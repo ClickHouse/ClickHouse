@@ -136,4 +136,4 @@ When requesting data, use the [sumMap(key, value)](../../../sql-reference/aggreg
 
 For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/summingmergetree/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/summingmergetree/) <!--hide-->

@@ -174,8 +174,9 @@ void PullingAsyncPipelineExecutor::cancel()
     if (data && !data->is_finished && data->executor)
         data->executor->cancel();
 
-    /// The following code is needed to rethrow exception from PipelineExecutor.
-    /// It could have been thrown from pull(), but we will not likely call it again.
+    /// Finish lazy format. Otherwise thread.join() may hung.
+    if (lazy_format && !lazy_format->isFinished())
+        lazy_format->finish();
 
     /// Join thread here to wait for possible exception.
     if (data && data->thread.joinable())

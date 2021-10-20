@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+    extern const int DATABASE_NOT_EMPTY;
 }
 
 
@@ -46,7 +47,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     const String & database_name,
     const String & table_data_path_relative,
     ContextMutablePtr context,
-    bool force_restore)
+    bool has_force_restore_data_flag)
 {
     ast_create_query.attach = true;
     ast_create_query.database = database_name;
@@ -88,7 +89,7 @@ std::pair<String, StoragePtr> createTableFromAST(
             context->getGlobalContext(),
             columns,
             constraints,
-            force_restore)
+            has_force_restore_data_flag)
     };
 }
 
@@ -528,8 +529,28 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 void DatabaseOnDisk::drop(ContextPtr local_context)
 {
     assert(tables.empty());
-    fs::remove(local_context->getPath() + getDataPath());
-    fs::remove(getMetadataPath());
+    if (local_context->getSettingsRef().force_remove_data_recursively_on_drop)
+    {
+        fs::remove_all(local_context->getPath() + getDataPath());
+        fs::remove_all(getMetadataPath());
+    }
+    else
+    {
+        try
+        {
+            fs::remove(local_context->getPath() + getDataPath());
+            fs::remove(getMetadataPath());
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() != std::errc::directory_not_empty)
+                throw Exception(Exception::CreateFromSTDTag{}, e);
+            throw Exception(ErrorCodes::DATABASE_NOT_EMPTY, "Cannot drop: {}. "
+                "Probably database contain some detached tables or metadata leftovers from Ordinary engine. "
+                "If you want to remove all data anyway, try to attach database back and drop it again "
+                "with enabled force_remove_data_recursively_on_drop setting", e.what());
+        }
+    }
 }
 
 String DatabaseOnDisk::getObjectMetadataPath(const String & object_name) const
@@ -699,55 +720,4 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metada
     return ast;
 }
 
-void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context)
-{
-    std::lock_guard lock(modify_settings_mutex);
-
-    auto create_query = getCreateDatabaseQuery()->clone();
-    auto * create = create_query->as<ASTCreateQuery>();
-    auto * settings = create->storage->settings;
-    if (settings)
-    {
-        auto & storage_settings = settings->changes;
-        for (const auto & change : settings_changes)
-        {
-            auto it = std::find_if(storage_settings.begin(), storage_settings.end(),
-                                   [&](const auto & prev){ return prev.name == change.name; });
-            if (it != storage_settings.end())
-                it->value = change.value;
-            else
-                storage_settings.push_back(change);
-        }
-    }
-    else
-    {
-        auto storage_settings = std::make_shared<ASTSetQuery>();
-        storage_settings->is_standalone = false;
-        storage_settings->changes = settings_changes;
-        create->storage->set(create->storage->settings, storage_settings->clone());
-    }
-
-    create->attach = true;
-    create->if_not_exists = false;
-
-    WriteBufferFromOwnString statement_buf;
-    formatAST(*create, statement_buf, false);
-    writeChar('\n', statement_buf);
-    String statement = statement_buf.str();
-
-    String database_name_escaped = escapeForFileName(database_name);
-    fs::path metadata_root_path = fs::canonical(query_context->getGlobalContext()->getPath());
-    fs::path metadata_file_tmp_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql.tmp");
-    fs::path metadata_file_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql");
-
-    WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-    writeString(statement, out);
-
-    out.next();
-    if (getContext()->getSettingsRef().fsync_metadata)
-        out.sync();
-    out.close();
-
-    fs::rename(metadata_file_tmp_path, metadata_file_path);
-}
 }

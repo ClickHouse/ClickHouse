@@ -1,6 +1,6 @@
 #include <Processors/Transforms/CreatingSetsTransform.h>
-#include <DataStreams/PushingToSinkBlockOutputStream.h>
 
+#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Interpreters/Set.h>
@@ -9,7 +9,6 @@
 
 #include <iomanip>
 #include <DataStreams/materializeBlock.h>
-
 
 namespace DB
 {
@@ -50,7 +49,7 @@ void CreatingSetsTransform::startSubquery()
         LOG_TRACE(log, "Filling temporary table.");
 
     if (subquery.table)
-        table_out = std::make_shared<PushingToSinkBlockOutputStream>(subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), getContext()));
+        table_out = subquery.table->write({}, subquery.table->getInMemoryMetadataPtr(), getContext());
 
     done_with_set = !subquery.set;
     done_with_table = !subquery.table;
@@ -84,7 +83,7 @@ void CreatingSetsTransform::init()
     is_initialized = true;
 
     if (subquery.set)
-        subquery.set->setHeader(getInputPort().getHeader().getColumnsWithTypeAndName());
+        subquery.set->setHeader(getInputPort().getHeader());
 
     watch.restart();
     startSubquery();
@@ -97,7 +96,7 @@ void CreatingSetsTransform::consume(Chunk chunk)
 
     if (!done_with_set)
     {
-        if (!subquery.set->insertFromBlock(block.getColumnsWithTypeAndName()))
+        if (!subquery.set->insertFromBlock(block))
             done_with_set = true;
     }
 

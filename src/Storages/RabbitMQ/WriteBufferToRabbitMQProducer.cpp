@@ -77,7 +77,7 @@ WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 {
     writing_task->deactivate();
     connection.disconnect();
-    assert(rows == 0);
+    assert(rows == 0 && chunks.empty());
 }
 
 

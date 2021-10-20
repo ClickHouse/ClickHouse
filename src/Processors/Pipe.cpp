@@ -4,8 +4,7 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/LimitTransform.h>
-#include <Processors/Sinks/NullSink.h>
-#include <Processors/Sinks/EmptySink.h>
+#include <Processors/NullSink.h>
 #include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sources/NullSource.h>

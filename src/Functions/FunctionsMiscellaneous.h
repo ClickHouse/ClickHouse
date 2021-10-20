@@ -77,7 +77,6 @@ public:
 
     bool isDeterministic() const override { return true; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return return_type; }
@@ -170,7 +169,6 @@ public:
 
     bool isDeterministic() const override { return true; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     const DataTypes & getArgumentTypes() const override { return capture->captured_types; }
     const DataTypePtr & getResultType() const override { return return_type; }

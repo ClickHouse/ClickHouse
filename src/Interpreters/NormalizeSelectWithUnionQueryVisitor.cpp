@@ -1,6 +1,5 @@
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Common/typeid_cast.h>
 
 namespace DB

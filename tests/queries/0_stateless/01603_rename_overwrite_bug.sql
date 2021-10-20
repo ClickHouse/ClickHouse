@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP database IF EXISTS test_1603_rename_bug_ordinary;
 create database test_1603_rename_bug_ordinary engine=Ordinary;
 create table test_1603_rename_bug_ordinary.foo engine=Memory as select * from numbers(100);

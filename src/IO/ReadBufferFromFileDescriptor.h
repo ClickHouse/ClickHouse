@@ -14,23 +14,17 @@ namespace DB
 class ReadBufferFromFileDescriptor : public ReadBufferFromFileBase
 {
 protected:
-    const size_t required_alignment = 0;  /// For O_DIRECT both file offsets and memory addresses have to be aligned.
-    bool use_pread = false;               /// To access one fd from multiple threads, use 'pread' syscall instead of 'read'.
-
-    size_t file_offset_of_buffer_end = 0; /// What offset in file corresponds to working_buffer.end().
     int fd;
+    size_t file_offset_of_buffer_end; /// What offset in file corresponds to working_buffer.end().
 
     bool nextImpl() override;
-    void prefetch() override;
 
     /// Name or some description of file.
     std::string getFileName() const override;
 
 public:
     ReadBufferFromFileDescriptor(int fd_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
-        : ReadBufferFromFileBase(buf_size, existing_memory, alignment), required_alignment(alignment), fd(fd_)
-    {
-    }
+        : ReadBufferFromFileBase(buf_size, existing_memory, alignment), fd(fd_), file_offset_of_buffer_end(0) {}
 
     int getFD() const
     {
@@ -51,23 +45,9 @@ public:
     off_t size();
 
     void setProgressCallback(ContextPtr context);
-
 private:
     /// Assuming file descriptor supports 'select', check that we have data to read or wait until timeout.
     bool poll(size_t timeout_microseconds);
-};
-
-
-/** Similar to ReadBufferFromFileDescriptor but it is using 'pread' allowing multiple concurrent reads from the same fd.
-  */
-class ReadBufferFromFileDescriptorPRead : public ReadBufferFromFileDescriptor
-{
-public:
-    ReadBufferFromFileDescriptorPRead(int fd_, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, char * existing_memory = nullptr, size_t alignment = 0)
-        : ReadBufferFromFileDescriptor(fd_, buf_size, existing_memory, alignment)
-    {
-        use_pread = true;
-    }
 };
 
 }

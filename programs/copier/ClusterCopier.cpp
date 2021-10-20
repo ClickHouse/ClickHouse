@@ -1274,14 +1274,13 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
     auto get_select_query = [&] (const DatabaseAndTableName & from_table, const String & fields, bool enable_splitting, String limit = "")
     {
         String query;
-        query += "WITH " + task_partition.name + " AS partition_key ";
         query += "SELECT " + fields + " FROM " + getQuotedTable(from_table);
 
         if (enable_splitting && experimental_use_sample_offset)
             query += " SAMPLE 1/" + toString(number_of_splits) + " OFFSET " + toString(current_piece_number) + "/" + toString(number_of_splits);
 
         /// TODO: Bad, it is better to rewrite with ASTLiteral(partition_key_field)
-        query += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = partition_key)";
+        query += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = (" + task_partition.name + " AS partition_key))";
 
         if (enable_splitting && !experimental_use_sample_offset)
             query += " AND ( cityHash64(" + primary_key_comma_separated + ") %" + toString(number_of_splits) + " = " + toString(current_piece_number) + " )";
@@ -1703,15 +1702,14 @@ void ClusterCopier::dropParticularPartitionPieceFromAllHelpingTables(const TaskT
     LOG_INFO(log, "All helping tables dropped partition {}", partition_name);
 }
 
-String ClusterCopier::getRemoteCreateTable(
-    const DatabaseAndTableName & table, Connection & connection, const Settings & settings)
+String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings & settings)
 {
     auto remote_context = Context::createCopy(context);
     remote_context->setSettings(settings);
 
     String query = "SHOW CREATE TABLE " + getQuotedTable(table);
-    Block block = getBlockWithAllStreamData(
-        std::make_shared<RemoteBlockInputStream>(connection, query, InterpreterShowCreateQuery::getSampleBlock(), remote_context));
+    Block block = getBlockWithAllStreamData(std::make_shared<RemoteBlockInputStream>(
+            connection, query, InterpreterShowCreateQuery::getSampleBlock(), remote_context));
 
     return typeid_cast<const ColumnString &>(*block.safeGetByPosition(0).column).getDataAt(0).toString();
 }
@@ -1721,8 +1719,10 @@ ASTPtr ClusterCopier::getCreateTableForPullShard(const ConnectionTimeouts & time
 {
     /// Fetch and parse (possibly) new definition
     auto connection_entry = task_shard.info.pool->get(timeouts, &task_cluster->settings_pull, true);
-    String create_query_pull_str
-        = getRemoteCreateTable(task_shard.task_table.table_pull, *connection_entry, task_cluster->settings_pull);
+    String create_query_pull_str = getRemoteCreateTable(
+            task_shard.task_table.table_pull,
+            *connection_entry,
+            task_cluster->settings_pull);
 
     ParserCreateQuery parser_create_query;
     const auto & settings = getContext()->getSettingsRef();
@@ -1852,9 +1852,9 @@ bool ClusterCopier::checkShardHasPartition(const ConnectionTimeouts & timeouts,
     TaskTable & task_table = task_shard.task_table;
 
     WriteBufferFromOwnString ss;
-    ss << "WITH " + partition_quoted_name + " AS partition_key ";
     ss << "SELECT 1 FROM " << getQuotedTable(task_shard.table_read_shard);
-    ss << " WHERE (" << queryToString(task_table.engine_push_partition_key_ast) << " = partition_key)";
+    ss << " WHERE (" << queryToString(task_table.engine_push_partition_key_ast);
+    ss << " = (" + partition_quoted_name << " AS partition_key))";
     if (!task_table.where_condition_str.empty())
         ss << " AND (" << task_table.where_condition_str << ")";
     ss << " LIMIT 1";
@@ -1883,15 +1883,13 @@ bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTi
 
     UNUSED(primary_key_comma_separated);
 
-    std::string query;
-
-    query += "WITH " + partition_quoted_name + " AS partition_key ";
-    query += "SELECT 1 FROM " + getQuotedTable(task_shard.table_read_shard);
+    std::string query = "SELECT 1 FROM " + getQuotedTable(task_shard.table_read_shard);
 
     if (experimental_use_sample_offset)
         query += " SAMPLE 1/" + toString(number_of_splits) + " OFFSET " + toString(current_piece_number) + "/" + toString(number_of_splits);
 
-    query += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = partition_key)";
+    query += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast)
+                        + " = (" + partition_quoted_name + " AS partition_key))";
 
     if (!experimental_use_sample_offset)
         query += " AND (cityHash64(" + primary_key_comma_separated + ") % "
@@ -1955,8 +1953,8 @@ UInt64 ClusterCopier::executeQueryOnCluster(
                 /// For unknown reason global context is passed to IStorage::read() method
                 /// So, task_identifier is passed as constructor argument. It is more obvious.
                 auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                    *connections.back(), query, header, getContext(),
-                    /*throttler=*/nullptr, Scalars(), Tables(), QueryProcessingStage::Complete);
+                        *connections.back(), query, header, getContext(),
+                        /*throttler=*/nullptr, Scalars(), Tables(), QueryProcessingStage::Complete);
 
                 try
                 {
@@ -1964,7 +1962,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
                 }
                 catch (...)
                 {
-                    LOG_WARNING(log, "Node with address {} seems to be unreachable.", node.host_name);
+                    LOG_WARNING(log, "Seemns like node with address {} is unreachable.", node.host_name);
                     continue;
                 }
 

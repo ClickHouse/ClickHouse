@@ -193,7 +193,7 @@
 	url = https://github.com/danlark1/miniselect
 [submodule "contrib/rocksdb"]
 	path = contrib/rocksdb
-	url = https://github.com/ClickHouse-Extras/rocksdb.git
+	url = https://github.com/ClickHouse-Extras/rocksdb.git 
 [submodule "contrib/xz"]
 	path = contrib/xz
 	url = https://github.com/xz-mirror/xz
@@ -213,6 +213,7 @@
 [submodule "contrib/boringssl"]
 	path = contrib/boringssl
 	url = https://github.com/ClickHouse-Extras/boringssl.git
+	branch = MergeWithUpstream
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse-Extras/NuRaft.git
@@ -225,27 +226,6 @@
 [submodule "contrib/yaml-cpp"]
 	path = contrib/yaml-cpp
 	url = https://github.com/ClickHouse-Extras/yaml-cpp.git
-[submodule "contrib/libstemmer_c"]
-	path = contrib/libstemmer_c
-	url = https://github.com/ClickHouse-Extras/libstemmer_c.git
-[submodule "contrib/wordnet-blast"]
-	path = contrib/wordnet-blast
-	url = https://github.com/ClickHouse-Extras/wordnet-blast.git
-[submodule "contrib/lemmagen-c"]
-	path = contrib/lemmagen-c
-	url = https://github.com/ClickHouse-Extras/lemmagen-c.git
 [submodule "contrib/libpqxx"]
 	path = contrib/libpqxx
 	url = https://github.com/ClickHouse-Extras/libpqxx.git
-[submodule "contrib/sqlite-amalgamation"]
-	path = contrib/sqlite-amalgamation
-	url = https://github.com/azadkuh/sqlite-amalgamation
-[submodule "contrib/s2geometry"]
-	path = contrib/s2geometry
-	url = https://github.com/ClickHouse-Extras/s2geometry.git
-[submodule "contrib/bzip2"]
-	path = contrib/bzip2
-	url = https://github.com/ClickHouse-Extras/bzip2.git
-[submodule "contrib/magic_enum"]
-	path = contrib/magic_enum
-	url = https://github.com/Neargye/magic_enum

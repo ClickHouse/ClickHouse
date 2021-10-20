@@ -48,8 +48,6 @@ public:
         return false;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     size_t getNumberOfArguments() const override
     {
         return 1;

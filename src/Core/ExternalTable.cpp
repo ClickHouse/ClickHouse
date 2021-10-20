@@ -12,9 +12,9 @@
 #include <IO/LimitReadBuffer.h>
 
 #include <Processors/Pipe.h>
+#include <Processors/Sources/SinkToOutputStream.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Sinks/SinkToStorage.h>
 
 #include <Core/ExternalTable.h>
 #include <Poco/Net/MessageHeader.h>
@@ -159,11 +159,12 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     auto temporary_table = TemporaryTableHolder(getContext(), ColumnsDescription{columns}, {});
     auto storage = temporary_table.getTable();
     getContext()->addExternalTable(data->table_name, std::move(temporary_table));
-    auto sink = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext());
+    BlockOutputStreamPtr output = storage->write(ASTPtr(), storage->getInMemoryMetadataPtr(), getContext());
 
     /// Write data
     data->pipe->resize(1);
 
+    auto sink = std::make_shared<SinkToOutputStream>(std::move(output));
     connect(*data->pipe->getOutputPort(0), sink->getPort());
 
     auto processors = Pipe::detachProcessors(std::move(*data->pipe));

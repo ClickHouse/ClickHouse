@@ -34,7 +34,7 @@ public:
 
     StoragePtr tryGetTable(const String & table_name, ContextPtr context) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
 
     bool empty() const override;
 
@@ -50,7 +50,7 @@ protected:
 private:
     Poco::Logger * log;
 
-    Tables listTables(const FilterByNameFunction & filter_by_name) const;
+    Tables listTables(const FilterByNameFunction & filter_by_name);
 };
 
 }

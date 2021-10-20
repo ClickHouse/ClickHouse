@@ -18,8 +18,6 @@ namespace CurrentMetrics
 namespace DB
 {
 
-class Session;
-
 /** PostgreSQL wire protocol implementation.
  * For more info see https://www.postgresql.org/docs/current/protocol.html
  */
@@ -39,7 +37,7 @@ private:
     Poco::Logger * log = &Poco::Logger::get("PostgreSQLHandler");
 
     IServer & server;
-    std::unique_ptr<Session> session;
+    ContextMutablePtr connection_context;
     bool ssl_enabled = false;
     Int32 connection_id = 0;
     Int32 secret_key = 0;

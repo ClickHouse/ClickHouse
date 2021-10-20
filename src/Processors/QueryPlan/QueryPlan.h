@@ -2,7 +2,6 @@
 
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
-#include <Columns/IColumn.h>
 
 #include <list>
 #include <memory>
@@ -86,14 +85,13 @@ public:
     JSONBuilder::ItemPtr explainPlan(const ExplainPlanOptions & options);
     void explainPlan(WriteBuffer & buffer, const ExplainPlanOptions & options);
     void explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptions & options);
-    void explainEstimate(MutableColumns & columns);
 
     /// Set upper limit for the recommend number of threads. Will be applied to the newly-created pipelines.
     /// TODO: make it in a better way.
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
     size_t getMaxThreads() const { return max_threads; }
 
-    void addInterpreterContext(ContextPtr context);
+    void addInterpreterContext(std::shared_ptr<Context> context);
 
     /// Tree node. Step and it's children.
     struct Node
@@ -113,7 +111,7 @@ private:
 
     /// Those fields are passed to QueryPipeline.
     size_t max_threads = 0;
-    std::vector<ContextPtr> interpreter_context;
+    std::vector<std::shared_ptr<Context>> interpreter_context;
 };
 
 std::string debugExplainStep(const IQueryPlanStep & step);

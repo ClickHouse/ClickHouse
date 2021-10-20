@@ -10,7 +10,6 @@
 
 #include <Storages/IStorage.h>
 #include <Storages/MySQL/MySQLSettings.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <mysqlxx/PoolWithFailover.h>
 
 
@@ -49,12 +48,10 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
-
-    static StorageMySQLConfiguration getConfiguration(ASTs engine_args, ContextPtr context_);
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
 private:
-    friend class StorageMySQLSink;
+    friend class StorageMySQLBlockOutputStream;
 
     std::string remote_database_name;
     std::string remote_table_name;

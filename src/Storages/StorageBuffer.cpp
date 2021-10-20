@@ -5,6 +5,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <DataStreams/IBlockInputStream.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
@@ -25,13 +26,11 @@
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-
 
 namespace ProfileEvents
 {
@@ -161,7 +160,13 @@ protected:
         columns.reserve(column_names_and_types.size());
 
         for (const auto & elem : column_names_and_types)
-            columns.emplace_back(getColumnFromBlock(buffer.data, elem));
+        {
+            const auto & current_column = buffer.data.getByName(elem.getNameInStorage()).column;
+            if (elem.isSubcolumn())
+                columns.emplace_back(elem.getTypeInStorage()->getSubcolumn(elem.getSubcolumnName(), *current_column));
+            else
+                columns.emplace_back(std::move(current_column));
+        }
 
         UInt64 size = columns.at(0)->size();
         res.setColumns(std::move(columns), size);
@@ -508,29 +513,29 @@ static void appendBlock(const Block & from, Block & to)
 }
 
 
-class BufferSink : public SinkToStorage
+class BufferBlockOutputStream : public IBlockOutputStream
 {
 public:
-    explicit BufferSink(
+    explicit BufferBlockOutputStream(
         StorageBuffer & storage_,
         const StorageMetadataPtr & metadata_snapshot_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , storage(storage_)
+        : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
-    {
-        // Check table structure.
-        metadata_snapshot->check(getPort().getHeader(), true);
-    }
+    {}
 
-    String getName() const override { return "BufferSink"; }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
-    void consume(Chunk chunk) override
+    void write(const Block & block) override
     {
-        size_t rows = chunk.getNumRows();
-        if (!rows)
+        if (!block)
             return;
 
-        auto block = getPort().getHeader().cloneWithColumns(chunk.getColumns());
+        // Check table structure.
+        metadata_snapshot->check(block, true);
+
+        size_t rows = block.rows();
+        if (!rows)
+            return;
 
         StoragePtr destination;
         if (storage.destination_id)
@@ -637,9 +642,9 @@ private:
 };
 
 
-SinkToStoragePtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+BlockOutputStreamPtr StorageBuffer::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<BufferSink>(*this, metadata_snapshot);
+    return std::make_shared<BufferBlockOutputStream>(*this, metadata_snapshot);
 }
 
 
@@ -1015,13 +1020,11 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, Context
     auto name_deps = getDependentViewsByColumn(local_context);
     for (const auto & command : commands)
     {
-        if (command.type != AlterCommand::Type::ADD_COLUMN
-            && command.type != AlterCommand::Type::MODIFY_COLUMN
-            && command.type != AlterCommand::Type::DROP_COLUMN
-            && command.type != AlterCommand::Type::COMMENT_COLUMN)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                command.type, getName());
-
+        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN)
+            throw Exception(
+                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
         if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
             const auto & deps_mv = name_deps[command.column_name];

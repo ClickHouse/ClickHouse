@@ -15,8 +15,8 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/Context.h>
-#include <Processors/Pipe.h>
-#include <Processors/LimitTransform.h>
+#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/LimitBlockInputStream.h>
 #include <Common/SipHash.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -24,10 +24,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Formats/registerFormats.h>
-#include <Formats/FormatFactory.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Processors/QueryPipeline.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Core/Block.h>
 #include <common/StringRef.h>
 #include <common/DateLUT.h>
@@ -1160,20 +1156,17 @@ try
         if (!silent)
             std::cerr << "Training models\n";
 
-        Pipe pipe(FormatFactory::instance().getInput(input_format, file_in, header, context, max_block_size));
+        BlockInputStreamPtr input = context->getInputFormat(input_format, file_in, header, max_block_size);
 
-        QueryPipeline pipeline;
-        pipeline.init(std::move(pipe));
-        PullingPipelineExecutor executor(pipeline);
-
-        Block block;
-        while (executor.pull(block))
+        input->readPrefix();
+        while (Block block = input->read())
         {
             obfuscator.train(block.getColumns());
             source_rows += block.rows();
             if (!silent)
                 std::cerr << "Processed " << source_rows << " rows\n";
         }
+        input->readSuffix();
     }
 
     obfuscator.finalize();
@@ -1190,26 +1183,15 @@ try
 
         file_in.seek(0, SEEK_SET);
 
-        Pipe pipe(FormatFactory::instance().getInput(input_format, file_in, header, context, max_block_size));
-
-        if (processed_rows + source_rows > limit)
-        {
-            pipe.addSimpleTransform([&](const Block & cur_header)
-            {
-                return std::make_shared<LimitTransform>(cur_header, limit - processed_rows, 0);
-            });
-        }
-
-        QueryPipeline pipeline;
-        pipeline.init(std::move(pipe));
-
+        BlockInputStreamPtr input = context->getInputFormat(input_format, file_in, header, max_block_size);
         BlockOutputStreamPtr output = context->getOutputStreamParallelIfPossible(output_format, file_out, header);
 
-        PullingPipelineExecutor executor(pipeline);
+        if (processed_rows + source_rows > limit)
+            input = std::make_shared<LimitBlockInputStream>(input, limit - processed_rows, 0);
 
+        input->readPrefix();
         output->writePrefix();
-        Block block;
-        while (executor.pull(block))
+        while (Block block = input->read())
         {
             Columns columns = obfuscator.generate(block.getColumns());
             output->write(header.cloneWithColumns(columns));
@@ -1218,6 +1200,7 @@ try
                 std::cerr << "Processed " << processed_rows << " rows\n";
         }
         output->writeSuffix();
+        input->readSuffix();
 
         obfuscator.updateSeed();
     }

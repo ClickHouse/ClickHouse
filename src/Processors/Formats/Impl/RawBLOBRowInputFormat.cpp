@@ -29,12 +29,12 @@ RawBLOBRowInputFormat::RawBLOBRowInputFormat(const Block & header_, ReadBuffer &
 
 bool RawBLOBRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
-    if (in->eof())
+    if (in.eof())
         return false;
 
     /// One excessive copy.
     String blob;
-    readStringUntilEOF(blob, *in);
+    readStringUntilEOF(blob, in);
     columns.at(0)->insertData(blob.data(), blob.size());
     return false;
 }

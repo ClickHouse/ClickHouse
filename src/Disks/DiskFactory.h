@@ -8,14 +8,12 @@
 #include <Poco/Util/AbstractConfiguration.h>
 
 #include <functional>
-#include <map>
 #include <unordered_map>
 
 
 namespace DB
 {
 
-using DisksMap = std::map<String, DiskPtr>;
 /**
  * Disk factory. Responsible for creating new disk objects.
  */
@@ -26,8 +24,7 @@ public:
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextPtr context,
-        const DisksMap & map)>;
+        ContextPtr context)>;
 
     static DiskFactory & instance();
 
@@ -37,8 +34,7 @@ public:
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextPtr context,
-        const DisksMap & map) const;
+        ContextPtr context) const;
 
 private:
     using DiskTypeRegistry = std::unordered_map<String, Creator>;

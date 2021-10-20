@@ -52,7 +52,7 @@ void addDefaultRequiredExpressionsRecursively(
         RequiredSourceColumnsVisitor(columns_context).visit(column_default_expr);
         NameSet required_columns_names = columns_context.requiredColumns();
 
-        auto expr = makeASTFunction("_CAST", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName()));
+        auto expr = makeASTFunction("CAST", column_default_expr, std::make_shared<ASTLiteral>(columns.get(required_column_name).type->getName()));
 
         if (is_column_in_query && convert_null_to_default)
             expr = makeASTFunction("ifNull", std::make_shared<ASTIdentifier>(required_column_name), std::move(expr));
@@ -63,11 +63,8 @@ void addDefaultRequiredExpressionsRecursively(
         for (const auto & next_required_column_name : required_columns_names)
             addDefaultRequiredExpressionsRecursively(block, next_required_column_name, required_column_type, columns, default_expr_list_accum, added_columns, null_as_default);
     }
-    else if (columns.has(required_column_name))
+    else
     {
-        /// In case of dictGet function we allow to use it with identifier dictGet(identifier, 'column_name', key_expression)
-        /// and this identifier will be in required columns. If such column is not in ColumnsDescription we ignore it.
-
         /// This column is required, but doesn't have default expression, so lets use "default default"
         auto column = columns.get(required_column_name);
         auto default_value = column.type->getDefault();
@@ -104,7 +101,7 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
             continue;
 
         auto cast_func = makeASTFunction(
-            "_CAST", std::make_shared<ASTIdentifier>(required_column.name), std::make_shared<ASTLiteral>(required_column.type->getName()));
+            "CAST", std::make_shared<ASTIdentifier>(required_column.name), std::make_shared<ASTLiteral>(required_column.type->getName()));
 
         conversion_expr_list->children.emplace_back(setAlias(cast_func, required_column.name));
 

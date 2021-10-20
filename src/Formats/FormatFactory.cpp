@@ -5,9 +5,11 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
+#include <DataStreams/NativeBlockInputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
@@ -18,6 +20,10 @@
 
 #include <IO/ReadHelpers.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
 namespace DB
 {
 
@@ -27,6 +33,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_INPUT;
     extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 const FormatFactory::Creators & FormatFactory::getCreators(const String & name) const
@@ -53,14 +60,12 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.avro.output_codec = settings.output_format_avro_codec;
     format_settings.avro.output_sync_interval = settings.output_format_avro_sync_interval;
     format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
-    format_settings.avro.string_column_pattern = settings.output_format_avro_string_column_pattern.toString();
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
     format_settings.csv.empty_as_default = settings.input_format_defaults_for_omitted_fields;
     format_settings.csv.input_format_enum_as_number = settings.input_format_csv_enum_as_number;
-    format_settings.csv.null_representation = settings.output_format_csv_null_representation;
     format_settings.csv.unquoted_null_literal_as_null = settings.input_format_csv_unquoted_null_literal_as_null;
     format_settings.csv.input_format_arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
     format_settings.custom.escaping_rule = settings.format_custom_escaping_rule;
@@ -82,9 +87,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.json.quote_64bit_integers = settings.output_format_json_quote_64bit_integers;
     format_settings.json.quote_denormals = settings.output_format_json_quote_denormals;
     format_settings.null_as_default = settings.input_format_null_as_default;
-    format_settings.decimal_trailing_zeros = settings.output_format_decimal_trailing_zeros;
     format_settings.parquet.row_group_size = settings.output_format_parquet_row_group_size;
-    format_settings.parquet.import_nested = settings.input_format_parquet_import_nested;
     format_settings.pretty.charset = settings.output_format_pretty_grid_charset.toString() == "ASCII" ? FormatSettings::Pretty::Charset::ASCII : FormatSettings::Pretty::Charset::UTF8;
     format_settings.pretty.color = settings.output_format_pretty_color;
     format_settings.pretty.max_column_pad_width = settings.output_format_pretty_max_column_pad_width;
@@ -111,8 +114,6 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.with_names_use_header = settings.input_format_with_names_use_header;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.arrow.low_cardinality_as_dictionary = settings.output_format_arrow_low_cardinality_as_dictionary;
-    format_settings.arrow.import_nested = settings.input_format_arrow_import_nested;
-    format_settings.orc.import_nested = settings.input_format_orc_import_nested;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -162,12 +163,14 @@ InputFormatPtr FormatFactory::getInput(
     if (settings.max_memory_usage_for_user && settings.min_chunk_bytes_for_parallel_parsing * settings.max_threads * 2 > settings.max_memory_usage_for_user)
         parallel_parsing = false;
 
-    if (parallel_parsing)
+    if (parallel_parsing && name == "JSONEachRow")
     {
-        const auto & non_trivial_prefix_and_suffix_checker = getCreators(name).non_trivial_prefix_and_suffix_checker;
-        /// Disable parallel parsing for input formats with non-trivial readPrefix() and readSuffix().
-        if (non_trivial_prefix_and_suffix_checker && non_trivial_prefix_and_suffix_checker(buf))
-            parallel_parsing = false;
+        /// FIXME ParallelParsingBlockInputStream doesn't support formats with non-trivial readPrefix() and readSuffix()
+
+        /// For JSONEachRow we can safely skip whitespace characters
+        skipWhitespaceIfAny(buf);
+        if (buf.eof() || *buf.position() == '[')
+            parallel_parsing = false; /// Disable it for JSONEachRow if data is in square brackets (see JSONEachRowRowInputFormat)
     }
 
     if (parallel_parsing)
@@ -209,11 +212,13 @@ BlockOutputStreamPtr FormatFactory::getOutputStreamParallelIfPossible(
 
     const Settings & settings = context->getSettingsRef();
     bool parallel_formatting = settings.output_format_parallel_formatting;
-    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
     if (output_getter && parallel_formatting && getCreators(name).supports_parallel_formatting
         && !settings.output_format_json_array_of_rows)
     {
+        auto format_settings = _format_settings
+        ? *_format_settings : getFormatSettings(context);
+
         auto formatter_creator = [output_getter, sample, callback, format_settings]
             (WriteBuffer & output) -> OutputFormatPtr
             { return output_getter(output, sample, {std::move(callback)}, format_settings);};
@@ -350,6 +355,10 @@ OutputFormatPtr FormatFactory::getOutputFormat(
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
+    /// If we're handling MySQL protocol connection right now then MySQLWire is only allowed output format.
+    if (format_settings.mysql_wire.sequence_id && (name != "MySQLWire"))
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "MySQL protocol does not support custom output formats");
+
     /** TODO: Materialization is needed, because formats can use the functions `IDataType`,
       *  which only work with full columns.
       */
@@ -391,14 +400,6 @@ void FormatFactory::registerInputFormatProcessor(const String & name, InputProce
     target = std::move(input_creator);
 }
 
-void FormatFactory::registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker)
-{
-    auto & target = dict[name].non_trivial_prefix_and_suffix_checker;
-    if (target)
-        throw Exception("FormatFactory: Non trivial prefix and suffix checker " + name + " is already registered", ErrorCodes::LOGICAL_ERROR);
-    target = std::move(non_trivial_prefix_and_suffix_checker);
-}
-
 void FormatFactory::registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator)
 {
     auto & target = dict[name].output_processor_creator;
@@ -438,18 +439,6 @@ bool FormatFactory::checkIfFormatIsColumnOriented(const String & name)
 {
     const auto & target = getCreators(name);
     return target.is_column_oriented;
-}
-
-bool FormatFactory::isInputFormat(const String & name) const
-{
-    auto it = dict.find(name);
-    return it != dict.end() && (it->second.input_creator || it->second.input_processor_creator);
-}
-
-bool FormatFactory::isOutputFormat(const String & name) const
-{
-    auto it = dict.find(name);
-    return it != dict.end() && (it->second.output_creator || it->second.output_processor_creator);
 }
 
 FormatFactory & FormatFactory::instance()

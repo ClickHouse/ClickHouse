@@ -45,7 +45,7 @@ struct MergeTreeIndexGranuleFullText final : public IMergeTreeIndexGranule
     ~MergeTreeIndexGranuleFullText() override = default;
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    void deserializeBinary(ReadBuffer & istr) override;
 
     bool empty() const override { return !has_elems; }
 
@@ -112,7 +112,6 @@ private:
             /// Atoms of a Boolean expression.
             FUNCTION_EQUALS,
             FUNCTION_NOT_EQUALS,
-            FUNCTION_HAS,
             FUNCTION_IN,
             FUNCTION_NOT_IN,
             FUNCTION_MULTI_SEARCH,

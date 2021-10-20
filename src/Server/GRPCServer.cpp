@@ -6,14 +6,12 @@
 #include <Common/CurrentThread.h>
 #include <Common/SettingsChanges.h>
 #include <Common/setThreadName.h>
-#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <DataStreams/AddingDefaultsBlockInputStream.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
-#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Session.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -23,10 +21,6 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ParserQuery.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Processors/QueryPipeline.h>
-#include <Formats/FormatFactory.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
 #include <Poco/FileStream.h>
@@ -55,6 +49,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int UNKNOWN_DATABASE;
 }
 
 namespace
@@ -120,33 +115,6 @@ namespace
             throw Exception("Unknown compression level: '" + str + "'", ErrorCodes::INVALID_CONFIG_PARAMETER);
     }
 
-    grpc_compression_algorithm convertCompressionAlgorithm(const ::clickhouse::grpc::CompressionAlgorithm & algorithm)
-    {
-        if (algorithm == ::clickhouse::grpc::NO_COMPRESSION)
-            return GRPC_COMPRESS_NONE;
-        else if (algorithm == ::clickhouse::grpc::DEFLATE)
-            return GRPC_COMPRESS_DEFLATE;
-        else if (algorithm == ::clickhouse::grpc::GZIP)
-            return GRPC_COMPRESS_GZIP;
-        else if (algorithm == ::clickhouse::grpc::STREAM_GZIP)
-            return GRPC_COMPRESS_STREAM_GZIP;
-        else
-            throw Exception("Unknown compression algorithm: '" + ::clickhouse::grpc::CompressionAlgorithm_Name(algorithm) + "'", ErrorCodes::INVALID_GRPC_QUERY_INFO);
-    }
-
-    grpc_compression_level convertCompressionLevel(const ::clickhouse::grpc::CompressionLevel & level)
-    {
-        if (level == ::clickhouse::grpc::COMPRESSION_NONE)
-            return GRPC_COMPRESS_LEVEL_NONE;
-        else if (level == ::clickhouse::grpc::COMPRESSION_LOW)
-            return GRPC_COMPRESS_LEVEL_LOW;
-        else if (level == ::clickhouse::grpc::COMPRESSION_MEDIUM)
-            return GRPC_COMPRESS_LEVEL_MED;
-        else if (level == ::clickhouse::grpc::COMPRESSION_HIGH)
-            return GRPC_COMPRESS_LEVEL_HIGH;
-        else
-            throw Exception("Unknown compression level: '" + ::clickhouse::grpc::CompressionLevel_Name(level) + "'", ErrorCodes::INVALID_GRPC_QUERY_INFO);
-    }
 
     /// Gets file's contents as a string, throws an exception if failed.
     String readFile(const String & filepath)
@@ -269,22 +237,7 @@ namespace
         virtual void write(const GRPCResult & result, const CompletionCallback & callback) = 0;
         virtual void writeAndFinish(const GRPCResult & result, const grpc::Status & status, const CompletionCallback & callback) = 0;
 
-        Poco::Net::SocketAddress getClientAddress() const
-        {
-            String peer = grpc_context.peer();
-            return Poco::Net::SocketAddress{peer.substr(peer.find(':') + 1)};
-        }
-
-        void setResultCompression(grpc_compression_algorithm algorithm, grpc_compression_level level)
-        {
-            grpc_context.set_compression_algorithm(algorithm);
-            grpc_context.set_compression_level(level);
-        }
-
-        void setResultCompression(const ::clickhouse::grpc::Compression & compression)
-        {
-            setResultCompression(convertCompressionAlgorithm(compression.algorithm()), convertCompressionLevel(compression.level()));
-        }
+        Poco::Net::SocketAddress getClientAddress() const { String peer = grpc_context.peer(); return Poco::Net::SocketAddress{peer.substr(peer.find(':') + 1)}; }
 
     protected:
         CompletionCallback * getCallbackPtr(const CompletionCallback & callback)
@@ -602,7 +555,7 @@ namespace
         IServer & iserver;
         Poco::Logger * log = nullptr;
 
-        std::optional<Session> session;
+        std::shared_ptr<NamedSession> session;
         ContextMutablePtr query_context;
         std::optional<CurrentThread::QueryScope> query_scope;
         String query_text;
@@ -629,8 +582,7 @@ namespace
 
         std::optional<ReadBufferFromCallback> read_buffer;
         std::optional<WriteBufferFromString> write_buffer;
-        std::unique_ptr<QueryPipeline> pipeline;
-        std::unique_ptr<PullingPipelineExecutor> pipeline_executor;
+        BlockInputStreamPtr block_input_stream;
         BlockOutputStreamPtr block_output_stream;
         bool need_input_data_from_insert_query = true;
         bool need_input_data_from_query_info = true;
@@ -731,20 +683,34 @@ namespace
             password = "";
         }
 
+        /// Create context.
+        query_context = Context::createCopy(iserver.context());
+
         /// Authentication.
-        session.emplace(iserver.context(), ClientInfo::Interface::GRPC);
-        session->authenticate(user, password, user_address);
-        session->getClientInfo().quota_key = quota_key;
+        query_context->setUser(user, password, user_address);
+        query_context->setCurrentQueryId(query_info.query_id());
+        if (!quota_key.empty())
+            query_context->setQuotaKey(quota_key);
 
         /// The user could specify session identifier and session timeout.
         /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
         if (!query_info.session_id().empty())
         {
-            session->makeSessionContext(
+            session = query_context->acquireNamedSession(
                 query_info.session_id(), getSessionTimeout(query_info, iserver.config()), query_info.session_check());
+            query_context = Context::createCopy(session->context);
+            query_context->setSessionContext(session->context);
         }
 
-        query_context = session->makeQueryContext();
+        query_scope.emplace(query_context);
+
+        /// Set client info.
+        ClientInfo & client_info = query_context->getClientInfo();
+        client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+        client_info.interface = ClientInfo::Interface::GRPC;
+        client_info.initial_user = client_info.current_user;
+        client_info.initial_query_id = client_info.current_query_id;
+        client_info.initial_address = client_info.current_address;
 
         /// Prepare settings.
         SettingsChanges settings_changes;
@@ -754,14 +720,11 @@ namespace
         }
         query_context->checkSettingsConstraints(settings_changes);
         query_context->applySettingsChanges(settings_changes);
-
-        query_context->setCurrentQueryId(query_info.query_id());
-        query_scope.emplace(query_context);
+        const Settings & settings = query_context->getSettingsRef();
 
         /// Prepare for sending exceptions and logs.
-        const Settings & settings = query_context->getSettingsRef();
-        send_exception_with_stacktrace = settings.calculate_text_stack_trace;
-        const auto client_logs_level = settings.send_logs_level;
+        send_exception_with_stacktrace = query_context->getSettingsRef().calculate_text_stack_trace;
+        const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
         if (client_logs_level != LogsLevel::none)
         {
             logs_queue = std::make_shared<InternalTextLogsQueue>();
@@ -772,14 +735,14 @@ namespace
 
         /// Set the current database if specified.
         if (!query_info.database().empty())
+        {
+            if (!DatabaseCatalog::instance().isDatabaseExist(query_info.database()))
+                throw Exception("Database " + query_info.database() + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             query_context->setCurrentDatabase(query_info.database());
-
-        /// Apply compression settings for this call.
-        if (query_info.has_result_compression())
-            responder->setResultCompression(query_info.result_compression());
+        }
 
         /// The interactive delay will be used to show progress.
-        interactive_delay = settings.interactive_delay;
+        interactive_delay = query_context->getSettingsRef().interactive_delay;
         query_context->setProgressCallback([this](const Progress & value) { return progress.incrementPiecewiseAtomically(value); });
 
         /// Parse the query.
@@ -825,16 +788,16 @@ namespace
                 throw Exception("Unexpected context in Input initializer", ErrorCodes::LOGICAL_ERROR);
             input_function_is_used = true;
             initializeBlockInputStream(input_storage->getInMemoryMetadataPtr()->getSampleBlock());
+            block_input_stream->readPrefix();
         });
 
         query_context->setInputBlocksReaderCallback([this](ContextPtr context) -> Block
         {
             if (context != query_context)
                 throw Exception("Unexpected context in InputBlocksReader", ErrorCodes::LOGICAL_ERROR);
-
-            Block block;
-            while (!block && pipeline_executor->pull(block));
-
+            auto block = block_input_stream->read();
+            if (!block)
+                block_input_stream->readSuffix();
             return block;
         });
 
@@ -845,7 +808,7 @@ namespace
             query_end = insert_query->data;
         }
         String query(begin, query_end);
-        io = ::DB::executeQuery(true, query, query_context);
+        io = ::DB::executeQuery(query, query_context, false, QueryProcessingStage::Complete, true, true);
     }
 
     void Call::processInput()
@@ -867,15 +830,13 @@ namespace
         /// So we mustn't touch the input stream from other thread.
         initializeBlockInputStream(io.out->getHeader());
 
+        block_input_stream->readPrefix();
         io.out->writePrefix();
 
-        Block block;
-        while (pipeline_executor->pull(block))
-        {
-            if (block)
-                io.out->write(block);
-        }
+        while (auto block = block_input_stream->read())
+            io.out->write(block);
 
+        block_input_stream->readSuffix();
         io.out->writeSuffix();
     }
 
@@ -938,11 +899,9 @@ namespace
             return {nullptr, 0}; /// no more input data
         });
 
-        assert(!pipeline);
-        pipeline = std::make_unique<QueryPipeline>();
-        auto source = FormatFactory::instance().getInput(
-            input_format, *read_buffer, header, query_context, query_context->getSettings().max_insert_block_size);
-        pipeline->init(Pipe(source));
+        assert(!block_input_stream);
+        block_input_stream = query_context->getInputFormat(
+            input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
 
         /// Add default values if necessary.
         if (ast)
@@ -955,17 +914,10 @@ namespace
                     StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, query_context);
                     const auto & columns = storage->getInMemoryMetadataPtr()->getColumns();
                     if (!columns.empty())
-                    {
-                        pipeline->addSimpleTransform([&](const Block & cur_header)
-                        {
-                            return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *source, query_context);
-                        });
-                    }
+                        block_input_stream = std::make_shared<AddingDefaultsBlockInputStream>(block_input_stream, columns, query_context);
                 }
             }
         }
-
-        pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
     }
 
     void Call::createExternalTables()
@@ -1008,7 +960,7 @@ namespace
                 {
                     /// The data will be written directly to the table.
                     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-                    auto out_stream = std::make_shared<PushingToSinkBlockOutputStream>(storage->write(ASTPtr(), metadata_snapshot, query_context));
+                    auto out_stream = storage->write(ASTPtr(), metadata_snapshot, query_context);
                     ReadBufferFromMemory data(external_table.data().data(), external_table.data().size());
                     String format = external_table.format();
                     if (format.empty())
@@ -1231,7 +1183,7 @@ namespace
     {
         io.onException();
 
-        LOG_ERROR(log, getExceptionMessage(exception, true));
+        LOG_ERROR(log, "Code: {}, e.displayText() = {}, Stack trace:\n\n{}", exception.code(), exception.displayText(), exception.getStackTraceString());
 
         if (responder && !responder_finished)
         {
@@ -1277,14 +1229,15 @@ namespace
     void Call::close()
     {
         responder.reset();
-        pipeline_executor.reset();
-        pipeline.reset();
+        block_input_stream.reset();
         block_output_stream.reset();
         read_buffer.reset();
         write_buffer.reset();
         io = {};
         query_scope.reset();
         query_context.reset();
+        if (session)
+            session->release();
         session.reset();
     }
 

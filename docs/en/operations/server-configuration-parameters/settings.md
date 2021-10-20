@@ -34,7 +34,6 @@ Configuration template:
       <min_part_size>...</min_part_size>
       <min_part_size_ratio>...</min_part_size_ratio>
       <method>...</method>
-      <level>...</level>
     </case>
     ...
 </compression>
@@ -44,8 +43,7 @@ Configuration template:
 
 -   `min_part_size` – The minimum size of a data part.
 -   `min_part_size_ratio` – The ratio of the data part size to the table size.
--   `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`.
--   `level` – Compression level. See [Codecs](../../sql-reference/statements/create/table/#create-query-general-purpose-codecs).
+-   `method` – Compression method. Acceptable values: `lz4` or `zstd`.
 
 You can configure multiple `<case>` sections.
 
@@ -64,89 +62,9 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
         <min_part_size>10000000000</min_part_size>
         <min_part_size_ratio>0.01</min_part_size_ratio>
         <method>zstd</method>
-        <level>1</level>
     </case>
 </compression>
 ```
-
-## encryption {#server-settings-encryption}
-
-Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in enviroment variables or be set in configuration file.
-
-Keys can be hex or string. Their length must be equal to 16.
-
-**Example**
-
-Load from config:
-
-```xml
-<encryption_codecs>
-    <aes_128_gcm_siv>
-        <key>12345567812345678</key>
-    </aes_128_gcm_siv>
-</encryption_codecs>
-```
-
-!!! note "NOTE"
-    Storing keys in configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
-
-Load from config, when key is in hex:
-
-```xml
-<encryption_codecs>
-    <aes_128_gcm_siv>
-        <key_hex>00112233445566778899aabbccddeeff</key_hex>
-    </aes_128_gcm_siv>
-</encryption_codecs>
-```
-
-Load key from environment variable:
-
-```xml
-<encryption_codecs>
-    <aes_128_gcm_siv>
-        <key_hex from_env="KEY"></key_hex>
-    </aes_128_gcm_siv>
-</encryption_codecs>
-```
-
-Where `current_key_id` sets the current key for encryption, and all specified keys can be used for decryption.
-
-All this methods can be applied for multiple keys:
-
-```xml
-<encryption_codecs>
-    <aes_128_gcm_siv>
-        <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
-        <key_hex id="1" from_env=".."></key_hex>
-        <current_key_id>1</current_key_id>
-    </aes_128_gcm_siv>
-</encryption_codecs>
-```
-
-Where `current_key_id` shows current key for encryption.
-
-Also user can add nonce that must be 12 bytes long (by default encryption and decryption will use nonce consisting of zero bytes):
-
-```xml
-<encryption_codecs>
-    <aes_128_gcm_siv>
-        <nonce>0123456789101</nonce>
-    </aes_128_gcm_siv>
-</encryption_codecs>
-```
-
-Or it can be set in hex:
-
-```xml
-<encryption_codecs>
-    <aes_128_gcm_siv>
-        <nonce_hex>abcdefabcdef</nonce_hex>
-    </aes_128_gcm_siv>
-</encryption_codecs>
-```
-
-Everything above can be applied for `aes_256_gcm_siv` (but key must be 32 bytes length).
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
@@ -180,9 +98,8 @@ Default value: `1073741824` (1 GB).
 ```xml
 <core_dump>
     <size_limit>1073741824</size_limit>
-</core_dump>
+</core_dump> 
 ```
-
 ## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
 
 Sets the delay before remove table data in seconds. If the query has `SYNC` modifier, this setting is ignored.
@@ -447,12 +364,12 @@ This section contains the following parameters:
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
-The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 10 seconds.
+The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 3 seconds.
 
 **Example**
 
 ``` xml
-<keep_alive_timeout>10</keep_alive_timeout>
+<keep_alive_timeout>3</keep_alive_timeout>
 ```
 
 ## listen_host {#server_configuration_parameters-listen_host}
@@ -522,8 +439,8 @@ The server will need access to the public Internet via IPv4 (at the time of writ
 
 Keys:
 
--   `enabled` – Boolean flag to enable the feature, `false` by default. Set to `true` to allow sending crash reports.
--   `endpoint` – You can override the Sentry endpoint URL for sending crash reports. It can be either a separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax.
+-   `enabled` – Boolean flag to enable the feature, `false` by default. Set to `true` to allow sending crash reports. 
+-   `endpoint` – You can override the Sentry endpoint URL for sending crash reports. It can be either a separate Sentry account or your self-hosted Sentry instance. Use the [Sentry DSN](https://docs.sentry.io/error-reporting/quickstart/?platform=native#configure-the-sdk) syntax. 
 -   `anonymize` - Avoid attaching the server hostname to the crash report.
 -   `http_proxy` - Configure HTTP proxy for sending crash reports.
 -   `debug` - Sets the Sentry client into debug mode.
@@ -543,7 +460,7 @@ Parameter substitutions for replicated tables.
 
 Can be omitted if replicated tables are not used.
 
-For more information, see the section [Creating replicated tables](../../engines/table-engines/mergetree-family/replication.md#creating-replicated-tables).
+For more information, see the section “[Creating replicated tables](../../engines/table-engines/mergetree-family/replication.md)”.
 
 **Example**
 
@@ -585,14 +502,14 @@ The default `max_server_memory_usage` value is calculated as `memory_amount * ma
 
 ## max_server_memory_usage_to_ram_ratio {#max_server_memory_usage_to_ram_ratio}
 
-Defines the fraction of total physical RAM amount, available to the ClickHouse server. If the server tries to utilize more, the memory is cut down to the appropriate amount.
+Defines the fraction of total physical RAM amount, available to the ClickHouse server. If the server tries to utilize more, the memory is cut down to the appropriate amount. 
 
 Possible values:
 
 -   Positive double.
 -   0 — The ClickHouse server can use all available RAM.
 
-Default value: `0.9`.
+Default value: `0`.
 
 **Usage**
 
@@ -796,7 +713,7 @@ Keys for server/client settings:
 -   extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
--   requireTLSv1_2 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
+-   requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
 -   fips – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
 -   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
 -   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
@@ -862,7 +779,7 @@ Use the following parameters to configure logging:
 
 The path to the directory containing data.
 
-!!! warning "Warning"
+!!! note "Note"
     The trailing slash is mandatory.
 
 **Example**
@@ -949,33 +866,6 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 </query_thread_log>
 ```
 
-## query_views_log {#server_configuration_parameters-query_views_log}
-
-Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views) setting.
-
-Queries are logged in the [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
-
-Use the following parameters to configure logging:
-
--   `database` – Name of the database.
--   `table` – Name of the system table the queries will be logged in.
--   `partition_by` — [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` defined.
--   `engine` - [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` defined.
--   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
-
-If the table does not exist, ClickHouse will create it. If the structure of the query views log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
-
-**Example**
-
-``` xml
-<query_views_log>
-    <database>system</database>
-    <table>query_views_log</table>
-    <partition_by>toYYYYMM(event_date)</partition_by>
-    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-</query_views_log>
-```
-
 ## text_log {#server_configuration_parameters-text_log}
 
 Settings for the [text_log](../../operations/system-tables/text_log.md#system_tables-text_log) system table for logging text messages.
@@ -990,7 +880,7 @@ Parameters:
 -   `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
 
 **Example**
-```xml
+```xml 
 <yandex>
     <text_log>
         <level>notice</level>
@@ -1031,7 +921,8 @@ The default server configuration file `config.xml` contains the following settin
 
 Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
 `system.query_log`, `system.text_log`, `system.processes` tables, and in logs sent to the client. That allows preventing
-sensitive data leakage from SQL queries (like names, emails, personal identifiers or credit card numbers) to logs.
+sensitive data leakage from SQL queries (like names, emails, personal
+identifiers or credit card numbers) to logs.
 
 **Example**
 
@@ -1129,7 +1020,7 @@ Example
 
 Path to temporary data for processing large queries.
 
-!!! warning "Note"
+!!! note "Note"
     The trailing slash is mandatory.
 
 **Example**
@@ -1146,9 +1037,9 @@ If not set, [tmp_path](#tmp-path) is used, otherwise it is ignored.
 
 !!! note "Note"
     - `move_factor` is ignored.
-    - `keep_free_space_bytes` is ignored.
-    - `max_data_part_size_bytes` is ignored.
-    - Уou must have exactly one volume in that policy.
+- `keep_free_space_bytes` is ignored.
+- `max_data_part_size_bytes` is ignored.
+- Уou must have exactly one volume in that policy.
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
@@ -1212,10 +1103,9 @@ This section contains the following parameters:
 
       The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
 
-- `session_timeout_ms` — Maximum timeout for the client session in milliseconds.
-- `operation_timeout_ms` — Maximum timeout for one operation in milliseconds.
-- `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
-- `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
+-   `session_timeout` — Maximum timeout for the client session in milliseconds.
+-   `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
+-   `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
 
 **Example configuration**
 
@@ -1289,39 +1179,6 @@ The update is performed asynchronously, in a separate system thread.
 
 -   [background_schedule_pool_size](../../operations/settings/settings.md#background_schedule_pool_size)
 
-## distributed_ddl {#server-settings-distributed_ddl}
-
-Manage executing [distributed ddl queries](../../sql-reference/distributed-ddl.md)  (CREATE, DROP, ALTER, RENAME) on cluster.
-Works only if [ZooKeeper](#server-settings_zookeeper) is enabled.
-
-**Example**
-
-```xml
-<distributed_ddl>
-    <!-- Path in ZooKeeper to queue with DDL queries -->
-    <path>/clickhouse/task_queue/ddl</path>
-
-    <!-- Settings from this profile will be used to execute DDL queries -->
-    <profile>default</profile>
-
-    <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
-    <pool_size>1</pool_size>
-
-    <!--
-         Cleanup settings (active tasks will not be removed)
-    -->
-
-    <!-- Controls task TTL (default 1 week) -->
-    <task_max_lifetime>604800</task_max_lifetime>
-
-    <!-- Controls how often cleanup should be performed (in seconds) -->
-    <cleanup_delay_period>60</cleanup_delay_period>
-
-    <!-- Controls how many tasks could be in the queue -->
-    <max_tasks_in_queue>1000</max_tasks_in_queue>
-</distributed_ddl>
-```
-
 ## access_control_path {#access_control_path}
 
 Path to a folder where a ClickHouse server stores user and role configurations created by SQL commands.
@@ -1330,20 +1187,19 @@ Default value: `/var/lib/clickhouse/access/`.
 
 **See also**
 
-- [Access Control and Account Management](../../operations/access-rights.md#access-control)
+-   [Access Control and Account Management](../../operations/access-rights.md#access-control)
 
 ## user_directories {#user_directories}
 
 Section of the configuration file that contains settings:
 -   Path to configuration file with predefined users.
 -   Path to folder where users created by SQL commands are stored.
--   ZooKeeper node path where users created by SQL commands are stored and replicated (experimental).
 
 If this section is specified, the path from [users_config](../../operations/server-configuration-parameters/settings.md#users-config) and [access_control_path](../../operations/server-configuration-parameters/settings.md#access_control_path) won't be used.
 
 The `user_directories` section can contain any number of items, the order of the items means their precedence (the higher the item the higher the precedence).
 
-**Examples**
+**Example**
 
 ``` xml
 <user_directories>
@@ -1356,20 +1212,7 @@ The `user_directories` section can contain any number of items, the order of the
 </user_directories>
 ```
 
-Users, roles, row policies, quotas, and profiles can be also stored in ZooKeeper:
-
-``` xml
-<user_directories>
-    <users_xml>
-        <path>/etc/clickhouse-server/users.xml</path>
-    </users_xml>
-    <replicated>
-        <zookeeper_path>/clickhouse/access/</zookeeper_path>
-    </replicated>
-</user_directories>
-```
-
-You can also define sections `memory` — means storing information only in memory, without writing to disk, and `ldap` — means storing information on an LDAP server.
+You can also specify settings `memory` — means storing information only in memory, without writing to disk, and `ldap` — means storing information on an LDAP server.
 
 To add an LDAP server as a remote user directory of users that are not defined locally, define a single `ldap` section with a following parameters:
 -   `server` — one of LDAP server names defined in `ldap_servers` config section. This parameter is mandatory and cannot be empty.
@@ -1387,4 +1230,4 @@ To add an LDAP server as a remote user directory of users that are not defined l
 </ldap>
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

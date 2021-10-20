@@ -12,6 +12,7 @@
 #include <common/types.h>
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
+#include <Common/Stopwatch.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -73,9 +74,6 @@ class CrashLog;
 class MetricLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
-class QueryViewsLog;
-class ZooKeeperLog;
-class SessionLog;
 
 
 class ISystemLog
@@ -112,12 +110,6 @@ struct SystemLogs
     std::shared_ptr<AsynchronousMetricLog> asynchronous_metric_log;
     /// OpenTelemetry trace spans.
     std::shared_ptr<OpenTelemetrySpanLog> opentelemetry_span_log;
-    /// Used to log queries of materialized and live views
-    std::shared_ptr<QueryViewsLog> query_views_log;
-    /// Used to log all actions of ZooKeeper client
-    std::shared_ptr<ZooKeeperLog> zookeeper_log;
-    /// Login, LogOut and Login failure events
-    std::shared_ptr<SessionLog> session_log;
 
     std::vector<ISystemLog *> logs;
 };
@@ -524,7 +516,7 @@ void SystemLog<LogElement>::prepareTable()
         auto alias_columns = LogElement::getNamesAndAliases();
         auto current_query = InterpreterCreateQuery::formatColumns(ordinary_columns, alias_columns);
 
-        if (old_query->getTreeHash() != current_query->getTreeHash())
+        if (serializeAST(*old_query) != serializeAST(*current_query))
         {
             /// Rename the existing table.
             int suffix = 0;

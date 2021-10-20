@@ -148,7 +148,6 @@ private:
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -424,7 +423,6 @@ private:
 
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool useDefaultImplementationForConstants() const override { return true; }

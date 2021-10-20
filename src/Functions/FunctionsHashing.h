@@ -193,20 +193,6 @@ struct SHA256Impl
         SHA256_Final(out_char_data, &ctx);
     }
 };
-
-struct SHA512Impl
-{
-    static constexpr auto name = "SHA512";
-    enum { length = 64 };
-
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
-    {
-        SHA512_CTX ctx;
-        SHA512_Init(&ctx);
-        SHA512_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        SHA512_Final(out_char_data, &ctx);
-    }
-};
 #endif
 
 struct SipHash64Impl
@@ -570,8 +556,6 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(arguments[0].column.get()))
@@ -635,7 +619,7 @@ private:
     template <typename FromType>
     ColumnPtr executeType(const ColumnsWithTypeAndName & arguments) const
     {
-        using ColVecType = ColumnVectorOrDecimal<FromType>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
 
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(arguments[0].column.get()))
         {
@@ -676,8 +660,6 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IDataType * from_type = arguments[0].type.get();
@@ -701,8 +683,6 @@ public:
             return executeType<Int64>(arguments);
         else if (which.isDate())
             return executeType<UInt16>(arguments);
-        else if (which.isDate32())
-            return executeType<Int32>(arguments);
         else if (which.isDateTime())
             return executeType<UInt32>(arguments);
         else if (which.isDecimal32())
@@ -762,7 +742,7 @@ private:
     template <typename FromType, bool first>
     void executeIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
-        using ColVecType = ColumnVectorOrDecimal<FromType>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
 
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
@@ -819,7 +799,7 @@ private:
     template <typename FromType, bool first>
     void executeBigIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
-        using ColVecType = ColumnVectorOrDecimal<FromType>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
 
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
@@ -1006,7 +986,6 @@ private:
         else if (which.isEnum8()) executeIntType<Int8, first>(icolumn, vec_to);
         else if (which.isEnum16()) executeIntType<Int16, first>(icolumn, vec_to);
         else if (which.isDate()) executeIntType<UInt16, first>(icolumn, vec_to);
-        else if (which.isDate32()) executeIntType<Int32, first>(icolumn, vec_to);
         else if (which.isDateTime()) executeIntType<UInt32, first>(icolumn, vec_to);
         /// TODO: executeIntType() for Decimal32/64 leads to incompatible result
         else if (which.isDecimal32()) executeBigIntType<Decimal32, first>(icolumn, vec_to);
@@ -1064,7 +1043,6 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
@@ -1211,7 +1189,6 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -1332,7 +1309,6 @@ using FunctionMD5 = FunctionStringHashFixedString<MD5Impl>;
 using FunctionSHA1 = FunctionStringHashFixedString<SHA1Impl>;
 using FunctionSHA224 = FunctionStringHashFixedString<SHA224Impl>;
 using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
-using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
 #endif
 using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionAnyHash<ImplCityHash64>;

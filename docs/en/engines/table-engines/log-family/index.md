@@ -14,8 +14,6 @@ Engines of the family:
 -   [Log](../../../engines/table-engines/log-family/log.md)
 -   [TinyLog](../../../engines/table-engines/log-family/tinylog.md)
 
-`Log` family table engines can store data to [HDFS](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-hdfs) or [S3](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-s3) distributed file systems.
-
 ## Common Properties {#common-properties}
 
 Engines:
@@ -44,4 +42,4 @@ The `TinyLog` engine is the simplest in the family and provides the poorest func
 
 The `Log` and `StripeLog` engines support parallel data reading. When reading data, ClickHouse uses multiple threads. Each thread processes a separate data block. The `Log` engine uses a separate file for each column of the table. `StripeLog` stores all the data in one file. As a result, the `StripeLog` engine uses fewer file descriptors, but the `Log` engine provides higher efficiency when reading data.
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/log_family/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/log_family/) <!--hide-->

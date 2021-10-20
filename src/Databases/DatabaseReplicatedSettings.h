@@ -18,6 +18,9 @@ class ASTStorage;
 DECLARE_SETTINGS_TRAITS(DatabaseReplicatedSettingsTraits, LIST_OF_DATABASE_REPLICATED_SETTINGS)
 
 
+/** Settings for the MaterializeMySQL database engine.
+  * Could be loaded from a CREATE DATABASE query (SETTINGS clause).
+  */
 struct DatabaseReplicatedSettings : public BaseSettings<DatabaseReplicatedSettingsTraits>
 {
     void loadFromQuery(ASTStorage & storage_def);

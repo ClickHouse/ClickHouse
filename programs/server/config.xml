@@ -18,7 +18,6 @@
           - information
           - debug
           - trace
-          - test (not for production usage)
 
             [1]: https://github.com/pocoproject/poco/blob/poco-1.9.4-release/Foundation/include/Poco/Logger.h#L105-L114
         -->
@@ -194,11 +193,11 @@
         <!-- The following file is used only if ssl_require_client_auth=1 -->
         <ssl_ca_cert_file>/path/to/ssl_ca_cert_file</ssl_ca_cert_file>
 
-        <!-- Default compression algorithm (applied if client doesn't specify another algorithm, see result_compression in QueryInfo).
+        <!-- Default compression algorithm (applied if client doesn't specify another algorithm).
              Supported algorithms: none, deflate, gzip, stream_gzip -->
         <compression>deflate</compression>
 
-        <!-- Default compression level (applied if client doesn't specify another level, see result_compression in QueryInfo).
+        <!-- Default compression level (applied if client doesn't specify another level).
              Supported levels: none, low, medium, high -->
         <compression_level>medium</compression_level>
 
@@ -321,7 +320,7 @@
          The amount of data in mapped files can be monitored
          in system.metrics, system.metric_log by the MMappedFiles, MMappedFileBytes metrics
          and in system.asynchronous_metrics, system.asynchronous_metrics_log by the MMapCacheCells metric,
-         and also in system.events, system.processes, system.query_log, system.query_thread_log, system.query_views_log by the
+         and also in system.events, system.processes, system.query_log, system.query_thread_log by the
          CreatedReadBufferMMap, CreatedReadBufferMMapFailed, MMappedFileCacheHits, MMappedFileCacheMisses events.
          Note that the amount of data in mapped files does not consume memory directly and is not accounted
          in query or server memory usage - because this memory can be discarded similar to OS page cache.
@@ -879,23 +878,14 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_thread_log>
 
-    <!-- Query views log. Has information about all dependent views associated with a query.
-         Used only for queries with setting log_query_views = 1. -->
-    <query_views_log>
-        <database>system</database>
-        <table>query_views_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </query_views_log>
-
     <!-- Uncomment if use part log.
-         Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).-->
+         Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).
     <part_log>
         <database>system</database>
         <table>part_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </part_log>
+    -->
 
     <!-- Uncomment to write text log into table.
          Text log contains all information from usual server log but stores it in structured and efficient way.
@@ -965,15 +955,6 @@
         <flush_interval_milliseconds>1000</flush_interval_milliseconds>
     </crash_log>
 
-    <!-- Session log. Stores user log in (successful or not) and log out events. -->
-    <session_log>
-        <database>system</database>
-        <table>session_log</table>
-
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </session_log>
-
     <!-- Parameters for embedded dictionaries, used in Yandex.Metrica.
          See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
     -->
@@ -1003,9 +984,6 @@
     -->
     <dictionaries_config>*_dictionary.xml</dictionaries_config>
 
-    <!-- Configuration of user defined executable functions -->
-    <user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
-
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
       -->
@@ -1023,34 +1001,6 @@
         </case>
     </compression>
     -->
-
-    <!-- Configuration of encryption. The server executes a command to
-         obtain an encryption key at startup if such a command is
-         defined, or encryption codecs will be disabled otherwise. The
-         command is executed through /bin/sh and is expected to write
-         a Base64-encoded key to the stdout. -->
-    <encryption_codecs>
-        <!-- aes_128_gcm_siv -->
-            <!-- Example of getting hex key from env -->
-            <!-- the code should use this key and throw an exception if its length is not 16 bytes -->
-            <!--key_hex from_env="..."></key_hex -->
-
-            <!-- Example of multiple hex keys. They can be imported from env or be written down in config-->
-            <!-- the code should use these keys and throw an exception if their length is not 16 bytes -->
-            <!-- key_hex id="0">...</key_hex -->
-            <!-- key_hex id="1" from_env=".."></key_hex -->
-            <!-- key_hex id="2">...</key_hex -->
-            <!-- current_key_id>2</current_key_id -->
-
-            <!-- Example of getting hex key from config -->
-            <!-- the code should use this key and throw an exception if its length is not 16 bytes -->
-            <!-- key>...</key -->
-
-            <!-- example of adding nonce -->
-            <!-- nonce>...</nonce -->
-
-        <!-- /aes_128_gcm_siv -->
-    </encryption_codecs>
 
     <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
          Works only if ZooKeeper is enabled. Comment it if such functionality isn't required. -->
@@ -1206,27 +1156,4 @@
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->
-
-    <!-- You can also configure rocksdb like this: -->
-    <!--
-    <rocksdb>
-        <options>
-            <max_background_jobs>8</max_background_jobs>
-        </options>
-        <column_family_options>
-            <num_levels>2</num_levels>
-        </column_family_options>
-        <tables>
-            <table>
-                <name>TABLE</name>
-                <options>
-                    <max_background_jobs>8</max_background_jobs>
-                </options>
-                <column_family_options>
-                    <num_levels>2</num_levels>
-                </column_family_options>
-            </table>
-        </tables>
-    </rocksdb>
-    -->
 </yandex>

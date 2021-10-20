@@ -99,8 +99,8 @@ def create_distributed_table(node, table_name):
 
 
 def drop_distributed_table(node, table_name):
-    node.query("DROP TABLE IF EXISTS {} ON CLUSTER test_cluster SYNC".format(table_name))
-    node.query("DROP TABLE IF EXISTS {}_replicated ON CLUSTER test_cluster SYNC".format(table_name))
+    node.query("DROP TABLE IF EXISTS {} ON CLUSTER test_cluster".format(table_name))
+    node.query("DROP TABLE IF EXISTS {}_replicated ON CLUSTER test_cluster".format(table_name))
     time.sleep(1)
 
 
@@ -379,6 +379,68 @@ def test_rename_with_parallel_slow_insert(started_cluster):
         drop_table(nodes, table_name)
 
 
+def test_rename_with_parallel_slow_select(started_cluster):
+    table_name = "test_rename_with_parallel_slow_select"
+    drop_table(nodes, table_name)
+    try:
+        create_table(nodes, table_name)
+        insert(node1, table_name, 1000)
+
+        p = Pool(15)
+        tasks = []
+
+        tasks.append(p.apply_async(select, (node1, table_name, "num2", "999\n", 1, True, True)))
+        time.sleep(0.5)
+        tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2")))
+
+        for task in tasks:
+            task.get(timeout=240)
+
+        insert(node1, table_name, 100, ["num", "foo2"])
+
+        # rename column back to original
+        rename_column(node1, table_name, "foo2", "num2")
+
+        # check that select still works
+        select(node1, table_name, "num2", "1099\n")
+        select(node2, table_name, "num2", "1099\n", poll=30)
+        select(node3, table_name, "num2", "1099\n", poll=30)
+    finally:
+        drop_table(nodes, table_name)
+
+
+def test_rename_with_parallel_moves(started_cluster):
+    table_name = "test_rename_with_parallel_moves"
+    drop_table(nodes, table_name)
+    try:
+        create_table(nodes, table_name, with_storage_policy=True)
+        insert(node1, table_name, 1000)
+
+        p = Pool(15)
+        tasks = []
+
+        tasks.append(p.apply_async(alter_move, (node1, table_name, 20, True)))
+        tasks.append(p.apply_async(alter_move, (node2, table_name, 20, True)))
+        tasks.append(p.apply_async(alter_move, (node3, table_name, 20, True)))
+        tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 20, True)))
+        tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 20, True)))
+        tasks.append(p.apply_async(rename_column, (node3, table_name, "num3", "num2", 20, True)))
+
+        for task in tasks:
+            task.get(timeout=240)
+
+        # rename column back to original
+        rename_column(node1, table_name, "foo2", "num2", 1, True)
+        rename_column(node1, table_name, "foo3", "num2", 1, True)
+
+        # check that select still works
+        select(node1, table_name, "num2", "999\n")
+        select(node2, table_name, "num2", "999\n", poll=30)
+        select(node3, table_name, "num2", "999\n", poll=30)
+    finally:
+        drop_table(nodes, table_name)
+
+
 def test_rename_with_parallel_ttl_move(started_cluster):
     table_name = 'test_rename_with_parallel_ttl_move'
     try:
@@ -393,9 +455,9 @@ def test_rename_with_parallel_ttl_move(started_cluster):
         time.sleep(5)
         rename_column(node1, table_name, "time", "time2", 1, False)
         time.sleep(4)
-        tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 5, True)))
-        tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 5, True)))
-        tasks.append(p.apply_async(rename_column, (node3, table_name, "num3", "num2", 5, True)))
+        tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 20, True)))
+        tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 20, True)))
+        tasks.append(p.apply_async(rename_column, (node3, table_name, "num3", "num2", 20, True)))
 
         for task in tasks:
             task.get(timeout=240)
@@ -431,12 +493,12 @@ def test_rename_with_parallel_ttl_delete(started_cluster):
 
         tasks.append(p.apply_async(insert, (node1, table_name, 10000, ["num", "num2"], 1, False, False, True, 0, True)))
         time.sleep(15)
-        tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 5, True)))
-        tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 5, True)))
-        tasks.append(p.apply_async(rename_column, (node3, table_name, "num3", "num2", 5, True)))
-        tasks.append(p.apply_async(merge_parts, (node1, table_name, 3)))
-        tasks.append(p.apply_async(merge_parts, (node2, table_name, 3)))
-        tasks.append(p.apply_async(merge_parts, (node3, table_name, 3)))
+        tasks.append(p.apply_async(rename_column, (node1, table_name, "num2", "foo2", 20, True)))
+        tasks.append(p.apply_async(rename_column, (node2, table_name, "foo2", "foo3", 20, True)))
+        tasks.append(p.apply_async(rename_column, (node3, table_name, "num3", "num2", 20, True)))
+        tasks.append(p.apply_async(merge_parts, (node1, table_name, 20)))
+        tasks.append(p.apply_async(merge_parts, (node2, table_name, 20)))
+        tasks.append(p.apply_async(merge_parts, (node3, table_name, 20)))
 
         for task in tasks:
             task.get(timeout=240)

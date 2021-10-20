@@ -14,7 +14,7 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
-#include <common/scope_guard_safe.h>
+#include <common/scope_guard.h>
 #include <common/defines.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
@@ -26,7 +26,6 @@
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
-#include <Common/ShellCommand.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
@@ -39,30 +38,27 @@
 #include <Common/getMappedArea.h>
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
-#include <Core/ServerUUID.h>
 #include <IO/HTTPCommon.h>
-#include <IO/ReadHelpers.h>
 #include <IO/UseSSL.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
-#include <Interpreters/DNSCacheUpdater.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
-#include <Interpreters/UserDefinedSQLObjectsLoader.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DNSCacheUpdater.h>
+#include <Interpreters/ExternalLoaderXMLConfigRepository.h>
+#include <Interpreters/InterserverCredentials.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
-#include <Storages/System/attachInformationSchemaTables.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
-#include <DataStreams/ConnectionCollector.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
@@ -78,9 +74,8 @@
 #include <Server/PostgreSQLHandlerFactory.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
-#include <Interpreters/AsynchronousInsertQueue.h>
-#include <Compression/CompressionCodecEncrypted.h>
 #include <filesystem>
+
 
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
@@ -99,9 +94,6 @@
 #endif
 
 #if USE_SSL
-#    if USE_INTERNAL_SSL_LIBRARY  && !defined(ARCADIA_BUILD)
-#        include <Compression/CompressionCodecEncrypted.h>
-#    endif
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -114,10 +106,6 @@
 #   include <Server/KeeperTCPHandlerFactory.h>
 #endif
 
-#if USE_BASE64
-#   include <turbob64.h>
-#endif
-
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
 #endif
@@ -128,7 +116,6 @@ namespace CurrentMetrics
     extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
     extern const Metric MaxDDLEntryID;
-    extern const Metric MaxPushedDDLEntryID;
 }
 
 namespace fs = std::filesystem;
@@ -147,6 +134,7 @@ static bool jemallocOptionEnabled(const char *name)
 #else
 static bool jemallocOptionEnabled(const char *) { return 0; }
 #endif
+
 
 int mainEntryClickHouseServer(int argc, char ** argv)
 {
@@ -358,7 +346,6 @@ void Server::createServer(const std::string & listen_host, const char * port_nam
     try
     {
         func(port);
-        global_context->registerServerPort(port_name, port);
     }
     catch (const Poco::Exception &)
     {
@@ -457,6 +444,7 @@ void checkForUsersNotInMainConfig(
     }
 }
 
+
 [[noreturn]] void forceShutdown()
 {
 #if defined(THREAD_SANITIZER) && defined(OS_LINUX)
@@ -489,6 +477,17 @@ int Server::main(const std::vector<std::string> & /*args*/)
     CurrentMetrics::set(CurrentMetrics::Revision, ClickHouseRevision::getVersionRevision());
     CurrentMetrics::set(CurrentMetrics::VersionInteger, ClickHouseRevision::getVersionInteger());
 
+    if (ThreadFuzzer::instance().isEffective())
+        LOG_WARNING(log, "ThreadFuzzer is enabled. Application will run slowly and unstable.");
+
+#if !defined(NDEBUG) || !defined(__OPTIMIZE__)
+    LOG_WARNING(log, "Server was built in debug mode. It will work slowly.");
+#endif
+
+#if defined(SANITIZER)
+    LOG_WARNING(log, "Server was built with sanitizer. It will work slowly.");
+#endif
+
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases, ...
       */
@@ -498,26 +497,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
-#if !defined(NDEBUG) || !defined(__OPTIMIZE__)
-    global_context->addWarningMessage("Server was built in debug mode. It will work slowly.");
-#endif
-
-if (ThreadFuzzer::instance().isEffective())
-    global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
-
-#if defined(SANITIZER)
-    global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
-#endif
-
-
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
     GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
-
-    global_context->initializeBackgroundExecutors();
-
-    ConnectionCollector::init(global_context, config().getUInt("max_threads_for_connection_collector", 10));
 
     bool has_zookeeper = config().has("zookeeper");
 
@@ -569,10 +552,8 @@ if (ThreadFuzzer::instance().isEffective())
             if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
             {
                 /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
-                global_context->addWarningMessage(
-                    fmt::format("Server is run under debugger and its binary image is modified (most likely with breakpoints).",
-                    calculated_binary_hash)
-                );
+                LOG_WARNING(log, "Server is run under debugger and its binary image is modified (most likely with breakpoints).",
+                    calculated_binary_hash);
             }
             else
             {
@@ -636,14 +617,13 @@ if (ThreadFuzzer::instance().isEffective())
 
     global_context->setRemoteHostFilter(config());
 
-    std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
-    fs::path path = path_str;
+    std::string path = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
     std::string default_database = config().getString("default_database", "default");
 
     /// Check that the process user id matches the owner of the data.
     const auto effective_user_id = geteuid();
     struct stat statbuf;
-    if (stat(path_str.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
+    if (stat(path.c_str(), &statbuf) == 0 && effective_user_id != statbuf.st_uid)
     {
         const auto effective_user = getUserName(effective_user_id);
         const auto data_owner = getUserName(statbuf.st_uid);
@@ -656,15 +636,13 @@ if (ThreadFuzzer::instance().isEffective())
         }
         else
         {
-            global_context->addWarningMessage(message);
+            LOG_WARNING(log, message);
         }
     }
 
-    global_context->setPath(path_str);
+    global_context->setPath(path);
 
-    StatusFile status{path / "status", StatusFile::write_full_info};
-
-    DB::ServerUUID::load(path / "uuid", log);
+    StatusFile status{path + "status", StatusFile::write_full_info};
 
     /// Try to increase limit on number of open files.
     {
@@ -698,23 +676,19 @@ if (ThreadFuzzer::instance().isEffective())
 
     /// Storage with temporary data for processing of heavy queries.
     {
-        std::string tmp_path = config().getString("tmp_path", path / "tmp/");
+        std::string tmp_path = config().getString("tmp_path", path + "tmp/");
         std::string tmp_policy = config().getString("tmp_policy", "");
         const VolumePtr & volume = global_context->setTemporaryStorage(tmp_path, tmp_policy);
         for (const DiskPtr & disk : volume->getDisks())
             setupTmpPath(log, disk->getPath());
     }
 
-    /// Storage keeping all the backups.
-    fs::create_directories(path / "backups");
-    global_context->setBackupsVolume(config().getString("backups_path", path / "backups"), config().getString("backups_policy", ""));
-
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
       * Flags may be cleared automatically after being applied by the server.
       * Examples: do repair of local data; clone all replicated tables from replica.
       */
     {
-        auto flags_path = path / "flags/";
+        auto flags_path = fs::path(path) / "flags/";
         fs::create_directories(flags_path);
         global_context->setFlagsPath(flags_path);
     }
@@ -723,36 +697,29 @@ if (ThreadFuzzer::instance().isEffective())
       */
     {
 
-        std::string user_files_path = config().getString("user_files_path", path / "user_files/");
+        std::string user_files_path = config().getString("user_files_path", fs::path(path) / "user_files/");
         global_context->setUserFilesPath(user_files_path);
         fs::create_directories(user_files_path);
     }
 
     {
-        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path / "dictionaries_lib/");
+        std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", fs::path(path) / "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
         fs::create_directories(dictionaries_lib_path);
     }
 
-    {
-        std::string user_scripts_path = config().getString("user_scripts_path", path / "user_scripts/");
-        global_context->setUserScriptsPath(user_scripts_path);
-        fs::create_directories(user_scripts_path);
-    }
-
     /// top_level_domains_lists
     {
-        const std::string & top_level_domains_path = config().getString("top_level_domains_path", path / "top_level_domains/");
+        const std::string & top_level_domains_path = config().getString("top_level_domains_path", fs::path(path) / "top_level_domains/");
         TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
     }
 
     {
-        fs::create_directories(path / "data/");
-        fs::create_directories(path / "metadata/");
-        fs::create_directories(path / "user_defined/");
+        fs::create_directories(fs::path(path) / "data/");
+        fs::create_directories(fs::path(path) / "metadata/");
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
-        fs::create_directories(path / "metadata_dropped/");
+        fs::create_directories(fs::path(path) / "metadata_dropped/");
     }
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
@@ -871,8 +838,6 @@ if (ThreadFuzzer::instance().isEffective())
 
             global_context->updateStorageConfiguration(*config);
             global_context->updateInterserverCredentials(*config);
-
-            CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
@@ -913,13 +878,6 @@ if (ThreadFuzzer::instance().isEffective())
     global_context->setDefaultProfiles(config());
     const Settings & settings = global_context->getSettingsRef();
 
-    if (settings.async_insert_threads)
-        global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
-            global_context,
-            settings.async_insert_threads,
-            settings.async_insert_max_data_size,
-            AsynchronousInsertQueue::Timeout{.busy = settings.async_insert_busy_timeout_ms, .stale = settings.async_insert_stale_timeout_ms}));
-
     /// Size of cache for marks (index of MergeTree family of tables). It is mandatory.
     size_t mark_cache_size = config().getUInt64("mark_cache_size");
     if (!mark_cache_size)
@@ -944,17 +902,13 @@ if (ThreadFuzzer::instance().isEffective())
 #endif
 
     /// Set path for format schema files
-    fs::path format_schema_path(config().getString("format_schema_path", path / "format_schemas/"));
+    fs::path format_schema_path(config().getString("format_schema_path", fs::path(path) / "format_schemas/"));
     global_context->setFormatSchemaPath(format_schema_path);
     fs::create_directories(format_schema_path);
 
     /// Check sanity of MergeTreeSettings on server startup
     global_context->getMergeTreeSettings().sanityCheck(settings);
     global_context->getReplicatedMergeTreeSettings().sanityCheck(settings);
-
-
-    /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
-    CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
 
     Poco::Timespan keep_alive_timeout(config().getUInt("keep_alive_timeout", 10), 0);
 
@@ -979,7 +933,7 @@ if (ThreadFuzzer::instance().isEffective())
     {
 #if USE_NURAFT
         /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-        global_context->initializeKeeperDispatcher();
+        global_context->initializeKeeperStorageDispatcher();
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper
@@ -1028,6 +982,10 @@ if (ThreadFuzzer::instance().isEffective())
         server.start();
 
     SCOPE_EXIT({
+        /// Stop reloading of the main config. This must be done before `global_context->shutdown()` because
+        /// otherwise the reloading may pass a changed config to some destroyed parts of ContextSharedPart.
+        main_config_reloader.reset();
+
         /** Ask to cancel background jobs all table engines,
           *  and also query_log.
           * It is important to do early, not in destructor of Context, because
@@ -1062,14 +1020,11 @@ if (ThreadFuzzer::instance().isEffective())
             else
                 LOG_INFO(log, "Closed connections to servers for tables.");
 
-            global_context->shutdownKeeperDispatcher();
+            global_context->shutdownKeeperStorageDispatcher();
         }
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
-
-        // Uses a raw pointer to global context for getting ZooKeeper.
-        main_config_reloader.reset();
 
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
@@ -1083,40 +1038,20 @@ if (ThreadFuzzer::instance().isEffective())
     /// system logs may copy global context.
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
 
-    LOG_INFO(log, "Loading user defined objects from {}", path_str);
-    try
-    {
-        UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Caught exception while loading user defined objects");
-        throw;
-    }
-    LOG_DEBUG(log, "Loaded user defined objects");
-
-    LOG_INFO(log, "Loading metadata from {}", path_str);
+    LOG_INFO(log, "Loading metadata from {}", path);
 
     try
     {
-        auto & database_catalog = DatabaseCatalog::instance();
-        /// We load temporary database first, because projections need it.
-        database_catalog.initializeAndLoadTemporaryDatabase();
         loadMetadataSystem(global_context);
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
-        global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
+        auto & database_catalog = DatabaseCatalog::instance();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
-        attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
-        attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        /// Firstly remove partially dropped databases, to avoid race with MaterializedMySQLSyncThread,
-        /// that may execute DROP before loadMarkedAsDroppedTables() in background,
-        /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
-        database_catalog.loadMarkedAsDroppedTables();
+        /// We load temporary database first, because projections need it.
+        database_catalog.initializeAndLoadTemporaryDatabase();
         /// Then, load remaining databases
         loadMetadata(global_context, default_database);
-        startupSystemTables();
         database_catalog.loadDatabases();
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
@@ -1442,6 +1377,7 @@ if (ThreadFuzzer::instance().isEffective())
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
         async_metrics.start();
+        global_context->enableNamedSessions();
 
         {
             String level_str = config().getString("text_log.level", "");
@@ -1474,17 +1410,6 @@ if (ThreadFuzzer::instance().isEffective())
             throw;
         }
 
-        /// try to load user defined executable functions, throw on error and die
-        try
-        {
-            global_context->loadUserDefinedExecutableFunctions(config());
-        }
-        catch (...)
-        {
-            LOG_ERROR(log, "Caught exception while loading user defined executable functions.");
-            throw;
-        }
-
         if (has_zookeeper && config().has("distributed_ddl"))
         {
             /// DDL worker should be started after all tables were loaded
@@ -1493,15 +1418,14 @@ if (ThreadFuzzer::instance().isEffective())
             if (pool_size < 1)
                 throw Exception("distributed_ddl.pool_size should be greater then 0", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
             global_context->setDDLWorker(std::make_unique<DDLWorker>(pool_size, ddl_zookeeper_path, global_context, &config(),
-                                                                     "distributed_ddl", "DDLWorker",
-                                                                     &CurrentMetrics::MaxDDLEntryID, &CurrentMetrics::MaxPushedDDLEntryID));
+                                                                     "distributed_ddl", "DDLWorker", &CurrentMetrics::MaxDDLEntryID));
         }
 
         for (auto & server : *servers)
             server.start();
         LOG_INFO(log, "Ready for connections.");
 
-        SCOPE_EXIT_SAFE({
+        SCOPE_EXIT({
             LOG_DEBUG(log, "Received termination signal.");
             LOG_DEBUG(log, "Waiting for current connections to close.");
 

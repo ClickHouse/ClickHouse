@@ -18,6 +18,7 @@ public:
             bool overflow_row_,
             const ActionsDAGPtr & actions_dag_,
             const std::string & filter_column_,
+            bool remove_filter_,
             TotalsMode totals_mode_,
             double auto_include_threshold_,
             bool final_);
@@ -35,6 +36,7 @@ private:
     bool overflow_row;
     ActionsDAGPtr actions_dag;
     String filter_column_name;
+    bool remove_filter;
     TotalsMode totals_mode;
     double auto_include_threshold;
     bool final;

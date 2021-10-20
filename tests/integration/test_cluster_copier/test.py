@@ -89,9 +89,9 @@ class Task1:
         instance = cluster.instances['s0_0_0']
 
         for cluster_num in ["0", "1"]:
-            ddl_check_query(instance, "DROP DATABASE IF EXISTS default ON CLUSTER cluster{} SYNC".format(cluster_num))
+            ddl_check_query(instance, "DROP DATABASE IF EXISTS default ON CLUSTER cluster{}".format(cluster_num))
             ddl_check_query(instance,
-                            "CREATE DATABASE default ON CLUSTER cluster{} ".format(
+                            "CREATE DATABASE IF NOT EXISTS default ON CLUSTER cluster{}".format(
                                 cluster_num))
 
         ddl_check_query(instance, "CREATE TABLE hits ON CLUSTER cluster0 (d UInt64, d1 UInt64 MATERIALIZED d+1) " +
@@ -105,11 +105,11 @@ class Task1:
                        settings={"insert_distributed_sync": 1})
 
     def check(self):
-        assert self.cluster.instances['s0_0_0'].query("SELECT count() FROM hits_all").strip() == "1002"
-        assert self.cluster.instances['s1_0_0'].query("SELECT count() FROM hits_all").strip() == "1002"
+        assert TSV(self.cluster.instances['s0_0_0'].query("SELECT count() FROM hits_all")) == TSV("1002\n")
+        assert TSV(self.cluster.instances['s1_0_0'].query("SELECT count() FROM hits_all")) == TSV("1002\n")
 
-        assert self.cluster.instances['s1_0_0'].query("SELECT DISTINCT d % 2 FROM hits").strip() == "1"
-        assert self.cluster.instances['s1_1_0'].query("SELECT DISTINCT d % 2 FROM hits").strip() == "0"
+        assert TSV(self.cluster.instances['s1_0_0'].query("SELECT DISTINCT d % 2 FROM hits")) == TSV("1\n")
+        assert TSV(self.cluster.instances['s1_1_0'].query("SELECT DISTINCT d % 2 FROM hits")) == TSV("0\n")
 
         instance = self.cluster.instances['s0_0_0']
         ddl_check_query(instance, "DROP TABLE hits_all ON CLUSTER cluster0")

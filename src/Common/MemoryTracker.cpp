@@ -15,7 +15,7 @@
 
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
-thread_local bool memory_tracker_always_throw_logical_error_on_allocation = false;
+thread_local bool _memory_tracker_always_throw_logical_error_on_allocation = false;
 #endif
 
 namespace
@@ -173,9 +173,9 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
     }
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
-    if (unlikely(memory_tracker_always_throw_logical_error_on_allocation))
+    if (unlikely(_memory_tracker_always_throw_logical_error_on_allocation))
     {
-        memory_tracker_always_throw_logical_error_on_allocation = false;
+        _memory_tracker_always_throw_logical_error_on_allocation = false;
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Memory tracker: allocations not allowed.");
     }
 #endif
@@ -183,6 +183,9 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
     std::bernoulli_distribution fault(fault_probability);
     if (unlikely(fault_probability && fault(thread_local_rng)) && memoryTrackerCanThrow(level, true) && throw_if_memory_exceeded)
     {
+        ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+        amount.fetch_sub(size, std::memory_order_relaxed);
+
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
         BlockerInThread untrack_lock(VariableContext::Global);
 
@@ -360,7 +363,7 @@ void MemoryTracker::setOrRaiseHardLimit(Int64 value)
 {
     /// This is just atomic set to maximum.
     Int64 old_value = hard_limit.load(std::memory_order_relaxed);
-    while ((value == 0 || old_value < value) && !hard_limit.compare_exchange_weak(old_value, value))
+    while (old_value < value && !hard_limit.compare_exchange_weak(old_value, value))
         ;
 }
 
@@ -368,6 +371,6 @@ void MemoryTracker::setOrRaiseHardLimit(Int64 value)
 void MemoryTracker::setOrRaiseProfilerLimit(Int64 value)
 {
     Int64 old_value = profiler_limit.load(std::memory_order_relaxed);
-    while ((value == 0 || old_value < value) && !profiler_limit.compare_exchange_weak(old_value, value))
+    while (old_value < value && !profiler_limit.compare_exchange_weak(old_value, value))
         ;
 }

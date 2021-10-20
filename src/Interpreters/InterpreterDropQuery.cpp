@@ -17,7 +17,7 @@
 #endif
 
 #if USE_MYSQL
-#   include <Databases/MySQL/DatabaseMaterializedMySQL.h>
+#   include <Databases/MySQL/DatabaseMaterializeMySQL.h>
 #endif
 
 #if USE_LIBPQXX
@@ -34,7 +34,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
-    extern const int TABLE_IS_READ_ONLY;
 }
 
 
@@ -196,8 +195,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
                 throw Exception("Cannot TRUNCATE dictionary", ErrorCodes::SYNTAX_ERROR);
 
             getContext()->checkAccess(AccessType::TRUNCATE, table_id);
-            if (table->isStaticStorage())
-                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 
             table->checkTableCanBeDropped();
 
@@ -318,7 +315,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 throw Exception("DETACH PERMANENTLY is not implemented for databases", ErrorCodes::NOT_IMPLEMENTED);
 
 #if USE_MYSQL
-            if (database->getEngineName() == "MaterializedMySQL")
+            if (database->getEngineName() == "MaterializeMySQL")
                 stopDatabaseSynchronization(database);
 #endif
             if (auto * replicated = typeid_cast<DatabaseReplicated *>(database.get()))
@@ -338,7 +335,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
                 /// Flush should not be done if shouldBeEmptyOnDetach() == false,
                 /// since in this case getTablesIterator() may do some additional work,
-                /// see DatabaseMaterializedMySQL<>::getTablesIterator()
+                /// see DatabaseMaterializeMySQL<>::getTablesIterator()
                 for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
                 {
                     iterator->table()->flush();
@@ -355,13 +352,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 }
             }
 
-            if (!drop && query.no_delay)
-            {
-                /// Avoid "some tables are still in use" when sync mode is enabled
-                for (const auto & table_uuid : uuids_to_wait)
-                    database->waitDetachedTableNotInUse(table_uuid);
-            }
-
             /// Protects from concurrent CREATE TABLE queries
             auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
 
@@ -369,7 +359,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 database->assertCanBeDetached(true);
 
             /// DETACH or DROP database itself
-            DatabaseCatalog::instance().detachDatabase(database_name, drop, database->shouldBeEmptyOnDetach());
+            DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
         }
     }
 

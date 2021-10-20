@@ -175,12 +175,11 @@ public:
     SequenceNextNodeImpl(
         const DataTypePtr & data_type_,
         const DataTypes & arguments,
-        const Array & parameters_,
         SequenceBase seq_base_kind_,
         SequenceDirection seq_direction_,
         size_t min_required_args_,
         UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node>, Self>({data_type_}, parameters_)
+        : IAggregateFunctionDataHelper<SequenceNextNodeGeneralData<Node>, Self>({data_type_}, {})
         , seq_base_kind(seq_base_kind_)
         , seq_direction(seq_direction_)
         , min_required_args(min_required_args_)
@@ -193,11 +192,6 @@ public:
     String getName() const override { return "sequenceNextNode"; }
 
     DataTypePtr getReturnType() const override { return data_type; }
-
-    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
-    {
-        return this->getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
-    }
 
     AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params,

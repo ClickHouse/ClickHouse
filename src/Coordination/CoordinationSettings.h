@@ -11,7 +11,6 @@ namespace DB
 
 struct Settings;
 
-
 /** These settings represent fine tunes for internal details of Coordination storages
   * and should not be changed by the user without a reason.
   */
@@ -22,7 +21,7 @@ struct Settings;
     M(Milliseconds, dead_session_check_period_ms, 500, "How often leader will check sessions to consider them dead and remove", 0) \
     M(Milliseconds, heart_beat_interval_ms, 500, "Heartbeat interval between quorum nodes", 0) \
     M(Milliseconds, election_timeout_lower_bound_ms, 1000, "Lower bound of election timer (avoid too often leader elections)", 0) \
-    M(Milliseconds, election_timeout_upper_bound_ms, 2000, "Upper bound of election timer (avoid too often leader elections)", 0) \
+    M(Milliseconds, election_timeout_upper_bound_ms, 2000, "Lower bound of election timer (avoid too often leader elections)", 0) \
     M(UInt64, reserved_log_items, 100000, "How many log items to store (don't remove during compaction)", 0) \
     M(UInt64, snapshot_distance, 100000, "How many log items we have to collect to write new snapshot", 0) \
     M(Bool, auto_forwarding, true, "Allow to forward write requests from followers to leader", 0) \
@@ -35,8 +34,7 @@ struct Settings;
     M(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
     M(UInt64, max_requests_batch_size, 100, "Max size of batch in requests count before it will be sent to RAFT", 0) \
     M(Bool, quorum_reads, false, "Execute read requests as writes through whole RAFT consesus with similar speed", 0) \
-    M(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
-    M(Bool, compress_logs, true, "Write compressed coordination logs in ZSTD format", 0)
+    M(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0)
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
 

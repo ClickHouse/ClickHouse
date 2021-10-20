@@ -18,7 +18,7 @@ struct ArraySourceCreator<Type, Types...>
 {
     static std::unique_ptr<IArraySource> create(const ColumnArray & col, const NullMap * null_map, bool is_const, size_t total_rows)
     {
-        using ColVecType = ColumnVectorOrDecimal<Type>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<Type>, ColumnDecimal<Type>, ColumnVector<Type>>;
 
         if (typeid_cast<const ColVecType *>(&col.getData()))
         {

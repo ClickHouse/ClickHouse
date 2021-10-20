@@ -10,9 +10,16 @@ import logging
 import time
 
 
+def get_skip_list_cmd(path):
+    with open(path, 'r') as f:
+        for line in f:
+            if '--use-skip-list' in line:
+                return '--use-skip-list'
+    return ''
+
+
 def get_options(i):
     options = []
-    client_options = []
     if 0 < i:
         options.append("--order=random")
 
@@ -20,34 +27,32 @@ def get_options(i):
         options.append("--db-engine=Ordinary")
 
     if i % 3 == 2:
-        options.append('''--db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i))
-        client_options.append('allow_experimental_database_replicated=1')
+        options.append('''--client-option='allow_experimental_database_replicated=1' --db-engine="Replicated('/test/db/test_{}', 's1', 'r1')"'''.format(i))
 
     # If database name is not specified, new database is created for each functional test.
     # Run some threads with one database for all tests.
     if i % 2 == 1:
         options.append(" --database=test_{}".format(i))
 
-    if i % 5 == 1:
-        client_options.append("join_use_nulls=1")
+    if i % 7 == 0:
+        options.append(" --client-option='join_use_nulls=1'")
 
-    if i % 15 == 6:
-        client_options.append("join_algorithm='partial_merge'")
+    if i % 14 == 0:
+        options.append(' --client-option="join_algorithm=\'partial_merge\'"')
 
-    if i % 15 == 11:
-        client_options.append("join_algorithm='auto'")
-        client_options.append('max_rows_in_join=1000')
+    if i % 21 == 0:
+        options.append(' --client-option="join_algorithm=\'auto\'"')
+        options.append(' --client-option="max_rows_in_join=1000"')
 
     if i == 13:
-        client_options.append('memory_tracker_fault_probability=0.001')
-
-    if client_options:
-        options.append(" --client-option " + ' '.join(client_options))
+        options.append(" --client-option='memory_tracker_fault_probability=0.00001'")
 
     return ' '.join(options)
 
 
 def run_func_test(cmd, output_prefix, num_processes, skip_tests_option, global_time_limit):
+    skip_list_opt = get_skip_list_cmd(cmd)
+
     global_time_limit_option = ''
     if global_time_limit:
         global_time_limit_option = "--global_time_limit={}".format(global_time_limit)
@@ -56,7 +61,7 @@ def run_func_test(cmd, output_prefix, num_processes, skip_tests_option, global_t
     pipes = []
     for i in range(0, len(output_paths)):
         f = open(output_paths[i], 'w')
-        full_command = "{} {} {} {}".format(cmd, get_options(i), global_time_limit_option, skip_tests_option)
+        full_command = "{} {} {} {} {}".format(cmd, skip_list_opt, get_options(i), global_time_limit_option, skip_tests_option)
         logging.info("Run func tests '%s'", full_command)
         p = Popen(full_command, shell=True, stdout=f, stderr=f)
         pipes.append(p)
@@ -69,9 +74,6 @@ def compress_stress_logs(output_path, files_prefix):
 
 def prepare_for_hung_check(drop_databases):
     # FIXME this function should not exist, but...
-
-    # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
-    call("clickhouse client -q 'SYSTEM STOP THREAD FUZZER'", shell=True, stderr=STDOUT)
 
     # We attach gdb to clickhouse-server before running tests
     # to print stacktraces of all crashes even if clickhouse cannot print it for some reason.

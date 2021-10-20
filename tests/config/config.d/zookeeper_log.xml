@@ -1,7 +1,0 @@
-<yandex>
-    <zookeeper_log>
-        <database>system</database>
-        <table>zookeeper_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-    </zookeeper_log>
-</yandex>

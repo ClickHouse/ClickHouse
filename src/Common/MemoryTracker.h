@@ -15,11 +15,11 @@
 /// DENY_ALLOCATIONS_IN_SCOPE in the inner scope. In Release builds these macros do nothing.
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
 #include <common/scope_guard.h>
-extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation;
+extern thread_local bool _memory_tracker_always_throw_logical_error_on_allocation;
 #define ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val) \
-        bool _allocations_flag_prev_val##n = memory_tracker_always_throw_logical_error_on_allocation; \
-        memory_tracker_always_throw_logical_error_on_allocation = val; \
-        SCOPE_EXIT({ memory_tracker_always_throw_logical_error_on_allocation = _allocations_flag_prev_val##n; })
+        bool _allocations_flag_prev_val##n = _memory_tracker_always_throw_logical_error_on_allocation; \
+        _memory_tracker_always_throw_logical_error_on_allocation = val; \
+        SCOPE_EXIT({ _memory_tracker_always_throw_logical_error_on_allocation = _allocations_flag_prev_val##n; })
 #define ALLOCATIONS_IN_SCOPE_IMPL(n, val) ALLOCATIONS_IN_SCOPE_IMPL_CONCAT(n, val)
 #define DENY_ALLOCATIONS_IN_SCOPE ALLOCATIONS_IN_SCOPE_IMPL(__LINE__, true)
 #define ALLOW_ALLOCATIONS_IN_SCOPE ALLOCATIONS_IN_SCOPE_IMPL(__LINE__, false)
@@ -62,8 +62,8 @@ private:
     void logMemoryUsage(Int64 current) const;
 
 public:
-    explicit MemoryTracker(VariableContext level_ = VariableContext::Thread);
-    explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
+    MemoryTracker(VariableContext level_ = VariableContext::Thread);
+    MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
 
     ~MemoryTracker();
 
@@ -162,17 +162,17 @@ public:
     struct BlockerInThread
     {
     private:
+        BlockerInThread(const BlockerInThread &) = delete;
+        BlockerInThread & operator=(const BlockerInThread &) = delete;
+
         static thread_local uint64_t counter;
         static thread_local VariableContext level;
 
         VariableContext previous_level;
     public:
         /// level_ - block in level and above
-        explicit BlockerInThread(VariableContext level_ = VariableContext::User);
+        BlockerInThread(VariableContext level_ = VariableContext::User);
         ~BlockerInThread();
-
-        BlockerInThread(const BlockerInThread &) = delete;
-        BlockerInThread & operator=(const BlockerInThread &) = delete;
 
         static bool isBlocked(VariableContext current_level)
         {
@@ -195,6 +195,9 @@ public:
     struct LockExceptionInThread
     {
     private:
+        LockExceptionInThread(const LockExceptionInThread &) = delete;
+        LockExceptionInThread & operator=(const LockExceptionInThread &) = delete;
+
         static thread_local uint64_t counter;
         static thread_local VariableContext level;
         static thread_local bool block_fault_injections;
@@ -204,11 +207,8 @@ public:
     public:
         /// level_ - block in level and above
         /// block_fault_injections_ - block in fault injection too
-        explicit LockExceptionInThread(VariableContext level_ = VariableContext::User, bool block_fault_injections_ = true);
+        LockExceptionInThread(VariableContext level_ = VariableContext::User, bool block_fault_injections_ = true);
         ~LockExceptionInThread();
-
-        LockExceptionInThread(const LockExceptionInThread &) = delete;
-        LockExceptionInThread & operator=(const LockExceptionInThread &) = delete;
 
         static bool isBlocked(VariableContext current_level, bool fault_injection)
         {

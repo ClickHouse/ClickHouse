@@ -51,9 +51,6 @@ class Pipe;
 class QueryPlan;
 using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 
-class SinkToStorage;
-using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
-
 class QueryPipeline;
 using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
 
@@ -65,13 +62,6 @@ class EnabledQuota;
 struct SelectQueryInfo;
 
 using NameDependencies = std::unordered_map<String, std::vector<String>>;
-using DatabaseAndTableName = std::pair<String, String>;
-
-class IBackup;
-using BackupPtr = std::shared_ptr<const IBackup>;
-class IBackupEntry;
-using BackupEntries = std::vector<std::pair<String, std::unique_ptr<IBackupEntry>>>;
-using RestoreDataTasks = std::vector<std::function<void()>>;
 
 struct ColumnSize
 {
@@ -126,9 +116,6 @@ public:
 
     /// Returns true if the storage supports queries with the FINAL section.
     virtual bool supportsFinal() const { return false; }
-
-    /// Returns true if the storage supports insert queries with the PARTITION BY section.
-    virtual bool supportsPartitionBy() const { return false; }
 
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
@@ -198,12 +185,6 @@ public:
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 
-    /// Prepares entries to backup data of the storage.
-    virtual BackupEntries backup(const ASTs & partitions, ContextPtr context) const;
-
-    /// Extract data from the backup and put it to the storage.
-    virtual RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context);
-
 protected:
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
@@ -219,6 +200,7 @@ private:
     /// without locks.
     MultiVersionStorageMetadataPtr metadata;
 
+protected:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
 
@@ -280,7 +262,7 @@ public:
      *
      * It is guaranteed that the structure of the table will not change over the lifetime of the returned streams (that is, there will not be ALTER, RENAME and DROP).
      */
-    virtual Pipe watch(
+    virtual BlockInputStreams watch(
         const Names & /*column_names*/,
         const SelectQueryInfo & /*query_info*/,
         ContextPtr /*context*/,
@@ -345,7 +327,7 @@ public:
       * changed during lifetime of the returned streams, but the snapshot is
       * guaranteed to be immutable.
       */
-    virtual SinkToStoragePtr write(
+    virtual BlockOutputStreamPtr write(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr /*context*/)
@@ -538,9 +520,6 @@ public:
 
     /// Returns storage policy if storage supports it.
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
-
-    /// Returns true if all disks of storage are read-only.
-    virtual bool isStaticStorage() const;
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:

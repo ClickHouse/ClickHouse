@@ -35,7 +35,7 @@ void Throttler::add(size_t amount)
     {
         std::lock_guard lock(mutex);
 
-        auto now = clock_gettime_ns();
+        auto now = clock_gettime_ns_adjusted(prev_ns);
         /// If prev_ns is equal to zero (first `add` call) we known nothing about speed
         /// and don't track anything.
         if (max_speed && prev_ns != 0)

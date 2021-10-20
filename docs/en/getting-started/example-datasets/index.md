@@ -14,10 +14,7 @@ The list of documented datasets:
 -   [Anonymized Yandex.Metrica Dataset](../../getting-started/example-datasets/metrica.md)
 -   [Recipes](../../getting-started/example-datasets/recipes.md)
 -   [OnTime](../../getting-started/example-datasets/ontime.md)
--   [OpenSky](../../getting-started/example-datasets/opensky.md)
 -   [New York Taxi Data](../../getting-started/example-datasets/nyc-taxi.md)
--   [UK Property Price Paid](../../getting-started/example-datasets/uk-price-paid.md)
--   [What's on the Menu?](../../getting-started/example-datasets/menus.md)
 -   [Star Schema Benchmark](../../getting-started/example-datasets/star-schema.md)
 -   [WikiStat](../../getting-started/example-datasets/wikistat.md)
 -   [Terabyte of Click Logs from Criteo](../../getting-started/example-datasets/criteo.md)
@@ -25,4 +22,4 @@ The list of documented datasets:
 -   [Brown University Benchmark](../../getting-started/example-datasets/brown-benchmark.md)
 -   [Cell Towers](../../getting-started/example-datasets/cell-towers.md)
 
-[Original article](https://clickhouse.com/docs/en/getting_started/example_datasets) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets) <!--hide-->

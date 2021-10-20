@@ -15,11 +15,13 @@
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/FixedHashMap.h>
+#include <Common/RWLock.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 
 #include <DataStreams/SizeLimits.h>
+#include <DataStreams/IBlockStream_fwd.h>
 
 #include <Core/Block.h>
 
@@ -140,8 +142,6 @@ public:
       */
     bool addJoinedBlock(const Block & block, bool check_limits) override;
 
-    void checkTypesOfKeys(const Block & block) const override;
-
     /** Join data from the map (that was previously built by calls to addJoinedBlock) to the block with data from "left" table.
       * Could be called from different threads in parallel.
       */
@@ -165,7 +165,7 @@ public:
       * Use only after all calls to joinBlock was done.
       * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
       */
-    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block & result_sample_block, UInt64 max_block_size) const override;
+    BlockInputStreamPtr createStreamWithNonJoinedRows(const Block & result_sample_block, UInt64 max_block_size) const override;
 
     /// Number of keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
@@ -323,9 +323,9 @@ public:
 
     /// We keep correspondence between used_flags and hash table internal buffer.
     /// Hash table cannot be modified during HashJoin lifetime and must be protected with lock.
-    void setLock(std::shared_mutex & rwlock)
+    void setLock(RWLockImpl::LockHolder rwlock_holder)
     {
-        storage_join_lock = std::shared_lock<std::shared_mutex>(rwlock);
+        storage_join_lock = rwlock_holder;
     }
 
     void reuseJoinedData(const HashJoin & join);
@@ -338,7 +338,7 @@ public:
     bool isUsed(size_t off) const { return used_flags.getUsedSafe(off); }
 
 private:
-    friend class NotJoinedHash;
+    friend class NonJoinedBlockInputStream;
     friend class JoinSource;
 
     std::shared_ptr<TableJoin> table_join;
@@ -378,17 +378,13 @@ private:
     /// Left table column names that are sources for required_right_keys columns
     std::vector<String> required_right_keys_sources;
 
-    /// Additional conditions for rows to join from JOIN ON section
-    String condition_mask_column_name_left;
-    String condition_mask_column_name_right;
-
     Poco::Logger * log;
 
     Block totals;
 
     /// Should be set via setLock to protect hash table from modification from StorageJoin
     /// If set HashJoin instance is not available for modification (addJoinedBlock)
-    std::shared_lock<std::shared_mutex> storage_join_lock;
+    RWLockImpl::LockHolder storage_join_lock = nullptr;
 
     void init(Type type_);
 

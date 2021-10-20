@@ -1,7 +1,3 @@
-#if defined(__clang__) && __clang_major__ >= 13
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
-
 #include <string.h>
 #include <IO/BitHelpers.h>
 
@@ -162,6 +158,7 @@ TEST_P(BitIO, WriteAndRead)
 
         BitReader reader(data.data(), data.size());
 
+        int bitpos = 0;
         int item = 0;
         for (const auto & bv : bits_and_vals)
         {
@@ -175,6 +172,7 @@ TEST_P(BitIO, WriteAndRead)
             ASSERT_TRUE(BinaryEqual(getBits(bv.first, bv.second), reader.readBits(bv.first)));
 
             ++item;
+            bitpos += bv.first;
         }
     }
 }

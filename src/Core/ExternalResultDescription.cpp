@@ -62,8 +62,6 @@ void ExternalResultDescription::init(const Block & sample_block_)
             types.emplace_back(ValueType::vtString, is_nullable);
         else if (which.isDate())
             types.emplace_back(ValueType::vtDate, is_nullable);
-        else if (which.isDate32())
-            types.emplace_back(ValueType::vtDate32, is_nullable);
         else if (which.isDateTime())
             types.emplace_back(ValueType::vtDateTime, is_nullable);
         else if (which.isUUID())

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <common/EnumReflection.h>
 
 
 namespace DB

@@ -44,7 +44,6 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
 
     boost::program_options::options_description desc = createOptionsDescription("Allowed options", getTerminalWidth());
     desc.add_options()
-        ("query", po::value<std::string>(), "query to format")
         ("help,h", "produce help message")
         ("hilite", "add syntax highlight with ANSI terminal escape sequences")
         ("oneline", "format in single line")
@@ -87,16 +86,8 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         }
 
         String query;
-
-        if (options.count("query"))
-        {
-            query = options["query"].as<std::string>();
-        }
-        else
-        {
-            ReadBufferFromFileDescriptor in(STDIN_FILENO);
-            readStringUntilEOF(query, in);
-        }
+        ReadBufferFromFileDescriptor in(STDIN_FILENO);
+        readStringUntilEOF(query, in);
 
         if (obfuscate)
         {

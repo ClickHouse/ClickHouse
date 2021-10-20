@@ -10,12 +10,11 @@ set (SRCS
     "${LIBRARY_DIR}/src/deferredconsumer.cpp"
     "${LIBRARY_DIR}/src/deferredextreceiver.cpp"
     "${LIBRARY_DIR}/src/deferredget.cpp"
-    "${LIBRARY_DIR}/src/deferredrecall.cpp"
+    "${LIBRARY_DIR}/src/deferredpublisher.cpp"
     "${LIBRARY_DIR}/src/deferredreceiver.cpp"
     "${LIBRARY_DIR}/src/field.cpp"
     "${LIBRARY_DIR}/src/flags.cpp"
     "${LIBRARY_DIR}/src/linux_tcp/openssl.cpp"
-    "${LIBRARY_DIR}/src/linux_tcp/sslerrorprinter.cpp"
     "${LIBRARY_DIR}/src/linux_tcp/tcpconnection.cpp"
     "${LIBRARY_DIR}/src/inbuffer.cpp"
     "${LIBRARY_DIR}/src/receivedframe.cpp"
@@ -41,4 +40,6 @@ target_compile_options (amqp-cpp
 )
 
 target_include_directories (amqp-cpp SYSTEM PUBLIC "${LIBRARY_DIR}/include")
-target_link_libraries(amqp-cpp PUBLIC ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+
+target_link_libraries (amqp-cpp PUBLIC ssl)
+

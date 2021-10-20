@@ -2,7 +2,6 @@
 
 #include <Parsers/IParserBase.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ASTAlterQuery.h>
 
 namespace DB
 {
@@ -46,10 +45,9 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:
-    ASTAlterQuery::AlterObjectType alter_object;
+    bool is_live_view;
 
-    ParserAlterCommandList(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE)
-        : alter_object(alter_object_) {}
+    ParserAlterCommandList(bool is_live_view_ = false) : is_live_view(is_live_view_) {}
 };
 
 
@@ -60,10 +58,9 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:
-    ASTAlterQuery::AlterObjectType alter_object;
+    bool is_live_view;
 
-    ParserAlterCommand(ASTAlterQuery::AlterObjectType alter_object_ = ASTAlterQuery::AlterObjectType::TABLE)
-        : alter_object(alter_object_) {}
+    ParserAlterCommand(bool is_live_view_ = false) : is_live_view(is_live_view_) {}
 };
 
 

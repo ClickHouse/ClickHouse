@@ -4,14 +4,17 @@
 #include "MaterializedPostgreSQLSettings.h"
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Core/PostgreSQL/Utils.h>
-#include <Parsers/ASTCreateQuery.h>
 
 
 namespace DB
 {
 
+/// IDEA: There is ALTER PUBLICATION command to dynamically add and remove tables for replicating (the command is transactional).
+///       (Probably, if in a replication stream comes a relation name, which does not currently
+///       exist in CH, it can be loaded via snapshot while stream is stopped and then comparing wal positions with
+///       current lsn and table start lsn.
+
 class StorageMaterializedPostgreSQL;
-struct SettingChange;
 
 class PostgreSQLReplicationHandler
 {
@@ -39,35 +42,23 @@ public:
     void addStorage(const std::string & table_name, StorageMaterializedPostgreSQL * storage);
 
     /// Fetch list of tables which are going to be replicated. Used for database engine.
-    NameSet fetchRequiredTables();
+    std::set<String> fetchRequiredTables(postgres::Connection & connection_);
 
     /// Start replication setup immediately.
     void startSynchronization(bool throw_on_error);
-
-    ASTPtr getCreateNestedTableQuery(StorageMaterializedPostgreSQL * storage, const String & table_name);
-
-    void addTableToReplication(StorageMaterializedPostgreSQL * storage, const String & postgres_table_name);
-
-    void removeTableFromReplication(const String & postgres_table_name);
-
-    void setSetting(const SettingChange & setting);
 
 private:
     using MaterializedStorages = std::unordered_map<String, StorageMaterializedPostgreSQL *>;
 
     /// Methods to manage Publication.
 
-    bool isPublicationExist(pqxx::nontransaction & tx);
+    bool isPublicationExist(pqxx::work & tx);
 
-    void createPublicationIfNeeded(pqxx::nontransaction & tx);
+    void createPublicationIfNeeded(pqxx::work & tx);
 
-    NameSet fetchTablesFromPublication(pqxx::work & tx);
+    std::set<String> fetchTablesFromPublication(pqxx::work & tx);
 
     void dropPublication(pqxx::nontransaction & ntx);
-
-    void addTableToPublication(pqxx::nontransaction & ntx, const String & table_name);
-
-    void removeTableFromPublication(pqxx::nontransaction & ntx, const String & table_name);
 
     /// Methods to manage Replication Slots.
 
@@ -83,7 +74,7 @@ private:
 
     void consumerFunc();
 
-    StoragePtr loadFromSnapshot(postgres::Connection & connection, std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);
+    StoragePtr loadFromSnapshot(std::string & snapshot_name, const String & table_name, StorageMaterializedPostgreSQL * materialized_storage);
 
     void reloadFromSnapshot(const std::vector<std::pair<Int32, String>> & relation_data);
 
@@ -94,9 +85,6 @@ private:
 
     /// If it is not attach, i.e. a create query, then if publication already exists - always drop it.
     bool is_attach;
-
-    /// If new publication is created at start up - always drop replication slot if it exists.
-    bool new_publication = false;
 
     const String remote_database_name, current_database_name;
 
@@ -121,6 +109,9 @@ private:
 
     String replication_slot, publication_name;
 
+    /// Shared between replication_consumer and replication_handler, but never accessed concurrently.
+    std::shared_ptr<postgres::Connection> connection;
+
     /// Replication consumer. Manages decoding of replication stream and syncing into tables.
     std::shared_ptr<MaterializedPostgreSQLConsumer> consumer;
 
@@ -132,8 +123,6 @@ private:
     MaterializedStorages materialized_storages;
 
     UInt64 milliseconds_to_wait;
-
-    String postgres_schema;
 };
 
 }
