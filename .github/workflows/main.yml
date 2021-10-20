@@ -17,6 +17,11 @@ jobs:
         uses: actions/checkout@v2
       - name: Labels check
         run: cd $GITHUB_WORKSPACE/tests/ci && python3 run_check.py
+        env:
+          ROBOT_TOKEN_0: ${{ secrets.ROBOT_CLICKHOUSE_PERSONAL_ACCESS_TOKEN }}
+          ROBOT_TOKEN_1: ${{ secrets.ROBOT_CLICKHOUSE_PERSONAL_ACCESS_TOKEN_1 }}
+          ROBOT_TOKEN_2: ${{ secrets.ROBOT_CLICKHOUSE_PERSONAL_ACCESS_TOKEN_2 }}
+          ROBOT_TOKEN_3: ${{ secrets.ROBOT_CLICKHOUSE_PERSONAL_ACCESS_TOKEN_3 }}
   DockerHubPush:
     needs: CheckLabels
     runs-on: [self-hosted]
@@ -28,6 +33,10 @@ jobs:
         env:
           YANDEX_S3_ACCESS_KEY_ID: ${{ secrets.YANDEX_S3_ACCESS_KEY_ID }}
           YANDEX_S3_ACCESS_SECRET_KEY: ${{ secrets.YANDEX_S3_ACCESS_SECRET_KEY }}
+          ROBOT_TOKEN_0: ${{ secrets.ROBOT_CLICKHOUSE_PERSONAL_ACCESS_TOKEN }}
+          ROBOT_TOKEN_1: ${{ secrets.ROBOT_CLICKHOUSE_PERSONAL_ACCESS_TOKEN_1 }}
+          ROBOT_TOKEN_2: ${{ secrets.ROBOT_CLICKHOUSE_PERSONAL_ACCESS_TOKEN_2 }}
+          ROBOT_TOKEN_3: ${{ secrets.ROBOT_CLICKHOUSE_PERSONAL_ACCESS_TOKEN_3 }}
           DOCKER_ROBOT_PASSWORD: ${{ secrets.DOCKER_ROBOT_PASSWORD }}
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v2
@@ -49,4 +58,21 @@ jobs:
         env:
           YANDEX_S3_ACCESS_KEY_ID: ${{ secrets.YANDEX_S3_ACCESS_KEY_ID }}
           YANDEX_S3_ACCESS_SECRET_KEY: ${{ secrets.YANDEX_S3_ACCESS_SECRET_KEY }}
+          ROBOT_TOKEN_0: ${{ secrets.ROBOT_CLICKHOUSE_PERSONAL_ACCESS_TOKEN }}
+          ROBOT_TOKEN_1: ${{ secrets.ROBOT_CLICKHOUSE_PERSONAL_ACCESS_TOKEN_1 }}
+          ROBOT_TOKEN_2: ${{ secrets.ROBOT_CLICKHOUSE_PERSONAL_ACCESS_TOKEN_2 }}
+          ROBOT_TOKEN_3: ${{ secrets.ROBOT_CLICKHOUSE_PERSONAL_ACCESS_TOKEN_3 }}
         run: cd $GITHUB_WORKSPACE/tests/ci && python3 style_check.py
+  FinishCheck:
+    needs: [StyleCheck, DockerHubPush, CheckLabels]
+    runs-on: [self-hosted]
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Finish label
+        run: cd $GITHUB_WORKSPACE/tests/ci && python3 finish_check.py
+        env:
+          ROBOT_TOKEN_0: ${{ secrets.ROBOT_CLICKHOUSE_PERSONAL_ACCESS_TOKEN }}
+          ROBOT_TOKEN_1: ${{ secrets.ROBOT_CLICKHOUSE_PERSONAL_ACCESS_TOKEN_1 }}
+          ROBOT_TOKEN_2: ${{ secrets.ROBOT_CLICKHOUSE_PERSONAL_ACCESS_TOKEN_2 }}
+          ROBOT_TOKEN_3: ${{ secrets.ROBOT_CLICKHOUSE_PERSONAL_ACCESS_TOKEN_3 }}
