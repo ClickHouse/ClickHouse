@@ -50,19 +50,19 @@ void BinaryRowOutputFormat::writeField(const IColumn & column, const ISerializat
 
 void registerOutputFormatRowBinary(FormatFactory & factory)
 {
-    auto get_output_creator = [&](bool with_names, bool with_types)
+    auto register_func = [&](const String & format_name, bool with_names, bool with_types)
     {
-        return [with_names, with_types](
+        factory.registerOutputFormat(format_name, [with_names, with_types](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams & params,
             const FormatSettings &)
         {
             return std::make_shared<BinaryRowOutputFormat>(buf, sample, with_names, with_types, params);
-        };
+        });
     };
 
-    registerOutputFormatWithNamesAndTypes(factory, "RowBinary", get_output_creator);
+    registerWithNamesAndTypes("RowBinary", register_func);
 }
 
 }
