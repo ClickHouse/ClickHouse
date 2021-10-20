@@ -3817,12 +3817,15 @@ Default value: `0`.
 
 ## describe_include_subcolumns {#describe_include_subcolumns}
 
-Enables describing subcolumns for a [DESCRIBE](../../sql-reference/statements/describe-table.md) query. Subcolumns appear if [Tuple](../../sql-reference/data-types/tuple.md) or [Map](../../sql-reference/data-types/map.md#map-subcolumns) data types are used.
+Enables describing subcolumns for a [DESCRIBE](../../sql-reference/statements/describe-table.md) query. Subcolumns appear in columns of [Tuple](../../sql-reference/data-types/tuple.md) or [Map](../../sql-reference/data-types/map.md#map-subcolumns) data types.
 
 Possible values:
 
--   0 — Subcolumns are not included in DESCRIBE queries.
--   1 — Subcolumns are included in DESCRIBE queries.
+-   0 — Subcolumns are not included in `DESCRIBE` queries.
+-   1 — Subcolumns are included in `DESCRIBE` queries.
 
 Default value: `0`.
 
+**Example**
+
+See an example for the [DESCRIBE](../../sql-reference/statements/describe-table.md) statement.
