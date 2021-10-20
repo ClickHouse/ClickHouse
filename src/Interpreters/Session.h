@@ -33,9 +33,10 @@ public:
     static void shutdownNamedSessions();
 
     Session(const ContextPtr & global_context_, ClientInfo::Interface interface_);
-    Session(Session &&);
     ~Session();
 
+    Session(const Session &&) = delete;
+    Session& operator=(const Session &&) = delete;
     Session(const Session &) = delete;
     Session& operator=(const Session &) = delete;
 
