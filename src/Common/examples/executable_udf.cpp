@@ -24,11 +24,13 @@ int main(int argc, char **argv)
     size_t rows = 0;
     char dummy;
 
-    while (!read_buffer.eof()) {
+    while (!read_buffer.eof())
+    {
         readIntText(rows, read_buffer);
         readChar(dummy, read_buffer);
 
-        for (size_t i = 0; i < rows; ++i) {
+        for (size_t i = 0; i < rows; ++i)
+        {
             readString(buffer, read_buffer);
             readChar(dummy, read_buffer);
 
