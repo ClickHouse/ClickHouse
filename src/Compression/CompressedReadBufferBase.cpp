@@ -13,7 +13,6 @@
 #include <Compression/CompressionInfo.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
-#include <Disks/DiskRestartProxy.h>
 
 
 namespace ProfileEvents

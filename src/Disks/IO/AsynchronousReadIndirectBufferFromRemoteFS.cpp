@@ -16,11 +16,11 @@ namespace ProfileEvents
     extern const Event AsynchronousReadWaitMicroseconds;
     extern const Event RemoteFSSeeks;
     extern const Event RemoteFSPrefetches;
-    extern const Event RemoteFSSeekCancelledPrefetches;
-    extern const Event RemoteFSUnusedCancelledPrefetches;
-    extern const Event RemoteFSPrefetchReads;
-    extern const Event RemoteFSAsyncBufferReads;
-    extern const Event RemoteFSAsyncBuffers;
+    extern const Event RemoteFSCancelledPrefetches;
+    extern const Event RemoteFSUnusedPrefetches;
+    extern const Event RemoteFSPrefetchedReads;
+    extern const Event RemoteFSUnprefetchedReads;
+    extern const Event RemoteFSBuffers;
 }
 
 namespace DB
@@ -46,8 +46,7 @@ AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRe
     , prefetch_buffer(buf_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
 {
-    ProfileEvents::increment(ProfileEvents::RemoteFSAsyncBuffers);
-    buffer_events += "Events for buffer: " + impl->getFileName() + " : ";
+    ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
 }
 
 
@@ -86,33 +85,23 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
 
     if (absolute_position > last_offset)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {}) {}",
-                        absolute_position, last_offset, buffer_events);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
+                        absolute_position, last_offset);
     }
 
     /// Prefetch even in case hasPendingData() == true.
     prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
-
-    buffer_events += fmt::format("-- PREFETCH from offset: {}, upper bound: {} --",
-                                    toString(absolute_position), toString(last_offset));
 }
 
 
 void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t position)
 {
-    buffer_events += "-- Set last offset " + toString(position) + "--";
     if (prefetch_future.valid())
     {
-        LOG_DEBUG(&Poco::Logger::get("kssenii"), buffer_events);
         /// TODO: Planning to put logical error here after more testing,
         // because seems like future is never supposed to be valid at this point.
         std::terminate();
-
-        // buffer_events += "-- Cancelling because of offset update --";
-        // ProfileEvents::increment(ProfileEvents::RemoteFSSeekCancelledPrefetches);
-        // prefetch_future.wait();
-        // prefetch_future = {};
     }
 
     last_offset = position;
@@ -122,7 +111,6 @@ void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t pos
 
 bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 {
-    LOG_DEBUG(&Poco::Logger::get("kssenii"), buffer_events);
     /// Everything is already read.
     if (absolute_position == last_offset)
         return false;
@@ -131,12 +119,11 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
                         absolute_position, last_offset);
 
-    ProfileEvents::increment(ProfileEvents::RemoteFSAsyncBufferReads);
     size_t size = 0;
 
     if (prefetch_future.valid())
     {
-        ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchReads);
+        ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedReads);
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::AsynchronousReadWait};
         Stopwatch watch;
@@ -151,16 +138,14 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
             }
         }
 
-        buffer_events += fmt::format("-- Read from prefetch from offset: {}, upper bound: {}, actually read: {} --",
-                                     toString(absolute_position), toString(last_offset), toString(size));
         watch.stop();
         ProfileEvents::increment(ProfileEvents::AsynchronousReadWaitMicroseconds, watch.elapsedMicroseconds());
     }
     else
     {
+        ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
         size = readInto(memory.data(), memory.size()).get();
-        buffer_events += fmt::format("-- Read without prefetch from offset: {}, upper bound: {}, actually read: {} --",
-                                     toString(absolute_position), toString(last_offset), toString(size));
+
         if (size)
         {
             set(memory.data(), memory.size());
@@ -170,8 +155,6 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     }
 
     prefetch_future = {};
-
-    LOG_DEBUG(&Poco::Logger::get("kssenii"), buffer_events);
     return size;
 }
 
@@ -179,7 +162,6 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence)
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSSeeks);
-    buffer_events += "-- Seek to " + toString(offset_) + " --";
 
     if (whence == SEEK_CUR)
     {
@@ -218,8 +200,7 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
 
     if (prefetch_future.valid())
     {
-        buffer_events += "-- cancelling prefetch because of seek --";
-        ProfileEvents::increment(ProfileEvents::RemoteFSSeekCancelledPrefetches);
+        ProfileEvents::increment(ProfileEvents::RemoteFSCancelledPrefetches);
         prefetch_future.wait();
         prefetch_future = {};
     }
@@ -238,7 +219,6 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
     }
     else
     {
-        buffer_events += "-- Impl seek --";
         impl->seek(absolute_position); /// SEEK_SET.
     }
 
@@ -250,12 +230,10 @@ void AsynchronousReadIndirectBufferFromRemoteFS::finalize()
 {
     if (prefetch_future.valid())
     {
-        buffer_events += "-- cancelling prefetch in finalize --";
-        ProfileEvents::increment(ProfileEvents::RemoteFSUnusedCancelledPrefetches);
+        ProfileEvents::increment(ProfileEvents::RemoteFSUnusedPrefetches);
         prefetch_future.wait();
         prefetch_future = {};
     }
-    LOG_DEBUG(&Poco::Logger::get("kssenii"), buffer_events);
 }
 
 

@@ -3,12 +3,6 @@
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 
 
-namespace ProfileEvents
-{
-    extern const Event RemoteFSSimpleBufferReads;
-    extern const Event RemoteFSSimpleBuffers;
-}
-
 namespace DB
 {
 
@@ -21,7 +15,6 @@ namespace ErrorCodes
 ReadIndirectBufferFromRemoteFS::ReadIndirectBufferFromRemoteFS(
     std::shared_ptr<ReadBufferFromRemoteFSGather> impl_) : impl(std::move(impl_))
 {
-    ProfileEvents::increment(ProfileEvents::RemoteFSSimpleBuffers);
 }
 
 
@@ -79,7 +72,6 @@ off_t ReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence)
 
 bool ReadIndirectBufferFromRemoteFS::nextImpl()
 {
-    ProfileEvents::increment(ProfileEvents::RemoteFSSimpleBufferReads);
     /// Transfer current position and working_buffer to actual ReadBuffer
     swap(*impl);
     /// Position and working_buffer will be updated in next() call
