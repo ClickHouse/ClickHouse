@@ -3,6 +3,7 @@
 #include <Common/ProgressIndication.h>
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
+#include <Common/Stopwatch.h>
 #include <Core/ExternalTable.h>
 #include <Poco/Util/Application.h>
 #include <Interpreters/Context.h>
@@ -217,6 +218,16 @@ protected:
 
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
+
+    struct
+    {
+        bool print = false;
+        /// UINT64_MAX -- print only last
+        UInt64 delay_ms = 0;
+        Stopwatch watch;
+        /// For printing only last (delay_ms == 0).
+        Block last_block;
+    } profile_events;
 
     QueryProcessingStage::Enum query_processing_stage;
 };
