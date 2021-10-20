@@ -15,17 +15,18 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 The `DESCRIBE` statement returns a row for each table column with the following [String](../../sql-reference/data-types/string.md) values:
 
--   `name` — a column name.
--   `type` — a column type.
--   `default_type` — a clause that is used in the column [default expression](../../sql-reference/statements/create/table.md#create-default-values): `DEFAULT`, `MATERIALIZED` or `ALIAS`. If there is no default expression, then empty string is returned.
+-   `name` — A column name.
+-   `type` — A column type.
+-   `default_type` — A clause that is used in the column [default expression](../../sql-reference/statements/create/table.md#create-default-values): `DEFAULT`, `MATERIALIZED` or `ALIAS`. If there is no default expression, then empty string is returned.
 -   `default_expression` — an expression specified after the `DEFAULT` clause.
--   `comment` — a comment.
--   `codec_expression` - a [codec](../../sql-reference/statements/create/table.md#codecs) that is applied to the column.
--   `ttl_expression` - a [TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) expression.
--   `is_subcolumn` - a flag that is set to `1` for internal subcolumns. It is included into an output if subcolumn description is enabled.
+-   `comment` — A [column comment](../../sql-reference/statements/alter/column.md#alter_comment-column).
+-   `codec_expression` - A [codec](../../sql-reference/statements/create/table.md#codecs) that is applied to the column.
+-   `ttl_expression` - A [TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) expression.
+-   `is_subcolumn` - A flag that equals `1` for internal subcolumns. It is included into the result if subcolumn description is enabled.
 
-[Nested](../../sql-reference/data-types/nested-data-structures/nested.md) columns are described separately. The name of each nested column is prefixed with a parent column name and a dot.
-To enable internal subcolumn description, use the [describe_include_subcolumns](../../operations/settings/settings.md#describe_include_subcolumns) setting. 
+All columns in a [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) data structure are described separately. The name of each column is prefixed with a parent column name and a dot.
+
+To include internal subcolumns into the result, use the [describe_include_subcolumns](../../operations/settings/settings.md#describe_include_subcolumns) setting. 
 
 **Example**
 
