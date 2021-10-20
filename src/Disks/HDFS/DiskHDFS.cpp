@@ -80,8 +80,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
     if (read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool)
     {
         auto reader = getThreadPoolReader();
-        auto buf = std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings.priority, std::move(hdfs_impl));
-        return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
+        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings.priority, std::move(hdfs_impl));
     }
     else
     {

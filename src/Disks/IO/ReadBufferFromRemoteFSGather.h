@@ -19,6 +19,10 @@ class S3Client;
 namespace DB
 {
 
+/**
+ * Remote disk might need to split one clickhouse file into multiple files in remote fs.
+ * This class works like a proxy to allow transition from one file into multiple.
+ */
 class ReadBufferFromRemoteFSGather : public ReadBuffer
 {
 friend class ReadIndirectBufferFromRemoteFS;
@@ -29,8 +33,6 @@ public:
     String getFileName() const;
 
     void reset();
-
-    void seek(off_t offset); /// SEEK_SET only.
 
     void setReadUntilPosition(size_t position) override;
 
@@ -56,7 +58,7 @@ private:
 
     size_t bytes_to_ignore = 0;
 
-    size_t last_offset = 0;
+    size_t read_until_position = 0;
 
     String canonical_path;
 };
@@ -84,7 +86,7 @@ public:
     {
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t last_offset) const override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t read_until_position) const override;
 
 private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
@@ -114,7 +116,7 @@ public:
     {
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t last_offset) const override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t read_until_position) const override;
 
 private:
     String uri;
@@ -144,7 +146,7 @@ public:
         hdfs_uri = hdfs_uri_.substr(0, begin_of_path);
     }
 
-    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t last_offset) const override;
+    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t read_until_position) const override;
 
 private:
     const Poco::Util::AbstractConfiguration & config;
