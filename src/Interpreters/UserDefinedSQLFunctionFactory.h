@@ -23,6 +23,8 @@ public:
 
     ASTPtr tryGet(const String & function_name) const;
 
+    bool has(const String & function_name) const;
+
     std::vector<String> getAllRegisteredNames() const override;
 
 private:
