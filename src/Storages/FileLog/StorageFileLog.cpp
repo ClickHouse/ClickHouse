@@ -128,7 +128,7 @@ void StorageFileLog::loadMetaFiles(bool attach)
 
 void StorageFileLog::loadFiles()
 {
-    if (!isPathOrSymlinkStartsWith(path, getContext()->getUserFilesPath()))
+    if (!fileOrSymlinkPathStartsWith(path, getContext()->getUserFilesPath()))
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "The absolute data path should be inside `user_files_path`({})", getContext()->getUserFilesPath());
@@ -582,7 +582,6 @@ void StorageFileLog::threadFunc()
     bool reschedule = false;
     try
     {
-        std::lock_guard<std::mutex> lock(file_infos_mutex);
         auto table_id = getStorageID();
 
         auto dependencies_count = getTableDependentCount();
@@ -596,7 +595,11 @@ void StorageFileLog::threadFunc()
             while (!task->stream_cancelled)
             {
                 if (!checkDependencies(table_id))
+                {
+                    /// For this case, we can not wait for watch thread to wake up
+                    reschedule = true;
                     break;
+                }
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", dependencies_count);
 
@@ -660,6 +663,8 @@ bool StorageFileLog::streamToViews()
         LOG_INFO(log, "Another select query is running on this table, need to wait it finish.");
         return true;
     }
+    ///
+    std::lock_guard<std::mutex> lock(file_infos_mutex);
     Stopwatch watch;
 
     auto table_id = getStorageID();
