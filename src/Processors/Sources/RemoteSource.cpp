@@ -3,6 +3,7 @@
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionSum.h>
 
 namespace DB
 {
@@ -91,6 +92,28 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         query_executor->finish(&read_context);
         return {};
     }
+
+    // String anime;
+
+    // anime += block.dumpStructure();
+
+    // for (const auto & column : block.getColumnsWithTypeAndName())
+    // {
+
+    //     for (size_t i = 0; i < column.column->size(); ++i)
+    //     {
+    //         auto field = column.column->operator[](i).get<AggregateFunctionStateData>();
+    //         ReadBufferFromString ss(field.data);
+
+    //         AggregateFunctionSumData<Int64> sumdata;
+
+    //         sumdata.read(ss);
+
+    //         anime += fmt::format("size = {} value = {} \n", toString(field.data.size()), toString(sumdata.sum));
+    //     }
+    // }
+
+    // LOG_FATAL(&Poco::Logger::get("RemoteQueryExecutor"), anime);
 
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);

@@ -7,6 +7,7 @@
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
 #include "Core/Protocol.h"
+#include "IO/ReadHelpers.h"
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/IStorage.h>
@@ -19,6 +20,7 @@
 #include <Client/MultiplexedConnections.h>
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <IO/ReadBufferFromString.h>
 
 
 namespace CurrentMetrics
@@ -392,12 +394,20 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
             break;
 
         case Protocol::Server::Totals:
+        {
+            LOG_FATAL(&Poco::Logger::get("RemoteQueryExecutor"), "Totals!!");
             totals = packet.block;
             break;
+        }
+
 
         case Protocol::Server::Extremes:
+        {
+            LOG_FATAL(&Poco::Logger::get("RemoteQueryExecutor"), "Extremes!!");
             extremes = packet.block;
             break;
+        }
+
 
         case Protocol::Server::Log:
             /// Pass logs from remote server to client

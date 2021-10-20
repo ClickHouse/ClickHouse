@@ -125,6 +125,7 @@ class IColumn;
     M(UInt64, parallel_replicas_count, 0, "", 0) \
     M(UInt64, parallel_replica_offset, 0, "", 0) \
     \
+    M(Bool, enable_sample_offset_parallel_processing, false, "If true, ClickHouse will send a SELECT query to all replicas of a table. Iw will work only for tables with SAMPLE key.", 0)\
     M(Bool, parallel_reading_from_replicas, true, "If true, ClickHouse will send a SELECT query to all replicas of a table...", 0) \
     M(Bool, collaborate_with_initiator, false, "...", 0) \
     \

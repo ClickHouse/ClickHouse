@@ -40,8 +40,8 @@ struct PartitionReadRequest
 
 struct PartitionReadResponce
 {
-    bool denied;
-    MarkRanges mark_ranges;
+    bool denied{false};
+    MarkRanges mark_ranges{};
 
     void serialize(WriteBuffer & out) const;
     void deserialize(ReadBuffer & in);

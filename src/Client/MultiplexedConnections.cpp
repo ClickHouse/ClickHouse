@@ -139,11 +139,16 @@ void MultiplexedConnections::sendQuery(
     size_t num_replicas = replica_states.size();
     if (num_replicas > 1)
     {
-        /// Use multiple replicas for parallel query processing.
-        modified_settings.parallel_replicas_count = num_replicas;
+        if (settings.enable_sample_offset_parallel_processing)
+        {
+            /// Use multiple replicas for parallel query processing.
+            modified_settings.parallel_replicas_count = num_replicas;
+            for (size_t i = 0; i < num_replicas; ++i)
+                modified_settings.parallel_replica_offset = i;
+        }
+
         for (size_t i = 0; i < num_replicas; ++i)
         {
-            modified_settings.parallel_replica_offset = i;
             replica_states[i].connection->sendQuery(timeouts, query, query_id,
                 stage, &modified_settings, &client_info, with_pending_data);
         }

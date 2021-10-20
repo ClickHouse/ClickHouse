@@ -44,6 +44,8 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
         min_marks_to_read = min_marks_to_read_;
 
     ordered_names = getPort().getHeader().getNames();
+
+    LOG_FATAL(&Poco::Logger::get("MergeTreeThreadSelectProcessor"), "Using MergeTreeThreadSelectProcessor");
 }
 
 /// Requests read task from MergeTreeReadPool and signals whether it got one

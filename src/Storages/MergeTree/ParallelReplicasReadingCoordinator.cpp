@@ -122,12 +122,20 @@ PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
     /// Or maybe there is a bug in merges assigning...
     /// Nothing to update in our state
     if (number_of_part_intersection >= 2)
+    {
+        // LOG_FATAL(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Denied 1");
         return {.denied = true, .mark_ranges = {}};
+    }
+
 
     if (number_of_part_intersection == 1)
     {
         if (!partition_reading.part_ranges.checkPartIsSuitable(part_to_read))
+        {
+            // LOG_FATAL(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Denied 2");
             return {.denied = true, .mark_ranges = {}};
+        }
+
 
         auto marks_it = partition_reading.mark_ranges_in_part.find(part_and_projection);
 
@@ -151,7 +159,11 @@ PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
         }
 
         if (result.empty())
+        {
+            // LOG_FATAL(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Denied 3");
             return {.denied = true, .mark_ranges = {}};
+        }
+
 
         marks_it->second.addRanges(result);
 
