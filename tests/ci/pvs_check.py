@@ -9,6 +9,7 @@ from s3_helper import S3Helper
 from pr_info import PRInfo
 import shutil
 import sys
+from get_robot_token import get_best_robot_token
 
 NAME = 'PVS Studio (actions)'
 LICENCE_NAME = 'Free license: ClickHouse, Yandex'
@@ -83,7 +84,7 @@ if __name__ == "__main__":
     aws_secret_key_id = os.getenv("YANDEX_S3_ACCESS_KEY_ID", "")
     aws_secret_key = os.getenv("YANDEX_S3_ACCESS_SECRET_KEY", "")
 
-    gh = Github(os.getenv("GITHUB_TOKEN"))
+    gh = Github(get_best_robot_token())
 
     images_path = os.path.join(temp_path, 'changed_images.json')
     docker_image = 'clickhouse/pvs-test'

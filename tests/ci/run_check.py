@@ -6,6 +6,7 @@ from pr_info import PRInfo
 import sys
 import logging
 from github import Github
+from get_robot_token import get_best_robot_token
 
 NAME = 'Run Check (actions)'
 
@@ -113,7 +114,7 @@ if __name__ == "__main__":
 
     pr_info = PRInfo(event, need_orgs=True)
     can_run, description = should_run_checks_for_pr(pr_info)
-    gh = Github(os.getenv("GITHUB_TOKEN"))
+    gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
     url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
     if not can_run:
