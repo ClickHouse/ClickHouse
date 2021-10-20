@@ -302,7 +302,7 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
         DB::Memory<> & memory,
         size_t min_chunk_size)
     {
-        return fileSegmentationEngineTabSeparatedImpl(in, memory, min_chunk_size, false, 0);
+        return fileSegmentationEngineTabSeparatedImpl(in, memory, min_chunk_size, false, 1);
     });
 }
 
