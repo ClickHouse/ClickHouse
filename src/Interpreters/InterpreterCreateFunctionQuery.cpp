@@ -18,7 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_IDENTIFIER;
     extern const int CANNOT_CREATE_RECURSIVE_FUNCTION;
     extern const int UNSUPPORTED_METHOD;
 }
