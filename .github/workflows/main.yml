@@ -1,5 +1,8 @@
 name: Ligthweight GithubActions
 on: # yamllint disable-line rule:truthy
+  push:
+    branches:
+      - master
   pull_request:
     types:
       - labeled
