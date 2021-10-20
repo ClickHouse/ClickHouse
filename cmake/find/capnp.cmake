@@ -34,8 +34,6 @@ endif()
 if (CAPNP_LIBRARIES)
     set (USE_CAPNP 1)
 elseif(NOT MISSING_INTERNAL_CAPNP_LIBRARY)
-    add_subdirectory(contrib/capnproto-cmake)
-
     set (CAPNP_LIBRARIES capnpc)
     set (USE_CAPNP 1)
     set (USE_INTERNAL_CAPNP_LIBRARY 1)
