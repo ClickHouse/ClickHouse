@@ -81,9 +81,6 @@ if __name__ == "__main__":
     # this check modify repository so copy it to the temp directory
     logging.info("Repo copy path %s", repo_path)
 
-    aws_secret_key_id = os.getenv("YANDEX_S3_ACCESS_KEY_ID", "")
-    aws_secret_key = os.getenv("YANDEX_S3_ACCESS_SECRET_KEY", "")
-
     gh = Github(get_best_robot_token())
 
     images_path = os.path.join(temp_path, 'changed_images.json')
@@ -98,10 +95,7 @@ if __name__ == "__main__":
 
     logging.info("Got docker image %s", docker_image)
 
-    if not aws_secret_key_id  or not aws_secret_key:
-        logging.info("No secrets, will not upload anything to S3")
-
-    s3_helper = S3Helper('https://storage.yandexcloud.net', aws_access_key_id=aws_secret_key_id, aws_secret_access_key=aws_secret_key)
+    s3_helper = S3Helper('https://s3.amazonaws.com')
 
     licence_key = os.getenv('PVS_STUDIO_KEY')
     cmd = f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --volume={repo_path}:/repo_folder --volume={temp_path}:/test_output -e LICENCE_NAME='{LICENCE_NAME}' -e LICENCE_KEY='{licence_key}' {docker_image}"
