@@ -29,7 +29,7 @@ def _flatten_list(lst):
 
 class S3Helper(object):
     def __init__(self, host):
-        self.session = boto3.session.Session()
+        self.session = boto3.session.Session(region_name='us-east-1')
         self.client = self.session.client('s3', endpoint_url=host)
 
     def _upload_file_to_s3(self, bucket_name, file_path, s3_path):
