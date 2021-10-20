@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -53,14 +54,52 @@ void AsynchronousReadBufferFromFileDescriptor::prefetch()
     if (prefetch_future.valid())
         return;
 
-    /// Will request the same amount of data that is read in nextImpl.
-    prefetch_buffer.resize(internal_buffer.size());
+    size_t read_size;
+    if (read_until_position)
+    {
+        /// Everything is already read.
+        if (file_offset_of_buffer_end == *read_until_position)
+            return;
+
+        if (file_offset_of_buffer_end > *read_until_position)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
+                            file_offset_of_buffer_end, *read_until_position);
+
+        /// Read range [file_offset_of_buffer_end, read_until_position).
+        read_size = *read_until_position - file_offset_of_buffer_end - 1;
+    }
+    else
+    {
+        read_size = internal_buffer.size();
+    }
+
+    prefetch_buffer.resize(read_size);
     prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
+}
+
+
+void AsynchronousReadBufferFromFileDescriptor::setReadUntilPosition(size_t position)
+{
+    if (prefetch_future.valid())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Prefetch is valid in readUntilPosition");
+
+    read_until_position = position;
 }
 
 
 bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
 {
+    if (read_until_position)
+    {
+        /// Everything is already read.
+        if (file_offset_of_buffer_end == *read_until_position)
+            return false;
+
+        if (file_offset_of_buffer_end > *read_until_position)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
+                            file_offset_of_buffer_end, *read_until_position);
+    }
+
     if (prefetch_future.valid())
     {
         /// Read request already in flight. Wait for its completion.
@@ -201,4 +240,3 @@ void AsynchronousReadBufferFromFileDescriptor::rewind()
 }
 
 }
-
