@@ -14,6 +14,7 @@
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/randomSeed.h>
+#include <Common/GetPriorityForLoadBalancing.h>
 #include <unistd.h>
 #include <random>
 
@@ -61,22 +62,7 @@ private:
     std::minstd_rand rng = std::minstd_rand(randomSeed());
 };
 
-enum class ZooKeeperLoadBalancing
-{
-    /// Randomly select one from the zookeeper nodes.
-    RANDOM = 0,
-    /// Choose one from the zookeeper node that has the least
-    /// number of characters different from the hostname of the local host
-    NEAREST_HOSTNAME,
-    /// Select one from the zookeeper node configuration in order.
-    IN_ORDER,
-    /// If the first node cannot be connected,
-    /// one will be randomly selected from other nodes.
-    FIRST_OR_RANDOM,
-    /// Round robin from the node configured by zookeeper.
-    ROUND_ROBIN,
-};
-
+using GetPriorityForLoadBalancing = DB::GetPriorityForLoadBalancing;
 
 /// ZooKeeper session. The interface is substantially different from the usual libzookeeper API.
 ///
@@ -99,7 +85,7 @@ public:
               const std::string & chroot_ = "",
               const std::string & implementation_ = "zookeeper",
               std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
-              ZooKeeperLoadBalancing zookeeper_load_balancing_ = ZooKeeperLoadBalancing::RANDOM);
+              const GetPriorityForLoadBalancing & get_priority_load_balancing_ = {});
 
     ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
               int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
@@ -107,7 +93,7 @@ public:
               const std::string & chroot_ = "",
               const std::string & implementation_ = "zookeeper",
               std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr,
-              ZooKeeperLoadBalancing zookeeper_load_balancing_ = ZooKeeperLoadBalancing::RANDOM);
+              const GetPriorityForLoadBalancing & get_priority_load_balancing_ = {});
 
     /** Config of the form:
         <zookeeper>
@@ -328,7 +314,7 @@ private:
     friend class EphemeralNodeHolder;
 
     void init(const std::string & implementation_, const Strings & hosts_, const std::string & identity_,
-              int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_, ZooKeeperLoadBalancing zookeeper_load_balancing_);
+              int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_, const GetPriorityForLoadBalancing & get_priority_load_balancing_);
 
     /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
@@ -354,7 +340,8 @@ private:
 
     Poco::Logger * log = nullptr;
     std::shared_ptr<DB::ZooKeeperLog> zk_log;
-    ZooKeeperLoadBalancing zookeeper_load_balancing;
+
+    GetPriorityForLoadBalancing get_priority_load_balancing;
 
     AtomicStopwatch session_uptime;
 };
