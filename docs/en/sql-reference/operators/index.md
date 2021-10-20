@@ -71,6 +71,54 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 `a GLOBAL NOT IN ...` – The `globalNotIn(a, b)` function.
 
+`ALL` – The operator allows you to get data by comparing the value with the list of values returned by the subquery. The comparison condition must be running for all values of the subquery.
+
+The subquery must select values of the same type as those compared in the main predicate. 
+
+**Example**
+
+Query:
+
+``` sql
+SELECT number AS a FROM numbers(10) WHERE a > all(SELECT number FROM numbers(3, 3));
+```
+
+Result:
+
+``` text
+┌─a─┐
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
+`ANY` – The operator is comparing a value to a set of values returned by a subquery. The comparison condition must be running for any values of the subquery.  
+
+The subquery must select values of the same type as those compared in the main predicate. 
+
+**Example**
+
+Query:
+
+``` sql
+SELECT number AS a FROM numbers(10) WHERE a > any(SELECT number FROM numbers(3, 3));
+```
+
+Result:
+
+``` text
+┌─a─┐
+│ 4 │
+│ 5 │
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
 ## Operators for Working with Dates and Times {#operators-datetime}
 
 ### EXTRACT {#operator-extract}
