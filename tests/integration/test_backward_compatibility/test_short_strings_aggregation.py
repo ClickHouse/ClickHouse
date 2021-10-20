@@ -29,5 +29,3 @@ def test_backward_compatability(start_cluster):
         "select s, count() from remote('node{1,2}', default, tab) group by s order by toUInt64(s) limit 50")
     print(res)
     assert res == ''.join('{}\t2\n'.format(i) for i in range(50))
-    node1.query("drop table tab")
-    node2.query("drop table tab")

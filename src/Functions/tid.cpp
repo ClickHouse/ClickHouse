@@ -3,7 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 
-#include <base/getThreadId.h>
+#include <common/getThreadId.h>
 
 namespace DB
 {

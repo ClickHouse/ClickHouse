@@ -3,7 +3,7 @@
 #include <ifaddrs.h>
 #include <cstring>
 #include <optional>
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 #include <Poco/Net/IPAddress.h>
 #include <Poco/Net/SocketAddress.h>

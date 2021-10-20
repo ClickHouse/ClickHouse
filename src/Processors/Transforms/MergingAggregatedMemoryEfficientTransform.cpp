@@ -3,7 +3,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ResizeProcessor.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 
 namespace DB
 {

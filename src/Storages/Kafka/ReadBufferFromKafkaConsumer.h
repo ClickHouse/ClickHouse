@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <IO/ReadBuffer.h>
 
 #include <cppkafka/cppkafka.h>

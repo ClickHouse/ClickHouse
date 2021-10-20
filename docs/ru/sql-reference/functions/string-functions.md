@@ -34,15 +34,15 @@ empty(x)
 Запрос:
 
 ```sql
-SELECT empty('text');
+SELECT notempty('text');
 ```
 
 Результат:
 
 ```text
-┌─empty('text')─┐
-│             0 │
-└───────────────┘
+┌─empty('')─┐
+│         1 │
+└───────────┘
 ```
 
 ## notEmpty {#notempty}

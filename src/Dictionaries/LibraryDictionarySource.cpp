@@ -1,7 +1,8 @@
 #include "LibraryDictionarySource.h"
 
+#include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/Context.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -180,11 +181,11 @@ void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextPtr global_context,
+                                 ContextPtr context,
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
-        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, global_context, created_from_ddl);
+        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, context, created_from_ddl);
     };
 
     factory.registerSource("library", create_table_source);

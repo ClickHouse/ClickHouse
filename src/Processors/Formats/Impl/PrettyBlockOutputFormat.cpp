@@ -407,9 +407,9 @@ void PrettyBlockOutputFormat::finalize()
 }
 
 
-void registerOutputFormatPretty(FormatFactory & factory)
+void registerOutputFormatProcessorPretty(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Pretty", [](
+    factory.registerOutputFormatProcessor("Pretty", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,
@@ -418,7 +418,7 @@ void registerOutputFormatPretty(FormatFactory & factory)
         return std::make_shared<PrettyBlockOutputFormat>(buf, sample, format_settings);
     });
 
-    factory.registerOutputFormat("PrettyNoEscapes", [](
+    factory.registerOutputFormatProcessor("PrettyNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,

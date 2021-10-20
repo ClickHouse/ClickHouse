@@ -7,12 +7,12 @@
 #endif
 
 #if USE_MYSQL
-#    include <base/LocalDateTime.h>
+#    include <common/LocalDateTime.h>
 #    include <mysqlxx/PoolWithFailover.h>
 #    include "DictionaryStructure.h"
 #    include "ExternalQueryBuilder.h"
 #    include "IDictionarySource.h"
-#    include <Processors/Sources/MySQLSource.h>
+#    include <Formats/MySQLSource.h>
 
 namespace Poco
 {

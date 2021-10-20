@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/FinishSortingStep.h>
 #include <Processors/Transforms/DistinctTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
@@ -31,12 +31,14 @@ FinishSortingStep::FinishSortingStep(
     SortDescription prefix_description_,
     SortDescription result_description_,
     size_t max_block_size_,
-    UInt64 limit_)
+    UInt64 limit_,
+    bool has_filtration_)
     : ITransformingStep(input_stream_, input_stream_.header, getTraits(limit_))
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , max_block_size(max_block_size_)
     , limit(limit_)
+    , has_filtration(has_filtration_)
 {
     /// TODO: check input_stream is sorted by prefix_description.
     output_stream->sort_description = result_description;
@@ -52,27 +54,29 @@ void FinishSortingStep::updateLimit(size_t limit_)
     }
 }
 
-void FinishSortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void FinishSortingStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     bool need_finish_sorting = (prefix_description.size() < result_description.size());
     if (pipeline.getNumStreams() > 1)
     {
         UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
+        bool has_limit_below_one_block = !has_filtration && limit_for_merging && limit_for_merging < max_block_size;
         auto transform = std::make_shared<MergingSortedTransform>(
                 pipeline.getHeader(),
                 pipeline.getNumStreams(),
                 prefix_description,
                 max_block_size,
-                limit_for_merging);
+                limit_for_merging,
+                has_limit_below_one_block);
 
         pipeline.addTransform(std::move(transform));
     }
 
     if (need_finish_sorting)
     {
-        pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
         {
-            if (stream_type != QueryPipelineBuilder::StreamType::Main)
+            if (stream_type != QueryPipeline::StreamType::Main)
                 return nullptr;
 
             return std::make_shared<PartialSortingTransform>(header, result_description, limit);

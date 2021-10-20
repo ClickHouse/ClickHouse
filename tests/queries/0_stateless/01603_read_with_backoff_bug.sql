@@ -1,6 +1,3 @@
--- Tags: no-tsan
--- Tag no-tsan: Too long for TSan
-
 drop table if exists t;
 
 create table t (x UInt64, s String) engine = MergeTree order by x;

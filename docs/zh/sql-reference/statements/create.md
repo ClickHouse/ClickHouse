@@ -244,7 +244,7 @@ SELECT a, b, c FROM (SELECT ...)
 
 没有单独的删除视图的语法。如果要删除视图，请使用`DROP TABLE`。
 
-[来源文章](https://clickhouse.com/docs/en/query_language/create/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/create/) <!--hide-->
 
 ## CREATE DICTIONARY {#create-dictionary-query}
 
