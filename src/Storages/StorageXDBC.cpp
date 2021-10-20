@@ -1,6 +1,5 @@
 #include "StorageXDBC.h"
 
-#include <DataStreams/IBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ConnectionTimeoutsContext.h>
@@ -8,7 +7,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageURL.h>
 #include <Storages/transformQueryForExternalDatabase.h>
