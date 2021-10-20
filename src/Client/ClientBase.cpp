@@ -267,7 +267,7 @@ void ClientBase::onLogData(Block & block)
 {
     initLogsOutputStream();
     progress_indication.clearProgressOutput();
-    logs_out_stream->write(block);
+    logs_out_stream->writeLogs(block);
     logs_out_stream->flush();
 }
 
@@ -669,39 +669,61 @@ void ClientBase::onEndOfStream()
 void ClientBase::onProfileEvents(Block & block)
 {
     const auto rows = block.rows();
-    if (rows == 0 || !progress_indication.print_hardware_utilization)
+    if (rows == 0)
         return;
-    const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
-    const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
-    const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
-    const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
 
-    const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
-    const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
-
-    HostToThreadTimesMap thread_times;
-    for (size_t i = 0; i < rows; ++i)
+    if (progress_indication.print_hardware_utilization)
     {
-        auto thread_id = array_thread_id[i];
-        auto host_name = host_names.getDataAt(i).toString();
-        if (thread_id != 0)
-            progress_indication.addThreadIdToList(host_name, thread_id);
-        auto event_name = names.getDataAt(i);
-        auto value = array_values[i];
-        if (event_name == user_time_name)
+        const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
+        const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
+        const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
+        const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
+
+        const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
+        const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+
+        HostToThreadTimesMap thread_times;
+        for (size_t i = 0; i < rows; ++i)
         {
-            thread_times[host_name][thread_id].user_ms = value;
+            auto thread_id = array_thread_id[i];
+            auto host_name = host_names.getDataAt(i).toString();
+            if (thread_id != 0)
+                progress_indication.addThreadIdToList(host_name, thread_id);
+            auto event_name = names.getDataAt(i);
+            auto value = array_values[i];
+            if (event_name == user_time_name)
+            {
+                thread_times[host_name][thread_id].user_ms = value;
+            }
+            else if (event_name == system_time_name)
+            {
+                thread_times[host_name][thread_id].system_ms = value;
+            }
+            else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
+            {
+                thread_times[host_name][thread_id].memory_usage = value;
+            }
         }
-        else if (event_name == system_time_name)
+        progress_indication.updateThreadEventData(thread_times);
+    }
+
+    if (profile_events.print)
+    {
+        if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
         {
-            thread_times[host_name][thread_id].system_ms = value;
+            initLogsOutputStream();
+            progress_indication.clearProgressOutput();
+            logs_out_stream->writeProfileEvents(block);
+            logs_out_stream->flush();
+
+            profile_events.watch.restart();
+            profile_events.last_block = {};
         }
-        else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
+        else
         {
-            thread_times[host_name][thread_id].memory_usage = value;
+            profile_events.last_block = block;
         }
     }
-    progress_indication.updateThreadEventData(thread_times);
 }
 
 
@@ -1024,6 +1046,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     processed_rows = 0;
     written_first_block = false;
     progress_indication.resetProgress();
+    profile_events.watch.restart();
 
     {
         /// Temporarily apply query settings to context.
@@ -1090,6 +1113,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             /// If the connection initiates the reconnection, it uses its variable.
             connection->setDefaultDatabase(new_database);
         }
+    }
+
+    /// Always print last block (if it was not printed already)
+    if (profile_events.last_block)
+    {
+        initLogsOutputStream();
+        progress_indication.clearProgressOutput();
+        logs_out_stream->writeProfileEvents(profile_events.last_block);
+        logs_out_stream->flush();
     }
 
     if (is_interactive)
@@ -1582,6 +1614,8 @@ void ClientBase::init(int argc, char ** argv)
         ("ignore-error", "do not stop processing in multiquery mode")
         ("stacktrace", "print stack traces of exceptions")
         ("hardware-utilization", "print hardware utilization information in progress bar")
+        ("print-profile-events", po::value(&profile_events.print)->zero_tokens(), "Printing ProfileEvents packets")
+        ("profile-events-delay-ms", po::value<UInt64>()->default_value(profile_events.delay_ms), "Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet)")
     ;
 
     addOptions(options_description);
@@ -1633,6 +1667,10 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("vertical", true);
     if (options.count("stacktrace"))
         config().setBool("stacktrace", true);
+    if (options.count("print-profile-events"))
+        config().setBool("print-profile-events", true);
+    if (options.count("profile-events-delay-ms"))
+        config().setInt("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
     if (options.count("progress"))
         config().setBool("progress", true);
     if (options.count("echo"))
@@ -1653,6 +1691,8 @@ void ClientBase::init(int argc, char ** argv)
         progress_indication.print_hardware_utilization = true;
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
+    profile_events.print = options.count("print-profile-events");
+    profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
     processOptions(options_description, options, external_tables_arguments);
     argsToConfig(common_arguments, config(), 100);
