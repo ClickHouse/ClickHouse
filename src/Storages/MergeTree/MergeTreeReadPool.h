@@ -137,7 +137,7 @@ private:
 
     Poco::Logger * log = &Poco::Logger::get("MergeTreeReadPool");
 
-    bool stored_on_remote_disk = false;
+    std::vector<bool> is_part_on_remote_disk;
 };
 
 using MergeTreeReadPoolPtr = std::shared_ptr<MergeTreeReadPool>;

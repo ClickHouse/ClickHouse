@@ -56,13 +56,41 @@ String AsynchronousReadIndirectBufferFromRemoteFS::getFileName() const
 }
 
 
+size_t AsynchronousReadIndirectBufferFromRemoteFS::getNumBytesToRead()
+{
+    size_t num_bytes_to_read;
+
+    /// Position is set only for MergeTree tables.
+    if (read_until_position)
+    {
+        /// Everything is already read.
+        if (file_offset_of_buffer_end == *read_until_position)
+            return 0;
+
+        if (file_offset_of_buffer_end > *read_until_position)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
+                            file_offset_of_buffer_end, *read_until_position);
+
+        /// Read range [file_offset_of_buffer_end, read_until_position).
+        num_bytes_to_read = *read_until_position - file_offset_of_buffer_end;
+        num_bytes_to_read = std::min(num_bytes_to_read, internal_buffer.size());
+    }
+    else
+    {
+        num_bytes_to_read = internal_buffer.size();
+    }
+
+    return num_bytes_to_read;
+}
+
+
 std::future<IAsynchronousReader::Result> AsynchronousReadIndirectBufferFromRemoteFS::readInto(char * data, size_t size)
 {
     IAsynchronousReader::Request request;
     request.descriptor = std::make_shared<ThreadPoolRemoteFSReader::RemoteFSFileDescriptor>(impl);
     request.buf = data;
     request.size = size;
-    request.offset = absolute_position;
+    request.offset = file_offset_of_buffer_end;
     request.priority = priority;
 
     if (bytes_to_ignore)
@@ -79,17 +107,12 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
     if (prefetch_future.valid())
         return;
 
-    /// Everything is already read.
-    if (absolute_position == last_offset)
+    auto num_bytes_to_read = getNumBytesToRead();
+    if (!num_bytes_to_read)
         return;
 
-    if (absolute_position > last_offset)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
-                        absolute_position, last_offset);
-    }
-
     /// Prefetch even in case hasPendingData() == true.
+    prefetch_buffer.resize(num_bytes_to_read);
     prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
@@ -98,27 +121,15 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
 void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t position)
 {
     if (prefetch_future.valid())
-    {
-        /// TODO: Planning to put logical error here after more testing,
-        // because seems like future is never supposed to be valid at this point.
-        std::terminate();
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Prefetch is valid in readUntilPosition");
 
-    last_offset = position;
+    read_until_position = position;
     impl->setReadUntilPosition(position);
 }
 
 
 bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
 {
-    /// Everything is already read.
-    if (absolute_position == last_offset)
-        return false;
-
-    if (absolute_position > last_offset)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
-                        absolute_position, last_offset);
-
     size_t size = 0;
 
     if (prefetch_future.valid())
@@ -134,7 +145,7 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
                 memory.swap(prefetch_buffer);
                 set(memory.data(), memory.size());
                 working_buffer.resize(size);
-                absolute_position += size;
+                file_offset_of_buffer_end += size;
             }
         }
 
@@ -143,14 +154,18 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::nextImpl()
     }
     else
     {
+        auto num_bytes_to_read = getNumBytesToRead();
+        if (!num_bytes_to_read) /// Nothing to read.
+            return false;
+
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
-        size = readInto(memory.data(), memory.size()).get();
+        size = readInto(memory.data(), num_bytes_to_read).get();
 
         if (size)
         {
             set(memory.data(), memory.size());
             working_buffer.resize(size);
-            absolute_position += size;
+            file_offset_of_buffer_end += size;
         }
     }
 
@@ -166,24 +181,24 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
     if (whence == SEEK_CUR)
     {
         /// If position within current working buffer - shift pos.
-        if (!working_buffer.empty() && static_cast<size_t>(getPosition() + offset_) < absolute_position)
+        if (!working_buffer.empty() && static_cast<size_t>(getPosition() + offset_) < file_offset_of_buffer_end)
         {
             pos += offset_;
             return getPosition();
         }
         else
         {
-            absolute_position += offset_;
+            file_offset_of_buffer_end += offset_;
         }
     }
     else if (whence == SEEK_SET)
     {
         /// If position is within current working buffer - shift pos.
         if (!working_buffer.empty()
-            && static_cast<size_t>(offset_) >= absolute_position - working_buffer.size()
-            && size_t(offset_) < absolute_position)
+            && static_cast<size_t>(offset_) >= file_offset_of_buffer_end - working_buffer.size()
+            && size_t(offset_) < file_offset_of_buffer_end)
         {
-            pos = working_buffer.end() - (absolute_position - offset_);
+            pos = working_buffer.end() - (file_offset_of_buffer_end - offset_);
 
             assert(pos >= working_buffer.begin());
             assert(pos <= working_buffer.end());
@@ -192,7 +207,7 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
         }
         else
         {
-            absolute_position = offset_;
+            file_offset_of_buffer_end = offset_;
         }
     }
     else
@@ -207,22 +222,22 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
 
     pos = working_buffer.end();
 
-    /// Note: we read in range [absolute_position, last_offset).
-    if (absolute_position < last_offset
-        && static_cast<off_t>(absolute_position) >= getPosition()
-        && static_cast<off_t>(absolute_position) < getPosition() + static_cast<off_t>(min_bytes_for_seek))
+    /// Note: we read in range [file_offset_of_buffer_end, read_until_position).
+    if (file_offset_of_buffer_end < read_until_position
+        && static_cast<off_t>(file_offset_of_buffer_end) >= getPosition()
+        && static_cast<off_t>(file_offset_of_buffer_end) < getPosition() + static_cast<off_t>(min_bytes_for_seek))
     {
        /**
         * Lazy ignore. Save number of bytes to ignore and ignore it either for prefetch buffer or current buffer.
         */
-        bytes_to_ignore = absolute_position - getPosition();
+        bytes_to_ignore = file_offset_of_buffer_end - getPosition();
     }
     else
     {
-        impl->seek(absolute_position); /// SEEK_SET.
+        impl->reset();
     }
 
-    return absolute_position;
+    return file_offset_of_buffer_end;
 }
 
 

@@ -49,31 +49,44 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
 }
 
 
-void AsynchronousReadBufferFromFileDescriptor::prefetch()
+size_t AsynchronousReadBufferFromFileDescriptor::getNumBytesToRead()
 {
-    if (prefetch_future.valid())
-        return;
+    size_t num_bytes_to_read;
 
-    size_t read_size;
+    /// Position is set only for MergeTree tables.
     if (read_until_position)
     {
         /// Everything is already read.
         if (file_offset_of_buffer_end == *read_until_position)
-            return;
+            return 0;
 
         if (file_offset_of_buffer_end > *read_until_position)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
                             file_offset_of_buffer_end, *read_until_position);
 
         /// Read range [file_offset_of_buffer_end, read_until_position).
-        read_size = *read_until_position - file_offset_of_buffer_end - 1;
+        num_bytes_to_read = *read_until_position - file_offset_of_buffer_end;
+        num_bytes_to_read = std::min(num_bytes_to_read, internal_buffer.size());
     }
     else
     {
-        read_size = internal_buffer.size();
+        num_bytes_to_read = internal_buffer.size();
     }
 
-    prefetch_buffer.resize(read_size);
+    return num_bytes_to_read;
+}
+
+
+void AsynchronousReadBufferFromFileDescriptor::prefetch()
+{
+    if (prefetch_future.valid())
+        return;
+
+    auto num_bytes_to_read = getNumBytesToRead();
+    if (!num_bytes_to_read)
+        return;
+
+    prefetch_buffer.resize(num_bytes_to_read);
     prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
 }
 
@@ -89,17 +102,6 @@ void AsynchronousReadBufferFromFileDescriptor::setReadUntilPosition(size_t posit
 
 bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
 {
-    if (read_until_position)
-    {
-        /// Everything is already read.
-        if (file_offset_of_buffer_end == *read_until_position)
-            return false;
-
-        if (file_offset_of_buffer_end > *read_until_position)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
-                            file_offset_of_buffer_end, *read_until_position);
-    }
-
     if (prefetch_future.valid())
     {
         /// Read request already in flight. Wait for its completion.
@@ -127,9 +129,13 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     }
     else
     {
+        auto num_bytes_to_read = getNumBytesToRead();
+        if (!num_bytes_to_read) /// Nothing to read.
+            return false;
+
         /// No pending request. Do synchronous read.
 
-        auto size = readInto(memory.data(), memory.size()).get();
+        auto size = readInto(memory.data(), num_bytes_to_read).get();
         file_offset_of_buffer_end += size;
 
         if (size)

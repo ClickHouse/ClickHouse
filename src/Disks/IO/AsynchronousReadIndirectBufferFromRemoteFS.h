@@ -41,7 +41,7 @@ public:
 
     off_t seek(off_t offset_, int whence) override;
 
-    off_t getPosition() override { return absolute_position - available(); }
+    off_t getPosition() override { return file_offset_of_buffer_end - available(); }
 
     String getFileName() const override;
 
@@ -54,6 +54,8 @@ private:
 
     void finalize();
 
+    size_t getNumBytesToRead();
+
     std::future<IAsynchronousReader::Result> readInto(char * data, size_t size);
 
     AsynchronousReaderPtr reader;
@@ -64,7 +66,7 @@ private:
 
     std::future<IAsynchronousReader::Result> prefetch_future;
 
-    size_t absolute_position = 0;
+    size_t file_offset_of_buffer_end = 0;
 
     Memory<> prefetch_buffer;
 
@@ -72,7 +74,7 @@ private:
 
     size_t bytes_to_ignore = 0;
 
-    size_t last_offset = 0;
+    std::optional<size_t> read_until_position = 0;
 };
 
 }

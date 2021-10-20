@@ -35,7 +35,7 @@ namespace ErrorCodes
 
 ReadBufferFromS3::ReadBufferFromS3(
     std::shared_ptr<Aws::S3::S3Client> client_ptr_, const String & bucket_, const String & key_,
-    UInt64 max_single_read_retries_, const ReadSettings & settings_, bool use_external_buffer_, size_t last_offset_)
+    UInt64 max_single_read_retries_, const ReadSettings & settings_, bool use_external_buffer_, size_t read_until_position_)
     : SeekableReadBuffer(nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , bucket(bucket_)
@@ -43,19 +43,19 @@ ReadBufferFromS3::ReadBufferFromS3(
     , max_single_read_retries(max_single_read_retries_)
     , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
-    , last_offset(last_offset_)
+    , read_until_position(read_until_position_)
 {
 }
 
 bool ReadBufferFromS3::nextImpl()
 {
-    if (last_offset)
+    if (read_until_position)
     {
-        if (last_offset == offset)
+        if (read_until_position == offset)
             return false;
 
-        if (last_offset < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, last_offset - 1);
+        if (read_until_position < offset)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
     }
 
     bool next_result = false;
@@ -171,13 +171,13 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     req.SetBucket(bucket);
     req.SetKey(key);
 
-    if (last_offset)
+    if (read_until_position)
     {
-        if (offset >= last_offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, last_offset - 1);
+        if (offset >= read_until_position)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
 
-        req.SetRange(fmt::format("bytes={}-{}", offset, last_offset - 1));
-        LOG_DEBUG(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, last_offset - 1);
+        req.SetRange(fmt::format("bytes={}-{}", offset, read_until_position - 1));
+        LOG_DEBUG(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, read_until_position - 1);
     }
     else
     {

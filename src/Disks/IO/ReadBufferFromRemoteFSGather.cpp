@@ -86,7 +86,7 @@ void ReadBufferFromRemoteFSGather::initialize()
             /// Do not create a new buffer if we already have what we need.
             if (!current_buf || current_buf_idx != i)
             {
-                current_buf = createImplementationBuffer(file_path, last_offset);
+                current_buf = createImplementationBuffer(file_path, read_until_position);
                 current_buf_idx = i;
             }
 
@@ -123,7 +123,7 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
     ++current_buf_idx;
 
     const auto & current_path = metadata.remote_fs_objects[current_buf_idx].first;
-    current_buf = createImplementationBuffer(current_path, last_offset);
+    current_buf = createImplementationBuffer(current_path, read_until_position);
 
     return readImpl();
 }
@@ -141,7 +141,6 @@ bool ReadBufferFromRemoteFSGather::readImpl()
     if (bytes_to_ignore)
         current_buf->ignore(bytes_to_ignore);
 
-    LOG_DEBUG(&Poco::Logger::get("ReadBufferFromRemoteFSGather"), "Reading from path: {}", canonical_path);
     auto result = current_buf->next();
 
     swap(*current_buf);
@@ -153,18 +152,10 @@ bool ReadBufferFromRemoteFSGather::readImpl()
 }
 
 
-void ReadBufferFromRemoteFSGather::seek(off_t offset)
-{
-    current_buf.reset();
-    absolute_position = offset;
-}
-
-
 void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t position)
 {
-    assert(last_offset < position);
-    current_buf.reset();
-    last_offset = position;
+    read_until_position = position;
+    reset();
 }
 
 
