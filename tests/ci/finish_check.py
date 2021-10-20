@@ -4,6 +4,7 @@ from github import Github
 from pr_info import PRInfo
 import json
 import os
+from get_robot_token import get_best_robot_token
 
 NAME = 'Run Check (actions)'
 
@@ -34,7 +35,7 @@ if __name__ == "__main__":
         event = json.load(event_file)
 
     pr_info = PRInfo(event, need_orgs=True)
-    gh = Github(os.getenv("GITHUB_TOKEN"))
+    gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
 
     url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
