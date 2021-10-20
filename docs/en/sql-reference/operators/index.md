@@ -94,7 +94,7 @@ Result:
 └───┘
 ```
 
-`ANY` – The operator is comparing a value to a set of values returned by a subquery. The comparison condition must be running for any values of the subquery.  
+`ANY` – The operator is comparing a value to a set of values returned by a subquery. The comparison condition can be running for any values of the subquery.  
 
 The subquery must select values of the same type as those compared in the main predicate. 
 

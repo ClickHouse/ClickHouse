@@ -4,7 +4,7 @@ toc_title: INTERSECT
 
 # INTERSECT Clause {#intersect-clause}
 
-The `INTERSECT` clause returns only those rows that result from first and second queries. The queries must match the number of columns, order, type, and names. The result of `INTERSECT` can contain duplicate rows.
+The `INTERSECT` clause returns only those rows that result from first and second queries. The queries must match the number of columns, order, and type. The result of `INTERSECT` can contain duplicate rows.
 
 Multiple `INTERSECT` statements execute left to right if brackets are not specified. The `INTERSECT` operator has a higher priority than the `UNION` and `EXCEPT` clause.
 
