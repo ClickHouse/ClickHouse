@@ -1,4 +1,4 @@
 send_timeout	300	0		\N	\N	0	Seconds
-storage_policy	default	0	Name of storage disk policy	String
+write_final_mark	1	0	Deprecated setting	Bool
 1
 1
