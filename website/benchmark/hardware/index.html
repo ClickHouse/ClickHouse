@@ -13,11 +13,11 @@
 <div class="container-fluid py-3">
 
 <div class="row mb-3">
-    <div class="col">
+    <div class="col d-flex align-items-center">
         <a href="/" title="Main page" class="float-left mr-3">
             <img src="/images/logo.svg" alt="ClickHouse" />
         </a>
-        <h1>{{ title }}</h1>
+        <h1 class="h2 mb-0">{{ title }}</h1>
     </div>
 </div>
 
@@ -27,21 +27,21 @@
 
 <div class="row mb-3">
     <div class="col">
-        <h3 class="my-3">Relative query processing time <span class="text-muted">(lower is better)</span></h3>
+        <h3 class="h4 my-3">Relative query processing time <span class="text-muted">(lower is better)</span></h3>
         <div id="diagram"></div>
     </div>
 </div>
 
 <div class="row mb-3">
     <div class="col">
-        <h3 class="my-3">Full results</h3>
+        <h3 class="h4 my-3">Full results</h3>
         <div id="comparison_table"></div>
     </div>
 </div>
 
 <div class="row">
     <div class="col">
-        <h3 class="my-3">Comments</h3>
+        <h3 class="h4 my-3">Comments</h3>
         <p>Submit your own results: <a href="https://clickhouse.com/docs/en/operations/performance-test/">https://clickhouse.com/docs/en/operations/performance-test/</a></p>
         <p>
 Results for Lenovo B580 Laptop are from <b>Ragıp Ünal</b>. 16GB RAM 1600 GHz, 240GB SSD, Intel(R) Core(TM) i5-3210M CPU @ 2.50GHz (2 Core / 4 HT)<br/>
