@@ -301,8 +301,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (replicated)
         name_part = name_part.substr(strlen("Replicated"));
 
-    args.getContext()->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
-
     MergeTreeData::MergingParams merging_params;
     merging_params.mode = MergeTreeData::MergingParams::Ordinary;
 
