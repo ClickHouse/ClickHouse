@@ -115,7 +115,10 @@ bool SquashingTransform::isEnoughSize(const Block & block)
 
     for (const auto & [column, type, name] : block)
     {
-        if (!rows)
+        if (!column)
+            throw Exception("Column " + name + " in block is nullptr, in method isEnoughSize."
+                            , ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        else if (!rows)
             rows = column->size();
         else if (rows != column->size())
             throw Exception("Sizes of columns doesn't match", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
