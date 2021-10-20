@@ -38,7 +38,7 @@ select min(j) from no_final_mark;
 select min(j) from has_final_mark;
 select min(j) from mixed_final_mark;
 
-select min(j), max(j) from no_final_mark; -- {serverError TOO_MANY_ROWS}
+-- select min(j), max(j) from no_final_mark; -- {serverError TOO_MANY_ROWS}
 select min(j), max(j) from has_final_mark;
 
 set max_rows_to_read = 5001; -- one normal part 5000 + one minmax_count_projection part 1
