@@ -31,20 +31,32 @@ BlockIO InterpreterCreateFunctionQuery::execute()
     if (!create_function_query)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Expected CREATE FUNCTION query");
 
+    auto & user_defined_function_factory = UserDefinedSQLFunctionFactory::instance();
+
     auto & function_name = create_function_query->function_name;
+
+    bool if_not_exists = create_function_query->if_not_exists;
+    bool replace = create_function_query->or_replace;
+
+    create_function_query->if_not_exists = false;
+    create_function_query->or_replace = false;
+
+    if (if_not_exists && user_defined_function_factory.tryGet(function_name) != nullptr)
+        return {};
+
     validateFunction(create_function_query->function_core, function_name);
 
-    UserDefinedSQLFunctionFactory::instance().registerFunction(function_name, query_ptr);
+    user_defined_function_factory.registerFunction(function_name, query_ptr, replace);
 
-    if (!persist_function)
+    if (persist_function)
     {
         try
         {
-            UserDefinedSQLObjectsLoader::instance().storeObject(current_context, UserDefinedSQLObjectType::Function, function_name, *query_ptr);
+            UserDefinedSQLObjectsLoader::instance().storeObject(current_context, UserDefinedSQLObjectType::Function, function_name, *query_ptr, replace);
         }
         catch (Exception & exception)
         {
-            UserDefinedSQLFunctionFactory::instance().unregisterFunction(function_name);
+            user_defined_function_factory.unregisterFunction(function_name);
             exception.addMessage(fmt::format("while storing user defined function {} on disk", backQuote(function_name)));
             throw;
         }
