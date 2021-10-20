@@ -233,19 +233,19 @@ bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, co
 
 void registerInputFormatCSV(FormatFactory & factory)
 {
-    auto get_input_creator = [](bool with_names, bool with_types)
+    auto register_func = [&](const String & format_name, bool with_names, bool with_types)
     {
-        return [with_names, with_types](
+        factory.registerInputFormat(format_name, [with_names, with_types](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
             return std::make_shared<CSVRowInputFormat>(sample, buf, std::move(params), with_names, with_types, settings);
-        };
+        });
     };
 
-    registerInputFormatWithNamesAndTypes(factory, "CSV", get_input_creator);
+    registerWithNamesAndTypes("CSV", register_func);
 }
 
 static std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size, size_t min_rows)
@@ -314,14 +314,16 @@ static std::pair<bool, size_t> fileSegmentationEngineCSVImpl(ReadBuffer & in, DB
 
 void registerFileSegmentationEngineCSV(FormatFactory & factory)
 {
-    auto get_file_segmentation_engine = [](size_t min_rows)
+    auto register_func = [&](const String & format_name, bool with_names, bool with_types)
     {
-        return [min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+        size_t min_rows = 1 + int(with_names) + int(with_types);
+        factory.registerFileSegmentationEngine(format_name, [min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
         {
             return fileSegmentationEngineCSVImpl(in, memory, min_chunk_size, min_rows);
-        };
+        });
     };
-    registerFileSegmentationEngineForFormatWithNamesAndTypes(factory, "CSV", get_file_segmentation_engine);
+
+    registerWithNamesAndTypes("CSV", register_func);
 }
 
 }

@@ -222,20 +222,20 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})
     {
-        auto get_input_creator = [is_raw](bool with_names, bool with_types)
+        auto register_func = [&](const String & format_name, bool with_names, bool with_types)
         {
-            return [with_names, with_types, is_raw](
+            factory.registerInputFormat(format_name, [with_names, with_types, is_raw](
                 ReadBuffer & buf,
                 const Block & sample,
                 IRowInputFormat::Params params,
                 const FormatSettings & settings)
             {
                 return std::make_shared<TabSeparatedRowInputFormat>(sample, buf, std::move(params), with_names, with_types, is_raw, settings);
-            };
+            });
         };
 
-        registerInputFormatWithNamesAndTypes(factory, is_raw ? "TabSeparatedRaw" : "TabSeparated", get_input_creator);
-        registerInputFormatWithNamesAndTypes(factory, is_raw ? "TSVRaw" : "TSV", get_input_creator);
+        registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
+        registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
     }
 }
 
@@ -284,16 +284,17 @@ void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})
     {
-        auto get_file_segmentation_engine = [is_raw](size_t min_rows)
+        auto register_func = [&](const String & format_name, bool with_names, bool with_types)
         {
-            return [is_raw, min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+            size_t min_rows = 1 + int(with_names) + int(with_types);
+            factory.registerFileSegmentationEngine(format_name, [is_raw, min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
             {
                 return fileSegmentationEngineTabSeparatedImpl(in, memory, min_chunk_size, is_raw, min_rows);
-            };
+            });
         };
 
-        registerFileSegmentationEngineForFormatWithNamesAndTypes(factory, is_raw ? "TSVRaw" : "TSV", get_file_segmentation_engine);
-        registerFileSegmentationEngineForFormatWithNamesAndTypes(factory, is_raw ? "TabSeparatedRaw" : "TabSeparated", get_file_segmentation_engine);
+        registerWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
+        registerWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
     }
 
     // We can use the same segmentation engine for TSKV.
