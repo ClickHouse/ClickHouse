@@ -15,7 +15,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/Cluster.h>
-#include <common/getFQDNOrHostName.h>
+#include <base/getFQDNOrHostName.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ParserCreateQuery.h>

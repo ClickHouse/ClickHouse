@@ -116,4 +116,9 @@ IMPLEMENT_SETTING_ENUM(ShortCircuitFunctionEvaluation, ErrorCodes::BAD_ARGUMENTS
     {{"enable",          ShortCircuitFunctionEvaluation::ENABLE},
      {"force_enable",    ShortCircuitFunctionEvaluation::FORCE_ENABLE},
      {"disable",         ShortCircuitFunctionEvaluation::DISABLE}})
+
+IMPLEMENT_SETTING_ENUM(EnumComparingMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"by_names",   FormatSettings::EnumComparingMode::BY_NAMES},
+     {"by_values",  FormatSettings::EnumComparingMode::BY_VALUES},
+     {"by_names_case_insensitive", FormatSettings::EnumComparingMode::BY_NAMES_CASE_INSENSITIVE}})
 }

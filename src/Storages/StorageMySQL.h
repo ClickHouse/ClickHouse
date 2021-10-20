@@ -6,7 +6,7 @@
 
 #if USE_MYSQL
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/MySQL/MySQLSettings.h>

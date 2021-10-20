@@ -9,8 +9,8 @@
 #include <Common/Exception.h>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
-#include <common/setTerminalEcho.h>
-#include <common/scope_guard.h>
+#include <base/setTerminalEcho.h>
+#include <base/scope_guard.h>
 
 #if !defined(ARCADIA_BUILD)
 #include <readpassphrase/readpassphrase.h> // Y_IGNORE

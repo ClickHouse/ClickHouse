@@ -3,7 +3,7 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include <Common/intExp.h>
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 
 #include <limits>
 #include <type_traits>

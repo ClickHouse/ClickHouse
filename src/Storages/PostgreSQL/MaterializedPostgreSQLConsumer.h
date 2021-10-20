@@ -5,9 +5,8 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/Names.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Storages/IStorage.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Parsers/ASTExpressionList.h>
 
 

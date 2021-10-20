@@ -5,7 +5,6 @@
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -14,7 +13,8 @@
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
-#include <common/types.h>
+#include <Common/isLocalAddress.h>
+#include <base/types.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -116,7 +116,9 @@ using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
 class Session;
 
+class IInputFormat;
 class IOutputFormat;
+using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
@@ -291,6 +293,8 @@ private:
 
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
+    /// Has initializeBackgroundExecutors() method been executed?
+    bool is_background_executors_initialized = false;
 
 
 public:
@@ -555,27 +559,25 @@ public:
     const ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
     ExternalDictionariesLoader & getExternalDictionariesLoader();
+    ExternalDictionariesLoader & getExternalDictionariesLoaderUnlocked();
     ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoader();
+    ExternalUserDefinedExecutableFunctionsLoader & getExternalUserDefinedExecutableFunctionsLoaderUnlocked();
     ExternalModelsLoader & getExternalModelsLoader();
     ExternalModelsLoader & getExternalModelsLoaderUnlocked();
-    void tryCreateEmbeddedDictionaries() const;
-    void loadDictionaries(const Poco::Util::AbstractConfiguration & config);
-    void loadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+    void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
+    void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
+    void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
+    void loadOrReloadModels(const Poco::Util::AbstractConfiguration & config);
 
 #if USE_NLP
     SynonymsExtensions & getSynonymsExtensions() const;
     Lemmatizers & getLemmatizers() const;
 #endif
 
-    void setExternalModelsConfig(const ConfigurationPtr & config, const std::string & config_name = "models_config");
-
     /// I/O formats.
-    BlockInputStreamPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const;
+    InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings = std::nullopt) const;
 
-    /// Don't use streams. Better look at getOutputFormat...
-    BlockOutputStreamPtr getOutputStreamParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
-    BlockOutputStreamPtr getOutputStream(const String & name, WriteBuffer & buf, const Block & sample) const;
-
+    OutputFormatPtr getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const;
     OutputFormatPtr getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const;
 
     InterserverIOHandler & getInterserverIOHandler();
@@ -636,13 +638,13 @@ public:
     const Settings & getSettingsRef() const { return settings; }
 
     void setProgressCallback(ProgressCallback callback);
-    /// Used in InterpreterSelectQuery to pass it to the IBlockInputStream.
+    /// Used in executeQuery() to pass it to the QueryPipeline.
     ProgressCallback getProgressCallback() const;
 
     void setFileProgressCallback(FileProgressCallback && callback) { file_progress_callback = callback; }
     FileProgressCallback getFileProgressCallback() const { return file_progress_callback; }
 
-    /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IBlockInputStream,
+    /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
       */
     void setProcessListElement(QueryStatus * elem);
@@ -665,12 +667,18 @@ public:
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
+    /// Try to connect to Keeper using get(Auxiliary)ZooKeeper. Useful for
+    /// internal Keeper start (check connection to some other node). Return true
+    /// if connected successfully (without exception) or our zookeeper client
+    /// connection configured for some other cluster without our node.
+    bool tryCheckClientConnectionToMyKeeperCluster() const;
+
     UInt32 getZooKeeperSessionUptime() const;
 
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
 #endif
-    void initializeKeeperDispatcher() const;
+    void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
@@ -695,6 +703,16 @@ public:
     void setMarkCache(size_t cache_size_in_bytes);
     std::shared_ptr<MarkCache> getMarkCache() const;
     void dropMarkCache() const;
+
+    /// Create a cache of index uncompressed blocks of specified size. This can be done only once.
+    void setIndexUncompressedCache(size_t max_size_in_bytes);
+    std::shared_ptr<UncompressedCache> getIndexUncompressedCache() const;
+    void dropIndexUncompressedCache() const;
+
+    /// Create a cache of index marks of specified size. This can be done only once.
+    void setIndexMarkCache(size_t cache_size_in_bytes);
+    std::shared_ptr<MarkCache> getIndexMarkCache() const;
+    void dropIndexMarkCache() const;
 
     /// Create a cache of mapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     void setMMappedFileCache(size_t cache_size_in_num_entries);
@@ -851,7 +869,7 @@ public:
     void setReadTaskCallback(ReadTaskCallback && callback);
 
     /// Background executors related methods
-    void initializeBackgroundExecutors();
+    void initializeBackgroundExecutorsIfNeeded();
 
     MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;

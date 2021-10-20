@@ -8,25 +8,23 @@
 #include <unordered_set>
 #include <algorithm>
 #include <optional>
-#include <common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 #include <boost/program_options.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <Poco/String.h>
 #include <filesystem>
 #include <string>
 #include "Client.h"
+#include "Core/Protocol.h"
 
-#include <common/argsToConfig.h>
-#include <common/find_symbols.h>
+#include <base/argsToConfig.h>
+#include <base/find_symbols.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
 #endif
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <Common/NetException.h>
-#include <Common/Config/ConfigProcessor.h>
-#include <Common/PODArray.h>
 #include <Common/TerminalSize.h>
 #include <Common/Config/configReadClient.h>
 #include "Common/MemoryTracker.h"
@@ -34,17 +32,13 @@
 #include <Core/QueryProcessingStage.h>
 #include <Client/TestHint.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Poco/Util/Application.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/UseSSL.h>
-
-#include <DataStreams/NullBlockOutputStream.h>
 
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
@@ -52,16 +46,12 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/formatAST.h>
 
 #include <Interpreters/InterpreterSetQuery.h>
 
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Formats/registerFormats.h>
-#include <Formats/FormatFactory.h>
 #include "TestTags.h"
 
 #ifndef __clang__
@@ -88,7 +78,6 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int TOO_DEEP_RECURSION;
     extern const int NETWORK_ERROR;
-    extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int AUTHENTICATION_FAILED;
 }
 
@@ -377,6 +366,9 @@ std::vector<String> Client::loadWarningMessages()
             case Protocol::Server::EndOfStream:
                 return messages;
 
+            case Protocol::Server::ProfileEvents:
+                continue;
+
             default:
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
                     packet.type, connection->getDescription());
@@ -417,6 +409,7 @@ try
 {
     UseSSL use_ssl;
     MainThreadStatus::getInstance();
+    setupSignalHandler();
 
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
@@ -711,21 +704,36 @@ bool Client::processWithFuzzing(const String & full_query)
             throw;
     }
 
+    // `USE db` should not be executed
+    // since this will break every query after `DROP db`
+    if (orig_ast->as<ASTUseQuery>())
+    {
+        return true;
+    }
+
     if (!orig_ast)
     {
         // Can't continue after a parsing error
         return true;
     }
 
-    // Don't repeat inserts, the tables grow too big. Also don't repeat
-    // creates because first we run the unmodified query, it will succeed,
-    // and the subsequent queries will fail. When we run out of fuzzer
-    // errors, it may be interesting to add fuzzing of create queries that
-    // wraps columns into LowCardinality or Nullable. Also there are other
-    // kinds of create queries such as CREATE DICTIONARY, we could fuzz
-    // them as well. Also there is no point fuzzing DROP queries.
+    // Don't repeat:
+    // - INSERT -- Because the tables may grow too big.
+    // - CREATE -- Because first we run the unmodified query, it will succeed,
+    //             and the subsequent queries will fail.
+    //             When we run out of fuzzer errors, it may be interesting to
+    //             add fuzzing of create queries that wraps columns into
+    //             LowCardinality or Nullable.
+    //             Also there are other kinds of create queries such as CREATE
+    //             DICTIONARY, we could fuzz them as well.
+    // - DROP   -- No point in this (by the same reasons).
+    // - SET    -- The time to fuzz the settings has not yet come
+    //             (see comments in Client/QueryFuzzer.cpp)
     size_t this_query_runs = query_fuzzer_runs;
-    if (orig_ast->as<ASTInsertQuery>() || orig_ast->as<ASTCreateQuery>() || orig_ast->as<ASTDropQuery>())
+    if (orig_ast->as<ASTInsertQuery>() ||
+        orig_ast->as<ASTCreateQuery>() ||
+        orig_ast->as<ASTDropQuery>() ||
+        orig_ast->as<ASTSetQuery>())
     {
         this_query_runs = 1;
     }
@@ -976,7 +984,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
 }
 
 
-void Client::addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
+void Client::addOptions(OptionsDescription & options_description)
 {
     /// Main commandline options related to client functionality and all parameters from Settings.
     options_description.main_description->add_options()
@@ -1033,14 +1041,6 @@ void Client::addAndCheckOptions(OptionsDescription & options_description, po::va
     (
         "types", po::value<std::string>(), "types"
     );
-
-    cmd_settings.addProgramOptions(options_description.main_description.value());
-    /// Parse main commandline options.
-    po::parsed_options parsed = po::command_line_parser(arguments).options(options_description.main_description.value()).run();
-    auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
-    if (unrecognized_options.size() > 1)
-        throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[1]);
-    po::store(parsed, options);
 }
 
 
@@ -1099,8 +1099,6 @@ void Client::processOptions(const OptionsDescription & options_description,
 
     if (options.count("config-file") && options.count("config"))
         throw Exception("Two or more configuration files referenced in arguments", ErrorCodes::BAD_ARGUMENTS);
-
-    query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
 
     if (options.count("config"))
         config().setString("config-file", options["config"].as<std::string>());
@@ -1220,15 +1218,15 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         client.init(argc, argv);
         return client.run();
     }
-    catch (const boost::program_options::error & e)
-    {
-        std::cerr << "Bad arguments: " << e.what() << std::endl;
-        return 1;
-    }
     catch (const DB::Exception & e)
     {
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
         return 1;
+    }
+    catch (const boost::program_options::error & e)
+    {
+        std::cerr << "Bad arguments: " << e.what() << std::endl;
+        return DB::ErrorCodes::BAD_ARGUMENTS;
     }
     catch (...)
     {

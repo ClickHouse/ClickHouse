@@ -9,7 +9,7 @@
 #include <memory>
 #include <optional>
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include "Client/Connection.h"
 #include <Interpreters/Cluster.h>

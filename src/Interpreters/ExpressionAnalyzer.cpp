@@ -35,7 +35,6 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 
-#include <DataStreams/copyData.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 
@@ -938,7 +937,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
     if (auto storage = analyzed_join->getStorageJoin())
     {
         std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, {});
-        return storage->getJoinLocked(analyzed_join);
+        return storage->getJoinLocked(analyzed_join, getContext());
     }
 
     joined_plan = buildJoinedPlan(getContext(), join_element, *analyzed_join, query_options);

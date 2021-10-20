@@ -1,7 +1,7 @@
 #include "Connection.h"
 
 #if USE_LIBPQXX
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace postgres

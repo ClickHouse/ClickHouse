@@ -20,8 +20,8 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
-#include <common/getResource.h>
-#include <common/errnoToString.h>
+#include <base/getResource.h>
+#include <base/errnoToString.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 

@@ -363,9 +363,9 @@ bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     return true;
 }
 
-void registerInputFormatProcessorMsgPack(FormatFactory & factory)
+void registerInputFormatMsgPack(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("MsgPack", [](
+    factory.registerInputFormat("MsgPack", [](
             ReadBuffer & buf,
             const Block & sample,
             const RowInputFormatParams & params,
@@ -382,7 +382,7 @@ void registerInputFormatProcessorMsgPack(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatProcessorMsgPack(FormatFactory &)
+void registerInputFormatMsgPack(FormatFactory &)
 {
 }
 }

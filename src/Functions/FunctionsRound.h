@@ -16,7 +16,7 @@
 #include <cmath>
 #include <type_traits>
 #include <array>
-#include <common/bit_cast.h>
+#include <base/bit_cast.h>
 #include <algorithm>
 
 #ifdef __SSE4_1__
