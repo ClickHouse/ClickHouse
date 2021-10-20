@@ -1,3 +1,6 @@
+-- Tags: long, replica, no-replicated-database
+-- Tag no-replicated-database: Old syntax is not allowed
+
 DROP TABLE IF EXISTS replicated_optimize1;
 DROP TABLE IF EXISTS replicated_optimize2;
 CREATE TABLE replicated_optimize1 (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree('/clickhouse/tables/{database}/test_00925/optimize', 'r1', d, k, 8192);

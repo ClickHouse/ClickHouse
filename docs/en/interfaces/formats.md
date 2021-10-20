@@ -23,7 +23,6 @@ The supported formats are:
 | [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
 | [Values](#data-format-values)                                                           | ✔     | ✔      |
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
-| [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
 | [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
 | [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
@@ -60,6 +59,7 @@ The supported formats are:
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
 | [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
+| [MsgPack](#msgpack)                                                                     | ✔     | ✔      |
 
 You can control some format processing parameters with the ClickHouse settings. For more information read the [Settings](../operations/settings/settings.md) section.
 
@@ -74,7 +74,7 @@ The `TabSeparated` format is convenient for processing data using custom program
 The `TabSeparated` format supports outputting total values (when using WITH TOTALS) and extreme values (when ‘extremes’ is set to 1). In these cases, the total values and extremes are output after the main data. The main result, total values, and extremes are separated from each other by an empty line. Example:
 
 ``` sql
-SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
+SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated
 ```
 
 ``` text
@@ -386,7 +386,7 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 
 ## CSVWithNames {#csvwithnames}
 
-Also prints the header row, similar to `TabSeparatedWithNames`.
+Also prints the header row, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
 ## CustomSeparated {#format-customseparated}
 
@@ -515,11 +515,11 @@ Example:
 
 ## JSONAsString {#jsonasstring}
 
-In this format, a single JSON object is interpreted as a single value. If the input has several JSON objects (comma separated) they will be interpreted as separate rows.
+In this format, a single JSON object is interpreted as a single value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in square brackets, it is interpreted as an array of JSONs.
 
 This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted. Once you collect whole JSON object to string you can use [JSON functions](../sql-reference/functions/json-functions.md) to process it.
 
-**Example**
+**Examples**
 
 Query:
 
@@ -538,6 +538,26 @@ Result:
 │ {}                                │
 │ {"any json stucture":1}           │
 └───────────────────────────────────┘
+```
+
+**An array of JSON objects**
+
+Query:
+
+``` sql
+CREATE TABLE json_square_brackets (field String) ENGINE = Memory;
+INSERT INTO json_square_brackets FORMAT JSONAsString [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
+
+SELECT * FROM json_square_brackets;
+```
+
+Result:
+
+```text
+┌─field──────────────────────┐
+│ {"id": 1, "name": "name1"} │
+│ {"id": 2, "name": "name2"} │
+└────────────────────────────┘
 ```
 
 ## JSONCompact {#jsoncompact}
@@ -943,10 +963,6 @@ test: string with 'quotes' and      with some special
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
 
-## VerticalRaw {#verticalraw}
-
-Similar to [Vertical](#vertical), but with escaping disabled. This format is only suitable for outputting query results, not for parsing (receiving data and inserting it in the table).
-
 ## XML {#xml}
 
 XML format is suitable only for output, not for parsing. Example:
@@ -1270,6 +1286,8 @@ You can insert Parquet data from a file into ClickHouse table by the following c
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
 
+To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must switch on the [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested) setting.
+
 You can select data from a ClickHouse table and save them into some file in the Parquet format by the following command:
 
 ``` bash
@@ -1328,6 +1346,8 @@ You can insert Arrow data from a file into ClickHouse table by the following com
 $ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
+To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must switch on the [input_format_arrow_import_nested](../operations/settings/settings.md#input_format_arrow_import_nested) setting.
+
 ### Selecting Data {#selecting-data-arrow}
 
 You can select data from a ClickHouse table and save them into some file in the Arrow format by the following command:
@@ -1383,6 +1403,8 @@ You can insert ORC data from a file into ClickHouse table by the following comma
 ``` bash
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
+
+To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must switch on the [input_format_orc_import_nested](../operations/settings/settings.md#input_format_orc_import_nested) setting.
 
 ### Selecting Data {#selecting-data-2}
 
@@ -1545,4 +1567,33 @@ Result:
 f9725a22f9191e064120d718e26862a9  -
 ```
 
-[Original article](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
+## MsgPack {#msgpack}
+
+ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data files.
+
+### Data Types Matching {#data-types-matching-msgpack}
+
+| MessagePack data type (`INSERT`)                                   | ClickHouse data type                                      | MessagePack data type (`SELECT`)   |
+|--------------------------------------------------------------------|-----------------------------------------------------------|------------------------------------|
+| `uint N`, `positive fixint`                                        | [UIntN](../sql-reference/data-types/int-uint.md)          | `uint N`                           |
+| `int N`                                                            | [IntN](../sql-reference/data-types/int-uint.md)           | `int N`                            |
+| `bool`                                                             | [UInt8](../sql-reference/data-types/int-uint.md)          | `uint 8`                           |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [String](../sql-reference/data-types/string.md)           | `bin 8`, `bin 16`, `bin 32`        |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [FixedString](../sql-reference/data-types/fixedstring.md) | `bin 8`, `bin 16`, `bin 32`        |
+| `float 32`                                                         | [Float32](../sql-reference/data-types/float.md)           | `float 32`                         |
+| `float 64`                                                         | [Float64](../sql-reference/data-types/float.md)           | `float 64`                         |
+| `uint 16`                                                          | [Date](../sql-reference/data-types/date.md)               | `uint 16`                          |
+| `uint 32`                                                          | [DateTime](../sql-reference/data-types/datetime.md)       | `uint 32`                          |
+| `uint 64`                                                          | [DateTime64](../sql-reference/data-types/datetime.md)     | `uint 64`                          |
+| `fixarray`, `array 16`, `array 32`                                 | [Array](../sql-reference/data-types/array.md)             | `fixarray`, `array 16`, `array 32` |
+| `fixmap`, `map 16`, `map 32`                                       | [Map](../sql-reference/data-types/map.md)                 | `fixmap`, `map 16`, `map 32`       |
+
+Example:
+
+Writing to a file ".msgpk":
+
+```sql
+$ clickhouse-client --query="CREATE TABLE msgpack (array Array(UInt8)) ENGINE = Memory;"
+$ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 254, 255]), ([255, 254, 253, 42, 3, 2, 1, 0])";
+$ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;
+```

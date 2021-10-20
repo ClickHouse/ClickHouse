@@ -1,4 +1,6 @@
 #include <Parsers/ParserOptimizeQuery.h>
+#include <Parsers/ParserAlterQuery.h>
+#include <Parsers/ParserCreateQuery.h>
 
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
@@ -17,22 +19,27 @@ using namespace std::literals;
 
 struct ParserTestCase
 {
-    std::shared_ptr<IParser> parser;
     const std::string_view input_text;
     const char * expected_ast = nullptr;
 };
 
-std::ostream & operator<<(std::ostream & ostr, const ParserTestCase & test_case)
+std::ostream & operator<<(std::ostream & ostr, const std::shared_ptr<IParser> parser)
 {
-    return ostr << "parser: " << test_case.parser->getName() << ", input: " << test_case.input_text;
+    return ostr << "Praser: " << parser->getName();
 }
 
-class ParserTest : public ::testing::TestWithParam<ParserTestCase>
+std::ostream & operator<<(std::ostream & ostr, const ParserTestCase & test_case)
+{
+    return ostr << "ParserTestCase input: " << test_case.input_text;
+}
+
+class ParserTest : public ::testing::TestWithParam<std::tuple<std::shared_ptr<IParser>, ParserTestCase>>
 {};
 
 TEST_P(ParserTest, parseQuery)
 {
-    const auto & [parser, input_text, expected_ast] = GetParam();
+    const auto & parser = std::get<0>(GetParam());
+    const auto & [input_text, expected_ast] = std::get<1>(GetParam());
 
     ASSERT_NE(nullptr, parser);
 
@@ -49,86 +56,117 @@ TEST_P(ParserTest, parseQuery)
 }
 
 
-INSTANTIATE_TEST_SUITE_P(ParserOptimizeQuery, ParserTest, ::testing::Values(
-    ParserTestCase
-    {
-        std::make_shared<ParserOptimizeQuery>(),
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('a, b')",
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('a, b')"
-    },
-    ParserTestCase
-    {
-        std::make_shared<ParserOptimizeQuery>(),
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('[a]')",
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('[a]')"
-    },
-    ParserTestCase
-    {
-        std::make_shared<ParserOptimizeQuery>(),
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('[a]') EXCEPT b",
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('[a]') EXCEPT b"
-    },
-    ParserTestCase
-    {
-        std::make_shared<ParserOptimizeQuery>(),
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('[a]') EXCEPT (a, b)",
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('[a]') EXCEPT (a, b)"
-    },
-    ParserTestCase
-    {
-        std::make_shared<ParserOptimizeQuery>(),
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY a, b, c",
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY a, b, c"
-    },
-    ParserTestCase
-    {
-        std::make_shared<ParserOptimizeQuery>(),
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY *",
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY *"
-    },
-    ParserTestCase
-    {
-        std::make_shared<ParserOptimizeQuery>(),
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY * EXCEPT a",
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY * EXCEPT a"
-    },
-    ParserTestCase
-    {
-        std::make_shared<ParserOptimizeQuery>(),
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY * EXCEPT (a, b)",
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY * EXCEPT (a, b)"
-    }
-));
+INSTANTIATE_TEST_SUITE_P(ParserOptimizeQuery, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserOptimizeQuery>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>
+        {
+            {
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('a, b')",
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('a, b')"
+            },
+            {
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('[a]')",
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('[a]')"
+            },
+            {
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('[a]') EXCEPT b",
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('[a]') EXCEPT b"
+            },
+            {
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('[a]') EXCEPT (a, b)",
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('[a]') EXCEPT (a, b)"
+            },
+            {
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY a, b, c",
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY a, b, c"
+            },
+            {
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY *",
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY *"
+            },
+            {
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY * EXCEPT a",
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY * EXCEPT a"
+            },
+            {
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY * EXCEPT (a, b)",
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY * EXCEPT (a, b)"
+            }
+        }
+)));
 
-INSTANTIATE_TEST_SUITE_P(ParserOptimizeQuery_FAIL, ParserTest, ::testing::Values(
-    ParserTestCase
-    {
-        std::make_shared<ParserOptimizeQuery>(),
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY",
-    },
-    ParserTestCase
-    {
-        std::make_shared<ParserOptimizeQuery>(),
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('[a]') APPLY(x)",
-    },
-    ParserTestCase
-    {
-        std::make_shared<ParserOptimizeQuery>(),
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('[a]') REPLACE(y)",
-    },
-    ParserTestCase
-    {
-        std::make_shared<ParserOptimizeQuery>(),
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY * APPLY(x)",
-    },
-    ParserTestCase
-    {
-        std::make_shared<ParserOptimizeQuery>(),
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY * REPLACE(y)",
-    },
-    ParserTestCase
-    {
-        std::make_shared<ParserOptimizeQuery>(),
-        "OPTIMIZE TABLE table_name DEDUPLICATE BY db.a, db.b, db.c",
-    }
-));
+INSTANTIATE_TEST_SUITE_P(ParserOptimizeQuery_FAIL, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserAlterCommand>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>
+        {
+            {
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY",
+            },
+            {
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('[a]') APPLY(x)",
+            },
+            {
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY COLUMNS('[a]') REPLACE(y)",
+            },
+            {
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY * APPLY(x)",
+            },
+            {
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY * REPLACE(y)",
+            },
+            {
+                "OPTIMIZE TABLE table_name DEDUPLICATE BY db.a, db.b, db.c",
+            }
+        }
+)));
+
+
+INSTANTIATE_TEST_SUITE_P(ParserAlterCommand_MODIFY_COMMENT, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserAlterCommand>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>
+        {
+            {
+                // Empty comment value
+                "MODIFY COMMENT ''",
+                "MODIFY COMMENT ''",
+            },
+            {
+                // Non-empty comment value
+                "MODIFY COMMENT 'some comment value'",
+                "MODIFY COMMENT 'some comment value'",
+            }
+        }
+)));
+
+
+INSTANTIATE_TEST_SUITE_P(ParserCreateQuery_DICTIONARY_WITH_COMMENT, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserAlterCommand>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+        {
+            R"sql(CREATE DICTIONARY 2024_dictionary_with_comment
+(
+    id UInt64,
+    value String
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'source_table'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000)
+COMMENT 'Test dictionary with comment';
+)sql",
+        R"sql(CREATE DICTIONARY `2024_dictionary_with_comment`
+(
+    `id` UInt64,
+    `value` String
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'source_table'))
+LIFETIME(MIN 0 MAX 1000)
+LAYOUT(FLAT())
+COMMENT 'Test dictionary with comment')sql"
+    }}
+)));

@@ -5,8 +5,8 @@
 #include <climits>
 #include <random>
 #include <functional>
-#include <common/types.h>
-#include <common/scope_guard.h>
+#include <base/types.h>
+#include <base/scope_guard.h>
 #include <Common/PoolBase.h>
 #include <Common/ProfileEvents.h>
 #include <Common/NetException.h>

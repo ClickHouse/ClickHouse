@@ -3,7 +3,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Common/Arena.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -423,7 +423,7 @@ void WindowTransform::advancePartitionEnd()
     assert(!partition_ended && partition_end == blocksEnd());
 }
 
-auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int offset) const
+auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int64_t offset) const
 {
     RowNumber x = _x;
 
@@ -461,9 +461,9 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int offset) con
             assertValid(x);
             assert(offset <= 0);
 
-            // abs(offset) is less than INT_MAX, as checked in the parser, so
+            // abs(offset) is less than INT64_MAX, as checked in the parser, so
             // this negation should always work.
-            assert(offset >= -INT_MAX);
+            assert(offset >= -INT64_MAX);
             if (x.row >= static_cast<uint64_t>(-offset))
             {
                 x.row -= -offset;
@@ -493,7 +493,7 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & _x, int offset) con
     return std::tuple{x, offset};
 }
 
-auto WindowTransform::moveRowNumber(const RowNumber & _x, int offset) const
+auto WindowTransform::moveRowNumber(const RowNumber & _x, int64_t offset) const
 {
     auto [x, o] = moveRowNumberNoCheck(_x, offset);
 
@@ -617,8 +617,8 @@ void WindowTransform::advanceFrameStart()
                 default:
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Frame start type '{}' for frame '{}' is not implemented",
-                        WindowFrame::toString(window_description.frame.begin_type),
-                        WindowFrame::toString(window_description.frame.type));
+                        window_description.frame.begin_type,
+                        window_description.frame.type);
             }
             break;
     }
@@ -849,7 +849,7 @@ void WindowTransform::advanceFrameEnd()
                 default:
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "The frame end type '{}' is not implemented",
-                        WindowFrame::toString(window_description.frame.end_type));
+                        window_description.frame.end_type);
             }
             break;
     }
@@ -1614,17 +1614,13 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             offset = (*current_block.input_columns[
                     workspace.argument_column_indices[1]])[
                         transform->current_row.row].get<Int64>();
+
+            /// Either overflow or really negative value, both is not acceptable.
             if (offset < 0)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "The offset for function {} must be nonnegative, {} given",
-                    getName(), offset);
-            }
-            if (offset > INT_MAX)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "The offset for function {} must be less than {}, {} given",
-                    getName(), INT_MAX, offset);
+                    "The offset for function {} must be in (0, {}], {} given",
+                    getName(), INT64_MAX, offset);
             }
         }
 
@@ -1662,73 +1658,6 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
     }
 };
 
-struct WindowFunctionNthValue final : public WindowFunction
-{
-    WindowFunctionNthValue(const std::string & name_,
-    const DataTypes & argument_types_, const Array & parameters_)
-    : WindowFunction(name_, argument_types_, parameters_)
-    {
-        if (!parameters.empty())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function {} cannot be parameterized", name_);
-        }
-
-        if (argument_types.size() != 2)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function '{}' accepts 2 arguments, {} given",
-                name_, argument_types.size());
-        }
-    }
-
-    DataTypePtr getReturnType() const override
-    { return argument_types[0]; }
-
-    bool allocatesMemoryInArena() const override { return false; }
-
-    void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
-    {
-        const auto & current_block = transform->blockAt(transform->current_row);
-        IColumn & to = *(current_block.output_columns[function_index]);
-        const auto & workspace = transform->workspaces[function_index];
-
-        int64_t offset = (*current_block.input_columns[
-                workspace.argument_column_indices[1]])[
-            transform->current_row.row].get<Int64>() - 1;
-
-        if (offset < 0)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The offset for function {} must be non-negative, {} given",
-                getName(), offset);
-        }
-
-        if (offset > INT_MAX)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The offset for function {} must be less than {}, {} given",
-                getName(), INT_MAX, offset);
-        }
-
-        const auto [target_row, offset_left] = transform->moveRowNumber(transform->frame_start, offset);
-        if (offset_left != 0
-            || target_row < transform->frame_start
-            || transform->frame_end <= target_row)
-        {
-            // Offset is outside the frame.
-            to.insertDefault();
-        }
-        else
-        {
-            // Offset is inside the frame.
-            to.insertFrom(*transform->blockAt(target_row).input_columns[
-                    workspace.argument_column_indices[0]],
-               target_row.row);
-        }
-    }
-};
 
 void registerWindowFunctions(AggregateFunctionFactory & factory)
 {
@@ -1793,13 +1722,6 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
             return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
                 name, argument_types, parameters);
         }, properties});
-
-    factory.registerFunction("nth_value", {[](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters, const Settings *)
-        {
-            return std::make_shared<WindowFunctionNthValue>(
-                name, argument_types, parameters);
-        }, properties}, AggregateFunctionFactory::CaseInsensitive);
 }
 
 }

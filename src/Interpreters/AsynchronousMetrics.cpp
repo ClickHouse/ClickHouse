@@ -547,6 +547,22 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     }
 
     {
+        if (auto index_mark_cache = getContext()->getIndexMarkCache())
+        {
+            new_values["IndexMarkCacheBytes"] = index_mark_cache->weight();
+            new_values["IndexMarkCacheFiles"] = index_mark_cache->count();
+        }
+    }
+
+    {
+        if (auto index_uncompressed_cache = getContext()->getIndexUncompressedCache())
+        {
+            new_values["IndexUncompressedCacheBytes"] = index_uncompressed_cache->weight();
+            new_values["IndexUncompressedCacheCells"] = index_uncompressed_cache->count();
+        }
+    }
+
+    {
         if (auto mmap_cache = getContext()->getMMappedFileCache())
         {
             new_values["MMapCacheCells"] = mmap_cache->count();
@@ -1105,7 +1121,8 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        if (errno != ENODATA)   /// Ok for thermal sensors.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
 
         /// Files maybe re-created on module load/unload
         try
@@ -1144,7 +1161,8 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        if (errno != ENODATA)   /// Ok for thermal sensors.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
 
         /// Files can be re-created on:
         /// - module load/unload

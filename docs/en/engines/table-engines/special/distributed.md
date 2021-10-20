@@ -188,14 +188,15 @@ When the `max_parallel_replicas` option is enabled, query processing is parallel
 
 ## Virtual Columns {#virtual-columns}
 
--   `_shard_num` — Contains the `shard_num` (from `system.clusters`). Type: [UInt32](../../../sql-reference/data-types/int-uint.md).
+-   `_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](../../../sql-reference/data-types/int-uint.md).
 
 !!! note "Note"
-    Since [`remote`](../../../sql-reference/table-functions/remote.md)/`cluster` table functions internally create temporary instance of the same Distributed engine, `_shard_num` is available there too.
+    Since [remote](../../../sql-reference/table-functions/remote.md) and [cluster](../../../sql-reference/table-functions/cluster.md) table functions internally create temporary Distributed table, `_shard_num` is available there too.
 
 **See Also**
 
--   [Virtual columns](../../../engines/table-engines/special/index.md#table_engines-virtual_columns)
--   [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size)
+-   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns) description
+-   [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size) setting
+-   [shardNum()](../../../sql-reference/functions/other-functions.md#shard-num) and [shardCount()](../../../sql-reference/functions/other-functions.md#shard-count) functions
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/distributed/) <!--hide-->
+

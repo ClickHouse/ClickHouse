@@ -190,7 +190,7 @@ public:
                     continue;
 
                 decltype(merged_maps.begin()) it;
-                if constexpr (IsDecimalNumber<T>)
+                if constexpr (is_decimal<T>)
                 {
                     // FIXME why is storing NearestFieldType not enough, and we
                     // have to check for decimals again here?
@@ -217,7 +217,7 @@ public:
                     new_values.resize(size);
                     new_values[col] = value;
 
-                    if constexpr (IsDecimalNumber<T>)
+                    if constexpr (is_decimal<T>)
                     {
                         UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getData().getScale();
                         merged_maps.emplace(DecimalField<T>(key, scale), std::move(new_values));
@@ -280,7 +280,7 @@ public:
             for (size_t col = 0; col < values_types.size(); ++col)
                 values_serializations[col]->deserializeBinary(values[col], buf);
 
-            if constexpr (IsDecimalNumber<T>)
+            if constexpr (is_decimal<T>)
                 merged_maps[key.get<DecimalField<T>>()] = values;
             else
                 merged_maps[key.get<T>()] = values;
@@ -396,7 +396,7 @@ private:
     using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument, true>;
 
     /// ARCADIA_BUILD disallow unordered_set for big ints for some reason
-    static constexpr const bool allow_hash = !OverBigInt<T>;
+    static constexpr const bool allow_hash = !is_over_big_int<T>;
     using ContainerT = std::conditional_t<allow_hash, std::unordered_set<T>, std::set<T>>;
 
     ContainerT keys_to_keep;

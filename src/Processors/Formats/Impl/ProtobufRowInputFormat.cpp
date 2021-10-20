@@ -8,7 +8,7 @@
 #   include <Formats/ProtobufSchemas.h>
 #   include <Formats/ProtobufSerializer.h>
 #   include <Interpreters/Context.h>
-#   include <common/range.h>
+#   include <base/range.h>
 
 
 namespace DB
@@ -56,19 +56,18 @@ void ProtobufRowInputFormat::syncAfterError()
     reader->endMessage(true);
 }
 
-void registerInputFormatProcessorProtobuf(FormatFactory & factory)
+void registerInputFormatProtobuf(FormatFactory & factory)
 {
     for (bool with_length_delimiter : {false, true})
     {
-        factory.registerInputFormatProcessor(with_length_delimiter ? "Protobuf" : "ProtobufSingle", [with_length_delimiter](
+        factory.registerInputFormat(with_length_delimiter ? "Protobuf" : "ProtobufSingle", [with_length_delimiter](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
             const FormatSettings & settings)
         {
             return std::make_shared<ProtobufRowInputFormat>(buf, sample, std::move(params),
-                FormatSchemaInfo(settings.schema.format_schema, "Protobuf", true,
-                                settings.schema.is_server, settings.schema.format_schema_path),
+                FormatSchemaInfo(settings, "Protobuf", true),
                 with_length_delimiter);
         });
     }
@@ -81,7 +80,7 @@ void registerInputFormatProcessorProtobuf(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatProcessorProtobuf(FormatFactory &) {}
+void registerInputFormatProtobuf(FormatFactory &) {}
 }
 
 #endif

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 
 
 namespace DB
@@ -76,6 +76,7 @@ struct FormatSettings
         bool crlf_end_of_line = false;
         bool input_format_enum_as_number = false;
         bool input_format_arrays_as_nested_csv = false;
+        String null_representation = "\\N";
     } csv;
 
     struct Custom
@@ -182,6 +183,20 @@ struct FormatSettings
     {
         bool import_nested = false;
     } orc;
+
+    /// For capnProto format we should determine how to
+    /// compare ClickHouse Enum and Enum from schema.
+    enum class EnumComparingMode
+    {
+        BY_NAMES, // Names in enums should be the same, values can be different.
+        BY_NAMES_CASE_INSENSITIVE, // Case-insensitive name comparison.
+        BY_VALUES, // Values should be the same, names can be different.
+    };
+
+    struct
+    {
+        EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
+    } capn_proto;
 };
 
 }

@@ -283,7 +283,7 @@ Among other things, you can run the OPTIMIZE query on MergeTree. But it’s not 
 ## Download of Prepared Partitions {#download-of-prepared-partitions}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.tech/trips_mergetree/partitions/trips_mergetree.tar
+$ curl -O https://datasets.clickhouse.com/trips_mergetree/partitions/trips_mergetree.tar
 $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart
@@ -385,4 +385,4 @@ We ran queries using a client located in a Yandex datacenter in Finland on a clu
 | 3       | 0.212 | 0.438 | 0.733 | 1.241 |
 | 140     | 0.028 | 0.043 | 0.051 | 0.072 |
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/nyc_taxi/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/getting_started/example_datasets/nyc_taxi/) <!--hide-->

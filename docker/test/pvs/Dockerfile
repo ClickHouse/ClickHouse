@@ -1,6 +1,6 @@
-# docker build -t yandex/clickhouse-pvs-test .
+# docker build -t clickhouse/pvs-test .
 
-FROM yandex/clickhouse-binary-builder
+FROM clickhouse/binary-builder
 
 RUN apt-get update --yes \
     && apt-get install \
@@ -28,7 +28,7 @@ RUN apt-get update --yes \
 ENV PKG_VERSION="pvs-studio-latest"
 
 RUN set -x \
-    && export PUBKEY_HASHSUM="686e5eb8b3c543a5c54442c39ec876b6c2d912fe8a729099e600017ae53c877dda3368fe38ed7a66024fe26df6b5892a" \
+    && export PUBKEY_HASHSUM="ad369a2e9d8b8c30f5a9f2eb131121739b79c78e03fef0f016ea51871a5f78cd4e6257b270dca0ac3be3d1f19d885516" \
     && wget -nv https://files.viva64.com/etc/pubkey.txt -O /tmp/pubkey.txt \
     && echo "${PUBKEY_HASHSUM} /tmp/pubkey.txt" | sha384sum -c \
     && apt-key add /tmp/pubkey.txt \
@@ -37,8 +37,10 @@ RUN set -x \
     || echo "WARNING: Some file was just downloaded from the internet without any validation and we are installing it into the system"; } \
     && dpkg -i "${PKG_VERSION}.deb"
 
-CMD echo "Running PVS version $PKG_VERSION" && cd /repo_folder && pvs-studio-analyzer credentials $LICENCE_NAME $LICENCE_KEY -o ./licence.lic  \
-    && cmake . -D"ENABLE_EMBEDDED_COMPILER"=OFF -D"USE_INTERNAL_PROTOBUF_LIBRARY"=OFF -D"USE_INTERNAL_GRPC_LIBRARY"=OFF \
+ENV CCACHE_DIR=/test_output/ccache
+
+CMD echo "Running PVS version $PKG_VERSION" && mkdir -p $CCACHE_DIR && cd /repo_folder && pvs-studio-analyzer credentials $LICENCE_NAME $LICENCE_KEY -o ./licence.lic  \
+    && cmake . -D"ENABLE_EMBEDDED_COMPILER"=OFF -D"USE_INTERNAL_PROTOBUF_LIBRARY"=OFF -D"USE_INTERNAL_GRPC_LIBRARY"=OFF -DCMAKE_C_COMPILER=clang-13 -DCMAKE_CXX_COMPILER=clang\+\+-13 \
     && ninja re2_st clickhouse_grpc_protos \
     && pvs-studio-analyzer analyze -o pvs-studio.log -e contrib -j 4 -l ./licence.lic; \
     cp /repo_folder/pvs-studio.log /test_output; \

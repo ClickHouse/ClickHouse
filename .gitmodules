@@ -140,7 +140,7 @@
 	url = https://github.com/ClickHouse-Extras/libc-headers.git
 [submodule "contrib/replxx"]
 	path = contrib/replxx
-	url = https://github.com/ClickHouse-Extras/replxx.git
+	url = https://github.com/AmokHuginnsson/replxx.git
 [submodule "contrib/avro"]
 	path = contrib/avro
 	url = https://github.com/ClickHouse-Extras/avro.git
@@ -213,6 +213,7 @@
 [submodule "contrib/boringssl"]
 	path = contrib/boringssl
 	url = https://github.com/ClickHouse-Extras/boringssl.git
+	branch = MergeWithUpstream
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse-Extras/NuRaft.git
@@ -246,3 +247,12 @@
 [submodule "contrib/bzip2"]
 	path = contrib/bzip2
 	url = https://github.com/ClickHouse-Extras/bzip2.git
+[submodule "contrib/magic_enum"]
+	path = contrib/magic_enum
+	url = https://github.com/Neargye/magic_enum
+[submodule "contrib/libprotobuf-mutator"]
+	path = contrib/libprotobuf-mutator
+	url = https://github.com/google/libprotobuf-mutator
+[submodule "contrib/sysroot"]
+	path = contrib/sysroot
+	url = https://github.com/ClickHouse-Extras/sysroot.git

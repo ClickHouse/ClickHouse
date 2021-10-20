@@ -4,8 +4,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 
-#include <DataStreams/materializeBlock.h>
-
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -15,7 +13,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
 
-#include <common/logger_useful.h>
 namespace DB
 {
 
@@ -194,6 +191,16 @@ void convertColumnsToNullable(Block & block, size_t starting_pos)
         convertColumnToNullable(block.getByPosition(i));
 }
 
+void convertColumnsToNullable(MutableColumns & mutable_columns, size_t starting_pos)
+{
+    for (size_t i = starting_pos; i < mutable_columns.size(); ++i)
+    {
+        ColumnPtr column = std::move(mutable_columns[i]);
+        column = makeNullable(column);
+        mutable_columns[i] = IColumn::mutate(std::move(column));
+    }
+}
+
 /// @warning It assumes that every NULL has default value in nested column (or it does not matter)
 void removeColumnNullability(ColumnWithTypeAndName & column)
 {
@@ -286,6 +293,21 @@ ColumnRawPtrs materializeColumnsInplace(Block & block, const Names & names)
         auto & column = block.getByName(column_name).column;
         column = recursiveRemoveLowCardinality(column->convertToFullColumnIfConst());
         ptrs.push_back(column.get());
+    }
+
+    return ptrs;
+}
+
+ColumnRawPtrMap materializeColumnsInplaceMap(Block & block, const Names & names)
+{
+    ColumnRawPtrMap ptrs;
+    ptrs.reserve(names.size());
+
+    for (const auto & column_name : names)
+    {
+        auto & column = block.getByName(column_name).column;
+        column = recursiveRemoveLowCardinality(column->convertToFullColumnIfConst());
+        ptrs[column_name] = column.get();
     }
 
     return ptrs;
@@ -399,7 +421,7 @@ void checkTypesOfKeys(const Block & block_left, const Names & key_names_left,
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const String & condition_name_left,
                       const Block & block_right, const Names & key_names_right, const String & condition_name_right)
 {
-    checkTypesOfKeys(block_left, key_names_left,block_right,key_names_right);
+    checkTypesOfKeys(block_left, key_names_left, block_right, key_names_right);
     checkTypesOfMasks(block_left, condition_name_left, block_right, condition_name_right);
 }
 
@@ -528,7 +550,6 @@ NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
     , saved_block_sample(filler->getEmptyBlock())
     , result_sample_block(materializeBlock(result_sample_block_))
 {
-
     for (size_t left_pos = 0; left_pos < left_columns_count; ++left_pos)
     {
         /// We need right 'x' for 'RIGHT JOIN ... USING(x)'

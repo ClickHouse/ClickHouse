@@ -9,8 +9,9 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
 
 
@@ -140,9 +141,8 @@ void IStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /
     for (const auto & command : commands)
     {
         if (!command.isCommentAlter())
-            throw Exception(
-                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
-                ErrorCodes::NOT_IMPLEMENTED);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                command.type, getName());
     }
 }
 
@@ -201,7 +201,7 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
     return name_deps;
 }
 
-bool IStorage::isReadOnly() const
+bool IStorage::isStaticStorage() const
 {
     auto storage_policy = getStoragePolicy();
     if (storage_policy)

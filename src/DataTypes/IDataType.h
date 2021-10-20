@@ -4,7 +4,7 @@
 #include <Common/COW.h>
 #include <boost/noncopyable.hpp>
 #include <Core/Names.h>
-#include <Core/Types.h>
+#include <Core/TypeId.h>
 #include <DataTypes/DataTypeCustom.h>
 
 
@@ -70,16 +70,31 @@ public:
           return doGetName();
     }
 
+    DataTypePtr getPtr() const { return shared_from_this(); }
+
     /// Name of data type family (example: FixedString, Array).
     virtual const char * getFamilyName() const = 0;
 
     /// Data type id. It's used for runtime type checks.
     virtual TypeIndex getTypeId() const = 0;
 
-    static constexpr auto MAIN_SUBCOLUMN_NAME = "__main";
-    virtual DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const;
+    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const;
     DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
-    virtual ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const;
+
+    SerializationPtr getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & serialization) const;
+    ColumnPtr getSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const;
+
+    using SubcolumnCallback = std::function<void(
+        const ISerialization::SubstreamPath &,
+        const String &,
+        const ISerialization::SubstreamData &)>;
+
+    static void forEachSubcolumn(
+        const SubcolumnCallback & callback,
+        const SerializationPtr & serialization,
+        const DataTypePtr & type,
+        const ColumnPtr & column);
+
     Names getSubcolumnNames() const;
 
     /// Returns default serialization of data type.
@@ -90,7 +105,6 @@ public:
     /// one of serialization types, that serialization will be chosen for reading.
     /// If callback always returned false, the default serialization will be chosen.
     using StreamExistenceCallback = std::function<bool(const String &)>;
-    using BaseSerializationGetter = std::function<SerializationPtr(const IDataType &)>;
 
     /// Chooses serialization for reading of one column or subcolumns by
     /// checking existence of substreams using callback.
@@ -100,21 +114,9 @@ public:
 
     virtual SerializationPtr getSerialization(const String & column_name, const StreamExistenceCallback & callback) const;
 
-    /// Returns serialization wrapper for reading one particular subcolumn of data type.
-    virtual SerializationPtr getSubcolumnSerialization(
-        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const;
-
-    using StreamCallbackWithType = std::function<void(const ISerialization::SubstreamPath &, const IDataType &)>;
-
-    void enumerateStreams(const SerializationPtr & serialization, const StreamCallbackWithType & callback, ISerialization::SubstreamPath & path) const;
-    void enumerateStreams(const SerializationPtr & serialization, const StreamCallbackWithType & callback, ISerialization::SubstreamPath && path) const { enumerateStreams(serialization, callback, path); }
-    void enumerateStreams(const SerializationPtr & serialization, const StreamCallbackWithType & callback) const { enumerateStreams(serialization, callback, {}); }
-
 protected:
     virtual String doGetName() const { return getFamilyName(); }
     virtual SerializationPtr doGetDefaultSerialization() const = 0;
-
-    DataTypePtr getTypeForSubstream(const ISerialization::SubstreamPath & substream_path) const;
 
 public:
     /** Create empty column for corresponding type.
@@ -385,6 +387,12 @@ inline bool isUInt8(const T & data_type)
 }
 
 template <typename T>
+inline bool isUInt64(const T & data_type)
+{
+    return WhichDataType(data_type).isUInt64();
+}
+
+template <typename T>
 inline bool isUnsignedInteger(const T & data_type)
 {
     return WhichDataType(data_type).isUInt();
@@ -490,7 +498,7 @@ template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
 
-template <typename T>
+template <is_decimal T>
 class DataTypeDecimal;
 
 template <typename T>
@@ -501,7 +509,7 @@ class DataTypeDate32;
 class DataTypeDateTime;
 class DataTypeDateTime64;
 
-template <typename T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
+template <is_decimal T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
 template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;

@@ -1,7 +1,7 @@
 FROM ubuntu:20.04
 
-ARG repository="deb https://repo.clickhouse.tech/deb/stable/ main/"
-ARG version=21.10.1.*
+ARG repository="deb https://repo.clickhouse.com/deb/stable/ main/"
+ARG version=21.11.1.*
 ARG gosu_ver=1.10
 
 # set non-empty deb_location_url url to create a docker image
@@ -12,7 +12,7 @@ ARG deb_location_url=""
 # set non-empty single_binary_location_url to create docker image
 # from a single binary url (useful for non-standard builds - with sanitizers, for arm64).
 # for example (run on aarch64 server):
-# docker build . --network host --build-arg single_binary_location_url="https://builds.clickhouse.tech/master/aarch64/clickhouse" -t altinity/clickhouse-server:master-testing-arm
+# docker build . --network host --build-arg single_binary_location_url="https://builds.clickhouse.com/master/aarch64/clickhouse" -t altinity/clickhouse-server:master-testing-arm
 # note: clickhouse-odbc-bridge is not supported there.
 ARG single_binary_location_url=""
 

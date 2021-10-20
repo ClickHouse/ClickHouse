@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
 
     <storage_configuration>
         <disks>
@@ -89,4 +89,4 @@
         <cluster>test_cluster</cluster>
     </macros>
 
-</yandex>
+</clickhouse>

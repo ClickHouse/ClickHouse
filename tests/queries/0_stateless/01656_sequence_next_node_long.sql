@@ -1,3 +1,5 @@
+-- Tags: long
+
 SET allow_experimental_funnel_functions = 1;
 
 DROP TABLE IF EXISTS test_sequenceNextNode_Nullable;

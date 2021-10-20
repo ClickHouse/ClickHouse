@@ -1,7 +1,10 @@
+-- Tags: long, zookeeper, no-replicated-database, no-polymorphic-parts
+-- Tag no-replicated-database: Fails due to additional replicas or shards
+
 drop table if exists rmt;
 -- cleanup code will perform extra Exists
 -- (so the .reference will not match)
-create table rmt (n int) engine=ReplicatedMergeTree('/test/01158/{database}/rmt', '1') order by n settings cleanup_delay_period=86400;
+create table rmt (n int) engine=ReplicatedMergeTree('/test/01158/{database}/rmt', '1') order by n settings cleanup_delay_period=86400, replicated_can_become_leader=0;
 system sync replica rmt;
 insert into rmt values (1);
 insert into rmt values (1);

@@ -1,5 +1,5 @@
-# docker build -t yandex/clickhouse-stateless-test .
-FROM yandex/clickhouse-test-base
+# docker build -t clickhouse/stateless-test .
+FROM clickhouse/test-base
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
 
@@ -60,6 +60,5 @@ ENV MINIO_ROOT_USER="clickhouse"
 ENV MINIO_ROOT_PASSWORD="clickhouse"
 
 COPY run.sh /
-COPY process_functional_tests_result.py /
 COPY setup_minio.sh /
 CMD ["/bin/bash", "/run.sh"]

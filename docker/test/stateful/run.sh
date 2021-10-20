@@ -108,8 +108,10 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--replicated-database')
     fi
 
-    clickhouse-test --testname --shard --zookeeper --no-stateless --hung-check --use-skip-list --print-time "${ADDITIONAL_OPTIONS[@]}" \
+    set +e
+    clickhouse-test --testname --shard --zookeeper --no-stateless --hung-check --print-time "${ADDITIONAL_OPTIONS[@]}" \
         "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+    set -e
 }
 
 export -f run_tests

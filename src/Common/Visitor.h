@@ -1,7 +1,7 @@
 #pragma once
 
-#include <common/demangle.h>
-#include <Common/TypeList.h>
+#include <base/demangle.h>
+#include <base/Typelist.h>
 #include <Common/Exception.h>
 
 /* Generic utils which are intended for visitor pattern implementation.
@@ -64,7 +64,7 @@ template <>
 class Visitor<>
 {
 public:
-    using List = TypeList<>;
+    using List = Typelist<>;
 
 protected:
     ~Visitor() = default;
@@ -74,7 +74,7 @@ template <typename Type>
 class Visitor<Type> : public Visitor<>
 {
 public:
-    using List = TypeList<Type>;
+    using List = Typelist<Type>;
 
     virtual void visit(Type &) = 0;
 
@@ -86,7 +86,7 @@ template <typename Type, typename ... Types>
 class Visitor<Type, Types ...> : public Visitor<Types ...>
 {
 public:
-    using List = TypeList<Type, Types ...>;
+    using List = Typelist<Type, Types ...>;
     using Visitor<Types ...>::visit;
 
     virtual void visit(Type &) = 0;
@@ -145,13 +145,13 @@ protected:
 
 template <typename Derived, typename VisitorBase>
 class VisitorImpl : public
-        ApplyTypeListForClass<
-                VisitorImplHelper,
-                typename TypeListConcat<
-                        TypeList<Derived, VisitorBase>,
-                        typename VisitorBase::List
-                >::Type
-        >::Type
+    TLChangeRoot<
+        VisitorImplHelper,
+        TLConcat<
+            Typelist<Derived, VisitorBase>,
+            typename VisitorBase::List
+        >
+    >
 {
 protected:
     ~VisitorImpl() = default;

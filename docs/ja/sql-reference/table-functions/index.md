@@ -35,4 +35,4 @@ toc_title: "\u306F\u3058\u3081\u306B"
 | [odbc](odbc.md)       | を作成します。 [ODBC](../../engines/table-engines/integrations/odbc.md)-エンジンテーブル。                                             |
 | [hdfs](hdfs.md)       | を作成します。 [HDFS](../../engines/table-engines/integrations/hdfs.md)-エンジンテーブル。                                             |
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/table_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/table_functions/) <!--hide-->

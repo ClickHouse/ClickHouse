@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 CREATE FUNCTION 01856_test_function_0 AS (a, b, c) -> a * b * c;
 SELECT 01856_test_function_0(2, 3, 4);
 SELECT isConstant(01856_test_function_0(1, 2, 3));

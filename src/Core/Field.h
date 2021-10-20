@@ -12,9 +12,9 @@
 #include <Core/Defines.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/UUID.h>
-#include <common/DayNum.h>
-#include <common/strong_typedef.h>
-
+#include <base/DayNum.h>
+#include <base/strong_typedef.h>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
@@ -283,33 +283,6 @@ public:
             Map = 26,
             UUID = 27,
         };
-
-        static const char * toString(Which which)
-        {
-            switch (which)
-            {
-                case Null:    return "Null";
-                case UInt64:  return "UInt64";
-                case UInt128: return "UInt128";
-                case UInt256: return "UInt256";
-                case Int64:   return "Int64";
-                case Int128:  return "Int128";
-                case Int256:  return "Int256";
-                case UUID:    return "UUID";
-                case Float64: return "Float64";
-                case String:  return "String";
-                case Array:   return "Array";
-                case Tuple:   return "Tuple";
-                case Map:     return "Map";
-                case Decimal32:  return "Decimal32";
-                case Decimal64:  return "Decimal64";
-                case Decimal128: return "Decimal128";
-                case Decimal256: return "Decimal256";
-                case AggregateFunctionState: return "AggregateFunctionState";
-            }
-
-            throw Exception("Bad type of Field", ErrorCodes::BAD_TYPE_OF_FIELD);
-        }
     };
 
 
@@ -417,7 +390,8 @@ public:
 
 
     Types::Which getType() const { return which; }
-    const char * getTypeName() const { return Types::toString(which); }
+
+    constexpr std::string_view getTypeName() const { return magic_enum::enum_name(which); }
 
     bool isNull() const { return which == Types::Null; }
     template <typename T>
@@ -808,7 +782,8 @@ NearestFieldType<std::decay_t<T>> & Field::get()
     constexpr Field::Types::Which target = TypeToEnum<StoredType>::value;
     if (target != which
            && (!isInt64OrUInt64FieldType(target) || !isInt64OrUInt64FieldType(which)))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid Field get from type {} to type {}", Types::toString(which), Types::toString(target));
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Invalid Field get from type {} to type {}", which, target);
 #endif
 
     StoredType * MAY_ALIAS ptr = reinterpret_cast<StoredType *>(&storage);
@@ -821,8 +796,11 @@ template <typename T>
 auto & Field::safeGet()
 {
     const Types::Which requested = TypeToEnum<NearestFieldType<std::decay_t<T>>>::value;
+
     if (which != requested)
-        throw Exception("Bad get: has " + std::string(getTypeName()) + ", requested " + std::string(Types::toString(requested)), ErrorCodes::BAD_GET);
+        throw Exception(ErrorCodes::BAD_GET,
+            "Bad get: has {}, requested {}", getTypeName(), requested);
+
     return get<T>();
 }
 
@@ -858,12 +836,6 @@ T safeGet(Field & field)
 {
     return field.template safeGet<T>();
 }
-
-template <> inline constexpr const char * TypeName<Array> = "Array";
-template <> inline constexpr const char * TypeName<Tuple> = "Tuple";
-template <> inline constexpr const char * TypeName<Map> = "Map";
-template <> inline constexpr const char * TypeName<AggregateFunctionStateData> = "AggregateFunctionState";
-
 
 template <typename T>
 Field::Field(T && rhs, enable_if_not_field_or_bool_or_stringlike_t<T>) //-V730

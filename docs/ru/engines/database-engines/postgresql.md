@@ -15,7 +15,7 @@ toc_title: PostgreSQL
 
 ``` sql
 CREATE DATABASE test_database
-ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cache`]);
+ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use_table_cache`]);
 ```
 
 **Параметры движка**
@@ -24,6 +24,7 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `use_table_cac
 -   `database` — имя удаленной БД.
 -   `user` — пользователь PostgreSQL.
 -   `password` — пароль пользователя.
+ -  `schema` — схема PostgreSQL.
 -   `use_table_cache` —  определяет кеширование структуры таблиц БД. Необязательный параметр. Значение по умолчанию: `0`.
 
 ## Поддерживаемые типы данных {#data_types-support}
@@ -135,4 +136,4 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.tech/docs/ru/database-engines/postgresql/) <!--hide-->
+[Оригинальная статья](https://clickhouse.com/docs/ru/database-engines/postgresql/) <!--hide-->
