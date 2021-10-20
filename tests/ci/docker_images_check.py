@@ -8,6 +8,7 @@ import os
 from pr_info import PRInfo
 from github import Github
 import shutil
+from get_robot_token import get_best_robot_token
 
 NAME = "Push to Dockerhub (actions)"
 
@@ -222,7 +223,7 @@ if __name__ == "__main__":
 
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results)
 
-    gh = Github(os.getenv("GITHUB_TOKEN"))
+    gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
     commit.create_status(context=NAME, description=description, state=status, target_url=url)
 
