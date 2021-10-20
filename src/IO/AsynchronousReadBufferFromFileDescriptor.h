@@ -67,6 +67,8 @@ public:
 
 private:
     std::future<IAsynchronousReader::Result> readInto(char * data, size_t size);
+
+    size_t getNumBytesToRead();
 };
 
 }

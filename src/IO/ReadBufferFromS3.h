@@ -46,7 +46,7 @@ public:
         UInt64 max_single_read_retries_,
         const ReadSettings & settings_,
         bool use_external_buffer = false,
-        size_t last_offset_ = 0);
+        size_t read_until_position_ = 0);
 
     size_t right = 0;
     bool nextImpl() override;
@@ -59,7 +59,7 @@ private:
 
     ReadSettings read_settings;
     bool use_external_buffer;
-    off_t last_offset;
+    off_t read_until_position = 0;
 };
 
 }
