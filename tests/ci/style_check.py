@@ -10,7 +10,6 @@ from s3_helper import S3Helper
 import time
 import json
 from pr_info import PRInfo
-from get_robot_token import get_best_robot_token
 
 NAME = "Style Check (actions)"
 
@@ -79,12 +78,6 @@ def upload_results(s3_client, pr_number, commit_sha, test_results, additional_fi
     logging.info("Search result in url %s", url)
     return url
 
-
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
-
 def update_check_with_curl(check_id):
     cmd_template = ("curl -v --request PATCH --url https://api.github.com/repos/ClickHouse/ClickHouse/check-runs/{} "
            "--header 'authorization: Bearer {}' "
@@ -108,8 +101,6 @@ if __name__ == "__main__":
 
     aws_secret_key_id = os.getenv("YANDEX_S3_ACCESS_KEY_ID", "")
     aws_secret_key = os.getenv("YANDEX_S3_ACCESS_SECRET_KEY", "")
-
-    gh = Github(get_best_robot_token())
 
     images_path = os.path.join(temp_path, 'changed_images.json')
     docker_image = 'clickhouse/style-test'
@@ -141,5 +132,3 @@ if __name__ == "__main__":
     state, description, test_results, additional_files = process_result(temp_path)
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_files)
     print("::notice ::Report url: {}".format(report_url))
-    commit = get_commit(gh, pr_info.sha)
-    commit.create_status(context=NAME, description=description, state=state, target_url=report_url)
