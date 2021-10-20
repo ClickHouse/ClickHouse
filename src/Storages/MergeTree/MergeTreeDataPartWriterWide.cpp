@@ -90,17 +90,20 @@ void MergeTreeDataPartWriterWide::addStreams(
     const NameAndTypePair & column,
     const ASTPtr & effective_codec_desc)
 {
-    IDataType::StreamCallbackWithType callback = [&] (const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
+    ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
+        assert(!substream_path.empty());
         String stream_name = ISerialization::getFileNameForStream(column, substream_path);
         /// Shared offsets for Nested type.
         if (column_streams.count(stream_name))
             return;
 
+        const auto & subtype = substream_path.back().data.type;
         CompressionCodecPtr compression_codec;
+
         /// If we can use special codec then just get it
         if (ISerialization::isSpecialCompressionAllowed(substream_path))
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, &substream_type, default_codec);
+            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
         else /// otherwise return only generic codecs and don't use info about the` data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
@@ -113,7 +116,8 @@ void MergeTreeDataPartWriterWide::addStreams(
             settings.max_compress_block_size);
     };
 
-    column.type->enumerateStreams(serializations[column.name], callback);
+    ISerialization::SubstreamPath path;
+    serializations[column.name]->enumerateStreams(path, callback, column.type, nullptr);
 }
 
 
