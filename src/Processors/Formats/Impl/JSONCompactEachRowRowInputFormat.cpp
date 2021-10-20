@@ -5,6 +5,7 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/JSONEachRowUtils.h>
+#include <Formats/registerWithNamesAndTypes.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 
@@ -183,26 +184,34 @@ void registerInputFormatJSONCompactEachRow(FormatFactory & factory)
 {
     for (bool yield_strings : {true, false})
     {
-        auto register_func = [&](const String & format_name, bool with_names, bool with_types)
+        auto get_input_creator = [yield_strings](bool with_names, bool with_types)
         {
-            factory.registerInputFormat(format_name, [with_names, with_types, yield_strings](
+            return [with_names, with_types, yield_strings](
                 ReadBuffer & buf,
                 const Block & sample,
                 IRowInputFormat::Params params,
                 const FormatSettings & settings)
             {
                 return std::make_shared<JSONCompactEachRowRowInputFormat>(sample, buf, std::move(params), with_names, with_types, yield_strings, settings);
-            });
+            };
         };
 
-        registerInputFormatWithNamesAndTypes(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", register_func);
+        registerInputFormatWithNamesAndTypes(factory, yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", get_input_creator);
     }
 }
 
 void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory)
 {
-    registerFileSegmentationEngineForFormatWithNamesAndTypes(factory, "JSONCompactEachRow", &fileSegmentationEngineJSONCompactEachRow);
-    registerFileSegmentationEngineForFormatWithNamesAndTypes(factory, "JSONCompactStringsEachRow", &fileSegmentationEngineJSONCompactEachRow);
+    auto get_file_segmentation_engine = [](size_t min_rows)
+    {
+        return [min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+        {
+            return fileSegmentationEngineJSONCompactEachRow(in, memory, min_chunk_size, min_rows);
+        };
+    };
+
+    registerFileSegmentationEngineForFormatWithNamesAndTypes(factory, "JSONCompactEachRow", get_file_segmentation_engine);
+    registerFileSegmentationEngineForFormatWithNamesAndTypes(factory, "JSONCompactStringsEachRow", get_file_segmentation_engine);
 }
 
 }

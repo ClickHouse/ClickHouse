@@ -4,6 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <Processors/Formats/Impl/BinaryRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/registerWithNamesAndTypes.h>
 
 
 namespace DB
@@ -49,23 +50,19 @@ void BinaryRowOutputFormat::writeField(const IColumn & column, const ISerializat
 
 void registerOutputFormatRowBinary(FormatFactory & factory)
 {
-    factory.registerOutputFormat("RowBinary", [](
-        WriteBuffer & buf,
-        const Block & sample,
-        const RowOutputFormatParams & params,
-        const FormatSettings &)
+    auto get_output_creator = [&](bool with_names, bool with_types)
     {
-        return std::make_shared<BinaryRowOutputFormat>(buf, sample, false, false, params);
-    });
+        return [with_names, with_types](
+            WriteBuffer & buf,
+            const Block & sample,
+            const RowOutputFormatParams & params,
+            const FormatSettings &)
+        {
+            return std::make_shared<BinaryRowOutputFormat>(buf, sample, with_names, with_types, params);
+        };
+    };
 
-    factory.registerOutputFormat("RowBinaryWithNamesAndTypes", [](
-        WriteBuffer & buf,
-        const Block & sample,
-        const RowOutputFormatParams & params,
-        const FormatSettings &)
-    {
-        return std::make_shared<BinaryRowOutputFormat>(buf, sample, true, true, params);
-    });
+    registerOutputFormatWithNamesAndTypes(factory, "RowBinary", get_output_creator);
 }
 
 }
