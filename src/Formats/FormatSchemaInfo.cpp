@@ -99,4 +99,10 @@ FormatSchemaInfo::FormatSchemaInfo(const String & format_schema, const String & 
     }
 }
 
+FormatSchemaInfo::FormatSchemaInfo(const FormatSettings & settings, const String & format, bool require_message)
+    : FormatSchemaInfo(
+        settings.schema.format_schema, format, require_message, settings.schema.is_server, settings.schema.format_schema_path)
+{
+}
+
 }
