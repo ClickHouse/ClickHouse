@@ -34,4 +34,8 @@ WITH dates AS
 
 select key, Path, Value, Version, col from test_graphite final order by key, Path, Time desc;
 
+optimize table test_graphite final;
+
+select key, Path, Value, Version, col from test_graphite order by key, Path, Time desc;
+
 drop table test_graphite;
