@@ -23,18 +23,24 @@ class WriteBuffer;
   */
 class IRowOutputFormat : public IOutputFormat
 {
+public:
+    using Params = RowOutputFormatParams;
+
+private:
+    bool prefix_written = false;
+    bool suffix_written = false;
+
 protected:
     DataTypes types;
     Serializations serializations;
+    Params params;
+
     bool first_row = true;
 
     void consume(Chunk chunk) override;
     void consumeTotals(Chunk chunk) override;
     void consumeExtremes(Chunk chunk) override;
     void finalize() override;
-
-    bool prefix_written = false;
-    bool suffix_written = false;
 
     void writePrefixIfNot()
     {
@@ -53,8 +59,6 @@ protected:
     }
 
 public:
-    using Params = RowOutputFormatParams;
-
     IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_);
 
     /** Write a row.
@@ -81,9 +85,6 @@ public:
     virtual void writeBeforeExtremes() {}
     virtual void writeAfterExtremes() {}
     virtual void writeLastSuffix() {}  /// Write something after resultset, totals end extremes.
-
-private:
-    Params params;
 
 };
 
