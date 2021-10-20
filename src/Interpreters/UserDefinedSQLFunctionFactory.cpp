@@ -77,6 +77,11 @@ ASTPtr UserDefinedSQLFunctionFactory::tryGet(const std::string & function_name) 
     return it->second;
 }
 
+bool UserDefinedSQLFunctionFactory::has(const String & function_name) const
+{
+    return tryGet(function_name) != nullptr;
+}
+
 std::vector<std::string> UserDefinedSQLFunctionFactory::getAllRegisteredNames() const
 {
     std::vector<std::string> registered_names;
