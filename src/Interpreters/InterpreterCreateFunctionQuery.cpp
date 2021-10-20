@@ -1,14 +1,17 @@
+#include <Interpreters/InterpreterCreateFunctionQuery.h>
+
+#include <stack>
+
 #include <Access/ContextAccess.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/InterpreterCreateFunctionQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/UserDefinedSQLFunctionFactory.h>
-#include <stack>
+
 
 namespace DB
 {
@@ -66,40 +69,7 @@ void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const Str
     }
 
     ASTPtr function_body = function->as<ASTFunction>()->children.at(0)->children.at(1);
-    std::unordered_set<String> identifiers_in_body = getIdentifiers(function_body);
-
-    for (const auto & identifier : identifiers_in_body)
-    {
-        if (!arguments.contains(identifier))
-            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier {} does not exist in arguments", backQuote(identifier));
-    }
-
     validateFunctionRecursiveness(function_body, name);
-}
-
-std::unordered_set<String> InterpreterCreateFunctionQuery::getIdentifiers(ASTPtr node)
-{
-    std::unordered_set<String> identifiers;
-
-    std::stack<ASTPtr> ast_nodes_to_process;
-    ast_nodes_to_process.push(node);
-
-    while (!ast_nodes_to_process.empty())
-    {
-        auto ast_node_to_process = ast_nodes_to_process.top();
-        ast_nodes_to_process.pop();
-
-        for (const auto & child : ast_node_to_process->children)
-        {
-            auto identifier_name_opt = tryGetIdentifierName(child);
-            if (identifier_name_opt)
-                identifiers.insert(identifier_name_opt.value());
-
-            ast_nodes_to_process.push(child);
-        }
-    }
-
-    return identifiers;
 }
 
 void InterpreterCreateFunctionQuery::validateFunctionRecursiveness(ASTPtr node, const String & function_to_create)
