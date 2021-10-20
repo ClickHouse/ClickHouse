@@ -140,7 +140,7 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
         else
             positional = false;
     }
-    else if (auto * ast_function = typeid_cast<const ASTFunction *>(argument.get()))
+    else if (const auto * ast_function = typeid_cast<const ASTFunction *>(argument.get()))
     {
         if (ast_function->arguments)
         {
