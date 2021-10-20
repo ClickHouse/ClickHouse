@@ -6,6 +6,7 @@ import boto3
 from botocore.exceptions import ClientError, BotoCoreError
 from multiprocessing.dummy import Pool
 from compress_files import compress_file_fast
+from get_robot_token import get_parameter_from_ssm
 
 def _md5(fname):
     hash_md5 = hashlib.md5()
@@ -27,8 +28,8 @@ def _flatten_list(lst):
 
 
 class S3Helper(object):
-    def __init__(self, host, aws_access_key_id, aws_secret_access_key):
-        self.session = boto3.session.Session(aws_access_key_id=aws_access_key_id, aws_secret_access_key=aws_secret_access_key)
+    def __init__(self, host):
+        self.session = boto3.session.Session()
         self.client = self.session.client('s3', endpoint_url=host)
 
     def _upload_file_to_s3(self, bucket_name, file_path, s3_path):
@@ -55,7 +56,7 @@ class S3Helper(object):
 
         self.client.upload_file(file_path, bucket_name, s3_path, ExtraArgs=metadata)
         logging.info("Upload {} to {}. Meta: {}".format(file_path, s3_path, metadata))
-        return "https://storage.yandexcloud.net/{bucket}/{path}".format(bucket=bucket_name, path=s3_path)
+        return "https://s3.amazonaws.com/{bucket}/{path}".format(bucket=bucket_name, path=s3_path)
 
     def upload_test_report_to_s3(self, file_path, s3_path):
         return self._upload_file_to_s3('clickhouse-test-reports', file_path, s3_path)
