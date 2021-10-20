@@ -41,7 +41,8 @@ class CacheDictionaryStorage final : public ICacheDictionaryStorage
     static constexpr size_t max_collision_length = 10;
 
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
+    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by CacheDictionaryStorage");
 
     explicit CacheDictionaryStorage(
         const DictionaryStructure & dictionary_structure,
@@ -61,19 +62,19 @@ public:
 
     String getName() const override
     {
-        if (dictionary_key_type == DictionaryKeyType::Simple)
+        if (dictionary_key_type == DictionaryKeyType::simple)
             return "Cache";
         else
             return "ComplexKeyCache";
     }
 
-    bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::Simple; }
+    bool supportsSimpleKeys() const override { return dictionary_key_type == DictionaryKeyType::simple; }
 
     SimpleKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<UInt64> & keys,
         const DictionaryStorageFetchRequest & fetch_request) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             return fetchColumnsForKeysImpl<SimpleKeysStorageFetchResult>(keys, fetch_request);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for complex key storage");
@@ -81,7 +82,7 @@ public:
 
     void insertColumnsForKeys(const PaddedPODArray<UInt64> & keys, Columns columns) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             insertColumnsForKeysImpl(keys, columns);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for complex key storage");
@@ -89,7 +90,7 @@ public:
 
     void insertDefaultKeys(const PaddedPODArray<UInt64> & keys) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             insertDefaultKeysImpl(keys);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for complex key storage");
@@ -97,19 +98,19 @@ public:
 
     PaddedPODArray<UInt64> getCachedSimpleKeys() const override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+        if constexpr (dictionary_key_type == DictionaryKeyType::simple)
             return getCachedKeysImpl();
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedSimpleKeys is not supported for complex key storage");
     }
 
-    bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::Complex; }
+    bool supportsComplexKeys() const override { return dictionary_key_type == DictionaryKeyType::complex; }
 
     ComplexKeysStorageFetchResult fetchColumnsForKeys(
         const PaddedPODArray<StringRef> & keys,
         const DictionaryStorageFetchRequest & column_fetch_requests) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
+        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             return fetchColumnsForKeysImpl<ComplexKeysStorageFetchResult>(keys, column_fetch_requests);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method fetchColumnsForKeys is not supported for simple key storage");
@@ -117,7 +118,7 @@ public:
 
     void insertColumnsForKeys(const PaddedPODArray<StringRef> & keys, Columns columns) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
+        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             insertColumnsForKeysImpl(keys, columns);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertColumnsForKeys is not supported for simple key storage");
@@ -125,7 +126,7 @@ public:
 
     void insertDefaultKeys(const PaddedPODArray<StringRef> & keys) override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
+        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             insertDefaultKeysImpl(keys);
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultKeysImpl is not supported for simple key storage");
@@ -133,7 +134,7 @@ public:
 
     PaddedPODArray<StringRef> getCachedComplexKeys() const override
     {
-        if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
+        if constexpr (dictionary_key_type == DictionaryKeyType::complex)
             return getCachedKeysImpl();
         else
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getCachedComplexKeys is not supported for simple key storage");

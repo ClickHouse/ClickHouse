@@ -32,9 +32,8 @@ private:
     /// The size of the rows.
     const size_t n;
 
-    template <bool positive> struct Cmp;
+    template <bool positive>
     struct less;
-    struct greater;
 
     /** Create an empty column of strings of fixed-length `n` */
     ColumnFixedString(size_t n_) : n(n_) {}
@@ -147,8 +146,6 @@ public:
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const IColumn::Filter & filt, ssize_t result_size_hint) const override;
-
-    void expand(const IColumn::Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 

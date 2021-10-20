@@ -222,7 +222,7 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
         }
 
         const auto & join = table->table_join->as<ASTTableJoin &>();
-        if (join.kind == ASTTableJoin::Kind::Comma)
+        if (isComma(join.kind))
             throw Exception("COMMA to CROSS JOIN rewriter is not enabled or cannot rewrite query", ErrorCodes::NOT_IMPLEMENTED);
 
         if (join.using_expression_list)
@@ -552,6 +552,8 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
             else
                 needed_columns[*table_pos].no_clashes.emplace(ident->shortName());
         }
+        else if (!got_alias)
+            throw Exception("Unknown column name '" + ident->name() + "'", ErrorCodes::UNKNOWN_IDENTIFIER);
     }
 
     return needed_columns;

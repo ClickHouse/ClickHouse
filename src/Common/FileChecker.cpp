@@ -1,4 +1,4 @@
-#include <base/JSON.h>
+#include <common/JSON.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
@@ -111,7 +111,7 @@ void FileChecker::save() const
         std::unique_ptr<WriteBuffer> out = disk->writeFile(tmp_files_info_path);
 
         /// So complex JSON structure - for compatibility with the old format.
-        writeCString("{\"clickhouse\":{", *out);
+        writeCString("{\"yandex\":{", *out);
 
         auto settings = FormatSettings();
         for (auto it = map.begin(); it != map.end(); ++it)
@@ -153,7 +153,7 @@ void FileChecker::load()
     }
     JSON json(out.str());
 
-    JSON files = json.has("clickhouse") ? json["clickhouse"] : json["yandex"];
+    JSON files = json["yandex"];
     for (const JSON file : files) // NOLINT
         map[unescapeForFileName(file.getName())] = file.getValue()["size"].toUInt();
 }

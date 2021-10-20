@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/bit_cast.h>
+#include <common/bit_cast.h>
 #include <Common/HashTable/Hash.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
@@ -90,7 +90,6 @@ struct BloomFilterHash
         else if (which.isEnum8()) return build_hash_column(getNumberTypeHash<Int64, Int8>(field));
         else if (which.isEnum16()) return build_hash_column(getNumberTypeHash<Int64, Int16>(field));
         else if (which.isDate()) return build_hash_column(getNumberTypeHash<UInt64, UInt16>(field));
-        else if (which.isDate32()) return build_hash_column(getNumberTypeHash<UInt64, Int32>(field));
         else if (which.isDateTime()) return build_hash_column(getNumberTypeHash<UInt64, UInt32>(field));
         else if (which.isFloat32()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
         else if (which.isFloat64()) return build_hash_column(getNumberTypeHash<Float64, Float64>(field));
@@ -152,7 +151,6 @@ struct BloomFilterHash
         else if (which.isEnum8()) getNumberTypeHash<Int8, is_first>(column, vec, pos);
         else if (which.isEnum16()) getNumberTypeHash<Int16, is_first>(column, vec, pos);
         else if (which.isDate()) getNumberTypeHash<UInt16, is_first>(column, vec, pos);
-        else if (which.isDate32()) getNumberTypeHash<Int32, is_first>(column, vec, pos);
         else if (which.isDateTime()) getNumberTypeHash<UInt32, is_first>(column, vec, pos);
         else if (which.isFloat32()) getNumberTypeHash<Float32, is_first>(column, vec, pos);
         else if (which.isFloat64()) getNumberTypeHash<Float64, is_first>(column, vec, pos);

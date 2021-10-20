@@ -3,8 +3,7 @@
 #include <pdqsort.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/MaskOperations.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
@@ -14,10 +13,10 @@
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <base/sort.h>
-#include <base/unaligned.h>
-#include <base/bit_cast.h>
-#include <base/scope_guard.h>
+#include <common/sort.h>
+#include <common/unaligned.h>
+#include <common/bit_cast.h>
+#include <common/scope_guard.h>
 
 #include <cmath>
 #include <cstring>
@@ -107,15 +106,6 @@ struct ColumnVector<T>::greater
     int nan_direction_hint;
     greater(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
     bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::greater(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
-};
-
-template <typename T>
-struct ColumnVector<T>::equals
-{
-    const Self & parent;
-    int nan_direction_hint;
-    equals(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
-    bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::equals(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
 };
 
 
@@ -213,21 +203,80 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
 template <typename T>
 void ColumnVector<T>::updatePermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_range) const
 {
-    auto sort = [](auto begin, auto end, auto pred) { pdqsort(begin, end, pred); };
-    auto partial_sort = [](auto begin, auto mid, auto end, auto pred) { ::partial_sort(begin, mid, end, pred); };
+    if (equal_range.empty())
+        return;
 
-    if (reverse)
-        this->updatePermutationImpl(
-            limit, res, equal_range,
-            greater(*this, nan_direction_hint),
-            equals(*this, nan_direction_hint),
-            sort, partial_sort);
-    else
-        this->updatePermutationImpl(
-            limit, res, equal_range,
-            less(*this, nan_direction_hint),
-            equals(*this, nan_direction_hint),
-            sort, partial_sort);
+    if (limit >= data.size() || limit >= equal_range.back().second)
+        limit = 0;
+
+    EqualRanges new_ranges;
+    SCOPE_EXIT({equal_range = std::move(new_ranges);});
+
+    for (size_t i = 0; i < equal_range.size() - bool(limit); ++i)
+    {
+        const auto & [first, last] = equal_range[i];
+        if (reverse)
+            pdqsort(res.begin() + first, res.begin() + last, greater(*this, nan_direction_hint));
+        else
+            pdqsort(res.begin() + first, res.begin() + last, less(*this, nan_direction_hint));
+        size_t new_first = first;
+        for (size_t j = first + 1; j < last; ++j)
+        {
+            if (less(*this, nan_direction_hint)(res[j], res[new_first]) || greater(*this, nan_direction_hint)(res[j], res[new_first]))
+            {
+                if (j - new_first > 1)
+                {
+                    new_ranges.emplace_back(new_first, j);
+                }
+                new_first = j;
+            }
+        }
+        if (last - new_first > 1)
+        {
+            new_ranges.emplace_back(new_first, last);
+        }
+    }
+    if (limit)
+    {
+        const auto & [first, last] = equal_range.back();
+
+        if (limit < first || limit > last)
+            return;
+
+        /// Since then, we are working inside the interval.
+
+        if (reverse)
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, greater(*this, nan_direction_hint));
+        else
+            partial_sort(res.begin() + first, res.begin() + limit, res.begin() + last, less(*this, nan_direction_hint));
+
+        size_t new_first = first;
+        for (size_t j = first + 1; j < limit; ++j)
+        {
+            if (less(*this, nan_direction_hint)(res[j], res[new_first]) || greater(*this, nan_direction_hint)(res[j], res[new_first]))
+            {
+                if (j - new_first > 1)
+                {
+                    new_ranges.emplace_back(new_first, j);
+                }
+                new_first = j;
+            }
+        }
+
+        size_t new_last = limit;
+        for (size_t j = limit; j < last; ++j)
+        {
+            if (!less(*this, nan_direction_hint)(res[j], res[new_first]) && !greater(*this, nan_direction_hint)(res[j], res[new_first]))
+            {
+                std::swap(res[j], res[new_last]);
+                ++new_last;
+            }
+        }
+        if (new_last - new_first > 1)
+        {
+            new_ranges.emplace_back(new_first, new_last);
+        }
+    }
 }
 
 template <typename T>
@@ -327,18 +376,19 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
         UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
         mask = ~mask;
 
-        if (0xFFFF == mask)
+        if (0 == mask)
+        {
+            /// Nothing is inserted.
+        }
+        else if (0xFFFF == mask)
         {
             res_data.insert(data_pos, data_pos + SIMD_BYTES);
         }
         else
         {
-            while (mask)
-            {
-                size_t index = __builtin_ctz(mask);
-                res_data.push_back(data_pos[index]);
-                mask = mask & (mask - 1);
-            }
+            for (size_t i = 0; i < SIMD_BYTES; ++i)
+                if (filt_pos[i])
+                    res_data.push_back(data_pos[i]);
         }
 
         filt_pos += SIMD_BYTES;
@@ -356,12 +406,6 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     }
 
     return res;
-}
-
-template <typename T>
-void ColumnVector<T>::expand(const IColumn::Filter & mask, bool inverted)
-{
-    expandDataByMask<T>(data, mask, inverted);
 }
 
 template <typename T>
@@ -392,7 +436,22 @@ void ColumnVector<T>::applyZeroMap(const IColumn::Filter & filt, bool inverted)
 template <typename T>
 ColumnPtr ColumnVector<T>::permute(const IColumn::Permutation & perm, size_t limit) const
 {
-    return permuteImpl(*this, perm, limit);
+    size_t size = data.size();
+
+    if (limit == 0)
+        limit = size;
+    else
+        limit = std::min(size, limit);
+
+    if (perm.size() < limit)
+        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
+    auto res = this->create(limit);
+    typename Self::Container & res_data = res->getData();
+    for (size_t i = 0; i < limit; ++i)
+        res_data[i] = data[perm[i]];
+
+    return res;
 }
 
 template <typename T>

@@ -2,7 +2,7 @@
 
 #include <Core/UUID.h>
 #include <Poco/Net/SocketAddress.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/OpenTelemetryTraceContext.h>
 
 namespace DB
@@ -28,16 +28,13 @@ public:
         GRPC = 3,
         MYSQL = 4,
         POSTGRESQL = 5,
-        LOCAL = 6,
-        TCP_INTERSERVER = 7,
     };
 
     enum class HTTPMethod : uint8_t
     {
         UNKNOWN = 0,
-        GET     = 1,
-        POST    = 2,
-        OPTIONS = 3
+        GET = 1,
+        POST = 2,
     };
 
     enum class QueryKind : uint8_t

@@ -1,7 +1,5 @@
 <?xml version="1.0"?>
-<clickhouse>
-    <!-- See also the files in users.d directory where the settings can be overridden. -->
-
+<yandex>
     <!-- Profiles of settings. -->
     <profiles>
         <!-- Default settings. -->
@@ -30,9 +28,7 @@
     <users>
         <!-- If user name was not specified, 'default' user is used. -->
         <default>
-            <!-- See also the files in users.d directory where the password can be overridden.
-
-                 Password could be specified in plaintext or in SHA256 (in hex format).
+            <!-- Password could be specified in plaintext or in SHA256 (in hex format).
 
                  If you want to specify password in plaintext (not recommended), place it in 'password' element.
                  Example: <password>qwerty</password>.
@@ -53,7 +49,7 @@
                   place 'kerberos' element instead of 'password' (and similar) elements.
                  The name part of the canonical principal name of the initiator must match the user name for authentication to succeed.
                  You can also place 'realm' element inside 'kerberos' element to further restrict authentication to only those requests
-                  whose initiator's realm matches it.
+                  whose initiator's realm matches it. 
                  Example: <kerberos />
                  Example: <kerberos><realm>EXAMPLE.COM</realm></kerberos>
 
@@ -120,4 +116,4 @@
             </interval>
         </default>
     </quotas>
-</clickhouse>
+</yandex>

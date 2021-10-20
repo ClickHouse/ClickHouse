@@ -4,7 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <amqpcpp.h>
 #include <uv.h>
 #include <chrono>
@@ -21,7 +21,6 @@ static const auto RETURNED_LIMIT = 50000;
 namespace ErrorCodes
 {
     extern const int CANNOT_CONNECT_RABBITMQ;
-    extern const int LOGICAL_ERROR;
 }
 
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
@@ -78,7 +77,7 @@ WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 {
     writing_task->deactivate();
     connection.disconnect();
-    assert(rows == 0);
+    assert(rows == 0 && chunks.empty());
 }
 
 
@@ -103,8 +102,7 @@ void WriteBufferToRabbitMQProducer::countRow()
         reinitializeChunks();
 
         ++payload_counter;
-        if (!payloads.push(std::make_pair(payload_counter, payload)))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to payloads queue");
+        payloads.push(std::make_pair(payload_counter, payload));
     }
 }
 
@@ -124,8 +122,7 @@ void WriteBufferToRabbitMQProducer::setupChannel()
          * they are republished because after channel recovery they will acquire new delivery tags, so all previous records become invalid
          */
         for (const auto & record : delivery_record)
-            if (!returned.push(record.second))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to returned queue");
+            returned.tryPush(record.second);
 
         LOG_DEBUG(log, "Producer on channel {} hasn't confirmed {} messages, {} waiting to be published",
                 channel_id, delivery_record.size(), payloads.size());
@@ -173,8 +170,7 @@ void WriteBufferToRabbitMQProducer::removeRecord(UInt64 received_delivery_tag, b
 
         if (republish)
             for (auto record = delivery_record.begin(); record != record_iter; ++record)
-                if (!returned.push(record->second))
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to returned queue");
+                returned.tryPush(record->second);
 
         /// Delete the records even in case when republished because new delivery tags will be assigned by the server.
         delivery_record.erase(delivery_record.begin(), record_iter);
@@ -182,8 +178,7 @@ void WriteBufferToRabbitMQProducer::removeRecord(UInt64 received_delivery_tag, b
     else
     {
         if (republish)
-            if (!returned.push(record_iter->second))
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not push to returned queue");
+            returned.tryPush(record_iter->second);
 
         delivery_record.erase(record_iter);
     }
@@ -199,11 +194,7 @@ void WriteBufferToRabbitMQProducer::publish(ConcurrentBoundedQueue<std::pair<UIn
      */
     while (!messages.empty() && producer_channel->usable() && delivery_record.size() < RETURNED_LIMIT)
     {
-        bool pop_result = messages.pop(payload);
-
-        if (!pop_result)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not pop payload");
-
+        messages.pop(payload);
         AMQP::Envelope envelope(payload.second.data(), payload.second.size());
 
         /// if headers exchange is used, routing keys are added here via headers, if not - it is just empty

@@ -74,14 +74,13 @@ struct ExtractNumericType
  * If a field was not found or an incorrect value is associated with the field,
  * then the default value used - 0.
  */
-template <typename Name, typename ParamExtractor>
+template <typename ParamExtractor>
 struct ExtractParamImpl
 {
     using ResultType = typename ParamExtractor::ResultType;
 
     static constexpr bool use_default_implementation_for_constants = true;
     static constexpr bool supports_start_pos = false;
-    static constexpr auto name = Name::name;
 
     /// It is assumed that `res` is the correct size and initialized with zeros.
     static void vectorConstant(
@@ -92,7 +91,7 @@ struct ExtractParamImpl
         PaddedPODArray<ResultType> & res)
     {
         if (start_pos != nullptr)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' doesn't support start_pos argument", name);
+            throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support start_pos argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         /// We are looking for a parameter simply as a substring of the form "name"
         needle = "\"" + needle + "\":";
@@ -132,18 +131,18 @@ struct ExtractParamImpl
 
     template <typename... Args> static void vectorVector(Args &&...)
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support non-constant needle argument", name);
+        throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <typename... Args> static void constantVector(Args &&...)
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support non-constant needle argument", name);
+        throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <typename... Args>
     static void vectorFixedConstant(Args &&...)
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
+        throw Exception("Functions 'visitParamHas' don't support FixedString haystack argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 

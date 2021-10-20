@@ -1,5 +1,3 @@
--- Tags: disabled
-
 DROP TABLE IF EXISTS replacing;
 CREATE TABLE replacing (d Date, k UInt64, s String, v UInt16) ENGINE = ReplacingMergeTree(d, k, 8192, v);
 

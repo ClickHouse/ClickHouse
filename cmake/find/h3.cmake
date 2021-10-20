@@ -11,7 +11,7 @@ option(USE_INTERNAL_H3_LIBRARY "Set to FALSE to use system h3 library instead of
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/h3/src/h3lib/include/h3Index.h")
     if(USE_INTERNAL_H3_LIBRARY)
-        message(WARNING "submodule contrib/h3 is missing. to fix try run: \n git submodule update --init")
+        message(WARNING "submodule contrib/h3 is missing. to fix try run: \n git submodule update --init --recursive")
         message(${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal h3 library")
         set(USE_INTERNAL_H3_LIBRARY 0)
     endif()

@@ -4,7 +4,6 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/IAST_fwd.h>
-#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {
@@ -17,18 +16,9 @@ public:
         , options(options_)
         , max_streams(context->getSettingsRef().max_threads)
     {
-        if (options.shard_num)
-            context->addLocalScalar(
-                "_shard_num",
-                Block{{DataTypeUInt32().createColumnConst(1, *options.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}});
-        if (options.shard_count)
-            context->addLocalScalar(
-                "_shard_count",
-                Block{{DataTypeUInt32().createColumnConst(1, *options.shard_count), std::make_shared<DataTypeUInt32>(), "_shard_count"}});
     }
 
     virtual void buildQueryPlan(QueryPlan & query_plan) = 0;
-    QueryPipelineBuilder buildQueryPipeline();
 
     virtual void ignoreWithTotals() = 0;
 

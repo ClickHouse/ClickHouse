@@ -6,10 +6,9 @@
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/BufferWithOwnMemory.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 #include <stdlib.h>
 
 #ifdef __SSE2__
@@ -328,7 +327,6 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
             && decoded_char != '"'
             && decoded_char != '`'  /// MySQL style identifiers
             && decoded_char != '/'  /// JavaScript in HTML
-            && decoded_char != '='  /// Yandex's TSKV
             && !isControlASCII(decoded_char))
         {
             s.push_back('\\');
@@ -1121,7 +1119,7 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
     }
 }
 
-void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
+void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
 {
     assert(current >= in.position());
     assert(current <= in.buffer().end());
@@ -1141,7 +1139,7 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
     in.position() = current;
 }
 
-bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current)
+bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current)
 {
     assert(current <= in.buffer().end());
 

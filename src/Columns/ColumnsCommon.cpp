@@ -85,7 +85,7 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
         /// TODO Add duff device for tail?
 #endif
 
-    for (; pos < end; ++pos, ++pos2)
+    for (; pos < end; ++pos)
         count += (*pos & ~*pos2) != 0;
 
     return count;
@@ -241,7 +241,11 @@ namespace
                 zero_vec));
             mask = ~mask;
 
-            if (mask == 0xffff)
+            if (mask == 0)
+            {
+                /// SIMD_BYTES consecutive rows do not pass the filter
+            }
+            else if (mask == 0xffff)
             {
                 /// SIMD_BYTES consecutive rows pass the filter
                 const auto first = offsets_pos == offsets_begin;
@@ -258,12 +262,9 @@ namespace
             }
             else
             {
-                while (mask)
-                {
-                    size_t index = __builtin_ctz(mask);
-                    copy_array(offsets_pos + index);
-                    mask = mask & (mask - 1);
-                }
+                for (size_t i = 0; i < SIMD_BYTES; ++i)
+                    if (filt_pos[i])
+                        copy_array(offsets_pos + i);
             }
 
             filt_pos += SIMD_BYTES;
@@ -343,20 +344,5 @@ namespace detail
     template const PaddedPODArray<UInt32> * getIndexesData<UInt32>(const IColumn & indexes);
     template const PaddedPODArray<UInt64> * getIndexesData<UInt64>(const IColumn & indexes);
 }
-
-size_t getLimitForPermutation(size_t column_size, size_t perm_size, size_t limit)
-{
-    if (limit == 0)
-        limit = column_size;
-    else
-        limit = std::min(column_size, limit);
-
-    if (perm_size < limit)
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
-            "Size of permutation ({}) is less than required ({})", perm_size, limit);
-
-    return limit;
-}
-
 
 }

@@ -1,23 +1,23 @@
-#include <amqpcpp.h>
+#include <Storages/RabbitMQ/StorageRabbitMQ.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/UnionBlockInputStream.h>
+#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Context.h>
+#include <DataTypes/DataTypeString.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Transforms/ExpressionTransform.h>
-#include <Storages/RabbitMQ/RabbitMQHandler.h>
-#include <Storages/RabbitMQ/RabbitMQSink.h>
-#include <Storages/RabbitMQ/RabbitMQSource.h>
-#include <Storages/RabbitMQ/StorageRabbitMQ.h>
+#include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
+#include <Storages/RabbitMQ/RabbitMQBlockOutputStream.h>
 #include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
+#include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -27,11 +27,13 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/config_version.h>
-#include <Common/parseAddress.h>
-#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
+#include <Common/quoteString.h>
+#include <Common/parseAddress.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <amqpcpp.h>
 
 namespace DB
 {
@@ -75,16 +77,16 @@ StorageRabbitMQ::StorageRabbitMQ(
         : IStorage(table_id_)
         , WithContext(context_->getGlobalContext())
         , rabbitmq_settings(std::move(rabbitmq_settings_))
-        , exchange_name(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_exchange_name))
-        , format_name(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_format))
-        , exchange_type(defineExchangeType(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_exchange_type)))
-        , routing_keys(parseSettings(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_routing_key_list)))
+        , exchange_name(rabbitmq_settings->rabbitmq_exchange_name.value)
+        , format_name(rabbitmq_settings->rabbitmq_format.value)
+        , exchange_type(defineExchangeType(rabbitmq_settings->rabbitmq_exchange_type.value))
+        , routing_keys(parseSettings(rabbitmq_settings->rabbitmq_routing_key_list.value))
         , row_delimiter(rabbitmq_settings->rabbitmq_row_delimiter.value)
-        , schema_name(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_schema))
+        , schema_name(rabbitmq_settings->rabbitmq_schema.value)
         , num_consumers(rabbitmq_settings->rabbitmq_num_consumers.value)
         , num_queues(rabbitmq_settings->rabbitmq_num_queues.value)
-        , queue_base(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_base))
-        , queue_settings_list(parseSettings(getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_queue_settings_list)))
+        , queue_base(rabbitmq_settings->rabbitmq_queue_base.value)
+        , queue_settings_list(parseSettings(rabbitmq_settings->rabbitmq_queue_settings_list.value))
         , persistent(rabbitmq_settings->rabbitmq_persistent.value)
         , use_user_setup(rabbitmq_settings->rabbitmq_queue_consume.value)
         , hash_exchange(num_consumers > 1 || num_queues > 1)
@@ -102,13 +104,8 @@ StorageRabbitMQ::StorageRabbitMQ(
         .port = parsed_address.second,
         .username = getContext()->getConfigRef().getString("rabbitmq.username"),
         .password = getContext()->getConfigRef().getString("rabbitmq.password"),
-        .vhost = getContext()->getConfigRef().getString("rabbitmq.vhost", getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_vhost)),
-        .secure = rabbitmq_settings->rabbitmq_secure.value,
-        .connection_string = getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_address)
+        .vhost = getContext()->getConfigRef().getString("rabbitmq.vhost", getContext()->getMacros()->expand(rabbitmq_settings->rabbitmq_vhost))
     };
-
-    if (configuration.secure)
-        SSL_library_init();
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -212,10 +209,10 @@ String StorageRabbitMQ::getTableBasedName(String name, const StorageID & table_i
 }
 
 
-ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
+std::shared_ptr<Context> StorageRabbitMQ::addSettings(ContextPtr local_context) const
 {
     auto modified_context = Context::createCopy(local_context);
-    modified_context->setSetting("input_format_skip_unknown_fields", true);
+    modified_context->setSetting("input_format_skip_unknown_fields", Field{true});
     modified_context->setSetting("input_format_allow_errors_ratio", 0.);
     modified_context->setSetting("input_format_allow_errors_num", rabbitmq_settings->rabbitmq_skip_broken_messages.value);
 
@@ -629,19 +626,12 @@ Pipe StorageRabbitMQ::read(
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto rabbit_source = std::make_shared<RabbitMQSource>(
+        auto rabbit_stream = std::make_shared<RabbitMQBlockInputStream>(
                 *this, metadata_snapshot, modified_context, column_names, block_size);
 
-        auto converting_dag = ActionsDAG::makeConvertingActions(
-            rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
-            sample_block.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
-
-        auto converting = std::make_shared<ExpressionActions>(std::move(converting_dag));
-        auto converting_transform = std::make_shared<ExpressionTransform>(rabbit_source->getPort().getHeader(), std::move(converting));
-
-        pipes.emplace_back(std::move(rabbit_source));
-        pipes.back().addTransform(std::move(converting_transform));
+        auto converting_stream = std::make_shared<ConvertingBlockInputStream>(
+            rabbit_stream, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Name);
+        pipes.emplace_back(std::make_shared<SourceFromInputStream>(converting_stream));
     }
 
     if (!connection->getHandler().loopRunning() && connection->isConnected())
@@ -654,9 +644,9 @@ Pipe StorageRabbitMQ::read(
 }
 
 
-SinkToStoragePtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+BlockOutputStreamPtr StorageRabbitMQ::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
-    return std::make_shared<RabbitMQSink>(*this, metadata_snapshot, local_context);
+    return std::make_shared<RabbitMQBlockOutputStream>(*this, metadata_snapshot, local_context);
 }
 
 
@@ -962,23 +952,20 @@ bool StorageRabbitMQ::streamToViews()
     auto block_io = interpreter.execute();
 
     auto metadata_snapshot = getInMemoryMetadataPtr();
-    auto column_names = block_io.pipeline.getHeader().getNames();
+    auto column_names = block_io.out->getHeader().getNames();
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
 
     auto block_size = getMaxBlockSize();
 
     // Create a stream for each consumer and join them in a union stream
-    std::vector<std::shared_ptr<RabbitMQSource>> sources;
-    Pipes pipes;
-    sources.reserve(num_created_consumers);
-    pipes.reserve(num_created_consumers);
+    BlockInputStreams streams;
+    streams.reserve(num_created_consumers);
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto source = std::make_shared<RabbitMQSource>(
+        auto stream = std::make_shared<RabbitMQBlockInputStream>(
                 *this, metadata_snapshot, rabbitmq_context, column_names, block_size, false);
-        sources.emplace_back(source);
-        pipes.emplace_back(source);
+        streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
         StreamLocalLimits limits;
@@ -989,10 +976,17 @@ bool StorageRabbitMQ::streamToViews()
 
         limits.timeout_overflow_mode = OverflowMode::BREAK;
 
-        source->setLimits(limits);
+        stream->setLimits(limits);
     }
 
-    block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
+    // Join multiple streams if necessary
+    BlockInputStreamPtr in;
+    if (streams.size() > 1)
+        in = std::make_shared<UnionBlockInputStream>(streams, nullptr, streams.size());
+    else
+        in = streams[0];
+
+    std::atomic<bool> stub = {false};
 
     if (!connection->getHandler().loopRunning())
     {
@@ -1000,10 +994,7 @@ bool StorageRabbitMQ::streamToViews()
         looping_task->activateAndSchedule();
     }
 
-    {
-        CompletedPipelineExecutor executor(block_io.pipeline);
-        executor.execute();
-    }
+    copyData(*in, *block_io.out, &stub);
 
     /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
      * error occurs or connection is lost while ack is being sent
@@ -1019,8 +1010,8 @@ bool StorageRabbitMQ::streamToViews()
         if (connection->reconnect())
         {
             LOG_DEBUG(log, "Connection restored, updating channels");
-            for (auto & source : sources)
-                source->updateChannel();
+            for (auto & stream : streams)
+                stream->as<RabbitMQBlockInputStream>()->updateChannel();
         }
         else
         {
@@ -1031,14 +1022,14 @@ bool StorageRabbitMQ::streamToViews()
     else
     {
         /// Commit
-        for (auto & source : sources)
+        for (auto & stream : streams)
         {
-            if (source->queueEmpty())
+            if (stream->as<RabbitMQBlockInputStream>()->queueEmpty())
                 ++queue_empty;
 
-            if (source->needChannelUpdate())
+            if (stream->as<RabbitMQBlockInputStream>()->needChannelUpdate())
             {
-                auto buffer = source->getBuffer();
+                auto buffer = stream->as<RabbitMQBlockInputStream>()->getBuffer();
                 if (buffer)
                 {
                     if (buffer->queuesCount() != queues.size())
@@ -1066,7 +1057,7 @@ bool StorageRabbitMQ::streamToViews()
              *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
              *    will ever happen.
              */
-            if (!source->sendAck())
+            if (!stream->as<RabbitMQBlockInputStream>()->sendAck())
             {
                 /// Iterate loop to activate error callbacks if they happened
                 connection->getHandler().iterateLoop();
@@ -1100,20 +1091,50 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
+        ASTs & engine_args = args.engine_args;
+        size_t args_count = engine_args.size();
+        bool has_settings = args.storage_def->settings;
 
         auto rabbitmq_settings = std::make_unique<RabbitMQSettings>();
-        if (!args.storage_def->settings)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "RabbitMQ engine must have settings");
+        if (has_settings)
+            rabbitmq_settings->loadFromQuery(*args.storage_def);
 
-        rabbitmq_settings->loadFromQuery(*args.storage_def);
+        // Check arguments and settings
+        #define CHECK_RABBITMQ_STORAGE_ARGUMENT(ARG_NUM, ARG_NAME)                                           \
+            /* One of the three required arguments is not specified */                                       \
+            if (args_count < (ARG_NUM) && (ARG_NUM) <= 2 && !rabbitmq_settings->ARG_NAME.changed)            \
+            {                                                                                                \
+                throw Exception("Required parameter '" #ARG_NAME "' for storage RabbitMQ not specified",     \
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);                                           \
+            }                                                                                                \
+            if (args_count >= (ARG_NUM))                                                                     \
+            {                                                                                                \
+                if (rabbitmq_settings->ARG_NAME.changed) /* The same argument is given in two places */      \
+                {                                                                                            \
+                    throw Exception("The argument №" #ARG_NUM " of storage RabbitMQ "                        \
+                        "and the parameter '" #ARG_NAME "' is duplicated", ErrorCodes::BAD_ARGUMENTS);       \
+                }                                                                                            \
+            }
 
-        if (!rabbitmq_settings->rabbitmq_host_port.changed
-           && !rabbitmq_settings->rabbitmq_address.changed)
-                throw Exception("You must specify either `rabbitmq_host_port` or `rabbitmq_address` settings",
-                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(1, rabbitmq_host_port)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(2, rabbitmq_format)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(3, rabbitmq_exchange_name)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(4, rabbitmq_exchange_type)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(5, rabbitmq_routing_key_list)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(6, rabbitmq_row_delimiter)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(7, rabbitmq_schema)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(8, rabbitmq_num_consumers)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(9, rabbitmq_num_queues)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(10, rabbitmq_queue_base)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(11, rabbitmq_persistent)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(12, rabbitmq_skip_broken_messages)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(13, rabbitmq_max_block_size)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(14, rabbitmq_flush_interval_ms)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(15, rabbitmq_vhost)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(16, rabbitmq_queue_settings_list)
+        CHECK_RABBITMQ_STORAGE_ARGUMENT(17, rabbitmq_queue_consume)
 
-        if (!rabbitmq_settings->rabbitmq_format.changed)
-            throw Exception("You must specify `rabbitmq_format` setting", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        #undef CHECK_RABBITMQ_STORAGE_ARGUMENT
 
         return StorageRabbitMQ::create(args.table_id, args.getContext(), args.columns, std::move(rabbitmq_settings), args.attach);
     };

@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <zookeeper>
         <node index="1">
             <host>zoo1</host>
@@ -15,4 +15,4 @@
         <session_timeout_ms>3000</session_timeout_ms>
         <root>/root_a</root>
     </zookeeper>
-</clickhouse>
+</yandex>
