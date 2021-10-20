@@ -131,18 +131,22 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     Pos before_values = pos;
+    String format_str;
 
     /// VALUES or FROM INFILE or FORMAT or SELECT
     if (!infile && s_values.ignore(pos, expected))
     {
         /// If VALUES is defined in query, everything except setting will be parsed as data
         data = pos->begin;
+        format_str = "Values";
     }
     else if (s_format.ignore(pos, expected))
     {
         /// If FORMAT is defined, read format name
         if (!name_p.parse(pos, format, expected))
             return false;
+
+        tryGetIdentifierNameInto(format, format_str);
     }
     else if (s_select.ignore(pos, expected) || s_with.ignore(pos,expected))
     {
@@ -155,6 +159,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// FORMAT section is expected if we have input() in SELECT part
         if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
             return false;
+
+        tryGetIdentifierNameInto(format, format_str);
     }
     else if (s_watch.ignore(pos, expected))
     {
@@ -242,9 +248,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         tryGetIdentifierNameInto(table, query->table_id.table_name);
     }
 
-    tryGetIdentifierNameInto(format, query->format);
-
     query->columns = columns;
+    query->format = std::move(format_str);
     query->select = select;
     query->watch = watch;
     query->settings_ast = settings_ast;
