@@ -56,7 +56,6 @@ NativeReader::NativeReader(ReadBuffer & istr_, UInt64 server_revision_,
     }
 }
 
-// also resets few vars from IBlockInputStream (I didn't want to propagate resetParser upthere)
 void NativeReader::resetParser()
 {
     istr_concrete = nullptr;

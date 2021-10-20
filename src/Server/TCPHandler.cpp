@@ -30,6 +30,7 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Session.h>
+#include <Interpreters/ProfileEventsExt.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Cluster.h>
@@ -831,12 +832,6 @@ namespace
 {
     using namespace ProfileEvents;
 
-    enum ProfileEventTypes : int8_t
-    {
-        INCREMENT = 1,
-        GAUGE     = 2,
-    };
-
     constexpr size_t NAME_COLUMN_INDEX  = 4;
     constexpr size_t VALUE_COLUMN_INDEX = 5;
 
@@ -879,7 +874,7 @@ namespace
             columns[i++]->insertData(host_name.data(), host_name.size());
             columns[i++]->insert(UInt64(snapshot.current_time));
             columns[i++]->insert(UInt64{snapshot.thread_id});
-            columns[i++]->insert(ProfileEventTypes::INCREMENT);
+            columns[i++]->insert(ProfileEvents::Type::INCREMENT);
         }
     }
 
@@ -893,7 +888,7 @@ namespace
             columns[i++]->insertData(host_name.data(), host_name.size());
             columns[i++]->insert(UInt64(snapshot.current_time));
             columns[i++]->insert(UInt64{snapshot.thread_id});
-            columns[i++]->insert(ProfileEventTypes::GAUGE);
+            columns[i++]->insert(ProfileEvents::Type::GAUGE);
 
             columns[i++]->insertData(MemoryTracker::USAGE_EVENT_NAME, strlen(MemoryTracker::USAGE_EVENT_NAME));
             columns[i++]->insert(snapshot.memory_usage);
@@ -907,18 +902,11 @@ void TCPHandler::sendProfileEvents()
     if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS)
         return;
 
-    auto profile_event_type = std::make_shared<DataTypeEnum8>(
-        DataTypeEnum8::Values
-        {
-            { "increment", static_cast<Int8>(INCREMENT)},
-            { "gauge",     static_cast<Int8>(GAUGE)},
-        });
-
     NamesAndTypesList column_names_and_types = {
         { "host_name",    std::make_shared<DataTypeString>()   },
         { "current_time", std::make_shared<DataTypeDateTime>() },
         { "thread_id",    std::make_shared<DataTypeUInt64>()   },
-        { "type",         profile_event_type                   },
+        { "type",         ProfileEvents::TypeEnum              },
         { "name",         std::make_shared<DataTypeString>()   },
         { "value",        std::make_shared<DataTypeUInt64>()   },
     };

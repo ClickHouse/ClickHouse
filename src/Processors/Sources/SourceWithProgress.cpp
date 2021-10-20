@@ -69,8 +69,7 @@ void SourceWithProgress::work()
     }
 }
 
-/// Aggregated copy-paste from IBlockInputStream::progressImpl.
-/// Most of this must be done in PipelineExecutor outside. Now it's done for compatibility with IBlockInputStream.
+/// TODO: Most of this must be done in PipelineExecutor outside.
 void SourceWithProgress::progress(const Progress & value)
 {
     was_progress_called = true;
@@ -135,14 +134,12 @@ void SourceWithProgress::progress(const Progress & value)
 
         if (last_profile_events_update_time + profile_events_update_period_microseconds < total_elapsed_microseconds)
         {
-            /// Should be done in PipelineExecutor.
-            /// It is here for compatibility with IBlockInputsStream.
+            /// TODO: Should be done in PipelineExecutor.
             CurrentThread::updatePerformanceCounters();
             last_profile_events_update_time = total_elapsed_microseconds;
         }
 
-        /// Should be done in PipelineExecutor.
-        /// It is here for compatibility with IBlockInputsStream.
+        /// TODO: Should be done in PipelineExecutor.
         limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
         if (quota && limits.mode == LimitsMode::LIMITS_TOTAL)
