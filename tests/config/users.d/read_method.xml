@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <local_filesystem_read_method>pread_threadpool</local_filesystem_read_method>
+        </default>
+    </profiles>
+</clickhouse>
