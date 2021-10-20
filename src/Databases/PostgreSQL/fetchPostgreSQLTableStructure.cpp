@@ -216,7 +216,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "SELECT attname AS name, format_type(atttypid, atttypmod) AS type, "
            "attnotnull AS not_null, attndims AS dims "
            "FROM pg_attribute "
-           "WHERE attrelid = {}::regclass "
+           "WHERE attrelid = (SELECT oid FROM pg_class WHERE relname = {})"
            "AND NOT attisdropped AND attnum > 0", quoteString(postgres_table_name));
 
     table.columns = readNamesAndTypesList(tx, postgres_table_name, query, use_nulls, false);
