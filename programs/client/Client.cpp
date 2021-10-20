@@ -25,9 +25,6 @@
 #endif
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <Common/NetException.h>
-#include <Common/Config/ConfigProcessor.h>
-#include <Common/PODArray.h>
 #include <Common/TerminalSize.h>
 #include <Common/Config/configReadClient.h>
 #include "Common/MemoryTracker.h"
@@ -35,13 +32,11 @@
 #include <Core/QueryProcessingStage.h>
 #include <Client/TestHint.h>
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Poco/Util/Application.h>
 
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/UseSSL.h>
 
@@ -51,9 +46,6 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/formatAST.h>
 
 #include <Interpreters/InterpreterSetQuery.h>
 
@@ -86,7 +78,6 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int TOO_DEEP_RECURSION;
     extern const int NETWORK_ERROR;
-    extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int AUTHENTICATION_FAILED;
 }
 
@@ -992,7 +983,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
 }
 
 
-void Client::addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
+void Client::addOptions(OptionsDescription & options_description)
 {
     /// Main commandline options related to client functionality and all parameters from Settings.
     options_description.main_description->add_options()
@@ -1049,14 +1040,6 @@ void Client::addAndCheckOptions(OptionsDescription & options_description, po::va
     (
         "types", po::value<std::string>(), "types"
     );
-
-    cmd_settings.addProgramOptions(options_description.main_description.value());
-    /// Parse main commandline options.
-    po::parsed_options parsed = po::command_line_parser(arguments).options(options_description.main_description.value()).run();
-    auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
-    if (unrecognized_options.size() > 1)
-        throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[1]);
-    po::store(parsed, options);
 }
 
 
@@ -1235,15 +1218,15 @@ int mainEntryClickHouseClient(int argc, char ** argv)
         client.init(argc, argv);
         return client.run();
     }
-    catch (const boost::program_options::error & e)
-    {
-        std::cerr << "Bad arguments: " << e.what() << std::endl;
-        return 1;
-    }
     catch (const DB::Exception & e)
     {
         std::cerr << DB::getExceptionMessage(e, false) << std::endl;
         return 1;
+    }
+    catch (const boost::program_options::error & e)
+    {
+        std::cerr << "Bad arguments: " << e.what() << std::endl;
+        return DB::ErrorCodes::BAD_ARGUMENTS;
     }
     catch (...)
     {

@@ -20,7 +20,7 @@ toc_title: FROM
 
 当 `FINAL` 被指定，ClickHouse会在返回结果之前完全合并数据，从而执行给定表引擎合并期间发生的所有数据转换。
 
-它适用于从使用 [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)-引擎族（除了 `GraphiteMergeTree`). 还支持:
+它适用于从使用 [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)-引擎族. 还支持:
 
 -   [Replicated](../../../engines/table-engines/mergetree-family/replication.md) 版本 `MergeTree` 引擎
 -   [View](../../../engines/table-engines/special/view.md), [Buffer](../../../engines/table-engines/special/buffer.md), [Distributed](../../../engines/table-engines/special/distributed.md)，和 [MaterializedView](../../../engines/table-engines/special/materializedview.md) 在其他引擎上运行的引擎，只要是它们底层是 `MergeTree`-引擎表即可。
