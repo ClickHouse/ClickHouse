@@ -78,8 +78,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData::DataPartPtr & data_part,
     const Names & required_columns,
-    const PrewhereInfoPtr & prewhere_info,
-    bool check_columns);
+    const PrewhereInfoPtr & prewhere_info);
 
 struct MergeTreeBlockSizePredictor
 {
