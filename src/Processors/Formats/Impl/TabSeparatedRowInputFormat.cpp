@@ -5,6 +5,7 @@
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
 #include <Formats/verbosePrintString.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/registerWithNamesAndTypes.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 
@@ -221,25 +222,24 @@ void registerInputFormatTabSeparated(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})
     {
-        auto register_func = [&](const String & format_name, bool with_names, bool with_types)
+        auto get_input_creator = [is_raw](bool with_names, bool with_types)
         {
-            factory.registerInputFormat(format_name, [with_names, with_types, is_raw](
+            return [with_names, with_types, is_raw](
                 ReadBuffer & buf,
                 const Block & sample,
                 IRowInputFormat::Params params,
                 const FormatSettings & settings)
             {
                 return std::make_shared<TabSeparatedRowInputFormat>(sample, buf, std::move(params), with_names, with_types, is_raw, settings);
-            });
+            };
         };
 
-        registerInputFormatWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
-        registerInputFormatWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
+        registerInputFormatWithNamesAndTypes(factory, is_raw ? "TabSeparatedRaw" : "TabSeparated", get_input_creator);
+        registerInputFormatWithNamesAndTypes(factory, is_raw ? "TSVRaw" : "TSV", get_input_creator);
     }
 }
 
-template <bool is_raw>
-static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size, bool is_raw, size_t min_rows)
 {
     bool need_more_data = true;
     char * pos = in.position();
@@ -247,7 +247,7 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
 
     while (loadAtPosition(in, memory, pos) && need_more_data)
     {
-        if constexpr (is_raw)
+        if (is_raw)
             pos = find_first_symbols<'\r', '\n'>(pos, in.buffer().end());
         else
             pos = find_first_symbols<'\\', '\r', '\n'>(pos, in.buffer().end());
@@ -269,7 +269,7 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
             if (*pos == '\n')
                 ++number_of_rows;
 
-            if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
+            if ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size) && number_of_rows >= min_rows)
                 need_more_data = false;
             ++pos;
         }
@@ -282,13 +282,28 @@ static std::pair<bool, size_t> fileSegmentationEngineTabSeparatedImpl(ReadBuffer
 
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory)
 {
-    registerFileSegmentationEngineForFormatWithNamesAndTypes(factory, "TSV", &fileSegmentationEngineTabSeparatedImpl<false>);
-    registerFileSegmentationEngineForFormatWithNamesAndTypes(factory, "TabSeparated", &fileSegmentationEngineTabSeparatedImpl<false>);
-    registerFileSegmentationEngineForFormatWithNamesAndTypes(factory, "TSVRaw", &fileSegmentationEngineTabSeparatedImpl<true>);
-    registerFileSegmentationEngineForFormatWithNamesAndTypes(factory, "TabSeparatedRaw", &fileSegmentationEngineTabSeparatedImpl<true>);
+    for (bool is_raw : {false, true})
+    {
+        auto get_file_segmentation_engine = [is_raw](size_t min_rows)
+        {
+            return [is_raw, min_rows](ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
+            {
+                return fileSegmentationEngineTabSeparatedImpl(in, memory, min_chunk_size, is_raw, min_rows);
+            };
+        };
+
+        registerFileSegmentationEngineForFormatWithNamesAndTypes(factory, is_raw ? "TSVRaw" : "TSV", get_file_segmentation_engine);
+        registerFileSegmentationEngineForFormatWithNamesAndTypes(factory, is_raw ? "TabSeparatedRaw" : "TabSeparated", get_file_segmentation_engine);
+    }
 
     // We can use the same segmentation engine for TSKV.
-    factory.registerFileSegmentationEngine("TSKV", &fileSegmentationEngineTabSeparatedImpl<false>);
+    factory.registerFileSegmentationEngine("TSKV", [](
+        ReadBuffer & in,
+        DB::Memory<> & memory,
+        size_t min_chunk_size)
+    {
+        return fileSegmentationEngineTabSeparatedImpl(in, memory, min_chunk_size, false, 0);
+    });
 }
 
 }

@@ -2,6 +2,7 @@
 #include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/JSONCompactEachRowRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/registerWithNamesAndTypes.h>
 
 
 namespace DB
@@ -101,20 +102,19 @@ void registerOutputFormatJSONCompactEachRow(FormatFactory & factory)
 {
     for (bool yield_strings : {false, true})
     {
-        auto register_func = [&](const String & format_name, bool with_names, bool with_types)
+        auto get_output_creator = [yield_strings](bool with_names, bool with_types)
         {
-            factory.registerOutputFormat(format_name, [=](
+            return [yield_strings, with_names, with_types](
                 WriteBuffer & buf,
                 const Block & sample,
                 const RowOutputFormatParams & params,
                 const FormatSettings & format_settings)
             {
                 return std::make_shared<JSONCompactEachRowRowOutputFormat>(buf, sample, params, format_settings, with_names, with_types, yield_strings);
-            });
-            factory.markOutputFormatSupportsParallelFormatting(format_name);
+            };
         };
 
-        registerOutputFormatWithNamesAndTypes(yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", register_func);
+        registerOutputFormatWithNamesAndTypes(factory, yield_strings ? "JSONCompactStringsEachRow" : "JSONCompactEachRow", get_output_creator, true);
     }
 }
 

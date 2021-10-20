@@ -63,13 +63,6 @@ private:
     std::unordered_map<String, size_t> column_indexes_by_names;
 };
 
-using RegisterFormatWithNamesAndTypesFunc = std::function<void(
-    const String & format_name,
-    bool with_names,
-    bool with_types)>;
-
-void registerInputFormatWithNamesAndTypes(const String & base_format_name, RegisterFormatWithNamesAndTypesFunc register_func);
-
 void registerFileSegmentationEngineForFormatWithNamesAndTypes(
     FormatFactory & factory, const String & base_format_name, FormatFactory::FileSegmentationEngine segmentation_engine);
 

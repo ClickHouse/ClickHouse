@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/TabSeparatedRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/registerWithNamesAndTypes.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -78,21 +79,20 @@ void registerOutputFormatTabSeparated(FormatFactory & factory)
 {
     for (bool is_raw : {false, true})
     {
-        auto register_func = [&](const String & format_name, bool with_names, bool with_types)
+        auto get_output_creator = [is_raw](bool with_names, bool with_types)
         {
-            factory.registerOutputFormat(format_name, [=](
+            return [is_raw, with_names, with_types](
                 WriteBuffer & buf,
                 const Block & sample,
                 const RowOutputFormatParams & params,
                 const FormatSettings & settings)
             {
                 return std::make_shared<TabSeparatedRowOutputFormat>(buf, sample, with_names, with_types, is_raw, params, settings);
-            });
-            factory.markOutputFormatSupportsParallelFormatting(format_name);
+            };
         };
 
-        registerOutputFormatWithNamesAndTypes(is_raw ? "TSVRaw" : "TSV", register_func);
-        registerOutputFormatWithNamesAndTypes(is_raw ? "TabSeparatedRaw" : "TabSeparated", register_func);
+        registerOutputFormatWithNamesAndTypes(factory, is_raw ? "TSVRaw" : "TSV", get_output_creator, true);
+        registerOutputFormatWithNamesAndTypes(factory, is_raw ? "TabSeparatedRaw" : "TabSeparated", get_output_creator, true);
     }
 }
 

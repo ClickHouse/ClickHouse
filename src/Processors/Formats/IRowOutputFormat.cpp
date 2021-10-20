@@ -113,11 +113,4 @@ void IRowOutputFormat::writeTotals(const DB::Columns & columns, size_t row_num)
     write(columns, row_num);
 }
 
-void registerOutputFormatWithNamesAndTypes(const String & base_format_name, RegisterOutputFormatWithNamesAndTypes register_func)
-{
-    register_func(base_format_name, false, false);
-    register_func(base_format_name + "WithNames", true, false);
-    register_func(base_format_name + "WithNamesAndTypes", true, true);
-}
-
 }

@@ -2,6 +2,7 @@
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/BinaryRowInputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/registerWithNamesAndTypes.h>
 #include <DataTypes/DataTypeFactory.h>
 
 
@@ -10,11 +11,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int CANNOT_SKIP_UNKNOWN_FIELD;
 }
 
-BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params_, bool with_names_and_types, const FormatSettings & format_settings_)
-    : RowInputFormatWithNamesAndTypes(std::move(header), in_, std::move(params_), with_names_and_types, with_names_and_types, format_settings_)
+BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+    : RowInputFormatWithNamesAndTypes(std::move(header), in_, std::move(params_), with_names_, with_types_, format_settings_)
 {
 }
 
@@ -71,30 +72,26 @@ void BinaryRowInputFormat::skipTypes()
 void BinaryRowInputFormat::skipField(size_t file_column)
 {
     if (file_column >= read_data_types.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot skip field in Binary format, because it's type is unknown");
+        throw Exception(ErrorCodes::CANNOT_SKIP_UNKNOWN_FIELD, "Cannot skip unknown field in RowBinaryWithNames format, because it's type is unknown");
     Field field;
     read_data_types[file_column]->getDefaultSerialization()->deserializeBinary(field, *in);
 }
 
 void registerInputFormatRowBinary(FormatFactory & factory)
 {
-    factory.registerInputFormat("RowBinary", [](
-        ReadBuffer & buf,
-        const Block & sample,
-        const IRowInputFormat::Params & params,
-        const FormatSettings & settings)
+    auto get_input_creator = [](bool with_names, bool with_types)
     {
-        return std::make_shared<BinaryRowInputFormat>(buf, sample, params, false, settings);
-    });
+        return [with_names, with_types](
+            ReadBuffer & buf,
+            const Block & sample,
+            const IRowInputFormat::Params & params,
+            const FormatSettings & settings)
+        {
+            return std::make_shared<BinaryRowInputFormat>(buf, sample, params, with_names, with_types, settings);
+        };
+    };
 
-    factory.registerInputFormat("RowBinaryWithNamesAndTypes", [](
-        ReadBuffer & buf,
-        const Block & sample,
-        const IRowInputFormat::Params & params,
-        const FormatSettings & settings)
-    {
-        return std::make_shared<BinaryRowInputFormat>(buf, sample, params, true, settings);
-    });
+    registerInputFormatWithNamesAndTypes(factory, "RowBinary", get_input_creator);
 }
 
 }

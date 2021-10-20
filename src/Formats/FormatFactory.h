@@ -67,8 +67,6 @@ public:
         const Columns & columns,
         size_t row)>;
 
-private:
-
     using InputCreatorFunc = InputFormatPtr(
         ReadBuffer & buf,
         const Block & header,
@@ -83,6 +81,7 @@ private:
             const RowOutputFormatParams & params,
             const FormatSettings & settings)>;
 
+private:
     /// Some input formats can have non trivial readPrefix() and readSuffix(),
     /// so in some cases there is no possibility to use parallel parsing.
     /// The checker should return true if parallel parsing should be disabled.
