@@ -252,8 +252,6 @@ Session::Session(const ContextPtr & global_context_, ClientInfo::Interface inter
     prepared_client_info->interface = interface_;
 }
 
-Session::Session(Session &&) = default;
-
 Session::~Session()
 {
     LOG_DEBUG(log, "{} Destroying {} of user {}",
