@@ -19,7 +19,7 @@ UserDefinedSQLFunctionFactory & UserDefinedSQLFunctionFactory::instance()
     return result;
 }
 
-void UserDefinedSQLFunctionFactory::registerFunction(const String & function_name, ASTPtr create_function_query)
+void UserDefinedSQLFunctionFactory::registerFunction(const String & function_name, ASTPtr create_function_query, bool replace)
 {
     if (FunctionFactory::instance().hasNameOrAlias(function_name))
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The function '{}' already exists", function_name);
@@ -29,11 +29,17 @@ void UserDefinedSQLFunctionFactory::registerFunction(const String & function_nam
 
     std::lock_guard lock(mutex);
 
-    auto [_, inserted] = function_name_to_create_query.emplace(function_name, std::move(create_function_query));
+    auto [it, inserted] = function_name_to_create_query.emplace(function_name, create_function_query);
+
     if (!inserted)
-        throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS,
-            "The function name '{}' is not unique",
-            function_name);
+    {
+        if (replace)
+            it->second = std::move(create_function_query);
+        else
+            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS,
+                "The function name '{}' is not unique",
+                function_name);
+    }
 }
 
 void UserDefinedSQLFunctionFactory::unregisterFunction(const String & function_name)
