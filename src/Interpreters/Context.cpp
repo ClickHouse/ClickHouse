@@ -1895,7 +1895,7 @@ void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
         zk.second->setZooKeeperLog(shared->system_logs->zookeeper_log);
 }
 
-void Context::initializeKeeperDispatcher(bool start_async) const
+void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) const
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
