@@ -8,7 +8,6 @@ import os
 from pr_info import PRInfo
 from github import Github
 import shutil
-from get_robot_token import get_best_robot_token
 
 NAME = "Push to Dockerhub (actions)"
 
@@ -168,11 +167,6 @@ def upload_results(s3_client, pr_number, commit_sha, test_results):
     logging.info("Search result in url %s", url)
     return url
 
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     repo_path = os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../"))
@@ -222,10 +216,6 @@ if __name__ == "__main__":
     status, test_results = process_test_results(s3_helper, images_processing_result, s3_path_prefix)
 
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results)
-
-    gh = Github(get_best_robot_token())
-    commit = get_commit(gh, pr_info.sha)
-    commit.create_status(context=NAME, description=description, state=status, target_url=url)
 
     with open(os.path.join(temp_path, 'changed_images.json'), 'w') as images_file:
         json.dump(result_images, images_file)

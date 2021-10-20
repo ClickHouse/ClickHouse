@@ -9,7 +9,6 @@ from s3_helper import S3Helper
 from pr_info import PRInfo
 import shutil
 import sys
-from get_robot_token import get_best_robot_token
 
 NAME = 'PVS Studio (actions)'
 LICENCE_NAME = 'Free license: ClickHouse, Yandex'
@@ -39,11 +38,6 @@ def _process_txt_report(path):
             elif 'err' in line:
                 errors.append(':'.join(line.split('\t')[0:2]))
     return warnings, errors
-
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
 
 def upload_results(s3_client, pr_number, commit_sha, test_results, additional_files):
     s3_path_prefix = str(pr_number) + "/" + commit_sha + "/" + NAME.lower().replace(' ', '_')
@@ -83,8 +77,6 @@ if __name__ == "__main__":
 
     aws_secret_key_id = os.getenv("YANDEX_S3_ACCESS_KEY_ID", "")
     aws_secret_key = os.getenv("YANDEX_S3_ACCESS_SECRET_KEY", "")
-
-    gh = Github(get_best_robot_token())
 
     images_path = os.path.join(temp_path, 'changed_images.json')
     docker_image = 'clickhouse/pvs-test'
@@ -138,8 +130,6 @@ if __name__ == "__main__":
         report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_logs)
 
         print("::notice ::Report url: {}".format(report_url))
-        commit = get_commit(gh, pr_info.sha)
-        commit.create_status(context=NAME, description=description, state=status, target_url=report_url)
     except Exception as ex:
         print("Got an exception", ex)
         sys.exit(1)
