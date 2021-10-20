@@ -79,16 +79,15 @@ void ReadBufferFromRemoteFSGather::initialize()
     auto current_buf_offset = absolute_position;
     for (size_t i = 0; i < metadata.remote_fs_objects.size(); ++i)
     {
-        current_buf_idx = i;
         const auto & [file_path, size] = metadata.remote_fs_objects[i];
 
         if (size > current_buf_offset)
         {
             /// Do not create a new buffer if we already have what we need.
-            if (!current_buf || buf_idx != i)
+            if (!current_buf || current_buf_idx != i)
             {
                 current_buf = createImplementationBuffer(file_path, last_offset);
-                buf_idx = i;
+                current_buf_idx = i;
             }
 
             current_buf->seek(current_buf_offset, SEEK_SET);
@@ -97,6 +96,7 @@ void ReadBufferFromRemoteFSGather::initialize()
 
         current_buf_offset -= size;
     }
+    current_buf_idx = metadata.remote_fs_objects.size();
     current_buf = nullptr;
 }
 
@@ -141,7 +141,7 @@ bool ReadBufferFromRemoteFSGather::readImpl()
     if (bytes_to_ignore)
         current_buf->ignore(bytes_to_ignore);
 
-    LOG_DEBUG(&Poco::Logger::get("Gather"), "Reading from path: {}", canonical_path);
+    LOG_DEBUG(&Poco::Logger::get("ReadBufferFromRemoteFSGather"), "Reading from path: {}", canonical_path);
     auto result = current_buf->next();
 
     swap(*current_buf);
@@ -160,11 +160,11 @@ void ReadBufferFromRemoteFSGather::seek(off_t offset)
 }
 
 
-void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t offset)
+void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t position)
 {
-    assert(last_offset < offset);
+    assert(last_offset < position);
     current_buf.reset();
-    last_offset = offset;
+    last_offset = position;
 }
 
 
@@ -177,9 +177,6 @@ void ReadBufferFromRemoteFSGather::reset()
 String ReadBufferFromRemoteFSGather::getFileName() const
 {
     return canonical_path;
-    // if (current_buf)
-    //     return fs::path(metadata.metadata_file_path) / metadata.remote_fs_objects[buf_idx].first;
-    // return metadata.metadata_file_path;
 }
 
 }

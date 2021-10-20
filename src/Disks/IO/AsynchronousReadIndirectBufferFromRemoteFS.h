@@ -68,8 +68,6 @@ private:
 
     Memory<> prefetch_buffer;
 
-    String buffer_events;
-
     size_t min_bytes_for_seek;
 
     size_t bytes_to_ignore = 0;

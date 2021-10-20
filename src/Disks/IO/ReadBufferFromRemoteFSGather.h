@@ -54,8 +54,6 @@ private:
 
     size_t absolute_position = 0;
 
-    size_t buf_idx = 0;
-
     size_t bytes_to_ignore = 0;
 
     size_t last_offset = 0;
