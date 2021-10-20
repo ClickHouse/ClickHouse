@@ -22,6 +22,8 @@ $CLICKHOUSE_CLIENT $SETTINGS -nm -q '''
 ''';
 
 
+FAILED=()
+
 for TESTNAME in *.sql
 do
     echo -n "Testing $TESTNAME ----> "
@@ -51,13 +53,20 @@ do
     actual=$($CLICKHOUSE_CLIENT $SETTINGS -nm --testmode < $NEW_TESTNAME | md5sum)
 
     if [[ $expected != $actual ]]; then
-        echo "Error, results are not equal while processing $TESTNAME"
-        exit
+        FAILED+=($TESTNAME)
+        echo "Failed! ❌ "
     fi
 
     echo "Ok! ✅"
 done
 
+
+echo "Total failed tests: "
+# Iterate the loop to read and print each array element
+for value in "${arrVar[@]}"
+do
+    echo "🔺  $value"
+done
 
 # Drop tables
 
