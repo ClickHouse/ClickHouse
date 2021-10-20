@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/CSVRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/registerWithNamesAndTypes.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -74,20 +75,19 @@ void CSVRowOutputFormat::writeBeforeExtremes()
 
 void registerOutputFormatCSV(FormatFactory & factory)
 {
-    auto register_func = [&](const String & format_name, bool with_names, bool with_types)
+    auto get_output_creator = [](bool with_names, bool with_types)
     {
-        factory.registerOutputFormat(format_name, [=](
+        return [with_names, with_types](
                    WriteBuffer & buf,
                    const Block & sample,
                    const RowOutputFormatParams & params,
                    const FormatSettings & format_settings)
         {
             return std::make_shared<CSVRowOutputFormat>(buf, sample, with_names, with_types, params, format_settings);
-        });
-        factory.markOutputFormatSupportsParallelFormatting(format_name);
+        };
     };
 
-    registerOutputFormatWithNamesAndTypes("CSV", register_func);
+    registerOutputFormatWithNamesAndTypes(factory, "CSV", get_output_creator, true);
 }
 
 }

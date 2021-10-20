@@ -16,7 +16,7 @@ class ReadBuffer;
 class BinaryRowInputFormat : public RowInputFormatWithNamesAndTypes
 {
 public:
-    BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params_, bool with_names_and_types, const FormatSettings & format_settings_);
+    BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
     String getName() const override { return "BinaryRowInputFormat"; }
 

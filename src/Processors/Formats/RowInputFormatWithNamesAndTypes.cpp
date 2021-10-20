@@ -247,12 +247,6 @@ bool RowInputFormatWithNamesAndTypes::parseRowAndPrintDiagnosticInfo(MutableColu
     return parseRowEndWithDiagnosticInfo(out);
 }
 
-void registerInputFormatWithNamesAndTypes(const String & base_format_name, RegisterFormatWithNamesAndTypesFunc register_func)
-{
-    register_func(base_format_name, false, false);
-    register_func(base_format_name + "WithNames", true, false);
-    register_func(base_format_name + "WithNamesAndTypes", true, true);
-}
 
 void registerFileSegmentationEngineForFormatWithNamesAndTypes(
     FormatFactory & factory, const String & base_format_name, FormatFactory::FileSegmentationEngine segmentation_engine)
