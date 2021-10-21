@@ -31,9 +31,13 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
         {
             connection_timeout_ms = config.getInt(config_name + "." + key);
         }
-        else if (key == "session_fault_probability")
+        else if (key == "send_fault_probability")
         {
-            session_fault_probability = config.getDouble(config_name + "." + key);
+            send_fault_probability = config.getDouble(config_name + "." + key);
+        }
+        else if (key == "recv_fault_probability")
+        {
+            recv_fault_probability = config.getDouble(config_name + "." + key);
         }
         else if (key == "identity")
         {
