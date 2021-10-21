@@ -13,6 +13,7 @@ from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 import os
 import sys
 import time
+from version_helper import get_version_from_repo, update_version_local
 
 
 def get_build_config(build_check_name, build_number, repo_path):
@@ -113,7 +114,6 @@ if __name__ == "__main__":
 
     build_check_name = sys.argv[1]
     build_number = int(sys.argv[2])
-    build_version = sys.argv[3]
 
     build_config = get_build_config(build_check_name, build_number, repo_path)
 
@@ -151,6 +151,9 @@ if __name__ == "__main__":
     else:
         raise Exception(f"Cannot pull dockerhub for image docker pull {image_name}:{image_version}")
 
+    version = get_version_from_repo(repo_path)
+    version.tweak_update()
+    update_version_local(repo_path, pr_info.sha, version)
 
     build_name = build_config_to_string(build_config)
     logging.info(f"Build short name {build_name}")
@@ -164,7 +167,7 @@ if __name__ == "__main__":
     if not os.path.exists(ccache_path):
         os.makedirs(ccache_path)
 
-    packager_cmd = get_packager_cmd(build_config, os.path.join(repo_path, "docker/packager"), build_output_path, build_version, image_version, ccache_path)
+    packager_cmd = get_packager_cmd(build_config, os.path.join(repo_path, "docker/packager"), build_output_path, version.get_version_string(), image_version, ccache_path)
     logging.info("Going to run packager with %s", packager_cmd)
 
     build_clickhouse_log = os.path.join(temp_path, "build_log")
