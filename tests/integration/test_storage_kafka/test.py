@@ -2880,9 +2880,6 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
         if format_opts.get('printable', False) == False:
             raw_message = 'hex(_raw_message)'
         kafka_produce(kafka_cluster, topic_name, data_prefix + data_sample)
-        format_settings = ''
-        if format_opts.get('format_settings'):
-            format_settings = 'SETTINGS ' + format_opts.get('format_settings')
         instance.query('''
             DROP TABLE IF EXISTS test.kafka_{format_name};
 
@@ -2908,16 +2905,20 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
             DROP TABLE IF EXISTS test.kafka_errors_{format_name}_mv;
             CREATE MATERIALIZED VIEW test.kafka_errors_{format_name}_mv Engine=Log AS
                 SELECT {raw_message} as raw_message, _error as error, _topic as topic, _partition as partition, _offset as offset FROM test.kafka_{format_name}
-                WHERE length(_error) > 0 {format_settings};
+                WHERE length(_error) > 0;
             '''.format(topic_name=topic_name, format_name=format_name, raw_message=raw_message,
-                       extra_settings=format_opts.get('extra_settings') or '', format_settings=format_settings)
+                       extra_settings=format_opts.get('extra_settings') or '')
 
     for format_name, format_opts in list(all_formats.items()):
         logging.debug('Checking {format_name}')
         topic_name = f"{topic_name_prefix}{format_name}"
         # shift offsets by 1 if format supports empty value
         offsets = [1, 2, 3] if format_opts.get('supports_empty_value', False) else [0, 1, 2]
-        result = instance.query('SELECT * FROM test.kafka_data_{format_name}_mv;'.format(format_name=format_name))
+        format_settings = ''
+        if format_opts.get('format_settings'):
+            format_settings = 'SETTINGS ' + format_opts.get('format_settings')
+                       
+        result = instance.query('SELECT * FROM test.kafka_data_{format_name}_mv {format_settings};'.format(format_name=format_name, format_settings=format_settings))
         expected = '''\
 0	0	AM	0.5	1	{topic_name}	0	{offset_0}
 1	0	AM	0.5	1	{topic_name}	0	{offset_1}
