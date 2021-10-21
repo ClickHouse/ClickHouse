@@ -1,0 +1,2 @@
+<!-- Decrease number of threads to reduce memory overhead by TSan -->
+<clickhouse><max_thread_pool_size>200</max_thread_pool_size></clickhouse>

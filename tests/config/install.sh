@@ -15,6 +15,9 @@ mkdir -p $DEST_SERVER_PATH/config.d/
 mkdir -p $DEST_SERVER_PATH/users.d/
 mkdir -p $DEST_CLIENT_PATH
 
+if clickhouse local --query "SELECT max(value LIKE '%-fsanitize=thread%') FROM system.build_options" | grep -x -q '1'; then
+   ln -sf $SRC_PATH/config.d/threads.xml $DEST_SERVER_PATH/config.d/
+fi
 ln -sf $SRC_PATH/config.d/zookeeper.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/listen.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/part_log.xml $DEST_SERVER_PATH/config.d/
