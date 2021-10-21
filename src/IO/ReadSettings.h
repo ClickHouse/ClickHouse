@@ -77,6 +77,12 @@ struct ReadSettings
     size_t remote_fs_read_max_backoff_ms = 10000;
     size_t remote_fs_read_backoff_max_tries = 4;
 
+    /// Set to true for MergeTree tables to make sure
+    /// that last position (offset in compressed file) is always passed.
+    /// (Otherwise asynchronous reading from remote fs is not efficient).
+    /// If reading is done without final position set, throw logical_error.
+    bool must_read_until_position = false;
+
     bool http_retriable_read = true;
     size_t http_max_tries = 1;
     size_t http_retry_initial_backoff_ms = 100;

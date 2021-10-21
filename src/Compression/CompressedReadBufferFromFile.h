@@ -46,7 +46,7 @@ private:
     void prefetch() override;
 
 public:
-    CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_ = false);
+    explicit CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_ = false);
 
     CompressedReadBufferFromFile(
         const std::string & path, const ReadSettings & settings, size_t estimated_size, bool allow_different_codecs_ = false);
@@ -64,6 +64,8 @@ public:
     }
 
     void setReadUntilPosition(size_t position) override { file_in.setReadUntilPosition(position); }
+
+    void setReadUntilEnd() override { file_in.setReadUntilEnd(); }
 };
 
 }
