@@ -6,6 +6,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -109,12 +110,7 @@ public:
       */
     ZooKeeper(
         const Nodes & nodes,
-        const String & root_path,
-        const String & auth_scheme,
-        const String & auth_data,
-        Poco::Timespan session_timeout_,
-        Poco::Timespan connection_timeout,
-        Poco::Timespan operation_timeout_,
+        const zkutil::ZooKeeperArgs & args_,
         std::shared_ptr<ZooKeeperLog> zk_log_);
 
     ~ZooKeeper() override;
@@ -192,11 +188,10 @@ public:
     void setZooKeeperLog(std::shared_ptr<DB::ZooKeeperLog> zk_log_);
 
 private:
-    String root_path;
     ACLs default_acls;
 
-    Poco::Timespan session_timeout;
-    Poco::Timespan operation_timeout;
+    zkutil::ZooKeeperArgs args;
+
 
     Poco::Net::StreamSocket socket;
     /// To avoid excessive getpeername(2) calls.

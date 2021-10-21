@@ -13,6 +13,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <unistd.h>
 
 
@@ -50,22 +51,10 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 class ZooKeeper
 {
 public:
+
     using Ptr = std::shared_ptr<ZooKeeper>;
 
-    /// hosts_string -- comma separated [secure://]host:port list
-    ZooKeeper(const std::string & hosts_string, const std::string & identity_ = "",
-              int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
-              int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
-              const std::string & chroot_ = "",
-              const std::string & implementation_ = "zookeeper",
-              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
-
-    ZooKeeper(const Strings & hosts_, const std::string & identity_ = "",
-              int32_t session_timeout_ms_ = Coordination::DEFAULT_SESSION_TIMEOUT_MS,
-              int32_t operation_timeout_ms_ = Coordination::DEFAULT_OPERATION_TIMEOUT_MS,
-              const std::string & chroot_ = "",
-              const std::string & implementation_ = "zookeeper",
-              std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
+    ZooKeeper(const ZooKeeperArgs & args_, std::shared_ptr<DB::ZooKeeperLog> zk_log_ = nullptr);
 
     /** Config of the form:
         <zookeeper>
@@ -283,8 +272,7 @@ public:
 private:
     friend class EphemeralNodeHolder;
 
-    void init(const std::string & implementation_, const Strings & hosts_, const std::string & identity_,
-              int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_);
+    void init(ZooKeeperArgs args_);
 
     /// The following methods don't any throw exceptions but return error codes.
     Coordination::Error createImpl(const std::string & path, const std::string & data, int32_t mode, std::string & path_created);
@@ -299,12 +287,7 @@ private:
 
     std::unique_ptr<Coordination::IKeeper> impl;
 
-    Strings hosts;
-    std::string identity;
-    int32_t session_timeout_ms;
-    int32_t operation_timeout_ms;
-    std::string chroot;
-    std::string implementation;
+    ZooKeeperArgs args;
 
     std::mutex mutex;
 
