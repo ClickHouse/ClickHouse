@@ -109,6 +109,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
+    caches_path = os.getenv("CACHES_PATH", temp_path)
 
     build_check_name = sys.argv[1]
     build_number = int(sys.argv[2])
@@ -154,13 +155,12 @@ if __name__ == "__main__":
     build_name = build_config_to_string(build_config)
     logging.info(f"Build short name {build_name}")
     subprocess.check_call(f"echo 'BUILD_NAME={build_name}' >> $GITHUB_ENV", shell=True)
-    os.environ['BUILD_NAME'] = build_name
 
     build_output_path = os.path.join(temp_path, build_name)
     if not os.path.exists(build_output_path):
         os.makedirs(build_output_path)
 
-    ccache_path = os.path.join(temp_path, build_name + '_ccache')
+    ccache_path = os.path.join(caches_path, build_name + '_ccache')
     if not os.path.exists(ccache_path):
         os.makedirs(ccache_path)
 
