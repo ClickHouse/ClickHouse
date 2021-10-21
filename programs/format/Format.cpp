@@ -25,6 +25,8 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/registerStorages.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <Formats/FormatFactory.h>
+#include <Formats/registerFormats.h>
 
 
 #pragma GCC diagnostic ignored "-Wunused-function"
@@ -114,6 +116,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             registerAggregateFunctions();
             registerTableFunctions();
             registerStorages();
+            registerFormats();
 
             std::unordered_set<std::string> additional_names;
 
@@ -130,6 +133,8 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
                 return FunctionFactory::instance().has(what)
                     || AggregateFunctionFactory::instance().isAggregateFunctionName(what)
                     || TableFunctionFactory::instance().isTableFunctionName(what)
+                    || FormatFactory::instance().isOutputFormat(what)
+                    || FormatFactory::instance().isInputFormat(what)
                     || additional_names.count(what);
             };
 
