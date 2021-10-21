@@ -336,6 +336,18 @@ ZooKeeper::ZooKeeper(
         default_acls.emplace_back(std::move(acl));
     }
 
+
+    /// It makes sense (especially, for async requests) to inject a fault in two places:
+    /// pushRequest (before request is sent) and receiveEvent (after request was executed).
+    if (0 < args.send_fault_probability && args.send_fault_probability <= 1)
+    {
+        send_inject_fault.emplace(args.send_fault_probability);
+    }
+    if (0 < args.recv_fault_probability && args.recv_fault_probability <= 1)
+    {
+        recv_inject_fault.emplace(args.recv_fault_probability);
+    }
+
     connect(nodes, args.connection_timeout_ms * 1000);
 
     if (!args.auth_scheme.empty())
@@ -683,6 +695,9 @@ void ZooKeeper::receiveEvent()
     RequestInfo request_info;
     ZooKeeperResponsePtr response;
 
+    if (unlikely(recv_inject_fault) && recv_inject_fault.value()(thread_local_rng))
+        throw Exception("Session expired (fault injected)", Error::ZSESSIONEXPIRED);
+
     if (xid == PING_XID)
     {
         if (err != Error::ZOK)
@@ -1018,6 +1033,9 @@ void ZooKeeper::pushRequest(RequestInfo && info)
                     dynamic_cast<ZooKeeperRequest &>(*request).xid = multi_request->xid;
             }
         }
+
+        if (unlikely(send_inject_fault) && send_inject_fault.value()(thread_local_rng))
+            throw Exception("Session expired (fault injected)", Error::ZSESSIONEXPIRED);
 
         if (!requests_queue.tryPush(std::move(info), args.operation_timeout_ms))
         {

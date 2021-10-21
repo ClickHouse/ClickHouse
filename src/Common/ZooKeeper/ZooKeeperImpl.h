@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <optional>
 #include <functional>
+#include <random>
 
 
 /** ZooKeeper C++ library, a replacement for libzookeeper.
@@ -192,6 +193,8 @@ private:
 
     zkutil::ZooKeeperArgs args;
 
+    std::optional<std::bernoulli_distribution> send_inject_fault;
+    std::optional<std::bernoulli_distribution> recv_inject_fault;
 
     Poco::Net::StreamSocket socket;
     /// To avoid excessive getpeername(2) calls.

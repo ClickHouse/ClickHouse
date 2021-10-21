@@ -23,7 +23,7 @@ struct ZooKeeperArgs
     bool operator == (const ZooKeeperArgs &) const = default;
     bool operator != (const ZooKeeperArgs &) const = default;
 
-    String implementation;
+    String implementation = "zookeeper";
     Strings hosts;
     String auth_scheme;
     String identity;
@@ -31,7 +31,8 @@ struct ZooKeeperArgs
     int32_t connection_timeout_ms = Coordination::DEFAULT_CONNECTION_TIMEOUT_MS;
     int32_t session_timeout_ms = Coordination::DEFAULT_SESSION_TIMEOUT_MS;
     int32_t operation_timeout_ms = Coordination::DEFAULT_OPERATION_TIMEOUT_MS;
-    float session_fault_probability = 0;
+    float send_fault_probability = 0;
+    float recv_fault_probability = 0;
 };
 
 }

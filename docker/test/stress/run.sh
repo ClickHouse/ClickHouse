@@ -34,6 +34,7 @@ dpkg -i package_folder/clickhouse-test_*.deb
 
 function configure()
 {
+    export ZOOKEEPER_FAULT_INJECTION=1
     # install test configs
     /usr/share/clickhouse-test/config/install.sh
 
