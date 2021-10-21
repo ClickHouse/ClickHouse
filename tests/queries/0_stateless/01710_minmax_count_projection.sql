@@ -43,3 +43,9 @@ select min(j), max(j) from has_final_mark;
 
 set max_rows_to_read = 5001; -- one normal part 5000 + one minmax_count_projection part 1
 select min(j), max(j) from mixed_final_mark;
+
+-- The first primary expr is the same of some partition column
+drop table if exists t;
+create table t (server_date Date, something String) engine MergeTree partition by (toYYYYMM(server_date), server_date) order by (server_date, something);
+insert into t values ('2019-01-01', 'test1'), ('2019-02-01', 'test2'), ('2019-03-01', 'test3');
+select count() from t;

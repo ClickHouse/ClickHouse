@@ -17,8 +17,6 @@ jobs:
         uses: actions/checkout@v2
       - name: Labels check
         run: cd $GITHUB_WORKSPACE/tests/ci && python3 run_check.py
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   DockerHubPush:
     needs: CheckLabels
     runs-on: [self-hosted]
@@ -27,11 +25,6 @@ jobs:
         uses: actions/checkout@v2
       - name: Images check
         run: cd $GITHUB_WORKSPACE/tests/ci && python3 docker_images_check.py
-        env:
-          YANDEX_S3_ACCESS_KEY_ID: ${{ secrets.YANDEX_S3_ACCESS_KEY_ID }}
-          YANDEX_S3_ACCESS_SECRET_KEY: ${{ secrets.YANDEX_S3_ACCESS_SECRET_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DOCKER_ROBOT_PASSWORD: ${{ secrets.DOCKER_ROBOT_PASSWORD }}
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v2
         with:
@@ -49,10 +42,6 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Style Check
-        env:
-          YANDEX_S3_ACCESS_KEY_ID: ${{ secrets.YANDEX_S3_ACCESS_KEY_ID }}
-          YANDEX_S3_ACCESS_SECRET_KEY: ${{ secrets.YANDEX_S3_ACCESS_SECRET_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: cd $GITHUB_WORKSPACE/tests/ci && python3 style_check.py
   FinishCheck:
     needs: [StyleCheck, DockerHubPush, CheckLabels]
@@ -62,5 +51,3 @@ jobs:
         uses: actions/checkout@v2
       - name: Finish label
         run: cd $GITHUB_WORKSPACE/tests/ci && python3 finish_check.py
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
