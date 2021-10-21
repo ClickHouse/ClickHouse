@@ -353,11 +353,11 @@ ReturnType SerializationNullable::deserializeWholeTextImpl(IColumn & column, Rea
         buf.setCheckpoint();
         SCOPE_EXIT(buf.dropCheckpoint());
 
-        if (checkStringCaseInsensitive("NULL", buf))
+        if (checkStringCaseInsensitive("NULL", buf) && buf.eof())
             return true;
 
         buf.rollbackToCheckpoint();
-        if (checkStringCaseInsensitive("ᴺᵁᴸᴸ", buf))
+        if (checkStringCaseInsensitive("ᴺᵁᴸᴸ", buf) && buf.eof())
             return true;
 
         buf.rollbackToCheckpoint();
