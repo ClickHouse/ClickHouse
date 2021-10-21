@@ -57,15 +57,15 @@ size_t AsynchronousReadBufferFromFileDescriptor::getNumBytesToRead()
     if (read_until_position)
     {
         /// Everything is already read.
-        if (file_offset_of_buffer_end == *read_until_position)
+        if (file_offset_of_buffer_end == read_until_position)
             return 0;
 
-        if (file_offset_of_buffer_end > *read_until_position)
+        if (file_offset_of_buffer_end > read_until_position)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
-                            file_offset_of_buffer_end, *read_until_position);
+                            file_offset_of_buffer_end, read_until_position);
 
         /// Read range [file_offset_of_buffer_end, read_until_position).
-        num_bytes_to_read = *read_until_position - file_offset_of_buffer_end;
+        num_bytes_to_read = read_until_position - file_offset_of_buffer_end;
         num_bytes_to_read = std::min(num_bytes_to_read, internal_buffer.size());
     }
     else

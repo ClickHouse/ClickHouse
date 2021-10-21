@@ -24,7 +24,7 @@ protected:
 
     const size_t required_alignment = 0;  /// For O_DIRECT both file offsets and memory addresses have to be aligned.
     size_t file_offset_of_buffer_end = 0; /// What offset in file corresponds to working_buffer.end().
-    std::optional<size_t> read_until_position;
+    size_t read_until_position = 0;
     int fd;
 
     bool nextImpl() override;
