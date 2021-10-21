@@ -250,7 +250,7 @@ MergeTreeData::MergeTreeData(
     {
         /// This is for backward compatibility.
         checkSampleExpression(metadata_, attach || settings->compatibility_allow_sampling_expression_not_in_primary_key,
-                              settings->check_sample_column_is_correct);
+                              settings->check_sample_column_is_correct && !attach);
     }
 
     checkTTLExpressions(metadata_, metadata_);
