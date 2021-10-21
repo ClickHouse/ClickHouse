@@ -307,7 +307,7 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello"
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## JSON_EXISTS(path, json) {#json-exists}
+## JSON_EXISTS(json, path) {#json-exists}
 
 Если значение существует в документе JSON, то возвращается 1.
 
@@ -322,7 +322,10 @@ SELECT JSON_EXISTS('$.hello[*]', '{"hello":["world"]}');
 SELECT JSON_EXISTS('$.hello[0]', '{"hello":["world"]}');
 ```
 
-## JSON_QUERY(path, json) {#json-query}
+!!! note "Примечание"
+    до версии 21.11 порядок аргументов функции был обратный, т.е. JSON_EXISTS(path, json)
+
+## JSON_QUERY(json, path) {#json-query}
 
 Парсит JSON и извлекает строку.
 
@@ -345,8 +348,10 @@ SELECT toTypeName(JSON_QUERY('$.hello', '{"hello":2}'));
 [2]
 String
 ```
+!!! note "Примечание"
+    до версии 21.11 порядок аргументов функции был обратный, т.е. JSON_QUERY(path, json)
 
-## JSON_VALUE(path, json) {#json-value}
+## JSON_VALUE(json, path) {#json-value}
 
 Парсит JSON и извлекает строку.
 
@@ -369,6 +374,9 @@ SELECT toTypeName(JSON_VALUE('$.hello', '{"hello":2}'));
 2
 String
 ```
+
+!!! note "Примечание"
+    до версии 21.11 порядок аргументов функции был обратный, т.е. JSON_VALUE(path, json)
 
 ## toJSONString {#tojsonstring}
 
