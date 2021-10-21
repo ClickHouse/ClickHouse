@@ -5,7 +5,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Access/AccessControlManager.h>
 #include <Access/AccessFlags.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <boost/range/algorithm/find_if.hpp>
 #include <boost/range/algorithm/upper_bound.hpp>
 #include <boost/range/algorithm/sort.hpp>

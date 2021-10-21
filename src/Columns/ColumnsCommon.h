@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Common/PODArray.h>
 
 
 /// Common helper methods for implementation of different columns.
@@ -55,7 +56,8 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
         limit = indexes.size();
 
     if (indexes.size() < limit)
-        throw Exception("Size of indexes is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Size of indexes ({}) is less than required ({})", indexes.size(), limit);
 
     if (auto * data_uint8 = detail::getIndexesData<UInt8>(indexes))
         return column.template indexImpl<UInt8>(*data_uint8, limit);
@@ -68,6 +70,15 @@ ColumnPtr selectIndexImpl(const Column & column, const IColumn & indexes, size_t
     else
         throw Exception("Indexes column for IColumn::select must be ColumnUInt, got " + indexes.getName(),
                         ErrorCodes::LOGICAL_ERROR);
+}
+
+size_t getLimitForPermutation(size_t column_size, size_t perm_size, size_t limit);
+
+template <typename Column>
+ColumnPtr permuteImpl(const Column & column, const IColumn::Permutation & perm, size_t limit)
+{
+    limit = getLimitForPermutation(column.size(), perm.size(), limit);
+    return column.indexImpl(perm, limit);
 }
 
 #define INSTANTIATE_INDEX_IMPL(Column) \

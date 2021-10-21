@@ -87,59 +87,77 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
     return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
 }
 
-std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const
+QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr query_context) const
 {
-    bool has_dictionary = has(dictionary_name);
-    if (has_dictionary)
-        return dictionary_name;
-
-    std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name);
-    has_dictionary = has(resolved_name);
-
-    if (!has_dictionary)
+    auto qualified_name = QualifiedTableName::tryParseFromString(dictionary_name);
+    if (!qualified_name)
     {
-        /// If dictionary not found. And database was not implicitly specified
-        /// we can qualify dictionary name with current database name.
-        /// It will help if dictionary is created with DDL and is in current database.
-        if (dictionary_name.find('.') == std::string::npos)
-        {
-            String dictionary_name_with_database = current_database_name + '.' + dictionary_name;
-            resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name_with_database);
-            has_dictionary = has(resolved_name);
-        }
+        QualifiedTableName qualified_dictionary_name;
+        qualified_dictionary_name.table = dictionary_name;
+        return qualified_dictionary_name;
     }
 
-    if (!has_dictionary)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary ({}) not found", backQuote(dictionary_name));
+    if (qualified_name->database.empty() && has(dictionary_name))
+    {
+        /// This is xml dictionary
+        return *qualified_name;
+    }
 
-    return resolved_name;
+    if (qualified_name->database.empty())
+        qualified_name->database = query_context->getCurrentDatabase();
+
+    return *qualified_name;
 }
 
-std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog(const std::string & name) const
+std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const
+{
+    if (has(dictionary_name))
+        return dictionary_name;
+
+    std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
+
+    if (has(resolved_name))
+        return resolved_name;
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dictionary ({}) not found", backQuote(dictionary_name));
+}
+
+std::string ExternalDictionariesLoader::resolveDictionaryNameFromDatabaseCatalog(const std::string & name, const std::string & current_database_name) const
 {
     /// If it's dictionary from Atomic database, then we need to convert qualified name to UUID.
     /// Try to split name and get id from associated StorageDictionary.
     /// If something went wrong, return name as is.
 
-    auto pos = name.find('.');
-    if (pos == std::string::npos || name.find('.', pos + 1) != std::string::npos)
-        return name;
+    String res = name;
 
-    std::string maybe_database_name = name.substr(0, pos);
-    std::string maybe_table_name = name.substr(pos + 1);
+    auto qualified_name = QualifiedTableName::tryParseFromString(name);
+    if (!qualified_name)
+        return res;
+
+    if (qualified_name->database.empty())
+    {
+        /// Ether database name is not specified and we should use current one
+        /// or it's an XML dictionary.
+        bool is_xml_dictionary = has(name);
+        if (is_xml_dictionary)
+            return res;
+
+        qualified_name->database = current_database_name;
+        res = current_database_name + '.' + name;
+    }
 
     auto [db, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(
-        {maybe_database_name, maybe_table_name},
+        {qualified_name->database, qualified_name->table},
         const_pointer_cast<Context>(getContext()));
 
     if (!db)
-        return name;
+        return res;
     assert(table);
 
     if (db->getUUID() == UUIDHelpers::Nil)
-        return name;
+        return res;
     if (table->getName() != "Dictionary")
-        return name;
+        return res;
 
     return toString(table->getStorageID().uuid);
 }

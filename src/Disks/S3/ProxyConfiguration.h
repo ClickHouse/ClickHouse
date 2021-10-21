@@ -7,7 +7,7 @@
 #if USE_AWS_S3
 
 #include <utility>
-#include <common/types.h>
+#include <base/types.h>
 #include <aws/core/client/ClientConfiguration.h> // Y_IGNORE
 #include <Poco/URI.h>
 

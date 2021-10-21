@@ -129,4 +129,4 @@ Most numeric and string operations are not defined for Enum values, e.g. adding
 
 ALTERを使用すると、Int8をInt16に変更するのと同じように、Enum8をEnum16に変更することも、その逆も可能です。
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/enum/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/enum/) <!--hide-->

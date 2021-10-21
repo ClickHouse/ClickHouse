@@ -1,13 +1,16 @@
+#include <Interpreters/InterpreterCreateFunctionQuery.h>
+
+#include <stack>
+
 #include <Access/ContextAccess.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/InterpreterCreateFunctionQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Interpreters/UserDefinedObjectsLoader.h>
-#include <Interpreters/UserDefinedFunctionFactory.h>
+#include <Interpreters/UserDefinedSQLObjectsLoader.h>
+#include <Interpreters/UserDefinedSQLFunctionFactory.h>
 
 
 namespace DB
@@ -15,7 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_IDENTIFIER;
     extern const int CANNOT_CREATE_RECURSIVE_FUNCTION;
     extern const int UNSUPPORTED_METHOD;
 }
@@ -31,20 +33,32 @@ BlockIO InterpreterCreateFunctionQuery::execute()
     if (!create_function_query)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Expected CREATE FUNCTION query");
 
+    auto & user_defined_function_factory = UserDefinedSQLFunctionFactory::instance();
+
     auto & function_name = create_function_query->function_name;
+
+    bool if_not_exists = create_function_query->if_not_exists;
+    bool replace = create_function_query->or_replace;
+
+    create_function_query->if_not_exists = false;
+    create_function_query->or_replace = false;
+
+    if (if_not_exists && user_defined_function_factory.tryGet(function_name) != nullptr)
+        return {};
+
     validateFunction(create_function_query->function_core, function_name);
 
-    UserDefinedFunctionFactory::instance().registerFunction(function_name, query_ptr);
+    user_defined_function_factory.registerFunction(function_name, query_ptr, replace);
 
-    if (!is_internal)
+    if (persist_function)
     {
         try
         {
-            UserDefinedObjectsLoader::instance().storeObject(current_context, UserDefinedObjectType::Function, function_name, *query_ptr);
+            UserDefinedSQLObjectsLoader::instance().storeObject(current_context, UserDefinedSQLObjectType::Function, function_name, *query_ptr, replace);
         }
         catch (Exception & exception)
         {
-            UserDefinedFunctionFactory::instance().unregisterFunction(function_name);
+            user_defined_function_factory.unregisterFunction(function_name);
             exception.addMessage(fmt::format("while storing user defined function {} on disk", backQuote(function_name)));
             throw;
         }
@@ -66,40 +80,7 @@ void InterpreterCreateFunctionQuery::validateFunction(ASTPtr function, const Str
     }
 
     ASTPtr function_body = function->as<ASTFunction>()->children.at(0)->children.at(1);
-    std::unordered_set<String> identifiers_in_body = getIdentifiers(function_body);
-
-    for (const auto & identifier : identifiers_in_body)
-    {
-        if (!arguments.contains(identifier))
-            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Identifier {} does not exist in arguments", backQuote(identifier));
-    }
-
     validateFunctionRecursiveness(function_body, name);
-}
-
-std::unordered_set<String> InterpreterCreateFunctionQuery::getIdentifiers(ASTPtr node)
-{
-    std::unordered_set<String> identifiers;
-
-    std::stack<ASTPtr> ast_nodes_to_process;
-    ast_nodes_to_process.push(node);
-
-    while (!ast_nodes_to_process.empty())
-    {
-        auto ast_node_to_process = ast_nodes_to_process.top();
-        ast_nodes_to_process.pop();
-
-        for (const auto & child : ast_node_to_process->children)
-        {
-            auto identifier_name_opt = tryGetIdentifierName(child);
-            if (identifier_name_opt)
-                identifiers.insert(identifier_name_opt.value());
-
-            ast_nodes_to_process.push(child);
-        }
-    }
-
-    return identifiers;
 }
 
 void InterpreterCreateFunctionQuery::validateFunctionRecursiveness(ASTPtr node, const String & function_to_create)

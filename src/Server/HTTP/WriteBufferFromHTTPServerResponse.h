@@ -46,6 +46,7 @@ private:
     std::shared_ptr<std::ostream> response_header_ostr;
 
     std::unique_ptr<WriteBuffer> out;
+    bool initialized = false;
 
     bool headers_started_sending = false;
     bool headers_finished_sending = false;    /// If true, you could not add any headers.

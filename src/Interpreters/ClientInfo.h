@@ -2,7 +2,7 @@
 
 #include <Core/UUID.h>
 #include <Poco/Net/SocketAddress.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/OpenTelemetryTraceContext.h>
 
 namespace DB
@@ -35,8 +35,9 @@ public:
     enum class HTTPMethod : uint8_t
     {
         UNKNOWN = 0,
-        GET = 1,
-        POST = 2,
+        GET     = 1,
+        POST    = 2,
+        OPTIONS = 3
     };
 
     enum class QueryKind : uint8_t

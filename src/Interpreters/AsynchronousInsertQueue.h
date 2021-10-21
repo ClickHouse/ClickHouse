@@ -106,13 +106,10 @@ private:
     QueryIdToEntry currently_processing_queries;
 
     /// Logic and events behind queue are as follows:
-    ///  - reset_timeout:  if queue is empty for some time, then we delete the queue and free all associated resources, e.g. tables.
     ///  - busy_timeout:   if queue is active for too long and there are a lot of rapid inserts, then we dump the data, so it doesn't
     ///                    grow for a long period of time and users will be able to select new data in deterministic manner.
     ///  - stale_timeout:  if queue is stale for too long, then we dump the data too, so that users will be able to select the last
     ///                    piece of inserted data.
-    ///  - access_timeout: also we have to check if user still has access to the tables periodically, and if the access is lost, then
-    ///                    we dump pending data and delete queue immediately.
     ///  - max_data_size:  if the maximum size of data is reached, then again we dump the data.
 
     const size_t max_data_size;  /// in bytes
@@ -134,7 +131,7 @@ private:
     /// Should be called with shared or exclusively locked 'rwlock'.
     void pushImpl(InsertData::EntryPtr entry, QueueIterator it);
 
-    void scheduleProcessDataJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
+    void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context);
     static void processData(InsertQuery key, InsertDataPtr data, ContextPtr global_context);
 
     template <typename E>

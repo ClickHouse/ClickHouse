@@ -11,6 +11,8 @@
 
 ClickHouse не удаляет данные из таблицы автоматически. Подробности в разделе [Введение](#system-tables-introduction).
 
+Чтобы уменьшить количество запросов, регистрирующихся в таблице `query_thread_log`, вы можете использовать настройку [log_queries_probability](../../operations/settings/settings.md#log-queries-probability).
+
 Столбцы:
 
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — дата завершения выполнения запроса потоком.

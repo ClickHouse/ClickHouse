@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <!-- this update period also syncs MemoryTracking with RSS, disable this, by using period = 1 day -->
     <asynchronous_metrics_update_period_s>86400</asynchronous_metrics_update_period_s>
-</yandex>
+</clickhouse>

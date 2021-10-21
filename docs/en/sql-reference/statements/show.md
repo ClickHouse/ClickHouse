@@ -91,7 +91,7 @@ Result:
 
 ### See Also {#see-also}
 
--   [CREATE DATABASE](https://clickhouse.tech/docs/en/sql-reference/statements/create/database/#query-language-create-database)
+-   [CREATE DATABASE](https://clickhouse.com/docs/en/sql-reference/statements/create/database/#query-language-create-database)
 
 ## SHOW PROCESSLIST {#show-processlist}
 
@@ -190,8 +190,8 @@ Result:
 
 ### See Also {#see-also}
 
--   [Create Tables](https://clickhouse.tech/docs/en/getting-started/tutorial/#create-tables)
--   [SHOW CREATE TABLE](https://clickhouse.tech/docs/en/sql-reference/statements/show/#show-create-table)
+-   [Create Tables](https://clickhouse.com/docs/en/getting-started/tutorial/#create-tables)
+-   [SHOW CREATE TABLE](https://clickhouse.com/docs/en/sql-reference/statements/show/#show-create-table)
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 
@@ -493,4 +493,4 @@ Result:
 
 -   [system.settings](../../operations/system-tables/settings.md) table
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/show/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/statements/show/) <!--hide-->
