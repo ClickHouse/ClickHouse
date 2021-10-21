@@ -1806,6 +1806,68 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+namespace
+{
+
+bool checkZooKeeperConfigIsLocal(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
+{
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_name, keys);
+
+    for (const auto & key : keys)
+    {
+        if (startsWith(key, "node"))
+        {
+            String host = config.getString(config_name + "." + key + ".host");
+            if (isLocalAddress(DNSResolver::instance().resolveHost(host)))
+                return true;
+        }
+    }
+    return false;
+}
+
+}
+
+
+bool Context::tryCheckClientConnectionToMyKeeperCluster() const
+{
+    try
+    {
+        /// If our server is part of main Keeper cluster
+        if (checkZooKeeperConfigIsLocal(getConfigRef(), "zookeeper"))
+        {
+            LOG_DEBUG(shared->log, "Keeper server is participant of the main zookeeper cluster, will try to connect to it");
+            getZooKeeper();
+            /// Connected, return true
+            return true;
+        }
+        else
+        {
+            Poco::Util::AbstractConfiguration::Keys keys;
+            getConfigRef().keys("auxiliary_zookeepers", keys);
+
+            /// If our server is part of some auxiliary_zookeeper
+            for (const auto & aux_zk_name : keys)
+            {
+                if (checkZooKeeperConfigIsLocal(getConfigRef(), "auxiliary_zookeepers." + aux_zk_name))
+                {
+                    LOG_DEBUG(shared->log, "Our Keeper server is participant of the auxiliary zookeeper cluster ({}), will try to connect to it", aux_zk_name);
+                    getAuxiliaryZooKeeper(aux_zk_name);
+                    /// Connected, return true
+                    return true;
+                }
+            }
+        }
+
+        /// Our server doesn't depend on our Keeper cluster
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
 UInt32 Context::getZooKeeperSessionUptime() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
@@ -1833,10 +1895,11 @@ void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
         zk.second->setZooKeeperLog(shared->system_logs->zookeeper_log);
 }
 
-void Context::initializeKeeperDispatcher() const
+void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) const
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
+
 
     if (shared->keeper_storage_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
@@ -1844,8 +1907,21 @@ void Context::initializeKeeperDispatcher() const
     const auto & config = getConfigRef();
     if (config.has("keeper_server"))
     {
+        bool is_standalone_app = getApplicationType() == ApplicationType::KEEPER;
+        if (start_async)
+        {
+            assert(!is_standalone_app);
+            LOG_INFO(shared->log, "Connected to ZooKeeper (or Keeper) before internal Keeper start or we don't depend on our Keeper cluster"
+                     ", will wait for Keeper asynchronously");
+        }
+        else
+        {
+            LOG_INFO(shared->log, "Cannot connect to ZooKeeper (or Keeper) before internal Keeper start,"
+                     "will wait for Keeper synchronously");
+        }
+
         shared->keeper_storage_dispatcher = std::make_shared<KeeperDispatcher>();
-        shared->keeper_storage_dispatcher->initialize(config, getApplicationType() == ApplicationType::KEEPER);
+        shared->keeper_storage_dispatcher->initialize(config, is_standalone_app, start_async);
     }
 #endif
 }
@@ -2589,6 +2665,7 @@ void Context::setFormatSchemaPath(const String & path)
 
 Context::SampleBlockCache & Context::getSampleBlockCache() const
 {
+    assert(hasQueryContext());
     return getQueryContext()->sample_block_cache;
 }
 
@@ -2894,8 +2971,12 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
     shared->async_insert_queue = ptr;
 }
 
-void Context::initializeBackgroundExecutors()
+void Context::initializeBackgroundExecutorsIfNeeded()
 {
+    auto lock = getLock();
+    if (is_background_executors_initialized)
+        return;
+
     const size_t max_merges_and_mutations = getSettingsRef().background_pool_size * getSettingsRef().background_merges_mutations_concurrency_ratio;
 
     /// With this executor we can execute more tasks than threads we have
@@ -2942,6 +3023,8 @@ void Context::initializeBackgroundExecutors()
 
     LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}",
         getSettingsRef().background_common_pool_size, getSettingsRef().background_common_pool_size);
+
+    is_background_executors_initialized = true;
 }
 
 

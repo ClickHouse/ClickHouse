@@ -2,9 +2,10 @@
 
 #include "Connection.h"
 #include <Interpreters/Context.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <IO/TimeoutSetter.h>
 #include <Interpreters/Session.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
@@ -33,6 +34,7 @@ struct LocalQueryState
 
     /// Current block to be sent next.
     std::optional<Block> block;
+    std::optional<ColumnsDescription> columns_description;
 
     /// Is request cancelled
     bool is_cancelled = false;

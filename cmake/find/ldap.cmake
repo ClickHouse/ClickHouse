@@ -15,7 +15,7 @@ option (USE_INTERNAL_LDAP_LIBRARY "Set to FALSE to use system *LDAP library inst
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/openldap/README")
     if (USE_INTERNAL_LDAP_LIBRARY)
-        message (WARNING "Submodule contrib/openldap is missing. To fix try running:\n git submodule update --init --recursive")
+        message (WARNING "Submodule contrib/openldap is missing. To fix try running:\n git submodule update --init")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal LDAP library")
     endif ()
 
