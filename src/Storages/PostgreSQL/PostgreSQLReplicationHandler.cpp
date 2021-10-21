@@ -455,7 +455,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection & connection_)
 {
     pqxx::work tx(connection_.getRef());
-    NameSet result_tables;
+    std::set<String> result_tables;
 
     bool publication_exists_before_startup = isPublicationExist(tx);
     LOG_DEBUG(log, "Publication exists: {}, is attach: {}", publication_exists_before_startup, is_attach);
