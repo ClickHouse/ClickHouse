@@ -49,7 +49,7 @@ def process_report(build_report):
         sanitizer=build_config['sanitizer'],
         bundled=build_config['bundled'],
         splitted=build_config['splitted'],
-        status=build_report['status'],
+        status="success" if build_report['status'] else "failure",
         elapsed_seconds=build_report['elapsed_seconds'],
         with_coverage=False
     )
@@ -68,16 +68,20 @@ def process_report(build_report):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    reports_path = os.getenv("REPORTS_PATH")
-    temp_path = os.path.join(os.getenv("TEMP_PATH"))
+    reports_path = os.getenv("REPORTS_PATH", "./reports")
+    temp_path = os.path.join(os.getenv("TEMP_PATH", "."))
     logging.info("Reports path %s", reports_path)
+
+    if not os.path.exists(temp_path):
+        os.makedirs(temp_path)
 
     build_check_name = sys.argv[1]
 
     build_reports = []
     for root, dirs, files in os.walk(reports_path):
+        print(files)
         for f in files:
-            if f.starts_with("build_urls_") and f.ends_with('.json'):
+            if f.startswith("build_urls_") and f.endswith('.json'):
                 logging.info("Found build report json %s", f)
                 with open(os.path.join(root, f), 'r') as file_handler:
                     build_report = json.load(file_handler)
@@ -109,8 +113,8 @@ if __name__ == "__main__":
     if pr_info.number != 0:
         branch_name = "PR #{}".format(pr_info.number)
         branch_url = "https://github.com/ClickHouse/ClickHouse/pull/" + str(pr_info.number)
-    commit_url = f"https://github.com/ClickHouse/ClickHouse/commit/{pr_info.commit}"
-    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
+    commit_url = f"https://github.com/ClickHouse/ClickHouse/commit/{pr_info.sha}"
+    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID', 0)}"
     report = create_build_html_report(
         build_check_name,
         build_results,
