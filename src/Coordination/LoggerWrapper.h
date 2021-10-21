@@ -1,7 +1,7 @@
 #pragma once
 
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Core/SettingsEnums.h>
 
 namespace DB

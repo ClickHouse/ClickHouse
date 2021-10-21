@@ -35,19 +35,6 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        auto value = getValue(arguments);
-        return applyVisitor(FieldToDataType{}, value);
-    }
-
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
-    {
-        auto value = getValue(arguments);
-        return result_type->createColumnConst(input_rows_count, convertFieldToType(value, *result_type));
-    }
-
-private:
-    Field getValue(const ColumnsWithTypeAndName & arguments) const
-    {
         if (!isString(arguments[0].type))
             throw Exception{"The argument of function " + String{name} + " should be a constant string with the name of a setting",
                             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
@@ -57,8 +44,20 @@ private:
                             ErrorCodes::ILLEGAL_COLUMN};
 
         std::string_view setting_name{column->getDataAt(0)};
-        return getContext()->getSettingsRef().get(setting_name);
+        value = getContext()->getSettingsRef().get(setting_name);
+
+        DataTypePtr type = applyVisitor(FieldToDataType{}, value);
+        value = convertFieldToType(value, *type);
+        return type;
     }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return result_type->createColumnConst(input_rows_count, value);
+    }
+
+private:
+    mutable Field value;
 };
 
 }

@@ -4,8 +4,8 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <base/map.h>
-#include <base/range.h>
+#include <common/map.h>
+#include <common/range.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/WeakHash.h>
@@ -276,10 +276,7 @@ bool ColumnMap::structureEquals(const IColumn & rhs) const
 ColumnPtr ColumnMap::compress() const
 {
     auto compressed = nested->compress();
-    const auto byte_size = compressed->byteSize();
-    /// The order of evaluation of function arguments is unspecified
-    /// and could cause interacting with object in moved-from state
-    return ColumnCompressed::create(size(), byte_size, [compressed = std::move(compressed)]
+    return ColumnCompressed::create(size(), compressed->byteSize(), [compressed = std::move(compressed)]
     {
         return ColumnMap::create(compressed->decompress());
     });

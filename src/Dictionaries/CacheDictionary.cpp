@@ -1,7 +1,7 @@
 #include "CacheDictionary.h"
 
 #include <memory>
-#include <base/chrono_io.h>
+#include <common/chrono_io.h>
 
 #include <Core/Defines.h>
 #include <Common/CurrentMetrics.h>
@@ -14,7 +14,7 @@
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 
 namespace ProfileEvents
 {
@@ -573,9 +573,9 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             QueryPipeline pipeline;
 
             if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-                pipeline = QueryPipeline(current_source_ptr->loadIds(requested_keys_vector));
+                pipeline.init(current_source_ptr->loadIds(requested_keys_vector));
             else
-                pipeline = QueryPipeline(current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows));
+                pipeline.init(current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows));
 
             size_t skip_keys_size_offset = dict_struct.getKeysSize();
             PaddedPODArray<KeyType> found_keys_in_source;

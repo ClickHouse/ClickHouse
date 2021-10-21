@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <kafka>
         <auto_offset_reset>earliest</auto_offset_reset>
         <!-- Debugging of possible issues, like:
@@ -23,4 +23,4 @@
         <!-- default: 10000 -->
         <session_timeout_ms>6000</session_timeout_ms>
     </kafka_consumer_hang>
-</clickhouse>
+</yandex>

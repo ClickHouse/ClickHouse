@@ -4,7 +4,7 @@
 #include <Common/PODArray_fwd.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 #include <Core/Types.h>
 
 

@@ -17,8 +17,6 @@ dpkg -i package_folder/clickhouse-test_*.deb
 # install test configs
 /usr/share/clickhouse-test/config/install.sh
 
-./setup_minio.sh
-
 # For flaky check we also enable thread fuzzer
 if [ "$NUM_TRIES" -gt "1" ]; then
     export THREAD_FUZZER_CPU_TIME_PERIOD_US=1000
@@ -97,7 +95,7 @@ function run_tests()
     fi
 
     clickhouse-test --testname --shard --zookeeper --hung-check --print-time \
-            --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
+            --use-skip-list --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
         | tee -a test_output/test_result.txt
 }

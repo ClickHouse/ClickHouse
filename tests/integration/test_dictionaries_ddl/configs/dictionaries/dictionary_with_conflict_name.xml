@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
 <dictionary>
     <name>test.conflicting_dictionary</name>
     <source>
@@ -38,4 +38,4 @@
         </attribute>
     </structure>
 </dictionary>
-</clickhouse>
+</yandex>

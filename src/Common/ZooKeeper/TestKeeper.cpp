@@ -1,7 +1,7 @@
 #include <Common/ZooKeeper/TestKeeper.h>
 #include <Common/setThreadName.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <base/types.h>
+#include <common/types.h>
 
 #include <sstream>
 #include <iomanip>

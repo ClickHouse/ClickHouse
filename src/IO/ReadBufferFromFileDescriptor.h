@@ -21,7 +21,6 @@ protected:
     int fd;
 
     bool nextImpl() override;
-    void prefetch() override;
 
     /// Name or some description of file.
     std::string getFileName() const override;

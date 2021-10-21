@@ -5,7 +5,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <numeric>
 
@@ -167,7 +167,7 @@ DictionaryPtr createLayout(const std::string & ,
                            const Poco::Util::AbstractConfiguration & config,
                            const std::string & config_prefix,
                            DictionarySourcePtr source_ptr,
-                           ContextPtr /* global_context */,
+                           ContextPtr /* context */,
                            bool /*created_from_ddl*/)
 {
     const String database = config.getString(config_prefix + ".database", "");

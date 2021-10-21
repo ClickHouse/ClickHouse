@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Compression/CompressedReadBufferBase.h>
+#include "CompressedReadBufferBase.h"
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadSettings.h>
 #include <time.h>
 #include <memory>
 
@@ -29,13 +28,13 @@ private:
     size_t size_compressed = 0;
 
     bool nextImpl() override;
-    void prefetch() override;
 
 public:
     CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_ = false);
 
     CompressedReadBufferFromFile(
-        const std::string & path, const ReadSettings & settings, size_t estimated_size, bool allow_different_codecs_ = false);
+        const std::string & path, size_t estimated_size, size_t direct_io_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, bool allow_different_codecs_ = false);
 
     void seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block);
 

@@ -13,7 +13,7 @@
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
 #    include <Formats/MySQLSource.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
-#    include <Processors/QueryPipelineBuilder.h>
+#    include <Processors/QueryPipeline.h>
 #    include <IO/Operators.h>
 #    include <Interpreters/Context.h>
 #    include <Parsers/ASTCreateQuery.h>
@@ -84,7 +84,7 @@ bool DatabaseMySQL::empty() const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name) const
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name)
 {
     Tables tables;
     std::lock_guard<std::mutex> lock(mutex);
@@ -284,7 +284,8 @@ std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime(ContextP
     std::map<String, UInt64> tables_with_modification_time;
     StreamSettings mysql_input_stream_settings(local_context->getSettingsRef());
     auto result = std::make_unique<MySQLSource>(mysql_pool.get(), query.str(), tables_status_sample_block, mysql_input_stream_settings);
-    QueryPipeline pipeline(std::move(result));
+    QueryPipeline pipeline;
+    pipeline.init(Pipe(std::move(result)));
 
     Block block;
     PullingPipelineExecutor executor(pipeline);
@@ -404,7 +405,7 @@ String DatabaseMySQL::getMetadataPath() const
     return metadata_path;
 }
 
-void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, bool, bool /*force_attach*/, bool /* skip_startup_tables */)
+void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, bool, bool /*force_attach*/)
 {
 
     std::lock_guard<std::mutex> lock{mutex};

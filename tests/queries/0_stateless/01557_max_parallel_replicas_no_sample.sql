@@ -1,5 +1,3 @@
--- Tags: replica
-
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (x String) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t VALUES ('Hello');

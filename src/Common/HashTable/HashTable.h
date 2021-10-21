@@ -10,7 +10,7 @@
 #include <boost/noncopyable.hpp>
 
 #include <Core/Defines.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 #include <Common/MemorySanitizer.h>
 

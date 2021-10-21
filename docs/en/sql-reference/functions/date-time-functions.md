@@ -322,7 +322,7 @@ Truncates sub-seconds.
 **Syntax**
 
 ``` sql
-toStartOfSecond(value, [timezone])
+toStartOfSecond(value[, timezone])
 ```
 
 **Arguments**

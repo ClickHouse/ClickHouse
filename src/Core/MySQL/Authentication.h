@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Interpreters/Context.h>
 #include <Core/MySQL/PacketEndpoint.h>
 

@@ -1,6 +1,6 @@
 #include <Storages/IStorage.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/BlockIO.h>
 #include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -21,7 +21,7 @@ namespace ErrorCodes
 BlockIO InterpreterExistsQuery::execute()
 {
     BlockIO res;
-    res.pipeline = executeImpl();
+    res.in = executeImpl();
     return res;
 }
 
@@ -35,7 +35,7 @@ Block InterpreterExistsQuery::getSampleBlock()
 }
 
 
-QueryPipeline InterpreterExistsQuery::executeImpl()
+BlockInputStreamPtr InterpreterExistsQuery::executeImpl()
 {
     ASTQueryWithTableAndOutput * exists_query;
     bool result = false;
@@ -76,10 +76,10 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
         result = DatabaseCatalog::instance().isDictionaryExist({database, exists_query->table});
     }
 
-    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{
+    return std::make_shared<OneBlockInputStream>(Block{{
         ColumnUInt8::create(1, result),
         std::make_shared<DataTypeUInt8>(),
-        "result" }}));
+        "result" }});
 }
 
 }

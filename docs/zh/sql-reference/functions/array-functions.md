@@ -662,4 +662,4 @@ arrayReduce（‘agg_func’，arr1，…） - 将聚合函数`agg_func`应用�
 
 返回与源数组大小相同的数组，包含反转源数组的所有元素的结果。
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/array_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/array_functions/) <!--hide-->

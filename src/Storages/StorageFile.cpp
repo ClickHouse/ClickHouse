@@ -49,7 +49,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
-    extern const int CANNOT_FSTAT;
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -165,12 +164,6 @@ bool StorageFile::isColumnOriented() const
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
-    struct stat buf;
-    int res = fstat(table_fd_, &buf);
-    if (-1 == res)
-        throwFromErrno("Cannot execute fstat", res, ErrorCodes::CANNOT_FSTAT);
-    total_bytes_to_read = buf.st_size;
-
     if (args.getContext()->getApplicationType() == Context::ApplicationType::SERVER)
         throw Exception("Using file descriptor as source of storage isn't allowed for server daemons", ErrorCodes::DATABASE_ACCESS_DENIED);
     if (args.format_name == "Distributed")
@@ -215,8 +208,6 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
     String table_dir_path = fs::path(base_path) / relative_table_dir_path / "";
     fs::create_directories(table_dir_path);
     paths = {getTablePath(table_dir_path, format_name)};
-    if (fs::exists(paths[0]))
-        total_bytes_to_read = fs::file_size(paths[0]);
 }
 
 StorageFile::StorageFile(CommonArguments args)
@@ -336,7 +327,8 @@ public:
                     /// Special case for distributed format. Defaults are not needed here.
                     if (storage->format_name == "Distributed")
                     {
-                        pipeline = std::make_unique<QueryPipeline>(StorageDistributedDirectoryMonitor::createSourceFromFile(current_path));
+                        pipeline = std::make_unique<QueryPipeline>();
+                        pipeline->init(Pipe(StorageDistributedDirectoryMonitor::createSourceFromFile(current_path)));
                         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                         continue;
                     }
@@ -393,18 +385,16 @@ public:
                 auto format = FormatFactory::instance().getInput(
                     storage->format_name, *read_buf, get_block_for_format(), context, max_block_size, storage->format_settings);
 
-                QueryPipelineBuilder builder;
-                builder.init(Pipe(format));
+                pipeline = std::make_unique<QueryPipeline>();
+                pipeline->init(Pipe(format));
 
                 if (columns_description.hasDefaults())
                 {
-                    builder.addSimpleTransform([&](const Block & header)
+                    pipeline->addSimpleTransform([&](const Block & header)
                     {
                         return std::make_shared<AddingDefaultsTransform>(header, columns_description, *format, context);
                     });
                 }
-
-                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
 
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
@@ -590,7 +580,7 @@ public:
 
     void consume(Chunk chunk) override
     {
-        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+        writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onFinish() override

@@ -2,7 +2,7 @@
 
 #if USE_SQLITE
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
@@ -44,7 +44,7 @@ bool DatabaseSQLite::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &) const
+DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &)
 {
     std::lock_guard<std::mutex> lock(mutex);
 

@@ -8,6 +8,7 @@
 #include <Common/setThreadName.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataStreams/AsynchronousBlockInputStream.h>
+#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -23,19 +24,15 @@
 #include <Parsers/ParserQuery.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Sinks/EmptySink.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Formats/FormatFactory.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
 #include <Poco/FileStream.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <base/range.h>
+#include <common/range.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -123,33 +120,6 @@ namespace
             throw Exception("Unknown compression level: '" + str + "'", ErrorCodes::INVALID_CONFIG_PARAMETER);
     }
 
-    grpc_compression_algorithm convertCompressionAlgorithm(const ::clickhouse::grpc::CompressionAlgorithm & algorithm)
-    {
-        if (algorithm == ::clickhouse::grpc::NO_COMPRESSION)
-            return GRPC_COMPRESS_NONE;
-        else if (algorithm == ::clickhouse::grpc::DEFLATE)
-            return GRPC_COMPRESS_DEFLATE;
-        else if (algorithm == ::clickhouse::grpc::GZIP)
-            return GRPC_COMPRESS_GZIP;
-        else if (algorithm == ::clickhouse::grpc::STREAM_GZIP)
-            return GRPC_COMPRESS_STREAM_GZIP;
-        else
-            throw Exception("Unknown compression algorithm: '" + ::clickhouse::grpc::CompressionAlgorithm_Name(algorithm) + "'", ErrorCodes::INVALID_GRPC_QUERY_INFO);
-    }
-
-    grpc_compression_level convertCompressionLevel(const ::clickhouse::grpc::CompressionLevel & level)
-    {
-        if (level == ::clickhouse::grpc::COMPRESSION_NONE)
-            return GRPC_COMPRESS_LEVEL_NONE;
-        else if (level == ::clickhouse::grpc::COMPRESSION_LOW)
-            return GRPC_COMPRESS_LEVEL_LOW;
-        else if (level == ::clickhouse::grpc::COMPRESSION_MEDIUM)
-            return GRPC_COMPRESS_LEVEL_MED;
-        else if (level == ::clickhouse::grpc::COMPRESSION_HIGH)
-            return GRPC_COMPRESS_LEVEL_HIGH;
-        else
-            throw Exception("Unknown compression level: '" + ::clickhouse::grpc::CompressionLevel_Name(level) + "'", ErrorCodes::INVALID_GRPC_QUERY_INFO);
-    }
 
     /// Gets file's contents as a string, throws an exception if failed.
     String readFile(const String & filepath)
@@ -272,22 +242,7 @@ namespace
         virtual void write(const GRPCResult & result, const CompletionCallback & callback) = 0;
         virtual void writeAndFinish(const GRPCResult & result, const grpc::Status & status, const CompletionCallback & callback) = 0;
 
-        Poco::Net::SocketAddress getClientAddress() const
-        {
-            String peer = grpc_context.peer();
-            return Poco::Net::SocketAddress{peer.substr(peer.find(':') + 1)};
-        }
-
-        void setResultCompression(grpc_compression_algorithm algorithm, grpc_compression_level level)
-        {
-            grpc_context.set_compression_algorithm(algorithm);
-            grpc_context.set_compression_level(level);
-        }
-
-        void setResultCompression(const ::clickhouse::grpc::Compression & compression)
-        {
-            setResultCompression(convertCompressionAlgorithm(compression.algorithm()), convertCompressionLevel(compression.level()));
-        }
+        Poco::Net::SocketAddress getClientAddress() const { String peer = grpc_context.peer(); return Poco::Net::SocketAddress{peer.substr(peer.find(':') + 1)}; }
 
     protected:
         CompletionCallback * getCallbackPtr(const CompletionCallback & callback)
@@ -580,6 +535,7 @@ namespace
         void createExternalTables();
 
         void generateOutput();
+        void generateOutputWithProcessors();
 
         void finishQuery();
         void onException(const Exception & exception);
@@ -776,10 +732,6 @@ namespace
         if (!query_info.database().empty())
             query_context->setCurrentDatabase(query_info.database());
 
-        /// Apply compression settings for this call.
-        if (query_info.has_result_compression())
-            responder->setResultCompression(query_info.result_compression());
-
         /// The interactive delay will be used to show progress.
         interactive_delay = settings.interactive_delay;
         query_context->setProgressCallback([this](const Progress & value) { return progress.incrementPiecewiseAtomically(value); });
@@ -847,12 +799,12 @@ namespace
             query_end = insert_query->data;
         }
         String query(begin, query_end);
-        io = ::DB::executeQuery(true, query, query_context);
+        io = ::DB::executeQuery(query, query_context, false, QueryProcessingStage::Complete, true, true);
     }
 
     void Call::processInput()
     {
-        if (!io.pipeline.pushing())
+        if (!io.out)
             return;
 
         bool has_data_to_insert = (insert_query && insert_query->data)
@@ -867,19 +819,18 @@ namespace
 
         /// This is significant, because parallel parsing may be used.
         /// So we mustn't touch the input stream from other thread.
-        initializeBlockInputStream(io.pipeline.getHeader());
+        initializeBlockInputStream(io.out->getHeader());
 
-        PushingPipelineExecutor executor(io.pipeline);
-        executor.start();
+        io.out->writePrefix();
 
         Block block;
         while (pipeline_executor->pull(block))
         {
             if (block)
-                executor.push(block);
+                io.out->write(block);
         }
 
-        executor.finish();
+        io.out->writeSuffix();
     }
 
     void Call::initializeBlockInputStream(const Block & header)
@@ -942,10 +893,10 @@ namespace
         });
 
         assert(!pipeline);
+        pipeline = std::make_unique<QueryPipeline>();
         auto source = FormatFactory::instance().getInput(
             input_format, *read_buffer, header, query_context, query_context->getSettings().max_insert_block_size);
-        QueryPipelineBuilder builder;
-        builder.init(Pipe(source));
+        pipeline->init(Pipe(source));
 
         /// Add default values if necessary.
         if (ast)
@@ -959,7 +910,7 @@ namespace
                     const auto & columns = storage->getInMemoryMetadataPtr()->getColumns();
                     if (!columns.empty())
                     {
-                        builder.addSimpleTransform([&](const Block & cur_header)
+                        pipeline->addSimpleTransform([&](const Block & cur_header)
                         {
                             return std::make_shared<AddingDefaultsTransform>(cur_header, columns, *source, query_context);
                         });
@@ -968,7 +919,6 @@ namespace
             }
         }
 
-        pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
         pipeline_executor = std::make_unique<PullingPipelineExecutor>(*pipeline);
     }
 
@@ -1012,7 +962,7 @@ namespace
                 {
                     /// The data will be written directly to the table.
                     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
-                    auto sink = storage->write(ASTPtr(), metadata_snapshot, query_context);
+                    auto out_stream = std::make_shared<PushingToSinkBlockOutputStream>(storage->write(ASTPtr(), metadata_snapshot, query_context));
                     ReadBufferFromMemory data(external_table.data().data(), external_table.data().size());
                     String format = external_table.format();
                     if (format.empty())
@@ -1029,20 +979,14 @@ namespace
                         external_table_context->checkSettingsConstraints(settings_changes);
                         external_table_context->applySettingsChanges(settings_changes);
                     }
-                    auto in = FormatFactory::instance().getInput(
-                        format, data, metadata_snapshot->getSampleBlock(),
-                        external_table_context, external_table_context->getSettings().max_insert_block_size);
-
-                    QueryPipelineBuilder cur_pipeline;
-                    cur_pipeline.init(Pipe(std::move(in)));
-                    cur_pipeline.addTransform(std::move(sink));
-                    cur_pipeline.setSinks([&](const Block & header, Pipe::StreamType)
-                    {
-                        return std::make_shared<EmptySink>(header);
-                    });
-
-                    auto executor = cur_pipeline.execute();
-                    executor->execute(1);
+                    auto in_stream = external_table_context->getInputFormat(
+                        format, data, metadata_snapshot->getSampleBlock(), external_table_context->getSettings().max_insert_block_size);
+                    in_stream->readPrefix();
+                    out_stream->writePrefix();
+                    while (auto block = in_stream->read())
+                        out_stream->write(block);
+                    in_stream->readSuffix();
+                    out_stream->writeSuffix();
                 }
             }
 
@@ -1077,15 +1021,90 @@ namespace
 
     void Call::generateOutput()
     {
-        if (!io.pipeline.initialized() || io.pipeline.pushing())
+        if (io.pipeline.initialized())
+        {
+            generateOutputWithProcessors();
+            return;
+        }
+
+        if (!io.in)
             return;
 
-        Block header;
-        if (io.pipeline.pulling())
-            header = io.pipeline.getHeader();
-
+        AsynchronousBlockInputStream async_in(io.in);
         write_buffer.emplace(*result.mutable_output());
-        block_output_stream = query_context->getOutputStream(output_format, *write_buffer, header);
+        block_output_stream = query_context->getOutputStream(output_format, *write_buffer, async_in.getHeader());
+        Stopwatch after_send_progress;
+
+        /// Unless the input() function is used we are not going to receive input data anymore.
+        if (!input_function_is_used)
+            check_query_info_contains_cancel_only = true;
+
+        auto check_for_cancel = [&]
+        {
+            if (isQueryCancelled())
+            {
+                async_in.cancel(false);
+                return false;
+            }
+            return true;
+        };
+
+        async_in.readPrefix();
+        block_output_stream->writePrefix();
+
+        while (check_for_cancel())
+        {
+            Block block;
+            if (async_in.poll(interactive_delay / 1000))
+            {
+                block = async_in.read();
+                if (!block)
+                    break;
+            }
+
+            throwIfFailedToSendResult();
+            if (!check_for_cancel())
+                break;
+
+            if (block && !io.null_format)
+                block_output_stream->write(block);
+
+            if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
+            {
+                addProgressToResult();
+                after_send_progress.restart();
+            }
+
+            addLogsToResult();
+
+            bool has_output = write_buffer->offset();
+            if (has_output || result.has_progress() || result.logs_size())
+                sendResult();
+
+            throwIfFailedToSendResult();
+            if (!check_for_cancel())
+                break;
+        }
+
+        async_in.readSuffix();
+        block_output_stream->writeSuffix();
+
+        if (!isQueryCancelled())
+        {
+            addTotalsToResult(io.in->getTotals());
+            addExtremesToResult(io.in->getExtremes());
+            addProfileInfoToResult(io.in->getProfileInfo());
+        }
+    }
+
+    void Call::generateOutputWithProcessors()
+    {
+        if (!io.pipeline.initialized())
+            return;
+
+        auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
+        write_buffer.emplace(*result.mutable_output());
+        block_output_stream = query_context->getOutputStream(output_format, *write_buffer, executor->getHeader());
         block_output_stream->writePrefix();
         Stopwatch after_send_progress;
 
@@ -1093,79 +1112,54 @@ namespace
         if (!input_function_is_used)
             check_query_info_contains_cancel_only = true;
 
-        if (io.pipeline.pulling())
+        auto check_for_cancel = [&]
         {
-            auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
-            auto check_for_cancel = [&]
+            if (isQueryCancelled())
             {
-                if (isQueryCancelled())
-                {
-                    executor->cancel();
-                    return false;
-                }
-                return true;
-            };
-
-            Block block;
-            while (check_for_cancel())
-            {
-                if (!executor->pull(block, interactive_delay / 1000))
-                    break;
-
-                throwIfFailedToSendResult();
-                if (!check_for_cancel())
-                    break;
-
-                if (block && !io.null_format)
-                    block_output_stream->write(block);
-
-                if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
-                {
-                    addProgressToResult();
-                    after_send_progress.restart();
-                }
-
-                addLogsToResult();
-
-                bool has_output = write_buffer->offset();
-                if (has_output || result.has_progress() || result.logs_size())
-                    sendResult();
-
-                throwIfFailedToSendResult();
-                if (!check_for_cancel())
-                    break;
+                executor->cancel();
+                return false;
             }
+            return true;
+        };
 
-            if (!isQueryCancelled())
-            {
-                addTotalsToResult(executor->getTotalsBlock());
-                addExtremesToResult(executor->getExtremesBlock());
-                addProfileInfoToResult(executor->getProfileInfo());
-            }
-        }
-        else
+        Block block;
+        while (check_for_cancel())
         {
-            auto executor = std::make_shared<CompletedPipelineExecutor>(io.pipeline);
-            auto callback = [&]() -> bool
-            {
+            if (!executor->pull(block, interactive_delay / 1000))
+                break;
 
-                throwIfFailedToSendResult();
+            throwIfFailedToSendResult();
+            if (!check_for_cancel())
+                break;
+
+            if (block && !io.null_format)
+                block_output_stream->write(block);
+
+            if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
+            {
                 addProgressToResult();
-                addLogsToResult();
+                after_send_progress.restart();
+            }
 
-                bool has_output = write_buffer->offset();
-                if (has_output || result.has_progress() || result.logs_size())
-                    sendResult();
+            addLogsToResult();
 
-                throwIfFailedToSendResult();
+            bool has_output = write_buffer->offset();
+            if (has_output || result.has_progress() || result.logs_size())
+                sendResult();
 
-                return isQueryCancelled();
-            };
-            executor->setCancelCallback(std::move(callback), interactive_delay / 1000);
-            executor->execute();
+            throwIfFailedToSendResult();
+            if (!check_for_cancel())
+                break;
         }
 
         block_output_stream->writeSuffix();
+
+        if (!isQueryCancelled())
+        {
+            addTotalsToResult(executor->getTotalsBlock());
+            addExtremesToResult(executor->getExtremesBlock());
+            addProfileInfoToResult(executor->getProfileInfo());
+        }
     }
 
     void Call::finishQuery()

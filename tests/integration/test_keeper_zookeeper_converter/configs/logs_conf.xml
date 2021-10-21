@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <shutdown_wait_unfinished>3</shutdown_wait_unfinished>
     <logger>
         <level>trace</level>
@@ -9,4 +9,4 @@
         <stderr>/var/log/clickhouse-server/stderr.log</stderr>
         <stdout>/var/log/clickhouse-server/stdout.log</stdout>
     </logger>
-</clickhouse>
+</yandex>

@@ -367,7 +367,8 @@ void HashedDictionary<dictionary_key_type, sparse>::updateData()
 
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
+        QueryPipeline pipeline;
+        pipeline.init(source_ptr->loadUpdatedAll());
 
         PullingPipelineExecutor executor(pipeline);
         Block block;
@@ -562,9 +563,9 @@ void HashedDictionary<dictionary_key_type, sparse>::loadData()
 
         QueryPipeline pipeline;
         if (configuration.preallocate)
-            pipeline = QueryPipeline(source_ptr->loadAllWithSizeHint(&new_size));
+            pipeline.init(source_ptr->loadAllWithSizeHint(&new_size));
         else
-            pipeline = QueryPipeline(source_ptr->loadAll());
+            pipeline.init(source_ptr->loadAll());
 
         PullingPipelineExecutor executor(pipeline);
         Block block;
@@ -755,13 +756,13 @@ void registerDictionaryHashed(DictionaryFactory & factory)
     using namespace std::placeholders;
 
     factory.registerLayout("hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* global_context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Simple, /* sparse = */ false); }, false);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Simple, /* sparse = */ false); }, false);
     factory.registerLayout("sparse_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* global_context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Simple, /* sparse = */ true); }, false);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Simple, /* sparse = */ true); }, false);
     factory.registerLayout("complex_key_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* global_context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Complex, /* sparse = */ false); }, true);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Complex, /* sparse = */ false); }, true);
     factory.registerLayout("complex_key_sparse_hashed",
-        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* global_context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Complex, /* sparse = */ true); }, true);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e, ContextPtr /* context */, bool /*created_from_ddl*/){ return create_layout(a, b, c, d, std::move(e), DictionaryKeyType::Complex, /* sparse = */ true); }, true);
 
 }
 

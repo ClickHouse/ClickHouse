@@ -15,7 +15,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/Exception.h>
-#include <base/types.h>
+#include <common/types.h>
 
 
 namespace DB

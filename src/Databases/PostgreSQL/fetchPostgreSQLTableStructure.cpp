@@ -14,7 +14,6 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/quoteString.h>
 #include <Core/PostgreSQL/Utils.h>
-#include <base/FnTraits.h>
 
 
 namespace DB
@@ -42,7 +41,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
 }
 
 
-static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && recheck_array, bool is_nullable = false, uint16_t dimensions = 0)
+static DataTypePtr convertPostgreSQLDataType(String & type, const std::function<void()> & recheck_array, bool is_nullable = false, uint16_t dimensions = 0)
 {
     DataTypePtr res;
     bool is_array = false;
@@ -292,18 +291,10 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
         bool with_primary_key, bool with_replica_identity_index);
 
 template
-PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        pqxx::nontransaction & tx, const String & postgres_table_name, bool use_nulls,
-        bool with_primary_key, bool with_replica_identity_index);
-
-template
-std::set<String> fetchPostgreSQLTablesList(pqxx::work & tx, const String & postgres_schema);
+std::set<std::string> fetchPostgreSQLTablesList(pqxx::work & tx, const String & postgres_schema);
 
 template
 std::set<String> fetchPostgreSQLTablesList(pqxx::ReadTransaction & tx, const String & postgres_schema);
-
-template
-std::set<String> fetchPostgreSQLTablesList(pqxx::nontransaction & tx, const String & postgres_schema);
 
 }
 

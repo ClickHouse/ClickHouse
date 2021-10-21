@@ -22,24 +22,26 @@ namespace ErrorCodes
 }
 
 
-CheckConstraintsTransform::CheckConstraintsTransform(
+CheckConstraintsBlockOutputStream::CheckConstraintsBlockOutputStream(
     const StorageID & table_id_,
-    const Block & header,
+    const BlockOutputStreamPtr & output_,
+    const Block & header_,
     const ConstraintsDescription & constraints_,
     ContextPtr context_)
-    : ExceptionKeepingTransform(header, header)
-    , table_id(table_id_)
-    , constraints(constraints_)
-    , expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
+    : table_id(table_id_),
+    output(output_),
+    header(header_),
+    constraints(constraints_),
+    expressions(constraints_.getExpressions(context_, header.getNamesAndTypesList()))
 {
 }
 
 
-void CheckConstraintsTransform::transform(Chunk & chunk)
+void CheckConstraintsBlockOutputStream::write(const Block & block)
 {
-    if (chunk.getNumRows() > 0)
+    if (block.rows() > 0)
     {
-        Block block_to_calculate = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
+        Block block_to_calculate = block;
         for (size_t i = 0; i < expressions.size(); ++i)
         {
             auto constraint_expr = expressions[i];
@@ -63,8 +65,8 @@ void CheckConstraintsTransform::transform(Chunk & chunk)
 
                 /// Check if constraint value is nullable
                 const auto & null_map = column_nullable->getNullMapColumn();
-                const PaddedPODArray<UInt8> & null_map_data = null_map.getData();
-                bool null_map_contains_null = !memoryIsZero(null_map_data.raw_data(), null_map_data.size() * sizeof(UInt8));
+                const PaddedPODArray<UInt8> & data = null_map.getData();
+                bool null_map_contains_null = !memoryIsZero(data.raw_data(), data.size() * sizeof(UInt8));
 
                 if (null_map_contains_null)
                     throw Exception(
@@ -80,15 +82,15 @@ void CheckConstraintsTransform::transform(Chunk & chunk)
 
             const ColumnUInt8 & res_column_uint8 = assert_cast<const ColumnUInt8 &>(*result_column);
 
-            const UInt8 * res_data = res_column_uint8.getData().data();
+            const UInt8 * data = res_column_uint8.getData().data();
             size_t size = res_column_uint8.size();
 
             /// Is violated.
-            if (!memoryIsByte(res_data, size, 1))
+            if (!memoryIsByte(data, size, 1))
             {
                 size_t row_idx = 0;
                 for (; row_idx < size; ++row_idx)
-                    if (res_data[row_idx] != 1)
+                    if (data[row_idx] != 1)
                         break;
 
                 Names related_columns = constraint_expr->getRequiredColumns();
@@ -99,7 +101,7 @@ void CheckConstraintsTransform::transform(Chunk & chunk)
                 column_values_msg.reserve(approx_bytes_for_col * related_columns.size());
                 for (const auto & name : related_columns)
                 {
-                    const IColumn & column = *chunk.getColumns()[getInputPort().getHeader().getPositionByName(name)];
+                    const IColumn & column = *block.getByName(name).column;
                     assert(row_idx < column.size());
 
                     if (!first)
@@ -122,7 +124,23 @@ void CheckConstraintsTransform::transform(Chunk & chunk)
         }
     }
 
-    rows_written += chunk.getNumRows();
+    output->write(block);
+    rows_written += block.rows();
+}
+
+void CheckConstraintsBlockOutputStream::flush()
+{
+    output->flush();
+}
+
+void CheckConstraintsBlockOutputStream::writePrefix()
+{
+    output->writePrefix();
+}
+
+void CheckConstraintsBlockOutputStream::writeSuffix()
+{
+    output->writeSuffix();
 }
 
 }

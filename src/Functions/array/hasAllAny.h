@@ -1,7 +1,7 @@
 #pragma once
 
-#include <base/range.h>
-#include <base/map.h>
+#include <common/range.h>
+#include <common/map.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>

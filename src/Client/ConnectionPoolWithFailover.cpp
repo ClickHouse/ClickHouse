@@ -6,7 +6,7 @@
 
 #include <Common/BitHelpers.h>
 #include <Common/quoteString.h>
-#include <base/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>

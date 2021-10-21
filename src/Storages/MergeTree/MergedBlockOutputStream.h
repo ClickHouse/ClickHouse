@@ -33,7 +33,7 @@ public:
 
     void writeSuffix() override;
 
-    /// Finalize writing part and fill inner structures
+    /// Finilize writing part and fill inner structures
     /// If part is new and contains projections, they should be added before invoking this method.
     void writeSuffixAndFinalizePart(
             MergeTreeData::MutableDataPartPtr & new_part,
@@ -59,7 +59,5 @@ private:
     size_t rows_count = 0;
     CompressionCodecPtr default_codec;
 };
-
-using MergedBlockOutputStreamPtr = std::shared_ptr<MergedBlockOutputStream>;
 
 }

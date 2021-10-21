@@ -26,7 +26,7 @@
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 
-#include <base/getPageSize.h>
+#include <common/getPageSize.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 

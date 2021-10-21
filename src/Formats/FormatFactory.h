@@ -5,7 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/BufferWithOwnMemory.h>
-#include <base/types.h>
+#include <common/types.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -93,11 +93,6 @@ private:
             const RowOutputFormatParams & params,
             const FormatSettings & settings)>;
 
-    /// Some input formats can have non trivial readPrefix() and readSuffix(),
-    /// so in some cases there is no possibility to use parallel parsing.
-    /// The checker should return true if parallel parsing should be disabled.
-    using NonTrivialPrefixAndSuffixChecker = std::function<bool(ReadBuffer & buf)>;
-
     struct Creators
     {
         InputCreator input_creator;
@@ -107,7 +102,6 @@ private:
         FileSegmentationEngine file_segmentation_engine;
         bool supports_parallel_formatting{false};
         bool is_column_oriented{false};
-        NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker;
     };
 
     using FormatsDictionary = std::unordered_map<String, Creators>;
@@ -172,8 +166,6 @@ public:
     void registerOutputFormat(const String & name, OutputCreator output_creator);
     void registerFileSegmentationEngine(const String & name, FileSegmentationEngine file_segmentation_engine);
 
-    void registerNonTrivialPrefixAndSuffixChecker(const String & name, NonTrivialPrefixAndSuffixChecker non_trivial_prefix_and_suffix_checker);
-
     void registerInputFormatProcessor(const String & name, InputProcessorCreator input_creator);
     void registerOutputFormatProcessor(const String & name, OutputProcessorCreator output_creator);
 
@@ -186,9 +178,6 @@ public:
     {
         return dict;
     }
-
-    bool isInputFormat(const String & name) const;
-    bool isOutputFormat(const String & name) const;
 
 private:
     FormatsDictionary dict;

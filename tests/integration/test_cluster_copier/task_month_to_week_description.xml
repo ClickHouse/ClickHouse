@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <!-- How many simualteneous workers are posssible -->
     <max_workers>4</max_workers>
 
@@ -97,4 +97,4 @@
     </cluster1>
     </remote_servers>
 
-</clickhouse>
+</yandex>

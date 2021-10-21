@@ -11,8 +11,8 @@
 #include <Common/assert_cast.h>
 #include <Common/memcmpSmall.h>
 #include <Common/memcpySmall.h>
-#include <base/sort.h>
-#include <base/scope_guard.h>
+#include <common/sort.h>
+#include <common/scope_guard.h>
 
 #if defined(__SSE2__)
 #    include <emmintrin.h>

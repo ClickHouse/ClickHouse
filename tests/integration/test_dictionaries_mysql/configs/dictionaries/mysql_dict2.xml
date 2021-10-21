@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
       <dictionary>
       <name>dict2</name>
       <source>
@@ -110,4 +110,4 @@
       <lifetime>0</lifetime>
    </dictionary>
    
-</clickhouse>
+</yandex>
