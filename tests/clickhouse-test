@@ -57,6 +57,8 @@ MAX_RETRIES = 3
 
 TEST_FILE_EXTENSIONS = ['.sql', '.sql.j2', '.sh', '.py', '.expect']
 
+VERSION_PATTERN = r"^((?:\d+\.)?(?:\d+\.)?(?:\d+\.)?\d+)$"
+
 class HTTPError(Exception):
     def __init__(self, message=None, code=None):
         self.message = message
@@ -406,6 +408,28 @@ class TestCase:
         self.testcase_args = None
         self.runs_count = 0
 
+    # Check if test contains tag "backward-incompatible" and we should skip it
+    def check_backward_incompatible_tag(self, tags) -> bool:
+        for tag in tags:
+            if tag.startswith("backward-incompatible"):
+                split = tag.split(':')
+
+                # If version is not specified in tag, always skip this test.
+                if len(split) == 1:
+                    return True
+                version_from_tag = split[1]
+
+                # Check if extracted string from tag is a real ClickHouse version, if not - always skip test.
+                if re.match(VERSION_PATTERN, version_from_tag) is None:
+                    return True
+
+                server_version = str(clickhouse_execute(args, "SELECT version()").decode())
+                # If server version is less or equal from the version specified in tag, we should skip this test.
+                if list(map(int, server_version.split('.'))) <= list(map(int, version_from_tag.split('.'))):
+                    return True
+
+        return False
+
     # should skip test, should increment skipped_total, skip reason
     def should_skip_test(self, suite) -> Optional[FailureReason]:
         tags = self.tags
@@ -438,7 +462,7 @@ class TestCase:
         elif tags and ('no-replicated-database' in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
-        elif tags and ('backward-incompatible' in tags) and args.backward_compatibility_check:
+        elif args.backward_compatibility_check and self.check_backward_incompatible_tag(tags):
             return FailureReason.BACKWARD_INCOMPATIBLE
 
         elif tags:
