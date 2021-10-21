@@ -42,7 +42,7 @@ def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache
     else:
         interactive = ""
 
-    cmd = "docker run --network=host --rm --volume={output_path}:/output --volume={ch_root}:/build --volume={ccache_dir}:/ccache {env} {interactive} {img_name}".format(
+    cmd = "docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --network=host --rm --volume={output_path}:/output --volume={ch_root}:/build --volume={ccache_dir}:/ccache {env} {interactive} {img_name}".format(
         output_path=output,
         ch_root=ch_root,
         ccache_dir=ccache_dir,
