@@ -47,7 +47,6 @@ jobs:
     needs: DockerHubPush
     runs-on: [self-hosted, builder]
     strategy:
-      continue-on-error: true
       fail-fast: false
       matrix:
         build_number: [7]
