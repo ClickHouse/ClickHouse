@@ -3,7 +3,7 @@ import pytest
 import logging
 from helpers.cluster import ClickHouseCluster
 
-cluster = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_in_order.xml')
+cluster = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_round_robin.xml')
 
 node1 = cluster.add_instance('node1', with_zookeeper=True,
                                 main_configs=["configs/remote_servers.xml", "configs/zookeeper_config_round_robin.xml", "configs/zookeeper_log.xml"])
@@ -39,8 +39,9 @@ def wait_zookeeper_node_to_start(started_cluster, zk_nodes, timeout=60):
 
 
 def test_round_robin(started_cluster):
-
+    wait_zookeeper_node_to_start(started_cluster, ["zoo1", "zoo2", "zoo3"])
     started_cluster.stop_zookeeper_nodes(["zoo1"])
+    time.sleep(10)
     zoo2_ip = started_cluster.get_instance_ip("zoo2")
     for i, node in enumerate([node1, node3]):
         node.query('DROP TABLE IF EXISTS simple SYNC')
@@ -50,6 +51,7 @@ def test_round_robin(started_cluster):
         '''.format(replica=node.name))
 
     time.sleep(5)
+    print("zoo2", zoo2_ip)
     assert '::ffff:' + str(zoo2_ip) + '\n' == node1.query('SELECT IPv6NumToString(address) FROM system.zookeeper_log ORDER BY event_time DESC LIMIT 1')
     assert '::ffff:' + str(zoo2_ip) + '\n' == node2.query('SELECT IPv6NumToString(address) FROM system.zookeeper_log ORDER BY event_time DESC LIMIT 1')
     assert '::ffff:' + str(zoo2_ip) + '\n' == node3.query('SELECT IPv6NumToString(address) FROM system.zookeeper_log ORDER BY event_time DESC LIMIT 1')
@@ -57,44 +59,3 @@ def test_round_robin(started_cluster):
     ## start zoo2, zoo3, table will be readonly too, because it only connect to zoo1
     started_cluster.start_zookeeper_nodes(["zoo1"])
     wait_zookeeper_node_to_start(started_cluster, ["zoo1"])
-
-
-# def test_nearest_hostname(started_cluster):
-#     new_config = """
-# <clickhouse>
-#     <zookeeper>
-#         <zookeeper_load_balancing>nearest_hostname</zookeeper_load_balancing>
-#         <node index="1">
-#             <host>zoo1</host>
-#             <port>2181</port>
-#         </node>
-#         <node index="2">
-#             <host>zoo2</host>
-#             <port>2181</port>
-#         </node>
-#         <node index="3">
-#             <host>zoo3</host>
-#             <port>2181</port>
-#         </node>
-#         <session_timeout_ms>3000</session_timeout_ms>
-#     </zookeeper>
-# </clickhouse>
-# """
-#     for i, node in enumerate([node1, node3]):
-#         node.replace_config("/etc/clickhouse-server/conf.d/zookeeper.xml", new_config)
-#         node.query("SYSTEM RELOAD CONFIG")
-#
-#     zoo1_ip = started_cluster.get_instance_ip("zoo1")
-#     zoo2_ip = started_cluster.get_instance_ip("zoo2")
-#     zoo3_ip = started_cluster.get_instance_ip("zoo3")
-#
-#     for i, node in enumerate([node1, node3]):
-#         node.query('DROP TABLE IF EXISTS simple SYNC')
-#         node.query('''
-#         CREATE TABLE simple (date Date, id UInt32)
-#         ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '{replica}', date, id, 8192);
-#         '''.format(replica=node.name))
-#
-#     assert '::ffff:' + str(zoo1_ip) + '\n' == node1.query('SELECT IPv6NumToString(address) FROM system.zookeeper_log ORDER BY event_time DESC LIMIT 1')
-#     assert '::ffff:' + str(zoo2_ip) + '\n' == node2.query('SELECT IPv6NumToString(address) FROM system.zookeeper_log ORDER BY event_time DESC LIMIT 1')
-#     assert '::ffff:' + str(zoo3_ip) + '\n' == node3.query('SELECT IPv6NumToString(address) FROM system.zookeeper_log ORDER BY event_time DESC LIMIT 1')

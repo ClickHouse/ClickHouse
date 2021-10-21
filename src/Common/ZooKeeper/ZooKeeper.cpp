@@ -258,16 +258,8 @@ struct ZooKeeperArgs
         const String & local_hostname = getFQDNOrHostName();
         for (size_t i = 0; i < hosts.size(); ++i)
         {
-            const String & ip_or_hostname = hosts[i].substr(0, hosts[i].find_last_of(':'));
-            try
-            {
-                get_priority_load_balancing.hostname_differences[i] = DB::getHostNameDifference(local_hostname, Poco::Net::DNS::resolve(ip_or_hostname).name());
-            }
-            catch (...)
-            {
-                /// There may be HostNotFoundException or DNSException, these exceptions will be processed later.
-                LOG_ERROR(&Poco::Logger::get("ZooKeeperArgs"), "Cannot use ZooKeeper host {}, hostname differences will be set to the maximum value", hosts[i]);
-            }
+            const String & node_host = hosts[i].substr(0, hosts[i].find_last_of(':'));
+            get_priority_load_balancing.hostname_differences[i] = DB::getHostNameDifference(local_hostname, node_host);
         }
         get_priority_load_balancing.pool_size = hosts.size();
     }
