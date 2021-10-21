@@ -21,7 +21,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 
 #include <Core/Block.h>
 

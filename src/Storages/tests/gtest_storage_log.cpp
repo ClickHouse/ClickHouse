@@ -18,8 +18,8 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Chain.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/Chain.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 #if !defined(__clang__)
 #    pragma GCC diagnostic push

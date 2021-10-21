@@ -1,9 +1,9 @@
 #pragma once
 
+#include <Common/Allocator.h>
 #include <Columns/IColumn.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context_fwd.h>
-#include <IO/BufferWithOwnMemory.h>
 #include <base/types.h>
 
 #include <boost/noncopyable.hpp>
@@ -34,12 +34,15 @@ struct RowOutputFormatParams;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;
 using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
 
+template <typename Allocator>
+struct Memory;
+
 FormatSettings getFormatSettings(ContextPtr context);
 
 template <typename T>
 FormatSettings getFormatSettings(ContextPtr context, const T & settings);
 
-/** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
+/** Allows to create an IInputFormat or IOutputFormat by the name of the format.
   * Note: format and compression are independent things.
   */
 class FormatFactory final : private boost::noncopyable
@@ -55,7 +58,7 @@ public:
       */
     using FileSegmentationEngine = std::function<std::pair<bool, size_t>(
         ReadBuffer & buf,
-        DB::Memory<> & memory,
+        DB::Memory<Allocator<false>> & memory,
         size_t min_chunk_bytes)>;
 
     /// This callback allows to perform some additional actions after writing a single row.

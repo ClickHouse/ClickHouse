@@ -1,10 +1,10 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Poco/Timespan.h>
 #include <Interpreters/ProcessList.h>
 
-#include <DataStreams/StreamLocalLimits.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 
 namespace DB
 {
