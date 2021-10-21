@@ -4,6 +4,9 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySource.h>
 
@@ -654,7 +657,10 @@ Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names
         using Types = std::decay_t<decltype(types)>;
         using LeftDataType = typename Types::LeftType;
 
-        if constexpr (IsDataTypeNumber<LeftDataType>)
+        if constexpr (IsDataTypeNumber<LeftDataType> ||
+            std::is_same_v<LeftDataType, DataTypeDate> ||
+            std::is_same_v<LeftDataType, DataTypeDate32> ||
+            std::is_same_v<LeftDataType, DataTypeDateTime>)
         {
             using RangeType = typename LeftDataType::FieldType;
 
