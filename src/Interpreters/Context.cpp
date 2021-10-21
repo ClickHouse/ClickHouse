@@ -267,6 +267,9 @@ struct ContextSharedPart
 
     bool shutdown_called = false;
 
+    /// Has background executors for MergeTree tables been initialized?
+    bool is_background_executors_initialized = false;
+
     Stopwatch uptime_watch;
 
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
@@ -1895,7 +1898,7 @@ void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
         zk.second->setZooKeeperLog(shared->system_logs->zookeeper_log);
 }
 
-void Context::initializeKeeperDispatcher(bool start_async) const
+void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) const
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
@@ -2974,7 +2977,7 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
 void Context::initializeBackgroundExecutorsIfNeeded()
 {
     auto lock = getLock();
-    if (is_background_executors_initialized)
+    if (shared->is_background_executors_initialized)
         return;
 
     const size_t max_merges_and_mutations = getSettingsRef().background_pool_size * getSettingsRef().background_merges_mutations_concurrency_ratio;
@@ -3024,7 +3027,7 @@ void Context::initializeBackgroundExecutorsIfNeeded()
     LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}",
         getSettingsRef().background_common_pool_size, getSettingsRef().background_common_pool_size);
 
-    is_background_executors_initialized = true;
+    shared->is_background_executors_initialized = true;
 }
 
 
