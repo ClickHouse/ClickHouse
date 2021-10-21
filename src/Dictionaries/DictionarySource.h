@@ -63,12 +63,16 @@ private:
     static ColumnsWithTypeAndName cutColumns(const ColumnsWithTypeAndName & columns_with_type, size_t start, size_t length);
 
     std::shared_ptr<const IDictionary> dictionary;
+
     ColumnsWithTypeAndName key_columns_with_type;
     ColumnsWithTypeAndName data_columns_with_type;
+
     Block header;
+
     std::vector<std::string> attributes_names_to_read;
     std::vector<DataTypePtr> attributes_types_to_read;
     std::vector<ColumnPtr> attributes_default_values_columns;
+
     const size_t max_block_size;
     std::atomic<size_t> parallel_read_block_index = 0;
 };

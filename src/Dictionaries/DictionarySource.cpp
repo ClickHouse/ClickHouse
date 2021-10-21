@@ -112,14 +112,13 @@ Chunk DictionarySource::generate()
 
     const auto & header = coordinator->getHeader();
 
-    std::vector<ColumnPtr> result_columns;
-    result_columns.reserve(header.columns());
-
     std::vector<ColumnPtr> key_columns;
     std::vector<DataTypePtr> key_types;
 
     key_columns.reserve(key_columns_to_read.size());
     key_types.reserve(key_columns_to_read.size());
+
+    std::unordered_map<std::string_view, ColumnPtr> name_to_column;
 
     for (const auto & key_column_to_read : key_columns_to_read)
     {
@@ -127,13 +126,13 @@ Chunk DictionarySource::generate()
         key_types.emplace_back(key_column_to_read.type);
 
         if (header.has(key_column_to_read.name))
-            result_columns.emplace_back(key_column_to_read.column);
+            name_to_column.emplace(key_column_to_read.name, key_column_to_read.column);
     }
 
     for (const auto & data_column : data_columns)
     {
         if (header.has(data_column.name))
-            result_columns.emplace_back(data_column.column);
+            name_to_column.emplace(data_column.name, data_column.column);
     }
 
     const auto & attributes_names_to_read = coordinator->getAttributesNamesToRead();
@@ -142,9 +141,30 @@ Chunk DictionarySource::generate()
 
     const auto & dictionary = coordinator->getDictionary();
     auto attributes_columns = dictionary->getColumns(
-        attributes_names_to_read, attributes_types_to_read, key_columns, key_types, attributes_default_values_columns);
+        attributes_names_to_read,
+        attributes_types_to_read,
+        key_columns,
+        key_types,
+        attributes_default_values_columns);
 
-    result_columns.insert(result_columns.end(), attributes_columns.begin(), attributes_columns.end());
+    for (size_t i = 0; i < attributes_names_to_read.size(); ++i)
+    {
+        const auto & attribute_name = attributes_names_to_read[i];
+        name_to_column.emplace(attribute_name, attributes_columns[i]);
+    }
+
+    std::vector<ColumnPtr> result_columns;
+    result_columns.reserve(header.columns());
+
+    for (const auto & column_with_type : header)
+    {
+        const auto & header_name = column_with_type.name;
+        auto it = name_to_column.find(header_name);
+        if (it == name_to_column.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column name {} not found in result columns", header_name);
+
+        result_columns.emplace_back(it->second);
+    }
 
     size_t rows_size = result_columns[0]->size();
     return Chunk(result_columns, rows_size);
