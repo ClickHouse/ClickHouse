@@ -29,7 +29,7 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
         time_t decrease_error_period_,
         size_t max_error_cap_)
     : Base(std::move(nested_pools_), decrease_error_period_, max_error_cap_, &Poco::Logger::get("ConnectionPoolWithFailover"))
-    , get_priority_load_balancing(load_balancing)
+    , get_priority_load_balancing(load_balancing, nested_pools.size())
 {
     const std::string & local_hostname = getFQDNOrHostName();
 
