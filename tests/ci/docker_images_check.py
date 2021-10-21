@@ -8,6 +8,7 @@ import os
 from pr_info import PRInfo
 from github import Github
 import shutil
+from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 
 NAME = "Push to Dockerhub (actions)"
 
@@ -176,7 +177,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     repo_path = os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../"))
     temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'docker_images_check')
-    dockerhub_password = os.getenv('DOCKER_ROBOT_PASSWORD')
+    dockerhub_password = get_parameter_from_ssm('dockerhub_robot_password')
 
     if os.path.exists(temp_path):
         shutil.rmtree(temp_path)
@@ -212,17 +213,14 @@ if __name__ == "__main__":
     if len(description) >= 140:
         description = description[:136] + "..."
 
-    aws_secret_key_id = os.getenv("YANDEX_S3_ACCESS_KEY_ID", "")
-    aws_secret_key = os.getenv("YANDEX_S3_ACCESS_SECRET_KEY", "")
-
-    s3_helper = S3Helper('https://storage.yandexcloud.net', aws_access_key_id=aws_secret_key_id, aws_secret_access_key=aws_secret_key)
+    s3_helper = S3Helper('https://s3.amazonaws.com')
 
     s3_path_prefix = str(pr_info.number) + "/" + pr_info.sha + "/" + NAME.lower().replace(' ', '_')
     status, test_results = process_test_results(s3_helper, images_processing_result, s3_path_prefix)
 
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results)
 
-    gh = Github(os.getenv("GITHUB_TOKEN"))
+    gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
     commit.create_status(context=NAME, description=description, state=status, target_url=url)
 
