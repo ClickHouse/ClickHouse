@@ -6,6 +6,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
+#include <Storages/StorageMergeTree.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
@@ -442,7 +443,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             if (column.default_desc.kind == ColumnDefaultKind::Materialized)
             {
                 auto query = column.default_desc.expression->clone();
-                auto syntax_result = TreeRewriter(context).analyze(query, all_columns, {}, {}, false, true, dry_run);
+                auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
                 for (const String & dependency : syntax_result->requiredSourceColumns())
                 {
                     if (updated_columns.count(dependency))
@@ -583,7 +584,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 throw Exception("Unknown index: " + command.index_name, ErrorCodes::BAD_ARGUMENTS);
 
             auto query = (*it).expression_list_ast->clone();
-            auto syntax_result = TreeRewriter(context).analyze(query, all_columns, {}, {}, false, true, dry_run);
+            auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
             const auto required_columns = syntax_result->requiredSourceColumns();
             for (const auto & column : required_columns)
                 dependencies.emplace(column, ColumnDependency::SKIP_INDEX);
@@ -784,7 +785,9 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         for (const String & column : stage.output_columns)
             all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
-        auto syntax_result = TreeRewriter(context).analyze(all_asts, all_columns, storage, metadata_snapshot, false, true, dry_run);
+        bool execute_scalar_subqueries = !dynamic_cast<StorageMergeTree *>(storage.get()) || !dry_run;
+        auto syntax_result = TreeRewriter(context).analyze(
+            all_asts, all_columns, storage, metadata_snapshot, false, true, execute_scalar_subqueries);
         if (context->hasQueryContext())
             for (const auto & it : syntax_result->getScalars())
                 context->getQueryContext()->addScalar(it.first, it.second);
