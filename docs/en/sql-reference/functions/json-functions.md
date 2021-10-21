@@ -306,6 +306,77 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## JSON_EXISTS(json, path) {#json-exists}
+
+If the value exists in the JSON document, `1` will be returned.
+
+If the value does not exist, `0` will be returned.
+
+Examples:
+
+``` sql
+SELECT JSON_EXISTS('$.hello', '{"hello":1}');
+SELECT JSON_EXISTS('$.hello.world', '{"hello":{"world":1}}');
+SELECT JSON_EXISTS('$.hello[*]', '{"hello":["world"]}');
+SELECT JSON_EXISTS('$.hello[0]', '{"hello":["world"]}');
+```
+
+!!! note "Note"
+    before version 21.11 the order of arguments was wrong, i.e. JSON_EXISTS(path, json)
+
+## JSON_QUERY(json, path) {#json-query}
+
+Parses a JSON and extract a value.
+
+If the value does not exist, an empty string will be returned.
+
+Example:
+
+``` sql
+SELECT JSON_QUERY('$.hello', '{"hello":"world"}');
+SELECT JSON_QUERY('$.array[*][0 to 2, 4]', '{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}');
+SELECT JSON_QUERY('$.hello', '{"hello":2}');
+SELECT toTypeName(JSON_QUERY('$.hello', '{"hello":2}'));
+```
+
+Result:
+
+``` text
+["world"]
+[0, 1, 4, 0, -1, -4]
+[2]
+String
+```
+!!! note "Note"
+    before version 21.11 the order of arguments was wrong, i.e. JSON_QUERY(path, json)
+
+## JSON_VALUE(json, path) {#json-value}
+
+Parses a JSON and extract a value.
+
+If the value does not exist, an empty string will be returned.
+
+Example:
+
+``` sql
+SELECT JSON_VALUE('$.hello', '{"hello":"world"}');
+SELECT JSON_VALUE('$.array[*][0 to 2, 4]', '{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}');
+SELECT JSON_VALUE('$.hello', '{"hello":2}');
+SELECT toTypeName(JSON_VALUE('$.hello', '{"hello":2}'));
+```
+
+Result:
+
+``` text
+"world"
+0
+2
+String
+```
+
+!!! note "Note"
+    before version 21.11 the order of arguments was wrong, i.e. JSON_VALUE(path, json)
+
 ## toJSONString {#tojsonstring}
 
 Serializes a value to its JSON representation. Various data types and nested structures are supported.
