@@ -417,7 +417,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 if (first_arg_func
                     && first_arg_func->name == "tuple"
                     && first_arg_func->arguments
-                    && (first_arg_func->arguments->children.size() == 1 || first_arg_func->arguments->children.size() == 0))
+                    && (first_arg_func->arguments->children.size() == 1 || first_arg_func->arguments->children.empty()))
                 {
                     if (first_arg_func->arguments->children.size() == 1)
                         first_arg_func->arguments->children[0]->formatImpl(settings, state, nested_need_parens);
