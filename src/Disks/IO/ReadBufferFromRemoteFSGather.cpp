@@ -22,24 +22,24 @@ namespace DB
 {
 
 #if USE_AWS_S3
-SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const String & path, size_t offset) const
+SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const String & path, size_t read_until_position_) const
 {
     return std::make_unique<ReadBufferFromS3>(client_ptr, bucket,
-        fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, settings, threadpool_read, offset);
+        fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, settings, threadpool_read, read_until_position_);
 }
 #endif
 
 
-SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(const String & path, size_t offset) const
+SeekableReadBufferPtr ReadBufferFromWebServerGather::createImplementationBuffer(const String & path, size_t read_until_position_) const
 {
-    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, threadpool_read, offset);
+    return std::make_unique<ReadBufferFromWebServer>(fs::path(uri) / path, context, settings, threadpool_read, read_until_position_);
 }
 
 
 #if USE_HDFS
-SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const String & path, size_t offset) const
+SeekableReadBufferPtr ReadBufferFromHDFSGather::createImplementationBuffer(const String & path, size_t read_until_position_) const
 {
-    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, buf_size, offset);
+    return std::make_unique<ReadBufferFromHDFS>(hdfs_uri, fs::path(hdfs_directory) / path, config, buf_size, read_until_position_);
 }
 #endif
 
@@ -52,7 +52,7 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(const RemoteMetadata 
 }
 
 
-size_t ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t offset, size_t ignore)
+size_t ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t read_until_position_, size_t ignore)
 {
     /**
      * Set `data` to current working and internal buffers.
@@ -60,7 +60,7 @@ size_t ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t o
      */
     set(data, size);
 
-    absolute_position = offset;
+    absolute_position = read_until_position_;
     bytes_to_ignore = ignore;
 
     auto result = nextImpl();
