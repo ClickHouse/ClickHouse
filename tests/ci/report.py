@@ -281,7 +281,7 @@ def create_build_html_report(header, build_results, build_logs_urls, artifact_ur
         link_separator = "<br/>"
         if artifact_urls:
             for artifact_url in artifact_urls:
-                links += LINK_TEMPLATE.format(text=os.path.basename(artifact_url), url=artifact_url)
+                links += LINK_TEMPLATE.format(text=os.path.basename(artifact_url.replace('%2B', '+').replace('%20', ' ')), url=artifact_url)
                 links += link_separator
             if links:
                 links = links[:-len(link_separator)]

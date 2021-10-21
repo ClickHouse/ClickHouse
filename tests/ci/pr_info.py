@@ -39,3 +39,9 @@ class PRInfo:
             'user_login': self.user_login,
             'user_orgs': self.user_orgs,
         }
+
+
+class FakePRInfo:
+    def __init__(self):
+        self.number = 11111
+        self.sha = "xxxxxxxxxxxxxxxxxx"

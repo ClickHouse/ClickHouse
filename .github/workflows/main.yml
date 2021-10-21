@@ -79,17 +79,17 @@ jobs:
       - name: Download json reports
         uses: actions/download-artifact@v2
         with:
-          path: ${{ runner.temp }}/reports_dir
+          path: ${{runner.temp}}/reports_dir
       - name: Check out repository code
         uses: actions/checkout@v2
-      - name: Report builder
+      - name: Report Builder
         env:
           TEMP_PATH: ${{runner.temp}}/report_check
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'ClickHouse build check (actions)'
         run: mkdir -p $TEMP_PATH && cd $GITHUB_WORKSPACE/tests/ci && python3 build_report_check.py "$CHECK_NAME"
   FinishCheck:
-    needs: [StyleCheck, DockerHubPush, CheckLabels, Builder]
+    needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
