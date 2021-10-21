@@ -2430,7 +2430,7 @@ Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
 ## getOSKernelVersion {#getoskernelversion}
 
-Returns string with the current OS kernel version.
+Returns a string with the current OS kernel version.
 
 **Syntax**
 
