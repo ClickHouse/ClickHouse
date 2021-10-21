@@ -6368,12 +6368,12 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     MutableDataPartsVector dst_parts;
     Strings block_id_paths;
     Strings part_checksums;
+    auto zookeeper = getZooKeeper();
     std::vector<EphemeralLockInZooKeeper> ephemeral_locks;
 
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
     static const String TMP_PREFIX = "tmp_replace_from_";
-    auto zookeeper = getZooKeeper();
 
     String alter_partition_version_path = zookeeper_path + "/alter_partition_version";
     Coordination::Stat alter_partition_version_stat;
