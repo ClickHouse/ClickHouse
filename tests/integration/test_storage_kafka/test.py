@@ -2852,6 +2852,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
             ],
             'expected':'{"raw_message":"0502696407626C6F636B4E6F0476616C310476616C320476616C3305496E74363406537472696E6706537472696E6707466C6F617433320555496E743800000000000000000342414402414D0000003F01","error":"Cannot read all data. Bytes read: 9. Bytes expected: 65.: (at row 1)\\n"}',
             'printable':False,
+            'format_settings':'input_format_with_types_use_header=0',
         },
         'ORC': {
             'data_sample': [
@@ -2879,6 +2880,9 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
         if format_opts.get('printable', False) == False:
             raw_message = 'hex(_raw_message)'
         kafka_produce(kafka_cluster, topic_name, data_prefix + data_sample)
+        format_settings = ''
+        if format_opts.get('format_settings'):
+            format_settings = 'SETTINGS ' + format_opts.get('format_settings')
         instance.query('''
             DROP TABLE IF EXISTS test.kafka_{format_name};
 
@@ -2904,9 +2908,9 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
             DROP TABLE IF EXISTS test.kafka_errors_{format_name}_mv;
             CREATE MATERIALIZED VIEW test.kafka_errors_{format_name}_mv Engine=Log AS
                 SELECT {raw_message} as raw_message, _error as error, _topic as topic, _partition as partition, _offset as offset FROM test.kafka_{format_name}
-                WHERE length(_error) > 0;
+                WHERE length(_error) > 0 {format_settings};
             '''.format(topic_name=topic_name, format_name=format_name, raw_message=raw_message,
-                       extra_settings=format_opts.get('extra_settings') or ''))
+                       extra_settings=format_opts.get('extra_settings') or '', format_settings=format_settings)
 
     for format_name, format_opts in list(all_formats.items()):
         logging.debug('Checking {format_name}')
