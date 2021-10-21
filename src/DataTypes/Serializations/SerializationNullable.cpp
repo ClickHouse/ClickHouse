@@ -12,6 +12,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/PeekableReadBuffer.h>
 #include <Common/assert_cast.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
