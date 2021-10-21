@@ -19,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int INVALID_SETTING_VALUE;
 }
 
 DataTypePtr SerializationNullable::SubcolumnCreator::create(const DataTypePtr & prev) const

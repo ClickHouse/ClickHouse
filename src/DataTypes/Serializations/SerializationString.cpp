@@ -1,7 +1,6 @@
 #include <DataTypes/Serializations/SerializationString.h>
 
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnConst.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
@@ -9,8 +8,6 @@
 #include <Core/Field.h>
 
 #include <Formats/FormatSettings.h>
-#include <Formats/ProtobufReader.h>
-#include <Formats/ProtobufWriter.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
