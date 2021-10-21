@@ -153,6 +153,7 @@ if __name__ == "__main__":
 
     build_name = build_config_to_string(build_config)
     logging.info(f"Build short name {build_name}")
+    subprocess.check_call(f"echo 'BUILD_NAME={build_name}' >> $GITHUB_ENV", shell=True)
     os.environ['BUILD_NAME'] = build_name
 
     build_output_path = os.path.join(temp_path, build_name)
@@ -171,6 +172,8 @@ if __name__ == "__main__":
         os.makedirs(build_clickhouse_log)
 
     log_path, success = build_clickhouse(packager_cmd, build_clickhouse_log)
+    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True)
+    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {ccache_path}", shell=True)
     logging.info("Build finished with %s, log path %s", success, log_path)
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
@@ -182,6 +185,7 @@ if __name__ == "__main__":
         logging.info("Build log doesn't exist")
 
     build_urls = s3_helper.upload_build_folder_to_s3(build_output_path, s3_path_prefix, keep_dirs_in_s3_path=False, upload_symlinks=False)
+    logging.info("Got build URLs %s", build_urls)
     result = {
         "log_url": log_url,
         "build_urls": build_urls,
