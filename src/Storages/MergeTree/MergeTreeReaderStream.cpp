@@ -50,6 +50,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     /// Avoid empty buffer. May happen while reading dictionary for DataTypeLowCardinality.
     /// For example: part has single dictionary and all marks point to the same position.
     ReadSettings read_settings = settings.read_settings;
+    read_settings.must_read_until_position = true;
     if (max_mark_range_bytes != 0)
         read_settings = read_settings.adjustBufferSize(max_mark_range_bytes);
 
@@ -183,7 +184,14 @@ void MergeTreeReaderStream::seekToStart()
 void MergeTreeReaderStream::adjustForRange(size_t left_mark, size_t right_mark)
 {
     auto [right_offset, mark_range_bytes] = getRightOffsetAndBytesRange(left_mark, right_mark);
-    if (right_offset > last_right_offset)
+    if (!right_offset)
+    {
+        if (cached_buffer)
+            cached_buffer->setReadUntilEnd();
+        if (non_cached_buffer)
+            non_cached_buffer->setReadUntilEnd();
+    }
+    else if (right_offset > last_right_offset)
     {
         last_right_offset = right_offset;
         if (cached_buffer)

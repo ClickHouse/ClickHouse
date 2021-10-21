@@ -170,4 +170,13 @@ String ReadBufferFromRemoteFSGather::getFileName() const
     return canonical_path;
 }
 
+
+size_t ReadBufferFromRemoteFSGather::getFileSize() const
+{
+    size_t size = 0;
+    for (const auto & object : metadata.remote_fs_objects)
+        size += object.second;
+    return size;
+}
+
 }

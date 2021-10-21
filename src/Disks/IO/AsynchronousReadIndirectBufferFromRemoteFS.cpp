@@ -3,6 +3,7 @@
 #include <Common/Stopwatch.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <IO/ReadSettings.h>
 #include <base/logger_useful.h>
 
 
@@ -35,16 +36,16 @@ namespace ErrorCodes
 
 AsynchronousReadIndirectBufferFromRemoteFS::AsynchronousReadIndirectBufferFromRemoteFS(
         AsynchronousReaderPtr reader_,
-        Int32 priority_,
+        const ReadSettings & settings_,
         std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
-        size_t buf_size_,
         size_t min_bytes_for_seek_)
-    : ReadBufferFromFileBase(buf_size_, nullptr, 0)
+    : ReadBufferFromFileBase(settings_.remote_fs_buffer_size, nullptr, 0)
     , reader(reader_)
-    , priority(priority_)
+    , priority(settings_.priority)
     , impl(impl_)
-    , prefetch_buffer(buf_size_)
+    , prefetch_buffer(settings_.remote_fs_buffer_size)
     , min_bytes_for_seek(min_bytes_for_seek_)
+    , must_read_until_position(settings_.must_read_until_position)
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
 }
@@ -69,6 +70,10 @@ bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
                             file_offset_of_buffer_end, read_until_position);
     }
+    else if (must_read_until_position)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Reading for MergeTree family tables must be done with last position boundary");
+
     return true;
 }
 
@@ -111,7 +116,17 @@ void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t pos
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Prefetch is valid in readUntilPosition");
 
     read_until_position = position;
-    impl->setReadUntilPosition(position);
+    impl->setReadUntilPosition(read_until_position);
+}
+
+
+void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilEnd()
+{
+    if (prefetch_future.valid())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Prefetch is valid in readUntilEnd");
+
+    read_until_position = impl->getFileSize();
+    impl->setReadUntilPosition(read_until_position);
 }
 
 

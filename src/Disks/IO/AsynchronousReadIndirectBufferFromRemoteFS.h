@@ -13,9 +13,10 @@ namespace DB
 {
 
 class ReadBufferFromRemoteFSGather;
+struct ReadSettings;
 
 /**
-* Reads data from S3/HDFS/Web using stored paths in metadata.
+ * Reads data from S3/HDFS/Web using stored paths in metadata.
 * This class is an asynchronous version of ReadIndirectBufferFromRemoteFS.
 *
 * Buffers chain for diskS3:
@@ -32,9 +33,8 @@ class AsynchronousReadIndirectBufferFromRemoteFS : public ReadBufferFromFileBase
 {
 public:
     explicit AsynchronousReadIndirectBufferFromRemoteFS(
-        AsynchronousReaderPtr reader_, Int32 priority_,
+        AsynchronousReaderPtr reader_, const ReadSettings & settings_,
         std::shared_ptr<ReadBufferFromRemoteFSGather> impl_,
-        size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         size_t min_bytes_for_seek = 1024 * 1024);
 
     ~AsynchronousReadIndirectBufferFromRemoteFS() override;
@@ -48,6 +48,8 @@ public:
     void prefetch() override;
 
     void setReadUntilPosition(size_t position) override;
+
+    void setReadUntilEnd() override;
 
 private:
     bool nextImpl() override;
@@ -75,6 +77,8 @@ private:
     size_t bytes_to_ignore = 0;
 
     size_t read_until_position = 0;
+
+    bool must_read_until_position;
 };
 
 }
