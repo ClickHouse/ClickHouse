@@ -4,7 +4,7 @@
 
 #include <Disks/IDisk.h>
 
-#include <DataStreams/RemoteQueryExecutor.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeUUID.h>
