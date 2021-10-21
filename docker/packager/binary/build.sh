@@ -59,13 +59,16 @@ then
     #   for a given nominal SHA, but it is not accessible outside Yandex.
     # This is why we add this repository snapshot from CI to the performance test
     # package.
-    mkdir /output/ch
-    git -C /output/ch init --bare
-    git -C /output/ch remote add origin /build
-    git -C /output/ch fetch --no-tags --depth 50 origin HEAD:pr
-    git -C /output/ch fetch --no-tags --depth 50 origin master:master
-    git -C /output/ch reset --soft pr
-    git -C /output/ch log -5
+    for i in $(seq 1 5); do
+        rm -fr /output/ch ||:
+        mkdir /output/ch
+        git -C /output/ch init --bare && \
+        git -C /output/ch remote add origin /build && \
+        git -C /output/ch fetch --no-tags --depth 50 origin HEAD:pr && \
+        git -C /output/ch fetch --no-tags --depth 50 origin master:master && \
+        git -C /output/ch reset --soft pr && \
+        git -C /output/ch log -5 && break || sleep 3
+    done
 fi
 
 # May be set for split build or for performance test.
