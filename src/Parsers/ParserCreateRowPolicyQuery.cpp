@@ -10,7 +10,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
-#include <base/range.h>
+#include <common/range.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
 

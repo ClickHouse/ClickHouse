@@ -8,9 +8,6 @@ import subprocess
 
 
 def test_single_page(input_path, lang):
-    if not (lang == 'en' or lang == 'ru'):
-        return
-
     with open(input_path) as f:
         soup = bs4.BeautifulSoup(
             f,
@@ -36,8 +33,11 @@ def test_single_page(input_path, lang):
                     logging.info('Link to nowhere: %s' % href)
 
         if links_to_nowhere:
-            logging.error(f'Found {links_to_nowhere} links to nowhere in {lang}')
-            sys.exit(1)
+            if lang == 'en' or lang == 'ru':
+                logging.error(f'Found {links_to_nowhere} links to nowhere in {lang}')
+                sys.exit(1)
+            else:
+                logging.warning(f'Found {links_to_nowhere} links to nowhere in {lang}')
 
         if len(anchor_points) <= 10:
             logging.error('Html parsing is probably broken')

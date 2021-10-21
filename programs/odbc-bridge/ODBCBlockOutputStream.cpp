@@ -1,10 +1,10 @@
 #include "ODBCBlockOutputStream.h"
 
 #include <Common/hex.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Core/Field.h>
-#include <base/LocalDate.h>
-#include <base/LocalDateTime.h>
+#include <common/LocalDate.h>
+#include <common/LocalDateTime.h>
 #include "getIdentifierQuote.h"
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>

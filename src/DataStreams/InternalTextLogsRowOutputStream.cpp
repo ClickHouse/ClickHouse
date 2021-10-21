@@ -7,7 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <IO/WriteHelpers.h>
-#include <base/terminalColors.h>
+#include <common/terminalColors.h>
 
 
 namespace DB

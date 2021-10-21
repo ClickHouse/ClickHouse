@@ -4,7 +4,7 @@
 #include <Common/COW.h>
 #include <boost/noncopyable.hpp>
 #include <Core/Names.h>
-#include <Core/TypeId.h>
+#include <Core/Types.h>
 #include <DataTypes/DataTypeCustom.h>
 
 
@@ -80,9 +80,6 @@ public:
     virtual DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const;
     DataTypePtr getSubcolumnType(const String & subcolumn_name) const;
     virtual ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const;
-
-    using SubcolumnCallback = std::function<void(const String &, const DataTypePtr &, const ISerialization::SubstreamPath &)>;
-    void forEachSubcolumn(const SubcolumnCallback & callback) const;
     Names getSubcolumnNames() const;
 
     /// Returns default serialization of data type.
@@ -388,12 +385,6 @@ inline bool isUInt8(const T & data_type)
 }
 
 template <typename T>
-inline bool isUInt64(const T & data_type)
-{
-    return WhichDataType(data_type).isUInt64();
-}
-
-template <typename T>
 inline bool isUnsignedInteger(const T & data_type)
 {
     return WhichDataType(data_type).isUInt();
@@ -499,7 +490,7 @@ template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
 
 template <typename DataType> constexpr bool IsDataTypeDecimalOrNumber = IsDataTypeDecimal<DataType> || IsDataTypeNumber<DataType>;
 
-template <is_decimal T>
+template <typename T>
 class DataTypeDecimal;
 
 template <typename T>
@@ -510,7 +501,7 @@ class DataTypeDate32;
 class DataTypeDateTime;
 class DataTypeDateTime64;
 
-template <is_decimal T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
+template <typename T> constexpr bool IsDataTypeDecimal<DataTypeDecimal<T>> = true;
 template <> inline constexpr bool IsDataTypeDecimal<DataTypeDateTime64> = true;
 
 template <typename T> constexpr bool IsDataTypeNumber<DataTypeNumber<T>> = true;

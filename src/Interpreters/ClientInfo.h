@@ -2,7 +2,7 @@
 
 #include <Core/UUID.h>
 #include <Poco/Net/SocketAddress.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/OpenTelemetryTraceContext.h>
 
 namespace DB

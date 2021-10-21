@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 CREATE DATABASE IF NOT EXISTS test_00101_0;
 
 USE test_00101_0;

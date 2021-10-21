@@ -10,8 +10,8 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
 
-#include <base/unaligned.h>
-#include <base/sort.h>
+#include <common/unaligned.h>
+#include <common/sort.h>
 
 #include <DataStreams/ColumnGathererStream.h>
 

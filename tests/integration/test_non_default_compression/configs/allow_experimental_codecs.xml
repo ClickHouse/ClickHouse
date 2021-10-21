@@ -1,7 +1,7 @@
-<clickhouse>
+<yandex>
     <profiles>
         <default>
             <allow_experimental_codecs>1</allow_experimental_codecs>
         </default>
     </profiles>
-</clickhouse>
+</yandex>

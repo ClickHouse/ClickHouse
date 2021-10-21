@@ -356,11 +356,3 @@ def test_cancel_while_generating_output():
     for result in results:
         output += result.output
     assert output == b'0\t0\n1\t0\n2\t0\n3\t0\n'
-
-def test_result_compression():
-    query_info = clickhouse_grpc_pb2.QueryInfo(query="SELECT 0 FROM numbers(1000000)",
-                                               result_compression=clickhouse_grpc_pb2.Compression(algorithm=clickhouse_grpc_pb2.CompressionAlgorithm.GZIP,
-                                                                                                  level=clickhouse_grpc_pb2.CompressionLevel.COMPRESSION_HIGH))
-    stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(main_channel)
-    result = stub.ExecuteQuery(query_info)
-    assert result.output == (b'0\n')*1000000

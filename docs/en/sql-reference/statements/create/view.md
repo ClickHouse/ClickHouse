@@ -5,9 +5,9 @@ toc_title: VIEW
 
 # CREATE VIEW {#create-view}
 
-Creates a new view. Views can be [normal](#normal), [materialized](#materialized) and [live](#live-view) (the latter is an experimental feature).
+Creates a new view. There are two types of views: normal and materialized.
 
-## Normal View {#normal}
+## Normal {#normal}
 
 Syntax:
 
@@ -35,7 +35,7 @@ This query is fully equivalent to using the subquery:
 SELECT a, b, c FROM (SELECT ...)
 ```
 
-## Materialized View {#materialized}
+## Materialized {#materialized}
 
 ``` sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
@@ -59,7 +59,7 @@ If you specify `POPULATE`, the existing table data is inserted in the view when 
 
 A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`… Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won’t be further aggregated. The exception is when using an `ENGINE` that independently performs data aggregation, such as `SummingMergeTree`.
 
-The execution of [ALTER](../../../sql-reference/statements/alter/view.md) queries on materialized views has limitations, so they might be inconvenient. If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
+The execution of [ALTER](../../../sql-reference/statements/alter/index.md) queries on materialized views has limitations, so they might be inconvenient. If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
 
 Note that materialized view is influenced by [optimize_on_insert](../../../operations/settings/settings.md#optimize-on-insert) setting. The data is merged before the insertion into a view.
 
@@ -67,7 +67,7 @@ Views look the same as normal tables. For example, they are listed in the result
 
 To delete a view, use [DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). Although `DROP TABLE` works for VIEWs as well.
 
-## Live View [Experimental] {#live-view}
+## Live View (Experimental) {#live-view}
 
 !!! important "Important"
     This is an experimental feature that may change in backwards-incompatible ways in the future releases.
@@ -93,7 +93,7 @@ Live views work similarly to how a query in a distributed table works. But inste
 
     See [WITH REFRESH](#live-view-with-refresh) to force periodic updates of a live view that in some cases can be used as a workaround.
 
-### Monitoring Live View Changes {#live-view-monitoring}
+### Monitoring Changes {#live-view-monitoring}
 
 You can monitor changes in the `LIVE VIEW` query result using [WATCH](../../../sql-reference/statements/watch.md) query.
 
@@ -118,11 +118,12 @@ WATCH lv;
 │      1 │        1 │
 └────────┴──────────┘
 ┌─sum(x)─┬─_version─┐
-│      3 │        2 │
+│      2 │        2 │
 └────────┴──────────┘
 ┌─sum(x)─┬─_version─┐
 │      6 │        3 │
 └────────┴──────────┘
+...
 ```
 
 ```sql
@@ -153,6 +154,7 @@ WATCH lv EVENTS;
 ┌─version─┐
 │       3 │
 └─────────┘
+...
 ```
 
 You can execute [SELECT](../../../sql-reference/statements/select/index.md) query on a live view in the same way as for any regular view or a table. If the query result is cached it will return the result immediately without running the stored query on the underlying tables.
@@ -161,7 +163,7 @@ You can execute [SELECT](../../../sql-reference/statements/select/index.md) quer
 SELECT * FROM [db.]live_view WHERE ...
 ```
 
-### Force Live View Refresh {#live-view-alter-refresh}
+### Force Refresh {#live-view-alter-refresh}
 
 You can force live view refresh using the `ALTER LIVE VIEW [db.]table_name REFRESH` statement.
 
@@ -233,7 +235,7 @@ WATCH lv
 Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.lv does not exist..
 ```
 
-### Live View Usage {#live-view-usage}
+### Usage {#live-view-usage}
 
 Most common uses of live view tables include:
 
@@ -242,5 +244,4 @@ Most common uses of live view tables include:
 - Watching for table changes and triggering a follow-up select queries.
 - Watching metrics from system tables using periodic refresh.
 
-**See Also**
--   [ALTER LIVE VIEW](../alter/view.md#alter-live-view)
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/create/view/) <!--hide-->

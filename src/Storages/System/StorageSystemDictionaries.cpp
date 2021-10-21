@@ -15,7 +15,7 @@
 #include <Columns/ColumnString.h>
 #include <Core/Names.h>
 
-#include <base/map.h>
+#include <common/map.h>
 #include <mutex>
 
 namespace DB

@@ -6,9 +6,9 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
 #include <Interpreters/FunctionNameNormalizer.h>
-#include <Interpreters/UserDefinedSQLObjectsLoader.h>
-#include <Interpreters/UserDefinedSQLFunctionFactory.h>
-#include <stack>
+#include <Interpreters/UserDefinedObjectsLoader.h>
+#include <Interpreters/UserDefinedFunctionFactory.h>
+
 
 namespace DB
 {
@@ -34,17 +34,17 @@ BlockIO InterpreterCreateFunctionQuery::execute()
     auto & function_name = create_function_query->function_name;
     validateFunction(create_function_query->function_core, function_name);
 
-    UserDefinedSQLFunctionFactory::instance().registerFunction(function_name, query_ptr);
+    UserDefinedFunctionFactory::instance().registerFunction(function_name, query_ptr);
 
     if (!is_internal)
     {
         try
         {
-            UserDefinedSQLObjectsLoader::instance().storeObject(current_context, UserDefinedSQLObjectType::Function, function_name, *query_ptr);
+            UserDefinedObjectsLoader::instance().storeObject(current_context, UserDefinedObjectType::Function, function_name, *query_ptr);
         }
         catch (Exception & exception)
         {
-            UserDefinedSQLFunctionFactory::instance().unregisterFunction(function_name);
+            UserDefinedFunctionFactory::instance().unregisterFunction(function_name);
             exception.addMessage(fmt::format("while storing user defined function {} on disk", backQuote(function_name)));
             throw;
         }

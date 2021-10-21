@@ -1,12 +1,9 @@
 #include "ReadIndirectBufferFromWebServer.h"
 
-#include <base/logger_useful.h>
-#include <base/sleep.h>
+#include <common/logger_useful.h>
 #include <Core/Types.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/ConnectionTimeoutsContext.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 #include <thread>
 
 
@@ -20,18 +17,17 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
 }
 
-static const auto WAIT_MS = 10;
 
-
-ReadIndirectBufferFromWebServer::ReadIndirectBufferFromWebServer(
-    const String & url_, ContextPtr context_, size_t buf_size_, size_t backoff_threshold_, size_t max_tries_)
+ReadIndirectBufferFromWebServer::ReadIndirectBufferFromWebServer(const String & url_,
+                                                                 ContextPtr context_,
+                                                                 size_t max_read_tries_,
+                                                                 size_t buf_size_)
     : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
     , log(&Poco::Logger::get("ReadIndirectBufferFromWebServer"))
     , context(context_)
     , url(url_)
     , buf_size(buf_size_)
-    , backoff_threshold_ms(backoff_threshold_)
-    , max_tries(max_tries_)
+    , max_read_tries(max_read_tries_)
 {
 }
 
@@ -42,20 +38,13 @@ std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
 
     ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
     headers.emplace_back(std::make_pair("Range", fmt::format("bytes={}-", offset)));
-    const auto & settings = context->getSettingsRef();
     LOG_DEBUG(log, "Reading from offset: {}", offset);
-    const auto & config = context->getConfigRef();
-    Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 20), 0};
 
     return std::make_unique<ReadWriteBufferFromHTTP>(
         uri,
         Poco::Net::HTTPRequest::HTTP_GET,
         ReadWriteBufferFromHTTP::OutStreamCallback(),
-        ConnectionTimeouts(std::max(Poco::Timespan(settings.http_connection_timeout.totalSeconds(), 0), Poco::Timespan(20, 0)),
-                           settings.http_send_timeout,
-                           std::max(Poco::Timespan(settings.http_receive_timeout.totalSeconds(), 0), Poco::Timespan(20, 0)),
-                           settings.tcp_keep_alive_timeout,
-                           http_keep_alive_timeout),
+        ConnectionTimeouts::getHTTPTimeouts(context),
         0,
         Poco::Net::HTTPBasicCredentials{},
         buf_size,
@@ -66,7 +55,6 @@ std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
 bool ReadIndirectBufferFromWebServer::nextImpl()
 {
     bool next_result = false, successful_read = false;
-    UInt16 milliseconds_to_wait = WAIT_MS;
 
     if (impl)
     {
@@ -74,42 +62,40 @@ bool ReadIndirectBufferFromWebServer::nextImpl()
         impl->position() = position();
         assert(!impl->hasPendingData());
     }
-
-    WriteBufferFromOwnString error_msg;
-    for (size_t i = 0; (i < max_tries) && !successful_read && !next_result; ++i)
+    else
     {
-        while (milliseconds_to_wait < backoff_threshold_ms)
+        try
         {
-            try
-            {
-                if (!impl)
-                {
-                    impl = initialize();
-                    next_result = impl->hasPendingData();
-                    if (next_result)
-                        break;
-                }
-
-                next_result = impl->next();
-                successful_read = true;
-                break;
-            }
-            catch (const Poco::Exception & e)
-            {
-                LOG_WARNING(log, "Read attempt failed for url: {}. Error: {}", url, e.what());
-                error_msg << fmt::format("Error: {}\n", e.what());
-
-                sleepForMilliseconds(milliseconds_to_wait);
-                milliseconds_to_wait *= 2;
-                impl.reset();
-            }
+            impl = initialize();
         }
-        milliseconds_to_wait = WAIT_MS;
+        catch (const Poco::Exception & e)
+        {
+            throw Exception(ErrorCodes::NETWORK_ERROR, "Unreachable url: {}. Error: {}", url, e.what());
+        }
+
+        next_result = impl->hasPendingData();
+    }
+
+    for (size_t try_num = 0; (try_num < max_read_tries) && !next_result; ++try_num)
+    {
+        try
+        {
+            next_result = impl->next();
+            successful_read = true;
+            break;
+        }
+        catch (const Exception & e)
+        {
+            LOG_WARNING(log, "Read attempt {}/{} failed from {}. ({})", try_num, max_read_tries, url, e.message());
+
+            impl.reset();
+            impl = initialize();
+            next_result = impl->hasPendingData();
+        }
     }
 
     if (!successful_read)
-        throw Exception(ErrorCodes::NETWORK_ERROR,
-                        "All read attempts failed for url: {}. Reason:\n{}", url, error_msg.str());
+        throw Exception(ErrorCodes::NETWORK_ERROR, "All read attempts ({}) failed for uri: {}", max_read_tries, url);
 
     if (next_result)
     {

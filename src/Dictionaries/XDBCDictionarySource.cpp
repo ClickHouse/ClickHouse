@@ -11,14 +11,13 @@
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <base/LocalDateTime.h>
-#include <base/logger_useful.h>
+#include <common/LocalDateTime.h>
+#include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "readInvalidateQuery.h"
 #include "registerDictionaries.h"
 #include <Common/escapeForFileName.h>
-#include <Processors/QueryPipeline.h>
 
 
 namespace DB
@@ -39,22 +38,29 @@ namespace
                                                   const std::string & where_,
                                                   IXDBCBridgeHelper & bridge_)
     {
-        QualifiedTableName qualified_name{schema_, table_};
+        std::string schema = schema_;
+        std::string table = table_;
 
         if (bridge_.isSchemaAllowed())
         {
-            if (qualified_name.database.empty())
-                qualified_name = QualifiedTableName::parseFromString(qualified_name.table);
+            if (schema.empty())
+            {
+                if (auto pos = table.find('.'); pos != std::string::npos)
+                {
+                    schema = table.substr(0, pos);
+                    table = table.substr(pos + 1);
+                }
+            }
         }
         else
         {
-            if (!qualified_name.database.empty())
+            if (!schema.empty())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                     "Dictionary source of type {} specifies a schema but schema is not supported by {}-driver",
                     bridge_.getName());
         }
 
-        return {dict_struct_, db_, qualified_name.database, qualified_name.table, query_, where_, bridge_.getIdentifierQuotingStyle()};
+        return {dict_struct_, db_, schema, table, query_, where_, bridge_.getIdentifierQuotingStyle()};
     }
 }
 
@@ -200,7 +206,7 @@ std::string XDBCDictionarySource::doInvalidateQuery(const std::string & request)
     for (const auto & [name, value] : url_params)
         invalidate_url.addQueryParameter(name, value);
 
-    return readInvalidateQuery(QueryPipeline(loadFromQuery(invalidate_url, invalidate_sample_block, request)));
+    return readInvalidateQuery(loadFromQuery(invalidate_url, invalidate_sample_block, request));
 }
 
 

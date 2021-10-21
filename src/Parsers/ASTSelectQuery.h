@@ -123,8 +123,8 @@ public:
     /// Compatibility with old parser of tables list. TODO remove
     ASTPtr sampleSize() const;
     ASTPtr sampleOffset() const;
-    std::pair<ASTPtr, bool> arrayJoinExpressionList() const;
-
+    ASTPtr arrayJoinExpressionList(bool & is_left) const;
+    ASTPtr arrayJoinExpressionList() const;
     const ASTTablesInSelectQueryElement * join() const;
     bool final() const;
     bool withFill() const;

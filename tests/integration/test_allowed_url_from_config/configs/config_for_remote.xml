@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <remote_url_allow_hosts>
         <host>localhost:9000</host>
         <host>localhost:9440</host>
@@ -7,4 +7,4 @@
         <host>example01-02-1</host>
         <host>example01-02-2</host>
     </remote_url_allow_hosts>
-</clickhouse>
+</yandex>

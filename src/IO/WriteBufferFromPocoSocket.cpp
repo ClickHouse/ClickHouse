@@ -57,9 +57,7 @@ void WriteBufferFromPocoSocket::nextImpl()
         }
         catch (const Poco::TimeoutException &)
         {
-            throw NetException(fmt::format("Timeout exceeded while writing to socket ({}, {} ms)",
-                peer_address.toString(),
-                socket.impl()->getSendTimeout().totalMilliseconds()), ErrorCodes::SOCKET_TIMEOUT);
+            throw NetException("Timeout exceeded while writing to socket (" + peer_address.toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
         }
         catch (const Poco::IOException & e)
         {

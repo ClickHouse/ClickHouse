@@ -3,9 +3,9 @@
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/Stopwatch.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/ThreadPool.h>
-#include <base/phdr_cache.h>
+#include <common/phdr_cache.h>
 #include <random>
 #include <pcg_random.hpp>
 #include <thread>

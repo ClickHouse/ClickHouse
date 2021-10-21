@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 SELECT 'database atomic tests';
 
 DROP DATABASE IF EXISTS test1601_detach_permanently_atomic;

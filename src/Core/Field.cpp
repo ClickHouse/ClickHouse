@@ -487,11 +487,11 @@ template bool decimalLessOrEqual<DateTime64>(DateTime64 x, DateTime64 y, UInt32 
 inline void writeText(const Null & x, WriteBuffer & buf)
 {
     if (x.isNegativeInfinity())
-        writeText("-Inf", buf);
+        writeText(std::string("-Inf"), buf);
     if (x.isPositiveInfinity())
-        writeText("+Inf", buf);
+        writeText(std::string("+Inf"), buf);
     else
-        writeText("NULL", buf);
+        writeText(std::string("NULL"), buf);
 }
 
 String toString(const Field & x)

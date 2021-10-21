@@ -4,10 +4,10 @@
 #include <Poco/SHA1Engine.h>
 #include <Interpreters/Session.h>
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/OpenSSLHelpers.h>
 
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 
 namespace DB
 {

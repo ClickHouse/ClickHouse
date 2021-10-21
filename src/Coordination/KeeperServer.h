@@ -7,7 +7,7 @@
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/CoordinationSettings.h>
 #include <unordered_map>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {

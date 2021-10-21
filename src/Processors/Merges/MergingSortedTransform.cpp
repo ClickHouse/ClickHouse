@@ -2,7 +2,7 @@
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBuffer.h>
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {

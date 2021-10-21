@@ -2,7 +2,7 @@
 
 #include <Coordination/KeeperStorage.h>
 #include <libnuraft/nuraft.hxx> // Y_IGNORE
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Coordination/ThreadSafeQueue.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>

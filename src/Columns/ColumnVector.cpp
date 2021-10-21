@@ -14,10 +14,10 @@
 #include <Common/SipHash.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
-#include <base/sort.h>
-#include <base/unaligned.h>
-#include <base/bit_cast.h>
-#include <base/scope_guard.h>
+#include <common/sort.h>
+#include <common/unaligned.h>
+#include <common/bit_cast.h>
+#include <common/scope_guard.h>
 
 #include <cmath>
 #include <cstring>

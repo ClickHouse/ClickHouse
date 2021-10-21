@@ -4,7 +4,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 #include <Coordination/ThreadSafeQueue.h>
 #include <atomic>
 #include <list>

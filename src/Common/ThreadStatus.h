@@ -6,7 +6,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ProfileEvents.h>
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -145,6 +145,7 @@ protected:
     Poco::Logger * log = nullptr;
 
     friend class CurrentThread;
+    friend class PushingToViewsBlockOutputStream;
 
     /// Use ptr not to add extra dependencies in the header
     std::unique_ptr<RUsageCounters> last_rusage;
@@ -187,11 +188,6 @@ public:
         return query_context.lock();
     }
 
-    void disableProfiling()
-    {
-        query_profiled_enabled = false;
-    }
-
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
     void initializeQuery();
 
@@ -226,7 +222,6 @@ public:
     /// Detaches thread from the thread group and the query, dumps performance counters if they have not been dumped
     void detachQuery(bool exit_if_already_detached = false, bool thread_exits = false);
 
-    void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
 protected:
     void applyQuerySettings();
@@ -239,6 +234,7 @@ protected:
 
     void logToQueryThreadLog(QueryThreadLog & thread_log, const String & current_database, std::chrono::time_point<std::chrono::system_clock> now);
 
+    void logToQueryViewsLog(const ViewRuntimeData & vinfo);
 
     void assertState(const std::initializer_list<int> & permitted_states, const char * description = nullptr) const;
 

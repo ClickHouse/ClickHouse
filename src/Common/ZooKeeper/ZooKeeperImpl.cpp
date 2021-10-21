@@ -7,7 +7,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>

@@ -6,7 +6,6 @@
 #include <Processors/Transforms/CheckSortedTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPipeline.h>
-#include <Processors/Pipe.h>
 #include <DataTypes/DataTypesNumber.h>
 
 
@@ -98,7 +97,8 @@ TEST(CheckSortedBlockInputStream, CheckGoodCase)
         return std::make_shared<CheckSortedTransform>(header, sort_description);
     });
 
-    QueryPipeline pipeline(std::move(pipe));
+    QueryPipeline pipeline;
+    pipeline.init(std::move(pipe));
 
     PullingPipelineExecutor executor(pipeline);
 
@@ -125,7 +125,8 @@ TEST(CheckSortedBlockInputStream, CheckBadLastRow)
         return std::make_shared<CheckSortedTransform>(header, sort_description);
     });
 
-    QueryPipeline pipeline(std::move(pipe));
+    QueryPipeline pipeline;
+    pipeline.init(std::move(pipe));
 
     PullingPipelineExecutor executor(pipeline);
 
@@ -149,7 +150,8 @@ TEST(CheckSortedBlockInputStream, CheckUnsortedBlock1)
         return std::make_shared<CheckSortedTransform>(header, sort_description);
     });
 
-    QueryPipeline pipeline(std::move(pipe));
+    QueryPipeline pipeline;
+    pipeline.init(std::move(pipe));
 
     PullingPipelineExecutor executor(pipeline);
 
@@ -170,7 +172,8 @@ TEST(CheckSortedBlockInputStream, CheckUnsortedBlock2)
         return std::make_shared<CheckSortedTransform>(header, sort_description);
     });
 
-    QueryPipeline pipeline(std::move(pipe));
+    QueryPipeline pipeline;
+    pipeline.init(std::move(pipe));
 
     PullingPipelineExecutor executor(pipeline);
 
@@ -191,7 +194,8 @@ TEST(CheckSortedBlockInputStream, CheckUnsortedBlock3)
         return std::make_shared<CheckSortedTransform>(header, sort_description);
     });
 
-    QueryPipeline pipeline(std::move(pipe));
+    QueryPipeline pipeline;
+    pipeline.init(std::move(pipe));
 
     PullingPipelineExecutor executor(pipeline);
 
@@ -214,7 +218,8 @@ TEST(CheckSortedBlockInputStream, CheckEqualBlock)
         return std::make_shared<CheckSortedTransform>(header, sort_description);
     });
 
-    QueryPipeline pipeline(std::move(pipe));
+    QueryPipeline pipeline;
+    pipeline.init(std::move(pipe));
 
     PullingPipelineExecutor executor(pipeline);
 

@@ -6,7 +6,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <DataStreams/ITTLAlgorithm.h>
 
-#include <base/DateLUT.h>
+#include <common/DateLUT.h>
 
 namespace DB
 {

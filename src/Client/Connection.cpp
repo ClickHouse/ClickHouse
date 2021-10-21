@@ -12,7 +12,6 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Client/Connection.h>
-#include <Client/ConnectionParameters.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
@@ -24,7 +23,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Processors/Pipe.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <pcg_random.hpp>
@@ -131,16 +130,10 @@ void Connection::connect(const ConnectionTimeouts & timeouts)
     }
     catch (Poco::TimeoutException & e)
     {
-        /// disconnect() will reset the socket, get timeouts before.
-        const std::string & message = fmt::format("{} ({}, receive timeout {} ms, send timeout {} ms)",
-            e.displayText(), getDescription(),
-            socket->getReceiveTimeout().totalMilliseconds(),
-            socket->getSendTimeout().totalMilliseconds());
-
         disconnect();
 
         /// Add server address to exception. Also Exception will remember stack trace. It's a pity that more precise exception type is lost.
-        throw NetException(message, ErrorCodes::SOCKET_TIMEOUT);
+        throw NetException(e.displayText() + " (" + getDescription() + ")", ErrorCodes::SOCKET_TIMEOUT);
     }
 }
 
@@ -511,7 +504,7 @@ void Connection::sendQuery(
     /// Send empty block which means end of data.
     if (!with_pending_data)
     {
-        sendData(Block(), "", false);
+        sendData(Block());
         out->next();
     }
 }
@@ -666,7 +659,7 @@ protected:
         num_rows += chunk.getNumRows();
 
         auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
-        connection.sendData(block, table_data.table_name, false);
+        connection.sendData(block, table_data.table_name);
     }
 
 private:
@@ -682,7 +675,7 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
     if (data.empty())
     {
         /// Send empty block, which means end of data transfer.
-        sendData(Block(), "", false);
+        sendData(Block());
         return;
     }
 
@@ -701,14 +694,14 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
         if (!elem->pipe)
             elem->pipe = elem->creating_pipe_callback();
 
-        QueryPipelineBuilder pipeline;
+        QueryPipeline pipeline;
         pipeline.init(std::move(*elem->pipe));
         elem->pipe.reset();
         pipeline.resize(1);
         auto sink = std::make_shared<ExternalTableDataSink>(pipeline.getHeader(), *this, *elem, std::move(on_cancel));
-        pipeline.setSinks([&](const Block &, QueryPipelineBuilder::StreamType type) -> ProcessorPtr
+        pipeline.setSinks([&](const Block &, QueryPipeline::StreamType type) -> ProcessorPtr
         {
-            if (type != QueryPipelineBuilder::StreamType::Main)
+            if (type != QueryPipeline::StreamType::Main)
                 return nullptr;
             return sink;
         });
@@ -720,11 +713,11 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 
         /// If table is empty, send empty block with name.
         if (read_rows == 0)
-            sendData(sink->getPort().getHeader(), elem->table_name, false);
+            sendData(sink->getPort().getHeader(), elem->table_name);
     }
 
     /// Send empty block, which means end of data transfer.
-    sendData(Block(), "", false);
+    sendData(Block());
 
     out_bytes = out->count() - out_bytes;
     maybe_compressed_out_bytes = maybe_compressed_out->count() - maybe_compressed_out_bytes;
@@ -979,21 +972,6 @@ void Connection::throwUnexpectedPacket(UInt64 packet_type, const char * expected
             "Unexpected packet from server " + getDescription() + " (expected " + expected
             + ", got " + String(Protocol::Server::toString(packet_type)) + ")",
             ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER);
-}
-
-ServerConnectionPtr Connection::createConnection(const ConnectionParameters & parameters, ContextPtr)
-{
-    return std::make_unique<Connection>(
-        parameters.host,
-        parameters.port,
-        parameters.default_database,
-        parameters.user,
-        parameters.password,
-        "", /* cluster */
-        "", /* cluster_secret */
-        "client",
-        parameters.compression,
-        parameters.security);
 }
 
 }

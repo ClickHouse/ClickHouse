@@ -26,11 +26,6 @@ public:
     /// @returns false, if join-on-disk disk limit exceeded
     bool addJoinedBlock(const Block & block, bool check_limits) override;
 
-    void checkTypesOfKeys(const Block & block) const override
-    {
-        join->checkTypesOfKeys(block);
-    }
-
     void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) override
     {
         join->joinBlock(block, not_processed);
@@ -61,10 +56,9 @@ public:
         return join->alwaysReturnsEmptySet();
     }
 
-    std::shared_ptr<NotJoinedBlocks>
-    getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override
+    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block & block, UInt64 max_block_size) const override
     {
-        return join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
+        return join->getNonJoinedBlocks(block, max_block_size);
     }
 
 private:

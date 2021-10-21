@@ -22,7 +22,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/memcpySmall.h>
 
-#include <base/unaligned.h>
+#include <common/unaligned.h>
 
 namespace DB
 {
@@ -217,7 +217,7 @@ public:
                     using From = typename FromType::FieldType;
                     using To = typename ToType::FieldType;
 
-                    using FromColumnType = ColumnVectorOrDecimal<From>;
+                    using FromColumnType = std::conditional_t<IsDecimalNumber<From>, ColumnDecimal<From>, ColumnVector<From>>;
 
                     const auto * column_from = assert_cast<const FromColumnType*>(arguments[0].column.get());
 

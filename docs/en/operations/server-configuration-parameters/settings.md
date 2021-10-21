@@ -45,7 +45,7 @@ Configuration template:
 -   `min_part_size` – The minimum size of a data part.
 -   `min_part_size_ratio` – The ratio of the data part size to the table size.
 -   `method` – Compression method. Acceptable values: `lz4`, `lz4hc`, `zstd`.
--   `level` – Compression level. See [Codecs](../../sql-reference/statements/create/table.md#create-query-general-purpose-codecs).
+-   `level` – Compression level. See [Codecs](../../sql-reference/statements/create/table/#create-query-general-purpose-codecs).
 
 You can configure multiple `<case>` sections.
 
@@ -69,85 +69,29 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 </compression>
 ```
 
+<!--
 ## encryption {#server-settings-encryption}
 
-Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in enviroment variables or be set in configuration file.
-
-Keys can be hex or string. Their length must be equal to 16.
+Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). The command, or a shell script, is expected to write a Base64-encoded key of any length to the stdout.
 
 **Example**
 
-Load from config:
+For Linux with systemd:
 
 ```xml
-<encryption_codecs>
-    <aes_128_gcm_siv>
-        <key>12345567812345678</key>
-    </aes_128_gcm_siv>
-</encryption_codecs>
+<encryption>
+    <key_command>/usr/bin/systemd-ask-password --id="clickhouse-server" --timeout=0 "Enter the ClickHouse encryption passphrase:" | base64</key_command>
+</encryption>
 ```
 
-!!! note "NOTE"
-    Storing keys in configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
-
-Load from config, when key is in hex:
+For other systems:
 
 ```xml
-<encryption_codecs>
-    <aes_128_gcm_siv>
-        <key_hex>00112233445566778899aabbccddeeff</key_hex>
-    </aes_128_gcm_siv>
-</encryption_codecs>
+<encryption>
+    <key_command><![CDATA[IFS=; echo -n >/dev/tty "Enter the ClickHouse encryption passphrase: "; stty=`stty -F /dev/tty -g`; stty -F /dev/tty -echo; read k </dev/tty; stty -F /dev/tty "$stty"; echo -n $k | base64]]></key_command>
+</encryption>
 ```
-
-Load key from environment variable:
-
-```xml
-<encryption_codecs>
-    <aes_128_gcm_siv>
-        <key_hex from_env="KEY"></key_hex>
-    </aes_128_gcm_siv>
-</encryption_codecs>
-```
-
-Where `current_key_id` sets the current key for encryption, and all specified keys can be used for decryption.
-
-All this methods can be applied for multiple keys:
-
-```xml
-<encryption_codecs>
-    <aes_128_gcm_siv>
-        <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
-        <key_hex id="1" from_env=".."></key_hex>
-        <current_key_id>1</current_key_id>
-    </aes_128_gcm_siv>
-</encryption_codecs>
-```
-
-Where `current_key_id` shows current key for encryption.
-
-Also user can add nonce that must be 12 bytes long (by default encryption and decryption will use nonce consisting of zero bytes):
-
-```xml
-<encryption_codecs>
-    <aes_128_gcm_siv>
-        <nonce>0123456789101</nonce>
-    </aes_128_gcm_siv>
-</encryption_codecs>
-```
-
-Or it can be set in hex:
-
-```xml
-<encryption_codecs>
-    <aes_128_gcm_siv>
-        <nonce_hex>abcdefabcdef</nonce_hex>
-    </aes_128_gcm_siv>
-</encryption_codecs>
-```
-
-Everything above can be applied for `aes_256_gcm_siv` (but key must be 32 bytes length).
-
+-->
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
 List of prefixes for [custom settings](../../operations/settings/index.md#custom_settings). The prefixes must be separated with commas.
@@ -182,7 +126,6 @@ Default value: `1073741824` (1 GB).
     <size_limit>1073741824</size_limit>
 </core_dump>
 ```
-
 ## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
 
 Sets the delay before remove table data in seconds. If the query has `SYNC` modifier, this setting is ignored.
@@ -862,7 +805,7 @@ Use the following parameters to configure logging:
 
 The path to the directory containing data.
 
-!!! warning "Warning"
+!!! note "Note"
     The trailing slash is mandatory.
 
 **Example**
@@ -951,9 +894,9 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 
 ## query_views_log {#server_configuration_parameters-query_views_log}
 
-Setting for logging views (live, materialized etc) dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views) setting.
+Setting for logging views dependant of queries received with the [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views) setting.
 
-Queries are logged in the [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+Queries are logged in the [system.query_views_log](../../operations/system-tables/query_thread_log.md#system_tables-query_views_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
 
 Use the following parameters to configure logging:
 
@@ -1031,7 +974,8 @@ The default server configuration file `config.xml` contains the following settin
 
 Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
 `system.query_log`, `system.text_log`, `system.processes` tables, and in logs sent to the client. That allows preventing
-sensitive data leakage from SQL queries (like names, emails, personal identifiers or credit card numbers) to logs.
+sensitive data leakage from SQL queries (like names, emails, personal
+identifiers or credit card numbers) to logs.
 
 **Example**
 
@@ -1129,7 +1073,7 @@ Example
 
 Path to temporary data for processing large queries.
 
-!!! warning "Note"
+!!! note "Note"
     The trailing slash is mandatory.
 
 **Example**
@@ -1146,9 +1090,9 @@ If not set, [tmp_path](#tmp-path) is used, otherwise it is ignored.
 
 !!! note "Note"
     - `move_factor` is ignored.
-    - `keep_free_space_bytes` is ignored.
-    - `max_data_part_size_bytes` is ignored.
-    - Уou must have exactly one volume in that policy.
+- `keep_free_space_bytes` is ignored.
+- `max_data_part_size_bytes` is ignored.
+- Уou must have exactly one volume in that policy.
 
 ## uncompressed_cache_size {#server-settings-uncompressed_cache_size}
 
@@ -1212,10 +1156,9 @@ This section contains the following parameters:
 
       The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
 
-- `session_timeout_ms` — Maximum timeout for the client session in milliseconds.
-- `operation_timeout_ms` — Maximum timeout for one operation in milliseconds.
-- `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
-- `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
+-   `session_timeout` — Maximum timeout for the client session in milliseconds.
+-   `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
+-   `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
 
 **Example configuration**
 
@@ -1289,39 +1232,6 @@ The update is performed asynchronously, in a separate system thread.
 
 -   [background_schedule_pool_size](../../operations/settings/settings.md#background_schedule_pool_size)
 
-## distributed_ddl {#server-settings-distributed_ddl}
-
-Manage executing [distributed ddl queries](../../sql-reference/distributed-ddl.md)  (CREATE, DROP, ALTER, RENAME) on cluster.
-Works only if [ZooKeeper](#server-settings_zookeeper) is enabled.
-
-**Example**
-
-```xml
-<distributed_ddl>
-    <!-- Path in ZooKeeper to queue with DDL queries -->
-    <path>/clickhouse/task_queue/ddl</path>
-
-    <!-- Settings from this profile will be used to execute DDL queries -->
-    <profile>default</profile>
-
-    <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
-    <pool_size>1</pool_size>
-
-    <!--
-         Cleanup settings (active tasks will not be removed)
-    -->
-
-    <!-- Controls task TTL (default 1 week) -->
-    <task_max_lifetime>604800</task_max_lifetime>
-
-    <!-- Controls how often cleanup should be performed (in seconds) -->
-    <cleanup_delay_period>60</cleanup_delay_period>
-
-    <!-- Controls how many tasks could be in the queue -->
-    <max_tasks_in_queue>1000</max_tasks_in_queue>
-</distributed_ddl>
-```
-
 ## access_control_path {#access_control_path}
 
 Path to a folder where a ClickHouse server stores user and role configurations created by SQL commands.
@@ -1330,7 +1240,7 @@ Default value: `/var/lib/clickhouse/access/`.
 
 **See also**
 
-- [Access Control and Account Management](../../operations/access-rights.md#access-control)
+-   [Access Control and Account Management](../../operations/access-rights.md#access-control)
 
 ## user_directories {#user_directories}
 
@@ -1387,4 +1297,4 @@ To add an LDAP server as a remote user directory of users that are not defined l
 </ldap>
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

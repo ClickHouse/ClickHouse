@@ -599,4 +599,4 @@ ALTER SETTINGS PROFILE [IF EXISTS] name [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
 ```
 
-[元の記事](https://clickhouse.com/docs/en/query_language/alter/) <!--hide-->
+[元の記事](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->
