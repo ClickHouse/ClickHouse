@@ -250,7 +250,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "and i.oid = ix.indexrelid "
             "and a.attrelid = t.oid "
             "and a.attnum = ANY(ix.indkey) "
-            "and t.relkind = 'r' " /// simple tables
+            "and t.relkind in ('r', 'p') " /// simple tables
             "and t.relname = {} " /// Connection is already done to a needed database, only table name is needed.
             "and ix.indisreplident = 't' " /// index is is replica identity index
             "ORDER BY a.attname", /// column names

@@ -9,6 +9,10 @@
 #include <base/LocalDate.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
+#include "Columns/ColumnString.h"
+#include "Columns/ColumnsNumber.h"
+#include "Core/Block.h"
+#include "Core/Protocol.h"
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -38,17 +42,16 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <Formats/FormatFactory.h>
+#include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/CompressionMethod.h>
-
-#include <DataStreams/NullBlockOutputStream.h>
-#include <DataStreams/InternalTextLogsRowOutputStream.h>
+#include <Client/InternalTextLogs.h>
 
 namespace fs = std::filesystem;
 
@@ -68,8 +71,15 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
+    extern const int UNRECOGNIZED_ARGUMENTS;
 }
 
+}
+
+namespace ProfileEvents
+{
+    extern const Event UserTimeMicroseconds;
+    extern const Event SystemTimeMicroseconds;
 }
 
 namespace DB
@@ -94,6 +104,9 @@ void interruptSignalHandler(int signum)
     if (exit_on_signal.test_and_set())
         _exit(signum);
 }
+
+ClientBase::~ClientBase() = default;
+ClientBase::ClientBase() = default;
 
 void ClientBase::setupSignalHandler()
 {
@@ -230,7 +243,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     initBlockOutputStream(block, parsed_query);
 
     /// The header block containing zero rows was used to initialize
-    /// block_out_stream, do not output it.
+    /// output_format, do not output it.
     /// Also do not output too much data if we're fuzzing.
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
         return;
@@ -238,11 +251,11 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (need_render_progress && (stdout_is_a_tty || is_interactive))
         progress_indication.clearProgressOutput();
 
-    block_out_stream->write(block);
+    output_format->write(materializeBlock(block));
     written_first_block = true;
 
     /// Received data block is immediately displayed to the user.
-    block_out_stream->flush();
+    output_format->flush();
 
     /// Restore progress bar after data block.
     if (need_render_progress && (stdout_is_a_tty || is_interactive))
@@ -254,7 +267,7 @@ void ClientBase::onLogData(Block & block)
 {
     initLogsOutputStream();
     progress_indication.clearProgressOutput();
-    logs_out_stream->write(block);
+    logs_out_stream->writeLogs(block);
     logs_out_stream->flush();
 }
 
@@ -262,14 +275,14 @@ void ClientBase::onLogData(Block & block)
 void ClientBase::onTotals(Block & block, ASTPtr parsed_query)
 {
     initBlockOutputStream(block, parsed_query);
-    block_out_stream->setTotals(block);
+    output_format->setTotals(block);
 }
 
 
 void ClientBase::onExtremes(Block & block, ASTPtr parsed_query)
 {
     initBlockOutputStream(block, parsed_query);
-    block_out_stream->setExtremes(block);
+    output_format->setExtremes(block);
 }
 
 
@@ -281,21 +294,21 @@ void ClientBase::onReceiveExceptionFromServer(std::unique_ptr<Exception> && e)
 }
 
 
-void ClientBase::onProfileInfo(const BlockStreamProfileInfo & profile_info)
+void ClientBase::onProfileInfo(const ProfileInfo & profile_info)
 {
-    if (profile_info.hasAppliedLimit() && block_out_stream)
-        block_out_stream->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
+    if (profile_info.hasAppliedLimit() && output_format)
+        output_format->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
 }
 
 
 void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
 {
-    if (!block_out_stream)
+    if (!output_format)
     {
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
-            block_out_stream = std::make_shared<NullBlockOutputStream>(block);
+            output_format = std::make_shared<NullOutputFormat>(block);
             return;
         }
 
@@ -357,11 +370,11 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
 
         /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
         if (!need_render_progress)
-            block_out_stream = global_context->getOutputStreamParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+            output_format = global_context->getOutputFormatParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
         else
-            block_out_stream = global_context->getOutputStream(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+            output_format = global_context->getOutputFormat(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
-        block_out_stream->writePrefix();
+        output_format->doWritePrefix();
     }
 }
 
@@ -393,8 +406,7 @@ void ClientBase::initLogsOutputStream()
             }
         }
 
-        logs_out_stream = std::make_shared<InternalTextLogsRowOutputStream>(*wb, stdout_is_a_tty);
-        logs_out_stream->writePrefix();
+        logs_out_stream = std::make_unique<InternalTextLogs>(*wb, stdout_is_a_tty);
     }
 }
 
@@ -426,10 +438,8 @@ void ClientBase::processTextAsSingleQuery(const String & full_query)
     catch (Exception & e)
     {
         if (!is_interactive)
-        {
             e.addMessage("(in query: {})", full_query);
-            throw;
-        }
+        throw;
     }
 
     if (have_error)
@@ -513,6 +523,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
     const size_t poll_interval
         = std::max(min_poll_interval, std::min<size_t>(receive_timeout.totalMicroseconds(), default_poll_interval));
 
+    bool break_on_timeout = connection->getConnectionType() != IServerConnection::Type::LOCAL;
     while (true)
     {
         Stopwatch receive_watch(CLOCK_MONOTONIC_COARSE);
@@ -543,7 +554,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
                 else
                 {
                     double elapsed = receive_watch.elapsedSeconds();
-                    if (elapsed > receive_timeout.totalSeconds())
+                    if (break_on_timeout && elapsed > receive_timeout.totalSeconds())
                     {
                         std::cout << "Timeout exceeded while receiving data from server."
                                     << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
@@ -617,6 +628,10 @@ bool ClientBase::receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled)
             onEndOfStream();
             return false;
 
+        case Protocol::Server::ProfileEvents:
+            onProfileEvents(packet.block);
+            return true;
+
         default:
             throw Exception(
                 ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}", packet.type, connection->getDescription());
@@ -632,8 +647,8 @@ void ClientBase::onProgress(const Progress & value)
         return;
     }
 
-    if (block_out_stream)
-        block_out_stream->onProgress(value);
+    if (output_format)
+        output_format->onProgress(value);
 
     if (need_render_progress)
         progress_indication.writeProgress();
@@ -644,11 +659,8 @@ void ClientBase::onEndOfStream()
 {
     progress_indication.clearProgressOutput();
 
-    if (block_out_stream)
-        block_out_stream->writeSuffix();
-
-    if (logs_out_stream)
-        logs_out_stream->writeSuffix();
+    if (output_format)
+        output_format->doWriteSuffix();
 
     resetOutput();
 
@@ -660,10 +672,71 @@ void ClientBase::onEndOfStream()
 }
 
 
+void ClientBase::onProfileEvents(Block & block)
+{
+    const auto rows = block.rows();
+    if (rows == 0)
+        return;
+
+    if (progress_indication.print_hardware_utilization)
+    {
+        const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
+        const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
+        const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
+        const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
+
+        const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
+        const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+
+        HostToThreadTimesMap thread_times;
+        for (size_t i = 0; i < rows; ++i)
+        {
+            auto thread_id = array_thread_id[i];
+            auto host_name = host_names.getDataAt(i).toString();
+            if (thread_id != 0)
+                progress_indication.addThreadIdToList(host_name, thread_id);
+            auto event_name = names.getDataAt(i);
+            auto value = array_values[i];
+            if (event_name == user_time_name)
+            {
+                thread_times[host_name][thread_id].user_ms = value;
+            }
+            else if (event_name == system_time_name)
+            {
+                thread_times[host_name][thread_id].system_ms = value;
+            }
+            else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
+            {
+                thread_times[host_name][thread_id].memory_usage = value;
+            }
+        }
+        progress_indication.updateThreadEventData(thread_times);
+    }
+
+    if (profile_events.print)
+    {
+        if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
+        {
+            initLogsOutputStream();
+            progress_indication.clearProgressOutput();
+            logs_out_stream->writeProfileEvents(block);
+            logs_out_stream->flush();
+
+            profile_events.watch.restart();
+            profile_events.last_block = {};
+        }
+        else
+        {
+            profile_events.last_block = block;
+        }
+    }
+}
+
+
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
-    block_out_stream.reset();
+    output_format.reset();
     logs_out_stream.reset();
 
     if (pager_cmd)
@@ -857,7 +930,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             current_format = insert->format;
     }
 
-    auto source = FormatFactory::instance().getInput(current_format, buf, sample, global_context, insert_format_max_block_size);
+    auto source = global_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
     Pipe pipe(source);
 
     if (columns_description.hasDefaults())
@@ -979,6 +1052,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     processed_rows = 0;
     written_first_block = false;
     progress_indication.resetProgress();
+    profile_events.watch.restart();
 
     {
         /// Temporarily apply query settings to context.
@@ -1045,6 +1119,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             /// If the connection initiates the reconnection, it uses its variable.
             connection->setDefaultDatabase(new_database);
         }
+    }
+
+    /// Always print last block (if it was not printed already)
+    if (profile_events.last_block)
+    {
+        initLogsOutputStream();
+        progress_indication.clearProgressOutput();
+        logs_out_stream->writeProfileEvents(profile_events.last_block);
+        logs_out_stream->flush();
     }
 
     if (is_interactive)
@@ -1461,6 +1544,26 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
     }
 }
 
+void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
+{
+    cmd_settings.addProgramOptions(options_description.main_description.value());
+    /// Parse main commandline options.
+    auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
+    po::parsed_options parsed = parser.run();
+
+    /// Check unrecognized options without positional options.
+    auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::exclude_positional);
+    if (!unrecognized_options.empty())
+        throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
+
+    /// Check positional options (options after ' -- ', ex: clickhouse-client -- <options>).
+    unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
+    if (unrecognized_options.size() > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional options are not supported.");
+
+    po::store(parsed, options);
+}
+
 
 void ClientBase::init(int argc, char ** argv)
 {
@@ -1516,9 +1619,13 @@ void ClientBase::init(int argc, char ** argv)
 
         ("ignore-error", "do not stop processing in multiquery mode")
         ("stacktrace", "print stack traces of exceptions")
+        ("hardware-utilization", "print hardware utilization information in progress bar")
+        ("print-profile-events", po::value(&profile_events.print)->zero_tokens(), "Printing ProfileEvents packets")
+        ("profile-events-delay-ms", po::value<UInt64>()->default_value(profile_events.delay_ms), "Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet)")
     ;
 
-    addAndCheckOptions(options_description, options, common_arguments);
+    addOptions(options_description);
+    parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
     if (options.count("version") || options.count("V"))
@@ -1566,6 +1673,10 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("vertical", true);
     if (options.count("stacktrace"))
         config().setBool("stacktrace", true);
+    if (options.count("print-profile-events"))
+        config().setBool("print-profile-events", true);
+    if (options.count("profile-events-delay-ms"))
+        config().setInt("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
     if (options.count("progress"))
         config().setBool("progress", true);
     if (options.count("echo"))
@@ -1582,8 +1693,12 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("verbose", true);
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
+    if (options.count("hardware-utilization"))
+        progress_indication.print_hardware_utilization = true;
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
+    profile_events.print = options.count("print-profile-events");
+    profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
     processOptions(options_description, options, external_tables_arguments);
     argsToConfig(common_arguments, config(), 100);

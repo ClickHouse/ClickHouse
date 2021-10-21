@@ -33,6 +33,7 @@
         :root {
             --background-color: #DDF8FF; /* Or #FFFBEF; actually many pastel colors look great for light theme. */
             --element-background-color: #FFF;
+            --bar-color: #F8F4F0; /* Light bar in background of table cells. */
             --border-color: #EEE;
             --shadow-color: rgba(0, 0, 0, 0.1);
             --button-color: #FFAA00; /* Orange on light-cyan is especially good. */
@@ -52,6 +53,7 @@
         [data-theme="dark"] {
             --background-color: #000;
             --element-background-color: #102030;
+            --bar-color: #182838;
             --border-color: #111;
             --shadow-color: rgba(255, 255, 255, 0.1);
             --text-color: #CCC;
@@ -568,17 +570,20 @@
         let thead = document.createElement('thead');
         for (let idx in response.meta) {
             let th = document.createElement('th');
-            let name = document.createTextNode(response.meta[idx].name);
+            const name = document.createTextNode(response.meta[idx].name);
             th.appendChild(name);
             thead.appendChild(th);
         }
 
         /// To prevent hanging the browser, limit the number of cells in a table.
         /// It's important to have the limit on number of cells, not just rows, because tables may be wide or narrow.
-        let max_rows = 10000 / response.meta.length;
+        const max_rows = 10000 / response.meta.length;
         let row_num = 0;
 
-        let column_classes = response.meta.map(elem => elem.type.match(/^(U?Int|Decimal|Float)/) ? 'right' : 'left');
+        const column_is_number = response.meta.map(elem => !!elem.type.match(/^(U?Int|Decimal|Float)/));
+        const column_maximums = column_is_number.map((elem, idx) => elem ? Math.max(...response.data.map(row => row[idx])) : 0);
+        const column_minimums = column_is_number.map((elem, idx) => elem ? Math.min(...response.data.map(row => Math.max(0, row[idx]))) : 0);
+        const column_need_render_bars = column_is_number.map((elem, idx) => column_maximums[idx] > 0 && column_maximums[idx] > column_minimums[idx]);
 
         let tbody = document.createElement('tbody');
         for (let row_idx in response.data) {
@@ -614,11 +619,27 @@
                     node = link;
                 }
 
-                td.appendChild(node);
-                td.className = column_classes[col_idx];
+                td.className = column_is_number[col_idx] ? 'right' : 'left';
                 if (is_null) {
                     td.className += ' null';
                 }
+
+                /// If it's a number, render bar in background.
+                if (column_need_render_bars[col_idx] && text > 0) {
+                    const ratio = 100 * text / column_maximums[col_idx];
+
+                    let div = document.createElement('div');
+
+                    div.style.width = '100%';
+                    div.style.background = `linear-gradient(to right,
+                        var(--bar-color) 0%, var(--bar-color) ${ratio}%,
+                        transparent ${ratio}%, transparent 100%)`;
+
+                    div.appendChild(node);
+                    node = div;
+                }
+
+                td.appendChild(node);
                 tr.appendChild(td);
             }
             tbody.appendChild(tr);

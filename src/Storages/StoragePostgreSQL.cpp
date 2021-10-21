@@ -1,7 +1,7 @@
 #include "StoragePostgreSQL.h"
 
 #if USE_LIBPQXX
-#include <DataStreams/PostgreSQLSource.h>
+#include <Processors/Transforms/PostgreSQLSource.h>
 
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
@@ -22,7 +22,6 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 
-#include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 
 #include <IO/WriteHelpers.h>

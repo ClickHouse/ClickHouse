@@ -71,26 +71,26 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 
 ## encryption {#server-settings-encryption}
 
-Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in enviroment variables or be set in configuration file.
+Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
 
-Keys can be hex or string. Their length must be equal to 16.
+Keys can be hex or string with a length equal to 16 bytes.
 
 **Example**
 
-Load from config:
+Loading from config:
 
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <key>12345567812345678</key>
+        <key>1234567812345678</key>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
 
 !!! note "NOTE"
-    Storing keys in configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
+    Storing keys in the configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
 
-Load from config, when key is in hex:
+Loading from config, when the key is in hex:
 
 ```xml
 <encryption_codecs>
@@ -100,7 +100,7 @@ Load from config, when key is in hex:
 </encryption_codecs>
 ```
 
-Load key from environment variable:
+Loading key from the environment variable:
 
 ```xml
 <encryption_codecs>
@@ -110,9 +110,9 @@ Load key from environment variable:
 </encryption_codecs>
 ```
 
-Where `current_key_id` sets the current key for encryption, and all specified keys can be used for decryption.
+Here `current_key_id` sets the current key for encryption, and all specified keys can be used for decryption.
 
-All this methods can be applied for multiple keys:
+Each of these methods can be applied for multiple keys:
 
 ```xml
 <encryption_codecs>
@@ -124,9 +124,9 @@ All this methods can be applied for multiple keys:
 </encryption_codecs>
 ```
 
-Where `current_key_id` shows current key for encryption.
+Here `current_key_id` shows current key for encryption.
 
-Also user can add nonce that must be 12 bytes long (by default encryption and decryption will use nonce consisting of zero bytes):
+Also, users can add nonce that must be 12 bytes long (by default encryption and decryption processes use nonce that consists of zero bytes):
 
 ```xml
 <encryption_codecs>
@@ -146,7 +146,7 @@ Or it can be set in hex:
 </encryption_codecs>
 ```
 
-Everything above can be applied for `aes_256_gcm_siv` (but key must be 32 bytes length).
+Everything mentioned above can be applied for `aes_256_gcm_siv` (but the key must be 32 bytes long).
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
@@ -473,6 +473,30 @@ Examples:
 ``` xml
 <listen_host>::1</listen_host>
 <listen_host>127.0.0.1</listen_host>
+```
+
+## listen_backlog {#server_configuration_parameters-listen_backlog}
+
+Backlog (queue size of pending connections) of the listen socket.
+
+Default value: `4096` (as in linux [5.4+](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=19f92a030ca6d772ab44b22ee6a01378a8cb32d4)).
+
+Usually this value does not need to be changed, since:
+- default value is large enough,
+- and for accepting client's connections server has separate thread.
+
+So even if you have `TcpExtListenOverflows` (from `nstat`) non zero and this
+counter grows for ClickHouse server it does not mean that this value need to be
+increased, since:
+- usually if 4096 is not enough it shows some internal ClickHouse scaling
+  issue, so it is better to report an issue.
+- and it does not mean that the server can handle more connections later (and
+  even if it can, clients can already goes away / disconnect).
+
+Examples:
+
+``` xml
+<listen_backlog>4096</listen_backlog>
 ```
 
 ## logger {#server_configuration_parameters-logger}

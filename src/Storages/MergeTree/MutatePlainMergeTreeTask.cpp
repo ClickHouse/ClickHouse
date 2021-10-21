@@ -40,6 +40,7 @@ void MutatePlainMergeTreeTask::prepare()
 
     write_part_log = [this] (const ExecutionStatus & execution_status)
     {
+        mutate_task.reset();
         storage.writePartLog(
             PartLogElement::MUTATE_PART,
             execution_status,
@@ -50,9 +51,13 @@ void MutatePlainMergeTreeTask::prepare()
             merge_list_entry.get());
     };
 
+    fake_query_context = Context::createCopy(storage.getContext());
+    fake_query_context->makeQueryContext();
+    fake_query_context->setCurrentQueryId("");
+
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_part, metadata_snapshot, merge_mutate_entry->commands, merge_list_entry.get(),
-            time(nullptr), storage.getContext(), merge_mutate_entry->tagger->reserved_space, table_lock_holder);
+            time(nullptr), fake_query_context, merge_mutate_entry->tagger->reserved_space, table_lock_holder);
 }
 
 bool MutatePlainMergeTreeTask::executeStep()
@@ -61,7 +66,7 @@ bool MutatePlainMergeTreeTask::executeStep()
     /// Make out memory tracker a parent of current thread memory tracker
     MemoryTrackerThreadSwitcherPtr switcher;
     if (merge_list_entry)
-        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(&(*merge_list_entry)->memory_tracker, (*merge_list_entry)->max_untracked_memory);
+        switcher = std::make_unique<MemoryTrackerThreadSwitcher>(*merge_list_entry);
 
     switch (state)
     {

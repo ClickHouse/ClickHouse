@@ -46,6 +46,7 @@ private:
     MergeTreeData::MutableDataPartPtr new_part{nullptr};
     FutureMergedMutatedPartPtr future_mutated_part{nullptr};
 
+    ContextMutablePtr fake_query_context;
     MutateTaskPtr mutate_task;
 };
 
