@@ -64,6 +64,12 @@ public:
         if (file_in)
             file_in->setReadUntilPosition(position);
     }
+
+    void setReadUntilEnd() override
+    {
+        if (file_in)
+            file_in->setReadUntilEnd();
+    }
 };
 
 }

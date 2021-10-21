@@ -202,7 +202,11 @@ public:
       */
     virtual void prefetch() {}
 
+    /**
+     * For reading from remote filesystem, when it matters how much we read.
+     */
     virtual void setReadUntilPosition(size_t /* position */) {}
+    virtual void setReadUntilEnd() {}
 
 protected:
     /// The number of bytes to ignore from the initial position of `working_buffer`
