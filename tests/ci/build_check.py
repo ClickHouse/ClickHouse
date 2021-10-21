@@ -41,7 +41,7 @@ def _can_export_binaries(build_config):
     return False
 
 
-def get_packager_cmd(build_config, packager_path, output_path, build_version, image_version):
+def get_packager_cmd(build_config, packager_path, output_path, build_version, image_version, ccache_path):
     package_type = build_config['package-type']
     comp = build_config['compiler']
     cmd = f"cd {packager_path} && ./packager --output-dir={output_path} --package-type={package_type} --compiler={comp}"
@@ -56,6 +56,9 @@ def get_packager_cmd(build_config, packager_path, output_path, build_version, im
         cmd += ' --split-binary'
     if build_config['tidy'] == 'enable':
         cmd += ' --clang-tidy'
+
+    cmd += ' --cache=ccache'
+    cmd += ' --ccache_dir={}'.format(ccache_path)
 
     if 'alien_pkgs' in build_config and build_config['alien_pkgs']:
         cmd += ' --alien-pkgs'
@@ -156,7 +159,11 @@ if __name__ == "__main__":
     if not os.path.exists(build_output_path):
         os.makedirs(build_output_path)
 
-    packager_cmd = get_packager_cmd(build_config, os.path.join(repo_path, "docker/packager"), build_output_path, build_version, image_version)
+    ccache_path = os.path.join(temp_path, build_name + '_ccache')
+    if not os.path.exists(ccache_path):
+        os.makedirs(ccache_path)
+
+    packager_cmd = get_packager_cmd(build_config, os.path.join(repo_path, "docker/packager"), build_output_path, build_version, image_version, ccache_path)
     logging.info("Going to run packager with %s", packager_cmd)
 
     build_clickhouse_log = os.path.join(temp_path, "build_log")
