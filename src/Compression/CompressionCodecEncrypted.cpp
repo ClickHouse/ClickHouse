@@ -1,13 +1,13 @@
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
 #endif
-#include "Common/Exception.h"
-#include "common/types.h"
-#include "IO/VarInt.h"
+#include <Common/Exception.h>
+#include <base/types.h>
+#include <IO/VarInt.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Poco/Logger.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ErrorCodes.h>
 
 // This depends on BoringSSL-specific API, notably <openssl/aead.h>.
@@ -123,7 +123,7 @@ UInt64 methodKeySize(EncryptionMethod Method)
 
 std::string lastErrorString()
 {
-    std::array<char, 1024> buffer;
+    std::array<char, 1024> buffer = {};
     ERR_error_string_n(ERR_get_error(), buffer.data(), buffer.size());
     return std::string(buffer.data());
 }
@@ -315,8 +315,19 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
     if (new_params->keys_storage[method].empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "No keys, an encryption needs keys to work");
 
-    /// Try to find which key will be used for encryption. If there is no current_key,
-    /// first key will be used for encryption (its index equals to zero).
+    if (!config.has(config_prefix + ".current_key_id"))
+    {
+        /// In case of multiple keys, current_key_id is mandatory
+        if (new_params->keys_storage[method].size() > 1)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are multiple keys in config. current_key_id is required");
+
+        /// If there is only one key with non zero ID, curren_key_id should be defined.
+        if (new_params->keys_storage[method].size() == 1 && !new_params->keys_storage[method].contains(0))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Config has one key with non zero id. сurrent_key_id is required");
+    }
+
+    /// Try to find which key will be used for encryption. If there is no current_key and only one key without id
+    /// or with zero id, first key will be used for encryption (its index equals to zero).
     new_params->current_key_id[method] = config.getUInt64(config_prefix + ".current_key_id", 0);
 
     /// Check that we have current key. Otherwise config is incorrect.

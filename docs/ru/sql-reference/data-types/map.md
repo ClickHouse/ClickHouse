@@ -94,4 +94,4 @@ SELECT a.values FROM t_map;
 -   функция [map()](../../sql-reference/functions/tuple-map-functions.md#function-map)
 -   функция [CAST()](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast)
 
-[Original article](https://clickhouse.tech/docs/ru/data-types/map/) <!--hide-->
+[Original article](https://clickhouse.com/docs/ru/data-types/map/) <!--hide-->

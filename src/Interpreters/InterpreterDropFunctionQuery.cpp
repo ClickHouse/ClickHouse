@@ -2,8 +2,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterDropFunctionQuery.h>
-#include <Interpreters/UserDefinedObjectsLoader.h>
-#include <Interpreters/UserDefinedFunctionFactory.h>
+#include <Interpreters/UserDefinedSQLObjectsLoader.h>
+#include <Interpreters/UserDefinedSQLFunctionFactory.h>
 #include <Parsers/ASTDropFunctionQuery.h>
 
 
@@ -18,8 +18,13 @@ BlockIO InterpreterDropFunctionQuery::execute()
     FunctionNameNormalizer().visit(query_ptr.get());
     auto & drop_function_query = query_ptr->as<ASTDropFunctionQuery &>();
 
-    UserDefinedFunctionFactory::instance().unregisterFunction(drop_function_query.function_name);
-    UserDefinedObjectsLoader::instance().removeObject(current_context, UserDefinedObjectType::Function, drop_function_query.function_name);
+    auto & user_defined_functions_factory = UserDefinedSQLFunctionFactory::instance();
+
+    if (drop_function_query.if_exists && !user_defined_functions_factory.has(drop_function_query.function_name))
+        return {};
+
+    UserDefinedSQLFunctionFactory::instance().unregisterFunction(drop_function_query.function_name);
+    UserDefinedSQLObjectsLoader::instance().removeObject(current_context, UserDefinedSQLObjectType::Function, drop_function_query.function_name);
 
     return {};
 }

@@ -1,7 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Core/SortDescription.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Disks/IVolume.h>
 
 namespace DB
@@ -24,7 +24,7 @@ public:
 
     String getName() const override { return "MergeSorting"; }
 
-    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
@@ -45,4 +45,3 @@ private:
 };
 
 }
-

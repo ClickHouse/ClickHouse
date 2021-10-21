@@ -801,11 +801,31 @@ ClickHouse может парсить только базовый формат `Y
 
 Кэш несжатых блоков хранит данные, извлечённые при выполнении запросов. ClickHouse использует кэш для ускорения ответов на повторяющиеся небольшие запросы. Настройка защищает кэш от переполнения. Настройка сервера [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) определяет размер кэша несжатых блоков.
 
-Возможное значение:
+Возможные значения:
 
 -   Положительное целое число.
 
 Значение по умолчанию: 2013265920.
+
+## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
+
+Задает интервал в секундах для удаления старых временных каталогов на сервере ClickHouse.
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `60` секунд.
+
+## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
+
+Задает интервал в секундах для удаления старых кусков данных, журналов предзаписи (WAL) и мутаций на сервере ClickHouse .
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `1` секунда.
 
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
@@ -1687,7 +1707,7 @@ ClickHouse генерирует исключение
 
 ## optimize_skip_unused_shards {#optimize-skip-unused-shards}
 
-Включает или отключает пропуск неиспользуемых шардов для запросов [SELECT](../../sql-reference/statements/select/index.md) , в которых условие ключа шардирования задано в секции `WHERE/PREWHERE`. Предполагается, что данные распределены с помощью ключа шардирования, в противном случае настройка ничего не делает.
+Включает или отключает пропуск неиспользуемых шардов для запросов [SELECT](../../sql-reference/statements/select/index.md) , в которых условие ключа шардирования задано в секции `WHERE/PREWHERE`. Предполагается, что данные распределены с помощью ключа шардирования, в противном случае запрос выдаст неверный результат.
 
 Возможные значения:
 
@@ -1777,6 +1797,21 @@ ClickHouse генерирует исключение
 -   1 — оптимизация включена.
 
 Значение по умолчанию: `0`.
+
+## optimize_trivial_count_query {#optimize-trivial-count-query}
+
+Включает или отключает оптимизацию простого запроса `SELECT count() FROM table` с использованием метаданных MergeTree. Если вы хотите управлять безопасностью на уровне строк, отключите оптимизацию.
+
+Возможные значения:
+
+   - 0 — оптимизация отключена.
+   - 1 — оптимизация включена.
+   
+Значение по умолчанию: `1`.
+
+См. также:
+
+-   [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
 
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
@@ -2649,6 +2684,43 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 Значение по умолчанию: `1`.
 
+## output_format_csv_null_representation {#output_format_csv_null_representation}
+
+Определяет представление `NULL` для формата выходных данных [CSV](../../interfaces/formats.md#csv). Пользователь может установить в качестве значения любую строку, например, `My NULL`.
+
+Значение по умолчанию: `\N`.
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT * FROM csv_custom_null FORMAT CSV;
+```
+
+Результат:
+
+```text
+788
+\N
+\N
+```
+
+Запрос:
+
+```sql
+SET output_format_csv_null_representation = 'My NULL';
+SELECT * FROM csv_custom_null FORMAT CSV;
+```
+
+Результат:
+
+```text
+788
+My NULL
+My NULL
+```
+
 ## output_format_tsv_null_representation {#output_format_tsv_null_representation}
 
 Определяет представление `NULL` для формата выходных данных [TSV](../../interfaces/formats.md#tabseparated). Пользователь может установить в качестве значения любую строку.
@@ -3122,7 +3194,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 Значение по умолчанию: `1800`.
 
-## optimize_fuse_sum_count_avg {#optimize_fuse_sum_count_avg}
+## optimize_syntax_fuse_functions {#optimize_syntax_fuse_functions}
 
 Позволяет объединить агрегатные функции с одинаковым аргументом. Запрос, содержащий по крайней мере две агрегатные функции: [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) или [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) с одинаковым аргументом, перезаписывается как [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md#agg_function-sumCount).
 
@@ -3139,7 +3211,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 ``` sql
 CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
-SET optimize_fuse_sum_count_avg = 1;
+SET optimize_syntax_fuse_functions = 1;
 EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
 ```
 
@@ -3320,6 +3392,14 @@ SETTINGS index_granularity = 8192 │
 
 Значение по умолчанию: `0`.
 
+## materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
+
+Строка с идентификатором слота репликации, созданного пользователем вручную. Эта настройка должна использоваться совместно с [materialized_postgresql_snapshot](#materialized-postgresql-snapshot).
+
+## materialized_postgresql_snapshot {#materialized-postgresql-snapshot}
+
+Строка с идентификатором снэпшота, из которого будет выполняться [исходный дамп таблиц PostgreSQL](../../engines/database-engines/materialized-postgresql.md). Эта настройка должна использоваться совместно с [materialized_postgresql_replication_slot](#materialized-postgresql-replication-slot).
+
 ## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
 
 Включает или отключает поддержку [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) при обработке запросов `SELECT`.
@@ -3333,7 +3413,7 @@ SETTINGS index_granularity = 8192 │
 
 ## force_optimize_projection {#force-optimize-projection}
 
-Включает или отключает обязательное использование [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) в запросах `SELECT`, если поддержка проекций включена (см. настройку [allow_experimental_projection_optimization](#allow-experimental-projection-optimization)). 
+Включает или отключает обязательное использование [проекций](../../engines/table-engines/mergetree-family/mergetree.md#projections) в запросах `SELECT`, если поддержка проекций включена (см. настройку [allow_experimental_projection_optimization](#allow-experimental-projection-optimization)).
 
 Возможные значения:
 
@@ -3376,6 +3456,40 @@ SETTINGS index_granularity = 8192 │
 
 Значение по умолчанию: `1000`.
 
+## http_max_single_read_retries {#http-max-single-read-retries}
+
+Задает максимальное количество попыток чтения данных во время одного HTTP-запроса.
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `1024`.
+
+## log_queries_probability {#log-queries-probability}
+
+Позволяет пользователю записывать в системные таблицы [query_log](../../operations/system-tables/query_log.md), [query_thread_log](../../operations/system-tables/query_thread_log.md) и [query_views_log](../../operations/system-tables/query_views_log.md) только часть запросов, выбранных случайным образом, с указанной вероятностью. Это помогает снизить нагрузку при большом объеме запросов в секунду.
+
+Возможные значения:
+
+-   0 — запросы не регистрируются в системных таблицах.
+-   Положительное число с плавающей точкой в диапазоне [0..1]. Например, при значении настройки, равном `0.5`, примерно половина запросов регистрируется в системных таблицах.
+-   1 — все запросы регистрируются в системных таблицах.
+
+Значение по умолчанию: `1`.
+
+## short_circuit_function_evaluation {#short-circuit-function-evaluation}
+
+Позволяет вычислять функции [if](../../sql-reference/functions/conditional-functions.md#if), [multiIf](../../sql-reference/functions/conditional-functions.md#multiif), [and](../../sql-reference/functions/logical-functions.md#logical-and-function) и [or](../../sql-reference/functions/logical-functions.md#logical-or-function) по [короткой схеме](https://ru-wikipedia-org.turbopages.org/ru.wikipedia.org/s/wiki/Вычисления_по_короткой_схеме). Это помогает оптимизировать выполнение сложных выражений в этих функциях и предотвратить возможные исключения (например, деление на ноль, когда оно не ожидается).
+
+Возможные значения:
+
+-   `enable` — по короткой схеме вычисляются функции, которые подходят для этого (могут сгенерировать исключение или требуют сложных вычислений).
+-   `force_enable` — все функции вычисляются по короткой схеме.
+-   `disable` — вычисление функций по короткой схеме отключено.
+
+Значение по умолчанию: `enable`.
+
 ## max_hyperscan_regexp_length {#max-hyperscan-regexp-length}
 
 Задает максимальную длину каждого регулярного выражения в [hyperscan-функциях](../../sql-reference/functions/string-search-functions.md#multimatchanyhaystack-pattern1-pattern2-patternn)  поиска множественных совпадений в строке. 
@@ -3401,7 +3515,6 @@ SELECT multiMatchAny('abcd', ['ab','bcd','c','d']) SETTINGS max_hyperscan_regexp
 ┌─multiMatchAny('abcd', ['ab', 'bcd', 'c', 'd'])─┐
 │                                              1 │
 └────────────────────────────────────────────────┘
-
 ```
 
 Запрос:
@@ -3419,7 +3532,6 @@ Exception: Regexp length too large.
 **См. также**
 
 -   [max_hyperscan_regexp_total_length](#max-hyperscan-regexp-total-length)
-
 
 ## max_hyperscan_regexp_total_length {#max-hyperscan-regexp-total-length}
 
@@ -3463,3 +3575,68 @@ Exception: Total regexp lengths too large.
 **См. также**
 
 -   [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)
+
+## enable_positional_arguments {#enable-positional-arguments}
+
+Включает и отключает поддержку позиционных аргументов для [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md). Если вы хотите использовать номера столбцов вместо названий в выражениях этих операторов, установите `enable_positional_arguments = 1`.
+
+Возможные значения:
+
+-   0 — Позиционные аргументы не поддерживаются.
+-   1 — Позиционные аргументы поддерживаются: можно использовать номера столбцов вместо названий столбцов.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Запрос:
+
+```sql
+CREATE TABLE positional_arguments(one Int, two Int, three Int) ENGINE=Memory();
+
+INSERT INTO positional_arguments VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
+
+SET enable_positional_arguments = 1;
+
+SELECT * FROM positional_arguments ORDER BY 2,3;
+```
+
+Результат:
+
+```text
+┌─one─┬─two─┬─three─┐
+│  30 │  10 │   20  │
+│  20 │  20 │   10  │
+│  10 │  20 │   30  │
+└─────┴─────┴───────┘
+```
+
+## optimize_move_to_prewhere {#optimize_move_to_prewhere}
+
+Включает или отключает автоматическую оптимизацию [PREWHERE](../../sql-reference/statements/select/prewhere.md) в запросах [SELECT](../../sql-reference/statements/select/index.md).
+
+Работает только с таблицами семейства [*MergeTree](../../engines/table-engines/mergetree-family/index.md).
+
+Возможные значения:
+
+-   0 — автоматическая оптимизация `PREWHERE` отключена.
+-   1 — автоматическая оптимизация `PREWHERE` включена.
+
+Значение по умолчанию: `1`.
+
+## optimize_move_to_prewhere_if_final {#optimize_move_to_prewhere_if_final}
+
+Включает или отключает автоматическую оптимизацию [PREWHERE](../../sql-reference/statements/select/prewhere.md) в запросах [SELECT](../../sql-reference/statements/select/index.md) с модификатором [FINAL](../../sql-reference/statements/select/from.md#select-from-final).
+
+Работает только с таблицами семейства [*MergeTree](../../engines/table-engines/mergetree-family/index.md).
+
+Возможные значения:
+
+-   0 — автоматическая оптимизация `PREWHERE` в запросах `SELECT` с модификатором `FINAL` отключена.
+-   1 — автоматическая оптимизация `PREWHERE` в запросах `SELECT` с модификатором `FINAL` включена.
+
+Значение по умолчанию: `0`.
+
+**См. также**
+
+-   настройка [optimize_move_to_prewhere](#optimize_move_to_prewhere)

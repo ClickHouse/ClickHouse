@@ -34,4 +34,4 @@ toc_title: "\u6BD4\u8F03"
 
 ## greaterOrEquals,\>=演算子 {#function-greaterorequals}
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/comparison_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/comparison_functions/) <!--hide-->

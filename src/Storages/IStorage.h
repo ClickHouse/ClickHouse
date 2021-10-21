@@ -2,12 +2,11 @@
 
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/CheckResults.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/IStorage_fwd.h>
@@ -54,8 +53,8 @@ using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 
-class QueryPipeline;
-using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
+class QueryPipelineBuilder;
+using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 class IStoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
@@ -86,6 +85,8 @@ struct ColumnSize
         data_uncompressed += other.data_uncompressed;
     }
 };
+
+using IndexSize = ColumnSize;
 
 /** Storage. Describes the table. Responsible for
   * - storage of the table data;
@@ -163,6 +164,11 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
+    /// Optional size information of each secondary index.
+    /// Valid only for MergeTree family.
+    using IndexSizeByName = std::unordered_map<std::string, IndexSize>;
+    virtual IndexSizeByName getSecondaryIndexSizes() const { return {}; }
+
     /// Get mutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
@@ -219,6 +225,7 @@ private:
     /// without locks.
     MultiVersionStorageMetadataPtr metadata;
 
+protected:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
 
@@ -359,7 +366,7 @@ public:
       *
       * Returns query pipeline if distributed writing is possible, and nullptr otherwise.
       */
-    virtual QueryPipelinePtr distributedWrite(
+    virtual QueryPipelineBuilderPtr distributedWrite(
         const ASTInsertQuery & /*query*/,
         ContextPtr /*context*/)
     {

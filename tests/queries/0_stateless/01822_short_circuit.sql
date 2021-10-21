@@ -153,3 +153,4 @@ select number % 2 and toLowCardinality(number) from numbers(5);
 select number % 2 or toLowCardinality(number) from numbers(5);
 select if(toLowCardinality(number) % 2, number, number + 1) from numbers(10);
 select multiIf(toLowCardinality(number) % 2, number, number + 1) from numbers(10);
+

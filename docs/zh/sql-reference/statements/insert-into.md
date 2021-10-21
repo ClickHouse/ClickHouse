@@ -108,4 +108,4 @@ INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 -   数据总是被实时的写入。
 -   写入的数据已经按照时间排序。
 
-[来源文章](https://clickhouse.tech/docs/en/query_language/insert_into/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/query_language/insert_into/) <!--hide-->

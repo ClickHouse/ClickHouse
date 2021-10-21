@@ -1,6 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ISourceStep.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -13,7 +13,7 @@ public:
 
     String getName() const override { return "ReadFromPreparedSource"; }
 
-    void initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
     Pipe pipe;

@@ -13,4 +13,4 @@ It’s optimized for storing many small \*Log tables, for which there is a long 
 
     CREATE DATABASE testlazy ENGINE = Lazy(expiration_time_in_seconds);
 
-[Original article](https://clickhouse.tech/docs/en/database_engines/lazy/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/database_engines/lazy/) <!--hide-->

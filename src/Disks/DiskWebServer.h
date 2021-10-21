@@ -185,8 +185,8 @@ private:
 
     struct FileData
     {
-        FileType type;
-        size_t size;
+        FileType type{};
+        size_t size = 0;
     };
 
     using Files = std::unordered_map<String, FileData>; /// file path -> file data

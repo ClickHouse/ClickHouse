@@ -1,18 +1,15 @@
 #include "HTTPDictionarySource.h"
-#include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/OwningBlockInputStream.h>
-#include <DataStreams/formatBlock.h>
+#include <Formats/formatBlock.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
-#include <Formats/FormatFactory.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
@@ -70,7 +67,7 @@ Pipe HTTPDictionarySource::createWrappedBuffer(std::unique_ptr<ReadWriteBufferFr
     String http_request_compression_method_str = http_buffer_ptr->getCompressionMethod();
     auto in_ptr_wrapped
         = wrapReadBufferWithCompressionMethod(std::move(http_buffer_ptr), chooseCompressionMethod(uri.getPath(), http_request_compression_method_str));
-    auto source = FormatFactory::instance().getInput(configuration.format, *in_ptr_wrapped, sample_block, context, max_block_size);
+    auto source = context->getInputFormat(configuration.format, *in_ptr_wrapped, sample_block, max_block_size);
     source->addBuffer(std::move(in_ptr_wrapped));
     return Pipe(std::move(source));
 }
@@ -136,8 +133,8 @@ Pipe HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
-        auto output_stream = context->getOutputStreamParallelIfPossible(configuration.format, out_buffer, sample_block);
-        formatBlock(output_stream, block);
+        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, block.cloneEmpty());
+        formatBlock(output_format, block);
     };
 
     Poco::URI uri(configuration.url);
@@ -163,8 +160,8 @@ Pipe HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vect
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [block, this](std::ostream & ostr)
     {
         WriteBufferFromOStream out_buffer(ostr);
-        auto output_stream = context->getOutputStreamParallelIfPossible(configuration.format, out_buffer, sample_block);
-        formatBlock(output_stream, block);
+        auto output_format = context->getOutputFormatParallelIfPossible(configuration.format, out_buffer, block.cloneEmpty());
+        formatBlock(output_format, block);
     };
 
     Poco::URI uri(configuration.url);
@@ -255,7 +252,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             .format =config.getString(settings_config_prefix + ".format", ""),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .header_entries = std::move(header_entries)
+            .header_entries = std::move(header_entries) //-V1030
         };
 
         return std::make_unique<HTTPDictionarySource>(dict_struct, configuration, credentials, sample_block, context, created_from_ddl);
