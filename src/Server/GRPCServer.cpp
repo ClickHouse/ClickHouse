@@ -956,7 +956,18 @@ namespace
         {
             if (insert_query)
             {
-                auto table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
+                auto table_id = StorageID::createEmpty();
+
+                if (insert_query->table_id)
+                {
+                    table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
+                }
+                else
+                {
+                    StorageID local_table_id(insert_query->getDatabase(), insert_query->getTable());
+                    table_id = query_context->resolveStorageID(local_table_id, Context::ResolveOrdinary);
+                }
+
                 if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields && table_id)
                 {
                     StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, query_context);

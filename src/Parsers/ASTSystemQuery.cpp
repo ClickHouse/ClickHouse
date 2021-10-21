@@ -56,18 +56,40 @@ String ASTSystemQuery::getTable() const
 
 void ASTSystemQuery::setDatabase(const String & name)
 {
-    if (name.empty())
-        database.reset();
+    if (name.empty() && !database)
+        return;
+
+    assert(!name.empty());
+
+    if (database)
+    {
+        if (auto * database_ptr = database->as<ASTIdentifier>())
+            database_ptr->setShortName(name);
+    }
     else
+    {
         database = std::make_shared<ASTIdentifier>(name);
+        children.push_back(database);
+    }
 }
 
 void ASTSystemQuery::setTable(const String & name)
 {
-    if (name.empty())
-        table.reset();
+    if (name.empty() && !table)
+        return;
+
+    assert(!name.empty());
+
+    if (table)
+    {
+        if (auto * table_ptr = table->as<ASTIdentifier>())
+            table_ptr->setShortName(name);
+    }
     else
+    {
         table = std::make_shared<ASTIdentifier>(name);
+        children.push_back(table);
+    }
 }
 
 void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const

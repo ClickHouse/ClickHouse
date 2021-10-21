@@ -63,8 +63,8 @@ namespace
                 if (create.getDatabase().empty())
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name specified in the CREATE TABLE query must not be empty");
                 auto table_name = data.renaming_config->getNewTableName({create.getDatabase(), create.getTable()});
-                create.setTable(table_name.first);
-                create.setDatabase(table_name.second);
+                create.setDatabase(table_name.first);
+                create.setTable(table_name.second);
             }
 
             create.uuid = UUIDHelpers::Nil;

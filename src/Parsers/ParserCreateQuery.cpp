@@ -495,7 +495,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
     }
 
-    auto table_id = table->as<ASTTableIdentifier>();
+    auto * table_id = table->as<ASTTableIdentifier>();
 
     // Shortcut for ATTACH a previously detached table
     bool short_attach = attach && !from_path;
@@ -745,7 +745,7 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->if_not_exists = if_not_exists;
     query->is_live_view = true;
 
-    auto table_id = table->as<ASTTableIdentifier>();
+    auto * table_id = table->as<ASTTableIdentifier>();
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
     query->uuid = table_id->uuid;
@@ -972,7 +972,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->is_populate = is_populate;
     query->replace_view = replace_view;
 
-    auto table_id = table->as<ASTTableIdentifier>();
+    auto * table_id = table->as<ASTTableIdentifier>();
     query->database = table_id->getDatabase();
     query->table = table_id->getTable();
     query->uuid = table_id->uuid;
@@ -1082,7 +1082,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->create_or_replace = or_replace;
     query->replace_table = replace;
 
-    auto dict_id = name->as<ASTTableIdentifier>();
+    auto * dict_id = name->as<ASTTableIdentifier>();
     query->database = dict_id->getDatabase();
     query->table = dict_id->getTable();
     query->uuid = dict_id->uuid;

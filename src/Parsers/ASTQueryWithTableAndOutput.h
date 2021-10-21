@@ -23,6 +23,7 @@ public:
     String getDatabase() const;
     String getTable() const;
 
+    // Once database or table are set they cannot be assigned with empty value
     void setDatabase(const String & name);
     void setTable(const String & name);
 
