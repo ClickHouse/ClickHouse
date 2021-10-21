@@ -186,6 +186,10 @@ if __name__ == "__main__":
 
     build_urls = s3_helper.upload_build_folder_to_s3(build_output_path, s3_path_prefix, keep_dirs_in_s3_path=False, upload_symlinks=False)
     logging.info("Got build URLs %s", build_urls)
+
+    for url in build_urls:
+        print("::notice ::Build URL: {}".format(url))
+
     result = {
         "log_url": log_url,
         "build_urls": build_urls,
