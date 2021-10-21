@@ -23,11 +23,12 @@ def get_build_config(build_check_name, build_number, repo_path):
 
     ci_config_path = os.path.join(repo_path, "tests/ci/ci_config.json")
     with open(ci_config_path, 'r') as ci_config:
-        return ci_config[build_config_name][build_number]
+        config_dict = json.load(ci_config)
+        return config_dict[build_config_name][build_number]
 
 
 def _can_export_binaries(build_config):
-    if build_config['package_type'] != 'deb':
+    if build_config['package-type'] != 'deb':
         return False
     if build_config['bundled'] != "bundled":
         return False
@@ -35,21 +36,18 @@ def _can_export_binaries(build_config):
         return False
     if build_config['sanitizer'] != '':
         return True
-    if build_config[''] != '':
+    if build_config['build-type'] != '':
         return True
     return False
 
 
 def get_packager_cmd(build_config, packager_path, output_path, build_version, image_version):
-    cmd = "cd {ppath} && ./packager --output-dir={odir} --package-type={package_type} --compiler={comp}".format(
-        ppath=packager_path,
-        odir=output_path,
-        package_type=build_config['package-type'],
-        comp=build_config['compiler']
-    )
+    package_type = build_config['package-type']
+    comp = build_config['compiler']
+    cmd = f"cd {packager_path} && ./packager --output-dir={output_path} --package-type={package_type} --compiler={comp}"
 
-    if build_config['build_type']:
-        cmd += ' --build-type={}'.format(build_config['build_type'])
+    if build_config['build-type']:
+        cmd += ' --build-type={}'.format(build_config['build-type'])
     if build_config['sanitizer']:
         cmd += ' --sanitizer={}'.format(build_config['sanitizer'])
     if build_config['bundled'] == 'unbundled':
@@ -73,7 +71,7 @@ def get_packager_cmd(build_config, packager_path, output_path, build_version, im
 def get_image_name(build_config):
     if build_config['bundled'] != 'bundled':
         return 'clickhouse/unbundled-builder'
-    elif build_config['package_type'] != 'deb':
+    elif build_config['package-type'] != 'deb':
         return 'clickhouse/binary-builder'
     else:
         return 'clickhouse/deb-builder'
@@ -87,27 +85,27 @@ def build_clickhouse(packager_cmd, logs_path):
             logging.info("Built successfully")
         else:
             logging.info("Build failed")
-    return build_log_path, success
+    return build_log_path, retcode == 0
 
 def build_config_to_string(build_config):
-    if build_config["package_type"] == "performance":
+    if build_config["package-type"] == "performance":
         return "performance"
 
     return "_".join([
         build_config['compiler'],
-        build_config['build_type'] if build_config['build_type'] else "relwithdebuginfo",
+        build_config['build-type'] if build_config['build-type'] else "relwithdebuginfo",
         build_config['sanitizer'] if build_config['sanitizer'] else "none",
         build_config['bundled'],
         build_config['splitted'],
-        build_config['tidy'],
-        build_config['with_coverage'],
-        build_config['package_type'],
+        "tidy" if build_config['tidy'] else "notidy",
+        "with_coverage" if build_config['with_coverage'] else "without_coverage",
+        build_config['package-type'],
     ])
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    repo_path = os.path.join(os.getenv("REPO_COPY", os.path.abspath("../../")))
-    temp_path = os.path.join(os.getenv("TEMP_PATH"))
+    repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
+    temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
 
     build_check_name = sys.argv[1]
     build_number = int(sys.argv[2])
@@ -140,7 +138,8 @@ if __name__ == "__main__":
 
     for i in range(10):
         try:
-            subprocess.check_output(f"docker pull {image_name}:{image_version}", shell=True)
+            logging.info(f"Pulling image {image_name}:{image_version}")
+            subprocess.check_output(f"docker pull {image_name}:{image_version}", stderr=subprocess.STDOUT, shell=True)
             break
         except Exception as ex:
             time.sleep(i * 3)
@@ -150,6 +149,7 @@ if __name__ == "__main__":
 
 
     build_name = build_config_to_string(build_config)
+    logging.info(f"Build short name {build_name}")
     os.environ['BUILD_NAME'] = build_name
 
     build_output_path = os.path.join(temp_path, build_name)
