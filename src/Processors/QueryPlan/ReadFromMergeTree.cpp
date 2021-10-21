@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -9,6 +9,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
+#include <Processors/Merges/GraphiteRollupSortedTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Merges/ReplacingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
@@ -485,8 +486,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
                         pipe.getHeader(),
                         pipe.numOutputPorts(),
                         sort_description,
-                        max_block_size,
-                        0, true);
+                        max_block_size);
 
                 pipe.addTransform(std::move(transform));
             }
@@ -507,38 +507,39 @@ static void addMergingFinal(
     const auto & header = pipe.getHeader();
     size_t num_outputs = pipe.numOutputPorts();
 
+    auto now = time(nullptr);
+
     auto get_merging_processor = [&]() -> MergingTransformPtr
     {
         switch (merging_params.mode)
         {
             case MergeTreeData::MergingParams::Ordinary:
-            {
                 return std::make_shared<MergingSortedTransform>(header, num_outputs,
-                           sort_description, max_block_size);
-            }
+                            sort_description, max_block_size);
 
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedTransform>(header, num_outputs,
-                           sort_description, merging_params.sign_column, true, max_block_size);
+                            sort_description, merging_params.sign_column, true, max_block_size);
 
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedTransform>(header, num_outputs,
-                           sort_description, merging_params.columns_to_sum, partition_key_columns, max_block_size);
+                            sort_description, merging_params.columns_to_sum, partition_key_columns, max_block_size);
 
             case MergeTreeData::MergingParams::Aggregating:
                 return std::make_shared<AggregatingSortedTransform>(header, num_outputs,
-                           sort_description, max_block_size);
+                            sort_description, max_block_size);
 
             case MergeTreeData::MergingParams::Replacing:
                 return std::make_shared<ReplacingSortedTransform>(header, num_outputs,
-                           sort_description, merging_params.version_column, max_block_size);
+                            sort_description, merging_params.version_column, max_block_size);
 
             case MergeTreeData::MergingParams::VersionedCollapsing:
                 return std::make_shared<VersionedCollapsingTransform>(header, num_outputs,
-                           sort_description, merging_params.sign_column, max_block_size);
+                            sort_description, merging_params.sign_column, max_block_size);
 
             case MergeTreeData::MergingParams::Graphite:
-                throw Exception("GraphiteMergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
+                return std::make_shared<GraphiteRollupSortedTransform>(header, num_outputs,
+                            sort_description, max_block_size, merging_params.graphite_params, now);
         }
 
         __builtin_unreachable();

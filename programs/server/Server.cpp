@@ -62,7 +62,7 @@
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
 #include <Storages/registerStorages.h>
-#include <DataStreams/ConnectionCollector.h>
+#include <QueryPipeline/ConnectionCollector.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Common/Config/ConfigReloader.h>
@@ -844,7 +844,7 @@ if (ThreadFuzzer::instance().isEffective())
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
-            //buildLoggers(*config, logger());
+            updateLevels(*config, logger());
             global_context->setClustersConfig(config);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
@@ -919,7 +919,7 @@ if (ThreadFuzzer::instance().isEffective())
 
     /// Initialize background executors after we load default_profile config.
     /// This is needed to load proper values of background_pool_size etc.
-    global_context->initializeBackgroundExecutors();
+    global_context->initializeBackgroundExecutorsIfNeeded();
 
     if (settings.async_insert_threads)
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
@@ -997,8 +997,19 @@ if (ThreadFuzzer::instance().isEffective())
     if (config().has("keeper_server"))
     {
 #if USE_NURAFT
-        /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-        global_context->initializeKeeperDispatcher();
+        //// If we don't have configured connection probably someone trying to use clickhouse-server instead
+        //// of clickhouse-keeper, so start synchronously.
+        bool can_initialize_keeper_async = false;
+
+        if (has_zookeeper) /// We have configured connection to some zookeeper cluster
+        {
+            /// If we cannot connect to some other node from our cluster then we have to wait our Keeper start
+            /// synchronously.
+            can_initialize_keeper_async = global_context->tryCheckClientConnectionToMyKeeperCluster();
+        }
+        /// Initialize keeper RAFT.
+        global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
+
         for (const auto & listen_host : listen_hosts)
         {
             /// TCP Keeper

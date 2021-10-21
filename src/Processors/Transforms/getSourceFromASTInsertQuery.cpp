@@ -5,12 +5,12 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/EmptyReadBuffer.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Formats/IInputFormat.h>
 #include "IO/CompressionMethod.h"
 #include "Parsers/ASTLiteral.h"

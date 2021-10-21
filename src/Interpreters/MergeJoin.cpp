@@ -4,8 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 
 #include <Core/SortCursor.h>
-#include <DataStreams/TemporaryFileStream.h>
-#include <DataStreams/materializeBlock.h>
+#include <Formats/TemporaryFileStream.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MergeJoin.h>
@@ -13,7 +12,7 @@
 #include <Interpreters/join_common.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Sources/BlocksListSource.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
