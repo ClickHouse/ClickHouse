@@ -1,4 +1,4 @@
-name: Ligthweight GithubActions
+name: CIGithubActions
 on: # yamllint disable-line rule:truthy
   pull_request:
     types:
@@ -11,7 +11,7 @@ on: # yamllint disable-line rule:truthy
       - master
 jobs:
   CheckLabels:
-    runs-on: [self-hosted]
+    runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
         uses: actions/checkout@v2
@@ -19,7 +19,7 @@ jobs:
         run: cd $GITHUB_WORKSPACE/tests/ci && python3 run_check.py
   DockerHubPush:
     needs: CheckLabels
-    runs-on: [self-hosted]
+    runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
         uses: actions/checkout@v2
@@ -32,7 +32,7 @@ jobs:
           path: ${{ runner.temp }}/docker_images_check/changed_images.json
   StyleCheck:
     needs: DockerHubPush
-    runs-on: [self-hosted]
+    runs-on: [self-hosted, style-checker]
     steps:
       - name: Download changed images
         uses: actions/download-artifact@v2
@@ -43,9 +43,38 @@ jobs:
         uses: actions/checkout@v2
       - name: Style Check
         run: cd $GITHUB_WORKSPACE/tests/ci && python3 style_check.py
+  Builder:
+    needs: DockerHubPush
+    runs-on: [self-hosted, builder]
+    strategy:
+      continue-on-error: true
+      fail-fast: false
+      matrix:
+        build_number: [7]
+    steps:
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/build_check
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - name: Build
+        env:
+          TEMP_PATH: ${{runner.temp}}/build_check
+          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
+          CHECK_NAME: 'ClickHouse build check (actions)'
+        run: mkdir -p $TEMP_PATH && cp -r $GITHUB_WORKSPACE $TEMP_PATH && cd $REPO_COPY/tests/ci && python3 build_check.py $CHECK_NAME ${{ matrix.build_number }} '21.10.1.1'
+      - name: Upload build URLs to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.BUILD_NAME }}
+          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
   FinishCheck:
     needs: [StyleCheck, DockerHubPush, CheckLabels]
-    runs-on: [self-hosted]
+    runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
         uses: actions/checkout@v2
