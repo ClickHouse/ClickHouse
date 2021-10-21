@@ -54,7 +54,7 @@ private:
 
     void finalize();
 
-    size_t getNumBytesToRead();
+    bool hasPendingDataToRead();
 
     std::future<IAsynchronousReader::Result> readInto(char * data, size_t size);
 
@@ -74,7 +74,7 @@ private:
 
     size_t bytes_to_ignore = 0;
 
-    std::optional<size_t> read_until_position = 0;
+    size_t read_until_position = 0;
 };
 
 }
