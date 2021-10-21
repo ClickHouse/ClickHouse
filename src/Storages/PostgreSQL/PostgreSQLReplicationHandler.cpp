@@ -150,7 +150,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         initial_sync();
     }
     /// Always drop replication slot if it is CREATE query and not ATTACH.
-    else if (!is_attach || new_publication)
+    else if (!is_attach)
     {
         dropReplicationSlot(tx);
         initial_sync();
@@ -334,7 +334,6 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::work & tx)
         {
             tx.exec(query_str);
             LOG_TRACE(log, "Created publication {} with tables list: {}", publication_name, tables_list);
-            new_publication = true;
         }
         catch (Exception & e)
         {
@@ -453,7 +452,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 
 
 /// Used by MaterializedPostgreSQL database engine.
-NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection & connection_)
+std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection & connection_)
 {
     pqxx::work tx(connection_.getRef());
     NameSet result_tables;
@@ -497,6 +496,7 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection &
             {
                 result_tables = fetchTablesFromPublication(tx);
                 NameSet diff;
+                std::sort(expected_tables.begin(), expected_tables.end());
                 std::set_symmetric_difference(expected_tables.begin(), expected_tables.end(),
                                               result_tables.begin(), result_tables.end(),
                                               std::inserter(diff, diff.begin()));
@@ -509,12 +509,30 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection &
                             diff_tables += ", ";
                         diff_tables += table_name;
                     }
+                    String publication_tables;
+                    for (const auto & table_name : result_tables)
+                    {
+                        if (!publication_tables.empty())
+                            publication_tables += ", ";
+                        publication_tables += table_name;
+                    }
+                    String listed_tables;
+                    for (const auto & table_name : expected_tables)
+                    {
+                        if (!listed_tables.empty())
+                            listed_tables += ", ";
+                        listed_tables += table_name;
+                    }
 
-                    LOG_WARNING(log,
-                                "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}.",
-                                publication_name, diff_tables);
+                    LOG_ERROR(log,
+                              "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}. ",
+                              "Will use tables list from setting. "
+                              "To avoid redundant work, you can try ALTER PUBLICATION query to remove redundant tables. "
+                              "Or you can you ALTER SETTING. "
+                              "\nPublication tables: {}.\nTables list: {}",
+                              publication_name, diff_tables, publication_tables, listed_tables);
 
-                    connection->execWithRetry([&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
+                    return std::set(expected_tables.begin(), expected_tables.end());
                 }
             }
         }
@@ -524,7 +542,7 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection &
     {
         if (!tables_list.empty())
         {
-            result_tables = NameSet(expected_tables.begin(), expected_tables.end());
+            result_tables = std::set(expected_tables.begin(), expected_tables.end());
         }
         else
         {
@@ -540,10 +558,10 @@ NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection &
 }
 
 
-NameSet PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::work & tx)
+std::set<String> PostgreSQLReplicationHandler::fetchTablesFromPublication(pqxx::work & tx)
 {
     std::string query = fmt::format("SELECT tablename FROM pg_publication_tables WHERE pubname = '{}'", publication_name);
-    std::unordered_set<std::string> tables;
+    std::set<String> tables;
 
     for (auto table_name : tx.stream<std::string>(query))
         tables.insert(std::get<0>(table_name));
