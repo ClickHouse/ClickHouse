@@ -100,7 +100,7 @@ def build_config_to_string(build_config):
         build_config['sanitizer'] if build_config['sanitizer'] else "none",
         build_config['bundled'],
         build_config['splitted'],
-        "tidy" if build_config['tidy'] else "notidy",
+        "tidy" if build_config['tidy'] == "enable" else "notidy",
         "with_coverage" if build_config['with_coverage'] else "without_coverage",
         build_config['package-type'],
     ])
