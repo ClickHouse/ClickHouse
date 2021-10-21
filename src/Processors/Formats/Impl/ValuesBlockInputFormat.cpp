@@ -7,7 +7,7 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Core/Block.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Parsers/ASTLiteral.h>
@@ -543,9 +543,9 @@ void ValuesBlockInputFormat::resetParser()
     total_rows = 0;
 }
 
-void registerInputFormatProcessorValues(FormatFactory & factory)
+void registerInputFormatValues(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("Values", [](
+    factory.registerInputFormat("Values", [](
         ReadBuffer & buf,
         const Block & header,
         const RowInputFormatParams & params,

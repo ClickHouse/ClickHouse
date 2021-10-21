@@ -23,7 +23,7 @@ void registerFunctionGeohashEncode(FunctionFactory & factory);
 void registerFunctionGeohashDecode(FunctionFactory & factory);
 void registerFunctionGeohashesInBox(FunctionFactory & factory);
 void registerFunctionWkt(FunctionFactory & factory);
-void registerFunctionReadWkt(FunctionFactory & factory);
+void registerFunctionReadWKT(FunctionFactory & factory);
 void registerFunctionSvg(FunctionFactory & factory);
 
 #if USE_H3
@@ -42,6 +42,9 @@ void registerFunctionH3IndexesAreNeighbors(FunctionFactory &);
 void registerFunctionStringToH3(FunctionFactory &);
 void registerFunctionH3ToString(FunctionFactory &);
 void registerFunctionH3HexAreaM2(FunctionFactory &);
+void registerFunctionH3IsResClassIII(FunctionFactory &);
+void registerFunctionH3IsPentagon(FunctionFactory &);
+void registerFunctionH3GetFaces(FunctionFactory &);
 #endif
 
 #if USE_S2_GEOMETRY
@@ -76,7 +79,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionGeohashDecode(factory);
     registerFunctionGeohashesInBox(factory);
     registerFunctionWkt(factory);
-    registerFunctionReadWkt(factory);
+    registerFunctionReadWKT(factory);
     registerFunctionSvg(factory);
 
 #if USE_H3
@@ -95,6 +98,9 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionStringToH3(factory);
     registerFunctionH3ToString(factory);
     registerFunctionH3HexAreaM2(factory);
+    registerFunctionH3IsResClassIII(factory);
+    registerFunctionH3IsPentagon(factory);
+    registerFunctionH3GetFaces(factory);
 #endif
 
 #if USE_S2_GEOMETRY

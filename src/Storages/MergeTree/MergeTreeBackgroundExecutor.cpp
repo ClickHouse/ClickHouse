@@ -5,27 +5,11 @@
 #include <Common/setThreadName.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
-
 namespace DB
 {
 
-
-String MergeTreeBackgroundExecutor::toString(Type type)
-{
-    switch (type)
-    {
-        case Type::MERGE_MUTATE:
-            return "MergeMutate";
-        case Type::FETCH:
-            return "Fetch";
-        case Type::MOVE:
-            return "Move";
-    }
-    __builtin_unreachable();
-}
-
-
-void MergeTreeBackgroundExecutor::wait()
+template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::wait()
 {
     {
         std::lock_guard lock(mutex);
@@ -37,7 +21,8 @@ void MergeTreeBackgroundExecutor::wait()
 }
 
 
-bool MergeTreeBackgroundExecutor::trySchedule(ExecutableTaskPtr task)
+template <class Queue>
+bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
 {
     std::lock_guard lock(mutex);
 
@@ -48,23 +33,22 @@ bool MergeTreeBackgroundExecutor::trySchedule(ExecutableTaskPtr task)
     if (value.load() >= static_cast<int64_t>(max_tasks_count))
         return false;
 
-    pending.push_back(std::make_shared<TaskRuntimeData>(std::move(task), metric));
+    pending.push(std::make_shared<TaskRuntimeData>(std::move(task), metric));
 
     has_tasks.notify_one();
     return true;
 }
 
 
-void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id)
+template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(StorageID id)
 {
     std::vector<TaskRuntimeDataPtr> tasks_to_wait;
     {
         std::lock_guard lock(mutex);
 
         /// Erase storage related tasks from pending and select active tasks to wait for
-        auto it = std::remove_if(pending.begin(), pending.end(),
-            [&] (auto item) -> bool { return item->task->getStorageID() == id; });
-        pending.erase(it, pending.end());
+        pending.remove(id);
 
         /// Copy items to wait for their completion
         std::copy_if(active.begin(), active.end(), std::back_inserter(tasks_to_wait),
@@ -74,13 +58,17 @@ void MergeTreeBackgroundExecutor::removeTasksCorrespondingToStorage(StorageID id
             item->is_currently_deleting = true;
     }
 
-
+    /// Wait for each task to be executed
     for (auto & item : tasks_to_wait)
+    {
         item->is_done.wait();
+        item.reset();
+    }
 }
 
 
-void MergeTreeBackgroundExecutor::routine(TaskRuntimeDataPtr item)
+template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::routine(TaskRuntimeDataPtr item)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
 
@@ -114,12 +102,19 @@ void MergeTreeBackgroundExecutor::routine(TaskRuntimeDataPtr item)
 
             /// This is significant to order the destructors.
             item->task.reset();
+            item->is_done.set();
+            item = nullptr;
             return;
         }
 
-        pending.push_back(item);
+        /// After the `guard` destruction `item` has to be in moved from state
+        /// Not to own the object it points to.
+        /// Otherwise the destruction of the task won't be ordered with the destruction of the
+        /// storage.
+        pending.push(std::move(item));
         erase_from_active();
         has_tasks.notify_one();
+        item = nullptr;
         return;
     }
 
@@ -149,11 +144,14 @@ void MergeTreeBackgroundExecutor::routine(TaskRuntimeDataPtr item)
         /// The thread that shutdowns storage will scan queues in order to find some tasks to wait for, but will find nothing.
         /// So, the destructor of a task and the destructor of a storage will be executed concurrently.
         item->task.reset();
+        item->is_done.set();
+        item = nullptr;
     }
 }
 
 
-void MergeTreeBackgroundExecutor::threadFunction()
+template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::threadFunction()
 {
     setThreadName(name.c_str());
 
@@ -171,18 +169,11 @@ void MergeTreeBackgroundExecutor::threadFunction()
                 if (shutdown)
                     break;
 
-                item = std::move(pending.front());
-                pending.pop_front();
+                item = std::move(pending.pop());
                 active.push_back(item);
             }
 
-            routine(item);
-
-            /// When storage shutdowns it will wait until all related background tasks
-            /// are finished, because they may want to interact with its fields
-            /// and this will cause segfault.
-            if (item->is_currently_deleting)
-                item->is_done.set();
+            routine(std::move(item));
         }
         catch (...)
         {
@@ -191,5 +182,8 @@ void MergeTreeBackgroundExecutor::threadFunction()
     }
 }
 
+
+template class MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
+template class MergeTreeBackgroundExecutor<OrdinaryRuntimeQueue>;
 
 }

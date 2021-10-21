@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
   <include_from>/etc/clickhouse-server/config.d/include_from_source.xml</include_from>
   <profiles>
     <default>
@@ -15,4 +15,4 @@
       <include incl="users_1" />
       <include incl="users_2" />
   </users>
-</yandex>
+</clickhouse>

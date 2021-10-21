@@ -161,4 +161,4 @@ Note that the split build has several drawbacks:
 * You cannot run the integration tests since they only work a single complete binary.
 * You can't easily copy the binaries elsewhere. Instead of moving a single binary you'll need to copy all binaries and libraries.
 
-[Original article](https://clickhouse.tech/docs/en/development/build/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/development/build/) <!--hide-->

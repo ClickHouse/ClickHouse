@@ -9,13 +9,13 @@
 
 #include <pcg-random/pcg_random.hpp>
 
-#include <common/DateLUT.h>
-#include <common/LocalDate.h>
-#include <common/LocalDateTime.h>
-#include <common/find_symbols.h>
-#include <common/StringRef.h>
-#include <common/DecomposedFloat.h>
-#include <common/EnumReflection.h>
+#include <base/DateLUT.h>
+#include <base/LocalDate.h>
+#include <base/LocalDateTime.h>
+#include <base/find_symbols.h>
+#include <base/StringRef.h>
+#include <base/DecomposedFloat.h>
+#include <base/EnumReflection.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>

@@ -1,5 +1,6 @@
 #include <Storages/IStorage.h>
-#include <DataStreams/BlockIO.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <QueryPipeline/BlockIO.h>
 #include <DataTypes/DataTypeString.h>
 #include <Parsers/queryToString.h>
 #include <Common/typeid_cast.h>
@@ -15,7 +16,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <DataTypes/NestedUtils.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -128,10 +128,10 @@ BlockIO InterpreterDescribeQuery::execute()
     {
         for (const auto & column : columns)
         {
-            column.type->forEachSubcolumn([&](const auto & name, const auto & type, const auto & path)
+            IDataType::forEachSubcolumn([&](const auto & path, const auto & name, const auto & data)
             {
                 res_columns[0]->insert(Nested::concatenateName(column.name, name));
-                res_columns[1]->insert(type->getName());
+                res_columns[1]->insert(data.type->getName());
 
                 /// It's not trivial to calculate default expression for subcolumn.
                 /// So, leave it empty.
@@ -150,14 +150,14 @@ BlockIO InterpreterDescribeQuery::execute()
                     res_columns[6]->insertDefault();
 
                 res_columns[7]->insert(1u);
-            });
+            }, column.type->getDefaultSerialization(), column.type, nullptr);
         }
     }
 
     BlockIO res;
     size_t num_rows = res_columns[0]->size();
     auto source = std::make_shared<SourceFromSingleChunk>(sample_block, Chunk(std::move(res_columns), num_rows));
-    res.pipeline.init(Pipe(std::move(source)));
+    res.pipeline = QueryPipeline(std::move(source));
 
     return res;
 }

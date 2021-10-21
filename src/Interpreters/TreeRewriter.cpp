@@ -1,6 +1,8 @@
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 
+#include <Common/checkStackSize.h>
+
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
@@ -14,12 +16,13 @@
 #include <Interpreters/CollectJoinOnKeysVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
-#include <Interpreters/UserDefinedFunctionsVisitor.h>
+#include <Interpreters/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/TreeOptimizer.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
+#include <Interpreters/PredicateExpressionsOptimizer.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -247,6 +250,61 @@ struct FuseSumCountAggregatesVisitorData
 using CustomizeAggregateFunctionsOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsSuffixData>, true>;
 using CustomizeAggregateFunctionsMoveOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsMoveSuffixData>, true>;
 using FuseSumCountAggregatesVisitor = InDepthNodeVisitor<OneTypeMatcher<FuseSumCountAggregatesVisitorData>, true>;
+
+
+struct ExistsExpressionData
+{
+    using TypeToVisit = ASTFunction;
+
+    static void visit(ASTFunction & func, ASTPtr)
+    {
+        bool exists_expression = func.name == "exists"
+            && func.arguments && func.arguments->children.size() == 1
+            && typeid_cast<const ASTSubquery *>(func.arguments->children[0].get());
+
+        if (!exists_expression)
+            return;
+
+        /// EXISTS(subquery) --> 1 IN (SELECT 1 FROM subquery LIMIT 1)
+
+        auto subquery_node = func.arguments->children[0];
+        auto table_expression = std::make_shared<ASTTableExpression>();
+        table_expression->subquery = std::move(subquery_node);
+        table_expression->children.push_back(table_expression->subquery);
+
+        auto tables_in_select_element = std::make_shared<ASTTablesInSelectQueryElement>();
+        tables_in_select_element->table_expression = std::move(table_expression);
+        tables_in_select_element->children.push_back(tables_in_select_element->table_expression);
+
+        auto tables_in_select = std::make_shared<ASTTablesInSelectQuery>();
+        tables_in_select->children.push_back(std::move(tables_in_select_element));
+
+        auto select_expr_list = std::make_shared<ASTExpressionList>();
+        select_expr_list->children.push_back(std::make_shared<ASTLiteral>(1u));
+
+        auto select_query = std::make_shared<ASTSelectQuery>();
+        select_query->children.push_back(select_expr_list);
+
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_expr_list);
+        select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables_in_select);
+
+        ASTPtr limit_length_ast = std::make_shared<ASTLiteral>(Field(UInt64(1)));
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length_ast));
+
+        auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+        select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
+        select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
+        select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
+
+        auto new_subquery = std::make_shared<ASTSubquery>();
+        new_subquery->children.push_back(select_with_union_query);
+
+        auto function = makeASTFunction("in", std::make_shared<ASTLiteral>(1u), new_subquery);
+        func = *function;
+    }
+};
+
+using ExistsExpressionVisitor = InDepthNodeVisitor<OneTypeMatcher<ExistsExpressionData>, false>;
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
 /// Expand asterisks and qualified asterisks with column names.
@@ -515,6 +573,8 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
     if (table_join.using_expression_list)
     {
         const auto & keys = table_join.using_expression_list->as<ASTExpressionList &>();
+
+        analyzed_join.addDisjunct();
         for (const auto & key : keys.children)
             analyzed_join.addUsingKey(key);
     }
@@ -523,15 +583,45 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
         bool is_asof = (table_join.strictness == ASTTableJoin::Strictness::Asof);
 
         CollectJoinOnKeysVisitor::Data data{analyzed_join, tables[0], tables[1], aliases, is_asof};
-        CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
-        if (analyzed_join.keyNamesLeft().empty())
+        if (auto * or_func = table_join.on_expression->as<ASTFunction>(); or_func && or_func->name == "or")
         {
-            throw Exception("Cannot get JOIN keys from JOIN ON section: " + queryToString(table_join.on_expression),
-                            ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+            for (auto & disjunct : or_func->arguments->children)
+            {
+                analyzed_join.addDisjunct();
+                CollectJoinOnKeysVisitor(data).visit(disjunct);
+            }
+            assert(analyzed_join.getClauses().size() == or_func->arguments->children.size());
+        }
+        else
+        {
+            analyzed_join.addDisjunct();
+            CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
+            assert(analyzed_join.oneDisjunct());
+        }
+
+        if (analyzed_join.getClauses().empty())
+                throw DB::Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                                    "Cannot get JOIN keys from JOIN ON section: '{}'",
+                                    queryToString(table_join.on_expression));
+
+        for (const auto & onexpr : analyzed_join.getClauses())
+        {
+            if (onexpr.key_names_left.empty())
+                throw DB::Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                                    "Cannot get JOIN keys from JOIN ON section: '{}'",
+                                    queryToString(table_join.on_expression));
         }
 
         if (is_asof)
+        {
+            if (!analyzed_join.oneDisjunct())
+                throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join doesn't support multiple ORs for keys in JOIN ON section");
             data.asofToJoinKeys();
+        }
+
+        if (!analyzed_join.oneDisjunct() && !analyzed_join.forceHashJoin())
+            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
+
     }
 }
 
@@ -864,6 +954,10 @@ void TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
     }
 
     required_source_columns.swap(source_columns);
+    for (const auto & column : required_source_columns)
+    {
+        source_column_names.insert(column.name);
+    }
 }
 
 NameSet TreeRewriterResult::getArrayJoinSourceNameSet() const
@@ -943,7 +1037,12 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (settings.legacy_column_name_of_tuple_literal)
         markTupleLiteralsAsLegacy(query);
 
-    TreeOptimizer::apply(query, result, tables_with_columns, getContext());
+    /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
+    result.rewrite_subqueries = PredicateExpressionsOptimizer(getContext(), tables_with_columns, settings).optimize(*select_query);
+
+    /// Only apply AST optimization for initial queries.
+    if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        TreeOptimizer::apply(query, result, tables_with_columns, getContext());
 
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
@@ -1041,8 +1140,8 @@ TreeRewriterResultPtr TreeRewriter::analyze(
 void TreeRewriter::normalize(
     ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases)
 {
-    UserDefinedFunctionsVisitor::Data data_user_defined_functions_visitor;
-    UserDefinedFunctionsVisitor(data_user_defined_functions_visitor).visit(query);
+    UserDefinedSQLFunctionVisitor::Data data_user_defined_functions_visitor;
+    UserDefinedSQLFunctionVisitor(data_user_defined_functions_visitor).visit(query);
 
     CustomizeCountDistinctVisitor::Data data_count_distinct{settings.count_distinct_implementation};
     CustomizeCountDistinctVisitor(data_count_distinct).visit(query);
@@ -1052,6 +1151,9 @@ void TreeRewriter::normalize(
 
     CustomizeIfDistinctVisitor::Data data_distinct_if{"DistinctIf"};
     CustomizeIfDistinctVisitor(data_distinct_if).visit(query);
+
+    ExistsExpressionVisitor::Data exists;
+    ExistsExpressionVisitor(exists).visit(query);
 
     if (settings.transform_null_in)
     {
@@ -1072,7 +1174,7 @@ void TreeRewriter::normalize(
     // if we have at least two different functions. E.g. we will replace sum(x)
     // and count(x) with sumCount(x).1 and sumCount(x).2, and sumCount() will
     // be calculated only once because of CSE.
-    if (settings.optimize_fuse_sum_count_avg)
+    if (settings.optimize_fuse_sum_count_avg || settings.optimize_syntax_fuse_functions)
     {
         FuseSumCountAggregatesVisitor::Data data;
         FuseSumCountAggregatesVisitor(data).visit(query);

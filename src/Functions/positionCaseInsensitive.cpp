@@ -13,7 +13,7 @@ struct NamePositionCaseInsensitive
     static constexpr auto name = "positionCaseInsensitive";
 };
 
-using FunctionPositionCaseInsensitive = FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveASCII>, NamePositionCaseInsensitive>;
+using FunctionPositionCaseInsensitive = FunctionsStringSearch<PositionImpl<NamePositionCaseInsensitive, PositionCaseInsensitiveASCII>>;
 
 }
 
