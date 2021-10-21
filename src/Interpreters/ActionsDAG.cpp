@@ -325,7 +325,7 @@ std::string ActionsDAG::dumpNames() const
     return out.str();
 }
 
-void ActionsDAG::removeUnusedActions(const NameSet & required_names)
+void ActionsDAG::removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs)
 {
     NodeRawConstPtrs required_nodes;
     required_nodes.reserve(required_names.size());
@@ -349,10 +349,10 @@ void ActionsDAG::removeUnusedActions(const NameSet & required_names)
     }
 
     index.swap(required_nodes);
-    removeUnusedActions();
+    removeUnusedActions(allow_remove_inputs);
 }
 
-void ActionsDAG::removeUnusedActions(const Names & required_names)
+void ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_remove_inputs)
 {
     NodeRawConstPtrs required_nodes;
     required_nodes.reserve(required_names.size());
@@ -372,7 +372,7 @@ void ActionsDAG::removeUnusedActions(const Names & required_names)
     }
 
     index.swap(required_nodes);
-    removeUnusedActions();
+    removeUnusedActions(allow_remove_inputs);
 }
 
 void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
