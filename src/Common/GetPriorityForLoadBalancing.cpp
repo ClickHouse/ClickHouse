@@ -29,7 +29,8 @@ std::function<size_t(size_t index)> GetPriorityForLoadBalancing::getPriorityFunc
              * last_used = 3 -> get_priority: 4 3 0 1 2
              * ...
              * */
-            get_priority = [&](size_t i) {
+            get_priority = [&](size_t i)
+            {
                 ++i;
                 return i < last_used ? pool_size - i : i - last_used;
             };

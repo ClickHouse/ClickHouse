@@ -43,7 +43,6 @@ constexpr size_t MULTI_BATCH_SIZE = 100;
 struct ShuffleHost
 {
     String host;
-    /// Priority from the GetPriorityFunc.
     Int64 priority = 0;
     UInt32 random = 0;
 
