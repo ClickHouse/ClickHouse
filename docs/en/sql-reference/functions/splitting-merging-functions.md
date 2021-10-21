@@ -273,7 +273,7 @@ Result:
 
 ## ngrams {#ngrams}
 
-Splits the ASCII string into n-grams of `ngramsize` symbols.
+Splits the UTF-8 string into n-grams of `ngramsize` symbols.
 
 **Syntax** 
 
