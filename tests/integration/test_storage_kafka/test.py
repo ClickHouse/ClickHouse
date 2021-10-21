@@ -2907,7 +2907,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 SELECT {raw_message} as raw_message, _error as error, _topic as topic, _partition as partition, _offset as offset FROM test.kafka_{format_name}
                 WHERE length(_error) > 0;
             '''.format(topic_name=topic_name, format_name=format_name, raw_message=raw_message,
-                       extra_settings=format_opts.get('extra_settings') or '')
+                       extra_settings=format_opts.get('extra_settings') or ''))
 
     for format_name, format_opts in list(all_formats.items()):
         logging.debug('Checking {format_name}')
