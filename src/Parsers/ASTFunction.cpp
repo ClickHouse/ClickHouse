@@ -294,8 +294,12 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     continue;
                 }
 
+                if (frame.need_parens)
+                    settings.ostr << '(';
                 arguments->formatImpl(settings, state, nested_need_parens);
                 settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
+                if (frame.need_parens)
+                    settings.ostr << ')';
 
                 written = true;
 
