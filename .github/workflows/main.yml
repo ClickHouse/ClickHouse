@@ -49,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        build_number: [7]
+        build_number: [1, 7]
     steps:
       - name: Download changed images
         uses: actions/download-artifact@v2
