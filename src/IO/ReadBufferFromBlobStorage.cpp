@@ -25,12 +25,10 @@ namespace ErrorCodes
 ReadBufferFromBlobStorage::ReadBufferFromBlobStorage(
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & path_,
-    UInt64 max_single_read_retries_,
     size_t buf_size_) :
     SeekableReadBuffer(nullptr, 0),
     blob_container_client(blob_container_client_),
     tmp_buffer(buf_size_),
-    max_single_read_retries(max_single_read_retries_),
     path(path_),
     buf_size(buf_size_) {}
 
@@ -46,11 +44,9 @@ bool ReadBufferFromBlobStorage::nextImpl()
         return false;
 
     size_t to_read_bytes = std::min(total_size - offset, buf_size);
-
     size_t bytes_read = data_stream->Read(tmp_buffer.data(), to_read_bytes);
 
     BufferBase::set(reinterpret_cast<char *>(tmp_buffer.data()), bytes_read, 0);
-
     offset += bytes_read;
 
     return true;
@@ -94,7 +90,6 @@ void ReadBufferFromBlobStorage::initialize()
 
     if (data_stream == nullptr)
     {
-        // TODO: change error code
         throw Exception("Null data stream obtained while downloading a file from Blob Storage", ErrorCodes::RECEIVED_EMPTY_DATA);
     }
 
@@ -114,10 +109,6 @@ void ReadBufferFromBlobStorage::initialize()
     }
 
     initialized = true;
-
-    // TODO: dummy if to avoid warning for max_single_read_retries
-    if (max_single_read_retries == 0)
-        return;
 }
 
 }

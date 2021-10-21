@@ -27,15 +27,11 @@ void blob_storage_demo();
 struct DiskBlobStorageSettings final
 {
     DiskBlobStorageSettings(
-        UInt64 max_single_read_retries_,
-        UInt64 min_upload_part_size_,
         UInt64 max_single_part_upload_size_,
         UInt64 min_bytes_for_seek_,
         int thread_pool_size_,
         int objects_chunk_size_to_delete_);
 
-    UInt64 max_single_read_retries;
-    UInt64 min_upload_part_size;
     UInt64 max_single_part_upload_size;
     UInt64 min_bytes_for_seek;
     int thread_pool_size;

@@ -48,18 +48,14 @@ void checkReadAccess(IDisk & disk)
 
 void checkRemoveAccess(IDisk & disk)
 {
+    // TODO: remove these checks if the names of blobs will be changed
     if (!disk.checkUniqueId(test_file))
-    {
-        // TODO: improve error codes
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Expected the file to exist, but did not find it: {}", test_file);
-    }
 
     disk.removeFile(test_file);
 
     if (disk.checkUniqueId(test_file))
-    {
         throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Expected the file not to exist, but found it: {}", test_file);
-    }
 }
 
 
@@ -78,9 +74,7 @@ void validate_endpoint_url(const String & endpoint_url)
 std::unique_ptr<DiskBlobStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr /* context */)
 {
     return std::make_unique<DiskBlobStorageSettings>(
-        config.getUInt64(config_prefix + ".max_single_read_retries", 3),
-        config.getUInt64(config_prefix + ".min_upload_part_size", 1024),
-        config.getUInt64(config_prefix + ".max_single_part_upload_size", 1024 * 1024),
+        config.getUInt64(config_prefix + ".max_single_part_upload_size", 100 * 1024 * 1024),
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".thread_pool_size", 16),
         config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000)
