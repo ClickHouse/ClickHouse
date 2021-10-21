@@ -2,7 +2,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
@@ -248,31 +248,23 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
         UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
         mask = ~mask;
 
-        if (0 == mask)
-        {
-            /// Nothing is inserted.
-            data_pos += chars_per_simd_elements;
-        }
-        else if (0xFFFF == mask)
+        if (0xFFFF == mask)
         {
             res->chars.insert(data_pos, data_pos + chars_per_simd_elements);
-            data_pos += chars_per_simd_elements;
         }
         else
         {
             size_t res_chars_size = res->chars.size();
-            for (size_t i = 0; i < SIMD_BYTES; ++i)
+            while (mask)
             {
-                if (filt_pos[i])
-                {
-                    res->chars.resize(res_chars_size + n);
-                    memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos, n);
-                    res_chars_size += n;
-                }
-                data_pos += n;
+                size_t index = __builtin_ctz(mask);
+                res->chars.resize(res_chars_size + n);
+                memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos + index * n, n);
+                res_chars_size += n;
+                mask = mask & (mask - 1);
             }
         }
-
+        data_pos += chars_per_simd_elements;
         filt_pos += SIMD_BYTES;
     }
 #endif
@@ -322,30 +314,7 @@ void ColumnFixedString::expand(const IColumn::Filter & mask, bool inverted)
 
 ColumnPtr ColumnFixedString::permute(const Permutation & perm, size_t limit) const
 {
-    size_t col_size = size();
-
-    if (limit == 0)
-        limit = col_size;
-    else
-        limit = std::min(col_size, limit);
-
-    if (perm.size() < limit)
-        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-    if (limit == 0)
-        return ColumnFixedString::create(n);
-
-    auto res = ColumnFixedString::create(n);
-
-    Chars & res_chars = res->chars;
-
-    res_chars.resize(n * limit);
-
-    size_t offset = 0;
-    for (size_t i = 0; i < limit; ++i, offset += n)
-        memcpySmallAllowReadWriteOverflow15(&res_chars[offset], &chars[perm[i] * n], n);
-
-    return res;
+    return permuteImpl(*this, perm, limit);
 }
 
 
@@ -358,6 +327,7 @@ ColumnPtr ColumnFixedString::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
+    assert(limit <= indexes.size());
     if (limit == 0)
         return ColumnFixedString::create(n);
 

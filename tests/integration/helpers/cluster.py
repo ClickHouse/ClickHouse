@@ -2073,11 +2073,11 @@ class ClickHouseInstance:
     def contains_in_log(self, substring, from_host=False):
         if from_host:
             result = subprocess_check_call(["bash", "-c",
-                f'[ -f {self.logs_dir}/clickhouse-server.log ] && grep "{substring}" {self.logs_dir}/clickhouse-server.log || true'
+                f'[ -f {self.logs_dir}/clickhouse-server.log ] && grep -a "{substring}" {self.logs_dir}/clickhouse-server.log || true'
             ])
         else:
             result = self.exec_in_container(["bash", "-c",
-                f'[ -f /var/log/clickhouse-server/clickhouse-server.log ] && grep "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
+                f'[ -f /var/log/clickhouse-server/clickhouse-server.log ] && grep -a "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
             ])
         return len(result) > 0
 
@@ -2085,18 +2085,18 @@ class ClickHouseInstance:
         logging.debug(f"grep in log called %s", substring)
         if from_host:
             result = subprocess_check_call(["bash", "-c",
-                f'grep "{substring}" {self.logs_dir}/clickhouse-server.log || true'
+                f'grep -a "{substring}" {self.logs_dir}/clickhouse-server.log || true'
             ])
         else:
             result = self.exec_in_container(["bash", "-c",
-                f'grep "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
+                f'grep -a "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
             ])
         logging.debug("grep result %s", result)
         return result
 
     def count_in_log(self, substring):
         result = self.exec_in_container(
-            ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log | wc -l'.format(substring)])
+            ["bash", "-c", 'grep -a "{}" /var/log/clickhouse-server/clickhouse-server.log | wc -l'.format(substring)])
         return result
 
     def wait_for_log_line(self, regexp, filename='/var/log/clickhouse-server/clickhouse-server.log', timeout=30, repetitions=1, look_behind_lines=100):
@@ -2320,6 +2320,9 @@ class ClickHouseInstance:
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(["bash", "-c", "echo '{}' > {}".format(replacement, path_to_config)])
 
+    def replace_in_config(self, path_to_config, replace, replacement):
+        self.exec_in_container(["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"])
+
     def create_dir(self, destroy_dir=True):
         """Create the instance directory and all the needed files there."""
 
@@ -2357,17 +2360,20 @@ class ClickHouseInstance:
         dictionaries_dir = p.abspath(p.join(instance_config_dir, 'dictionaries'))
         os.mkdir(dictionaries_dir)
 
-        def write_embedded_config(name, dest_dir):
+        def write_embedded_config(name, dest_dir, fix_log_level=False):
             with open(p.join(HELPERS_DIR, name), 'r') as f:
                 data = f.read()
                 data = data.replace('yandex', self.config_root_name)
+                if fix_log_level:
+                    data = data.replace('<level>test</level>', '<level>trace</level>')
                 with open(p.join(dest_dir, name), 'w') as r:
                     r.write(data)
 
         logging.debug("Copy common configuration from helpers")
         # The file is named with 0_ prefix to be processed before other configuration overloads.
         if self.copy_common_configs:
-            write_embedded_config('0_common_instance_config.xml', self.config_d_dir)
+            need_fix_log_level = self.tag != 'latest'
+            write_embedded_config('0_common_instance_config.xml', self.config_d_dir, need_fix_log_level)
 
         write_embedded_config('0_common_instance_users.xml', users_d_dir)
 

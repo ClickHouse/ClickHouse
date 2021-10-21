@@ -8,7 +8,6 @@
 #include <base/shared_ptr_helper.h>
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 

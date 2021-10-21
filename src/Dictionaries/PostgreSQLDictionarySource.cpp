@@ -8,10 +8,10 @@
 #if USE_LIBPQXX
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/PostgreSQLSource.h>
+#include <Processors/Transforms/PostgreSQLSource.h>
 #include "readInvalidateQuery.h"
 #include <Interpreters/Context.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #endif
 

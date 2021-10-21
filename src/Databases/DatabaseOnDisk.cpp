@@ -34,10 +34,12 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
+    extern const int CANNOT_OPEN_FILE;
     extern const int INCORRECT_FILE_NAME;
     extern const int SYNTAX_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+    extern const int DATABASE_NOT_EMPTY;
 }
 
 
@@ -187,12 +189,12 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.settings_changes)
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);
         }
-
-        if (metadata.comment.empty())
-            storage_ast.reset(storage_ast.comment);
-        else
-            storage_ast.set(storage_ast.comment, std::make_shared<ASTLiteral>(metadata.comment));
     }
+
+    if (metadata.comment.empty())
+        ast_create_query.reset(ast_create_query.comment);
+    else
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(metadata.comment));
 }
 
 
@@ -530,11 +532,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        // TODO(nemkov): this is a precaution and should never happen, remove if there are no failed tests on CI/CD.
-        if (!ast_create_query.storage)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ASTCreateQuery lacks engine clause, but a comment is present.");
-
-        ast_create_query.storage->set(ast_create_query.storage->comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
     }
 
     return ast;
@@ -543,8 +541,28 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 void DatabaseOnDisk::drop(ContextPtr local_context)
 {
     assert(tables.empty());
-    fs::remove(local_context->getPath() + getDataPath());
-    fs::remove(getMetadataPath());
+    if (local_context->getSettingsRef().force_remove_data_recursively_on_drop)
+    {
+        fs::remove_all(local_context->getPath() + getDataPath());
+        fs::remove_all(getMetadataPath());
+    }
+    else
+    {
+        try
+        {
+            fs::remove(local_context->getPath() + getDataPath());
+            fs::remove(getMetadataPath());
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() != std::errc::directory_not_empty)
+                throw Exception(Exception::CreateFromSTDTag{}, e);
+            throw Exception(ErrorCodes::DATABASE_NOT_EMPTY, "Cannot drop: {}. "
+                "Probably database contain some detached tables or metadata leftovers from Ordinary engine. "
+                "If you want to remove all data anyway, try to attach database back and drop it again "
+                "with enabled force_remove_data_recursively_on_drop setting", e.what());
+        }
+    }
 }
 
 String DatabaseOnDisk::getObjectMetadataPath(const String & object_name) const
@@ -646,18 +664,19 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
 {
     String query;
 
-    try
+    int metadata_file_fd = ::open(metadata_file_path.c_str(), O_RDONLY | O_CLOEXEC);
+
+    if (metadata_file_fd == -1)
     {
-        ReadBufferFromFile in(metadata_file_path, METADATA_FILE_BUFFER_SIZE);
-        readStringUntilEOF(query, in);
-    }
-    catch (const Exception & e)
-    {
-        if (!throw_on_error && e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+        if (errno == ENOENT && !throw_on_error)
             return nullptr;
-        else
-            throw;
+
+        throwFromErrnoWithPath("Cannot open file " + metadata_file_path, metadata_file_path,
+                               errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
     }
+
+    ReadBufferFromFile in(metadata_file_fd, metadata_file_path, METADATA_FILE_BUFFER_SIZE);
+    readStringUntilEOF(query, in);
 
     /** Empty files with metadata are generated after a rough restart of the server.
       * Remove these files to slightly reduce the work of the admins on startup.

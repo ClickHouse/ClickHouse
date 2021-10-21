@@ -1,6 +1,6 @@
 #include "PostgreSQLReplicationHandler.h"
 
-#include <DataStreams/PostgreSQLSource.h>
+#include <Processors/Transforms/PostgreSQLSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
@@ -9,7 +9,6 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Common/setThreadName.h>
 #include <Interpreters/Context.h>
-#include <DataStreams/copyData.h>
 #include <Databases/DatabaseOnDisk.h>
 
 
