@@ -39,7 +39,6 @@ static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery>
         ASTPtr ast;
         if (ParserStringLiteral{}.parse(pos, ast, expected))
         {
-            res->setDatabase("");
             res->setTable(ast->as<ASTLiteral &>().value.safeGet<String>());
             parsed_table = true;
         }

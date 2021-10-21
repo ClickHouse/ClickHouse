@@ -23,18 +23,40 @@ String ASTQueryWithTableAndOutput::getTable() const
 
 void ASTQueryWithTableAndOutput::setDatabase(const String & name)
 {
-    if (name.empty())
-        database.reset();
+    if (name.empty() && !database)
+        return;
+
+    assert(!name.empty());
+
+    if (database)
+    {
+        if (auto * database_ptr = database->as<ASTIdentifier>())
+            database_ptr->setShortName(name);
+    }
     else
+    {
         database = std::make_shared<ASTIdentifier>(name);
+        children.push_back(database);
+    }
 }
 
 void ASTQueryWithTableAndOutput::setTable(const String & name)
 {
-    if (name.empty())
-        table.reset();
+    if (name.empty() && !table)
+        return;
+
+    assert(!name.empty());
+
+    if (table)
+    {
+        if (auto * table_ptr = table->as<ASTIdentifier>())
+            table_ptr->setShortName(name);
+    }
     else
+    {
         table = std::make_shared<ASTIdentifier>(name);
+        children.push_back(table);
+    }
 }
 
 void ASTQueryWithTableAndOutput::cloneTableOptions(ASTQueryWithTableAndOutput & cloned) const

@@ -80,10 +80,7 @@ bool parseDatabaseASTPtr(IParser::Pos & pos, Expected & expected, ASTPtr & datab
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier identifier_parser(true);
 
-    if (!identifier_parser.parse(pos, database, expected))
-        return false;
-
-    return true;
+    return identifier_parser.parse(pos, database, expected);
 }
 
 
