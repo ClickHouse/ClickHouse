@@ -72,7 +72,7 @@ jobs:
           name: ${{ env.BUILD_NAME }}
           path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
   FinishCheck:
-    needs: [StyleCheck, DockerHubPush, CheckLabels]
+    needs: [StyleCheck, DockerHubPush, CheckLabels, Builder]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
