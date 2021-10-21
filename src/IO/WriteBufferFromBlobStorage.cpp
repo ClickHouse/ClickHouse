@@ -24,51 +24,46 @@ String getRandomName(char first = 'a', char last = 'z', size_t len = 64)
 WriteBufferFromBlobStorage::WriteBufferFromBlobStorage(
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & blob_path_,
-    UInt64 /* min_upload_part_size_ */,
     UInt64 max_single_part_upload_size_,
     size_t buf_size_) :
     BufferWithOwnMemory<WriteBuffer>(buf_size_, nullptr, 0),
     blob_container_client(blob_container_client_),
-    // min_upload_part_size(min_upload_part_size_),
     max_single_part_upload_size(max_single_part_upload_size_),
     blob_path(blob_path_) {}
 
 
-void WriteBufferFromBlobStorage::nextImpl() {
-
+void WriteBufferFromBlobStorage::nextImpl()
+{
     if (!offset())
         return;
 
     auto pos = working_buffer.begin();
     auto len = offset();
-
     auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
 
-    if (len <= max_single_part_upload_size)
+    size_t read = 0;
+    while (read < len)
     {
-        Azure::Core::IO::MemoryBodyStream tmp_buffer(reinterpret_cast<uint8_t *>(pos), len);
+        auto part_len = std::min(len - read, max_single_part_upload_size);
 
-        blob_container_client->UploadBlob(blob_path, tmp_buffer);
+        auto block_id = getRandomName();
+        block_ids.push_back(block_id);
+
+        Azure::Core::IO::MemoryBodyStream tmp_buffer(reinterpret_cast<uint8_t *>(pos + read), part_len);
+        block_blob_client.StageBlock(block_ids.back(), tmp_buffer);
+
+        read += part_len;
     }
-    else
-    {
-        size_t read = 0;
+}
 
-        while (read < len)
-        {
-            auto part_len = std::min(len - read, max_single_part_upload_size);
+void WriteBufferFromBlobStorage::finalize()
+{
+    if (finalized)
+        return;
 
-            auto block_id = getRandomName();
-            block_ids.push_back(block_id);
-
-            Azure::Core::IO::MemoryBodyStream tmp_buffer(reinterpret_cast<uint8_t *>(pos + read), part_len);
-            block_blob_client.StageBlock(block_ids.back(), tmp_buffer);
-
-            read += part_len;
-        }
-
-        block_blob_client.CommitBlockList(block_ids);
-    }
+    auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
+    block_blob_client.CommitBlockList(block_ids);
+    finalized = true;
 }
 
 }
