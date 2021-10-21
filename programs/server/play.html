@@ -552,7 +552,7 @@
     
     function formatReadable(number = 0, decimals = 2, units = []) {
         const k = 1000;
-        const i = Math.floor(Math.log(number) / Math.log(k));
+        const i = number ? Math.floor(Math.log(number) / Math.log(k)) : 0;
         const unit = units[i];
         const dm = unit ? decimals : 0;
         return Number(number / Math.pow(k, i)).toFixed(dm) + unit;
