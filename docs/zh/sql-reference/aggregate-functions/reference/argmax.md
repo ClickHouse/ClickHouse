@@ -6,8 +6,6 @@ toc_priority: 106
 
 计算 `val` 最大值对应的 `arg` 值。 如果 `val` 最大值存在几个不同的 `arg` 值，输出遇到的第一个值。
 
-这个函数的Tuple版本将返回 `val` 最大值对应的元组。本函数适合和 `SimpleAggregateFunction` 搭配使用。
-
 **语法**
 
 ``` sql
