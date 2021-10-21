@@ -157,7 +157,7 @@ if __name__ == "__main__":
 
     build_name = build_config_to_string(build_config)
     logging.info(f"Build short name {build_name}")
-    subprocess.check_call(f"echo 'BUILD_NAME={build_name}' >> $GITHUB_ENV", shell=True)
+    subprocess.check_call(f"echo 'BUILD_NAME=build_urls_{build_name}' >> $GITHUB_ENV", shell=True)
 
     build_output_path = os.path.join(temp_path, build_name)
     if not os.path.exists(build_output_path):
@@ -174,7 +174,9 @@ if __name__ == "__main__":
     if not os.path.exists(build_clickhouse_log):
         os.makedirs(build_clickhouse_log)
 
+    start = time.time()
     log_path, success = build_clickhouse(packager_cmd, build_clickhouse_log)
+    elapsed = int(time.time() - start)
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {build_output_path}", shell=True)
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {ccache_path}", shell=True)
     logging.info("Build finished with %s, log path %s", success, log_path)
@@ -190,15 +192,17 @@ if __name__ == "__main__":
     build_urls = s3_helper.upload_build_folder_to_s3(build_output_path, s3_path_prefix, keep_dirs_in_s3_path=False, upload_symlinks=False)
     logging.info("Got build URLs %s", build_urls)
 
-    for url in build_urls:
-        print("::notice ::Build URL: {}".format(url))
+    print("::notice ::Build URLs: {}".format('\n'.join(build_urls)))
 
     result = {
         "log_url": log_url,
         "build_urls": build_urls,
+        "build_config": build_config,
+        "elapsed_seconds": elapsed,
+        "status": success,
     }
 
     print("::notice ::Log URL: {}".format(log_url))
 
-    with open(os.path.join(temp_path, build_name + '.json'), 'w') as build_links:
+    with open(os.path.join(temp_path, "build_urls_" + build_name + '.json'), 'w') as build_links:
         json.dump(result, build_links)
