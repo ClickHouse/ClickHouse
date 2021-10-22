@@ -76,7 +76,6 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 `a = ALL (subquery)` –  The same as `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
 `a != ALL (subquery)` –  The same as `a NOT IN (subquery)`.
 
-The subquery must select values of the same type as those compared in the main predicate. 
 
 **Examples**
 
