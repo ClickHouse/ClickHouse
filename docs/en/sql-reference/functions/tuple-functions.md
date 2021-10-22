@@ -737,7 +737,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-## LpDistance {#LpDistance}
+## LpDistance {#lpdistance}
 
 Calculates the distance between two points (the values of the tuples are the coordinates) in [p-norm distance](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm).
 
@@ -930,7 +930,6 @@ Result:
 └─────────────────────────────────────────┘
 ```
 
-cosineDistance 
 
 ## cosineDistance {#cosinedistance}
 
