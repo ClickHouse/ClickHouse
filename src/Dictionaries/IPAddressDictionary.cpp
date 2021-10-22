@@ -814,7 +814,7 @@ Columns IPAddressDictionary::getKeyColumns() const
 template <typename KeyColumnType, bool IsIPv4>
 static auto keyViewGetter()
 {
-    return [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
+    return [](const Columns & columns, const std::vector<DictionaryAttribute> & dictonary_key_attributes)
     {
         auto column = ColumnString::create();
         const auto & key_ip_column = assert_cast<const KeyColumnType &>(*columns.front());
@@ -831,7 +831,7 @@ static auto keyViewGetter()
             column->insertData(buffer, str_len);
         }
         return ColumnsWithTypeAndName{
-            ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), dict_attributes.front().name)};
+            ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), dictonary_key_attributes.front().name)};
     };
 }
 
@@ -839,35 +839,30 @@ Pipe IPAddressDictionary::read(const Names & column_names, size_t max_block_size
 {
     const bool is_ipv4 = std::get_if<IPv4Container>(&ip_column) != nullptr;
 
-    auto get_key_columns = [is_ipv4](const Columns & columns)
-    {
-        std::shared_ptr<const IDataType> key_type;
-        if (is_ipv4)
-            key_type = std::make_shared<DataTypeUInt32>();
-        else
-            key_type = std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
-
-        return ColumnsWithTypeAndName({
-            ColumnWithTypeAndName(columns.front(), key_type, ""),
-            ColumnWithTypeAndName(columns.back(), std::make_shared<DataTypeUInt8>(), "")
-        });
-    };
-
     auto key_columns = getKeyColumns();
 
-    auto key_columns_with_type = get_key_columns(key_columns);
+    std::shared_ptr<const IDataType> key_type;
+    if (is_ipv4)
+        key_type = std::make_shared<DataTypeUInt32>();
+    else
+        key_type = std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH);
+
+    ColumnsWithTypeAndName key_columns_with_type = {
+        ColumnWithTypeAndName(key_columns.front(), key_type, ""),
+        ColumnWithTypeAndName(key_columns.back(), std::make_shared<DataTypeUInt8>(), "")
+    };
 
     ColumnsWithTypeAndName view_columns;
 
     if (is_ipv4)
     {
         auto get_view = keyViewGetter<ColumnVector<UInt32>, true>();
-        view_columns = get_view(key_columns, dict_struct.attributes);
+        view_columns = get_view(key_columns, *dict_struct.key);
     }
     else
     {
         auto get_view = keyViewGetter<ColumnFixedString, false>();
-        view_columns = get_view(key_columns, dict_struct.attributes);
+        view_columns = get_view(key_columns, *dict_struct.key);
     }
 
     std::shared_ptr<const IDictionary> dictionary = shared_from_this();
