@@ -3,9 +3,9 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', with_zookeeper=True, image='clickhouse/server', tag='21.3', with_installed_binary=True)
-node2 = cluster.add_instance('node2', with_zookeeper=True, image='clickhouse/server')
-node3 = cluster.add_instance('node3', with_zookeeper=True, image='clickhouse/server')
+node1 = cluster.add_instance('node1', with_zookeeper=True, image='yandex/clickhouse-server', tag='21.3', with_installed_binary=True)
+node2 = cluster.add_instance('node2', with_zookeeper=True, image='yandex/clickhouse-server')
+node3 = cluster.add_instance('node3', with_zookeeper=True, image='yandex/clickhouse-server')
 
 
 @pytest.fixture(scope="module")
