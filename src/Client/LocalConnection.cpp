@@ -5,7 +5,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Storages/IStorage.h>
-#include "Core/Protocol.h"
+#include <Core/Protocol.h>
 
 
 namespace DB
@@ -60,15 +60,15 @@ void LocalConnection::updateProgress(const Progress & value)
 
 void LocalConnection::sendQuery(
     const ConnectionTimeouts &,
-    const String & query_,
-    const String & query_id_,
-    UInt64,
+    const String & query,
+    const String & query_id,
+    UInt64 stage,
     const Settings *,
     const ClientInfo *,
     bool)
 {
     query_context = session.makeQueryContext();
-    query_context->setCurrentQueryId(query_id_);
+    query_context->setCurrentQueryId(query_id);
     if (send_progress)
         query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
 
@@ -77,8 +77,9 @@ void LocalConnection::sendQuery(
     state.reset();
     state.emplace();
 
-    state->query_id = query_id_;
-    state->query = query_;
+    state->query_id = query_id;
+    state->query = query;
+    state->stage = QueryProcessingStage::Enum(stage);
 
     if (send_progress)
         state->after_send_progress.restart();
@@ -104,6 +105,16 @@ void LocalConnection::sendQuery(
                 state->pushing_executor->start();
                 state->block = state->pushing_executor->getHeader();
             }
+
+            const auto & table_id = query_context->getInsertionTable();
+            if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+            {
+                if (!table_id.empty())
+                {
+                    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
+                    state->columns_description = storage_ptr->getInMemoryMetadataPtr()->getColumns();
+                }
+            }
         }
         else if (state->io.pipeline.pulling())
         {
@@ -116,7 +127,9 @@ void LocalConnection::sendQuery(
             executor.execute();
         }
 
-        if (state->block)
+        if (state->columns_description)
+            next_packet_type = Protocol::Server::TableColumns;
+        else if (state->block)
             next_packet_type = Protocol::Server::Data;
     }
     catch (const Exception & e)
@@ -266,13 +279,6 @@ bool LocalConnection::poll(size_t)
         }
     }
 
-    if (state->is_finished && send_progress && !state->sent_progress)
-    {
-        state->sent_progress = true;
-        next_packet_type = Protocol::Server::Progress;
-        return true;
-    }
-
     if (state->is_finished)
     {
         finishQuery();
@@ -292,7 +298,8 @@ bool LocalConnection::pollImpl()
 {
     Block block;
     auto next_read = pullBlock(block);
-    if (block)
+
+    if (block && !state->io.null_format)
     {
         state->block.emplace(block);
     }
@@ -336,21 +343,41 @@ Packet LocalConnection::receivePacket()
                 packet.block = std::move(state->block.value());
                 state->block.reset();
             }
+            next_packet_type.reset();
+            break;
+        }
+        case Protocol::Server::TableColumns:
+        {
+            if (state->columns_description)
+            {
+                /// Send external table name (empty name is the main table)
+                /// (see TCPHandler::sendTableColumns)
+                packet.multistring_message = {"", state->columns_description->toString()};
+            }
+
+            if (state->block)
+            {
+                next_packet_type = Protocol::Server::Data;
+            }
+
             break;
         }
         case Protocol::Server::Exception:
         {
             packet.exception = std::make_unique<Exception>(*state->exception);
+            next_packet_type.reset();
             break;
         }
         case Protocol::Server::Progress:
         {
             packet.progress = std::move(state->progress);
             state->progress.reset();
+            next_packet_type.reset();
             break;
         }
         case Protocol::Server::EndOfStream:
         {
+            next_packet_type.reset();
             break;
         }
         default:
@@ -358,7 +385,6 @@ Packet LocalConnection::receivePacket()
                             "Unknown packet {} for {}", toString(packet.type), getDescription());
     }
 
-    next_packet_type.reset();
     return packet;
 }
 
