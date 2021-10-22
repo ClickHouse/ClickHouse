@@ -487,7 +487,7 @@ Usually this value does not need to be changed, since:
 
 So even if you have `TcpExtListenOverflows` (from `nstat`) non zero and this counter grows for ClickHouse server it does not mean that this value need to be increased, since:
 -  usually if 4096 is not enough it shows some internal ClickHouse scaling issue, so it is better to report an issue.
--  and it does not mean that the server can handle more connections later (and even if it can, clients can already goes away / disconnect).
+-  and it does not mean that the server can handle more connections later (and even if it can, clients can already go away / disconnect).
 
 Examples:
 
