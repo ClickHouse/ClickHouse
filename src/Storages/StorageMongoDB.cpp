@@ -9,12 +9,10 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Common/parseAddress.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTLiteral.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MongoDBSource.h>
 
 namespace DB

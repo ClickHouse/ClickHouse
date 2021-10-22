@@ -1,4 +1,5 @@
 #include <IO/ReadHelpers.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/Operators.h>
 
 #include <Formats/verbosePrintString.h>
