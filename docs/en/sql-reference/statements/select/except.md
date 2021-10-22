@@ -66,4 +66,4 @@ Result:
 **See Also**
 
 -   [UNION](union.md#union-clause)
--   [INTERSECT](except.md#except-clause)
+-   [INTERSECT](intersect.md#intersect-clause)
