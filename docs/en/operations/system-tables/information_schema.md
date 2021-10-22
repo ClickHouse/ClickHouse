@@ -114,4 +114,4 @@ is_trigger_insertable_into: NO
 -   [View](../../sql-reference/statements/create/view.md).
 -   [system.tables](../../operations/system-tables/tables.md).
 -   [system.columns](../../operations/system-tables/columns.md).
--   [system.views](../../operations/system-tables/views.md).
+-   [system.query_views_log](../../operations/system-tables/query_views_log.md).
