@@ -63,11 +63,12 @@ String DatabasePostgreSQL::getTableNameForLogs(const String & table_name) const
 }
 
 
-String DatabasePostgreSQL::formatTableName(const String & table_name) const
+String DatabasePostgreSQL::formatTableName(const String & table_name, bool quoted) const
 {
     if (configuration.schema.empty())
-        return doubleQuoteString(table_name);
-    return fmt::format("{}.{}", doubleQuoteString(configuration.schema), doubleQuoteString(table_name));
+        return quoted ? doubleQuoteString(table_name) : table_name;
+    return quoted ? fmt::format("{}.{}", doubleQuoteString(configuration.schema), doubleQuoteString(table_name))
+                  : fmt::format("{}.{}", configuration.schema, table_name);
 }
 
 
@@ -170,7 +171,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr,
             return StoragePtr{};
 
         auto connection_holder = pool->get();
-        auto columns = fetchPostgreSQLTableStructure(connection_holder->get(), formatTableName(table_name)).columns;
+        auto columns = fetchPostgreSQLTableStructure(connection_holder->get(), table_name, configuration.schema).columns;
 
         if (!columns)
             return StoragePtr{};
