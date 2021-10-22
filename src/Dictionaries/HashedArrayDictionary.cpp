@@ -167,9 +167,10 @@ Columns HashedArrayDictionary<dictionary_key_type>::getColumns(
     /** Optimization for multiple attributes.
       * For each key save element index in key_index_to_element_index array.
       * Later in type_call for attribute use getItemsImpl specialization with key_index_to_element_index array
-      * intead of DictionaryKeyExtractor.
+      * instead of DictionaryKeyExtractor.
       */
-    if (attribute_names.size() > 1) {
+    if (attribute_names.size() > 1)
+    {
         const auto & key_attribute_container = key_attribute.container;
         size_t keys_found = 0;
 
