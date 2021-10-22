@@ -155,7 +155,7 @@ void ZooKeeper::init(const std::string & implementation_, const Strings & hosts_
 
 std::vector<ShuffleHost> ZooKeeper::shuffleHosts() const
 {
-    std::function<size_t(size_t index)> get_priority = get_priority_load_balancing.getPriorityFunc();
+    std::function<size_t(size_t index)> get_priority = get_priority_load_balancing.getPriorityFunc(get_priority_load_balancing.load_balancing, 0, hosts.size());
     std::vector<ShuffleHost> shuffle_hosts;
     for (size_t i = 0; i < hosts.size(); ++i)
     {
@@ -260,7 +260,6 @@ struct ZooKeeperArgs
             const String & node_host = hosts[i].substr(0, hosts[i].find_last_of(':'));
             get_priority_load_balancing.hostname_differences[i] = DB::getHostNameDifference(local_hostname, node_host);
         }
-        get_priority_load_balancing.pool_size = hosts.size();
     }
 
     Strings hosts;
