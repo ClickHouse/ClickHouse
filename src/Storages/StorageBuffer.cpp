@@ -817,8 +817,6 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     if (!locked)
         lock.emplace(buffer.lockForReading());
 
-    block_to_write = buffer.data.cloneEmpty();
-
     rows = buffer.data.rows();
     bytes = buffer.data.bytes();
     if (buffer.first_write_time)
