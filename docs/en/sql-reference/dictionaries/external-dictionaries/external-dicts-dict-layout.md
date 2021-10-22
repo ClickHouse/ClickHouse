@@ -52,17 +52,18 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 -   [flat](#flat)
 -   [hashed](#dicts-external_dicts_dict_layout-hashed)
--   [hashed_array](#dicts-external_dicts_dict_layout-hashed-array)
 -   [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
--   [cache](#cache)
--   [ssd_cache](#ssd-cache)
--   [direct](#direct)
--   [range_hashed](#range-hashed)
 -   [complex_key_hashed](#complex-key-hashed)
+-   [complex_key_sparse_hashed](#complex-key-sparse-hashed)
+-   [hashed_array](#dicts-external_dicts_dict_layout-hashed-array)
+-   [complex_key_hashed_array](#complex-key-hashed-array)
+-   [range_hashed](#range-hashed)
 -   [complex_key_range_hashed](#complex-key-range-hashed)
+-   [cache](#cache)
 -   [complex_key_cache](#complex-key-cache)
 -   [ssd_cache](#ssd-cache)
--   [ssd_complex_key_cache](#complex-key-ssd-cache)
+-   [complex_key_ssd_cache](#complex-key-ssd-cache)
+-   [direct](#direct)
 -   [complex_key_direct](#complex-key-direct)
 -   [ip_trie](#ip-trie)
 
@@ -551,4 +552,3 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
 
 Data must completely fit into RAM.
-
