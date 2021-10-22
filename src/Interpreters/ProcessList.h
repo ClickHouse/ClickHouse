@@ -14,6 +14,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Throttler.h>
+#include <Common/OvercommitTracker.h>
 
 #include <condition_variable>
 #include <list>
@@ -146,6 +147,11 @@ public:
 
     ThrottlerPtr getUserNetworkThrottler();
 
+    MemoryTracker * getMemoryTracker() const
+    {
+        return &thread_group->memory_tracker;
+    }
+
     bool updateProgressIn(const Progress & value)
     {
         CurrentThread::updateProgressIn(value);
@@ -202,6 +208,8 @@ struct ProcessListForUser
     ProfileEvents::Counters user_performance_counters{VariableContext::User, &ProfileEvents::global_counters};
     /// Limit and counter for memory of all simultaneously running queries of single user.
     MemoryTracker user_memory_tracker{VariableContext::User};
+
+    UserOvercommitTracker user_overcommit_tracker;
 
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
@@ -306,6 +314,14 @@ public:
     {
         std::lock_guard lock(mutex);
         max_size = max_size_;
+    }
+
+    template <typename F>
+    void processEachQueryStatus(F && func) const
+    {
+        std::lock_guard lk(mutex);
+        for (auto && query : processes)
+            func(query);
     }
 
     /// Try call cancel() for input and output streams of query with specified id and user

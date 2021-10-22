@@ -28,6 +28,9 @@ extern thread_local bool memory_tracker_always_throw_logical_error_on_allocation
 #define ALLOW_ALLOCATIONS_IN_SCOPE static_assert(true)
 #endif
 
+struct OvercommitRatio;
+struct OvercommitTracker;
+
 /** Tracks memory consumption.
   * It throws an exception if amount of consumed memory become greater than certain limit.
   * The same memory tracker could be simultaneously used in different threads.
@@ -37,6 +40,7 @@ class MemoryTracker
 private:
     std::atomic<Int64> amount {0};
     std::atomic<Int64> peak {0};
+    std::atomic<Int64> soft_limit {0};
     std::atomic<Int64> hard_limit {0};
     std::atomic<Int64> profiler_limit {0};
 
@@ -57,6 +61,8 @@ private:
 
     /// This description will be used as prefix into log messages (if isn't nullptr)
     std::atomic<const char *> description_ptr = nullptr;
+
+    OvercommitTracker * overcommit_tracker = nullptr;
 
     bool updatePeak(Int64 will_be, bool log_memory_usage);
     void logMemoryUsage(Int64 current) const;
@@ -105,6 +111,7 @@ public:
         return peak.load(std::memory_order_relaxed);
     }
 
+    void setSoftLimit(Int64 value);
     void setHardLimit(Int64 value);
 
     /** Set limit if it was not set.
@@ -154,6 +161,13 @@ public:
     void setDescription(const char * description)
     {
         description_ptr.store(description, std::memory_order_relaxed);
+    }
+
+    OvercommitRatio getOvercommitRatio();
+
+    void setOvercommitTracker(OvercommitTracker * tracker) noexcept
+    {
+        overcommit_tracker = tracker;
     }
 
     /// Reset the accumulated data
