@@ -5,7 +5,7 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 
 ## system.asynchronous_metric_log {#system-tables-async-log}
 
-包含每分钟记录一次的 `system.asynchronous_metrics`历史值. 默认开启. 
+包含每分钟记录一次的 `system.asynchronous_metrics`表历史值. 默认开启. 
 
 列：
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — 事件日期.
@@ -35,4 +35,4 @@ SELECT * FROM system.asynchronous_metric_log LIMIT 10
 
 **另请参阅**
 -   [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) — 包含在后台定期计算的指标.
--   [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — 包含定期刷新到磁盘表 `system.metrics` 以及 `system.events` 表中指标值的隶属记录.
+-   [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — 包含定期刷新到磁盘表 `system.metrics` 以及 `system.events` 中的指标值历史记录.
