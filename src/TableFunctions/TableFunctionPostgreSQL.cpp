@@ -52,7 +52,7 @@ ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr c
             connection_holder->get(), configuration->table, configuration->schema, use_nulls).columns;
 
     if (!columns)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table strcuture not returned");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table structure not returned");
     return ColumnsDescription{*columns};
 }
 
