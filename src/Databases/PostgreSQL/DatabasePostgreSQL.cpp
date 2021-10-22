@@ -90,14 +90,23 @@ bool DatabasePostgreSQL::empty() const
 DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */) const
 {
     std::lock_guard<std::mutex> lock(mutex);
-
     Tables tables;
-    auto connection_holder = pool->get();
-    auto table_names = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
 
-    for (const auto & table_name : table_names)
-        if (!detached_or_dropped.count(table_name))
-            tables[table_name] = fetchTable(table_name, local_context, true);
+    /// Do not allow to throw here, because this might be, for example, a query to system.tables.
+    /// It must not fail on case of some postgres error.
+    try
+    {
+        auto connection_holder = pool->get();
+        auto table_names = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+
+        for (const auto & table_name : table_names)
+            if (!detached_or_dropped.count(table_name))
+                tables[table_name] = fetchTable(table_name, local_context, true);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 }

@@ -191,7 +191,10 @@ std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
             columns[i] = NameAndTypePair(name_and_type.name, type);
         }
     }
-
+    catch (const pqxx::syntax_error & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error: {} (in query: {})", e.what(), query);
+    }
     catch (const pqxx::undefined_table &)
     {
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table);
@@ -213,7 +216,9 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
     PostgreSQLTableStructure table;
 
     auto where = fmt::format("relname = {}", quoteString(postgres_table));
-    if (!postgres_schema.empty())
+    if (postgres_schema.empty())
+        where += " AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')";
+    else
         where += fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteString(postgres_schema));
 
     std::string query = fmt::format(
@@ -224,6 +229,9 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
            "AND NOT attisdropped AND attnum > 0", where);
 
     table.columns = readNamesAndTypesList(tx, postgres_table, query, use_nulls, false);
+
+    if (!table.columns)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table);
 
     if (with_primary_key)
     {
