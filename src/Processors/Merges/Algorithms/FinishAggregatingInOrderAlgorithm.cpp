@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 FinishAggregatingInOrderAlgorithm::State::State(
     const Chunk & chunk, const SortDescription & desc, Int64 total_bytes_)
     : all_columns(chunk.getColumns())

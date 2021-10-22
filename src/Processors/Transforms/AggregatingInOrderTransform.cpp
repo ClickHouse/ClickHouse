@@ -6,12 +6,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
-
 AggregatingInOrderTransform::AggregatingInOrderTransform(
     Block header,
     AggregatingTransformParamsPtr params_,
