@@ -63,6 +63,9 @@ void FinishAggregatingInOrderAlgorithm::initialize(Inputs inputs)
 
 void FinishAggregatingInOrderAlgorithm::consume(Input & input, size_t source_num)
 {
+    if (!input.chunk.hasRows())
+        return;
+
     const auto & info = input.chunk.getChunkInfo();
     if (!info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk info was not set for chunk in FinishAggregatingInOrderAlgorithm");
