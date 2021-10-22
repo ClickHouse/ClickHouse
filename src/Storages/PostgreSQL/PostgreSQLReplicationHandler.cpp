@@ -481,7 +481,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
 
 
 /// Used by MaterializedPostgreSQL database engine.
-NameSet PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection & connection_)
+std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables(postgres::Connection & connection_)
 {
     pqxx::work tx(connection_.getRef());
     std::set<String> result_tables;
