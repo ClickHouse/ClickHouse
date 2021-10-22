@@ -3821,9 +3821,9 @@ Enables or disables asynchronous inserts for multiple concurrent connetions. Thi
 
 If enabled, the data is combined into batches before the insertion into tables, so it is possible to do small and frequent insertions into ClickHouse (up to 15000 queries per second) without buffer tables.
 
-The data is inserted either after the [async-insert-max-data-size](#async-insert-max-data-size) is exceeded or after [async_insert_busy_timeout](#async_insert_busy_timeout) milliseconds since the first `INSERT` query. If the [async-insert-stale-timeout](#async-insert-stale-timeout) is set to a non-zero value, the data is inserted after `async-insert-stale-timeout` milliseconds since the last query.
+The data is inserted either after the [async_insert_max_data_size](#async-insert-max-data-size) is exceeded or after [async_insert_busy_timeout](#async-insert-busy-timeout) milliseconds since the first `INSERT` query. If the [async_insert_stale_timeout](#async-insert-stale-timeout) is set to a non-zero value, the data is inserted after `async_insert_stale_timeout` milliseconds since the last query.
 
-If [wait-for-async-insert](#wait-for-async-insert) is enabled, every client will wait for the data to be processed and flushed to the table. Otherwise, the query would be processed almost instantly, even if the data is not inserted.
+If [wait_for_async_insert](#wait-for-async-insert) is enabled, every client will wait for the data to be processed and flushed to the table. Otherwise, the query would be processed almost instantly, even if the data is not inserted.
 
 Possible values:
 
@@ -3885,7 +3885,7 @@ Default value: `200`.
 
 ## async_insert_stale_timeout {#async-insert-stale-timeout}
 
-The maximum timeout in milliseconds since the last `INSERT` query before dumping collected data. If enabled, the settings prolongs the [async_insert_busy_timeout](#async_insert_busy_timeout) with every `INSERT` query as long as [async-insert-max-data-size](#async-insert-max-data-size) is not exceeded.
+The maximum timeout in milliseconds since the last `INSERT` query before dumping collected data. If enabled, the settings prolongs the [async_insert_busy_timeout](#async-insert-busy-timeout) with every `INSERT` query as long as [async_insert_max_data_size](#async-insert-max-data-size) is not exceeded.
 
 -   Positive integer.
 -   0 — Timeout disabled.
