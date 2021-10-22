@@ -285,13 +285,6 @@ bool LocalConnection::poll(size_t)
         return true;
     }
 
-    if (send_progress && !state->sent_progress)
-    {
-        state->sent_progress = true;
-        next_packet_type = Protocol::Server::Progress;
-        return true;
-    }
-
     if (state->block && state->block.value())
     {
         next_packet_type = Protocol::Server::Data;
