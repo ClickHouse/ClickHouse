@@ -21,7 +21,7 @@ Columns:
     -   `'NO_PASSWORD'`.
     -   `'PLAINTEXT_PASSWORD'`.
     -   `'SHA256_PASSWORD'`.
-	-   `'DOUBLE_SHA1_PASSWORD'`.
+    -   `'DOUBLE_SHA1_PASSWORD'`.
     -   `'LDAP'`.
     -   `'KERBEROS'`.
 -   `profiles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — The list of profiles is set for all roles and/or users.
@@ -33,7 +33,7 @@ Columns:
     -   `'TCP'`.
     -   `'HTTP'`.
     -   `'gRPC'`.
-	-   `'MySQL'`.
+    -   `'MySQL'`.
     -   `'PostgreSQL'`.
 -   `client_hostname` ([String](../../sql-reference/data-types/string.md)) — The hostname of the client machine where the [clickhouse-client](../../interfaces/cli.md) or another TCP client is run.
 -   `client_name` ([String](../../sql-reference/data-types/string.md)) — The `clickhouse-client` or another TCP client name.
@@ -45,9 +45,13 @@ Columns:
 
 **Example**
 
+Query:
+
 ``` sql
 SELECT * FROM system.session_log LIMIT 1 FORMAT Vertical;
 ```
+
+Result:
 
 ``` text
 Row 1:
