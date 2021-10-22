@@ -3,10 +3,10 @@
 namespace DB
 {
 
-std::function<size_t(size_t index)> GetPriorityForLoadBalancing::getPriorityFunc() const
+std::function<size_t(size_t index)> GetPriorityForLoadBalancing::getPriorityFunc(LoadBalancing load_balance, size_t offset, size_t pool_size) const
 {
     std::function<size_t(size_t index)> get_priority;
-    switch (load_balancing)
+    switch (load_balance)
     {
         case LoadBalancing::NEAREST_HOSTNAME:
             get_priority = [&](size_t i) { return hostname_differences[i]; };
@@ -17,7 +17,7 @@ std::function<size_t(size_t index)> GetPriorityForLoadBalancing::getPriorityFunc
         case LoadBalancing::RANDOM:
             break;
         case LoadBalancing::FIRST_OR_RANDOM:
-            get_priority = [&](size_t i) -> size_t { return i != offset; };
+            get_priority = [offset](size_t i) -> size_t { return i != offset; };
             break;
         case LoadBalancing::ROUND_ROBIN:
             if (last_used >= pool_size)

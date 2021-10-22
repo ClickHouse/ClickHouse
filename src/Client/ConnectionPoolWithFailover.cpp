@@ -29,7 +29,7 @@ ConnectionPoolWithFailover::ConnectionPoolWithFailover(
         time_t decrease_error_period_,
         size_t max_error_cap_)
     : Base(std::move(nested_pools_), decrease_error_period_, max_error_cap_, &Poco::Logger::get("ConnectionPoolWithFailover"))
-    , get_priority_load_balancing(load_balancing, nested_pools.size())
+    , get_priority_load_balancing(load_balancing)
 {
     const std::string & local_hostname = getFQDNOrHostName();
 
@@ -50,12 +50,16 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
         return tryGetEntry(pool, timeouts, fail_message, settings);
     };
 
+    GetPriorityForLoadBalancing get_priority_local(get_priority_load_balancing);
+    size_t offset = 0;
+    LoadBalancing load_balancing = get_priority_load_balancing.load_balancing;
     if (settings)
     {
-        get_priority_load_balancing.offset = settings->load_balancing_first_offset % nested_pools.size();
-        get_priority_load_balancing.load_balancing = settings->load_balancing;
+        offset = settings->load_balancing_first_offset % nested_pools.size();
+        load_balancing = LoadBalancing(settings->load_balancing);
     }
-    GetPriorityFunc get_priority = get_priority_load_balancing.getPriorityFunc();
+
+    GetPriorityFunc get_priority = get_priority_local.getPriorityFunc(load_balancing, offset, nested_pools.size());
 
     UInt64 max_ignored_errors = settings ? settings->distributed_replica_max_ignored_errors.value : 0;
     bool fallback_to_stale_replicas = settings ? settings->fallback_to_stale_replicas_for_distributed_queries.value : true;
@@ -148,12 +152,15 @@ std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::g
 
 ConnectionPoolWithFailover::Base::GetPriorityFunc ConnectionPoolWithFailover::makeGetPriorityFunc(const Settings * settings)
 {
+    size_t offset = 0;
+    LoadBalancing load_balancing = get_priority_load_balancing.load_balancing;
     if (settings)
     {
-        get_priority_load_balancing.offset = settings->load_balancing_first_offset % nested_pools.size();
-        get_priority_load_balancing.load_balancing = settings->load_balancing;
+        offset = settings->load_balancing_first_offset % nested_pools.size();
+        load_balancing = LoadBalancing(settings->load_balancing);
     }
-    return get_priority_load_balancing.getPriorityFunc();
+
+    return get_priority_load_balancing.getPriorityFunc(load_balancing, offset, nested_pools.size());
 }
 
 std::vector<ConnectionPoolWithFailover::TryResult> ConnectionPoolWithFailover::getManyImpl(
