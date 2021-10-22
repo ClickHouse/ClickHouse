@@ -363,6 +363,11 @@ void FlatDictionary::calculateBytesAllocated()
         };
 
         callOnDictionaryAttributeType(attribute.type, type_call);
+
+        bytes_allocated += sizeof(attribute.nullable_set);
+
+        if (attribute.nullable_set.has_value())
+            bytes_allocated = attribute.nullable_set->getBufferSizeInBytes();
     }
 
     if (saved_block)
