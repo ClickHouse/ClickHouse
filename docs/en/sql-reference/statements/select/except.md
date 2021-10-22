@@ -22,7 +22,7 @@ FROM table2
 ```
 The condition could be any expression based on your requirements.
 
-**Example**
+**Examples**
 
 Query:
 
