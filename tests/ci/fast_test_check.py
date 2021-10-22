@@ -14,7 +14,7 @@ import csv
 
 NAME = 'Fast test (actions)'
 
-def get_fasttest_cmd(workspace, output_path, ccache_path, pr_number, commit_sha, image):
+def get_fasttest_cmd(workspace, output_path, ccache_path, repo_path, pr_number, commit_sha, image):
     return "docker run " \
         f"-e FASTTEST_WORKSPACE=/fasttest-workspace -e FASTTEST_OUTPUT=/test_output " \
         f"-e FASTTEST_SOURCE=/ClickHouse --cap-add=SYS_PTRACE " \
@@ -92,7 +92,6 @@ def get_commit(gh, commit_sha):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
     caches_path = os.getenv("CACHES_PATH", temp_path)
 
@@ -142,7 +141,11 @@ if __name__ == "__main__":
     if not os.path.exists(cache_path):
         os.makedirs(cache_path)
 
-    run_cmd = get_fasttest_cmd(workspace, output_path, cache_path, pr_info.number, pr_info.sha, docker_image)
+    repo_path = os.path.join(temp_path, "fasttest-repo")
+    if not os.path.exists(repo_path):
+        os.makedirs(repo_path)
+
+    run_cmd = get_fasttest_cmd(workspace, output_path, cache_path, repo_path, pr_info.number, pr_info.sha, docker_image)
     logging.info("Going to run fasttest with cmd %s", run_cmd)
 
     logs_path = os.path.join(temp_path, "fasttest-logs")
