@@ -76,7 +76,7 @@ def upload_results(s3_client, pr_number, commit_sha, test_results, raw_log, addi
     raw_log_url = additional_urls[0]
     additional_urls.pop(0)
 
-    html_report = create_test_html_report(NAME, test_results, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls)
+    html_report = create_test_html_report(NAME, test_results, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls, True)
     with open('report.html', 'w') as f:
         f.write(html_report)
 
