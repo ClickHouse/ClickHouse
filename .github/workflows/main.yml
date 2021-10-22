@@ -109,7 +109,7 @@ jobs:
         run: mkdir -p $TEMP_PATH && cp -r $GITHUB_WORKSPACE $TEMP_PATH && cd $REPO_COPY/tests/ci && python3 fast_test_check.py
 
   FinishCheck:
-    needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport]
+    needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport, FastTest]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
