@@ -11,6 +11,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 MergeTreeReaderStream::MergeTreeReaderStream(
@@ -53,6 +54,10 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     read_settings.must_read_until_position = true;
     if (max_mark_range_bytes != 0)
         read_settings = read_settings.adjustBufferSize(max_mark_range_bytes);
+
+    //// Empty buffer does not makes progress.
+    if (!read_settings.local_fs_buffer_size || !read_settings.remote_fs_buffer_size)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
 
     /// Initialize the objects that shall be used to perform read operations.
     if (uncompressed_cache)

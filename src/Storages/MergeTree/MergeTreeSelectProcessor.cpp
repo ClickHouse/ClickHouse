@@ -19,7 +19,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     bool use_uncompressed_cache_,
     const PrewhereInfoPtr & prewhere_info_,
     ExpressionActionsSettings actions_settings,
-    bool check_columns_,
     const MergeTreeReaderSettings & reader_settings_,
     const Names & virt_column_names_,
     size_t part_index_in_query_,
@@ -35,7 +34,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
     has_limit_below_one_block(has_limit_below_one_block_),
-    check_columns(check_columns_),
     total_rows(data_part->index_granularity.getRowsCountInRanges(all_mark_ranges))
 {
     addTotalRowsApprox(total_rows);
@@ -46,7 +44,7 @@ void MergeTreeSelectProcessor::initializeReaders()
 {
     task_columns = getReadTaskColumns(
         storage, metadata_snapshot, data_part,
-        required_columns, prewhere_info, check_columns);
+        required_columns, prewhere_info);
 
     /// Will be used to distinguish between PREWHERE and WHERE columns when applying filter
     const auto & column_names = task_columns.columns.getNames();
