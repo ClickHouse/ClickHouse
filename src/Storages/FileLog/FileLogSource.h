@@ -30,12 +30,7 @@ public:
 
     void onFinish();
 
-    virtual ~FileLogSource() override
-    {
-        if (!finished)
-            onFinish();
-        storage.reduceStreams();
-    }
+    virtual ~FileLogSource() override;
 
 protected:
     Chunk generate() override;

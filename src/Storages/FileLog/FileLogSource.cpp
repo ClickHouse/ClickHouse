@@ -43,6 +43,21 @@ FileLogSource::FileLogSource(
     storage.increaseStreams();
 }
 
+FileLogSource::~FileLogSource()
+{
+    try
+    {
+        if (!finished)
+            onFinish();
+        storage.reduceStreams();
+    }
+    catch (...)
+    {
+        /// Exception may happened in onFinish()
+        storage.reduceStreams();
+    }
+}
+
 void FileLogSource::onFinish()
 {
     storage.closeFilesAndStoreMeta(start, end);
