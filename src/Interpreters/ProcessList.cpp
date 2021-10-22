@@ -179,12 +179,16 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         res = std::make_shared<Entry>(*this, process_it);
 
         ProcessListForUser & user_process_list = user_to_queries[client_info.current_user];
-        user_process_list.queries.emplace(client_info.current_query_id, &res->get());
+        {
+            BlockQueryIfMemoryLimit block_query{user_process_list.user_overcommit_tracker};
+            user_process_list.queries.emplace(client_info.current_query_id, &res->get());
+        }
 
         process_it->setUserProcessList(&user_process_list);
 
         /// Track memory usage for all simultaneously running queries from single user.
         user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
+        user_process_list.user_memory_tracker.setSoftLimit(settings.max_guaranteed_memory_usage_for_user);
         user_process_list.user_memory_tracker.setDescription("(for user)");
 
         /// Actualize thread group info
@@ -198,6 +202,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
             /// Set query-level memory trackers
             thread_group->memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage);
+            thread_group->memory_tracker.setSoftLimit(settings.max_guaranteed_memory_usage);
 
             if (query_context->hasTraceCollector())
             {
@@ -261,6 +266,7 @@ ProcessListEntry::~ProcessListEntry()
     {
         if (running_query->second == process_list_element_ptr)
         {
+            BlockQueryIfMemoryLimit block_query{user_process_list.user_overcommit_tracker};
             user_process_list.queries.erase(running_query->first);
             found = true;
         }
@@ -434,7 +440,11 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
 }
 
 
-ProcessListForUser::ProcessListForUser() = default;
+ProcessListForUser::ProcessListForUser()
+    : user_overcommit_tracker(this)
+{
+    user_memory_tracker.setOvercommitTracker(&user_overcommit_tracker);
+}
 
 
 ProcessListForUserInfo ProcessListForUser::getInfo(bool get_profile_events) const

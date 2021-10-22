@@ -22,6 +22,7 @@
 #include <base/getMemoryAmount.h>
 #include <base/errnoToString.h>
 #include <base/coverage.h>
+#include "Common/MemoryTracker.h"
 #include <Common/ClickHouseRevision.h>
 #include <Common/DNSResolver.h>
 #include <Common/CurrentMetrics.h>
@@ -840,6 +841,7 @@ if (ThreadFuzzer::instance().isEffective())
             total_memory_tracker.setHardLimit(max_server_memory_usage);
             total_memory_tracker.setDescription("(total)");
             total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+            total_memory_tracker.setOvercommitTracker(global_context->getGlobalOvercommitTracker());
 
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.

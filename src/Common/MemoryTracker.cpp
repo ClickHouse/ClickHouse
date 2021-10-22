@@ -2,11 +2,13 @@
 
 #include <IO/WriteHelpers.h>
 #include "Common/TraceCollector.h"
+#include "Common/VariableContext.h"
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 #include <base/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
+#include <Common/OvercommitTracker.h>
 
 #include <atomic>
 #include <cmath>
@@ -99,6 +101,17 @@ MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : 
 
 MemoryTracker::~MemoryTracker()
 {
+    if (level == VariableContext::Process)
+    {
+        auto * loaded_next = getParent();
+        while (loaded_next != nullptr)
+        {
+            if (auto * next_overcommit_tracker = loaded_next->overcommit_tracker)
+                next_overcommit_tracker->unsubscribe(this);
+            loaded_next = loaded_next->getParent();
+        }
+    }
+
     if ((level == VariableContext::Process || level == VariableContext::User) && peak)
     {
         try
@@ -219,18 +232,29 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
 
     if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
     {
-        /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
-        BlockerInThread untrack_lock(VariableContext::Global);
-        ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
-        const auto * description = description_ptr.load(std::memory_order_relaxed);
-        throw DB::Exception(
-            DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
-            "Memory limit{}{} exceeded: would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
-            description ? " " : "",
-            description ? description : "",
-            formatReadableSizeWithBinarySuffix(will_be),
-            size,
-            formatReadableSizeWithBinarySuffix(current_hard_limit));
+        bool need_to_throw = true;
+        if (overcommit_tracker)
+            need_to_throw = overcommit_tracker->needToStopQuery(this);
+
+        if (need_to_throw)
+        {
+            /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
+            BlockerInThread untrack_lock(VariableContext::Global);
+            ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
+            const auto * description = description_ptr.load(std::memory_order_relaxed);
+            throw DB::Exception(
+                DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
+                "Memory limit{}{} exceeded: would use {} (attempt to allocate chunk of {} bytes), maximum: {}",
+                description ? " " : "",
+                description ? description : "",
+                formatReadableSizeWithBinarySuffix(will_be),
+                size,
+                formatReadableSizeWithBinarySuffix(current_hard_limit));
+        }
+        else
+        {
+            will_be = amount.load(std::memory_order_relaxed);
+        }
     }
 
     bool peak_updated;
@@ -335,10 +359,17 @@ void MemoryTracker::free(Int64 size)
 }
 
 
+OvercommitRatio MemoryTracker::getOvercommitRatio()
+{
+    return { amount.load(std::memory_order_relaxed), soft_limit.load(std::memory_order_relaxed) };
+}
+
+
 void MemoryTracker::resetCounters()
 {
     amount.store(0, std::memory_order_relaxed);
     peak.store(0, std::memory_order_relaxed);
+    soft_limit.store(0, std::memory_order_relaxed);
     hard_limit.store(0, std::memory_order_relaxed);
     profiler_limit.store(0, std::memory_order_relaxed);
 }
@@ -360,6 +391,12 @@ void MemoryTracker::set(Int64 to)
 
     bool log_memory_usage = true;
     updatePeak(to, log_memory_usage);
+}
+
+
+void MemoryTracker::setSoftLimit(Int64 value)
+{
+    soft_limit.store(value, std::memory_order_relaxed);
 }
 
 
