@@ -826,11 +826,135 @@ normalizeUTF8NFKD(words)
 
 **Returned value**
 
--   String transformed to normalization form C (NFC).
+-   String transformed to NFC normalization form.
 
 Type: [String](../../sql-reference/data-types/string.md).
 
+**Example**
 
+Query:
+
+``` sql
+SELECT length('ё'), normalizeUTF8NFC('ё') AS nfc, length(nfc) AS nfc_len;
+```
+
+Result:
+
+``` text
+┌─length('ё')─┬─nfc─┬─nfc_len─┐
+│           2 │ ё   │       2 │
+└─────────────┴─────┴─────────┘
+```
+
+## normalizeUTF8NFD {#normalizeutf8nfd}
+
+Converts a string to [NFD normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string contains a set of bytes that make up a UTF-8 encoded text.
+
+**Syntax**
+
+``` sql
+normalizeUTF8NFD(words)
+```
+
+**Arguments**
+
+-   `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   String transformed to NFD normalization form.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT length('ё'), normalizeUTF8NFD('ё') AS nfd, length(nfd) AS nfd_len;
+```
+
+Result:
+
+``` text
+┌─length('ё')─┬─nfd─┬─nfd_len─┐
+│           2 │ ё   │       4 │
+└─────────────┴─────┴─────────┘
+```
+
+## normalizeUTF8NFKC {#normalizeutf8nfkc}
+
+Converts a string to [NFKC normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string contains a set of bytes that make up a UTF-8 encoded text.
+
+**Syntax**
+
+``` sql
+normalizeUTF8NFKC(words)
+```
+
+**Arguments**
+
+-   `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   String transformed to NFKC normalization form.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT length('ё'), normalizeUTF8NFKC('ё') AS nfkc, length(nfkc) AS nfkc_len;
+```
+
+Result:
+
+``` text
+┌─length('ё')─┬─nfkc─┬─nfkc_len─┐
+│           2 │ ё    │        2 │
+└─────────────┴──────┴──────────┘
+
+```
+
+## normalizeUTF8NFKD {#normalizeutf8nfkd}
+
+
+Converts a string to [NFKD normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string contains a set of bytes that make up a UTF-8 encoded text.
+
+**Syntax**
+
+``` sql
+normalizeUTF8NFKD(words)
+```
+
+**Arguments**
+
+-   `words` — Input string that contains UTF-8 encoded text. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+-   String transformed to NFKD normalization form.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT length('ё'), normalizeUTF8NFKD('ё') AS nfkd, length(nfkd) AS nfkd_len;
+```
+
+Result:
+
+``` text
+┌─length('ё')─┬─nfkd─┬─nfkd_len─┐
+│           2 │ ё    │        4 │
+└─────────────┴──────┴──────────┘
+```
 
 ## encodeXMLComponent {#encode-xml-component}
 
