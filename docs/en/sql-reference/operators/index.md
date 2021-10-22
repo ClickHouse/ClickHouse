@@ -82,7 +82,7 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 Query with ALL:
 
 ``` sql
-SELECT number AS a FROM numbers(10) WHERE a > all(SELECT number FROM numbers(3, 3));
+SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
 ```
 
 Result:
