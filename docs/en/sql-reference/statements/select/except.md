@@ -44,23 +44,6 @@ Result:
 Query:
 
 ``` sql
-SELECT number FROM numbers(1,10) WHERE number > 5 EXCEPT SELECT number FROM numbers(3,6) WHERE number < 7;
-```
-
-Result:
-
-``` text
-┌─number─┐
-│      7 │
-│      8 │
-│      9 │
-│     10 │
-└────────┘
-```
-
-Query:
-
-``` sql
 CREATE TABLE t1(one String, two String, three String) ENGINE=Memory();
 CREATE TABLE t2(four String, five String, six String) ENGINE=Memory();
 
