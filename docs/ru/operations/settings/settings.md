@@ -1707,7 +1707,7 @@ ClickHouse генерирует исключение
 
 ## distributed_push_down_limit {#distributed-push-down-limit}
 
-Включает или отключает [LIMIT](#limit), применяемый к каждому шарду по отдельности.
+Включает или отключает [LIMIT](#limit), применяемый к каждому шарду по отдельности. Работает для `GROUP BY`, но только, если включены настройки `optimize_distributed_group_by_sharding_key` или `distributed_group_by_no_merge`.
 
 Обычно, включение данной настройки не требуется, так как это будет сделано автоматически, если это возможно, например, для простого запроса SELECT FROM LIMIT.
 

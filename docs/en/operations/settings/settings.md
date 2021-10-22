@@ -1751,9 +1751,11 @@ Do not merge aggregation states from different servers for distributed query pro
 
 Possible values:
 
--   0 — Disabled (final query processing is done on the initiator node).
--   1 - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
--   2 - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+-   `0` — Disabled (final query processing is done on the initiator node).
+-   `1` - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
+-   `2` - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+
+Default value: `0`
 
 **Example**
 
@@ -1784,11 +1786,15 @@ FORMAT PrettyCompactMonoBlock
 └───────┘
 ```
 
-Default value: 0
+See also:
+
+-   [distributed_group_by_no_merge](#distributed-group-by-no-merge)
 
 ## distributed_push_down_limit {#distributed-push-down-limit}
 
-Enables or disables [LIMIT](#limit) applying on each shard separatelly. Usually you don't need to use it, since this will be done automatically if it is possible, i.e. for simple query SELECT FROM LIMIT.
+Enables or disables [LIMIT](#limit) applying on each shard separatelly. It works for `GROUP BY`, but only if enabled [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key) or [distributed_group_by_no_merge](#distributed-group-by-no-merge) settings.
+
+Usually you don't need to use it, since this will be done automatically if it is possible, i.e. for simple query SELECT FROM LIMIT.
 
 Possible values:
 
@@ -1906,6 +1912,7 @@ Default value: 0
 See also:
 
 -   [distributed_group_by_no_merge](#distributed-group-by-no-merge)
+-   [distributed_push_down_limit](#distributed-push-down-limit)
 -   [optimize_skip_unused_shards](#optimize-skip-unused-shards)
 
 !!! note "Note"
