@@ -2,7 +2,6 @@
 #
 import subprocess
 import logging
-from report import create_test_html_report
 from s3_helper import S3Helper
 import json
 import os
