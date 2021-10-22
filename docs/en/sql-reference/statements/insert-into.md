@@ -119,4 +119,4 @@ Performance will not decrease if:
 -   Data is added in real time.
 -   You upload data that is usually sorted by time.
 
-It's also possible to asynchronously insert data in small but frequent inserts from multiple concurrent connections with the setting [async-insert](../../operations/settings/settings.md#async-insert). The data from such inserts is combined into batches and then safely inserted into a table.
+It's also possible to asynchronously insert data in small but frequent inserts from multiple concurrent connections with the setting [async_insert](../../operations/settings/settings.md#async-insert). The data from such inserts is combined into batches and then safely inserted into a table.
