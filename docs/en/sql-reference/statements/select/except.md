@@ -6,7 +6,7 @@ toc_title: EXCEPT
 
 The `EXCEPT` clause returns only those rows that result from the first query without the second. The queries must match the number of columns, order, and type. The result of `EXCEPT` can contain duplicate rows.
 
-Multiple `EXCEPT` statements execute left to right if brackets are not specified. The `EXCEPT` operator has the same priority as the `UNION` clause and lower priority as the `INTERSECT` clause.
+Multiple `EXCEPT` statements are executed left to right if parenthesis are not specified. The `EXCEPT` operator has the same priority as the `UNION` clause and lower priority than the `INTERSECT` clause.
 
 ``` sql
 SELECT column1 [, column2 ]
