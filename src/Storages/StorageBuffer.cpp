@@ -446,7 +446,8 @@ static void appendBlock(const Block & from, Block & to)
     if (!to)
         throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
 
-    assertBlocksHaveEqualStructure(from, to, "Buffer");
+    if (to.rows())
+        assertBlocksHaveEqualStructure(from, to, "Buffer");
 
     from.checkNumberOfRows();
     to.checkNumberOfRows();
@@ -464,14 +465,21 @@ static void appendBlock(const Block & from, Block & to)
     {
         MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
-        for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
+        if (to.rows() == 0)
         {
-            const IColumn & col_from = *from.getByPosition(column_no).column.get();
-            last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
+            to = from;
+        }
+        else
+        {
+            for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
+            {
+                const IColumn & col_from = *from.getByPosition(column_no).column.get();
+                last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
 
-            last_col->insertRangeFrom(col_from, 0, rows);
+                last_col->insertRangeFrom(col_from, 0, rows);
 
-            to.getByPosition(column_no).column = std::move(last_col);
+                to.getByPosition(column_no).column = std::move(last_col);
+            }
         }
     }
     catch (...)
@@ -816,6 +824,8 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
     std::optional<std::unique_lock<std::mutex>> lock;
     if (!locked)
         lock.emplace(buffer.lockForReading());
+
+    block_to_write = buffer.data.cloneEmpty();
 
     rows = buffer.data.rows();
     bytes = buffer.data.bytes();
