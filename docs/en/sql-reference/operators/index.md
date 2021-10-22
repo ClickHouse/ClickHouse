@@ -102,7 +102,7 @@ The subquery must select values of the same type as those compared in the main p
 
 **Example**
 
-Query:
+Query with ANY:
 
 ``` sql
 SELECT number AS a FROM numbers(10) WHERE a > any(SELECT number FROM numbers(3, 3));
