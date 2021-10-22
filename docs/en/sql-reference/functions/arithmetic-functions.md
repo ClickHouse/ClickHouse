@@ -145,13 +145,13 @@ Type: [Float](../../sql-reference/data-types/float.md).
 Query:
 
 ```sql
-SELECT max2(-1, 2);
+SELECT min2(-1, 2);
 ```
 
 Result:
 
 ```text
-┌─max2(-1, 2)─┐
-│           2 │
+┌─min2(-1, 2)─┐
+│          -1 │
 └─────────────┘
 ```
