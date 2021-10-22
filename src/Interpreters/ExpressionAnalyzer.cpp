@@ -100,7 +100,7 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
 {
     auto columns = select_query->select()->children;
 
-    /// In case of expression/function (order by 1+2 and 2*x1, max(1, 2)) replace
+    /// In case of expression/function (order by 1+2 and 2*x1, greatest(1, 2)) replace
     /// positions only if all literals are numbers, otherwise it is not positional.
     bool positional = true;
 
@@ -120,22 +120,47 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
                 }
                 else if (const auto * function_ast = typeid_cast<const ASTFunction *>(column.get()))
                 {
-                    auto is_aggregate_function = AggregateFunctionFactory::instance().isAggregateFunctionName(function_ast->name);
-                    if (is_aggregate_function && expression != ASTSelectQuery::Expression::ORDER_BY)
+                    std::function<void(ASTPtr)> throw_if_aggregate_function = [&](ASTPtr node)
                     {
-                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                        "Illegal value (aggregate function) for positional argument in {}",
-                                        ASTSelectQuery::expressionToString(expression));
-                    }
+                        if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
+                        {
+                            auto is_aggregate_function = AggregateFunctionFactory::instance().isAggregateFunctionName(function->name);
+                            if (is_aggregate_function)
+                            {
+                                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                                "Illegal value (aggregate function) for positional argument in {}",
+                                                ASTSelectQuery::expressionToString(expression));
+                            }
+                            else
+                            {
+                                if (function->arguments)
+                                {
+                                    for (const auto & arg : function->arguments->children)
+                                        throw_if_aggregate_function(arg);
+                                }
+                            }
+                        }
+                    };
+
+                    if (expression == ASTSelectQuery::Expression::GROUP_BY)
+                        throw_if_aggregate_function(column);
+
                     argument = column->clone();
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal value for positional argument in {}",
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                    "Illegal value for positional argument in {}",
                                     ASTSelectQuery::expressionToString(expression));
                 }
             }
-            /// Do not throw if out of bounds, see appendUnusedGroupByColumn.
+            else if (pos > columns.size() || !pos)
+            {
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                                "Positional argument out of bounds: {} (exprected in range [1, {}]",
+                                pos, columns.size());
+            }
+            /// Do not throw if pos < 0, becuase of TreeOptimizer::appendUnusedColumn()
         }
         else
             positional = false;
