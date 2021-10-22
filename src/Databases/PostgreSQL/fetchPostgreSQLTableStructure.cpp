@@ -27,9 +27,9 @@ namespace ErrorCodes
 
 
 template<typename T>
-std::unordered_set<std::string> fetchPostgreSQLTablesList(T & tx, const String & postgres_schema)
+std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schema)
 {
-    std::unordered_set<std::string> tables;
+    std::set<String> tables;
     std::string query = fmt::format("SELECT tablename FROM pg_catalog.pg_tables "
                                     "WHERE schemaname != 'pg_catalog' AND {}",
                                     postgres_schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(postgres_schema));
@@ -271,7 +271,7 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(pqxx::connection & connec
 }
 
 
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection, const String & postgres_schema)
+std::set<String> fetchPostgreSQLTablesList(pqxx::connection & connection, const String & postgres_schema)
 {
     pqxx::ReadTransaction tx(connection);
     auto result = fetchPostgreSQLTablesList(tx, postgres_schema);
@@ -291,10 +291,10 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
         bool with_primary_key, bool with_replica_identity_index);
 
 template
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::work & tx, const String & postgres_schema);
+std::set<std::string> fetchPostgreSQLTablesList(pqxx::work & tx, const String & postgres_schema);
 
 template
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::ReadTransaction & tx, const String & postgres_schema);
+std::set<String> fetchPostgreSQLTablesList(pqxx::ReadTransaction & tx, const String & postgres_schema);
 
 }
 
