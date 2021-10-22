@@ -19,6 +19,42 @@ The result type is an integer with bits equal to the maximum bits of its argumen
 
 ## bitShiftLeft(a, b) {#bitshiftlefta-b}
 
+Shifts a value left.
+
+**Syntax**
+
+``` sql
+bitShiftLeft(a, b)
+```
+
+**Arguments**
+
+-   `a` — Value. [Integer](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md)
+-   `b` — Bit count to shift. [Integer](../../sql-reference/data-types/int-uint.md).
+
+**Returned value**
+
+-   Shifted value.
+
+Type of shifted value is preserved.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT bitShiftLeft(8, 2), bitShiftLeft('abc', 8);
+```
+
+Result:
+
+``` text
+┌─bitShiftLeft(8, 2)─┬─bitShiftLeft('abc', 8)─┐
+│                 32 │ abc                    │
+└────────────────────┴────────────────────────┘
+```
+
+
 ## bitShiftRight(a, b) {#bitshiftrighta-b}
 
 ## bitRotateLeft(a, b) {#bitrotatelefta-b}
