@@ -322,12 +322,12 @@ Pipe StorageFileLog::read(
             getStorageID().getTableName());
     }
 
+    std::lock_guard<std::mutex> lock(file_infos_mutex);
     if (running_streams)
     {
         throw Exception("Another select query is running on this table, need to wait it finish.", ErrorCodes::CANNOT_SELECT);
     }
 
-    std::lock_guard<std::mutex> lock(file_infos_mutex);
     updateFileInfos();
 
     /// No files to parse
@@ -659,13 +659,13 @@ void StorageFileLog::threadFunc()
 
 bool StorageFileLog::streamToViews()
 {
+    std::lock_guard<std::mutex> lock(file_infos_mutex);
     if (running_streams)
     {
         LOG_INFO(log, "Another select query is running on this table, need to wait it finish.");
         return true;
     }
 
-    std::lock_guard<std::mutex> lock(file_infos_mutex);
     Stopwatch watch;
 
     auto table_id = getStorageID();
