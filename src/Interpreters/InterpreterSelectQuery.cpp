@@ -43,15 +43,12 @@
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/FillingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/FinishSortingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
-#include <Processors/QueryPlan/MergeSortingStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
-#include <Processors/QueryPlan/MergingSortedStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
-#include <Processors/QueryPlan/PartialSortingStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
@@ -2261,35 +2258,20 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         // happens in case of `over ()`.
         if (!w.full_sort_description.empty() && (i == 0 || !sortIsPrefix(w, *windows_sorted[i - 1])))
         {
-            auto partial_sorting = std::make_unique<PartialSortingStep>(
-                query_plan.getCurrentDataStream(),
-                w.full_sort_description,
-                0 /* LIMIT */,
-                SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode));
-            partial_sorting->setStepDescription("Sort each block for window '" + w.window_name + "'");
-            query_plan.addStep(std::move(partial_sorting));
 
-            auto merge_sorting_step = std::make_unique<MergeSortingStep>(
+            auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentDataStream(),
                 w.full_sort_description,
                 settings.max_block_size,
                 0 /* LIMIT */,
+                SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
                 settings.max_bytes_before_remerge_sort,
                 settings.remerge_sort_lowered_memory_bytes_ratio,
                 settings.max_bytes_before_external_sort,
                 context->getTemporaryVolume(),
                 settings.min_free_disk_space_for_temporary_data);
-            merge_sorting_step->setStepDescription("Merge sorted blocks for window '" + w.window_name + "'");
-            query_plan.addStep(std::move(merge_sorting_step));
-
-            // First MergeSorted, now MergingSorted.
-            auto merging_sorted = std::make_unique<MergingSortedStep>(
-                query_plan.getCurrentDataStream(),
-                w.full_sort_description,
-                settings.max_block_size,
-                0 /* LIMIT */);
-            merging_sorted->setStepDescription("Merge sorted streams for window '" + w.window_name + "'");
-            query_plan.addStep(std::move(merging_sorted));
+            sorting_step->setStepDescription("Sorting for window '" + w.window_name + "'");
+            query_plan.addStep(std::move(sorting_step));
         }
 
         auto window_step = std::make_unique<WindowStep>(query_plan.getCurrentDataStream(), w, w.window_functions);
@@ -2304,7 +2286,7 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPlan & query_plan, Input
 {
     const Settings & settings = context->getSettingsRef();
 
-    auto finish_sorting_step = std::make_unique<FinishSortingStep>(
+    auto finish_sorting_step = std::make_unique<SortingStep>(
         query_plan.getCurrentDataStream(),
         input_sorting_info->order_key_prefix_descr,
         output_order_descr,
@@ -2334,32 +2316,21 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
 
     const Settings & settings = context->getSettingsRef();
 
-    auto partial_sorting = std::make_unique<PartialSortingStep>(
-        query_plan.getCurrentDataStream(),
-        output_order_descr,
-        limit,
-        SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode));
-
-    partial_sorting->setStepDescription("Sort each block for ORDER BY");
-    query_plan.addStep(std::move(partial_sorting));
-
     /// Merge the sorted blocks.
-    auto merge_sorting_step = std::make_unique<MergeSortingStep>(
+    auto sorting_step = std::make_unique<SortingStep>(
         query_plan.getCurrentDataStream(),
         output_order_descr,
         settings.max_block_size,
         limit,
+        SizeLimits(settings.max_rows_to_sort, settings.max_bytes_to_sort, settings.sort_overflow_mode),
         settings.max_bytes_before_remerge_sort,
         settings.remerge_sort_lowered_memory_bytes_ratio,
         settings.max_bytes_before_external_sort,
         context->getTemporaryVolume(),
         settings.min_free_disk_space_for_temporary_data);
 
-    merge_sorting_step->setStepDescription("Merge sorted blocks for ORDER BY");
-    query_plan.addStep(std::move(merge_sorting_step));
-
-    /// If there are several streams, we merge them into one
-    executeMergeSorted(query_plan, output_order_descr, limit, "for ORDER BY");
+    sorting_step->setStepDescription("Sorting for ORDER BY");
+    query_plan.addStep(std::move(sorting_step));
 }
 
 
@@ -2377,7 +2348,7 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPlan & query_plan, const So
     const Settings & settings = context->getSettingsRef();
 
     auto merging_sorted
-        = std::make_unique<MergingSortedStep>(query_plan.getCurrentDataStream(), sort_description, settings.max_block_size, limit);
+        = std::make_unique<SortingStep>(query_plan.getCurrentDataStream(), sort_description, settings.max_block_size, limit);
 
     merging_sorted->setStepDescription("Merge sorted streams " + description);
     query_plan.addStep(std::move(merging_sorted));
