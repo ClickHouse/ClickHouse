@@ -32,6 +32,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Server/TCPServer.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Cluster.h>
@@ -81,9 +82,10 @@ namespace ErrorCodes
     extern const int UNKNOWN_PROTOCOL;
 }
 
-TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
+TCPHandler::TCPHandler(IServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
+    , tcp_server(tcp_server_)
     , parse_proxy_protocol(parse_proxy_protocol_)
     , log(&Poco::Logger::get("TCPHandler"))
     , server_display_name(std::move(server_display_name_))
@@ -172,13 +174,13 @@ void TCPHandler::runImpl()
         throw;
     }
 
-    while (true)
+    while (tcp_server.isOpen())
     {
         /// We are waiting for a packet from the client. Thus, every `poll_interval` seconds check whether we need to shut down.
         {
             Stopwatch idle_time;
             UInt64 timeout_ms = std::min(poll_interval, idle_connection_timeout) * 1000000;
-            while (!server.isCancelled() && !static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_ms))
+            while (tcp_server.isOpen() && !server.isCancelled() && !static_cast<ReadBufferFromPocoSocket &>(*in).poll(timeout_ms))
             {
                 if (idle_time.elapsedSeconds() > idle_connection_timeout)
                 {
@@ -189,7 +191,7 @@ void TCPHandler::runImpl()
         }
 
         /// If we need to shut down, or client disconnects.
-        if (server.isCancelled() || in->eof())
+        if (!tcp_server.isOpen() || server.isCancelled() || in->eof())
             break;
 
         Stopwatch watch;
