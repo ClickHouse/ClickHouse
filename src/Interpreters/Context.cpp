@@ -1914,12 +1914,12 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
         if (start_async)
         {
             assert(!is_standalone_app);
-            LOG_INFO(shared->log, "Connected to ZooKeeper (or Keeper) before internal Keeper start or we don't depend on our Keeper cluster"
-                     ", will wait for Keeper asynchronously");
+            LOG_INFO(shared->log, "Connected to ZooKeeper (or Keeper) before internal Keeper start or we don't depend on our Keeper cluster, "
+                     "will wait for Keeper asynchronously");
         }
         else
         {
-            LOG_INFO(shared->log, "Cannot connect to ZooKeeper (or Keeper) before internal Keeper start,"
+            LOG_INFO(shared->log, "Cannot connect to ZooKeeper (or Keeper) before internal Keeper start, "
                      "will wait for Keeper synchronously");
         }
 
