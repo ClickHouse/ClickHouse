@@ -138,7 +138,7 @@ if __name__ == "__main__":
             images = json.load(images_fd)
             logging.info("Got images %s", images)
             if image_name in images:
-                image_version += images[image_name]
+                image_version = images[image_name]
 
     for i in range(10):
         try:
