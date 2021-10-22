@@ -455,7 +455,7 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
 {
     // Nonce, key and plaintext will be used to generate authentication_tag
     // and message_encryption_key. AES-GCM-SIV authenticates the encoded additional data and plaintext.
-    // For this purpose message_authentication_key is used. 
+    // For this purpose message_authentication_key is used.
     // Algorithm is completely deterministic, but does not leak any
     // information about the data block except for equivalence of
     // identical blocks (under the same key).
