@@ -2375,3 +2375,39 @@ shardCount()
 **См. также**
 
 - Пример использования функции [shardNum()](#shard-num) также содержит вызов `shardCount()`.
+
+## getOSKernelVersion {#getoskernelversion}
+
+Возвращает строку с текущей версией ядра ОС.
+
+**Синтаксис**
+
+``` sql
+getOSKernelVersion()
+```
+
+**Аргументы**
+
+-   Нет.
+
+**Возвращаемое значение**
+
+-   Текущая версия ядра ОС.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT getOSKernelVersion();
+```
+
+Результат:
+
+``` text
+┌─getOSKernelVersion()────┐
+│ Linux 4.15.0-55-generic │
+└─────────────────────────┘
+```
