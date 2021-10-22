@@ -1792,7 +1792,7 @@ See also:
 
 ## distributed_push_down_limit {#distributed-push-down-limit}
 
-Enables or disables [LIMIT](#limit) applying on each shard separatelly. It works for `GROUP BY`, but only if enabled [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key) or [distributed_group_by_no_merge](#distributed-group-by-no-merge) settings.
+Enables or disables [LIMIT](#limit) applying on each shard separately. It works for `GROUP BY`, but only if at least one of the settings [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key) or [distributed_group_by_no_merge](#distributed-group-by-no-merge) is enabled.
 
 Usually you don't need to use it, since this will be done automatically if it is possible, i.e. for simple query SELECT FROM LIMIT.
 
