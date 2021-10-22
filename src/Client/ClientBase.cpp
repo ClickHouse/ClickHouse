@@ -871,7 +871,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         StoragePtr storage = StorageFile::create(in_file, global_context->getUserFilesPath(), args);
         storage->startup();
         SelectQueryInfo query_info;
-        
+
         try
         {
             sendDataFromPipe(
@@ -883,7 +883,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
                         {},
                         DEFAULT_BLOCK_SIZE,
                         getNumberOfPhysicalCPUCores()
-                    ), 
+                    ),
                 parsed_query
             );
         }
