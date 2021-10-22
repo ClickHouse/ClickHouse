@@ -330,6 +330,11 @@ void ComplexKeyHashedDictionary::calculateBytesAllocated()
         };
 
         callOnDictionaryAttributeType(attribute.type, type_call);
+
+        bytes_allocated += sizeof(*attribute.nullable_set);
+
+        if (attribute.nullable_set)
+            bytes_allocated = attribute.nullable_set->getBufferSizeInBytes();
     }
 
     bytes_allocated += keys_pool.size();
