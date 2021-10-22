@@ -161,9 +161,10 @@ size_t MergeTreeReaderCompact::readRows(
                 readData(column_from_part, column, from_mark, current_task_last_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
 
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
-                if (read_rows_in_column < rows_to_read)
-                    throw Exception("Cannot read all data in MergeTreeReaderCompact. Rows read: " + toString(read_rows_in_column) +
-                        ". Rows expected: " + toString(rows_to_read) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
+                if (read_rows_in_column != rows_to_read)
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "Cannot read all data in MergeTreeReaderCompact. Rows read: {}. Rows expected: {}.",
+                        read_rows_in_column, rows_to_read);
             }
             catch (Exception & e)
             {
@@ -223,7 +224,7 @@ void MergeTreeReaderCompact::readData(
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
 
-        auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column);
+        auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
 
         /// TODO: Avoid extra copying.
         if (column->empty())

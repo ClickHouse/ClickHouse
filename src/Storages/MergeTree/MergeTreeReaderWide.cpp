@@ -70,10 +70,6 @@ size_t MergeTreeReaderWide::readRows(
         size_t num_columns = columns.size();
         checkNumberOfColumns(num_columns);
 
-        /// Pointers to offset columns that are common to the nested data structure columns.
-        /// If append is true, then the value will be equal to nullptr and will be used only to
-        /// check that the offsets column has been already read.
-        OffsetColumns offset_columns;
         std::unordered_map<String, ISerialization::SubstreamsCache> caches;
 
         std::unordered_set<std::string> prefetched_streams;

@@ -20,7 +20,7 @@ endif()
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/CMakeLists.txt")
     if(USE_INTERNAL_PARQUET_LIBRARY)
-        message(WARNING "submodule contrib/arrow (required for Parquet) is missing. to fix try run: \n git submodule update --init --recursive")
+        message(WARNING "submodule contrib/arrow (required for Parquet) is missing. to fix try run: \n git submodule update --init")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal parquet library")
         set(USE_INTERNAL_PARQUET_LIBRARY 0)
     endif()

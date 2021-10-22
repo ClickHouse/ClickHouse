@@ -49,7 +49,7 @@ add_subdirectory (Backups)
 add_subdirectory (Columns)
 add_subdirectory (Common)
 add_subdirectory (Core)
-add_subdirectory (DataStreams)
+add_subdirectory (QueryPipeline)
 add_subdirectory (DataTypes)
 add_subdirectory (Dictionaries)
 add_subdirectory (Disks)
@@ -186,7 +186,7 @@ add_object_library(clickhouse_backups Backups)
 add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
-add_object_library(clickhouse_datastreams DataStreams)
+add_object_library(clickhouse_querypipeline QueryPipeline)
 add_object_library(clickhouse_datatypes DataTypes)
 add_object_library(clickhouse_datatypes_serializations DataTypes/Serializations)
 add_object_library(clickhouse_databases Databases)
@@ -215,6 +215,7 @@ add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_sinks Processors/Sinks)
 add_object_library(clickhouse_processors_merges Processors/Merges)
+add_object_library(clickhouse_processors_ttl Processors/TTL)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
@@ -284,6 +285,13 @@ target_link_libraries (clickhouse_common_io
             ${DOUBLE_CONVERSION_LIBRARIES}
             dragonbox_to_chars
 )
+
+# Use X86 AVX2/AVX512 instructions to accelerate filter operations
+set_source_files_properties(
+        Columns/ColumnFixedString.cpp
+        Columns/ColumnsCommon.cpp
+        Columns/ColumnVector.cpp
+        PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
 if(RE2_LIBRARY)
     target_link_libraries(clickhouse_common_io PUBLIC ${RE2_LIBRARY})

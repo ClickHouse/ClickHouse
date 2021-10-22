@@ -9,7 +9,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
 
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/EmptySink.h>

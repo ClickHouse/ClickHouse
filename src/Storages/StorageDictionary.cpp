@@ -8,7 +8,7 @@
 #include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <IO/Operators.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
@@ -212,11 +212,20 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
     auto old_table_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
 
-    if (configuration)
+    bool has_configuration = false;
     {
-        configuration->setString("dictionary.database", new_table_id.database_name);
-        configuration->setString("dictionary.name", new_table_id.table_name);
+        std::lock_guard<std::mutex> lock(dictionary_config_mutex);
 
+        if (configuration)
+        {
+            has_configuration = true;
+            configuration->setString("dictionary.database", new_table_id.database_name);
+            configuration->setString("dictionary.name", new_table_id.table_name);
+        }
+    }
+
+    if (has_configuration)
+    {
         const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
         auto result = external_dictionaries_loader.getLoadResult(old_table_id.getInternalDictionaryName());
 
