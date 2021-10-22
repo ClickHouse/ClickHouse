@@ -237,6 +237,26 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
     const UInt8 * filt_end = filt_pos + size;
     const T * data_pos = data.data();
 
+#ifdef __SSE2__
+    static constexpr size_t SIMD_BYTES = 16;
+    const __m128i zero16 = _mm_setzero_si128();
+    const UInt8 * filt_end_sse = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
+
+    while (filt_pos < filt_end_sse)
+    {
+        UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
+        mask = ~mask;
+        while (mask)
+        {
+            size_t index = __builtin_ctz(mask);
+            res_data.push_back(*(data_pos + index));
+            mask = mask & (mask - 1);
+        }
+        filt_pos += SIMD_BYTES;
+        data_pos += SIMD_BYTES;
+    }
+#endif
+
     while (filt_pos < filt_end)
     {
         if (*filt_pos)
