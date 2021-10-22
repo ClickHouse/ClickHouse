@@ -422,6 +422,7 @@ void StorageFileLog::shutdown()
     catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
+        task->holder->deactivate();
     }
 }
 
@@ -663,7 +664,7 @@ bool StorageFileLog::streamToViews()
         LOG_INFO(log, "Another select query is running on this table, need to wait it finish.");
         return true;
     }
-    ///
+
     std::lock_guard<std::mutex> lock(file_infos_mutex);
     Stopwatch watch;
 
