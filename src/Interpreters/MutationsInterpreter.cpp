@@ -785,10 +785,12 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         for (const String & column : stage.output_columns)
             all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
-        bool execute_scalar_subqueries = !dynamic_cast<StorageMergeTree *>(storage.get()) || !dry_run;
+        /// Executing scalar subquery on that stage can lead to deadlock
+        /// e.g. ALTER referencing the same table in scalar subquery
+        bool execute_scalar_subqueries = !dry_run;
         auto syntax_result = TreeRewriter(context).analyze(
             all_asts, all_columns, storage, metadata_snapshot, false, true, execute_scalar_subqueries);
-        if (context->hasQueryContext())
+        if (execute_scalar_subqueries && context->hasQueryContext())
             for (const auto & it : syntax_result->getScalars())
                 context->getQueryContext()->addScalar(it.first, it.second);
 
