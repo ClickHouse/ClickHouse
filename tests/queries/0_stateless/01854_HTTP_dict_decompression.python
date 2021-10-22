@@ -14,7 +14,13 @@ import subprocess
 import lzma
 
 def get_local_port(host):
-    with socket.socket() as fd:
+    family = socket.AF_INET
+    try:
+        socket.inet_aton(host)
+    except:
+        family = socket.AF_INET6
+
+    with socket.socket(family) as fd:
         fd.bind((host, 0))
         return fd.getsockname()[1]
 
