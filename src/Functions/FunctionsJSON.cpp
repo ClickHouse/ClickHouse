@@ -744,6 +744,8 @@ public:
     }
 };
 
+template <typename JSONParser>
+class JSONExtractRawImpl;
 
 template <typename JSONParser>
 class JSONExtractStringImpl
@@ -760,8 +762,11 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
-        if (!element.isString())
+        if (element.isNull())
             return false;
+
+        if (!element.isString())
+            return JSONExtractRawImpl<JSONParser>::insertResultToColumn(dest, element, {});
 
         auto str = element.getString();
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
@@ -769,9 +774,6 @@ public:
         return true;
     }
 };
-
-template <typename JSONParser>
-class JSONExtractRawImpl;
 
 /// Nodes of the extract tree. We need the extract tree to extract from JSON complex values containing array, tuples or nullables.
 template <typename JSONParser>
@@ -856,12 +858,7 @@ struct JSONExtractTree
     public:
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
-            if (element.isString())
-                return JSONExtractStringImpl<JSONParser>::insertResultToColumn(dest, element, {});
-            else if (element.isNull())
-                return false;
-            else
-                return JSONExtractRawImpl<JSONParser>::insertResultToColumn(dest, element, {});
+            return JSONExtractStringImpl<JSONParser>::insertResultToColumn(dest, element, {});
         }
     };
 

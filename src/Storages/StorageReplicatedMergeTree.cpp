@@ -1015,8 +1015,15 @@ void StorageReplicatedMergeTree::setTableStructure(
 
         if (metadata_diff.sampling_expression_changed)
         {
-            auto sample_by_ast = parse_key_expr(metadata_diff.new_sampling_expression);
-            new_metadata.sampling_key.recalculateWithNewAST(sample_by_ast, new_metadata.columns, getContext());
+            if (!metadata_diff.new_sampling_expression.empty())
+            {
+                auto sample_by_ast = parse_key_expr(metadata_diff.new_sampling_expression);
+                new_metadata.sampling_key.recalculateWithNewAST(sample_by_ast, new_metadata.columns, getContext());
+            }
+            else /// SAMPLE BY was removed
+            {
+                new_metadata.sampling_key = {};
+            }
         }
 
         if (metadata_diff.skip_indices_changed)
@@ -5995,12 +6002,12 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     MutableDataPartsVector dst_parts;
     Strings block_id_paths;
     Strings part_checksums;
+    auto zookeeper = getZooKeeper();
     std::vector<EphemeralLockInZooKeeper> ephemeral_locks;
 
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
     static const String TMP_PREFIX = "tmp_replace_from_";
-    auto zookeeper = getZooKeeper();
 
     String alter_partition_version_path = zookeeper_path + "/alter_partition_version";
     Coordination::Stat alter_partition_version_stat;

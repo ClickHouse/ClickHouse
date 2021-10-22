@@ -41,6 +41,7 @@ public:
         RESET_SETTING,
         MODIFY_QUERY,
         REMOVE_TTL,
+        REMOVE_SAMPLE_BY,
 
         ADD_INDEX,
         DROP_INDEX,
