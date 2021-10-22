@@ -18,7 +18,7 @@ def get_local_port(host):
         fd.bind((host, 0))
         return fd.getsockname()[1]
 
-CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '127.0.0.1')
+CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', 'localhost')
 CLICKHOUSE_PORT_HTTP = os.environ.get('CLICKHOUSE_PORT_HTTP', '8123')
 
 #####################################################################################
