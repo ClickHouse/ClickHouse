@@ -358,8 +358,8 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     auto servers = std::make_shared<std::vector<ProtocolServerAdapter>>();
 
-    /// Initialize test keeper RAFT. Do nothing if no nu_keeper_server in config.
-    global_context->initializeKeeperDispatcher();
+    /// Initialize keeper RAFT. Do nothing if no keeper_server in config.
+    global_context->initializeKeeperDispatcher(/* start_async = */false);
     for (const auto & listen_host : listen_hosts)
     {
         /// TCP Keeper
