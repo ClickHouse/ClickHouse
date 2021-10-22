@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
 #include <cassert>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <unordered_map>
@@ -27,7 +28,9 @@ class MemoryTracker;
 
 struct OvercommitTracker : boost::noncopyable
 {
-    OvercommitTracker() = default;
+    OvercommitTracker();
+
+    void setMaxWaitTime(UInt64 wait_time);
 
     bool needToStopQuery(MemoryTracker * tracker);
 
@@ -50,6 +53,8 @@ protected:
     mutable std::mutex overcommit_m;
     mutable std::condition_variable cv;
 
+    std::chrono::microseconds max_wait_time;
+
     enum class QueryCancelationState
     {
         NONE,
@@ -57,7 +62,7 @@ protected:
     };
 
     MemoryTracker * picked_tracker;
-    QueryCancelationState cancelation_state = QueryCancelationState::NONE;
+    QueryCancelationState cancelation_state;
 
 private:
 
@@ -115,8 +120,7 @@ struct BlockQueryIfMemoryLimit
     {
         if (overcommit_tracker.cancelation_state == OvercommitTracker::QueryCancelationState::RUNNING)
         {
-            //TODO: Add timeout
-            overcommit_tracker.cv.wait(lk, [&overcommit_tracker]()
+            overcommit_tracker.cv.wait_for(lk, overcommit_tracker.max_wait_time, [&overcommit_tracker]()
             {
                 return overcommit_tracker.cancelation_state == OvercommitTracker::QueryCancelationState::NONE;
             });

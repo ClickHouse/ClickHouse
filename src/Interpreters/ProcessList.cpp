@@ -190,6 +190,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
         user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_user);
         user_process_list.user_memory_tracker.setSoftLimit(settings.max_guaranteed_memory_usage_for_user);
         user_process_list.user_memory_tracker.setDescription("(for user)");
+        user_process_list.user_overcommit_tracker.setMaxWaitTime(settings.memory_usage_overcommit_max_wait_microseconds);
 
         /// Actualize thread group info
         if (auto thread_group = CurrentThread::getGroup())

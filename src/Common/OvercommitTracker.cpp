@@ -1,6 +1,20 @@
 #include "OvercommitTracker.h"
 
+#include <chrono>
 #include <Interpreters/ProcessList.h>
+
+using namespace std::chrono_literals;
+
+OvercommitTracker::OvercommitTracker()
+    : max_wait_time(0us)
+    , picked_tracker(nullptr)
+    , cancelation_state(QueryCancelationState::NONE)
+{}
+
+void OvercommitTracker::setMaxWaitTime(UInt64 wait_time)
+{
+    max_wait_time = wait_time * 1us;
+}
 
 bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker)
 {
@@ -11,8 +25,7 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker)
     if (tracker == picked_tracker)
         return true;
 
-    auto now = std::chrono::system_clock::now();
-    return cv.wait_until(lk, now, [this]()
+    return cv.wait_for(lk, max_wait_time, [this]()
     {
         return cancelation_state == QueryCancelationState::NONE;
     });
