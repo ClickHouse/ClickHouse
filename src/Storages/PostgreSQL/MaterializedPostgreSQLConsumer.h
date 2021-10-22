@@ -7,7 +7,6 @@
 #include <Core/Names.h>
 #include <base/logger_useful.h>
 #include <Storages/IStorage.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <Parsers/ASTExpressionList.h>
 
 
