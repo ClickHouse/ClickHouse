@@ -735,7 +735,7 @@ void registerDictionaryHashed(DictionaryFactory & factory)
 
         std::string dictionary_layout_name;
 
-        if (dictionary_key_type == DictionaryKeyType::Simple)
+        if (dictionary_key_type == DictionaryKeyType::simple)
             dictionary_layout_name = "hashed";
         else
             dictionary_layout_name = "complex_key_hashed";
