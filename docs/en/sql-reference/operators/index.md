@@ -72,8 +72,11 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 `a GLOBAL NOT IN ...` – The `globalNotIn(a, b)` function.
 
 `a = ANY (subquery)` – The `in(a, subquery)` function.  
+
 `a != ANY (subquery)` – The `notIn(a, subquery)` function. 
+
 `a = ALL (subquery)` –  The same as `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
+
 `a != ALL (subquery)` –  The same as `a NOT IN (subquery)`.
 
 
