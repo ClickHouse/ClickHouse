@@ -78,7 +78,7 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 The subquery must select values of the same type as those compared in the main predicate. 
 
-**Example**
+**Examples**
 
 Query:
 
