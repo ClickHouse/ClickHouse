@@ -930,7 +930,6 @@ Result:
 └─────────────────────────────────────────┘
 ```
 
-
 ## cosineDistance {#cosinedistance}
 
 Calculates the cosine distance between two vectors (the values of the tuples are the coordinates). The less the returned value is, the more similar are the vectors.
