@@ -37,10 +37,10 @@ std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
 {
     Poco::URI uri(url);
 
-    ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
-    headers.emplace_back(std::make_pair("Range", fmt::format("bytes={}-", offset)));
-    const auto & settings = context->getSettingsRef();
+    read_settings.http_start_offset = offset;
     LOG_DEBUG(log, "Reading from offset: {}", offset);
+
+    const auto & settings = context->getSettingsRef();
     const auto & config = context->getConfigRef();
     Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 20), 0};
 
@@ -56,8 +56,7 @@ std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
         0,
         Poco::Net::HTTPBasicCredentials{},
         buf_size,
-        read_settings,
-        headers);
+        read_settings);
 }
 
 
