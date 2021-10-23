@@ -21,7 +21,7 @@ uint64_t getMemoryAmountOrZero()
     std::ifstream cgroup_limit("/sys/fs/cgroup/memory/memory.limit_in_bytes");
     if (cgroup_limit.is_open())
     {
-        uint64 amount = 0; // in case of read error
+        uint64_t amount = 0; // in case of read error
         cgroup_limit >> amount;
         return amount;
     }
