@@ -21,8 +21,6 @@ class AggregateFunctionCombinatorArray final : public IAggregateFunctionCombinat
 public:
     String getName() const override { return "Array"; }
 
-    bool supportsNesting() const override { return true; }
-
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
         if (arguments.empty())

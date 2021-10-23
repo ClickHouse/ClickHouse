@@ -1,4 +1,3 @@
-#include <DataStreams/ConnectionCollector.h>
 #include <DataStreams/RemoteQueryExecutor.h>
 #include <DataStreams/RemoteQueryExecutorReadContext.h>
 
@@ -13,16 +12,10 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <IO/ConnectionTimeoutsContext.h>
+#include <Common/FiberStack.h>
 #include <Client/MultiplexedConnections.h>
 #include <Client/HedgedConnections.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-
-
-namespace CurrentMetrics
-{
-    extern const Metric SyncDrainedConnections;
-    extern const Metric ActiveSyncDrainedConnections;
-}
 
 namespace DB
 {
@@ -35,62 +28,41 @@ namespace ErrorCodes
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    const String & query_, const Block & header_, ContextPtr context_,
-    const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
-    : header(header_), query(query_), context(context_), scalars(scalars_)
-    , external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
-{}
-
-RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
     const String & query_, const Block & header_, ContextPtr context_,
     ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
     QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, task_iterator_)
+    : header(header_), query(query_), context(context_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
 {
     create_connections = [this, &connection, throttler]()
     {
-        return std::make_shared<MultiplexedConnections>(connection, context->getSettingsRef(), throttler);
+        return std::make_unique<MultiplexedConnections>(connection, context->getSettingsRef(), throttler);
     };
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    std::shared_ptr<Connection> connection_ptr,
-    const String & query_, const Block & header_, ContextPtr context_,
-    ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, task_iterator_)
-{
-    create_connections = [this, connection_ptr, throttler]()
-    {
-        return std::make_shared<MultiplexedConnections>(connection_ptr, context->getSettingsRef(), throttler);
-    };
-}
-
-RemoteQueryExecutor::RemoteQueryExecutor(
-    const ConnectionPoolWithFailoverPtr & pool_,
     std::vector<IConnectionPool::Entry> && connections_,
     const String & query_, const Block & header_, ContextPtr context_,
     const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
     QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
     : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_), pool(pool_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
 {
     create_connections = [this, connections_, throttler]() mutable {
-        return std::make_shared<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
+        return std::make_unique<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
     };
 }
 
 RemoteQueryExecutor::RemoteQueryExecutor(
-    const ConnectionPoolWithFailoverPtr & pool_,
+    const ConnectionPoolWithFailoverPtr & pool,
     const String & query_, const Block & header_, ContextPtr context_,
     const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
     QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_)
     : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_), pool(pool_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
 {
-    create_connections = [this, throttler]()->std::shared_ptr<IConnections>
+    create_connections = [this, pool, throttler]()->std::unique_ptr<IConnections>
     {
         const Settings & current_settings = context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
@@ -102,7 +74,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             if (main_table)
                 table_to_check = std::make_shared<QualifiedTableName>(main_table.getQualifiedName());
 
-            return std::make_shared<HedgedConnections>(pool, context, timeouts, throttler, pool_mode, table_to_check);
+            return std::make_unique<HedgedConnections>(pool, current_settings, timeouts, throttler, pool_mode, table_to_check);
         }
 #endif
 
@@ -117,7 +89,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         else
             connection_entries = pool->getMany(timeouts, &current_settings, pool_mode);
 
-        return std::make_shared<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
+        return std::make_unique<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
     };
 }
 
@@ -434,15 +406,32 @@ void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)
 
     /// Send the request to abort the execution of the request, if not already sent.
     tryCancel("Cancelling query because enough data has been read", read_context);
-    /// Try to drain connections asynchronously.
-    if (auto conn = ConnectionCollector::enqueueConnectionCleanup(pool, connections))
+
+    /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
+    Packet packet = connections->drain();
+    switch (packet.type)
     {
-        /// Drain connections synchronously.
-        CurrentMetrics::Increment metric_increment(CurrentMetrics::ActiveSyncDrainedConnections);
-        ConnectionCollector::drainConnections(*conn);
-        CurrentMetrics::add(CurrentMetrics::SyncDrainedConnections, 1);
+        case Protocol::Server::EndOfStream:
+            finished = true;
+            break;
+
+        case Protocol::Server::Log:
+            /// Pass logs from remote server to client
+            if (auto log_queue = CurrentThread::getInternalTextLogsQueue())
+                log_queue->pushBlock(std::move(packet.block));
+            break;
+
+        case Protocol::Server::Exception:
+            got_exception_from_replica = true;
+            packet.exception->rethrow();
+            break;
+
+        default:
+            got_unknown_packet_from_replica = true;
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from one of the following replicas: {}",
+                toString(packet.type),
+                connections->dumpAddresses());
     }
-    finished = true;
 }
 
 void RemoteQueryExecutor::cancel(std::unique_ptr<ReadContext> * read_context)
@@ -517,29 +506,20 @@ void RemoteQueryExecutor::sendExternalTables()
 
 void RemoteQueryExecutor::tryCancel(const char * reason, std::unique_ptr<ReadContext> * read_context)
 {
-    /// Flag was_cancelled is atomic because it is checked in read().
-    std::lock_guard guard(was_cancelled_mutex);
-
-    if (was_cancelled)
-        return;
-
-    was_cancelled = true;
-
-    if (read_context && *read_context)
     {
-        /// The timer should be set for query cancellation to avoid query cancellation hung.
-        ///
-        /// Since in case the remote server will abnormally terminated, neither
-        /// FIN nor RST packet will be sent, and the initiator will not know that
-        /// the connection died (unless tcp_keep_alive_timeout > 0).
-        ///
-        /// Also note that it is possible to get this situation even when
-        /// enough data already had been read.
-        (*read_context)->setTimer();
-        (*read_context)->cancel();
-    }
+        /// Flag was_cancelled is atomic because it is checked in read().
+        std::lock_guard guard(was_cancelled_mutex);
 
-    connections->sendCancel();
+        if (was_cancelled)
+            return;
+
+        was_cancelled = true;
+
+        if (read_context && *read_context)
+            (*read_context)->cancel();
+
+        connections->sendCancel();
+    }
 
     if (log)
         LOG_TRACE(log, "({}) {}", connections->dumpAddresses(), reason);

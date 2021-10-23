@@ -168,6 +168,9 @@ struct AlterCommand
     std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 };
 
+/// Return string representation of AlterCommand::Type
+String alterTypeToString(const AlterCommand::Type type);
+
 class Context;
 
 /// Vector of AlterCommand with several additional functions

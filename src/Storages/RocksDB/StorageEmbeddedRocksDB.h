@@ -8,7 +8,6 @@
 namespace rocksdb
 {
     class DB;
-    class Statistics;
 }
 
 
@@ -17,11 +16,11 @@ namespace DB
 
 class Context;
 
-class StorageEmbeddedRocksDB final : public shared_ptr_helper<StorageEmbeddedRocksDB>, public IStorage, WithContext
+class StorageEmbeddedRocksDB final : public shared_ptr_helper<StorageEmbeddedRocksDB>, public IStorage
 {
     friend struct shared_ptr_helper<StorageEmbeddedRocksDB>;
     friend class EmbeddedRocksDBSource;
-    friend class EmbeddedRocksDBSink;
+    friend class EmbeddedRocksDBBlockOutputStream;
     friend class EmbeddedRocksDBBlockInputStream;
 public:
     std::string getName() const override { return "EmbeddedRocksDB"; }
@@ -35,7 +34,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
 
     bool supportsParallelInsert() const override { return true; }
@@ -48,8 +47,6 @@ public:
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {rocksdb_dir}; }
-
-    std::shared_ptr<rocksdb::Statistics> getRocksDBStatistics() const;
 
 protected:
     StorageEmbeddedRocksDB(const StorageID & table_id_,

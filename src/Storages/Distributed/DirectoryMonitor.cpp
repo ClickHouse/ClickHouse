@@ -2,7 +2,6 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
-#include <Processors/Sources/SourceWithProgress.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -28,7 +27,6 @@
 #include <Disks/IDisk.h>
 #include <boost/algorithm/string/find_iterator.hpp>
 #include <boost/algorithm/string/finder.hpp>
-#include <boost/range/adaptor/indexed.hpp>
 #include <filesystem>
 
 
@@ -332,13 +330,6 @@ namespace
         CheckingCompressedReadBuffer checking_in(in);
         remote.writePrepared(checking_in);
     }
-
-    uint64_t doubleToUInt64(double d)
-    {
-        if (d >= std::numeric_limits<uint64_t>::max())
-            return std::numeric_limits<uint64_t>::max();
-        return static_cast<uint64_t>(d);
-    }
 }
 
 
@@ -354,15 +345,15 @@ StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     , disk(disk_)
     , relative_path(relative_path_)
     , path(fs::path(disk->getPath()) / relative_path / "")
-    , should_batch_inserts(storage.getDistributedSettingsRef().monitor_batch_inserts)
-    , split_batch_on_failure(storage.getDistributedSettingsRef().monitor_split_batch_on_failure)
+    , should_batch_inserts(storage.getContext()->getSettingsRef().distributed_directory_monitor_batch_inserts)
+    , split_batch_on_failure(storage.getContext()->getSettingsRef().distributed_directory_monitor_split_batch_on_failure)
     , dir_fsync(storage.getDistributedSettingsRef().fsync_directories)
     , min_batched_block_size_rows(storage.getContext()->getSettingsRef().min_insert_block_size_rows)
     , min_batched_block_size_bytes(storage.getContext()->getSettingsRef().min_insert_block_size_bytes)
     , current_batch_file_path(path + "current_batch.txt")
-    , default_sleep_time(storage.getDistributedSettingsRef().monitor_sleep_time_ms.totalMilliseconds())
+    , default_sleep_time(storage.getContext()->getSettingsRef().distributed_directory_monitor_sleep_time_ms.totalMilliseconds())
     , sleep_time(default_sleep_time)
-    , max_sleep_time(storage.getDistributedSettingsRef().monitor_max_sleep_time_ms.totalMilliseconds())
+    , max_sleep_time(storage.getContext()->getSettingsRef().distributed_directory_monitor_max_sleep_time_ms.totalMilliseconds())
     , log(&Poco::Logger::get(getLoggerName()))
     , monitor_blocker(monitor_blocker_)
     , metric_pending_files(CurrentMetrics::DistributedFilesToInsert, 0)
@@ -440,14 +431,9 @@ void StorageDistributedDirectoryMonitor::run()
 
                 do_sleep = true;
                 ++status.error_count;
-
-                UInt64 q = doubleToUInt64(std::exp2(status.error_count));
-                std::chrono::milliseconds new_sleep_time(default_sleep_time.count() * q);
-                if (new_sleep_time.count() < 0)
-                    sleep_time = max_sleep_time;
-                else
-                    sleep_time = std::min(new_sleep_time, max_sleep_time);
-
+                sleep_time = std::min(
+                    std::chrono::milliseconds{Int64(default_sleep_time.count() * std::exp2(status.error_count))},
+                    max_sleep_time);
                 tryLogCurrentException(getLoggerName().data());
                 status.last_exception = std::current_exception();
             }
@@ -777,8 +763,8 @@ struct StorageDistributedDirectoryMonitor::Batch
             else
             {
                 std::vector<std::string> files(file_index_to_path.size());
-                for (const auto && file_info : file_index_to_path | boost::adaptors::indexed())
-                    files[file_info.index()] = file_info.value().second;
+                for (const auto & [index, name] : file_index_to_path)
+                    files.push_back(name);
                 e.addMessage(fmt::format("While sending batch {}", fmt::join(files, "\n")));
 
                 throw;
@@ -903,78 +889,50 @@ private:
     }
 };
 
-class DirectoryMonitorSource : public SourceWithProgress
+class DirectoryMonitorBlockInputStream : public IBlockInputStream
 {
 public:
-
-    struct Data
+    explicit DirectoryMonitorBlockInputStream(const String & file_name)
+        : in(file_name)
+        , decompressing_in(in)
+        , block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION)
+        , log{&Poco::Logger::get("DirectoryMonitorBlockInputStream")}
     {
-        std::unique_ptr<ReadBufferFromFile> in;
-        std::unique_ptr<CompressedReadBuffer> decompressing_in;
-        std::unique_ptr<NativeBlockInputStream> block_in;
+        readDistributedHeader(in, log);
 
-        Poco::Logger * log = nullptr;
-
-        Block first_block;
-
-        explicit Data(const String & file_name)
-        {
-            in = std::make_unique<ReadBufferFromFile>(file_name);
-            decompressing_in = std::make_unique<CompressedReadBuffer>(*in);
-            block_in = std::make_unique<NativeBlockInputStream>(*decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
-            log = &Poco::Logger::get("DirectoryMonitorSource");
-
-            readDistributedHeader(*in, log);
-
-            block_in->readPrefix();
-            first_block = block_in->read();
-        }
-
-        Data(Data &&) = default;
-    };
-
-    explicit DirectoryMonitorSource(const String & file_name)
-        : DirectoryMonitorSource(Data(file_name))
-    {
+        block_in.readPrefix();
+        first_block = block_in.read();
+        header = first_block.cloneEmpty();
     }
 
-    explicit DirectoryMonitorSource(Data data_)
-        : SourceWithProgress(data_.first_block.cloneEmpty())
-        , data(std::move(data_))
-    {
-    }
-
-    String getName() const override { return "DirectoryMonitorSource"; }
+    String getName() const override { return "DirectoryMonitor"; }
 
 protected:
-    Chunk generate() override
+    Block getHeader() const override { return header; }
+    Block readImpl() override
     {
-        if (data.first_block)
-        {
-            size_t num_rows = data.first_block.rows();
-            Chunk res(data.first_block.getColumns(), num_rows);
-            data.first_block.clear();
-            return res;
-        }
+        if (first_block)
+            return std::move(first_block);
 
-        auto block = data.block_in->read();
-        if (!block)
-        {
-            data.block_in->readSuffix();
-            return {};
-        }
-
-        size_t num_rows = block.rows();
-        return Chunk(block.getColumns(), num_rows);
+        return block_in.read();
     }
 
+    void readSuffix() override { block_in.readSuffix(); }
+
 private:
-    Data data;
+    ReadBufferFromFile in;
+    CompressedReadBuffer decompressing_in;
+    NativeBlockInputStream block_in;
+
+    Block first_block;
+    Block header;
+
+    Poco::Logger * log;
 };
 
-ProcessorPtr StorageDistributedDirectoryMonitor::createSourceFromFile(const String & file_name)
+BlockInputStreamPtr StorageDistributedDirectoryMonitor::createStreamFromFile(const String & file_name)
 {
-    return std::make_shared<DirectoryMonitorSource>(file_name);
+    return std::make_shared<DirectoryMonitorBlockInputStream>(file_name);
 }
 
 bool StorageDistributedDirectoryMonitor::addAndSchedule(size_t file_size, size_t ms)

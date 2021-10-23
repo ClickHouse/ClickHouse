@@ -70,9 +70,7 @@ const std::unordered_set<String> possibly_injective_function_names
 void appendUnusedGroupByColumn(ASTSelectQuery * select_query, const NameSet & source_columns)
 {
     /// You must insert a constant that is not the name of the column in the table. Such a case is rare, but it happens.
-    /// Also start unused_column integer from source_columns.size() + 1, because lower numbers ([1, source_columns.size()])
-    /// might be in positional GROUP BY.
-    UInt64 unused_column = source_columns.size() + 1;
+    UInt64 unused_column = 0;
     String unused_column_name = toString(unused_column);
 
     while (source_columns.count(unused_column_name))
@@ -113,8 +111,6 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
 
         group_exprs.pop_back();
     };
-
-    const auto & settings = context->getSettingsRef();
 
     /// iterate over each GROUP BY expression, eliminate injective function calls and literals
     for (size_t i = 0; i < group_exprs.size();)
@@ -171,22 +167,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
         }
         else if (is_literal(group_exprs[i]))
         {
-            bool keep_position = false;
-            if (settings.enable_positional_arguments)
-            {
-                const auto & value = group_exprs[i]->as<ASTLiteral>()->value;
-                if (value.getType() == Field::Types::UInt64)
-                {
-                    auto pos = value.get<UInt64>();
-                    if (pos > 0 && pos <= select_query->children.size())
-                        keep_position = true;
-                }
-            }
-
-            if (keep_position)
-                ++i;
-            else
-                remove_expr_at_index(i);
+            remove_expr_at_index(i);
         }
         else
         {

@@ -32,10 +32,10 @@ The `WITH TIES` option is used to return any additional rows that tie for the la
 
 !!! note "Note"
     According to the standard, the `OFFSET` clause must come before the `FETCH` clause if both are present.
-
+    
 !!! note "Note"
     The real offset can also depend on the [offset](../../../operations/settings/settings.md#offset) setting.
-
+	
 ## Examples {#examples}
 
 Input table:

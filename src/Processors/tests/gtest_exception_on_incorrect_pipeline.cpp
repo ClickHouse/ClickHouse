@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Sinks/NullSink.h>
+#include <Processors/NullSink.h>
 #include <Processors/Executors/PipelineExecutor.h>
 
 #include <Columns/ColumnsNumber.h>

@@ -1,6 +1,8 @@
 #include <cassert>
 #include <Common/Exception.h>
 
+#include <DataStreams/IBlockInputStream.h>
+
 #include <Interpreters/MutationsInterpreter.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
@@ -9,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
-#include <Processors/Sinks/SinkToStorage.h>
 
 
 namespace DB
@@ -61,7 +62,7 @@ protected:
 
         const Block & src = (*data)[current_index];
         Columns columns;
-        columns.reserve(column_names_and_types.size());
+        columns.reserve(columns.size());
 
         /// Add only required columns to `res`.
         for (const auto & elem : column_names_and_types)
@@ -99,23 +100,21 @@ private:
 };
 
 
-class MemorySink : public SinkToStorage
+class MemoryBlockOutputStream : public IBlockOutputStream
 {
 public:
-    MemorySink(
+    MemoryBlockOutputStream(
         StorageMemory & storage_,
         const StorageMetadataPtr & metadata_snapshot_)
-        : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , storage(storage_)
+        : storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
     {
     }
 
-    String getName() const override { return "MemorySink"; }
+    Block getHeader() const override { return metadata_snapshot->getSampleBlock(); }
 
-    void consume(Chunk chunk) override
+    void write(const Block & block) override
     {
-        auto block = getPort().getHeader().cloneWithColumns(chunk.getColumns());
         metadata_snapshot->check(block, true);
 
         if (storage.compress)
@@ -132,7 +131,7 @@ public:
         }
     }
 
-    void onFinish() override
+    void writeSuffix() override
     {
         size_t inserted_bytes = 0;
         size_t inserted_rows = 0;
@@ -229,9 +228,9 @@ Pipe StorageMemory::read(
 }
 
 
-SinkToStoragePtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+BlockOutputStreamPtr StorageMemory::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<MemorySink>(*this, metadata_snapshot);
+    return std::make_shared<MemoryBlockOutputStream>(*this, metadata_snapshot);
 }
 
 

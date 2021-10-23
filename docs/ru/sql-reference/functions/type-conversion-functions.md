@@ -152,104 +152,6 @@ Cиноним: `DATE`.
 
 ## toDateTimeOrNull {#todatetimeornull}
 
-## toDate32 {#todate32}
-
-Конвертирует аргумент в значение типа [Date32](../../sql-reference/data-types/date32.md). Если значение выходит за границы диапазона, возвращается пограничное значение `Date32`. Если аргумент имеет тип [Date](../../sql-reference/data-types/date.md), учитываются границы типа `Date`.
-
-**Синтаксис** 
-
-``` sql
-toDate32(value)
-```
-
-**Аргументы** 
-
--   `value` — Значение даты. [String](../../sql-reference/data-types/string.md), [UInt32](../../sql-reference/data-types/int-uint.md) или [Date](../../sql-reference/data-types/date.md).
-
-**Возвращаемое значение**
-
--   Календарная дата.
-
-Тип: [Date32](../../sql-reference/data-types/date32.md).
-
-**Пример**
-
-1. Значение находится в границах диапазона:
-
-``` sql
-SELECT toDate32('1955-01-01') AS value, toTypeName(value);
-```
-
-``` text
-┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
-│ 1955-01-01 │ Date32                             │
-└────────────┴────────────────────────────────────┘
-```
-
-2. Значение выходит за границы диапазона:
-
-``` sql
-SELECT toDate32('1924-01-01') AS value, toTypeName(value);
-```
-
-``` text
-┌──────value─┬─toTypeName(toDate32('1925-01-01'))─┐
-│ 1925-01-01 │ Date32                             │
-└────────────┴────────────────────────────────────┘
-```
-
-3. С аргументом типа `Date`:
-
-``` sql
-SELECT toDate32(toDate('1924-01-01')) AS value, toTypeName(value);
-```
-
-``` text
-┌──────value─┬─toTypeName(toDate32(toDate('1924-01-01')))─┐
-│ 1970-01-01 │ Date32                                     │
-└────────────┴────────────────────────────────────────────┘
-```
-
-## toDate32OrZero {#todate32-or-zero}
-
-То же самое, что и  [toDate32](#todate32), но возвращает минимальное значение типа [Date32](../../sql-reference/data-types/date32.md), если получен недопустимый аргумент.
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT toDate32OrZero('1924-01-01'), toDate32OrZero('');
-```
-
-Результат:
-
-``` text
-┌─toDate32OrZero('1924-01-01')─┬─toDate32OrZero('')─┐
-│                   1925-01-01 │         1925-01-01 │
-└──────────────────────────────┴────────────────────┘
-```
-
-## toDate32OrNull {#todate32-or-null}
-
-То же самое, что и [toDate32](#todate32), но возвращает `NULL`, если получен недопустимый аргумент.
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT toDate32OrNull('1955-01-01'), toDate32OrNull('');
-```
-
-Результат:
-
-``` text
-┌─toDate32OrNull('1955-01-01')─┬─toDate32OrNull('')─┐
-│                   1955-01-01 │               ᴺᵁᴸᴸ │
-└──────────────────────────────┴────────────────────┘
-```
-
 ## toDecimal(32\|64\|128\|256) {#todecimal3264128}
 
 Преобразует `value` к типу данных [Decimal](../../sql-reference/functions/type-conversion-functions.md) с точностью `S`. `value` может быть числом или строкой. Параметр `S` (scale) задаёт число десятичных знаков.
@@ -533,8 +435,8 @@ reinterpret(x, type)
 
 **Аргументы**
 
--   `x` — любой тип данных.
--   `type` — конечный тип данных. [String](../../sql-reference/data-types/string.md).
+-   `x` — любой тип данных. 
+-   `type` — конечный тип данных. [String](../../sql-reference/data-types/string.md). 
 
 **Возвращаемое значение**
 
@@ -560,29 +462,27 @@ SELECT reinterpret(toInt8(-1), 'UInt8') as int_to_uint,
 
 ## CAST(x, T) {#type_conversion_function-cast}
 
-Преобразует входное значение к указанному типу данных. В отличие от функции [reinterpret](#type_conversion_function-reinterpret) `CAST` пытается представить то же самое значение в новом типе данных. Если преобразование невозможно, то возникает исключение.
-Поддерживается несколько вариантов синтаксиса.
+Преобразует входное значение `x` в указанный тип данных `T`. В отличии от функции `reinterpret` использует внешнее представление значения `x`.
+
+Поддерживается также синтаксис `CAST(x AS t)`.
+
+!!! warning "Предупреждение"
+   Если значение `x` не может быть преобразовано к типу `T`, возникает переполнение. Например, `CAST(-1, 'UInt8')` возвращает 255.
 
 **Синтаксис**
 
 ``` sql
 CAST(x, T)
-CAST(x AS t)
-x::t
 ```
 
 **Аргументы**
 
--   `x` — значение, которое нужно преобразовать. Может быть любого типа.
--   `T` — имя типа данных. [String](../../sql-reference/data-types/string.md).
--   `t` — тип данных.
+-   `x` — любой тип данных. 
+-   `T` — конечный тип данных. [String](../../sql-reference/data-types/string.md).  
 
 **Возвращаемое значение**
 
--   Преобразованное значение.
-
-!!! note "Примечание"
-    Если входное значение выходит за границы нового типа, то результат переполняется. Например, `CAST(-1, 'UInt8')` возвращает `255`.
+- Значение конечного типа данных.
 
 **Примеры**
 
@@ -591,16 +491,16 @@ x::t
 ```sql
 SELECT
     CAST(toInt8(-1), 'UInt8') AS cast_int_to_uint,
-    CAST(1.5 AS Decimal(3,2)) AS cast_float_to_decimal,
-    '1'::Int32 AS cast_string_to_int;
+    CAST(toInt8(1), 'Float32') AS cast_int_to_float,
+    CAST('1', 'UInt32') AS cast_string_to_int
 ```
 
 Результат:
 
 ```
-┌─cast_int_to_uint─┬─cast_float_to_decimal─┬─cast_string_to_int─┐
-│              255 │                  1.50 │                  1 │
-└──────────────────┴───────────────────────┴────────────────────┘
+┌─cast_int_to_uint─┬─cast_int_to_float─┬─cast_string_to_int─┐
+│              255 │                 1 │                  1 │
+└──────────────────┴───────────────────┴────────────────────┘
 ```
 
 Запрос:
@@ -624,7 +524,7 @@ SELECT
 
 Преобразование в FixedString(N) работает только для аргументов типа [String](../../sql-reference/data-types/string.md) или [FixedString](../../sql-reference/data-types/fixedstring.md).
 
-Поддерживается преобразование к типу [Nullable](../../sql-reference/data-types/nullable.md) и обратно.
+Поддерживается преобразование к типу [Nullable](../../sql-reference/functions/type-conversion-functions.md) и обратно. 
 
 **Примеры**
 
@@ -673,7 +573,7 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null;
 Запрос:
 
 ``` sql
-SELECT cast(-1, 'UInt8') as uint8;
+SELECT cast(-1, 'UInt8') as uint8; 
 ```
 
 Результат:
@@ -1266,8 +1166,8 @@ SELECT toLowCardinality('1');
 
 ## toUnixTimestamp64Nano {#tounixtimestamp64nano}
 
-Преобразует значение `DateTime64` в значение `Int64` с фиксированной точностью менее одной секунды.
-Входное значение округляется соответствующим образом вверх или вниз в зависимости от его точности.
+Преобразует значение `DateTime64` в значение `Int64` с фиксированной точностью менее одной секунды. 
+Входное значение округляется соответствующим образом вверх или вниз в зависимости от его точности. 
 
 !!! info "Примечание"
     Возвращаемое значение — это временная метка в UTC, а не в часовом поясе `DateTime64`.
@@ -1303,7 +1203,7 @@ SELECT toUnixTimestamp64Milli(dt64);
 └──────────────────────────────┘
 ```
 
-Запрос:
+Запрос: 
 
 ``` sql
 WITH toDateTime64('2019-09-16 19:20:12.345678910', 6) AS dt64
@@ -1362,7 +1262,7 @@ SELECT fromUnixTimestamp64Milli(i64, 'UTC');
 
 Преобразует произвольные выражения в строку заданного формата.
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 formatRow(format, x, y, ...)
@@ -1403,7 +1303,7 @@ FROM numbers(3);
 
 Преобразует произвольные выражения в строку заданного формата. При этом удаляет лишние переводы строк `\n`, если они появились.
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 formatRowNoNewline(format, x, y, ...)
@@ -1435,145 +1335,4 @@ FROM numbers(3);
 │ 1,"good"                                  │
 │ 2,"good"                                  │
 └───────────────────────────────────────────┘
-```
-
-## snowflakeToDateTime {#snowflaketodatetime}
-
-Извлекает время из [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) в формате [DateTime](../data-types/datetime.md).
-
-**Синтаксис**
-
-``` sql
-snowflakeToDateTime(value [, time_zone])
-```
-
-**Аргументы**
-
--   `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
--   `time_zone` — [временная зона сервера](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). Функция распознает `time_string` в соответствии с часовым поясом. Необязательный. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--  Значение, преобразованное в фомат [DateTime](../data-types/datetime.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
-```
-
-Результат:
-
-``` text
-
-┌─snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC')─┐
-│                                              2021-08-15 10:57:56 │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-## snowflakeToDateTime64 {#snowflaketodatetime64}
-
-Извлекает время из [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) в формате [DateTime64](../data-types/datetime64.md).
-
-**Синтаксис**
-
-``` sql
-snowflakeToDateTime64(value [, time_zone])
-```
-
-**Аргументы**
-
--   `value` — Snowflake ID. [Int64](../data-types/int-uint.md).
--   `time_zone` — [временная зона сервера](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone). Функция распознает `time_string` в соответствии с часовым поясом. Необязательный. [String](../../sql-reference/data-types/string.md).
-
-**Возвращаемое значение**
-
--  Значение, преобразованное в фомат [DateTime64](../data-types/datetime64.md).
-
-**Пример**
-
-Запрос:
-
-``` sql
-SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
-```
-
-Результат:
-
-``` text
-
-┌─snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC')─┐
-│                                            2021-08-15 10:58:19.841 │
-└────────────────────────────────────────────────────────────────────┘
-```
-
-## dateTimeToSnowflake {#datetimetosnowflake}
-
-Преобразует значение [DateTime](../data-types/datetime.md) в первый идентификатор [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) на текущий момент.
-
-**Syntax**
-
-``` sql
-dateTimeToSnowflake(value)
-```
-
-**Аргументы**
-
--   `value` — дата и время. [DateTime](../../sql-reference/data-types/datetime.md).
-
-**Возвращаемое значение**
-
--   Значение, преобразованное в [Int64](../data-types/int-uint.md), как первый идентификатор Snowflake ID в момент выполнения.
-
-**Пример**
-
-Запрос:
-
-``` sql
-WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
-```
-
-Результат:
-
-``` text
-┌─dateTimeToSnowflake(dt)─┐
-│     1426860702823350272 │
-└─────────────────────────┘
-```
-
-## dateTime64ToSnowflake {#datetime64tosnowflake}
-
-Преобразует значение [DateTime64](../data-types/datetime64.md) в первый идентификатор [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) на текущий момент.
-
-**Синтаксис**
-
-``` sql
-dateTime64ToSnowflake(value)
-```
-
-**Аргументы**
-
--   `value` — дата и время. [DateTime64](../data-types/datetime64.md).
-
-**Возвращаемое значение**
-
--   Значение, преобразованное в [Int64](../data-types/int-uint.md), как первый идентификатор Snowflake ID в момент выполнения.
-
-
-**Пример**
-
-Запрос:
-
-``` sql
-WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
-```
-
-Результат:
-
-``` text
-┌─dateTime64ToSnowflake(dt64)─┐
-│         1426860704886947840 │
-└─────────────────────────────┘
 ```

@@ -10,7 +10,6 @@ PEERDIR(
 
 SRCS(
     AccessControlManager.cpp
-    AccessEntityIO.cpp
     AccessRights.cpp
     AccessRightsElement.cpp
     AllowedClientHosts.cpp
@@ -35,7 +34,6 @@ SRCS(
     Quota.cpp
     QuotaCache.cpp
     QuotaUsage.cpp
-    ReplicatedAccessStorage.cpp
     Role.cpp
     RoleCache.cpp
     RolesOrUsersSet.cpp
@@ -45,7 +43,6 @@ SRCS(
     SettingsProfile.cpp
     SettingsProfileElement.cpp
     SettingsProfilesCache.cpp
-    SettingsProfilesInfo.cpp
     User.cpp
     UsersConfigAccessStorage.cpp
 

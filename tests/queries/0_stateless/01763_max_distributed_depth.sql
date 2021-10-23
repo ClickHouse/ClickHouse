@@ -12,7 +12,6 @@ CREATE TABLE tt6
 ENGINE = Distributed('test_shard_localhost', '', 'tt7', rand());
 
 CREATE TABLE tt7 as tt6 ENGINE = Distributed('test_shard_localhost', '', 'tt6', rand());
-
 INSERT INTO tt6 VALUES (1, 1, 1, 1, 'ok'); -- { serverError 581 }
 
 SELECT * FROM tt6; -- { serverError 581 }

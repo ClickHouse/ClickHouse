@@ -64,8 +64,7 @@ size_t TLDListsHolder::parseAndAddTldList(const std::string & name, const std::s
     while (!in.eof())
     {
         readEscapedStringUntilEOL(line, in);
-        if (!in.eof())
-            ++in.position();
+        ++in.position();
         /// Skip comments
         if (line.size() > 2 && line[0] == '/' && line[1] == '/')
             continue;

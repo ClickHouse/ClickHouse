@@ -298,19 +298,11 @@ void ConfigProcessor::doIncludesRecursive(
     {
         const auto * subst = attributes->getNamedItem(attr_name);
         attr_nodes[attr_name] = subst;
-        substs_count += static_cast<size_t>(subst != nullptr);
+        substs_count += static_cast<size_t>(subst == nullptr);
     }
 
-    if (substs_count > 1) /// only one substitution is allowed
-        throw Poco::Exception("More than one substitution attribute is set for element <" + node->nodeName() + ">");
-
-    if (node->nodeName() == "include")
-    {
-        if (node->hasChildNodes())
-            throw Poco::Exception("<include> element must have no children");
-        if (substs_count == 0)
-            throw Poco::Exception("No substitution attributes set for element <include>, must have exactly one");
-    }
+    if (substs_count < SUBSTITUTION_ATTRS.size() - 1) /// only one substitution is allowed
+        throw Poco::Exception("several substitutions attributes set for element <" + node->nodeName() + ">");
 
     /// Replace the original contents, not add to it.
     bool replace = attributes->getNamedItem("replace");
@@ -328,57 +320,37 @@ void ConfigProcessor::doIncludesRecursive(
             else if (throw_on_bad_incl)
                 throw Poco::Exception(error_msg + name);
             else
-            {
-                if (node->nodeName() == "include")
-                    node->parentNode()->removeChild(node);
-
                 LOG_WARNING(log, "{}{}", error_msg, name);
-            }
         }
         else
         {
-            /// Replace the whole node not just contents.
-            if (node->nodeName() == "include")
+            Element & element = dynamic_cast<Element &>(*node);
+
+            for (const auto & attr_name : SUBSTITUTION_ATTRS)
+                element.removeAttribute(attr_name);
+
+            if (replace)
             {
-                const NodeListPtr children = node_to_include->childNodes();
-                for (size_t i = 0, size = children->length(); i < size; ++i)
-                {
-                    NodePtr new_node = config->importNode(children->item(i), true);
-                    node->parentNode()->insertBefore(new_node, node);
-                }
+                while (Node * child = node->firstChild())
+                    node->removeChild(child);
 
-                node->parentNode()->removeChild(node);
+                element.removeAttribute("replace");
             }
-            else
+
+            const NodeListPtr children = node_to_include->childNodes();
+            for (size_t i = 0, size = children->length(); i < size; ++i)
             {
-                Element & element = dynamic_cast<Element &>(*node);
-
-                for (const auto & attr_name : SUBSTITUTION_ATTRS)
-                    element.removeAttribute(attr_name);
-
-                if (replace)
-                {
-                    while (Node * child = node->firstChild())
-                        node->removeChild(child);
-
-                    element.removeAttribute("replace");
-                }
-
-                const NodeListPtr children = node_to_include->childNodes();
-                for (size_t i = 0, size = children->length(); i < size; ++i)
-                {
-                    NodePtr new_node = config->importNode(children->item(i), true);
-                    node->appendChild(new_node);
-                }
-
-                const NamedNodeMapPtr from_attrs = node_to_include->attributes();
-                for (size_t i = 0, size = from_attrs->length(); i < size; ++i)
-                {
-                    element.setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
-                }
-
-                included_something = true;
+                NodePtr new_node = config->importNode(children->item(i), true);
+                node->appendChild(new_node);
             }
+
+            const NamedNodeMapPtr from_attrs = node_to_include->attributes();
+            for (size_t i = 0, size = from_attrs->length(); i < size; ++i)
+            {
+                element.setAttributeNode(dynamic_cast<Attr *>(config->importNode(from_attrs->item(i), true)));
+            }
+
+            included_something = true;
         }
     };
 

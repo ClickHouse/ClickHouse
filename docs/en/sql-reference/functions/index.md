@@ -48,7 +48,7 @@ Functions can’t change the values of their arguments – any changes are retur
 
 Higher-order functions can only accept lambda functions as their functional argument. To pass a lambda function to a higher-order function use `->` operator. The left side of the arrow has a formal parameter, which is any ID, or multiple formal parameters – any IDs in a tuple. The right side of the arrow has an expression that can use these formal parameters, as well as any table columns.
 
-Examples:
+Examples: 
 
 ```
 x -> 2 * x
@@ -58,10 +58,6 @@ str -> str != Referer
 A lambda function that accepts multiple arguments can also be passed to a higher-order function. In this case, the higher-order function is passed several arrays of identical length that these arguments will correspond to.
 
 For some functions the first argument (the lambda function) can be omitted. In this case, identical mapping is assumed.
-
-## User Defined Functions {#user-defined-functions}
-
-Custom functions can be created using the [CREATE FUNCTION](../statements/create/function.md) statement. To delete these functions use the [DROP FUNCTION](../statements/drop.md#drop-function) statement.
 
 ## Error Handling {#error-handling}
 

@@ -1,7 +1,7 @@
-#  docker build -t clickhouse/fasttest .
+#  docker build -t yandex/clickhouse-fasttest .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=12
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
 
 RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
@@ -67,7 +67,7 @@ RUN apt-get update \
         unixodbc \
        --yes --no-install-recommends
 
-RUN pip3 install numpy scipy pandas Jinja2
+RUN pip3 install numpy scipy pandas
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld

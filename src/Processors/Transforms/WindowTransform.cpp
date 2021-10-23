@@ -197,16 +197,6 @@ WindowTransform::WindowTransform(const Block & input_header_,
     , input_header(input_header_)
     , window_description(window_description_)
 {
-    // Materialize all columns in header, because we materialize all columns
-    // in chunks and it's convenient if they match.
-    auto input_columns = input_header.getColumns();
-    for (auto & column : input_columns)
-    {
-        column = std::move(column)->convertToFullColumnIfConst();
-    }
-    input_header.setColumns(std::move(input_columns));
-
-    // Initialize window function workspaces.
     workspaces.reserve(functions.size());
     for (const auto & f : functions)
     {
@@ -358,8 +348,8 @@ void WindowTransform::advancePartitionEnd()
     assert(end.block == partition_end.block + 1);
 
     // Try to advance the partition end pointer.
-    const size_t partition_by_columns = partition_by_indices.size();
-    if (partition_by_columns == 0)
+    const size_t n = partition_by_indices.size();
+    if (n == 0)
     {
         // No PARTITION BY. All input is one partition, which will end when the
         // input ends.
@@ -370,44 +360,27 @@ void WindowTransform::advancePartitionEnd()
     // Check for partition end.
     // The partition ends when the PARTITION BY columns change. We need
     // some reference columns for comparison. We might have already
-    // dropped the blocks where the partition starts, but any other row in the
-    // partition will do. We can't use frame_start or frame_end or current_row (the next row
-    // for which we are calculating the window functions), because they all might be
-    // past the end of the partition. prev_frame_start is suitable, because it
-    // is a pointer to the first row of the previous frame that must have been
-    // valid, or to the first row of the partition, and we make sure not to drop
-    // its block.
-    assert(partition_start <= prev_frame_start);
-    // The frame start should be inside the prospective partition, except the
-    // case when it still has no rows.
-    assert(prev_frame_start < partition_end || partition_start == partition_end);
-    assert(first_block_number <= prev_frame_start.block);
+    // dropped the blocks where the partition starts, but any row in the
+    // partition will do. We use the current_row for this. It might be the same
+    // as the partition_end if we're at the first row of the first partition, so
+    // we will compare it to itself, but it still works correctly.
     const auto block_rows = blockRowsNumber(partition_end);
     for (; partition_end.row < block_rows; ++partition_end.row)
     {
-//        fmt::print(stderr, "compare reference '{}' to compared '{}'\n",
-//            prev_frame_start, partition_end);
-
         size_t i = 0;
-        for (; i < partition_by_columns; i++)
+        for (; i < n; i++)
         {
-            const auto * reference_column
-                = inputAt(prev_frame_start)[partition_by_indices[i]].get();
-            const auto * compared_column
-                = inputAt(partition_end)[partition_by_indices[i]].get();
-
-//            fmt::print(stderr, "reference '{}', compared '{}'\n",
-//                (*reference_column)[prev_frame_start.row],
-//                (*compared_column)[partition_end.row]);
-            if (compared_column->compareAt(partition_end.row,
-                    prev_frame_start.row, *reference_column,
+            const auto * ref = inputAt(current_row)[partition_by_indices[i]].get();
+            const auto * c = inputAt(partition_end)[partition_by_indices[i]].get();
+            if (c->compareAt(partition_end.row,
+                    current_row.row, *ref,
                     1 /* nan_direction_hint */) != 0)
             {
                 break;
             }
         }
 
-        if (i < partition_by_columns)
+        if (i < n)
         {
             partition_ended = true;
             return;
@@ -617,8 +590,8 @@ void WindowTransform::advanceFrameStart()
                 default:
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "Frame start type '{}' for frame '{}' is not implemented",
-                        window_description.frame.begin_type,
-                        window_description.frame.type);
+                        WindowFrame::toString(window_description.frame.begin_type),
+                        WindowFrame::toString(window_description.frame.type));
             }
             break;
     }
@@ -849,7 +822,7 @@ void WindowTransform::advanceFrameEnd()
                 default:
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "The frame end type '{}' is not implemented",
-                        window_description.frame.end_type);
+                        WindowFrame::toString(window_description.frame.end_type));
             }
             break;
     }
@@ -878,8 +851,6 @@ void WindowTransform::updateAggregationState()
     assert(prev_frame_start <= prev_frame_end);
     assert(prev_frame_start <= frame_start);
     assert(prev_frame_end <= frame_end);
-    assert(partition_start <= frame_start);
-    assert(frame_end <= partition_end);
 
     // We might have to reset aggregation state and/or add some rows to it.
     // Figure out what to do.
@@ -993,9 +964,6 @@ void WindowTransform::writeOutCurrentRow()
             a->insertResultInto(buf, *result_column, arena.get());
         }
     }
-
-//    fmt::print(stderr, "wrote out aggregation state for current row '{}'\n",
-//        current_row);
 }
 
 static void assertSameColumns(const Columns & left_all,
@@ -1076,10 +1044,13 @@ void WindowTransform::appendChunk(Chunk & chunk)
             block.output_columns.back()->reserve(block.rows);
         }
 
-        // As a debugging aid, assert that all chunks have the same C++ type of
-        // columns, that also matches the input header, because we often have to
-        // work across chunks.
-        assertSameColumns(input_header.getColumns(), block.input_columns);
+        // As a debugging aid, assert that chunk have the same C++ type of
+        // columns, because we often have to work across chunks.
+        if (blocks.size() > 1)
+        {
+            assertSameColumns(blocks.front().input_columns,
+                blocks.back().input_columns);
+        }
     }
 
     // Start the calculations. First, advance the partition end.
@@ -1166,23 +1137,6 @@ void WindowTransform::appendChunk(Chunk & chunk)
             // Write out the aggregation results.
             writeOutCurrentRow();
 
-            if (isCancelled())
-            {
-                // Good time to check if the query is cancelled. Checking once
-                // per block might not be enough in severe quadratic cases.
-                // Just leave the work halfway through and return, the 'prepare'
-                // method will figure out what to do. Note that this doesn't
-                // handle 'max_execution_time' and other limits, because these
-                // limits are only updated between blocks. Eventually we should
-                // start updating them in background and canceling the processor,
-                // like we do for Ctrl+C handling.
-                //
-                // This class is final, so the check should hopefully be
-                // devirtualized and become a single never-taken branch that is
-                // basically free.
-                return;
-            }
-
             // Move to the next row. The frame will have to be recalculated.
             // The peer group start is updated at the beginning of the loop,
             // because current_row might now be past-the-end.
@@ -1227,7 +1181,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         peer_group_number = 1;
 
 //        fmt::print(stderr, "reinitialize agg data at start of {}\n",
-//            partition_start);
+//            new_partition_start);
         // Reinitialize the aggregate function states because the new partition
         // has started.
         for (auto & ws : workspaces)
@@ -1272,12 +1226,10 @@ IProcessor::Status WindowTransform::prepare()
 //        next_output_block_number, first_not_ready_row, first_block_number,
 //        blocks.size());
 
-    if (output.isFinished() || isCancelled())
+    if (output.isFinished())
     {
         // The consumer asked us not to continue (or we decided it ourselves),
-        // so we abort. Not sure what the difference between the two conditions
-        // is, but it seemed that output.isFinished() is not enough to cancel on
-        // Ctrl+C. Test manually if you change it.
+        // so we abort.
         input.close();
         return Status::Finished;
     }
@@ -1406,16 +1358,13 @@ void WindowTransform::work()
     }
 
     // We don't really have to keep the entire partition, and it can be big, so
-    // we want to drop the starting blocks to save memory. We can drop the old
-    // blocks if we already returned them as output, and the frame and the
-    // current row are already past them. We also need to keep the previous
-    // frame start because we use it as the partition etalon. It is always less
-    // than the current frame start, so we don't have to check the latter. Note
-    // that the frame start can be further than current row for some frame specs
-    // (e.g. EXCLUDE CURRENT ROW), so we have to check both.
-    assert(prev_frame_start <= frame_start);
+    // we want to drop the starting blocks to save memory.
+    // We can drop the old blocks if we already returned them as output, and the
+    // frame and the current row are already past them. Note that the frame
+    // start can be further than current row for some frame specs (e.g. EXCLUDE
+    // CURRENT ROW), so we have to check both.
     const auto first_used_block = std::min(next_output_block_number,
-        std::min(prev_frame_start.block, current_row.block));
+        std::min(frame_start.block, current_row.block));
 
     if (first_block_number < first_used_block)
     {
@@ -1428,7 +1377,6 @@ void WindowTransform::work()
 
         assert(next_output_block_number >= first_block_number);
         assert(frame_start.block >= first_block_number);
-        assert(prev_frame_start.block >= first_block_number);
         assert(current_row.block >= first_block_number);
         assert(peer_group_start.block >= first_block_number);
     }
@@ -1572,21 +1520,12 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             return;
         }
 
-        const auto supertype = getLeastSupertype({argument_types[0], argument_types[2]});
-        if (!supertype)
+        if (!getLeastSupertype({argument_types[0], argument_types[2]}))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "There is no supertype for the argument type '{}' and the default value type '{}'",
-                argument_types[0]->getName(),
-                argument_types[2]->getName());
-        }
-        if (!argument_types[0]->equals(*supertype))
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The supertype '{}' for the argument type '{}' and the default value type '{}' is not the same as the argument type",
-                supertype->getName(),
-                argument_types[0]->getName(),
-                argument_types[2]->getName());
+                "The default value type '{}' is not convertible to the argument type '{}'",
+                argument_types[2]->getName(),
+                argument_types[0]->getName());
         }
 
         if (argument_types.size() > 3)
@@ -1597,7 +1536,8 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
         }
     }
 
-    DataTypePtr getReturnType() const override { return argument_types[0]; }
+    DataTypePtr getReturnType() const override
+    { return argument_types[0]; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -1639,13 +1579,9 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             if (argument_types.size() > 2)
             {
                 // Column with default values is specified.
-                // The conversion through Field is inefficient, but we accept
-                // subtypes of the argument type as a default value (for convenience),
-                // and it's a pain to write conversion that respects ColumnNothing
-                // and ColumnConst and so on.
-                const IColumn & default_column = *current_block.input_columns[
-                    workspace.argument_column_indices[2]].get();
-                to.insert(default_column[transform->current_row.row]);
+                to.insertFrom(*current_block.input_columns[
+                            workspace.argument_column_indices[2]],
+                    transform->current_row.row);
             }
             else
             {
@@ -1658,74 +1594,6 @@ struct WindowFunctionLagLeadInFrame final : public WindowFunction
             to.insertFrom(*transform->blockAt(target_row).input_columns[
                     workspace.argument_column_indices[0]],
                 target_row.row);
-        }
-    }
-};
-
-struct WindowFunctionNthValue final : public WindowFunction
-{
-    WindowFunctionNthValue(const std::string & name_,
-    const DataTypes & argument_types_, const Array & parameters_)
-    : WindowFunction(name_, argument_types_, parameters_)
-    {
-        if (!parameters.empty())
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function {} cannot be parameterized", name_);
-        }
-
-        if (argument_types.size() != 2)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Function '{}' accepts 2 arguments, {} given",
-                name_, argument_types.size());
-        }
-    }
-
-    DataTypePtr getReturnType() const override
-    { return argument_types[0]; }
-
-    bool allocatesMemoryInArena() const override { return false; }
-
-    void windowInsertResultInto(const WindowTransform * transform,
-        size_t function_index) override
-    {
-        const auto & current_block = transform->blockAt(transform->current_row);
-        IColumn & to = *(current_block.output_columns[function_index]);
-        const auto & workspace = transform->workspaces[function_index];
-
-        int64_t offset = (*current_block.input_columns[
-                workspace.argument_column_indices[1]])[
-            transform->current_row.row].get<Int64>() - 1;
-
-        if (offset < 0)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The offset for function {} must be non-negative, {} given",
-                getName(), offset);
-        }
-
-        if (offset > INT_MAX)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The offset for function {} must be less than {}, {} given",
-                getName(), INT_MAX, offset);
-        }
-
-        const auto [target_row, offset_left] = transform->moveRowNumber(transform->frame_start, offset);
-        if (offset_left != 0
-            || target_row < transform->frame_start
-            || transform->frame_end <= target_row)
-        {
-            // Offset is outside the frame.
-            to.insertDefault();
-        }
-        else
-        {
-            // Offset is inside the frame.
-            to.insertFrom(*transform->blockAt(target_row).input_columns[
-                    workspace.argument_column_indices[0]],
-               target_row.row);
         }
     }
 };
@@ -1750,56 +1618,40 @@ void registerWindowFunctions(AggregateFunctionFactory & factory)
     // to a (rows between unbounded preceding and unbounded following) frame,
     // instead of adding separate logic for them.
 
-    const AggregateFunctionProperties properties = {
-        // By default, if an aggregate function has a null argument, it will be
-        // replaced with AggregateFunctionNothing. We don't need this behavior
-        // e.g. for lagInFrame(number, 1, null).
-        .returns_default_when_only_null = true,
-        // This probably doesn't make any difference for window functions because
-        // it is an Aggregator-specific setting.
-        .is_order_dependent = true };
-
-    factory.registerFunction("rank", {[](const std::string & name,
+    factory.registerFunction("rank", [](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionRank>(name, argument_types,
                 parameters);
-        }, properties}, AggregateFunctionFactory::CaseInsensitive);
+        });
 
-    factory.registerFunction("dense_rank", {[](const std::string & name,
+    factory.registerFunction("dense_rank", [](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionDenseRank>(name, argument_types,
                 parameters);
-        }, properties}, AggregateFunctionFactory::CaseInsensitive);
+        });
 
-    factory.registerFunction("row_number", {[](const std::string & name,
+    factory.registerFunction("row_number", [](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionRowNumber>(name, argument_types,
                 parameters);
-        }, properties}, AggregateFunctionFactory::CaseInsensitive);
+        });
 
-    factory.registerFunction("lagInFrame", {[](const std::string & name,
+    factory.registerFunction("lagInFrame", [](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<false>>(
                 name, argument_types, parameters);
-        }, properties});
+        });
 
-    factory.registerFunction("leadInFrame", {[](const std::string & name,
+    factory.registerFunction("leadInFrame", [](const std::string & name,
             const DataTypes & argument_types, const Array & parameters, const Settings *)
         {
             return std::make_shared<WindowFunctionLagLeadInFrame<true>>(
                 name, argument_types, parameters);
-        }, properties});
-
-    factory.registerFunction("nth_value", {[](const std::string & name,
-            const DataTypes & argument_types, const Array & parameters, const Settings *)
-        {
-            return std::make_shared<WindowFunctionNthValue>(
-                name, argument_types, parameters);
-        }, properties}, AggregateFunctionFactory::CaseInsensitive);
+        });
 }
 
 }

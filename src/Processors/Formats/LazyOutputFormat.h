@@ -29,7 +29,7 @@ public:
 
     void setRowsBeforeLimit(size_t rows_before_limit) override;
 
-    void onCancel() override
+    void finish()
     {
         finished_processing = true;
         /// Clear queue in case if somebody is waiting lazy_format to push.

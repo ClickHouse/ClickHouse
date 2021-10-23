@@ -1,9 +1,6 @@
 #pragma once
-
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/RowsBeforeLimitCounter.h>
-#include <DataStreams/IBlockInputStream.h>
-
 
 namespace DB
 {

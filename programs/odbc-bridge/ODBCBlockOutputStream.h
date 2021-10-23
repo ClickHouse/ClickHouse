@@ -13,7 +13,6 @@ namespace DB
 
 class ODBCBlockOutputStream : public IBlockOutputStream
 {
-using ValueType = ExternalResultDescription::ValueType;
 
 public:
     ODBCBlockOutputStream(

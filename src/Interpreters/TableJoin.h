@@ -24,8 +24,6 @@ class ASTSelectQuery;
 struct DatabaseAndTableWithAlias;
 class Block;
 class DictionaryReader;
-class StorageJoin;
-class StorageDictionary;
 
 struct ColumnWithTypeAndName;
 using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
@@ -34,12 +32,6 @@ struct Settings;
 
 class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
-
-enum class JoinTableSide
-{
-    Left,
-    Right
-};
 
 class TableJoin
 {
@@ -75,12 +67,9 @@ private:
 
     Names key_names_left;
     Names key_names_right; /// Duplicating names are qualified.
-    ASTs on_filter_condition_asts_left;
-    ASTs on_filter_condition_asts_right;
 
     ASTs key_asts_left;
     ASTs key_asts_right;
-
     ASTTableJoin table_join;
 
     ASOF::Inequality asof_inequality = ASOF::Inequality::GreaterOrEquals;
@@ -88,13 +77,15 @@ private:
     /// All columns which can be read from joined table. Duplicating names are qualified.
     NamesAndTypesList columns_from_joined_table;
     /// Columns will be added to block by JOIN.
-    /// It's a subset of columns_from_joined_table
-    /// Note: without corrected Nullability or type, see correctedColumnsAddedByJoin
+    /// It's a subset of columns_from_joined_table with corrected Nullability and type (if inplace type conversion is required)
     NamesAndTypesList columns_added_by_join;
 
     /// Target type to convert key columns before join
     NameToTypeMap left_type_map;
     NameToTypeMap right_type_map;
+
+    ActionsDAGPtr left_converting_actions;
+    ActionsDAGPtr right_converting_actions;
 
     /// Name -> original name. Names are the same as in columns_from_joined_table list.
     std::unordered_map<String, String> original_names;
@@ -103,22 +94,11 @@ private:
 
     VolumePtr tmp_volume;
 
-    std::shared_ptr<StorageJoin> right_storage_join;
-
-    std::shared_ptr<StorageDictionary> right_storage_dictionary;
-    std::shared_ptr<DictionaryReader> dictionary_reader;
-
     Names requiredJoinedNames() const;
 
     /// Create converting actions and change key column names if required
     ActionsDAGPtr applyKeyConvertToTable(
         const ColumnsWithTypeAndName & cols_src, const NameToTypeMap & type_mapping, Names & names_to_rename) const;
-
-    /// Calculates common supertypes for corresponding join key columns.
-    template <typename LeftNamesAndTypes, typename RightNamesAndTypes>
-    bool inferJoinKeyCommonType(const LeftNamesAndTypes & left, const RightNamesAndTypes & right, bool allow_right);
-
-    NamesAndTypesList correctedColumnsAddedByJoin() const;
 
 public:
     TableJoin() = default;
@@ -137,12 +117,16 @@ public:
         table_join.strictness = strictness;
     }
 
+    StoragePtr joined_storage;
+    std::shared_ptr<DictionaryReader> dictionary_reader;
+
     ASTTableJoin::Kind kind() const { return table_join.kind; }
     ASTTableJoin::Strictness strictness() const { return table_join.strictness; }
     bool sameStrictnessAndKind(ASTTableJoin::Strictness, ASTTableJoin::Kind) const;
     const SizeLimits & sizeLimits() const { return size_limits; }
     VolumePtr getTemporaryVolume() { return tmp_volume; }
     bool allowMergeJoin() const;
+    bool allowDictJoin(const String & dict_key, const Block & sample_block, Names &, NamesAndTypesList &) const;
     bool preferMergeJoin() const { return join_algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE; }
     bool forceMergeJoin() const { return join_algorithm == JoinAlgorithm::PARTIAL_MERGE; }
     bool forceHashJoin() const
@@ -166,23 +150,6 @@ public:
     void addUsingKey(const ASTPtr & ast);
     void addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast);
 
-    /* Conditions for left/right table from JOIN ON section.
-     *
-     * Conditions for left and right tables stored separately and united with 'and' function into one column.
-     * For example for query:
-     * SELECT ... JOIN ... ON t1.id == t2.id AND expr11(t1) AND expr21(t2) AND expr12(t1) AND expr22(t2)
-     *
-     * We will build two new ASTs: `expr11(t1) AND expr12(t1)`, `expr21(t2) AND expr22(t2)`
-     * Such columns will be added and calculated for left and right tables respectively.
-     * Only rows where conditions are met (where new columns have non-zero value) will be joined.
-     *
-     * NOTE: non-equi condition containing columns from different tables (like `... ON t1.id = t2.id AND t1.val > t2.val)
-     *     doesn't supported yet, it can be added later.
-     */
-    void addJoinCondition(const ASTPtr & ast, bool is_left);
-    ASTPtr joinConditionColumn(JoinTableSide side) const;
-    std::pair<String, String> joinConditionColumnNames() const;
-
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
     bool hasOn() const { return table_join.on_expression != nullptr; }
 
@@ -197,13 +164,22 @@ public:
     bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
 
-    void addJoinedColumnsAndCorrectTypes(NamesAndTypesList & left_columns, bool correct_nullability);
+    void addJoinedColumnsAndCorrectTypes(NamesAndTypesList & names_and_types, bool correct_nullability = true) const;
+    void addJoinedColumnsAndCorrectTypes(ColumnsWithTypeAndName & columns, bool correct_nullability = true) const;
+
+    /// Calculates common supertypes for corresponding join key columns.
+    bool inferJoinKeyCommonType(const NamesAndTypesList & left, const NamesAndTypesList & right);
 
     /// Calculate converting actions, rename key columns in required
     /// For `USING` join we will convert key columns inplace and affect into types in the result table
     /// For `JOIN ON` we will create new columns with converted keys to join by.
-    std::pair<ActionsDAGPtr, ActionsDAGPtr>
-    createConvertingActions(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns);
+    bool applyJoinKeyConvert(const ColumnsWithTypeAndName & left_sample_columns, const ColumnsWithTypeAndName & right_sample_columns);
+
+    bool needConvert() const { return !left_type_map.empty(); }
+
+    /// Key columns should be converted before join.
+    ActionsDAGPtr leftConvertingActions() const { return left_converting_actions; }
+    ActionsDAGPtr rightConvertingActions() const { return right_converting_actions; }
 
     void setAsofInequality(ASOF::Inequality inequality) { asof_inequality = inequality; }
     ASOF::Inequality getAsofInequality() { return asof_inequality; }
@@ -214,7 +190,6 @@ public:
     const Names & keyNamesLeft() const { return key_names_left; }
     const Names & keyNamesRight() const { return key_names_right; }
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
-
     Names columnsAddedByJoin() const
     {
         Names res;
@@ -226,20 +201,11 @@ public:
     /// StorageJoin overrides key names (cause of different names qualification)
     void setRightKeys(const Names & keys) { key_names_right = keys; }
 
+    /// Split key and other columns by keys name list
+    void splitAdditionalColumns(const Block & sample_block, Block & block_keys, Block & block_others) const;
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     String renamedRightColumnName(const String & name) const;
-    std::unordered_map<String, String> leftToRightKeyRemap() const;
-
-    void setStorageJoin(std::shared_ptr<StorageJoin> storage);
-    void setStorageJoin(std::shared_ptr<StorageDictionary> storage);
-
-    std::shared_ptr<StorageJoin> getStorageJoin() { return right_storage_join; }
-
-    bool tryInitDictJoin(const Block & sample_block, ContextPtr context);
-
-    bool isSpecialStorage() const { return right_storage_dictionary || right_storage_join; }
-    const DictionaryReader * getDictionaryReader() const { return dictionary_reader.get(); }
 };
 
 }

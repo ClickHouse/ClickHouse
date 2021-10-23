@@ -24,8 +24,8 @@
 #endif
 
 #if USE_MYSQL
-#    include <Databases/MySQL/MaterializedMySQLSyncThread.h>
-#    include <Storages/StorageMaterializedMySQL.h>
+#    include <Databases/MySQL/MaterializeMySQLSyncThread.h>
+#    include <Storages/StorageMaterializeMySQL.h>
 #endif
 
 #if USE_LIBPQXX
@@ -146,6 +146,7 @@ void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 
 void DatabaseCatalog::loadDatabases()
 {
+    loadMarkedAsDroppedTables();
     auto task_holder = getContext()->getSchedulePool().createTask("DatabaseCatalog", [this](){ this->dropTableDataTask(); });
     drop_task = std::make_unique<BackgroundSchedulePoolTaskHolder>(std::move(task_holder));
     (*drop_task)->activate();
@@ -156,15 +157,6 @@ void DatabaseCatalog::loadDatabases()
     /// Another background thread which drops temporary LiveViews.
     /// We should start it after loadMarkedAsDroppedTables() to avoid race condition.
     TemporaryLiveViewCleaner::instance().startup();
-
-    /// Start up tables after all databases are loaded.
-    for (const auto & [database_name, database] : databases)
-    {
-        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
-            continue;
-
-        database->startupTables();
-    }
 }
 
 void DatabaseCatalog::shutdownImpl()
@@ -254,11 +246,11 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 #endif
 
 #if USE_MYSQL
-        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializedMySQL::tryGetTable(...)
-        if (db_and_table.first->getEngineName() == "MaterializedMySQL")
+        /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializeMySQL::tryGetTable(...)
+        if (db_and_table.first->getEngineName() == "MaterializeMySQL")
         {
-            if (!MaterializedMySQLSyncThread::isMySQLSyncThread())
-                db_and_table.second = std::make_shared<StorageMaterializedMySQL>(std::move(db_and_table.second), db_and_table.first.get());
+            if (!MaterializeMySQLSyncThread::isMySQLSyncThread())
+                db_and_table.second = std::make_shared<StorageMaterializeMySQL>(std::move(db_and_table.second), db_and_table.first.get());
         }
 #endif
         return db_and_table;

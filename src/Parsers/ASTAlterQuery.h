@@ -31,8 +31,6 @@ public:
         MODIFY_COLUMN,
         COMMENT_COLUMN,
         RENAME_COLUMN,
-        MATERIALIZE_COLUMN,
-
         MODIFY_ORDER_BY,
         MODIFY_SAMPLE_BY,
         MODIFY_TTL,
@@ -226,8 +224,6 @@ public:
     {
         return removeOnCluster<ASTAlterQuery>(clone(), new_database);
     }
-
-    const char * getQueryKindString() const override { return "Alter"; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

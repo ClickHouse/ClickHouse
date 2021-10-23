@@ -1,11 +1,13 @@
 #pragma once
 
+#include <Access/AccessControlManager.h>
+#include <Access/User.h>
 #include <functional>
+#include <Interpreters/Context.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Session.h>
 #include <common/logger_useful.h>
 #include <Poco/Format.h>
 #include <Poco/RegularExpression.h>
@@ -801,13 +803,12 @@ protected:
     static void setPassword(
         const String & user_name,
         const String & password,
-        Session & session,
+        ContextMutablePtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
-        try
-        {
-            session.authenticate(user_name, password, address);
+        try {
+            context->setUser(user_name, password, address);
         }
         catch (const Exception &)
         {
@@ -821,7 +822,7 @@ protected:
 public:
     virtual void authenticate(
         const String & user_name,
-        Session & session,
+        ContextMutablePtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) = 0;
 
@@ -835,11 +836,11 @@ class NoPasswordAuth : public AuthenticationMethod
 public:
     void authenticate(
         const String & user_name,
-        Session & session,
+        ContextMutablePtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) override
     {
-        return setPassword(user_name, "", session, mt, address);
+        setPassword(user_name, "", context, mt, address);
     }
 
     Authentication::Type getType() const override
@@ -853,7 +854,7 @@ class CleartextPasswordAuth : public AuthenticationMethod
 public:
     void authenticate(
         const String & user_name,
-        Session & session,
+        ContextMutablePtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) override
     {
@@ -863,7 +864,7 @@ public:
         if (type == Messaging::FrontMessageType::PASSWORD_MESSAGE)
         {
             std::unique_ptr<Messaging::PasswordMessage> password = mt.receive<Messaging::PasswordMessage>();
-            return setPassword(user_name, password->password, session, mt, address);
+            setPassword(user_name, password->password, context, mt, address);
         }
         else
             throw Exception(
@@ -896,14 +897,16 @@ public:
 
     void authenticate(
         const String & user_name,
-        Session & session,
+        ContextMutablePtr context,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address)
     {
-        const Authentication::Type user_auth_type = session.getAuthenticationTypeOrLogInFailure(user_name);
+        auto user = context->getAccessControlManager().read<User>(user_name);
+        Authentication::Type user_auth_type = user->authentication.getType();
+
         if (type_to_method.find(user_auth_type) != type_to_method.end())
         {
-            type_to_method[user_auth_type]->authenticate(user_name, session, mt, address);
+            type_to_method[user_auth_type]->authenticate(user_name, context, mt, address);
             mt.send(Messaging::AuthenticationOk(), true);
             LOG_DEBUG(log, "Authentication for user {} was successful.", user_name);
             return;

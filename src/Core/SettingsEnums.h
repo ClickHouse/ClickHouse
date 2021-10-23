@@ -94,7 +94,6 @@ enum class LogsLevel
     information,
     debug,
     trace,
-    test,
 };
 
 DECLARE_SETTING_ENUM(LogsLevel)
@@ -158,14 +157,4 @@ enum class HandleKafkaErrorMode
 };
 
 DECLARE_SETTING_ENUM(HandleKafkaErrorMode)
-
-enum class ShortCircuitFunctionEvaluation
-{
-    ENABLE, // Use short-circuit function evaluation for functions that are suitable for it.
-    FORCE_ENABLE, // Use short-circuit function evaluation for all functions.
-    DISABLE, // Disable short-circuit function evaluation.
-};
-
-DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
-
 }

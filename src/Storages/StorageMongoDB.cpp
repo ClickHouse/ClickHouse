@@ -1,5 +1,4 @@
 #include "StorageMongoDB.h"
-#include "StorageMongoDBSocketFactory.h"
 
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
@@ -15,7 +14,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
-#include <DataStreams/MongoDBSource.h>
+#include <DataStreams/MongoDBBlockInputStream.h>
 
 namespace DB
 {
@@ -34,7 +33,6 @@ StorageMongoDB::StorageMongoDB(
     const std::string & collection_name_,
     const std::string & username_,
     const std::string & password_,
-    const std::string & options_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment)
@@ -45,8 +43,6 @@ StorageMongoDB::StorageMongoDB(
     , collection_name(collection_name_)
     , username(username_)
     , password(password_)
-    , options(options_)
-    , uri("mongodb://" + host_ + ":" + std::to_string(port_) + "/" + database_name_ + "?" + options_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -60,10 +56,7 @@ void StorageMongoDB::connectIfNotConnected()
 {
     std::lock_guard lock{connection_mutex};
     if (!connection)
-    {
-        StorageMongoDBSocketFactory factory;
-        connection = std::make_shared<Poco::MongoDB::Connection>(uri, factory);
-    }
+        connection = std::make_shared<Poco::MongoDB::Connection>(host, port);
 
     if (!authenticated)
     {
@@ -99,7 +92,8 @@ Pipe StorageMongoDB::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size, true));
+    return Pipe(std::make_shared<SourceFromInputStream>(
+            std::make_shared<MongoDBBlockInputStream>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size, true)));
 }
 
 void registerStorageMongoDB(StorageFactory & factory)
@@ -108,9 +102,9 @@ void registerStorageMongoDB(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() < 5 || engine_args.size() > 6)
+        if (engine_args.size() != 5)
             throw Exception(
-                "Storage MongoDB requires from 5 to 6 parameters: MongoDB('host:port', database, collection, 'user', 'password' [, 'options']).",
+                "Storage MongoDB requires 5 parameters: MongoDB('host:port', database, collection, 'user', 'password').",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)
@@ -124,11 +118,6 @@ void registerStorageMongoDB(StorageFactory & factory)
         const String & username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
         const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
 
-        String options;
-
-        if (engine_args.size() >= 6)
-            options = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
-
         return StorageMongoDB::create(
             args.table_id,
             parsed_host_port.first,
@@ -137,7 +126,6 @@ void registerStorageMongoDB(StorageFactory & factory)
             collection,
             username,
             password,
-            options,
             args.columns,
             args.constraints,
             args.comment);

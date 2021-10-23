@@ -3,7 +3,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance("node1", main_configs=["configs/config_without_standard_part_log.xml"])
+node1 = cluster.add_instance("node1")
 node2 = cluster.add_instance("node2", main_configs=["configs/config_with_standard_part_log.xml"])
 node3 = cluster.add_instance("node3", main_configs=["configs/config_with_non_standard_part_log.xml"])
 

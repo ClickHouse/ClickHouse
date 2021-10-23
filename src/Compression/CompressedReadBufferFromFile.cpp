@@ -36,13 +36,6 @@ bool CompressedReadBufferFromFile::nextImpl()
     return true;
 }
 
-
-void CompressedReadBufferFromFile::prefetch()
-{
-    file_in.prefetch();
-}
-
-
 CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_)
     : BufferWithOwnMemory<ReadBuffer>(0), p_file_in(std::move(buf)), file_in(*p_file_in)
 {
@@ -53,11 +46,14 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadB
 
 CompressedReadBufferFromFile::CompressedReadBufferFromFile(
     const std::string & path,
-    const ReadSettings & settings,
     size_t estimated_size,
+    size_t aio_threshold,
+    size_t mmap_threshold,
+    MMappedFileCache * mmap_cache,
+    size_t buf_size,
     bool allow_different_codecs_)
     : BufferWithOwnMemory<ReadBuffer>(0)
-    , p_file_in(createReadBufferFromFileBase(path, settings, estimated_size))
+    , p_file_in(createReadBufferFromFileBase(path, estimated_size, aio_threshold, mmap_threshold, mmap_cache, buf_size))
     , file_in(*p_file_in)
 {
     compressed_in = &file_in;

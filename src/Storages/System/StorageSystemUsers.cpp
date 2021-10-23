@@ -50,7 +50,6 @@ NamesAndTypesList StorageSystemUsers::getNamesAndTypes()
         {"grantees_any", std::make_shared<DataTypeUInt8>()},
         {"grantees_list", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"grantees_except", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"default_database", std::make_shared<DataTypeString>()},
     };
     return names_and_types;
 }
@@ -86,7 +85,6 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
     auto & column_grantees_list_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
     auto & column_grantees_except = assert_cast<ColumnString &>(assert_cast<ColumnArray &>(*res_columns[column_index]).getData());
     auto & column_grantees_except_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
-    auto & column_default_database = assert_cast<ColumnString &>(*res_columns[column_index++]);
 
     auto add_row = [&](const String & name,
                        const UUID & id,
@@ -94,8 +92,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
                        const Authentication & authentication,
                        const AllowedClientHosts & allowed_hosts,
                        const RolesOrUsersSet & default_roles,
-                       const RolesOrUsersSet & grantees,
-                       const String default_database)
+                       const RolesOrUsersSet & grantees)
     {
         column_name.insertData(name.data(), name.length());
         column_id.push_back(id.toUnderType());
@@ -183,8 +180,6 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
         for (const auto & except_name : grantees_ast->except_names)
             column_grantees_except.insertData(except_name.data(), except_name.length());
         column_grantees_except_offsets.push_back(column_grantees_except.size());
-
-        column_default_database.insertData(default_database.data(),default_database.length());
     };
 
     for (const auto & id : ids)
@@ -197,8 +192,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
         if (!storage)
             continue;
 
-        add_row(user->getName(), id, storage->getStorageName(), user->authentication, user->allowed_client_hosts,
-                user->default_roles, user->grantees, user->default_database);
+        add_row(user->getName(), id, storage->getStorageName(), user->authentication, user->allowed_client_hosts, user->default_roles, user->grantees);
     }
 }
 

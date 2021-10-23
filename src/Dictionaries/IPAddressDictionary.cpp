@@ -13,7 +13,7 @@
 #include <common/itoa.h>
 #include <common/map.h>
 #include <common/range.h>
-#include <Dictionaries/DictionarySource.h>
+#include <Dictionaries/DictionaryBlockInputStream.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Functions/FunctionHelpers.h>
 
@@ -352,16 +352,14 @@ void IPAddressDictionary::createAttributes()
 
 void IPAddressDictionary::loadData()
 {
-    QueryPipeline pipeline;
-    pipeline.init(source_ptr->loadAll());
+    auto stream = source_ptr->loadAll();
+    stream->readPrefix();
 
     std::vector<IPRecord> ip_records;
 
     bool has_ipv6 = false;
 
-    PullingPipelineExecutor executor(pipeline);
-    Block block;
-    while (executor.pull(block))
+    while (const auto block = stream->read())
     {
         const auto rows = block.rows();
         element_count += rows;
@@ -388,6 +386,8 @@ void IPAddressDictionary::loadData()
             ip_records.emplace_back(addr, prefix, row_number);
         }
     }
+
+    stream->readSuffix();
 
     if (access_to_key_from_attributes)
     {
@@ -835,7 +835,7 @@ static auto keyViewGetter()
     };
 }
 
-Pipe IPAddressDictionary::read(const Names & column_names, size_t max_block_size) const
+BlockInputStreamPtr IPAddressDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
 {
     const bool is_ipv4 = std::get_if<IPv4Container>(&ip_column) != nullptr;
 
@@ -857,15 +857,13 @@ Pipe IPAddressDictionary::read(const Names & column_names, size_t max_block_size
     if (is_ipv4)
     {
         auto get_view = keyViewGetter<ColumnVector<UInt32>, true>();
-        return Pipe(std::make_shared<DictionarySource>(
-            DictionarySourceData(shared_from_this(), getKeyColumns(), column_names, std::move(get_keys), std::move(get_view)),
-            max_block_size));
+        return std::make_shared<DictionaryBlockInputStream>(
+            shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(get_keys), std::move(get_view));
     }
 
     auto get_view = keyViewGetter<ColumnFixedString, false>();
-    return Pipe(std::make_shared<DictionarySource>(
-        DictionarySourceData(shared_from_this(), getKeyColumns(), column_names, std::move(get_keys), std::move(get_view)),
-        max_block_size));
+    return std::make_shared<DictionaryBlockInputStream>(
+        shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(get_keys), std::move(get_view));
 }
 
 IPAddressDictionary::RowIdxConstIter IPAddressDictionary::ipNotFound() const
@@ -954,7 +952,7 @@ void registerDictionaryTrie(DictionaryFactory & factory)
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
                              DictionarySourcePtr source_ptr,
-                             ContextPtr /* global_context */,
+                             ContextPtr /* context */,
                              bool /*created_from_ddl*/) -> DictionaryPtr
     {
         if (!dict_struct.key || dict_struct.key->size() != 1)

@@ -7,13 +7,7 @@
 #include <functional>
 #include <string>
 
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <fcntl.h>
-
-#ifndef O_DIRECT
-#define O_DIRECT 00040000
-#endif
 
 
 namespace DB

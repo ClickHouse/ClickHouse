@@ -13,11 +13,11 @@ node1 = cluster.add_instance('node1',
 
 postgres_dict_table_template = """
     CREATE TABLE IF NOT EXISTS {} (
-    id Integer NOT NULL, key Integer NOT NULL, value Integer NOT NULL, PRIMARY KEY (id))
+    id Integer NOT NULL, value Integer NOT NULL, PRIMARY KEY (id))
     """
 click_dict_table_template = """
     CREATE TABLE IF NOT EXISTS `test`.`dict_table_{}` (
-        `key` UInt32, `value` UInt32
+        `id` UInt64, `value` UInt32
     ) ENGINE = Dictionary({})
     """
 
@@ -43,7 +43,7 @@ def create_and_fill_postgres_table(cursor, table_name, port, host):
     create_postgres_table(cursor, table_name)
     # Fill postgres table using clickhouse postgres table function and check
     table_func = '''postgresql('{}:{}', 'clickhouse', '{}', 'postgres', 'mysecretpassword')'''.format(host, port, table_name)
-    node1.query('''INSERT INTO TABLE FUNCTION {} SELECT number, number, number from numbers(10000)
+    node1.query('''INSERT INTO TABLE FUNCTION {} SELECT number, number from numbers(10000)
             '''.format(table_func, table_name))
     result = node1.query("SELECT count() FROM {}".format(table_func))
     assert result.rstrip() == '10000'
@@ -82,128 +82,13 @@ def test_load_dictionaries(started_cluster):
 
     node1.query("SYSTEM RELOAD DICTIONARY {}".format(dict_name))
     assert node1.query("SELECT count() FROM `test`.`dict_table_{}`".format(table_name)).rstrip() == '10000'
-    assert node1.query("SELECT dictGetUInt32('{}', 'key', toUInt64(0))".format(dict_name)) == '0\n'
+    assert node1.query("SELECT dictGetUInt32('{}', 'id', toUInt64(0))".format(dict_name)) == '0\n'
     assert node1.query("SELECT dictGetUInt32('{}', 'value', toUInt64(9999))".format(dict_name)) == '9999\n'
 
     cursor.execute("DROP TABLE IF EXISTS {}".format(table_name))
     node1.query("DROP TABLE IF EXISTS {}".format(table_name))
     node1.query("DROP DICTIONARY IF EXISTS {}".format(dict_name))
 
-
-def test_postgres_dictionaries_custom_query_full_load(started_cluster):
-    conn = get_postgres_conn(ip=started_cluster.postgres_ip, database=True, port=started_cluster.postgres_port)
-    cursor = conn.cursor()
-
-    cursor.execute("CREATE TABLE IF NOT EXISTS test_table_1 (id Integer, value_1 Text);")
-    cursor.execute("CREATE TABLE IF NOT EXISTS test_table_2 (id Integer, value_2 Text);")
-    cursor.execute("INSERT INTO test_table_1 VALUES (1, 'Value_1');")
-    cursor.execute("INSERT INTO test_table_2 VALUES (1, 'Value_2');")
-
-    query = node1.query
-    query("""
-    CREATE DICTIONARY test_dictionary_custom_query
-    (
-        id UInt64,
-        value_1 String,
-        value_2 String
-    )
-    PRIMARY KEY id
-    LAYOUT(FLAT())
-    SOURCE(PostgreSQL(
-        DB 'clickhouse'
-        HOST '{}'
-        PORT {}
-        USER 'postgres'
-        PASSWORD 'mysecretpassword'
-        QUERY $doc$SELECT id, value_1, value_2 FROM test_table_1 INNER JOIN test_table_2 USING (id);$doc$))
-    LIFETIME(0)
-    """.format(started_cluster.postgres_ip, started_cluster.postgres_port))
-
-    result = query("SELECT id, value_1, value_2 FROM test_dictionary_custom_query")
-
-    assert result == '1\tValue_1\tValue_2\n'
-
-    query("DROP DICTIONARY test_dictionary_custom_query;")
-
-    cursor.execute("DROP TABLE test_table_2;")
-    cursor.execute("DROP TABLE test_table_1;")
-
-
-def test_postgres_dictionaries_custom_query_partial_load_simple_key(started_cluster):
-    conn = get_postgres_conn(ip=started_cluster.postgres_ip, database=True, port=started_cluster.postgres_port)
-    cursor = conn.cursor()
-
-    cursor.execute("CREATE TABLE IF NOT EXISTS test_table_1 (id Integer, value_1 Text);")
-    cursor.execute("CREATE TABLE IF NOT EXISTS test_table_2 (id Integer, value_2 Text);")
-    cursor.execute("INSERT INTO test_table_1 VALUES (1, 'Value_1');")
-    cursor.execute("INSERT INTO test_table_2 VALUES (1, 'Value_2');")
-
-    query = node1.query
-    query("""
-    CREATE DICTIONARY test_dictionary_custom_query
-    (
-        id UInt64,
-        value_1 String,
-        value_2 String
-    )
-    PRIMARY KEY id
-    LAYOUT(DIRECT())
-    SOURCE(PostgreSQL(
-        DB 'clickhouse'
-        HOST '{}'
-        PORT {}
-        USER 'postgres'
-        PASSWORD 'mysecretpassword'
-        QUERY $doc$SELECT id, value_1, value_2 FROM test_table_1 INNER JOIN test_table_2 USING (id) WHERE {{condition}};$doc$))
-    """.format(started_cluster.postgres_ip, started_cluster.postgres_port))
-
-    result = query("SELECT dictGet('test_dictionary_custom_query', ('value_1', 'value_2'), toUInt64(1))")
-
-    assert result == '(\'Value_1\',\'Value_2\')\n'
-
-    query("DROP DICTIONARY test_dictionary_custom_query;")
-
-    cursor.execute("DROP TABLE test_table_2;")
-    cursor.execute("DROP TABLE test_table_1;")
-
-
-def test_postgres_dictionaries_custom_query_partial_load_complex_key(started_cluster):
-    conn = get_postgres_conn(ip=started_cluster.postgres_ip, database=True, port=started_cluster.postgres_port)
-    cursor = conn.cursor()
-
-    cursor.execute("CREATE TABLE IF NOT EXISTS test_table_1 (id Integer, key Text, value_1 Text);")
-    cursor.execute("CREATE TABLE IF NOT EXISTS test_table_2 (id Integer, key Text, value_2 Text);")
-    cursor.execute("INSERT INTO test_table_1 VALUES (1, 'Key', 'Value_1');")
-    cursor.execute("INSERT INTO test_table_2 VALUES (1, 'Key', 'Value_2');")
-
-    query = node1.query
-    query("""
-    CREATE DICTIONARY test_dictionary_custom_query
-    (
-        id UInt64,
-        key String,
-        value_1 String,
-        value_2 String
-    )
-    PRIMARY KEY id, key
-    LAYOUT(COMPLEX_KEY_DIRECT())
-    SOURCE(PostgreSQL(
-        DB 'clickhouse'
-        HOST '{}'
-        PORT {}
-        USER 'postgres'
-        PASSWORD 'mysecretpassword'
-        QUERY $doc$SELECT id, key, value_1, value_2 FROM test_table_1 INNER JOIN test_table_2 USING (id, key) WHERE {{condition}};$doc$))
-    """.format(started_cluster.postgres_ip, started_cluster.postgres_port))
-
-    result = query("SELECT dictGet('test_dictionary_custom_query', ('value_1', 'value_2'), (toUInt64(1), 'Key'))")
-
-    assert result == '(\'Value_1\',\'Value_2\')\n'
-
-    query("DROP DICTIONARY test_dictionary_custom_query;")
-
-    cursor.execute("DROP TABLE test_table_2;")
-    cursor.execute("DROP TABLE test_table_1;")
 
 def test_invalidate_query(started_cluster):
     conn = get_postgres_conn(ip=started_cluster.postgres_ip, database=True, port=started_cluster.postgres_port)
@@ -252,11 +137,11 @@ def test_dictionary_with_replicas(started_cluster):
     create_postgres_table(cursor1, 'test1')
     create_postgres_table(cursor2, 'test1')
 
-    cursor1.execute('INSERT INTO test1 select i, i, i from generate_series(0, 99) as t(i);')
-    cursor2.execute('INSERT INTO test1 select i, i, i from generate_series(100, 199) as t(i);')
+    cursor1.execute('INSERT INTO test1 select i, i from generate_series(0, 99) as t(i);');
+    cursor2.execute('INSERT INTO test1 select i, i from generate_series(100, 199) as t(i);');
 
     create_dict('test1', 1)
-    result = node1.query("SELECT * FROM `test`.`dict_table_test1` ORDER BY key")
+    result = node1.query("SELECT * FROM `test`.`dict_table_test1` ORDER BY id")
 
     # priority 0 - non running port
     assert node1.contains_in_log('PostgreSQLConnectionPool: Connection error*')
@@ -273,7 +158,7 @@ def test_dictionary_with_replicas(started_cluster):
     node1.query("DROP DICTIONARY IF EXISTS dict1")
 
 
-def test_postgres_schema(started_cluster):
+def test_postgres_scema(started_cluster):
     conn = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, database=True)
     cursor = conn.cursor()
 

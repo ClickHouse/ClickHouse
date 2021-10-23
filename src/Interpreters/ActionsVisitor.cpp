@@ -185,11 +185,9 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
 
                 /// If the function is not a tuple, treat it as a constant expression that returns tuple and extract it.
                 function_result = extractValueFromNode(elem, *tuple_type, context);
-
                 if (function_result.getType() != Field::Types::Tuple)
-                    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
-                        "Invalid type of set. Expected tuple, got {}",
-                        function_result.getTypeName());
+                    throw Exception("Invalid type of set. Expected tuple, got " + String(function_result.getTypeName()),
+                                    ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
                 tuple = &function_result.get<Tuple>();
             }
@@ -200,9 +198,8 @@ static Block createBlockFromAST(const ASTPtr & node, const DataTypes & types, Co
             {
                 /// The literal must be tuple.
                 if (literal->value.getType() != Field::Types::Tuple)
-                    throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET,
-                        "Invalid type in set. Expected tuple, got {}",
-                        literal->value.getTypeName());
+                    throw Exception("Invalid type in set. Expected tuple, got "
+                        + String(literal->value.getTypeName()), ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 
                 tuple = &literal->value.get<Tuple>();
             }
@@ -377,8 +374,8 @@ SetPtr makeExplicitSet(
 
     SetPtr set
         = std::make_shared<Set>(size_limits, create_ordered_set, context->getSettingsRef().transform_null_in);
-    set->setHeader(block.cloneEmpty().getColumnsWithTypeAndName());
-    set->insertFromBlock(block.getColumnsWithTypeAndName());
+    set->setHeader(block.cloneEmpty());
+    set->insertFromBlock(block);
     set->finishInsert();
 
     prepared_sets[set_key] = set;
