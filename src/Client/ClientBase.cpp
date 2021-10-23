@@ -45,14 +45,13 @@
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/CompressionMethod.h>
-#include <DataStreams/InternalTextLogs.h>
-#include <DataStreams/materializeBlock.h>
+#include <Client/InternalTextLogs.h>
 
 namespace fs = std::filesystem;
 
@@ -72,6 +71,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
+    extern const int UNRECOGNIZED_ARGUMENTS;
 }
 
 }
@@ -267,7 +267,7 @@ void ClientBase::onLogData(Block & block)
 {
     initLogsOutputStream();
     progress_indication.clearProgressOutput();
-    logs_out_stream->write(block);
+    logs_out_stream->writeLogs(block);
     logs_out_stream->flush();
 }
 
@@ -294,7 +294,7 @@ void ClientBase::onReceiveExceptionFromServer(std::unique_ptr<Exception> && e)
 }
 
 
-void ClientBase::onProfileInfo(const BlockStreamProfileInfo & profile_info)
+void ClientBase::onProfileInfo(const ProfileInfo & profile_info)
 {
     if (profile_info.hasAppliedLimit() && output_format)
         output_format->setRowsBeforeLimit(profile_info.getRowsBeforeLimit());
@@ -517,6 +517,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
     const size_t poll_interval
         = std::max(min_poll_interval, std::min<size_t>(receive_timeout.totalMicroseconds(), default_poll_interval));
 
+    bool break_on_timeout = connection->getConnectionType() != IServerConnection::Type::LOCAL;
     while (true)
     {
         Stopwatch receive_watch(CLOCK_MONOTONIC_COARSE);
@@ -547,7 +548,7 @@ void ClientBase::receiveResult(ASTPtr parsed_query)
                 else
                 {
                     double elapsed = receive_watch.elapsedSeconds();
-                    if (elapsed > receive_timeout.totalSeconds())
+                    if (break_on_timeout && elapsed > receive_timeout.totalSeconds())
                     {
                         std::cout << "Timeout exceeded while receiving data from server."
                                     << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
@@ -670,37 +671,59 @@ void ClientBase::onProfileEvents(Block & block)
     const auto rows = block.rows();
     if (rows == 0)
         return;
-    const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
-    const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
-    const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
-    const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
 
-    const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
-    const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
-
-    HostToThreadTimesMap thread_times;
-    for (size_t i = 0; i < rows; ++i)
+    if (progress_indication.print_hardware_utilization)
     {
-        auto thread_id = array_thread_id[i];
-        auto host_name = host_names.getDataAt(i).toString();
-        if (thread_id != 0)
-            progress_indication.addThreadIdToList(host_name, thread_id);
-        auto event_name = names.getDataAt(i);
-        auto value = array_values[i];
-        if (event_name == user_time_name)
+        const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
+        const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
+        const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
+        const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
+
+        const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
+        const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+
+        HostToThreadTimesMap thread_times;
+        for (size_t i = 0; i < rows; ++i)
         {
-            thread_times[host_name][thread_id].user_ms = value;
+            auto thread_id = array_thread_id[i];
+            auto host_name = host_names.getDataAt(i).toString();
+            if (thread_id != 0)
+                progress_indication.addThreadIdToList(host_name, thread_id);
+            auto event_name = names.getDataAt(i);
+            auto value = array_values[i];
+            if (event_name == user_time_name)
+            {
+                thread_times[host_name][thread_id].user_ms = value;
+            }
+            else if (event_name == system_time_name)
+            {
+                thread_times[host_name][thread_id].system_ms = value;
+            }
+            else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
+            {
+                thread_times[host_name][thread_id].memory_usage = value;
+            }
         }
-        else if (event_name == system_time_name)
+        progress_indication.updateThreadEventData(thread_times);
+    }
+
+    if (profile_events.print)
+    {
+        if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
         {
-            thread_times[host_name][thread_id].system_ms = value;
+            initLogsOutputStream();
+            progress_indication.clearProgressOutput();
+            logs_out_stream->writeProfileEvents(block);
+            logs_out_stream->flush();
+
+            profile_events.watch.restart();
+            profile_events.last_block = {};
         }
-        else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
+        else
         {
-            thread_times[host_name][thread_id].memory_usage = value;
+            profile_events.last_block = block;
         }
     }
-    progress_indication.updateThreadEventData(thread_times);
 }
 
 
@@ -1023,6 +1046,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     processed_rows = 0;
     written_first_block = false;
     progress_indication.resetProgress();
+    profile_events.watch.restart();
 
     {
         /// Temporarily apply query settings to context.
@@ -1089,6 +1113,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             /// If the connection initiates the reconnection, it uses its variable.
             connection->setDefaultDatabase(new_database);
         }
+    }
+
+    /// Always print last block (if it was not printed already)
+    if (profile_events.last_block)
+    {
+        initLogsOutputStream();
+        progress_indication.clearProgressOutput();
+        logs_out_stream->writeProfileEvents(profile_events.last_block);
+        logs_out_stream->flush();
     }
 
     if (is_interactive)
@@ -1505,6 +1538,26 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
     }
 }
 
+void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
+{
+    cmd_settings.addProgramOptions(options_description.main_description.value());
+    /// Parse main commandline options.
+    auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
+    po::parsed_options parsed = parser.run();
+
+    /// Check unrecognized options without positional options.
+    auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::exclude_positional);
+    if (!unrecognized_options.empty())
+        throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
+
+    /// Check positional options (options after ' -- ', ex: clickhouse-client -- <options>).
+    unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
+    if (unrecognized_options.size() > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional options are not supported.");
+
+    po::store(parsed, options);
+}
+
 
 void ClientBase::init(int argc, char ** argv)
 {
@@ -1560,9 +1613,13 @@ void ClientBase::init(int argc, char ** argv)
 
         ("ignore-error", "do not stop processing in multiquery mode")
         ("stacktrace", "print stack traces of exceptions")
+        ("hardware-utilization", "print hardware utilization information in progress bar")
+        ("print-profile-events", po::value(&profile_events.print)->zero_tokens(), "Printing ProfileEvents packets")
+        ("profile-events-delay-ms", po::value<UInt64>()->default_value(profile_events.delay_ms), "Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet)")
     ;
 
-    addAndCheckOptions(options_description, options, common_arguments);
+    addOptions(options_description);
+    parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
     if (options.count("version") || options.count("V"))
@@ -1610,6 +1667,10 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("vertical", true);
     if (options.count("stacktrace"))
         config().setBool("stacktrace", true);
+    if (options.count("print-profile-events"))
+        config().setBool("print-profile-events", true);
+    if (options.count("profile-events-delay-ms"))
+        config().setInt("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
     if (options.count("progress"))
         config().setBool("progress", true);
     if (options.count("echo"))
@@ -1626,8 +1687,12 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("verbose", true);
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
+    if (options.count("hardware-utilization"))
+        progress_indication.print_hardware_utilization = true;
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
+    profile_events.print = options.count("print-profile-events");
+    profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
     processOptions(options_description, options, external_tables_arguments);
     argsToConfig(common_arguments, config(), 100);

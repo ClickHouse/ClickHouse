@@ -4,7 +4,7 @@
 #include <base/LocalDateTime.h>
 #include <Common/ShellCommand.h>
 
-#include <DataStreams/formatBlock.h>
+#include <Formats/formatBlock.h>
 
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
@@ -100,7 +100,7 @@ Pipe ExecutablePoolDictionarySource::getStreamForBlock(const Block & block)
         config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy{ true /*terminate_in_destructor*/, configuration.command_termination_timeout };
         auto shell_command = ShellCommand::execute(config);
         return shell_command;
-    }, configuration.max_command_execution_time * 1000);
+    }, configuration.max_command_execution_time * 10000);
 
     if (!result)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,

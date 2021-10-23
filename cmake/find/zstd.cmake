@@ -2,7 +2,7 @@ option (USE_INTERNAL_ZSTD_LIBRARY "Set to FALSE to use system zstd library inste
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/zstd/lib/zstd.h")
     if(USE_INTERNAL_ZSTD_LIBRARY)
-        message(WARNING "submodule contrib/zstd is missing. to fix try run: \n git submodule update --init --recursive")
+        message(WARNING "submodule contrib/zstd is missing. to fix try run: \n git submodule update --init")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal zstd library")
         set(USE_INTERNAL_ZSTD_LIBRARY 0)
     endif()
