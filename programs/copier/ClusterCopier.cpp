@@ -1274,13 +1274,14 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
     auto get_select_query = [&] (const DatabaseAndTableName & from_table, const String & fields, bool enable_splitting, String limit = "")
     {
         String query;
+        query += "WITH " + task_partition.name + " AS partition_key ";
         query += "SELECT " + fields + " FROM " + getQuotedTable(from_table);
 
         if (enable_splitting && experimental_use_sample_offset)
             query += " SAMPLE 1/" + toString(number_of_splits) + " OFFSET " + toString(current_piece_number) + "/" + toString(number_of_splits);
 
         /// TODO: Bad, it is better to rewrite with ASTLiteral(partition_key_field)
-        query += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = (" + task_partition.name + " AS partition_key))";
+        query += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = partition_key)";
 
         if (enable_splitting && !experimental_use_sample_offset)
             query += " AND ( cityHash64(" + primary_key_comma_separated + ") %" + toString(number_of_splits) + " = " + toString(current_piece_number) + " )";
@@ -1852,9 +1853,9 @@ bool ClusterCopier::checkShardHasPartition(const ConnectionTimeouts & timeouts,
     TaskTable & task_table = task_shard.task_table;
 
     WriteBufferFromOwnString ss;
+    ss << "WITH " + partition_quoted_name + " AS partition_key ";
     ss << "SELECT 1 FROM " << getQuotedTable(task_shard.table_read_shard);
-    ss << " WHERE (" << queryToString(task_table.engine_push_partition_key_ast);
-    ss << " = (" + partition_quoted_name << " AS partition_key))";
+    ss << " WHERE (" << queryToString(task_table.engine_push_partition_key_ast) << " = partition_key)";
     if (!task_table.where_condition_str.empty())
         ss << " AND (" << task_table.where_condition_str << ")";
     ss << " LIMIT 1";
@@ -1883,13 +1884,15 @@ bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTi
 
     UNUSED(primary_key_comma_separated);
 
-    std::string query = "SELECT 1 FROM " + getQuotedTable(task_shard.table_read_shard);
+    std::string query;
+
+    query += "WITH " + partition_quoted_name + " AS partition_key ";
+    query += "SELECT 1 FROM " + getQuotedTable(task_shard.table_read_shard);
 
     if (experimental_use_sample_offset)
         query += " SAMPLE 1/" + toString(number_of_splits) + " OFFSET " + toString(current_piece_number) + "/" + toString(number_of_splits);
 
-    query += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast)
-                        + " = (" + partition_quoted_name + " AS partition_key))";
+    query += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = partition_key)";
 
     if (!experimental_use_sample_offset)
         query += " AND (cityHash64(" + primary_key_comma_separated + ") % "

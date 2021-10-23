@@ -105,9 +105,9 @@ void dropAliases(ASTPtr & node)
 }
 
 
-bool isCompatible(const IAST & node)
+bool isCompatible(IAST & node)
 {
-    if (const auto * function = node.as<ASTFunction>())
+    if (auto * function = node.as<ASTFunction>())
     {
         if (function->parameters)   /// Parametric aggregate functions
             return false;
@@ -135,8 +135,14 @@ bool isCompatible(const IAST & node)
 
         /// A tuple with zero or one elements is represented by a function tuple(x) and is not compatible,
         /// but a normal tuple with more than one element is represented as a parenthesized expression (x, y) and is perfectly compatible.
-        if (name == "tuple" && function->arguments->children.size() <= 1)
-            return false;
+        /// So to support tuple with zero or one elements we can clear function name to get (x) instead of tuple(x)
+        if (name == "tuple")
+        {
+            if (function->arguments->children.size() <= 1)
+            {
+                function->name.clear();
+            }
+        }
 
         /// If the right hand side of IN is a table identifier (example: x IN table), then it's not compatible.
         if ((name == "in" || name == "notIn")
