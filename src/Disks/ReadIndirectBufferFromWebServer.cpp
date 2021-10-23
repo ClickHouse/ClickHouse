@@ -59,6 +59,7 @@ std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
         0,
         Poco::Net::HTTPBasicCredentials{},
         buf_size,
+        context->getReadSettings(),
         headers);
 }
 
