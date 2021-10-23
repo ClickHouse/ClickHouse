@@ -111,7 +111,7 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
                 }
 
                 auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
-                auto * arg_value_literal = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context)->as<ASTLiteral>();
+                auto * arg_value_literal = arg_value_ast->as<ASTLiteral>();
                 if (arg_value_literal)
                 {
                     auto arg_value = arg_value_literal->value;
@@ -315,7 +315,7 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
 
                 auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
                 auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
-                auto arg_value = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context)->as<ASTLiteral>()->value;
+                auto arg_value = arg_value_ast->as<ASTLiteral>()->value;
 
                 if (arg_name == "url")
                     configuration.url = arg_value.safeGet<String>();

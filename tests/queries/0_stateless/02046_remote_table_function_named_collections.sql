@@ -6,6 +6,6 @@ INSERT INTO FUNCTION remote(remote1, database=currentDatabase()) VALUES(1);
 INSERT INTO FUNCTION remote(remote1, database=currentDatabase()) VALUES(2);
 INSERT INTO FUNCTION remote(remote1, database=currentDatabase()) VALUES(3);
 INSERT INTO FUNCTION remote(remote1, database=currentDatabase()) VALUES(4);
-SELECT COUNT(*) FROM remote(remote1, database=currentDatabase());
-SELECT count(*) FROM remote(remote2, database=merge(currentDatabase(), '^remote_test'));
+SELECT count() FROM remote(remote1, database=currentDatabase());
+SELECT count() FROM remote(remote2, database=merge(currentDatabase(), '^remote_test'));
 DROP TABLE remote_test;

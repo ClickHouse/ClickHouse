@@ -6,7 +6,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -80,7 +79,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
                 else
                 {
                     auto database_literal = evaluateConstantExpressionOrIdentifierAsLiteral(arg_value, context);
-                    configuration.database = safeGetFromASTLiteral<String>(database_literal);
+                    configuration.database = database_literal->as<ASTLiteral>()->value.safeGet<String>();
                 }
             }
             else
