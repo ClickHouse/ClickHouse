@@ -49,13 +49,12 @@ FileLogSource::~FileLogSource()
     {
         if (!finished)
             onFinish();
-        storage.reduceStreams();
     }
     catch (...)
     {
-        /// Exception may happened in onFinish()
-        storage.reduceStreams();
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+    storage.reduceStreams();
 }
 
 void FileLogSource::onFinish()

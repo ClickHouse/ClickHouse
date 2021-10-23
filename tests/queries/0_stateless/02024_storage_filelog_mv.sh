@@ -26,9 +26,15 @@ ${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=Fil
 ${CLICKHOUSE_CLIENT} --query "drop table if exists mv;"
 ${CLICKHOUSE_CLIENT} --query "create Materialized View mv engine=MergeTree order by k as select * from file_log;"
 
-for i in {1..200}
-do
-	sleep 0.1
+function count()
+{
+	COUNT=$(${CLICKHOUSE_CLIENT} --query "select count() from mv;")
+	echo $COUNT
+}
+
+while true; do
+	[[ $(count) == 20 ]] && break
+	sleep 1
 done
 
 ${CLICKHOUSE_CLIENT} --query "select * from mv order by k;"
@@ -46,9 +52,9 @@ do
 	echo $i, $i >> ${user_files_path}/logs/d.txt
 done
 
-for _ in {1..300}
-do
-	sleep 0.1
+while true; do
+	[[ $(count) == 101 ]] && break
+	sleep 1
 done
 
 ${CLICKHOUSE_CLIENT} --query "select * from mv order by k;"
