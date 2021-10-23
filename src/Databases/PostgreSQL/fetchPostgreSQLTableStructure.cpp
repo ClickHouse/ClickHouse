@@ -191,13 +191,13 @@ std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
             columns[i] = NameAndTypePair(name_and_type.name, type);
         }
     }
-    catch (const pqxx::syntax_error & e)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error: {} (in query: {})", e.what(), query);
-    }
     catch (const pqxx::undefined_table &)
     {
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table);
+    }
+    catch (const pqxx::syntax_error & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error: {} (in query: {})", e.what(), query);
     }
     catch (Exception & e)
     {
