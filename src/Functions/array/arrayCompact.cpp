@@ -16,7 +16,6 @@ namespace ErrorCodes
 
 struct ArrayCompactImpl
 {
-    static bool useDefaultImplementationForConstants() { return true; }
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -129,6 +128,7 @@ struct ArrayCompactImpl
     {
         ColumnPtr res;
 
+        mapped = mapped->convertToFullColumnIfConst();
         if (!(executeType< UInt8 >(mapped, array, res) ||
             executeType< UInt16>(mapped, array, res) ||
             executeType< UInt32>(mapped, array, res) ||

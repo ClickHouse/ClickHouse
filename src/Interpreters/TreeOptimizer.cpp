@@ -86,12 +86,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
     const FunctionFactory & function_factory = FunctionFactory::instance();
 
     if (!select_query->groupBy())
-    {
-        // If there is a HAVING clause without GROUP BY, make sure we have some aggregation happen.
-        if (select_query->having())
-            appendUnusedGroupByColumn(select_query, source_columns);
         return;
-    }
 
     const auto is_literal = [] (const ASTPtr & ast) -> bool
     {

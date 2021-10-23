@@ -413,7 +413,12 @@ void Connection::sendQuery(
     if (!connected)
         connect(timeouts);
 
-    TimeoutSetter timeout_setter(*socket, timeouts.send_timeout, timeouts.receive_timeout, true);
+    /// Query is not executed within sendQuery() function.
+    ///
+    /// And what this means that temporary timeout (via TimeoutSetter) is not
+    /// enough, since next query can use timeout from the previous query in this case.
+    socket->setReceiveTimeout(timeouts.receive_timeout);
+    socket->setSendTimeout(timeouts.send_timeout);
 
     if (settings)
     {
