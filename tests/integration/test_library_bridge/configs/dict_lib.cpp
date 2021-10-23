@@ -170,7 +170,6 @@ void * ClickHouseDictionary_v3_loadIds(void * data_ptr,
         LOG(ptr->lib->log, "ids passed: " << ids->size);
         for (size_t i = 0; i < ids->size; ++i)
         {
-            LOG(ptr->lib->log, "id " << i << " :" << ids->data[i] << " generating.");
             ptr->dataHolder.emplace_back(std::vector<uint64_t>{ids->data[i], ids->data[i] + 100, ids->data[i] + 200, ids->data[i] + 300});
         }
     }

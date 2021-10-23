@@ -69,7 +69,6 @@ Chunk ClickHouseLibrarySource::generate()
             break;
     }
 
-    LOG_TRACE(&Poco::Logger::get("KSSENII"), "Sending rows: {}", num_rows);
     return Chunk(std::move(columns), num_rows);
 }
 

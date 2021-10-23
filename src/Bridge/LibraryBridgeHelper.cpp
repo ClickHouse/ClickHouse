@@ -26,6 +26,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+static constexpr size_t max_tries = 5;
+
 LibraryBridgeHelper::LibraryBridgeHelper(
         ContextPtr context_,
         const Block & sample_block_,
@@ -251,6 +253,8 @@ bool LibraryBridgeHelper::executeRequest(const Poco::URI & uri, ReadWriteBufferF
 
 Pipe LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback)
 {
+    auto settings = getContext()->getReadSettings();
+    settings.http_max_tries = std::max(max_tries, settings.http_max_tries); /// Force retries.
     auto read_buf_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
         uri,
         Poco::Net::HTTPRequest::HTTP_POST,
@@ -259,7 +263,7 @@ Pipe LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTT
         0,
         Poco::Net::HTTPBasicCredentials{},
         DBMS_DEFAULT_BUFFER_SIZE,
-        getContext()->getReadSettings(),
+        settings,
         ReadWriteBufferFromHTTP::HTTPHeaderEntries{});
 
     auto source = FormatFactory::instance().getInput(LibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, getContext(), DEFAULT_BLOCK_SIZE);

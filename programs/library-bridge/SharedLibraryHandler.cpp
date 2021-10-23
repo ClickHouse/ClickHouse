@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EXTERNAL_LIBRARY_ERROR;
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 
