@@ -319,51 +319,6 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
     conn.close()
 
 
-# Check that limited connection_wait_timeout (via connection_pool_size=1) will throw.
-def test_settings_connection_wait_timeout(started_cluster):
-    table_name = 'test_settings_connection_wait_timeout'
-    node1.query(f'DROP TABLE IF EXISTS {table_name}')
-    wait_timeout = 2
-
-    conn = get_mysql_conn(started_cluster, cluster.mysql_ip)
-    drop_mysql_table(conn, table_name)
-    create_mysql_table(conn, table_name)
-
-    node1.query('''
-        CREATE TABLE {}
-        (
-            id UInt32,
-            name String,
-            age UInt32,
-            money UInt32
-        )
-        ENGINE = MySQL('mysql57:3306', 'clickhouse', '{}', 'root', 'clickhouse')
-        SETTINGS connection_wait_timeout={}, connection_pool_size=1
-        '''.format(table_name, table_name, wait_timeout)
-    )
-
-    node1.query("INSERT INTO {} (id, name) SELECT number, concat('name_', toString(number)) from numbers(10) ".format(table_name))
-
-    def worker():
-        node1.query("SELECT sleepEachRow(1) FROM {}".format(table_name))
-
-    worker_thread = threading.Thread(target=worker)
-    worker_thread.start()
-
-    # ensure that first query started in worker_thread
-    time.sleep(1)
-
-    started = time.time()
-    with pytest.raises(QueryRuntimeException, match=r"Exception: mysqlxx::Pool is full \(connection_wait_timeout is exceeded\)"):
-        node1.query("SELECT sleepEachRow(1) FROM {}".format(table_name))
-    ended = time.time()
-    assert (ended - started) >= wait_timeout
-
-    worker_thread.join()
-
-    drop_mysql_table(conn, table_name)
-    conn.close()
-
 # Regression for (k, v) IN ((k, v))
 def test_mysql_in(started_cluster):
     table_name = 'test_mysql_in'
