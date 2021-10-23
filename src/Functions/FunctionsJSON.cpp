@@ -1,3 +1,4 @@
+#include <type_traits>
 #include <boost/tti/has_member_function.hpp>
 
 #include <base/range.h>
@@ -38,7 +39,6 @@
 #include <Functions/SimdJSONParser.h>
 #include <Functions/RapidJSONParser.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsJSON.h>
 
 #include <Interpreters/Context.h>
 
@@ -58,6 +58,11 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+template <typename T>
+concept HasIndexOperator = requires (T t)
+{
+    t[0];
+};
 
 /// Functions to parse JSONs and extract values from it.
 /// The first argument of all these functions gets a JSON,
@@ -279,7 +284,7 @@ private:
             return true;
         }
 
-        if constexpr (FunctionJSONHelpersDetails::has_index_operator<typename JSONParser::Object>::value)
+        if constexpr (HasIndexOperator<typename JSONParser::Object>)
         {
             if (element.isObject())
             {
@@ -739,6 +744,8 @@ public:
     }
 };
 
+template <typename JSONParser>
+class JSONExtractRawImpl;
 
 template <typename JSONParser>
 class JSONExtractStringImpl
@@ -755,8 +762,11 @@ public:
 
     static bool insertResultToColumn(IColumn & dest, const Element & element, const std::string_view &)
     {
-        if (!element.isString())
+        if (element.isNull())
             return false;
+
+        if (!element.isString())
+            return JSONExtractRawImpl<JSONParser>::insertResultToColumn(dest, element, {});
 
         auto str = element.getString();
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
@@ -764,9 +774,6 @@ public:
         return true;
     }
 };
-
-template <typename JSONParser>
-class JSONExtractRawImpl;
 
 /// Nodes of the extract tree. We need the extract tree to extract from JSON complex values containing array, tuples or nullables.
 template <typename JSONParser>
@@ -851,12 +858,7 @@ struct JSONExtractTree
     public:
         bool insertResultToColumn(IColumn & dest, const Element & element) override
         {
-            if (element.isString())
-                return JSONExtractStringImpl<JSONParser>::insertResultToColumn(dest, element, {});
-            else if (element.isNull())
-                return false;
-            else
-                return JSONExtractRawImpl<JSONParser>::insertResultToColumn(dest, element, {});
+            return JSONExtractStringImpl<JSONParser>::insertResultToColumn(dest, element, {});
         }
     };
 

@@ -9,7 +9,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTHelpers.h>
 #include <Common/parseAddress.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Common/parseRemoteDescription.h>
 #include <Storages/StorageMySQL.h>
 #include <Storages/MySQL/MySQLSettings.h>

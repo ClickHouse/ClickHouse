@@ -1,8 +1,6 @@
 #include "LocalServer.h"
 
 #include <Poco/Util/XMLConfiguration.h>
-#include <Poco/Util/HelpFormatter.h>
-#include <Poco/Util/OptionCallback.h>
 #include <Poco/String.h>
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
@@ -10,7 +8,6 @@
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/getFQDNOrHostName.h>
@@ -20,19 +17,13 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/escapeForFileName.h>
-#include <Common/ClickHouseRevision.h>
 #include <Common/ThreadStatus.h>
-#include <Common/UnicodeBar.h>
-#include <Common/config_version.h>
 #include <Common/quoteString.h>
 #include <loggers/Loggers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/ReadHelpers.h>
 #include <IO/UseSSL.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 #include <base/ErrorHandlers.h>
 #include <Functions/registerFunctions.h>
@@ -43,9 +34,7 @@
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
 #include <boost/program_options/options_description.hpp>
-#include <boost/program_options.hpp>
 #include <base/argsToConfig.h>
-#include <Common/TerminalSize.h>
 #include <Common/randomSeed.h>
 #include <filesystem>
 
@@ -128,10 +117,9 @@ bool LocalServer::executeMultiQuery(const String & all_queries_text)
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
-                this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
-                this_query_begin = this_query_end; /// It's expected syntax error, skip the line
-                current_exception.reset();
-                continue;
+                if (current_exception)
+                    current_exception->rethrow();
+                return true;
             }
             case MultiQueryProcessingStage::EXECUTE_QUERY:
             {
@@ -514,18 +502,15 @@ void LocalServer::processConfig()
 
     format = config().getString("output-format", config().getString("format", is_interactive ? "PrettyCompact" : "TSV"));
     insert_format = "Values";
+
     /// Setting value from cmd arg overrides one from config
     if (global_context->getSettingsRef().max_insert_block_size.changed)
         insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
     else
         insert_format_max_block_size = config().getInt("insert_format_max_block_size", global_context->getSettingsRef().max_insert_block_size);
 
-    /// Skip networking
-
     /// Sets external authenticators config (LDAP, Kerberos).
     global_context->setExternalAuthenticatorsConfig(config());
-
-    global_context->initializeBackgroundExecutors();
 
     setupUsers();
 
@@ -662,7 +647,7 @@ void LocalServer::printHelpMessage(const OptionsDescription & options_descriptio
 }
 
 
-void LocalServer::addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
+void LocalServer::addOptions(OptionsDescription & options_description)
 {
     options_description.main_description->add_options()
         ("database,d", po::value<std::string>(), "database")
@@ -680,11 +665,8 @@ void LocalServer::addAndCheckOptions(OptionsDescription & options_description, p
         ("logger.level", po::value<std::string>(), "Log level")
 
         ("no-system-tables", "do not attach system tables (better startup time)")
+        ("path", po::value<std::string>(), "Storage path")
         ;
-
-    cmd_settings.addProgramOptions(options_description.main_description.value());
-    po::parsed_options parsed = po::command_line_parser(arguments).options(options_description.main_description.value()).run();
-    po::store(parsed, options);
 }
 
 
@@ -738,6 +720,17 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
     {
         app.init(argc, argv);
         return app.run();
+    }
+    catch (const DB::Exception & e)
+    {
+        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
+        auto code = DB::getCurrentExceptionCode();
+        return code ? code : 1;
+    }
+    catch (const boost::program_options::error & e)
+    {
+        std::cerr << "Bad arguments: " << e.what() << std::endl;
+        return DB::ErrorCodes::BAD_ARGUMENTS;
     }
     catch (...)
     {

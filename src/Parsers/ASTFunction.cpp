@@ -294,8 +294,12 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     continue;
                 }
 
+                if (frame.need_parens)
+                    settings.ostr << '(';
                 arguments->formatImpl(settings, state, nested_need_parens);
                 settings.ostr << (settings.hilite ? hilite_operator : "") << func[1] << (settings.hilite ? hilite_none : "");
+                if (frame.need_parens)
+                    settings.ostr << ')';
 
                 written = true;
 
@@ -440,6 +444,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             if (!written && 0 == strcmp(name.c_str(), "lambda"))
             {
+                /// Special case: zero elements tuple in lhs of lambda is printed as ().
                 /// Special case: one-element tuple in lhs of lambda is printed as its element.
 
                 if (frame.need_parens)
@@ -449,9 +454,12 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 if (first_arg_func
                     && first_arg_func->name == "tuple"
                     && first_arg_func->arguments
-                    && first_arg_func->arguments->children.size() == 1)
+                    && (first_arg_func->arguments->children.size() == 1 || first_arg_func->arguments->children.empty()))
                 {
-                    first_arg_func->arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+                    if (first_arg_func->arguments->children.size() == 1)
+                        first_arg_func->arguments->children[0]->formatImpl(settings, state, nested_need_parens);
+                    else
+                        settings.ostr << "()";
                 }
                 else
                     arguments->children[0]->formatImpl(settings, state, nested_need_parens);

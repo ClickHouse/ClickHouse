@@ -2,12 +2,12 @@
 
 #include <base/logger_useful.h>
 #include <Common/escapeForFileName.h>
-#include <DataStreams/TTLBlockInputStream.h>
-#include <DataStreams/TTLCalcInputStream.h>
+#include <Parsers/queryToString.h>
+#include <Interpreters/SquashingTransform.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
-#include <DataStreams/SquashingBlockInputStream.h>
-#include <Parsers/queryToString.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -337,15 +337,14 @@ static NameToNameVector collectFilesForRenames(
 {
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
-    for (const NameAndTypePair & column : source_part->getColumns())
+    for (const auto & column : source_part->getColumns())
     {
         auto serialization = source_part->getSerializationForColumn(column);
         serialization->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
                 ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
-            },
-            {});
+            });
     }
 
     NameToNameVector rename_vector;
