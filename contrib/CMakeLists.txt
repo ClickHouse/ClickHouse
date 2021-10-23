@@ -82,23 +82,10 @@ if (USE_INTERNAL_FARMHASH_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
-    set (ZLIB_ENABLE_TESTS 0 CACHE INTERNAL "")
-    set (SKIP_INSTALL_ALL 1 CACHE INTERNAL "")
-    set (ZLIB_COMPAT 1 CACHE INTERNAL "") # also enables WITH_GZFILEOP
-    set (WITH_NATIVE_INSTRUCTIONS ${ARCH_NATIVE} CACHE INTERNAL "")
-    if (OS_FREEBSD OR ARCH_I386)
-        set (WITH_OPTIM 0 CACHE INTERNAL "") # Bug in assembler
-    endif ()
-    if (ARCH_AARCH64)
-        set(WITH_NEON 1 CACHE INTERNAL "")
-        set(WITH_ACLE 1 CACHE INTERNAL "")
-    endif ()
-
-    add_subdirectory (${INTERNAL_ZLIB_NAME})
-    # We should use same defines when including zlib.h as used when zlib compiled
-    target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
-    if (ARCH_AMD64 OR ARCH_AARCH64)
-        target_compile_definitions (zlib PUBLIC X86_64 UNALIGNED_OK)
+    if (INTERNAL_ZLIB_NAME STREQUAL "zlib-ng")
+        add_subdirectory (zlib-ng-cmake)
+    else ()
+        add_subdirectory (${INTERNAL_ZLIB_NAME})
     endif ()
 endif ()
 
