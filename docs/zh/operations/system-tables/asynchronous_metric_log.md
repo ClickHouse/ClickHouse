@@ -5,7 +5,7 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 
 ## system.asynchronous_metric_log {#system-tables-async-log}
 
-包含每分钟记录一次的 `system.asynchronous_metrics`表历史值. 默认开启. 
+包含每分钟记录一次的 `system.asynchronous_metrics`历史值. 默认开启. 
 
 列：
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — 事件日期.
