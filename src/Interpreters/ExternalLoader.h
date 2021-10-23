@@ -219,14 +219,6 @@ private:
 
     LoadablePtr createObject(const String & name, const ObjectConfig & config, const LoadablePtr & previous_version) const;
 
-    /// We have to read configuration from LoadablesConfigReader and load configuration using LoadingDispatcher atomically.
-    /// Otherwise we can read configuration in one thread, then read and load newer configuration in another thread,
-    /// and then load outdated configuration from the first thread.
-    /// Remarkably, each class (LoadablesConfigReader, LoadingDispatcher, PeriodicUpdater) has own mutex for own purposes,
-    /// but it does not save from complex logical race conditions.
-    /// TODO Refactor dictionaries loading and get rid of this.
-    mutable std::recursive_mutex config_mutex;
-
     class LoadablesConfigReader;
     std::unique_ptr<LoadablesConfigReader> config_files_reader;
 

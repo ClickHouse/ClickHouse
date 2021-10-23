@@ -80,3 +80,8 @@ target_link_libraries (average PRIVATE clickhouse_common_io)
 
 add_executable (shell_command_inout shell_command_inout.cpp)
 target_link_libraries (shell_command_inout PRIVATE clickhouse_common_io)
+
+if (ENABLE_FUZZING)
+    add_executable(YAML_fuzzer YAML_fuzzer.cpp ${SRCS})
+    target_link_libraries(YAML_fuzzer PRIVATE clickhouse_parsers ${LIB_FUZZING_ENGINE})
+endif ()

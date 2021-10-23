@@ -79,9 +79,6 @@ void registerInputFormatProcessorJSONAsString(FormatFactory & factory);
 void registerInputFormatProcessorLineAsString(FormatFactory & factory);
 void registerInputFormatProcessorCapnProto(FormatFactory & factory);
 
-/// Non trivial prefix and suffix checkers for disabling parallel parsing.
-void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory);
-void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory);
 
 void registerFormats()
 {
@@ -156,9 +153,6 @@ void registerFormats()
 #if !defined(ARCADIA_BUILD)
     registerInputFormatProcessorCapnProto(factory);
 #endif
-
-    registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
-    registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);
 }
 
 }

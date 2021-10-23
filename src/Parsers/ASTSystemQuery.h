@@ -62,6 +62,8 @@ public:
         END
     };
 
+    static const char * typeToString(Type type);
+
     Type type = Type::UNKNOWN;
 
     String target_model;

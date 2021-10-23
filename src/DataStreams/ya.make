@@ -44,7 +44,6 @@ SRCS(
     SquashingTransform.cpp
     TTLAggregationAlgorithm.cpp
     TTLBlockInputStream.cpp
-    TTLCalcInputStream.cpp
     TTLColumnAlgorithm.cpp
     TTLDeleteAlgorithm.cpp
     TTLUpdateInfoAlgorithm.cpp

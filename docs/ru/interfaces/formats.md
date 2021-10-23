@@ -25,17 +25,17 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
 | [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
-| [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
+| [JSONString](#jsonstring)                                                               | ✗     | ✔      |
 | [JSONCompact](#jsoncompact)                                                             | ✗     | ✔      |
-| [JSONCompactStrings](#jsoncompactstrings)                                                 | ✗     | ✔      |
+| [JSONCompactString](#jsoncompactstring)                                                 | ✗     | ✔      |
 | [JSONEachRow](#jsoneachrow)                                                             | ✔     | ✔      |
 | [JSONEachRowWithProgress](#jsoneachrowwithprogress)                                     | ✗     | ✔      |
-| [JSONStringsEachRow](#jsonstringseachrow)                                                 | ✔     | ✔      |
-| [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                         | ✗     | ✔      |
+| [JSONStringEachRow](#jsonstringeachrow)                                                 | ✔     | ✔      |
+| [JSONStringEachRowWithProgress](#jsonstringeachrowwithprogress)                         | ✗     | ✔      |
 | [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
 | [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
-| [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔     | ✔      |
-| [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔     | ✔      |
+| [JSONCompactStringEachRow](#jsoncompactstringeachrow)                                   | ✔     | ✔      |
+| [JSONCompactStringEachRowWithNamesAndTypes](#jsoncompactstringeachrowwithnamesandtypes) | ✔     | ✔      |
 | [TSKV](#tskv)                                                                           | ✔     | ✔      |
 | [Pretty](#pretty)                                                                       | ✗     | ✔      |
 | [PrettyCompact](#prettycompact)                                                         | ✗     | ✔      |
@@ -442,7 +442,7 @@ ClickHouse поддерживает [NULL](../sql-reference/syntax.md), кото
 -   Формат [JSONEachRow](#jsoneachrow)
 -   Настройка [output_format_json_array_of_rows](../operations/settings/settings.md#output-format-json-array-of-rows)
 
-## JSONStrings {#jsonstrings}
+## JSONString {#jsonstring}
 
 Отличается от JSON только тем, что поля данных выводятся в строках, а не в типизированных значениях JSON.
 
@@ -519,7 +519,7 @@ SELECT * FROM json_as_string;
 ```
 
 ## JSONCompact {#jsoncompact}
-## JSONCompactStrings {#jsoncompactstrings}
+## JSONCompactString {#jsoncompactstring}
 
 Отличается от JSON только тем, что строчки данных выводятся в массивах, а не в object-ах.
 
@@ -558,7 +558,7 @@ SELECT * FROM json_as_string;
 ```
 
 ```json
-// JSONCompactStrings
+// JSONCompactString
 {
         "meta":
         [
@@ -590,9 +590,9 @@ SELECT * FROM json_as_string;
 ```
 
 ## JSONEachRow {#jsoneachrow}
-## JSONStringsEachRow {#jsonstringseachrow}
+## JSONStringEachRow {#jsonstringeachrow}
 ## JSONCompactEachRow {#jsoncompacteachrow}
-## JSONCompactStringsEachRow {#jsoncompactstringseachrow}
+## JSONCompactStringEachRow {#jsoncompactstringeachrow}
 
 При использовании этих форматов ClickHouse выводит каждую запись как значения JSON (каждое значение отдельной строкой), при этом данные в целом — невалидный JSON.
 
@@ -605,9 +605,9 @@ SELECT * FROM json_as_string;
 При вставке данных вы должны предоставить отдельное значение JSON для каждой строки.
 
 ## JSONEachRowWithProgress {#jsoneachrowwithprogress}
-## JSONStringsEachRowWithProgress {#jsonstringseachrowwithprogress}
+## JSONStringEachRowWithProgress {#jsonstringeachrowwithprogress}
 
-Отличается от `JSONEachRow`/`JSONStringsEachRow` тем, что ClickHouse будет выдавать информацию о ходе выполнения в виде значений JSON.
+Отличается от `JSONEachRow`/`JSONStringEachRow` тем, что ClickHouse будет выдавать информацию о ходе выполнения в виде значений JSON.
 
 ```json
 {"row":{"'hello'":"hello","multiply(42, number)":"0","range(5)":[0,1,2,3,4]}}
@@ -617,9 +617,9 @@ SELECT * FROM json_as_string;
 ```
 
 ## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
-## JSONCompactStringsEachRowWithNamesAndTypes {#jsoncompactstringseachrowwithnamesandtypes}
+## JSONCompactStringEachRowWithNamesAndTypes {#jsoncompactstringeachrowwithnamesandtypes}
 
-Отличается от `JSONCompactEachRow`/`JSONCompactStringsEachRow` тем, что имена и типы столбцов записываются как первые две строки.
+Отличается от `JSONCompactEachRow`/`JSONCompactStringEachRow` тем, что имена и типы столбцов записываются как первые две строки.
 
 ```json
 ["'hello'", "multiply(42, number)", "range(5)"]
@@ -1180,15 +1180,13 @@ ClickHouse поддерживает настраиваемую точность 
 
 Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
 
-### Вставка и выборка данных {#inserting-and-selecting-data}
+### Вставка и выборка данных {#vstavka-i-vyborka-dannykh}
 
 Чтобы вставить в ClickHouse данные из файла в формате Parquet, выполните команду следующего вида:
 
 ``` bash
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
-
-Чтобы вставить данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested).
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Parquet, используйте команду следующего вида:
 
@@ -1248,8 +1246,6 @@ ClickHouse поддерживает настраиваемую точность 
 $ cat filename.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-Чтобы вставить данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_arrow_import_nested](../operations/settings/settings.md#input_format_arrow_import_nested).
-
 ### Вывод данных {#selecting-data-arrow}
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата Arrow, используйте команду следующего вида:
@@ -1298,7 +1294,7 @@ ClickHouse поддерживает настраиваемую точность 
 
 Типы данных столбцов в таблицах ClickHouse могут отличаться от типов данных для соответствующих полей ORC. При вставке данных ClickHouse интерпретирует типы данных ORC согласно таблице соответствия, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к типу, установленному для столбца таблицы ClickHouse.
 
-### Вставка данных {#inserting-data-2}
+### Вставка данных {#vstavka-dannykh-1}
 
 Чтобы вставить в ClickHouse данные из файла в формате ORC, используйте команду следующего вида:
 
@@ -1306,9 +1302,7 @@ ClickHouse поддерживает настраиваемую точность 
 $ cat filename.orc | clickhouse-client --query="INSERT INTO some_table FORMAT ORC"
 ```
 
-Чтобы вставить данные в колонки типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_orc_import_nested](../operations/settings/settings.md#input_format_orc_import_nested).
-
-### Вывод данных {#selecting-data-2}
+### Вывод данных {#vyvod-dannykh-1}
 
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата ORC, используйте команду следующего вида:
 

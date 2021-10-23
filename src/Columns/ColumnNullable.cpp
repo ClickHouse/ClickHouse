@@ -577,15 +577,15 @@ void getExtremesWithNulls(const IColumn & nested_column, const NullMap & null_ar
     }
     else if (number_of_nulls == n)
     {
-        min = POSITIVE_INFINITY;
-        max = POSITIVE_INFINITY;
+        min = PositiveInfinity();
+        max = PositiveInfinity();
     }
     else
     {
         auto filtered_column = nested_column.filter(not_null_array, -1);
         filtered_column->getExtremes(min, max);
         if (null_last)
-            max = POSITIVE_INFINITY;
+            max = PositiveInfinity();
     }
 }
 }

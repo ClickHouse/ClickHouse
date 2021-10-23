@@ -9,7 +9,7 @@ trap 'kill $(jobs -pr) ||:' EXIT
 stage=${stage:-}
 
 # Compiler version, normally set by Dockerfile
-export LLVM_VERSION=${LLVM_VERSION:-12}
+export LLVM_VERSION=${LLVM_VERSION:-11}
 
 # A variable to pass additional flags to CMake.
 # Here we explicitly default it to nothing so that bash doesn't complain about
@@ -159,7 +159,6 @@ function clone_submodules
         cd "$FASTTEST_SOURCE"
 
         SUBMODULES_TO_UPDATE=(
-            contrib/magic_enum
             contrib/abseil-cpp
             contrib/boost
             contrib/zlib-ng
@@ -304,7 +303,6 @@ function run_tests
         01683_codec_encrypted                   # Depends on OpenSSL
         01776_decrypt_aead_size_check           # Depends on OpenSSL
         01811_filter_by_null                    # Depends on OpenSSL
-        02012_sha512_fixedstring                # Depends on OpenSSL
         01281_unsucceeded_insert_select_queries_counter
         01292_create_user
         01294_lazy_database_concurrent
@@ -316,7 +314,6 @@ function run_tests
         01799_long_uniq_theta_sketch
         01890_stem                               # depends on libstemmer_c
         02003_compress_bz2                       # depends on bzip2
-        01059_storage_file_compression           # depends on brotli and bzip2
         collate
         collation
         _orc_
@@ -379,7 +376,6 @@ function run_tests
 
         # Depends on AWS
         01801_s3_cluster
-        02012_settings_clause_for_s3
 
         # needs psql
         01889_postgresql_protocol_null_fields
@@ -402,9 +398,6 @@ function run_tests
 
         # depends on Go
         02013_zlib_read_after_eof
-
-        # Accesses CH via mysql table function (which is unavailable)
-        01747_system_session_log_long
     )
 
     time clickhouse-test --hung-check -j 8 --order=random --use-skip-list \

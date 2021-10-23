@@ -172,21 +172,11 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
         storage.cloneReplicaIfNeeded(zookeeper);
 
-        try
-        {
-            storage.queue.load(zookeeper);
+        storage.queue.load(zookeeper);
 
-            /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
-            /// because cleanup_thread doesn't delete log_pointer of active replicas.
-            storage.queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::LOAD);
-        }
-        catch (...)
-        {
-            std::unique_lock lock(storage.last_queue_update_exception_lock);
-            storage.last_queue_update_exception = getCurrentExceptionMessage(false);
-            throw;
-        }
-
+        /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
+        /// because cleanup_thread doesn't delete log_pointer of active replicas.
+        storage.queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::LOAD);
         storage.queue.removeCurrentPartsFromMutations();
         storage.last_queue_update_finish_time.store(time(nullptr));
 
@@ -204,7 +194,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         storage.partial_shutdown_event.reset();
 
         /// Start queue processing
-        storage.background_operations_assignee.start();
+        storage.background_executor.start();
 
         storage.queue_updating_task->activateAndSchedule();
         storage.mutations_updating_task->activateAndSchedule();
@@ -389,7 +379,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
         auto fetch_lock = storage.fetcher.blocker.cancel();
         auto merge_lock = storage.merger_mutator.merges_blocker.cancel();
         auto move_lock = storage.parts_mover.moves_blocker.cancel();
-        storage.background_operations_assignee.finish();
+        storage.background_executor.finish();
     }
 
     LOG_TRACE(log, "Threads finished");

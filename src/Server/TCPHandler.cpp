@@ -49,6 +49,27 @@
 namespace DB
 {
 
+namespace
+{
+std::string formatHTTPErrorResponse(const Poco::Util::AbstractConfiguration& config)
+{
+    std::string result = fmt::format(
+        "HTTP/1.0 400 Bad Request\r\n\r\n"
+        "Port {} is for clickhouse-client program\r\n",
+        config.getString("tcp_port"));
+
+    if (config.has("http_port"))
+    {
+        result += fmt::format(
+            "You must use port {} for HTTP.\r\n",
+            config.getString("http_port"));
+    }
+
+    return result;
+}
+}
+
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -904,29 +925,6 @@ bool TCPHandler::receiveProxyHeader()
 }
 
 
-namespace
-{
-
-std::string formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(const Poco::Util::AbstractConfiguration& config)
-{
-    std::string result = fmt::format(
-        "HTTP/1.0 400 Bad Request\r\n\r\n"
-        "Port {} is for clickhouse-client program\r\n",
-        config.getString("tcp_port"));
-
-    if (config.has("http_port"))
-    {
-        result += fmt::format(
-            "You must use port {} for HTTP.\r\n",
-            config.getString("http_port"));
-    }
-
-    return result;
-}
-
-}
-
-
 void TCPHandler::receiveHello()
 {
     /// Receive `hello` packet.
@@ -942,7 +940,9 @@ void TCPHandler::receiveHello()
           */
         if (packet_type == 'G' || packet_type == 'P')
         {
-            writeString(formatHTTPErrorResponseWhenUserIsConnectedToWrongPort(server.config()), *out);
+            writeString(formatHTTPErrorResponse(server.config()),
+                        *out);
+
             throw Exception("Client has connected to wrong port", ErrorCodes::CLIENT_HAS_CONNECTED_TO_WRONG_PORT);
         }
         else
@@ -979,7 +979,6 @@ void TCPHandler::receiveHello()
     is_interserver_mode = (user == USER_INTERSERVER_MARKER);
     if (is_interserver_mode)
     {
-        client_info.interface = ClientInfo::Interface::TCP_INTERSERVER;
         receiveClusterNameAndSalt();
         return;
     }
@@ -1268,7 +1267,7 @@ void TCPHandler::receiveQuery()
     /// compatibility.
     if (query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {
-        query_context->setSetting("normalize_function_names", false);
+        query_context->setSetting("normalize_function_names", Field(0));
     }
 }
 

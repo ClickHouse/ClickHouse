@@ -123,15 +123,7 @@ public:
 
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
-    virtual void loadStoredObjects(
-        ContextMutablePtr /*context*/,
-        bool /*has_force_restore_data_flag*/,
-        bool /*force_attach*/ = false,
-        bool /* skip_startup_tables */ = false)
-    {
-    }
-
-    virtual void startupTables() {}
+    virtual void loadStoredObjects(ContextMutablePtr /*context*/, bool /*has_force_restore_data_flag*/, bool /*force_attach*/ = false) {}
 
     /// Check the existence of the table.
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
@@ -145,7 +137,7 @@ public:
 
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
-    virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}) const = 0;
+    virtual DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name = {}) = 0;
 
     /// Is the database empty.
     virtual bool empty() const = 0;
@@ -246,12 +238,6 @@ public:
     virtual void renameDatabase(const String & /*new_name*/)
     {
         throw Exception(getEngineName() + ": RENAME DATABASE is not supported", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    /// Whether the contained tables should be written to a backup.
-    virtual DatabaseTablesIteratorPtr getTablesIteratorForBackup(ContextPtr context) const
-    {
-        return getTablesIterator(context); /// By default we backup each table.
     }
 
     /// Returns path for persistent data storage if the database supports it, empty string otherwise

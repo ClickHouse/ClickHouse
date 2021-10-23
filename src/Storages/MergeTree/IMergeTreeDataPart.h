@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/MergeTree/MergeTreeProjections.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -15,6 +16,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 
 #include <shared_mutex>
+
 
 namespace zkutil
 {
@@ -220,6 +222,12 @@ public:
         DeleteOnDestroy, /// part was moved to another disk and should be deleted in own destructor
     };
 
+    static constexpr auto all_part_states =
+    {
+        State::Temporary, State::PreCommitted, State::Committed, State::Outdated, State::Deleting,
+        State::DeleteOnDestroy
+    };
+
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
 
@@ -229,10 +237,14 @@ public:
     void setState(State new_state) const;
     State getState() const;
 
-    static constexpr std::string_view stateString(State state) { return magic_enum::enum_name(state); }
-    constexpr std::string_view stateString() const { return stateString(state); }
+    /// Returns name of state
+    static String stateToString(State state);
+    String stateString() const;
 
-    String getNameWithState() const { return fmt::format("{} (state {})", name, stateString()); }
+    String getNameWithState() const
+    {
+        return name + " (state " + stateString() + ")";
+    }
 
     /// Returns true if state of part is one of affordable_states
     bool checkState(const std::initializer_list<State> & affordable_states) const

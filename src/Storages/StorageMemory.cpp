@@ -61,7 +61,7 @@ protected:
 
         const Block & src = (*data)[current_index];
         Columns columns;
-        columns.reserve(column_names_and_types.size());
+        columns.reserve(columns.size());
 
         /// Add only required columns to `res`.
         for (const auto & elem : column_names_and_types)

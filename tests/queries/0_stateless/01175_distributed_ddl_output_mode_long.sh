@@ -6,8 +6,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-TMP_OUT=$(mktemp "$CURDIR/01175_distributed_ddl_output_mode_long.XXXXXX")
-trap 'rm -f ${TMP_OUT:?}' EXIT
 
 # We execute a distributed DDL query with timeout 1 to check that one host is unavailable and will time out and other complete successfully.
 # But sometimes one second is not enough even for healthy host to succeed. Repeat the test in this case.
@@ -18,11 +16,11 @@ function run_until_out_contains()
 
     for _ in {1..20}
     do
-        "$@" > "$TMP_OUT" 2>&1
-        if grep -q "$PATTERN" "$TMP_OUT"
+        "$@" > "${CLICKHOUSE_TMP}/out" 2>&1
+        if grep -q "$PATTERN" "${CLICKHOUSE_TMP}/out"
         then
-            cat "$TMP_OUT"
-            break
+            cat "${CLICKHOUSE_TMP}/out"
+            break;
         fi
     done
 }

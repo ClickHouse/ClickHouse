@@ -4,7 +4,6 @@
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <algorithm>
 
 namespace DB
@@ -178,21 +177,19 @@ MaskInfo extractMaskFromConstOrNull(
 template <bool inverted>
 MaskInfo extractMaskImpl(
     PaddedPODArray<UInt8> & mask,
-    const ColumnPtr & col,
+    const ColumnPtr & column,
     UInt8 null_value,
     const PaddedPODArray<UInt8> * null_bytemap,
     PaddedPODArray<UInt8> * nulls = nullptr)
 {
-    auto column = col->convertToFullColumnIfLowCardinality();
-
     /// Special implementation for Null and Const columns.
     if (column->onlyNull() || checkAndGetColumn<ColumnConst>(*column))
         return extractMaskFromConstOrNull<inverted>(mask, column, null_value, nulls);
 
-    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(*column))
+    if (const auto * col = checkAndGetColumn<ColumnNullable>(*column))
     {
-        const PaddedPODArray<UInt8> & null_map = nullable_column->getNullMapData();
-        return extractMaskImpl<inverted>(mask, nullable_column->getNestedColumnPtr(), null_value, &null_map, nulls);
+        const PaddedPODArray<UInt8> & null_map = col->getNullMapData();
+        return extractMaskImpl<inverted>(mask, col->getNestedColumnPtr(), null_value, &null_map, nulls);
     }
 
     MaskInfo mask_info;
@@ -317,4 +314,3 @@ void copyMask(const PaddedPODArray<UInt8> & from, PaddedPODArray<UInt8> & to)
 }
 
 }
-

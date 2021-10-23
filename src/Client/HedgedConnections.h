@@ -8,7 +8,8 @@
 #include <Client/HedgedConnectionsFactory.h>
 #include <Client/IConnections.h>
 #include <Client/PacketReceiver.h>
-
+#include <Common/FiberStack.h>
+#include <Common/Fiber.h>
 
 namespace DB
 {

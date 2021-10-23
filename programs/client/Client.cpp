@@ -129,7 +129,6 @@ namespace ErrorCodes
     extern const int UNRECOGNIZED_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int TOO_DEEP_RECURSION;
-    extern const int AUTHENTICATION_FAILED;
 }
 
 
@@ -774,50 +773,31 @@ private:
                       << connection_parameters.host << ":" << connection_parameters.port
                       << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
 
+        connection = std::make_unique<Connection>(
+            connection_parameters.host,
+            connection_parameters.port,
+            connection_parameters.default_database,
+            connection_parameters.user,
+            connection_parameters.password,
+            "", /* cluster */
+            "", /* cluster_secret */
+            "client",
+            connection_parameters.compression,
+            connection_parameters.security);
+
         String server_name;
         UInt64 server_version_major = 0;
         UInt64 server_version_minor = 0;
         UInt64 server_version_patch = 0;
 
-        try
+        if (max_client_network_bandwidth)
         {
-            connection = std::make_unique<Connection>(
-                connection_parameters.host,
-                connection_parameters.port,
-                connection_parameters.default_database,
-                connection_parameters.user,
-                connection_parameters.password,
-                "", /* cluster */
-                "", /* cluster_secret */
-                "client",
-                connection_parameters.compression,
-                connection_parameters.security);
-
-            if (max_client_network_bandwidth)
-            {
-                ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
-                connection->setThrottler(throttler);
-            }
-
-            connection->getServerVersion(
-                connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
+            ThrottlerPtr throttler = std::make_shared<Throttler>(max_client_network_bandwidth, 0, "");
+            connection->setThrottler(throttler);
         }
-        catch (const Exception & e)
-        {
-            /// It is typical when users install ClickHouse, type some password and instantly forget it.
-            if ((connection_parameters.user.empty() || connection_parameters.user == "default")
-                && e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
-            {
-                std::cerr << std::endl
-                    << "If you have installed ClickHouse and forgot password you can reset it in the configuration file." << std::endl
-                    << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml" << std::endl
-                    << "and deleting this file will reset the password." << std::endl
-                    << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed." << std::endl
-                    << std::endl;
-            }
 
-            throw;
-        }
+        connection->getServerVersion(
+            connection_parameters.timeouts, server_name, server_version_major, server_version_minor, server_version_patch, server_revision);
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
@@ -1031,29 +1011,18 @@ private:
         if (server_exception)
         {
             bool print_stack_trace = config().getBool("stacktrace", false);
-            fmt::print(stderr, "Received exception from server (version {}):\n{}\n",
-                server_version,
-                getExceptionMessage(*server_exception, print_stack_trace, true));
+            std::cerr << "Received exception from server (version " << server_version << "):" << std::endl
+                << getExceptionMessage(*server_exception, print_stack_trace, true) << std::endl;
             if (is_interactive)
-            {
-                fmt::print(stderr, "\n");
-            }
-            else
-            {
-                fmt::print(stderr, "(query: {})\n", full_query);
-            }
+                std::cerr << std::endl;
         }
 
         if (client_exception)
         {
-            fmt::print(stderr, "Error on processing query: {}\n", client_exception->message());
+            fmt::print(stderr, "Error on processing query '{}':\n{}\n", full_query, client_exception->message());
             if (is_interactive)
             {
                 fmt::print(stderr, "\n");
-            }
-            else
-            {
-                fmt::print(stderr, "(query: {})\n", full_query);
             }
         }
 
@@ -1255,17 +1224,13 @@ private:
                     if (!server_exception)
                     {
                         error_matches_hint = false;
-                        fmt::print(stderr, "Expected server error code '{}' but got no server error (query: {}).\n",
-                            test_hint.serverError(),
-                            full_query);
+                        fmt::print(stderr, "Expected server error code '{}' but got no server error.\n", test_hint.serverError());
                     }
                     else if (server_exception->code() != test_hint.serverError())
                     {
                         error_matches_hint = false;
-                        fmt::print(stderr, "Expected server error code: {} but got: {} (query: {}).\n",
-                            test_hint.serverError(),
-                            server_exception->code(),
-                            full_query);
+                        std::cerr << "Expected server error code: " << test_hint.serverError() << " but got: " << server_exception->code()
+                                  << "." << std::endl;
                     }
                 }
 
@@ -1274,17 +1239,13 @@ private:
                     if (!client_exception)
                     {
                         error_matches_hint = false;
-                        fmt::print(stderr, "Expected client error code '{}' but got no client error (query: {}).\n",
-                            test_hint.clientError(),
-                            full_query);
+                        fmt::print(stderr, "Expected client error code '{}' but got no client error.\n", test_hint.clientError());
                     }
                     else if (client_exception->code() != test_hint.clientError())
                     {
                         error_matches_hint = false;
-                        fmt::print(stderr, "Expected client error code '{}' but got '{}' (query: {}).\n",
-                            test_hint.clientError(),
-                            client_exception->code(),
-                            full_query);
+                        fmt::print(
+                            stderr, "Expected client error code '{}' but got '{}'.\n", test_hint.clientError(), client_exception->code());
                     }
                 }
 
@@ -1300,17 +1261,13 @@ private:
             {
                 if (test_hint.clientError())
                 {
-                    fmt::print(stderr, "The query succeeded but the client error '{}' was expected (query: {}).\n",
-                        test_hint.clientError(),
-                        full_query);
+                    fmt::print(stderr, "The query succeeded but the client error '{}' was expected.\n", test_hint.clientError());
                     error_matches_hint = false;
                 }
 
                 if (test_hint.serverError())
                 {
-                    fmt::print(stderr, "The query succeeded but the server error '{}' was expected (query: {}).\n",
-                        test_hint.serverError(),
-                        full_query);
+                    fmt::print(stderr, "The query succeeded but the server error '{}' was expected.\n", test_hint.serverError());
                     error_matches_hint = false;
                 }
             }
@@ -2308,10 +2265,7 @@ private:
             if (!pager.empty())
             {
                 signal(SIGPIPE, SIG_IGN);
-
-                ShellCommand::Config config(pager);
-                config.pipe_stdin_only = true;
-                pager_cmd = ShellCommand::execute(config);
+                pager_cmd = ShellCommand::execute(pager, true);
                 out_buf = &pager_cmd->in;
             }
             else

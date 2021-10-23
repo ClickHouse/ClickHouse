@@ -233,8 +233,7 @@ void MaterializedMySQLSyncThread::stopSynchronization()
     if (!sync_quit && background_thread_pool)
     {
         sync_quit = true;
-        if (background_thread_pool->joinable())
-            background_thread_pool->join();
+        background_thread_pool->join();
         client.disconnect();
     }
 }
@@ -248,7 +247,7 @@ void MaterializedMySQLSyncThread::assertMySQLAvailable()
 {
     try
     {
-        checkMySQLVariables(pool.get(/* wait_timeout= */ UINT64_MAX), getContext()->getSettingsRef());
+        checkMySQLVariables(pool.get(), getContext()->getSettingsRef());
     }
     catch (const mysqlxx::ConnectionFailed & e)
     {
@@ -730,7 +729,7 @@ void MaterializedMySQLSyncThread::onEvent(Buffers & buffers, const BinlogEventPt
         {
             /// Some behaviors(such as changing the value of "binlog_checksum") rotate the binlog file.
             /// To ensure that the synchronization continues, we need to handle these events
-            metadata.fetchMasterVariablesValue(pool.get(/* wait_timeout= */ UINT64_MAX));
+            metadata.fetchMasterVariablesValue(pool.get());
             client.setBinlogChecksum(metadata.binlog_checksum);
         }
         else if (receive_event->header.type != HEARTBEAT_EVENT)
