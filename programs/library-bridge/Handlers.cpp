@@ -18,6 +18,7 @@
 #include <QueryPipeline/Pipe.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <IO/ReadBufferFromString.h>
+#include "ClickHouseLibrarySource.h"
 
 
 namespace DB
@@ -68,9 +69,8 @@ namespace
 }
 
 
-static void writeData(Block data, OutputFormatPtr format)
+static void writeData(std::shared_ptr<ClickHouseLibrarySource> source, OutputFormatPtr format)
 {
-    auto source = std::make_shared<SourceFromSingleChunk>(std::move(data));
     QueryPipeline pipeline(std::move(source));
     pipeline.complete(std::move(format));
 
@@ -188,6 +188,13 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
                 return;
             }
 
+            if (!params.has("max_block_size"))
+            {
+                processError(response, "No 'max_block_size' in request URL");
+                return;
+            }
+            auto max_block_size = parse<UInt64>(params.get("sample_block"));
+
             ReadBufferFromString read_block_buf(params.get("null_values"));
             auto format = getContext()->getInputFormat(FORMAT, read_block_buf, *sample_block, DEFAULT_BLOCK_SIZE);
             QueryPipeline pipeline(Pipe(std::move(format)));
@@ -197,7 +204,7 @@ void LibraryRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServe
 
             LOG_DEBUG(log, "Dictionary sample block with null values: {}", sample_block_with_nulls.dumpStructure());
 
-            SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings, sample_block_with_nulls, attributes_names);
+            SharedLibraryHandlerFactory::instance().create(dictionary_id, library_path, library_settings, sample_block_with_nulls, max_block_size, attributes_names);
             writeStringBinary("1", out);
         }
         else if (method == "libDelete")

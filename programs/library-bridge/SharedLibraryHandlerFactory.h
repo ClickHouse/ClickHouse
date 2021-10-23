@@ -22,6 +22,7 @@ public:
         const std::string & library_path,
         const std::vector<std::string> & library_settings,
         const Block & sample_block,
+        size_t max_block_size,
         const std::vector<std::string> & attributes_names);
 
     bool clone(const std::string & from_dictionary_id, const std::string & to_dictionary_id);

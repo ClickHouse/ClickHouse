@@ -4,6 +4,7 @@
 #include <base/bit_cast.h>
 #include <base/find_symbols.h>
 #include <IO/ReadHelpers.h>
+#include "ClickHouseLibrarySource.h"
 
 
 namespace DB
@@ -20,9 +21,11 @@ SharedLibraryHandler::SharedLibraryHandler(
     const std::string & library_path_,
     const std::vector<std::string> & library_settings,
     const Block & sample_block_,
+    size_t max_block_size_,
     const std::vector<std::string> & attributes_names_)
     : library_path(library_path_)
     , sample_block(sample_block_)
+    , max_block_size(max_block_size_)
     , attributes_names(attributes_names_)
 {
     library = std::make_shared<SharedLibrary>(library_path, RTLD_LAZY);
@@ -92,7 +95,7 @@ bool SharedLibraryHandler::supportsSelectiveLoad()
 }
 
 
-Block SharedLibraryHandler::loadAll()
+std::shared_ptr<ClickHouseLibrarySource> SharedLibraryHandler::loadAll()
 {
     auto columns_holder = std::make_unique<ClickHouseLibrary::CString[]>(attributes_names.size());
     ClickHouseLibrary::CStrings columns{static_cast<decltype(ClickHouseLibrary::CStrings::data)>(columns_holder.get()), attributes_names.size()};
@@ -101,17 +104,17 @@ Block SharedLibraryHandler::loadAll()
 
     auto load_all_func = library->get<ClickHouseLibrary::LibraryLoadAllFunc>(ClickHouseLibrary::LIBRARY_LOAD_ALL_FUNC_NAME);
     auto data_new_func = library->get<ClickHouseLibrary::LibraryDataNewFunc>(ClickHouseLibrary::LIBRARY_DATA_NEW_FUNC_NAME);
-    auto data_delete_func = library->get<ClickHouseLibrary::LibraryDataDeleteFunc>(ClickHouseLibrary::LIBRARY_DATA_DELETE_FUNC_NAME);
 
-    ClickHouseLibrary::LibraryData data_ptr = data_new_func(lib_data);
-    SCOPE_EXIT(data_delete_func(lib_data, data_ptr));
+    auto state = std::make_unique<LibraryResultState>();
+    state->data_delete_func = library->get<ClickHouseLibrary::LibraryDataDeleteFunc>(ClickHouseLibrary::LIBRARY_DATA_DELETE_FUNC_NAME);
+    state->data_ptr = data_new_func(lib_data);
+    state->data = load_all_func(state->data_ptr, &settings_holder->strings, &columns);
 
-    ClickHouseLibrary::RawClickHouseLibraryTable data = load_all_func(data_ptr, &settings_holder->strings, &columns);
-    return dataToBlock(data);
+    return std::make_shared<ClickHouseLibrarySource>(std::move(state), sample_block, max_block_size);
 }
 
 
-Block SharedLibraryHandler::loadIds(const std::vector<uint64_t> & ids)
+std::shared_ptr<ClickHouseLibrarySource> SharedLibraryHandler::loadIds(const std::vector<uint64_t> & ids)
 {
     const ClickHouseLibrary::VectorUInt64 ids_data{bit_cast<decltype(ClickHouseLibrary::VectorUInt64::data)>(ids.data()), ids.size()};
 
@@ -120,17 +123,17 @@ Block SharedLibraryHandler::loadIds(const std::vector<uint64_t> & ids)
 
     auto load_ids_func = library->get<ClickHouseLibrary::LibraryLoadIdsFunc>(ClickHouseLibrary::LIBRARY_LOAD_IDS_FUNC_NAME);
     auto data_new_func = library->get<ClickHouseLibrary::LibraryDataNewFunc>(ClickHouseLibrary::LIBRARY_DATA_NEW_FUNC_NAME);
-    auto data_delete_func = library->get<ClickHouseLibrary::LibraryDataDeleteFunc>(ClickHouseLibrary::LIBRARY_DATA_DELETE_FUNC_NAME);
 
-    ClickHouseLibrary::LibraryData data_ptr = data_new_func(lib_data);
-    SCOPE_EXIT(data_delete_func(lib_data, data_ptr));
+    auto state = std::make_unique<LibraryResultState>();
+    state->data_delete_func = library->get<ClickHouseLibrary::LibraryDataDeleteFunc>(ClickHouseLibrary::LIBRARY_DATA_DELETE_FUNC_NAME);
+    state->data_ptr = data_new_func(lib_data);
+    state->data = load_ids_func(state->data_ptr, &settings_holder->strings, &columns_pass, &ids_data);
 
-    ClickHouseLibrary::RawClickHouseLibraryTable data = load_ids_func(data_ptr, &settings_holder->strings, &columns_pass, &ids_data);
-    return dataToBlock(data);
+    return std::make_shared<ClickHouseLibrarySource>(std::move(state), sample_block, max_block_size);
 }
 
 
-Block SharedLibraryHandler::loadKeys(const Columns & key_columns)
+std::shared_ptr<ClickHouseLibrarySource> SharedLibraryHandler::loadKeys(const Columns & key_columns)
 {
     auto holder = std::make_unique<ClickHouseLibrary::Row[]>(key_columns.size());
     std::vector<std::unique_ptr<ClickHouseLibrary::Field[]>> column_data_holders;
@@ -161,54 +164,13 @@ Block SharedLibraryHandler::loadKeys(const Columns & key_columns)
 
     auto load_keys_func = library->get<ClickHouseLibrary::LibraryLoadKeysFunc>(ClickHouseLibrary::LIBRARY_LOAD_KEYS_FUNC_NAME);
     auto data_new_func = library->get<ClickHouseLibrary::LibraryDataNewFunc>(ClickHouseLibrary::LIBRARY_DATA_NEW_FUNC_NAME);
-    auto data_delete_func = library->get<ClickHouseLibrary::LibraryDataDeleteFunc>(ClickHouseLibrary::LIBRARY_DATA_DELETE_FUNC_NAME);
 
-    ClickHouseLibrary::LibraryData data_ptr = data_new_func(lib_data);
-    SCOPE_EXIT(data_delete_func(lib_data, data_ptr));
+    auto state = std::make_unique<LibraryResultState>();
+    state->data_delete_func = library->get<ClickHouseLibrary::LibraryDataDeleteFunc>(ClickHouseLibrary::LIBRARY_DATA_DELETE_FUNC_NAME);
+    state->data_ptr = data_new_func(lib_data);
+    state->data = load_keys_func(state->data_ptr, &settings_holder->strings, &request_cols);
 
-    ClickHouseLibrary::RawClickHouseLibraryTable data = load_keys_func(data_ptr, &settings_holder->strings, &request_cols);
-    return dataToBlock(data);
-}
-
-
-Block SharedLibraryHandler::dataToBlock(const ClickHouseLibrary::RawClickHouseLibraryTable data)
-{
-    if (!data)
-        throw Exception("LibraryDictionarySource: No data returned", ErrorCodes::EXTERNAL_LIBRARY_ERROR);
-
-    const auto * columns_received = static_cast<const ClickHouseLibrary::Table *>(data);
-    if (columns_received->error_code)
-        throw Exception(
-            "LibraryDictionarySource: Returned error: " + std::to_string(columns_received->error_code) + " " + (columns_received->error_string ? columns_received->error_string : ""),
-            ErrorCodes::EXTERNAL_LIBRARY_ERROR);
-
-    MutableColumns columns = sample_block.cloneEmptyColumns();
-
-    for (size_t col_n = 0; col_n < columns_received->size; ++col_n)
-    {
-        if (columns.size() != columns_received->data[col_n].size)
-            throw Exception(
-                "LibraryDictionarySource: Returned unexpected number of columns: " + std::to_string(columns_received->data[col_n].size) + ", must be " + std::to_string(columns.size()),
-                ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-        for (size_t row_n = 0; row_n < columns_received->data[col_n].size; ++row_n)
-        {
-            const auto & field = columns_received->data[col_n].data[row_n];
-            if (!field.data)
-            {
-                /// sample_block contains null_value (from config) inside corresponding column
-                const auto & col = sample_block.getByPosition(row_n);
-                columns[row_n]->insertFrom(*(col.column), 0);
-            }
-            else
-            {
-                const auto & size = field.size;
-                columns[row_n]->insertData(static_cast<const char *>(field.data), size);
-            }
-        }
-    }
-
-    return sample_block.cloneWithColumns(std::move(columns));
+    return std::make_shared<ClickHouseLibrarySource>(std::move(state), sample_block, max_block_size);
 }
 
 }

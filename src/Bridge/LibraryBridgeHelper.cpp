@@ -144,6 +144,7 @@ ReadWriteBufferFromHTTP::OutStreamCallback LibraryBridgeHelper::getInitLibraryCa
         os << "library_path=" << escapeForFileName(library_data.library_path) << "&";
         os << "library_settings=" << escapeForFileName(library_data.library_settings) << "&";
         os << "attributes_names=" << escapeForFileName(library_data.dict_attributes) << "&";
+        os << "max_block_size=" << escapeForFileName(toString(library_data.max_block_size)) << "&";
         os << "sample_block=" << escapeForFileName(sample_block.getNamesAndTypesList().toString()) << "&";
         os << "null_values=" << escapeForFileName(block_string);
     };

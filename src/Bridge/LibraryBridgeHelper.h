@@ -22,6 +22,7 @@ public:
         String library_path;
         String library_settings;
         String dict_attributes;
+        size_t max_block_size;
     };
 
     static constexpr inline size_t DEFAULT_PORT = 9012;

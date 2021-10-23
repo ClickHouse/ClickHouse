@@ -44,7 +44,7 @@ struct Row
 struct Table
 {
     const Row * data = nullptr;
-    uint64_t size = 0;
+    uint64_t size = 0; /// num_rows
     uint64_t error_code = 0; // 0 = ok; !0 = error, with message in error_string
     const char * error_string = nullptr;
 };

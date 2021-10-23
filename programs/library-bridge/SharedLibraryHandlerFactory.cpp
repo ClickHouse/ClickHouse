@@ -21,11 +21,14 @@ void SharedLibraryHandlerFactory::create(
     const std::string & library_path,
     const std::vector<std::string> & library_settings,
     const Block & sample_block,
+    size_t max_block_size,
     const std::vector<std::string> & attributes_names)
 {
     std::lock_guard lock(mutex);
     if (!library_handlers.count(dictionary_id))
-        library_handlers.emplace(std::make_pair(dictionary_id, std::make_shared<SharedLibraryHandler>(library_path, library_settings, sample_block, attributes_names)));
+        library_handlers.emplace(
+            std::make_pair(dictionary_id,
+                std::make_shared<SharedLibraryHandler>(library_path, library_settings, sample_block, max_block_size, attributes_names)));
     else
         LOG_WARNING(&Poco::Logger::get("SharedLibraryHandlerFactory"), "Library handler with dictionary id {} already exists", dictionary_id);
 }
