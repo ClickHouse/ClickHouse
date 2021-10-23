@@ -3603,3 +3603,18 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 **См. также**
 
 -   настройка [optimize_move_to_prewhere](#optimize_move_to_prewhere)
+
+## describe_include_subcolumns {#describe_include_subcolumns}
+
+Разрешает описание подстолбцов при выполнении запроса [DESCRIBE](../../sql-reference/statements/describe-table.md). Настройка действует на подстолбцы внутри столбцов типов [Tuple](../../sql-reference/data-types/tuple.md) или [Map](../../sql-reference/data-types/map.md#map-subcolumns).
+
+Возможные значения:
+
+-   0 — подстолбцы не включаются в результат запросов `DESCRIBE`.
+-   1 — подстолбцы включаются в результат запросов `DESCRIBE`.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Смотрите пример запроса [DESCRIBE](../../sql-reference/statements/describe-table.md).
