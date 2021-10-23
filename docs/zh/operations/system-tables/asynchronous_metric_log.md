@@ -10,7 +10,7 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 列：
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — 事件日期.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — 事件时间.
--   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — 事件时间.
+-   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — 事件时间(微秒).
 -   `name` ([String](../../sql-reference/data-types/string.md)) — 指标名.
 -   `value` ([Float64](../../sql-reference/data-types/float.md)) — 指标值.
 
