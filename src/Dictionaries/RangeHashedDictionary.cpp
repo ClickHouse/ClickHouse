@@ -635,9 +635,9 @@ PaddedPODArray<Int64> RangeHashedDictionary<dictionary_key_type>::makeDateKeys(
     for (size_t i = 0; i < keys.size(); ++i)
     {
         if (Range::isCorrectDate(block_start_dates[i]))
-            keys[i] = block_start_dates[i];
+            keys[i] = block_start_dates[i]; // NOLINT
         else
-            keys[i] = block_end_dates[i];
+            keys[i] = block_end_dates[i]; // NOLINT
     }
 
     return keys;
