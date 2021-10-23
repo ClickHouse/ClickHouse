@@ -32,13 +32,14 @@ protected:
         local_disk.reset();
     }
 
-    void makeEncryptedDisk(FileEncryption::Algorithm algorithm, const String & key)
+    void makeEncryptedDisk(FileEncryption::Algorithm algorithm, const String & key, const String & path = "")
     {
         auto settings = std::make_unique<DiskEncryptedSettings>();
         settings->wrapped_disk = local_disk;
         settings->current_algorithm = algorithm;
         settings->keys[0] = key;
         settings->current_key_id = 0;
+        settings->disk_path = path;
         encrypted_disk = std::make_shared<DiskEncrypted>("encrypted_disk", std::move(settings));
     }
 
@@ -62,14 +63,22 @@ protected:
         return str;
     }
 
-    static void checkBinaryRepresentation(const String & abs_path, size_t size)
+    static String getBinaryRepresentation(const String & abs_path)
     {
         auto buf = createReadBufferFromFileBase(abs_path, {}, 0);
         String str;
         readStringUntilEOF(str, *buf);
+        return str;
+    }
+
+    static void checkBinaryRepresentation(const String & abs_path, size_t size)
+    {
+        String str = getBinaryRepresentation(abs_path);
         EXPECT_EQ(str.size(), size);
         if (str.size() >= 3)
+        {
             EXPECT_EQ(str.substr(0, 3), "ENC");
+        }
     }
 
     std::unique_ptr<Poco::TemporaryFile> temp_dir;
@@ -192,3 +201,92 @@ TEST_F(DiskEncryptedTest, ZeroFileSize)
     EXPECT_EQ(getFileContents("a.txt"), "");
     checkBinaryRepresentation(getDirectory() + "a.txt", 0);
 }
+
+
+TEST_F(DiskEncryptedTest, AnotherFolder)
+{
+    /// Encrypted disk will store its files at the path "folder1/folder2/".
+    local_disk->createDirectories("folder1/folder2");
+    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", "folder1/folder2/");
+
+    /// Write a file.
+    {
+        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        writeString(std::string_view{"Some text"}, *buf);
+    }
+
+    /// Now we have one file.
+    EXPECT_EQ(getFileNames(), "a.txt");
+    EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 9);
+
+    /// Read the file.
+    EXPECT_EQ(getFileContents("a.txt"), "Some text");
+    checkBinaryRepresentation(getDirectory() + "folder1/folder2/a.txt", kHeaderSize + 9);
+}
+
+
+TEST_F(DiskEncryptedTest, RandomIV)
+{
+    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456");
+
+    /// Write two files with the same contents.
+    {
+        auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        writeString(std::string_view{"Some text"}, *buf);
+    }
+    {
+        auto buf = encrypted_disk->writeFile("b.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
+        writeString(std::string_view{"Some text"}, *buf);
+    }
+
+    /// Now we have two files.
+    EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 9);
+    EXPECT_EQ(encrypted_disk->getFileSize("b.txt"), 9);
+
+    /// Read the files.
+    EXPECT_EQ(getFileContents("a.txt"), "Some text");
+    EXPECT_EQ(getFileContents("b.txt"), "Some text");
+    checkBinaryRepresentation(getDirectory() + "a.txt", kHeaderSize + 9);
+    checkBinaryRepresentation(getDirectory() + "b.txt", kHeaderSize + 9);
+
+    String bina = getBinaryRepresentation(getDirectory() + "a.txt");
+    String binb = getBinaryRepresentation(getDirectory() + "b.txt");
+    constexpr size_t iv_offset = 16;
+    constexpr size_t iv_size = FileEncryption::InitVector::kSize;
+    EXPECT_EQ(bina.substr(0, iv_offset), binb.substr(0, iv_offset)); /// Part of the header before IV is the same.
+    EXPECT_NE(bina.substr(iv_offset, iv_size), binb.substr(iv_offset, iv_size)); /// IV differs.
+    EXPECT_EQ(bina.substr(iv_offset + iv_size, kHeaderSize - iv_offset - iv_size),
+              binb.substr(iv_offset + iv_size, kHeaderSize - iv_offset - iv_size)); /// Part of the header after IV is the same.
+    EXPECT_NE(bina.substr(kHeaderSize), binb.substr(kHeaderSize)); /// Encrypted data differs.
+}
+
+
+#if 0
+/// TODO: Try to change DiskEncrypted::writeFile() to fix this test.
+/// It fails sometimes with quite an unexpected error:
+/// libc++abi: terminating with uncaught exception of type std::__1::__fs::filesystem::filesystem_error:
+///           filesystem error: in file_size: No such file or directory [/tmp/tmp14608aaaaaa/a.txt]
+/// Aborted (core dumped)
+/// It happens because for encrypted disks file appending is not atomic (see DiskEncrypted::writeFile())
+/// and a file could be removed after checking its existence but before getting its size.
+TEST_F(DiskEncryptedTest, RemoveFileDuringWriting)
+{
+    makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456");
+
+    size_t n = 100000;
+    std::thread t1{[&]
+    {
+        for (size_t i = 0; i != n; ++i)
+            encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+    }};
+
+    std::thread t2{[&]
+    {
+        for (size_t i = 0; i != n; ++i)
+            encrypted_disk->removeFileIfExists("a.txt");
+    }};
+
+    t1.join();
+    t2.join();
+}
+#endif
