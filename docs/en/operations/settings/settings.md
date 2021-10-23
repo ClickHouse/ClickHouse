@@ -1795,7 +1795,7 @@ This will allow to avoid:
 - sending extra rows over network,
 - processing rows behind the limit on the initiator.
 
-It is possible if one of next is true:
+It is possible if at least one of the following conditions met:
 
 - `distributed_group_by_no_merge` > 0
 - query **does not have `GROUP BY`/`DISTINCT`/`LIMIT BY`**, but it has `ORDER BY`/`LIMIT`.
