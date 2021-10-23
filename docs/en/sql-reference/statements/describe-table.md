@@ -24,9 +24,9 @@ The `DESCRIBE` statement returns a row for each table column with the following 
 -   `ttl_expression` - A [TTL](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) expression.
 -   `is_subcolumn` - A flag that equals `1` for internal subcolumns. It is included into the result only if subcolumn description is enabled.
 
-All columns in a [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) data structure are described separately. The name of each column is prefixed with a parent column name and a dot.
+All columns in [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) data structures are described separately. The name of each column is prefixed with a parent column name and a dot.
 
-To include internal subcolumns into the result, use the [describe_include_subcolumns](../../operations/settings/settings.md#describe_include_subcolumns) setting. 
+To show internal subcolumns of a [Tuple](../../sql-reference/data-types/tuple.md) or a [Map](../../sql-reference/data-types/map.md#map-subcolumns), use the [describe_include_subcolumns](../../operations/settings/settings.md#describe_include_subcolumns) setting. 
 
 **Example**
 
@@ -52,7 +52,7 @@ Result:
 └──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-The second query additionally shows subcolumn information:
+The second query additionally shows subcolumns:
 
 ``` text
 ┌─name──────┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┬─is_subcolumn─┐
