@@ -118,7 +118,7 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
                 {
                     argument = column->clone();
                 }
-                else if (const auto * function_ast = typeid_cast<const ASTFunction *>(column.get()))
+                else if (typeid_cast<const ASTFunction *>(column.get()))
                 {
                     std::function<void(ASTPtr)> throw_if_aggregate_function = [&](ASTPtr node)
                     {
@@ -160,7 +160,7 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
                                 "Positional argument out of bounds: {} (exprected in range [1, {}]",
                                 pos, columns.size());
             }
-            /// Do not throw if pos < 0, becuase of TreeOptimizer::appendUnusedColumn()
+            /// Do not throw if pos < 0, because of TreeOptimizer::appendUnusedColumn()
         }
         else
             positional = false;
