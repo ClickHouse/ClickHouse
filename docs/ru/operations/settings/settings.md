@@ -2684,6 +2684,43 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 Значение по умолчанию: `1`.
 
+## output_format_csv_null_representation {#output_format_csv_null_representation}
+
+Определяет представление `NULL` для формата выходных данных [CSV](../../interfaces/formats.md#csv). Пользователь может установить в качестве значения любую строку, например, `My NULL`.
+
+Значение по умолчанию: `\N`.
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT * FROM csv_custom_null FORMAT CSV;
+```
+
+Результат:
+
+```text
+788
+\N
+\N
+```
+
+Запрос:
+
+```sql
+SET output_format_csv_null_representation = 'My NULL';
+SELECT * FROM csv_custom_null FORMAT CSV;
+```
+
+Результат:
+
+```text
+788
+My NULL
+My NULL
+```
+
 ## output_format_tsv_null_representation {#output_format_tsv_null_representation}
 
 Определяет представление `NULL` для формата выходных данных [TSV](../../interfaces/formats.md#tabseparated). Пользователь может установить в качестве значения любую строку.

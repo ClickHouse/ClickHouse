@@ -36,7 +36,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 
 Create a table in ClickHouse which allows to read data from MongoDB collection:
 
-``` text
+``` sql
 CREATE TABLE mongo_table
 (
     key UInt64,
@@ -46,7 +46,7 @@ CREATE TABLE mongo_table
 
 To read from an SSL secured MongoDB server:
 
-``` text
+``` sql
 CREATE TABLE mongo_table_ssl
 (
     key UInt64,

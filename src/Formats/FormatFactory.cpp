@@ -4,17 +4,16 @@
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
-#include <DataStreams/MaterializingBlockOutputStream.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
-#include <Processors/Formats/OutputStreamToOutputFormat.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
 #include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 #include <Poco/URI.h>
 
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -112,6 +111,7 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.arrow.low_cardinality_as_dictionary = settings.output_format_arrow_low_cardinality_as_dictionary;
     format_settings.arrow.import_nested = settings.input_format_arrow_import_nested;
     format_settings.orc.import_nested = settings.input_format_orc_import_nested;
+    format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)

@@ -4,12 +4,11 @@
 
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <Formats/MySQLSource.h>
+#include <Processors/Sources/MySQLSource.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Common/parseAddress.h>
@@ -19,9 +18,8 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTHelpers.h>
 #include <mysqlxx/Transaction.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Common/parseRemoteDescription.h>
 #include <base/logger_useful.h>
 
