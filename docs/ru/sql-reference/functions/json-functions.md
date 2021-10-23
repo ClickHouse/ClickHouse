@@ -316,10 +316,10 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello"
 Пример:
 
 ``` sql
-SELECT JSON_EXISTS('$.hello', '{"hello":1}');
-SELECT JSON_EXISTS('$.hello.world', '{"hello":{"world":1}}');
-SELECT JSON_EXISTS('$.hello[*]', '{"hello":["world"]}');
-SELECT JSON_EXISTS('$.hello[0]', '{"hello":["world"]}');
+SELECT JSON_EXISTS('{"hello":1}', '$.hello');
+SELECT JSON_EXISTS('{"hello":{"world":1}}', '$.hello.world');
+SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[*]');
+SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
 ```
 
 !!! note "Примечание"
@@ -327,17 +327,17 @@ SELECT JSON_EXISTS('$.hello[0]', '{"hello":["world"]}');
 
 ## JSON_QUERY(json, path) {#json-query}
 
-Парсит JSON и извлекает строку.
+Парсит JSON и извлекает значение как JSON массив или JSON объект.
 
 Если значение не существует, то возвращается пустая строка.
 
 Пример:
 
 ``` sql
-SELECT JSON_QUERY('$.hello', '{"hello":"world"}');
-SELECT JSON_QUERY('$.array[*][0 to 2, 4]', '{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}');
-SELECT JSON_QUERY('$.hello', '{"hello":2}');
-SELECT toTypeName(JSON_QUERY('$.hello', '{"hello":2}'));
+SELECT JSON_QUERY('{"hello":"world"}', '$.hello');
+SELECT JSON_QUERY('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
+SELECT JSON_QUERY('{"hello":2}', '$.hello');
+SELECT toTypeName(JSON_QUERY('{"hello":2}', '$.hello'));
 ```
 
 Результат:
@@ -353,17 +353,17 @@ String
 
 ## JSON_VALUE(json, path) {#json-value}
 
-Парсит JSON и извлекает строку.
+Парсит JSON и извлекает значение как JSON скаляр.
 
 Если значение не существует, то возвращается пустая строка.
 
 Пример:
 
 ``` sql
-SELECT JSON_VALUE('$.hello', '{"hello":"world"}');
-SELECT JSON_VALUE('$.array[*][0 to 2, 4]', '{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}');
-SELECT JSON_VALUE('$.hello', '{"hello":2}');
-SELECT toTypeName(JSON_VALUE('$.hello', '{"hello":2}'));
+SELECT JSON_VALUE('{"hello":"world"}', '$.hello');
+SELECT JSON_VALUE('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
+SELECT JSON_VALUE('{"hello":2}', '$.hello');
+SELECT toTypeName(JSON_VALUE('{"hello":2}', '$.hello'));
 ```
 
 Результат:
