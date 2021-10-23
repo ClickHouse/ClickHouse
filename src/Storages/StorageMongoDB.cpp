@@ -12,7 +12,6 @@
 #include <Common/parseAddress.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTHelpers.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MongoDBSource.h>
 
@@ -114,9 +113,9 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "collection")
-                configuration.collection = safeGetFromASTLiteral<String>(arg_value);
+                configuration.collection = arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else if (arg_name == "options")
-                configuration.options = safeGetFromASTLiteral<String>(arg_value);
+                configuration.options = arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Unexpected key-value argument."
