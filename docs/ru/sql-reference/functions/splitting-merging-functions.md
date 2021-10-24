@@ -232,3 +232,29 @@ SELECT alphaTokens('abca1abc');
 │ ['abca','abc']          │
 └─────────────────────────┘
 ```
+
+## tokens {#tokens}
+
+Разбивает строку на  токены, используя в качестве разделителей не буквенно-цифровые символы ASCII.
+
+**Аргументы**
+
+-   `input_string` — набор байтов. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемые значения**
+
+Возвращает массив токенов.
+
+Тип: [Array](../data-types/array.md).
+
+**Пример**
+
+``` sql
+SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
+```
+
+``` text
+┌─tokens────────────────────────────┐
+│ ['test1','test2','test3','test4'] │
+└───────────────────────────────────┘
+```
