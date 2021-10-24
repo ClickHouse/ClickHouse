@@ -86,7 +86,6 @@ void Client::processError(const String & query) const
 {
     if (server_exception)
     {
-        bool print_stack_trace = config().getBool("stacktrace", false);
         fmt::print(stderr, "Received exception from server (version {}):\n{}\n",
                 server_version,
                 getExceptionMessage(*server_exception, print_stack_trace, true));
@@ -225,7 +224,7 @@ bool Client::executeMultiQuery(const String & all_queries_text)
                 {
                     // Surprisingly, this is a client error. A server error would
                     // have been reported w/o throwing (see onReceiveSeverException()).
-                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
                 // Check whether the error (or its absence) matches the test hints
@@ -813,7 +812,7 @@ bool Client::processWithFuzzing(const String & full_query)
             // uniformity.
             // Surprisingly, this is a client exception, because we get the
             // server exception w/o throwing (see onReceiveException()).
-            client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+            client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
             have_error = true;
         }
 
@@ -1179,6 +1178,7 @@ void Client::processConfig()
         if (!query_id.empty())
             global_context->setCurrentQueryId(query_id);
     }
+    print_stack_trace = config().getBool("stacktrace", false);
 
     if (config().has("multiquery"))
         is_multiquery = true;
