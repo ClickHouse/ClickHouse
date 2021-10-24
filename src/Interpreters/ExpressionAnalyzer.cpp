@@ -1227,7 +1227,15 @@ ActionsDAGPtr SelectQueryExpressionAnalyzer::appendOrderBy(ExpressionActionsChai
     {
         const auto * ast = child->as<ASTOrderByElement>();
         if (!ast || ast->children.empty())
-            throw Exception("Bad order expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+            throw Exception("Bad ORDER BY expression AST", ErrorCodes::UNKNOWN_TYPE_OF_AST_NODE);
+
+        if (getContext()->getSettingsRef().enable_positional_arguments)
+        {
+            auto new_argument = checkPositionalArgument(ast->children.at(0), select_query, ASTSelectQuery::Expression::ORDER_BY);
+            if (new_argument)
+                ast->children[0] = new_argument;
+        }
+
         ASTPtr order_expression = ast->children.at(0);
         step.addRequiredOutput(order_expression->getColumnName());
 
