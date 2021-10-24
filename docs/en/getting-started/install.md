@@ -27,10 +27,9 @@ It is recommended to use official pre-compiled `deb` packages for Debian or Ubun
 {% include 'install/deb.sh' %}
 ```
 
-You can replace `stable` with `lts` or `testing` to use different [“release trains”](../faq/operations/production.md) based on your needs.
+You can replace `stable` with `lts` or `testing` to use different [release trains](../faq/operations/production.md) based on your needs.
 
 You can also download and install packages manually from [here](https://repo.clickhouse.com/deb/stable/main/).
-
 
 #### Packages {#packages}
 

@@ -23,7 +23,7 @@ void registerFunctionGeohashEncode(FunctionFactory & factory);
 void registerFunctionGeohashDecode(FunctionFactory & factory);
 void registerFunctionGeohashesInBox(FunctionFactory & factory);
 void registerFunctionWkt(FunctionFactory & factory);
-void registerFunctionReadWkt(FunctionFactory & factory);
+void registerFunctionReadWKT(FunctionFactory & factory);
 void registerFunctionSvg(FunctionFactory & factory);
 
 #if USE_H3
@@ -79,7 +79,7 @@ void registerFunctionsGeo(FunctionFactory & factory)
     registerFunctionGeohashDecode(factory);
     registerFunctionGeohashesInBox(factory);
     registerFunctionWkt(factory);
-    registerFunctionReadWkt(factory);
+    registerFunctionReadWKT(factory);
     registerFunctionSvg(factory);
 
 #if USE_H3
