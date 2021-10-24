@@ -5,7 +5,7 @@ toc_title: Bit
 
 # Bit Functions {#bit-functions}
 
-Bit functions work for any pair of types from UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, or Float64.
+Bit functions work for any pair of types from `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`, `Float32`, or `Float64`. Some functions support `String` and `FixedString` types.
 
 The result type is an integer with bits equal to the maximum bits of its arguments. If at least one of the arguments is signed, the result is a signed number. If an argument is a floating-point number, it is cast to Int64.
 
@@ -19,7 +19,7 @@ The result type is an integer with bits equal to the maximum bits of its argumen
 
 ## bitShiftLeft(a, b) {#bitshiftlefta-b}
 
-Shifts a value left.
+Shifts a value left by specified number of bit positions.
 
 **Syntax**
 
@@ -36,7 +36,7 @@ bitShiftLeft(a, b)
 
 -   Shifted value.
 
-Type of shifted value is preserved.
+The type of a returned value is the same as the type of an input value.
 
 **Example**
 
