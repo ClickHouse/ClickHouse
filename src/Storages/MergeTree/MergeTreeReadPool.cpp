@@ -25,7 +25,6 @@ MergeTreeReadPool::MergeTreeReadPool(
     const MergeTreeData & data_,
     const StorageMetadataPtr & metadata_snapshot_,
     const PrewhereInfoPtr & prewhere_info_,
-    const bool check_columns_,
     const Names & column_names_,
     const BackoffSettings & backoff_settings_,
     size_t preferred_block_size_bytes_,
@@ -41,7 +40,7 @@ MergeTreeReadPool::MergeTreeReadPool(
     , parts_ranges{std::move(parts_)}
 {
     /// parts don't contain duplicate MergeTreeDataPart's.
-    const auto per_part_sum_marks = fillPerPartInfo(parts_ranges, check_columns_);
+    const auto per_part_sum_marks = fillPerPartInfo(parts_ranges);
     fillPerThreadInfo(threads_, sum_marks_, per_part_sum_marks, parts_ranges, min_marks_for_concurrent_read_);
 }
 
@@ -187,8 +186,7 @@ void MergeTreeReadPool::profileFeedback(const ReadBufferFromFileBase::ProfileInf
 }
 
 
-std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
-    const RangesInDataParts & parts, const bool check_columns)
+std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(const RangesInDataParts & parts)
 {
     std::vector<size_t> per_part_sum_marks;
     Block sample_block = metadata_snapshot->getSampleBlock();
@@ -204,7 +202,7 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(
 
         per_part_sum_marks.push_back(sum_marks);
 
-        auto task_columns = getReadTaskColumns(data, metadata_snapshot, part.data_part, column_names, prewhere_info, check_columns);
+        auto task_columns = getReadTaskColumns(data, metadata_snapshot, part.data_part, column_names, prewhere_info);
 
         auto size_predictor = !predict_block_size_bytes ? nullptr
             : MergeTreeBaseSelectProcessor::getSizePredictor(part.data_part, task_columns, sample_block);

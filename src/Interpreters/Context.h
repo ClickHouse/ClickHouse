@@ -13,6 +13,7 @@
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/isLocalAddress.h>
 #include <base/types.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -635,13 +636,13 @@ public:
     const Settings & getSettingsRef() const { return settings; }
 
     void setProgressCallback(ProgressCallback callback);
-    /// Used in InterpreterSelectQuery to pass it to the IBlockInputStream.
+    /// Used in executeQuery() to pass it to the QueryPipeline.
     ProgressCallback getProgressCallback() const;
 
     void setFileProgressCallback(FileProgressCallback && callback) { file_progress_callback = callback; }
     FileProgressCallback getFileProgressCallback() const { return file_progress_callback; }
 
-    /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IBlockInputStream,
+    /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
       */
     void setProcessListElement(QueryStatus * elem);
@@ -664,12 +665,18 @@ public:
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
+    /// Try to connect to Keeper using get(Auxiliary)ZooKeeper. Useful for
+    /// internal Keeper start (check connection to some other node). Return true
+    /// if connected successfully (without exception) or our zookeeper client
+    /// connection configured for some other cluster without our node.
+    bool tryCheckClientConnectionToMyKeeperCluster() const;
+
     UInt32 getZooKeeperSessionUptime() const;
 
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
 #endif
-    void initializeKeeperDispatcher() const;
+    void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
@@ -860,7 +867,7 @@ public:
     void setReadTaskCallback(ReadTaskCallback && callback);
 
     /// Background executors related methods
-    void initializeBackgroundExecutors();
+    void initializeBackgroundExecutorsIfNeeded();
 
     MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;

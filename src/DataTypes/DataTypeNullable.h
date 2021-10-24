@@ -41,11 +41,6 @@ public:
     bool onlyNull() const override;
     bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
 
-    DataTypePtr tryGetSubcolumnType(const String & subcolumn_name) const override;
-    ColumnPtr getSubcolumn(const String & subcolumn_name, const IColumn & column) const override;
-    SerializationPtr getSubcolumnSerialization(
-        const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const override;
-
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 private:
     SerializationPtr doGetDefaultSerialization() const override;

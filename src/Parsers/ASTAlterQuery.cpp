@@ -157,6 +157,10 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY SAMPLE BY " << (settings.hilite ? hilite_none : "");
         sample_by->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::REMOVE_SAMPLE_BY)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "REMOVE SAMPLE BY" << (settings.hilite ? hilite_none : "");
+    }
     else if (type == ASTAlterCommand::ADD_INDEX)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD INDEX " << (if_not_exists ? "IF NOT EXISTS " : "")
