@@ -4,8 +4,7 @@
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <DataStreams/BlockIO.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Context.h>
 
 

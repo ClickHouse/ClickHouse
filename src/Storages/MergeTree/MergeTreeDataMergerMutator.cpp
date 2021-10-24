@@ -15,13 +15,9 @@
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTask.h>
 
-#include <DataStreams/TTLBlockInputStream.h>
-#include <DataStreams/TTLCalcInputStream.h>
-#include <DataStreams/DistinctSortedBlockInputStream.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/ColumnGathererStream.h>
-#include <DataStreams/SquashingBlockInputStream.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
@@ -32,7 +28,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>
 #include <Common/interpolate.h>
@@ -432,7 +427,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const Names & deduplicate_by_columns,
     const MergeTreeData::MergingParams & merging_params,
     const IMergeTreeDataPart * parent_part,
-    const String & prefix)
+    const String & suffix)
 {
     return std::make_shared<MergeTask>(
         future_part,
@@ -446,8 +441,9 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         deduplicate_by_columns,
         merging_params,
         parent_part,
-        prefix,
+        suffix,
         &data,
+        this,
         &merges_blocker,
         &ttl_merges_blocker);
 }
@@ -777,5 +773,11 @@ ExecuteTTLType MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadat
     return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
+
+bool MergeTreeDataMergerMutator::hasTemporaryPart(const std::string & basename) const
+{
+    std::lock_guard lock(tmp_parts_lock);
+    return tmp_parts.contains(basename);
+}
 
 }
