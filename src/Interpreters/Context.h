@@ -867,7 +867,7 @@ public:
     void setReadTaskCallback(ReadTaskCallback && callback);
 
     /// Background executors related methods
-    void initializeBackgroundExecutors();
+    void initializeBackgroundExecutorsIfNeeded();
 
     MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;
