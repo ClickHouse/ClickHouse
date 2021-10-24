@@ -51,6 +51,8 @@ add_library(minizip OBJECT
     ${CASS_SRC_DIR}/third_party/minizip/zip.c
     ${CASS_SRC_DIR}/third_party/minizip/unzip.c)
 
+target_link_libraries(minizip zlib)
+target_compile_definitions(minizip PRIVATE "-Dz_crc_t=unsigned long")
 
 list(APPEND INCLUDE_DIRS
   ${CASS_SRC_DIR}/third_party/curl
@@ -110,7 +112,6 @@ target_include_directories(cassandra PRIVATE ${INCLUDE_DIRS} ${CMAKE_CURRENT_BIN
 target_compile_definitions(cassandra PRIVATE CASS_BUILDING)
 
 target_link_libraries(cassandra uv)
-target_link_libraries(cassandra zlib)
 
 if(CASS_USE_OPENSSL)
     target_link_libraries(cassandra ssl)
