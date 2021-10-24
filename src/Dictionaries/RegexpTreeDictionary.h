@@ -27,7 +27,7 @@ namespace
         String regexp;
         std::vector<String> attributes;
         UInt64 parent;
-        std::vector<RegexpTreeNode*> children;
+        std::vector<RegexpTreeNode *> children;
         
         RegexpTreeNode(String regexp_, std::vector<String> attributes_, std::vector<RegexpTreeNode*> children_)
             : regexp(regexp_)

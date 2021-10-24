@@ -4,9 +4,14 @@
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <common/map.h>
-#include <Functions/match.cpp>
+
+#include <Functions/FunctionsStringSearch.h>
+#include <Functions/MatchImpl.h>
 #include <Functions/extractAllGroups.h>
-#include <Functions/extractAllGroupsVertical.cpp>
+#include <Functions/ReplaceRegexpImpl.h>
+#include <Functions/FunctionStringReplace.h>
+
+
 #include <DataTypes/DataTypesDecimal.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsNumber.h>
@@ -30,6 +35,22 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
     extern const int TYPE_MISMATCH;
 }
+
+struct NameMatch
+{
+    static constexpr auto name = "match";
+};
+
+struct VerticalImpl
+{
+    static constexpr auto Kind = DB::ExtractAllGroupsResultKind::VERTICAL;
+    static constexpr auto Name = "extractAllGroupsVertical";
+};
+
+struct NameReplaceRegexpOne
+{
+    static constexpr auto name = "replaceRegexpOne";
+};
 
 static void validateKeyType(const DataTypes & key_types)
 {
@@ -206,7 +227,7 @@ void RegexpTreeDictionary::getItemsImpl(
 {
     bool isRegexp = false;
     regexp_+=node.regexp;
-    String attribute = node.attributes[attribute_index - 3];
+    String attribute = node.attributes[attribute_index - 2];
     String final_attribute;
 
     if(startsWith(attribute, "(") && endsWith(attribute, ")"))
@@ -231,42 +252,57 @@ void RegexpTreeDictionary::getItemsImpl(
 	bool isSet = false;
         for (const auto i : collections::range(0, rows))
         {
-	    std::vector<ColumnWithTypeAndName> match_arguments;
-
-	    auto external_type = std::make_shared<DataTypeString>();
+	    std::vector<ColumnWithTypeAndName> arguments;
+	    auto string_type = std::make_shared<DataTypeString>();
 	    auto result_type = std::make_shared<DataTypeNumber<UInt8>>();
 
-	    auto external_column_1 = external_type->createColumn();
-	    external_column_1->insert(user_agents[i].toString());
-	    match_arguments.push_back({std::move(external_column_1), std::move(external_type), "user_agent_column"});
+	    auto match_first_column = string_type->createColumn();
+	    match_first_column->insert(user_agents[i].toString());
+	    arguments.push_back({std::move(match_first_column), std::move(string_type), "first"});
 
-	    auto external_column_2 = external_type->createColumn();
-	    external_column_2->insert(regexp_);
-	    match_arguments.push_back({std::move(external_column_2), std::move(external_type), "regexp_column"});
+	    auto match_second_column = string_type->createColumn();
+	    match_second_column->insert(regexp_);
+	    ColumnPtr match_const_second_column = ColumnConst::create(std::move(match_second_column), 1);
+	    arguments.push_back({match_const_second_column, std::move(string_type), "second"});
 
-	    ColumnPtr match = FunctionMatch().executeImpl(match_arguments, std::move(result_type), rows);
+	    ColumnPtr match = FunctionsStringSearch<MatchImpl<NameMatch, false>>().executeImpl(arguments, std::move(result_type), rows);
 	    size_t isMatched = match->get64(0);
             if(isMatched == 1)
             {
-                if(!isRegexp)
+                if(isRegexp)
                 {
-		    std::vector<ColumnWithTypeAndName> arguments;
+		    arguments.clear();
 
-		    auto internal_type = std::make_shared<DataTypeString>();
- 
-		    auto internal_column_1 = internal_type->createColumn();
-		    internal_column_1->insert(user_agents[i].toString());
-		    arguments.push_back({std::move(internal_column_1), std::move(internal_type), "user_agent_column"});
+		    auto ExtractAllGroupsVertical_first_column = string_type->createColumn();
+		    ExtractAllGroupsVertical_first_column->insert(user_agents[i].toString());
+		    arguments.push_back({std::move(ExtractAllGroupsVertical_first_column), std::move(string_type), "first"});
 
-                    auto internal_column_2 = internal_type->createColumn();
-                    internal_column_2->insert(node.regexp);
-                    arguments.push_back({std::move(internal_column_2), std::move(internal_type), "node_regexp_column"});
+                    auto ExtractAllGroupsVertical_second_column = string_type->createColumn();
+                    ExtractAllGroupsVertical_second_column->insert(node.regexp);
+		    ColumnPtr ExtractAllGroupsVertical_const_second_column = ColumnConst::create(std::move(ExtractAllGroupsVertical_second_column), 1);
+                    arguments.push_back({ExtractAllGroupsVertical_const_second_column, std::move(string_type), "second"});
 		    
 		    ContextPtr context;
-		    ColumnPtr result = FunctionExtractAllGroups<VerticalImpl>(context).executeImpl(arguments, std::move(internal_type), 4);
-		    auto res = result->getDataAt(0).toString();
-		    std::regex re("\\1");
-                    final_attribute = std::regex_replace(attribute, re, res);
+		    ColumnPtr EAGV_result = FunctionExtractAllGroups<VerticalImpl>(context).executeImpl(arguments, std::move(string_type), 1);
+
+		    arguments.clear();
+
+		    auto replaceRegexpOne_first_column = string_type->createColumn();
+		    replaceRegexpOne_first_column->insert(attribute);
+		    arguments.push_back({std::move(replaceRegexpOne_first_column), std::move(string_type), "first"});
+
+		    auto replaceRegexpOne_second_column = string_type->createColumn();
+		    replaceRegexpOne_second_column->insert("\\\\1");
+		    ColumnPtr replaceRegexpOne_const_second_column = ColumnConst::create(std::move(replaceRegexpOne_second_column), 1);
+		    arguments.push_back({replaceRegexpOne_const_second_column, std::move(string_type), "second"});
+
+		    auto replaceRegexpOne_third_column = string_type->createColumn();
+		    replaceRegexpOne_third_column->insert(EAGV_result->getDataAt(0).toString());
+		    ColumnPtr replaceRegexpOne_const_third_column = ColumnConst::create(std::move(replaceRegexpOne_third_column), 1);
+		    arguments.push_back({replaceRegexpOne_const_third_column, std::move(string_type), "third"});
+
+		    final_attribute = FunctionStringReplace<ReplaceRegexpImpl<true>, NameReplaceRegexpOne>().executeImpl(arguments, std::move(string_type), 1)->getDataAt(0).toString();
+		    final_attribute = final_attribute.substr(1, final_attribute.size() - 2);
                 }
                 set_value(i, final_attribute);
                 ++keys_found;
@@ -321,16 +357,15 @@ void RegexpTreeDictionary::setNodeValue(UInt64 id, UInt64 parent_id, String rege
     std::vector<RegexpTreeNode *> children;
     if(parent_id == 0)
     {
-        RegexpTreeNode node(regexp, attributes, children);
+        RegexpTreeNode node = {regexp, attributes, children};
         nodes.emplace(id, node);
         roots.push_back(id);
     }
     else
     {
-        RegexpTreeNode parent = nodes.find(parent_id)->second;
 	RegexpTreeNode *node_ptr = new RegexpTreeNode(regexp, attributes, id, children);
         (nodes.find(parent_id)->second).children.push_back(node_ptr);
-	    
+	
         nodes.emplace(id, *node_ptr);
     }
 }
