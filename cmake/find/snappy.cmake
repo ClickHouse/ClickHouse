@@ -16,7 +16,7 @@ if(NOT USE_INTERNAL_SNAPPY_LIBRARY)
     endif()
 else ()
     set(SNAPPY_LIBRARY snappy)
-    set(SNAPPY_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/snappy ${ClickHouse_BINARY_DIR}/contrib/snappy)
+    set(SNAPPY_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/snappy ${ClickHouse_BINARY_DIR}/contrib/snappy ${ClickHouse_BINARY_DIR}/contrib/snappy-cmake)
 endif()
 
 message (STATUS "Using snappy: ${SNAPPY_LIBRARY} ${SNAPPY_INCLUDE_DIR}")
