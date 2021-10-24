@@ -26,33 +26,13 @@ get_directory_property(IS_SUBPROJECT PARENT_DIRECTORY)
 SET(CC_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/mariadb-connector-c)
 SET(CC_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
 
-MACRO(ADD_OPTION _name _text _default)
-  IF(NOT DEFINED ${_name})
-    OPTION(${OPT}${_name} "${_text}" "${_default}")
-  ELSE()
-    OPTION(${OPT}${_name} "${_text}" "${${_name}}")
-  ENDIF()
-ENDMACRO()
-
-### Options ###
-ADD_OPTION(WITH_MYSQLCOMPAT "creates libmysql* symbolic links" OFF)
-ADD_OPTION(WITH_UNIT_TESTS "build test suite" ON)
-ADD_OPTION(WITH_DYNCOL "Enables support of dynamic coluumns" ON)
-ADD_OPTION(WITH_EXTERNAL_ZLIB "Enables use of external zlib" OFF)
-SET(WITH_CURL OFF)
-ADD_OPTION(WITH_SSL "Enables use of TLS/SSL library" ON)
-###############
-
-INCLUDE(${CC_SOURCE_DIR}/cmake/misc.cmake)
-INCLUDE(FindCURL)
+SET(WITH_SSL ON)
 
 SET(MARIADB_CONNECTOR_C_COPYRIGHT "2013-2017 MariaDB Corporation Ab")
 
-IF(NOT WIN32)
-  INCLUDE(${CC_SOURCE_DIR}/cmake/FindGSSAPI.cmake)
-  IF(GSSAPI_FOUND)
-    INCLUDE_DIRECTORIES(${GSSAPI_INCS})
-  ENDIF()
+INCLUDE(${CC_SOURCE_DIR}/cmake/FindGSSAPI.cmake)
+IF(GSSAPI_FOUND)
+INCLUDE_DIRECTORIES(${GSSAPI_INCS})
 ENDIF()
 
 INCLUDE(${CC_SOURCE_DIR}/cmake/plugins.cmake)
@@ -62,17 +42,6 @@ IF(AUTH_GSSAPI_PLUGIN_TYPE MATCHES "STATIC")
 ENDIF()
 
 
-# various defines for generating include/mysql_version.h
-INCLUDE(FindGit)
-IF(GIT_EXECUTABLE AND EXISTS ${CC_SOURCE_DIR}/.git)
-  EXECUTE_PROCESS(
-    COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
-      WORKING_DIRECTORY ${CC_SOURCE_DIR}
-       OUTPUT_VARIABLE OUT RESULT_VARIABLE RES)
-   IF(RES EQUAL 0)
-    STRING(REGEX REPLACE "\n$" "" CC_SOURCE_REVISION "${OUT}")
-  ENDIF()
-ENDIF()
 SET(PROTOCOL_VERSION 10) # we adapted new password option from PHP's mysqlnd !
 
 # if C/C is build as subproject inside MariaDB server tree we will
@@ -100,15 +69,6 @@ ENDIF ()
 IF(NOT MARIADB_UNIX_ADDR)
   SET(MARIADB_UNIX_ADDR "/tmp/mysql.sock")
 ENDIF()
-
-INCLUDE("${CC_SOURCE_DIR}/cmake/install.cmake")
-IF(NOT PLUGINDIR)
-  SET(PLUGINDIR "${CMAKE_INSTALL_PREFIX}/${INSTALL_PLUGINDIR}")
-ENDIF()
-
-# todo: we don't character sets in share - all is compiled in
-SET(SHAREDIR "share")
-SET(DEFAULT_CHARSET_HOME "${CMAKE_INSTALL_PREFIX}")
 
 INCLUDE(${CC_SOURCE_DIR}/cmake/SearchLibrary.cmake)
 
@@ -185,20 +145,15 @@ IF(NOT WITH_SSL STREQUAL "OFF")
       ELSE()
         SET(TLS_LIBRARY_VERSION "OpenSSL ${OPENSSL_VERSION}")
       ENDIF()
-    ELSE()
-      MESSAGE1(TLS_LIBRARY_VERSION "OpenSSL/LibreSSL not found")
     ENDIF()
   ENDIF()
-  MESSAGE1(TLS_LIBRARY_VERSION "TLS library/version: ${TLS_LIBRARY_VERSION}")
 
   MARK_AS_ADVANCED(SSL_SOURCES)
 ENDIF()
 
 SET(ENABLED_LOCAL_INFILE OFF)
 
-IF(NOT WIN32)
-  INCLUDE(${CC_SOURCE_DIR}/cmake/FindIconv.cmake)
-ENDIF()
+INCLUDE(${CC_SOURCE_DIR}/cmake/FindIconv.cmake)
 
 CONFIGURE_FILE(${CC_SOURCE_DIR}/include/ma_config.h.in
                ${CC_BINARY_DIR}/include/ma_config.h)
@@ -212,19 +167,15 @@ INCLUDE_DIRECTORIES(${CC_BINARY_DIR}/include)
 IF(WITH_SSL)
   SET(SYSTEM_LIBS ${SYSTEM_LIBS} ${SSL_LIBRARIES})
 ENDIF()
-MESSAGE1(SYSTEM_LIBS "SYSTEM_LIBS ${SYSTEM_LIBS}")
-MARK_AS_ADVANCED(SYSTEM_LIBS)
 
-IF(NOT WIN32)
-  IF(NOT AUTH_GSSAPI_PLUGIN_TYPE MATCHES "OFF")
+IF(NOT AUTH_GSSAPI_PLUGIN_TYPE MATCHES "OFF")
     INCLUDE(${CC_SOURCE_DIR}/cmake/FindGSSAPI.cmake)
     IF(GSSAPI_FOUND)
-      INCLUDE_DIRECTORIES(${GSSAPI_INCS})
-      IF(AUTH_GSSAPI_PLUGIN_TYPE MATCHES "STATIC")
-        SET(SYSTEM_LIBS ${SYSTEM_LIBS} ${GSSAPI_LIBS})
-      ENDIF()
+        INCLUDE_DIRECTORIES(${GSSAPI_INCS})
+        IF(AUTH_GSSAPI_PLUGIN_TYPE MATCHES "STATIC")
+            SET(SYSTEM_LIBS ${SYSTEM_LIBS} ${GSSAPI_LIBS})
+        ENDIF()
     ENDIF()
-  ENDIF()
 ENDIF()
 
 INCLUDE(${CC_SOURCE_DIR}/plugins/CMakeLists.txt)
@@ -236,9 +187,6 @@ INCLUDE_DIRECTORIES(${CC_SOURCE_DIR}/include
 ADD_DEFINITIONS(-D HAVE_COMPRESS)
 ADD_DEFINITIONS(-D LIBMARIADB)
 ADD_DEFINITIONS(-D THREAD)
-
-INCLUDE(${CC_SOURCE_DIR}/cmake/sign.cmake)
-
 
 # handle static plugins
 SET(LIBMARIADB_SOURCES ${LIBMARIADB_PLUGIN_SOURCES})
