@@ -1795,15 +1795,15 @@ See also:
 Enables or disables [LIMIT](#limit) applying on each shard separatelly.
 
 This will allow to avoid:
-- sending extra rows over network;
-- processing rows behind the limit on the initiator.
+-  Sending extra rows over network;
+-  Processing rows behind the limit on the initiator.
 
 You cannot get inaccurate results anymore, since `distributed_push_down_limit` changes query execution only if at least one of the conditions met:
-- [distributed_group_by_no_merge](#distributed-group-by-no-merge) > 0.
-- Query **does not have** `GROUP BY`/`DISTINCT`/`LIMIT BY`, but it has `ORDER BY`/`LIMIT`.
-- Query **has** `GROUP BY`/`DISTINCT`/`LIMIT BY` with `ORDER BY`/`LIMIT` and:
-  - [optimize_skip_unused_shards](#optimize-skip-unused-shards) is enabled.
-  - [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key) is enabled.
+-  [distributed_group_by_no_merge](#distributed-group-by-no-merge) > 0.
+-  Query **does not have** `GROUP BY`/`DISTINCT`/`LIMIT BY`, but it has `ORDER BY`/`LIMIT`.
+-  Query **has** `GROUP BY`/`DISTINCT`/`LIMIT BY` with `ORDER BY`/`LIMIT` and:
+    -  [optimize_skip_unused_shards](#optimize-skip-unused-shards) is enabled.
+    -  [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key) is enabled.
 
 Possible values:
 
