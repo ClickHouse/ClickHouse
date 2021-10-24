@@ -35,7 +35,6 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/StorageJoin.h>
 
-#include <DataStreams/copyData.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 
@@ -891,9 +890,10 @@ static std::unique_ptr<QueryPlan> buildJoinedPlan(
         * - in the addExternalStorage function, the JOIN (SELECT ...) subquery is replaced with JOIN _data1,
         *   in the subquery_for_set object this subquery is exposed as source and the temporary table _data1 as the `table`.
         * - this function shows the expression JOIN _data1.
+        * - JOIN tables will need aliases to correctly resolve USING clause.
         */
     auto interpreter = interpretSubquery(
-        join_element.table_expression, context, original_right_columns, query_options.copy().setWithAllColumns());
+        join_element.table_expression, context, original_right_columns, query_options.copy().setWithAllColumns().ignoreAlias(false));
     auto joined_plan = std::make_unique<QueryPlan>();
     interpreter->buildQueryPlan(*joined_plan);
     {
@@ -938,7 +938,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(
     if (auto storage = analyzed_join->getStorageJoin())
     {
         std::tie(left_convert_actions, right_convert_actions) = analyzed_join->createConvertingActions(left_columns, {});
-        return storage->getJoinLocked(analyzed_join);
+        return storage->getJoinLocked(analyzed_join, getContext());
     }
 
     joined_plan = buildJoinedPlan(getContext(), join_element, *analyzed_join, query_options);

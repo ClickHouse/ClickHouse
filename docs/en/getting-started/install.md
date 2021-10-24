@@ -27,7 +27,7 @@ It is recommended to use official pre-compiled `deb` packages for Debian or Ubun
 {% include 'install/deb.sh' %}
 ```
 
-If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments).
+You can replace `stable` with `lts` or `testing` to use different [release trains](../faq/operations/production.md) based on your needs.
 
 You can also download and install packages manually from [here](https://repo.clickhouse.com/deb/stable/main/).
 
