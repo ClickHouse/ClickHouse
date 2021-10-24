@@ -7,7 +7,7 @@
 #include <IO/SnappyWriteBuffer.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <Common/Exception.h>
-#include <common/types.h>
+#include <base/types.h>
 
 int main()
 {
@@ -21,7 +21,7 @@ int main()
             input += str;
         std::cout << "input: " << input << std::endl;
 
-        std::stringstream s;
+        std::stringstream s;       // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         s.exceptions(std::ios::badbit);
         {
             std::unique_ptr<WriteBuffer> sink = std::make_unique<WriteBufferFromOStream>(s);

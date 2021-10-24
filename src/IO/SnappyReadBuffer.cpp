@@ -1,4 +1,5 @@
 #include <Common/config.h>
+#include "Compression/CompressedWriteBuffer.h"
 
 #if USE_SNAPPY
 #include <memory>
@@ -24,16 +25,24 @@ namespace ErrorCodes
 SnappyReadBuffer::SnappyReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_size, char * existing_memory, size_t alignment)
     : BufferWithOwnMemory<SeekableReadBuffer>(buf_size, existing_memory, alignment), in(std::move(in_))
 {
-    WriteBufferFromString wb(compress_buffer);
-    copyData(*in, wb);
+}
 
-    bool success = snappy::Uncompress(compress_buffer.data(), wb.count(), &uncompress_buffer);
-    if (!success)
+bool SnappyReadBuffer::nextImpl()
+{
+    if (compress_buffer.empty() && uncompress_buffer.empty())
     {
-        throw Exception("snappy uncomress failed: ", ErrorCodes::SNAPPY_UNCOMPRESS_FAILED);
-    }
+        WriteBufferFromString wb(compress_buffer);
+        copyData(*in, wb);
 
-    BufferBase::set(const_cast<char *>(uncompress_buffer.data()), uncompress_buffer.size(), 0);
+        bool success = snappy::Uncompress(compress_buffer.data(), wb.count(), &uncompress_buffer);
+        if (!success)
+        {
+            throw Exception("snappy uncomress failed: ", ErrorCodes::SNAPPY_UNCOMPRESS_FAILED);
+        }
+        BufferBase::set(const_cast<char *>(uncompress_buffer.data()), uncompress_buffer.size(), 0);
+        return true;
+    }
+    return false;
 }
 
 SnappyReadBuffer::~SnappyReadBuffer() = default;
