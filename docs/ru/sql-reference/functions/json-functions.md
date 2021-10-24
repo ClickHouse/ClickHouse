@@ -307,6 +307,76 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b":{"c": {"d": "hello"
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+## JSON_EXISTS(json, path) {#json-exists}
+
+Если значение существует в документе JSON, то возвращается 1.
+
+Если значение не существует, то возвращается 0.
+
+Пример:
+
+``` sql
+SELECT JSON_EXISTS('{"hello":1}', '$.hello');
+SELECT JSON_EXISTS('{"hello":{"world":1}}', '$.hello.world');
+SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[*]');
+SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
+```
+
+!!! note "Примечание"
+    до версии 21.11 порядок аргументов функции был обратный, т.е. JSON_EXISTS(path, json)
+
+## JSON_QUERY(json, path) {#json-query}
+
+Парсит JSON и извлекает значение как JSON массив или JSON объект.
+
+Если значение не существует, то возвращается пустая строка.
+
+Пример:
+
+``` sql
+SELECT JSON_QUERY('{"hello":"world"}', '$.hello');
+SELECT JSON_QUERY('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
+SELECT JSON_QUERY('{"hello":2}', '$.hello');
+SELECT toTypeName(JSON_QUERY('{"hello":2}', '$.hello'));
+```
+
+Результат:
+
+``` text
+["world"]
+[0, 1, 4, 0, -1, -4]
+[2]
+String
+```
+!!! note "Примечание"
+    до версии 21.11 порядок аргументов функции был обратный, т.е. JSON_QUERY(path, json)
+
+## JSON_VALUE(json, path) {#json-value}
+
+Парсит JSON и извлекает значение как JSON скаляр.
+
+Если значение не существует, то возвращается пустая строка.
+
+Пример:
+
+``` sql
+SELECT JSON_VALUE('{"hello":"world"}', '$.hello');
+SELECT JSON_VALUE('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
+SELECT JSON_VALUE('{"hello":2}', '$.hello');
+SELECT toTypeName(JSON_VALUE('{"hello":2}', '$.hello'));
+```
+
+Результат:
+
+``` text
+"world"
+0
+2
+String
+```
+
+!!! note "Примечание"
+    до версии 21.11 порядок аргументов функции был обратный, т.е. JSON_VALUE(path, json)
 
 ## toJSONString {#tojsonstring}
 
