@@ -595,7 +595,17 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
     if (!is_materialized_postgresql_database)
         return nullptr;
 
-    return std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, true, true, true));
+    PostgreSQLTableStructure structure;
+    try
+    {
+        structure = fetchPostgreSQLTableStructure(tx, table_name, postgres_schema, true, true, true);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    return std::make_unique<PostgreSQLTableStructure>(std::move(structure));
 }
 
 
