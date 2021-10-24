@@ -17,7 +17,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Disks/IStoragePolicy.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <DataTypes/DataTypeUUID.h>
 
 
@@ -59,6 +59,8 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"comment", std::make_shared<DataTypeString>()},
         {"has_own_data", std::make_shared<DataTypeUInt8>()},
+    }, {
+        {"table", std::make_shared<DataTypeString>(), "name"}
     }));
     setInMemoryMetadata(storage_metadata);
 }

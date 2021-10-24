@@ -1788,15 +1788,31 @@ Default value: 0
 
 ## distributed_push_down_limit (#distributed-push-down-limit}
 
-LIMIT will be applied on each shard separatelly. Usually you don't need to use it, since this will be done automatically if it is possible, i.e. for simple query SELECT FROM LIMIT.
+LIMIT will be applied on each shard separatelly.
+
+This will allow to avoid:
+
+- sending extra rows over network,
+- processing rows behind the limit on the initiator.
+
+It is possible if at least one of the following conditions met:
+
+- `distributed_group_by_no_merge` > 0
+- query **does not have `GROUP BY`/`DISTINCT`/`LIMIT BY`**, but it has `ORDER BY`/`LIMIT`.
+- query **has `GROUP BY`/`DISTINCT`/`LIMIT BY`** with `ORDER BY`/`LIMIT` and:
+  - `optimize_skip_unused_shards_limit` is enabled
+  - `optimize_distributed_group_by_sharding_key` is enabled
 
 Possible values:
 
 -  0 - Disabled
 -  1 - Enabled
 
-!!! note "Note"
-    That with this setting the result of the query may be inaccurate.
+See also:
+
+-   [distributed_group_by_no_merge](#distributed-group-by-no-merge)
+-   [optimize_skip_unused_shards](#optimize-skip-unused-shards)
+-   [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key)
 
 ## optimize_skip_unused_shards_limit {#optimize-skip-unused-shards-limit}
 
@@ -1808,7 +1824,7 @@ Default value: 1000
 
 ## optimize_skip_unused_shards {#optimize-skip-unused-shards}
 
-Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise does nothing).
+Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise a query yields incorrect result).
 
 Possible values:
 
@@ -1943,6 +1959,21 @@ Possible values:
 -   1 — Optimization enabled.
 
 Default value: `0`.
+
+## optimize_trivial_count_query {#optimize-trivial-count-query}
+
+Enables or disables the optimization to trivial query `SELECT count() FROM table` using metadata from MergeTree. If you need to use row-level security, disable this setting.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+   
+Default value: `1`.
+
+See also:
+
+-   [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
 
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
@@ -3542,7 +3573,7 @@ Default value: empty list — means whole PostgreSQL database will be replicated
 
 ## materialized_postgresql_allow_automatic_update {#materialized-postgresql-allow-automatic-update}
 
-Allow reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
+Allows reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
 
 Possible values:
 
@@ -3553,11 +3584,11 @@ Default value: `0`.
 
 ## materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
 
-Allows to have user-managed replication slots. Must be used together with `materialized_postgresql_snapshot`.
+A user-created replication slot. Must be used together with [materialized_postgresql_snapshot](#materialized-postgresql-snapshot).
 
-## materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
+## materialized_postgresql_snapshot {#materialized-postgresql-snapshot}
 
-A text string identifying a snapshot, from which initial dump of tables will be performed. Must be used together with `materialized_postgresql_replication_slot`.
+A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with [materialized_postgresql_replication_slot](#materialized-postgresql-replication-slot).
 
 ## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
 
@@ -3614,6 +3645,16 @@ Possible values:
 -   Positive integer.
 
 Default value: `1000`.
+
+## http_max_single_read_retries {#http-max-single-read-retries}
+
+Sets the maximum number of retries during a single HTTP read.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1024`.
 
 ## log_queries_probability {#log-queries-probability}
 
@@ -3724,6 +3765,72 @@ Exception: Total regexp lengths too large.
 **See Also**
 
 -   [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)
+
+
+## enable_positional_arguments {#enable-positional-arguments}
+
+Enables or disables supporting positional arguments for [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statements. When you want to use column numbers instead of column names in these clauses, set `enable_positional_arguments = 1`.
+
+Possible values:
+
+-   0 — Positional arguments aren't supported.
+-   1 — Positional arguments are supported: column numbers can use instead of column names.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE positional_arguments(one Int, two Int, three Int) ENGINE=Memory();
+
+INSERT INTO positional_arguments VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
+
+SET enable_positional_arguments = 1;
+
+SELECT * FROM positional_arguments ORDER BY 2,3;
+```
+
+Result:
+
+```text
+┌─one─┬─two─┬─three─┐
+│  30 │  10 │   20  │
+│  20 │  20 │   10  │
+│  10 │  20 │   30  │
+└─────┴─────┴───────┘
+```
+
+## optimize_move_to_prewhere {#optimize_move_to_prewhere}
+
+Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries.
+
+Works only for [*MergeTree](../../engines/table-engines/mergetree-family/index.md) tables.
+
+Possible values:
+
+-   0 — Automatic `PREWHERE` optimization is disabled.
+-   1 — Automatic `PREWHERE` optimization is enabled.
+
+Default value: `1`.
+
+## optimize_move_to_prewhere_if_final {#optimize_move_to_prewhere_if_final}
+
+Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries with [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier.
+
+Works only for [*MergeTree](../../engines/table-engines/mergetree-family/index.md) tables.
+
+Possible values:
+
+-   0 — Automatic `PREWHERE` optimization in `SELECT` queries with `FINAL` modifier is disabled.
+-   1 — Automatic `PREWHERE` optimization in `SELECT` queries with `FINAL` modifier is enabled.
+
+Default value: `0`.
+
+**See Also**
+
+-   [optimize_move_to_prewhere](#optimize_move_to_prewhere) setting
 
 ## pool_size {#pool_size}
 

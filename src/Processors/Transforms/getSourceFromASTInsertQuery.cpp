@@ -1,17 +1,16 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetQuery.h>
-#include <Formats/FormatFactory.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/EmptyReadBuffer.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Formats/IInputFormat.h>
 #include "IO/CompressionMethod.h"
 #include "Parsers/ASTLiteral.h"
@@ -60,7 +59,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
         : std::make_unique<EmptyReadBuffer>();
 
     /// Create a source from input buffer using format from query
-    auto source = FormatFactory::instance().getInput(format, *input_buffer, header, context, context->getSettings().max_insert_block_size);
+    auto source = context->getInputFormat(format, *input_buffer, header, context->getSettings().max_insert_block_size);
     source->addBuffer(std::move(input_buffer));
     return source;
 }

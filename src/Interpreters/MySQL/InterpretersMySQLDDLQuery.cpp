@@ -120,7 +120,7 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
                     auto * literal = child->as<ASTLiteral>();
 
                     new_child->arguments = std::make_shared<ASTExpressionList>();
-                    new_child->arguments->children.push_back(std::make_shared<ASTLiteral>(literal->value.get<String>()));
+                    new_child->arguments->children.push_back(std::make_shared<ASTLiteral>(literal->value.safeGet<String>()));
                     new_child->arguments->children.push_back(std::make_shared<ASTLiteral>(Int16(++i)));
                     child = new_child;
                 }

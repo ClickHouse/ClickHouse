@@ -4,6 +4,8 @@
 #include <Disks/DiskFactory.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
+#include <IO/ReadBufferFromFileDecorator.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromEncryptedFile.h>
 #include <boost/algorithm/hex.hpp>
 
@@ -75,6 +77,17 @@ namespace
 
             if (res->keys.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "No keys, an encrypted disk needs keys to work");
+
+            if (!config.has(config_prefix + ".current_key_id"))
+            {
+                /// In case of multiple keys, current_key_id is mandatory
+                if (res->keys.size() > 1)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "There are multiple keys in config. current_key_id is required");
+
+                /// If there is only one key with non zero ID, curren_key_id should be defined.
+                if (res->keys.size() == 1 && !res->keys.contains(0))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Config has one key with non zero id. сurrent_key_id is required");
+            }
 
             res->current_key_id = config.getUInt64(config_prefix + ".current_key_id", 0);
             if (!res->keys.contains(res->current_key_id))
@@ -243,6 +256,12 @@ std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
 {
     auto wrapped_path = wrappedPath(path);
     auto buffer = delegate->readFile(wrapped_path, settings, estimated_size);
+    if (buffer->eof())
+    {
+        /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().
+        /// There is no header so we just return `ReadBufferFromString("")`.
+        return std::make_unique<ReadBufferFromFileDecorator>(std::make_unique<ReadBufferFromString>(std::string_view{}), wrapped_path);
+    }
     auto encryption_settings = current_settings.get();
     FileEncryption::Header header = readHeader(*buffer);
     String key = getKey(path, header, *encryption_settings);
