@@ -34,8 +34,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_MANY_REDIRECTS;
-    extern const int HTTP_RANGE_NOT_SATISFIABLE;
-    extern const int BAD_ARGUMENTS;
 }
 
 template <typename SessionPtr>
@@ -109,12 +107,7 @@ namespace detail
         size_t buffer_size;
         size_t bytes_read = 0;
 
-        /// Non-empty if content-length header was received.
-        std::optional<size_t> total_bytes_to_read;
-
-        /// Delayed exception in case retries with partial content are not satisfiable.
         std::exception_ptr exception;
-
         ReadSettings settings;
         Poco::Logger * log;
 
@@ -135,10 +128,6 @@ namespace detail
                 request.set(std::get<0>(http_header_entry), std::get<1>(http_header_entry));
             }
 
-            bool with_partial_content = bytes_read && total_bytes_to_read;
-            if (with_partial_content)
-                request.set("Range", fmt::format("bytes={}-", bytes_read));
-
             if (!credentials.getUsername().empty())
                 credentials.authenticate(request);
 
@@ -155,14 +144,6 @@ namespace detail
 
                 istr = receiveResponse(*sess, request, response, true);
                 response.getCookies(cookies);
-
-                if (with_partial_content && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
-                {
-                    /// If we retried some request, throw error from that request.
-                    if (exception)
-                        std::rethrow_exception(exception);
-                    throw Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE, "Cannot read with range: {}", request.get("Range"));
-                }
 
                 content_encoding = response.get("Content-Encoding", "");
                 return istr;
@@ -220,10 +201,6 @@ namespace detail
                 istr = call(uri_redirect, response);
             }
 
-            /// If it is the very first initialization.
-            if (!bytes_read && !total_bytes_to_read && response.hasContentLength())
-                total_bytes_to_read = response.getContentLength();
-
             try
             {
                 impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size);
@@ -243,15 +220,13 @@ namespace detail
             if (next_callback)
                 next_callback(count());
 
-            if (total_bytes_to_read && bytes_read == total_bytes_to_read.value())
-                return false;
-
             if (impl && !working_buffer.empty())
                 impl->position() = position();
 
             bool result = false;
             bool successful_read = false;
             size_t milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
+            size_t ignore = 0;
 
             /// Default http_max_tries = 1.
             for (size_t i = 0; (i < settings.http_max_tries) && !successful_read; ++i)
@@ -263,23 +238,40 @@ namespace detail
                         if (!impl)
                             initialize();
 
+                        if (ignore && bytes_read)
+                        {
+                            LOG_WARNING(log, "Ignoring {} bytes", ignore);
+                            impl->ignore(bytes_read);
+                            ignore = 0;
+                            if (impl->hasPendingData())
+                            {
+                                successful_read = true;
+                                break;
+                            }
+                        }
+
                         result = impl->next();
                         successful_read = true;
                         break;
                     }
                     catch (const Poco::Exception & e)
                     {
-                        bool can_retry_request = !bytes_read || total_bytes_to_read.has_value();
-                        if (!can_retry_request)
-                            throw;
-
-                        LOG_ERROR(&Poco::Logger::get("ReadBufferFromHTTP"), "Error: {}, code: {}", e.what(), e.code());
+                        LOG_ERROR(log, "Error: {}, code: {}{}",
+                                  e.what(), e.code(),
+                                  (ignore ? " (while calling ignore(" + std::to_string(ignore) + "))" : ""));
 
                         exception = std::current_exception();
                         impl.reset();
+
+                        ignore = bytes_read;
+
                         sleepForMilliseconds(milliseconds_to_wait);
                         milliseconds_to_wait *= 2;
                     }
+
+                    /// If backoff is disabled.
+                    if (!settings.http_retry_initial_backoff_ms)
+                        break;
                 }
                 milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
             }

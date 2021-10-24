@@ -311,7 +311,7 @@ def test_path_validation(ch_cluster):
     assert('DB::Exception: File path /etc/clickhouse-server/config.d/dictionaries_lib/../../../../dict_lib_copy.so is not inside /etc/clickhouse-server/config.d/dictionaries_lib' in result)
 
 
-def test_long(ch_cluster):
+def test_long(ch_cluster): # test_long
     if instance.is_built_with_memory_sanitizer():
         pytest.skip("Memory Sanitizer cannot work with third-party shared libraries")
 
@@ -328,13 +328,7 @@ def test_long(ch_cluster):
         LIFETIME(2) ;
     ''')
 
-    for i in range(10):
-        result = instance.query('''select count() from (select dictGet(lib_dict_c, 'value1', toUInt64(number)) from numbers(10000000, 25555555));''')
+    for i in range(50):
+        result = instance.query('''select count() from (select dictGet(lib_dict_c, 'value1', toUInt64(number)) from numbers(10000000, 1200000)) settings max_threads=1;''')
         print(result)
-        assert(int(result) == 25555555)
-
-
-if __name__ == '__main__':
-    cluster.start()
-    input("Cluster created, press any key to destroy...")
-    cluster.shutdown()
+        assert(int(result) == 1200000)

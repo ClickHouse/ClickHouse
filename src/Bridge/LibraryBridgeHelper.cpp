@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-static constexpr size_t max_tries = 5;
+static constexpr size_t MAX_TRIES = 8;
 
 LibraryBridgeHelper::LibraryBridgeHelper(
         ContextPtr context_,
@@ -253,17 +253,30 @@ bool LibraryBridgeHelper::executeRequest(const Poco::URI & uri, ReadWriteBufferF
 
 Pipe LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback)
 {
-    auto settings = getContext()->getReadSettings();
-    settings.http_max_tries = std::max(max_tries, settings.http_max_tries); /// Force retries.
+    auto read_settings = getContext()->getReadSettings();
+
+    /// A reasonable amout, do not try more because reading from dictionaty source also has its own timeouts.
+    read_settings.http_max_tries = MAX_TRIES;
+    /// For the same reason disable backoff while loop.
+    read_settings.http_retry_initial_backoff_ms = 0; /// Zero means disable.
+    read_settings.http_retry_max_backoff_ms = 1;
+
+    const auto & settings = getContext()->getSettingsRef();
+    Poco::Timespan http_keep_alive_timeout{config.getUInt("keep_alive_timeout", 20), 0};
+
     auto read_buf_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
         uri,
         Poco::Net::HTTPRequest::HTTP_POST,
         std::move(out_stream_callback),
-        http_timeouts,
+        ConnectionTimeouts(std::max(Poco::Timespan(settings.http_connection_timeout.totalSeconds(), 0), Poco::Timespan(20, 0)),
+                           settings.http_send_timeout,
+                           std::max(Poco::Timespan(settings.http_receive_timeout.totalSeconds(), 0), Poco::Timespan(20, 0)),
+                           settings.tcp_keep_alive_timeout,
+                           http_keep_alive_timeout),
         0,
         Poco::Net::HTTPBasicCredentials{},
         DBMS_DEFAULT_BUFFER_SIZE,
-        settings,
+        read_settings,
         ReadWriteBufferFromHTTP::HTTPHeaderEntries{});
 
     auto source = FormatFactory::instance().getInput(LibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, getContext(), DEFAULT_BLOCK_SIZE);

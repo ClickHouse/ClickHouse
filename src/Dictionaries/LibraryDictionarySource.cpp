@@ -56,7 +56,7 @@ LibraryDictionarySource::LibraryDictionarySource(
         .dict_attributes = getDictAttributesString(),
         /// Keep default of max_block_size relatively small, because it helps a lot to
         /// reduce `Cannot read from istream` errors.
-        .max_block_size = config.getUInt(config_prefix + ".max_block_size", 10000),
+        .max_block_size = config.getUInt(config_prefix + ".bridge_block_size", 10000),
     };
 
     bridge_helper = std::make_shared<LibraryBridgeHelper>(context, description.sample_block, dictionary_id, library_data);
