@@ -119,7 +119,7 @@ add_library(cassandra
     $<TARGET_OBJECTS:http-parser>
     $<TARGET_OBJECTS:minizip>)
 
-target_link_libraries(cassandra ${CASS_LIBS})
+target_link_libraries(cassandra zlib)
 add_library(cassandra_static ALIAS cassandra)
 target_include_directories(cassandra PRIVATE ${INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
 target_compile_definitions(cassandra PRIVATE CASS_BUILDING)
