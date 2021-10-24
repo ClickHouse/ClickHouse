@@ -10,11 +10,11 @@ endif()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/base64/LICENSE")
     set (MISSING_INTERNAL_BASE64_LIBRARY 1)
-    message (WARNING "submodule contrib/base64 is missing. to fix try run: \n git submodule update --init --recursive")
+    message (WARNING "submodule contrib/base64 is missing. to fix try run: \n git submodule update --init")
 endif ()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/base64")
-    message (WARNING "submodule contrib/base64 is missing. to fix try run: \n git submodule update --init --recursive")
+    message (WARNING "submodule contrib/base64 is missing. to fix try run: \n git submodule update --init")
 else()
     set (BASE64_LIBRARY base64)
     set (USE_BASE64 1)

@@ -3,6 +3,7 @@
 #include <Common/ProgressIndication.h>
 #include <Common/InterruptListener.h>
 #include <Common/ShellCommand.h>
+#include <Common/Stopwatch.h>
 #include <Core/ExternalTable.h>
 #include <Poco/Util/Application.h>
 #include <Interpreters/Context.h>
@@ -91,7 +92,7 @@ protected:
     };
 
     virtual void printHelpMessage(const OptionsDescription & options_description) = 0;
-    virtual void addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments) = 0;
+    virtual void addOptions(OptionsDescription & options_description) = 0;
     virtual void processOptions(const OptionsDescription & options_description,
                                 const CommandLineOptions & options,
                                 const std::vector<Arguments> & external_tables_arguments) = 0;
@@ -112,7 +113,7 @@ private:
     void onTotals(Block & block, ASTPtr parsed_query);
     void onExtremes(Block & block, ASTPtr parsed_query);
     void onReceiveExceptionFromServer(std::unique_ptr<Exception> && e);
-    void onProfileInfo(const BlockStreamProfileInfo & profile_info);
+    void onProfileInfo(const ProfileInfo & profile_info);
     void onEndOfStream();
     void onProfileEvents(Block & block);
 
@@ -132,6 +133,7 @@ private:
     void resetOutput();
     void outputQueryInfo(bool echo_query_);
     void readArguments(int argc, char ** argv, Arguments & common_arguments, std::vector<Arguments> & external_tables_arguments);
+    void parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments);
 
 protected:
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
@@ -178,7 +180,7 @@ protected:
 
     /// The user can specify to redirect query output to a file.
     std::unique_ptr<WriteBuffer> out_file_buf;
-    BlockOutputStreamPtr block_out_stream;
+    std::shared_ptr<IOutputFormat> output_format;
 
     /// The user could specify special file for server logs (stderr by default)
     std::unique_ptr<WriteBuffer> out_logs_buf;
@@ -200,6 +202,7 @@ protected:
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.
 
+    bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the
     /// return code in batch mode.
     std::unique_ptr<Exception> server_exception;
@@ -216,6 +219,16 @@ protected:
 
     QueryFuzzer fuzzer;
     int query_fuzzer_runs = 0;
+
+    struct
+    {
+        bool print = false;
+        /// UINT64_MAX -- print only last
+        UInt64 delay_ms = 0;
+        Stopwatch watch;
+        /// For printing only last (delay_ms == 0).
+        Block last_block;
+    } profile_events;
 
     QueryProcessingStage::Enum query_processing_stage;
 };
