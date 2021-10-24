@@ -6,11 +6,12 @@
 namespace DB
 {
 
-static bool isFunctionCast(const ASTFunction * function)
+static inline bool isFunctionCast(const ASTFunction * function)
 {
     if (function)
         return function->name == "CAST" || function->name == "_CAST";
     return false;
 }
+
 
 }
