@@ -17,7 +17,7 @@ Columns:
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Login/logout time.
 -   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Login/logout starting time with microseconds precision.
 -   `user` ([String](../../sql-reference/data-types/string.md)) — User name.
--   `auth_type` ([Enum8](../../sql-reference/data-types/enum.md)) — The authentication type. There are multiple ways of user identification:
+-   `auth_type` ([Enum8](../../sql-reference/data-types/enum.md)) — The authentication type. Possible values:
     -   `NO_PASSWORD`
     -   `PLAINTEXT_PASSWORD`
     -   `SHA256_PASSWORD`
