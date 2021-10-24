@@ -26,7 +26,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -49,54 +48,14 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
 }
 
 
-size_t AsynchronousReadBufferFromFileDescriptor::getNumBytesToRead()
-{
-    size_t num_bytes_to_read;
-
-    /// Position is set only for MergeTree tables.
-    if (read_until_position)
-    {
-        /// Everything is already read.
-        if (file_offset_of_buffer_end == read_until_position)
-            return 0;
-
-        if (file_offset_of_buffer_end > read_until_position)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
-                            file_offset_of_buffer_end, read_until_position);
-
-        /// Read range [file_offset_of_buffer_end, read_until_position).
-        num_bytes_to_read = read_until_position - file_offset_of_buffer_end;
-        num_bytes_to_read = std::min(num_bytes_to_read, internal_buffer.size());
-    }
-    else
-    {
-        num_bytes_to_read = internal_buffer.size();
-    }
-
-    return num_bytes_to_read;
-}
-
-
 void AsynchronousReadBufferFromFileDescriptor::prefetch()
 {
     if (prefetch_future.valid())
         return;
 
-    auto num_bytes_to_read = getNumBytesToRead();
-    if (!num_bytes_to_read)
-        return;
-
-    prefetch_buffer.resize(num_bytes_to_read);
+    /// Will request the same amount of data that is read in nextImpl.
+    prefetch_buffer.resize(internal_buffer.size());
     prefetch_future = readInto(prefetch_buffer.data(), prefetch_buffer.size());
-}
-
-
-void AsynchronousReadBufferFromFileDescriptor::setReadUntilPosition(size_t position)
-{
-    if (prefetch_future.valid())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Prefetch is valid in readUntilPosition");
-
-    read_until_position = position;
 }
 
 
@@ -129,13 +88,9 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     }
     else
     {
-        auto num_bytes_to_read = getNumBytesToRead();
-        if (!num_bytes_to_read) /// Nothing to read.
-            return false;
-
         /// No pending request. Do synchronous read.
 
-        auto size = readInto(memory.data(), num_bytes_to_read).get();
+        auto size = readInto(memory.data(), memory.size()).get();
         file_offset_of_buffer_end += size;
 
         if (size)
@@ -246,3 +201,4 @@ void AsynchronousReadBufferFromFileDescriptor::rewind()
 }
 
 }
+

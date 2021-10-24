@@ -24,7 +24,6 @@ protected:
 
     const size_t required_alignment = 0;  /// For O_DIRECT both file offsets and memory addresses have to be aligned.
     size_t file_offset_of_buffer_end = 0; /// What offset in file corresponds to working_buffer.end().
-    size_t read_until_position = 0;
     int fd;
 
     bool nextImpl() override;
@@ -33,8 +32,6 @@ protected:
     std::string getFileName() const override;
 
     void finalize();
-
-    void setReadUntilPosition(size_t position) override;
 
 public:
     AsynchronousReadBufferFromFileDescriptor(
@@ -68,8 +65,7 @@ public:
 
 private:
     std::future<IAsynchronousReader::Result> readInto(char * data, size_t size);
-
-    size_t getNumBytesToRead();
 };
 
 }
+
