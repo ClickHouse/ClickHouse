@@ -95,3 +95,4 @@ FROM
     FROM numbers(10)
 )
 GROUP BY b
+1	1	1

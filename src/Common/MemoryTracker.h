@@ -64,6 +64,9 @@ private:
     void setOrRaiseProfilerLimit(Int64 value);
 
 public:
+
+    static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
+
     explicit MemoryTracker(VariableContext level_ = VariableContext::Thread);
     explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
 
@@ -141,6 +144,11 @@ public:
     void setMetric(CurrentMetrics::Metric metric_)
     {
         metric.store(metric_, std::memory_order_relaxed);
+    }
+
+    CurrentMetrics::Metric getMetric()
+    {
+        return metric.load(std::memory_order_relaxed);
     }
 
     void setDescription(const char * description)

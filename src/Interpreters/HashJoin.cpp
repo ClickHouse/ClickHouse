@@ -23,7 +23,6 @@
 
 #include <Storages/StorageDictionary.h>
 
-#include <DataStreams/materializeBlock.h>
 
 #include <Core/ColumnNumbers.h>
 #include <Common/typeid_cast.h>
@@ -744,7 +743,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     size_t total_rows = 0;
     size_t total_bytes = 0;
     {
-        if (storage_join_lock.mutex())
+        if (storage_join_lock)
             throw DB::Exception("addJoinedBlock called when HashJoin locked to prevent updates",
                                 ErrorCodes::LOGICAL_ERROR);
 

@@ -1,31 +1,28 @@
-#include "Storages/MergeTree/MergeTask.h"
+#include <Storages/MergeTree/MergeTask.h>
 
 #include <memory>
 #include <fmt/format.h>
 
 #include <base/logger_useful.h>
-#include "Common/ActionBlocker.h"
+#include <Common/ActionBlocker.h>
 
-#include "Storages/MergeTree/MergeTreeData.h"
-#include "Storages/MergeTree/IMergeTreeDataPart.h"
-#include "Storages/MergeTree/MergeTreeSequentialSource.h"
-#include "Storages/MergeTree/FutureMergedMutatedPart.h"
-#include "Processors/Transforms/ExpressionTransform.h"
-#include "Processors/Transforms/MaterializingTransform.h"
-#include "Processors/Merges/MergingSortedTransform.h"
-#include "Processors/Merges/CollapsingSortedTransform.h"
-#include "Processors/Merges/SummingSortedTransform.h"
-#include "Processors/Merges/ReplacingSortedTransform.h"
-#include "Processors/Merges/GraphiteRollupSortedTransform.h"
-#include "Processors/Merges/AggregatingSortedTransform.h"
-#include "Processors/Merges/VersionedCollapsingTransform.h"
-#include "Processors/Executors/PipelineExecutingBlockInputStream.h"
-#include "DataStreams/DistinctSortedBlockInputStream.h"
-#include "DataStreams/TTLBlockInputStream.h"
-#include <DataStreams/TTLCalcInputStream.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/DistinctSortedBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeSequentialSource.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Merges/CollapsingSortedTransform.h>
+#include <Processors/Merges/SummingSortedTransform.h>
+#include <Processors/Merges/ReplacingSortedTransform.h>
+#include <Processors/Merges/GraphiteRollupSortedTransform.h>
+#include <Processors/Merges/AggregatingSortedTransform.h>
+#include <Processors/Merges/VersionedCollapsingTransform.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
 
 namespace DB
 {
@@ -92,7 +89,10 @@ static void extractMergingAndGatheringColumns(
 
 bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 {
-    const String local_tmp_prefix = global_ctx->parent_part ? ctx->prefix : "tmp_merge_";
+    // projection parts have different prefix and suffix compared to normal parts.
+    // E.g. `proj_a.proj` for a normal projection merge and `proj_a.tmp_proj` for a projection materialization merge.
+    const String local_tmp_prefix = global_ctx->parent_part ? "" : "tmp_merge_";
+    const String local_tmp_suffix = global_ctx->parent_part ? ctx->suffix : "";
 
     if (global_ctx->merges_blocker->isCancelled())
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
@@ -117,9 +117,22 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     }
 
     ctx->disk = global_ctx->space_reservation->getDisk();
-    auto local_new_part_tmp_path = global_ctx->data->relative_data_path + local_tmp_prefix + global_ctx->future_part->name + (global_ctx->parent_part ? ".proj" : "") + "/";
+
+    String local_part_path = global_ctx->data->relative_data_path;
+    String local_tmp_part_basename = local_tmp_prefix + global_ctx->future_part->name + (global_ctx->parent_part ? ".proj" : "");
+    String local_new_part_tmp_path = local_part_path + local_tmp_part_basename + "/";
+
     if (ctx->disk->exists(local_new_part_tmp_path))
         throw Exception("Directory " + fullPath(ctx->disk, local_new_part_tmp_path) + " already exists", ErrorCodes::DIRECTORY_ALREADY_EXISTS);
+
+    {
+        std::lock_guard lock(global_ctx->mutator->tmp_parts_lock);
+        global_ctx->mutator->tmp_parts.emplace(local_tmp_part_basename);
+    }
+    SCOPE_EXIT(
+        std::lock_guard lock(global_ctx->mutator->tmp_parts_lock);
+        global_ctx->mutator->tmp_parts.erase(local_tmp_part_basename);
+    );
 
     global_ctx->all_column_names = global_ctx->metadata_snapshot->getColumns().getNamesOfPhysical();
     global_ctx->storage_columns = global_ctx->metadata_snapshot->getColumns().getAllPhysical();
@@ -141,7 +154,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->future_part->type,
         global_ctx->future_part->part_info,
         local_single_disk_volume,
-        local_tmp_prefix + global_ctx->future_part->name + (global_ctx->parent_part ? ".proj" : ""),
+        local_tmp_part_basename,
         global_ctx->parent_part);
 
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
@@ -529,7 +542,9 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
         projection_future_part->assign(std::move(projection_parts));
         projection_future_part->name = projection.name;
-        projection_future_part->path = global_ctx->future_part->path + "/" + projection.name + ".proj/";
+        // TODO (ab): path in future_part is only for merge process introspection, which is not available for merges of projection parts.
+        // Let's comment this out to avoid code inconsistency and add it back after we implement projection merge introspection.
+        // projection_future_part->path = global_ctx->future_part->path + "/" + projection.name + ".proj/";
         projection_future_part->part_info = {"all", 0, 0, 0};
 
         MergeTreeData::MergingParams projection_merging_params;
@@ -556,8 +571,9 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             global_ctx->deduplicate_by_columns,
             projection_merging_params,
             global_ctx->new_data_part.get(),
-            "", // empty string for projection
+            ".proj",
             global_ctx->data,
+            global_ctx->mutator,
             global_ctx->merges_blocker,
             global_ctx->ttl_merges_blocker));
     }
@@ -762,7 +778,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_transform = std::make_shared<MergingSortedTransform>(
-                header, pipes.size(), sort_description, merge_block_size, 0, false, ctx->rows_sources_write_buf.get(), true, ctx->blocks_are_granules_size);
+                header, pipes.size(), sort_description, merge_block_size, 0, ctx->rows_sources_write_buf.get(), true, ctx->blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:

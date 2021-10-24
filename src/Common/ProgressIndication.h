@@ -1,7 +1,10 @@
 #pragma once
 
+#include <unordered_map>
+#include <unordered_set>
 #include <IO/Progress.h>
 #include <Interpreters/Context.h>
+#include <base/types.h>
 #include <Common/Stopwatch.h>
 
 
@@ -10,6 +13,18 @@
 
 namespace DB
 {
+
+struct ThreadEventData
+{
+    UInt64 time() const noexcept { return user_ms + system_ms; }
+
+    UInt64 user_ms      = 0;
+    UInt64 system_ms    = 0;
+    UInt64 memory_usage = 0;
+};
+
+using ThreadIdToTimeMap = std::unordered_map<UInt64, ThreadEventData>;
+using HostToThreadTimesMap = std::unordered_map<String, ThreadIdToTimeMap>;
 
 class ProgressIndication
 {
@@ -41,7 +56,26 @@ public:
     /// How much seconds passed since query execution start.
     double elapsedSeconds() const { return watch.elapsedSeconds(); }
 
+    void addThreadIdToList(String const & host, UInt64 thread_id);
+
+    void updateThreadEventData(HostToThreadTimesMap & new_thread_data);
+
+    bool print_hardware_utilization = false;
+
 private:
+
+    size_t getUsedThreadsCount() const;
+
+    UInt64 getApproximateCoresNumber() const;
+
+    struct MemoryUsage
+    {
+        UInt64 total = 0;
+        UInt64 max   = 0;
+    };
+
+    MemoryUsage getMemoryUsage() const;
+
     /// This flag controls whether to show the progress bar. We start showing it after
     /// the query has been executing for 0.5 seconds, and is still less than half complete.
     bool show_progress_bar = false;
@@ -58,6 +92,9 @@ private:
     Stopwatch watch;
 
     bool write_progress_on_update = false;
+
+    std::unordered_map<String, UInt64> host_active_cores;
+    HostToThreadTimesMap thread_data;
 };
 
 }
