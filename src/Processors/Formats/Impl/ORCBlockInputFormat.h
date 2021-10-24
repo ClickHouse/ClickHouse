@@ -1,11 +1,8 @@
 #pragma once
-#if !defined(ARCADIA_BUILD)
-#    include "config_formats.h"
-#endif
+#include "config_formats.h"
 #if USE_ORC
 
 #include <Processors/Formats/IInputFormat.h>
-#include <Formats/FormatSettings.h>
 
 namespace arrow::adapters::orc { class ORCFileReader; }
 
@@ -17,7 +14,7 @@ class ArrowColumnToCHColumn;
 class ORCBlockInputFormat : public IInputFormat
 {
 public:
-    ORCBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_);
+    ORCBlockInputFormat(ReadBuffer & in_, Block header_);
 
     String getName() const override { return "ORCBlockInputFormat"; }
 
@@ -40,8 +37,6 @@ private:
 
     // indices of columns to read from ORC file
     std::vector<int> include_indices;
-
-    const FormatSettings format_settings;
 
     void prepareReader();
 };

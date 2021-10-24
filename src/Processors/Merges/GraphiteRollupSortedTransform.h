@@ -15,7 +15,7 @@ public:
         SortDescription description_, size_t max_block_size,
         Graphite::Params params_, time_t time_of_merge_)
         : IMergingTransform(
-            num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0,
+            num_inputs, header, header, true,
             header,
             num_inputs,
             std::move(description_),

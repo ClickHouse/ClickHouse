@@ -4,7 +4,7 @@
 set -x # trace
 
 : "${REALM:=TEST.CLICKHOUSE.TECH}"
-: "${DOMAIN_REALM:=test.clickhouse.com}"
+: "${DOMAIN_REALM:=test.clickhouse.tech}"
 : "${KERB_MASTER_KEY:=masterkey}"
 : "${KERB_ADMIN_USER:=admin}"
 : "${KERB_ADMIN_PASS:=admin}"

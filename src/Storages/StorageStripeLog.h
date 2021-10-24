@@ -3,7 +3,7 @@
 #include <map>
 #include <shared_mutex>
 
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Core/Defines.h>
 #include <Storages/IStorage.h>
@@ -19,7 +19,7 @@ namespace DB
 class StorageStripeLog final : public shared_ptr_helper<StorageStripeLog>, public IStorage
 {
     friend class StripeLogSource;
-    friend class StripeLogSink;
+    friend class StripeLogBlockOutputStream;
     friend struct shared_ptr_helper<StorageStripeLog>;
 
 public:
@@ -34,7 +34,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 

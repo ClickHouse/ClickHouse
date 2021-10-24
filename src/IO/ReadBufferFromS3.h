@@ -38,12 +38,12 @@ private:
     Poco::Logger * log = &Poco::Logger::get("ReadBufferFromS3");
 
 public:
-    ReadBufferFromS3(
+    explicit ReadBufferFromS3(
         std::shared_ptr<Aws::S3::S3Client> client_ptr_,
         const String & bucket_,
         const String & key_,
         UInt64 max_single_read_retries_,
-        size_t buffer_size_);
+        size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     bool nextImpl() override;
 

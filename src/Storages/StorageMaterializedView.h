@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -34,7 +34,7 @@ public:
         return target_table->mayBenefitFromIndexForIn(left_in_operand, query_context, metadata_snapshot);
     }
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void drop() override;
     void dropInnerTableIfAny(bool no_delay, ContextPtr local_context) override;

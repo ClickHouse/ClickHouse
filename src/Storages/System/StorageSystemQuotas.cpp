@@ -12,7 +12,7 @@
 #include <Access/AccessControlManager.h>
 #include <Access/Quota.h>
 #include <Access/AccessFlags.h>
-#include <base/range.h>
+#include <common/range.h>
 
 
 namespace DB

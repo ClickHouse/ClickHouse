@@ -70,8 +70,8 @@ struct ArrayCumSumNonNegativeImpl
     template <typename Element, typename Result>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
     {
-        using ColVecType = ColumnVectorOrDecimal<Element>;
-        using ColVecResult = ColumnVectorOrDecimal<Result>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
+        using ColVecResult = std::conditional_t<IsDecimalNumber<Result>, ColumnDecimal<Result>, ColumnVector<Result>>;
 
         const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
 
@@ -82,7 +82,7 @@ struct ArrayCumSumNonNegativeImpl
         const typename ColVecType::Container & data = column->getData();
 
         typename ColVecResult::MutablePtr res_nested;
-        if constexpr (is_decimal<Element>)
+        if constexpr (IsDecimalNumber<Element>)
             res_nested = ColVecResult::create(0, data.getScale());
         else
             res_nested = ColVecResult::create();

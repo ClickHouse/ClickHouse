@@ -22,6 +22,10 @@
     M(WriteBufferFromFileDescriptorWrite, "Number of writes (write/pwrite) to a file descriptor. Does not include sockets.") \
     M(WriteBufferFromFileDescriptorWriteFailed, "Number of times the write (write/pwrite) to a file descriptor have failed.") \
     M(WriteBufferFromFileDescriptorWriteBytes, "Number of bytes written to file descriptors. If the file is compressed, this will show compressed data size.") \
+    M(ReadBufferAIORead, "") \
+    M(ReadBufferAIOReadBytes, "") \
+    M(WriteBufferAIOWrite, "") \
+    M(WriteBufferAIOWriteBytes, "") \
     M(ReadCompressedBytes, "Number of bytes (the number of bytes before decompression) read from compressed sources (files, network).") \
     M(CompressedReadBufferBlocks, "Number of compressed blocks (the blocks of data that are compressed independent of each other) read from compressed sources (files, network).") \
     M(CompressedReadBufferBytes, "Number of uncompressed bytes (the number of bytes after decompression) read from compressed sources (files, network).") \
@@ -30,10 +34,6 @@
     M(UncompressedCacheWeightLost, "") \
     M(MMappedFileCacheHits, "") \
     M(MMappedFileCacheMisses, "") \
-    M(AIOWrite, "Number of writes with Linux or FreeBSD AIO interface") \
-    M(AIOWriteBytes, "Number of bytes written with Linux or FreeBSD AIO interface") \
-    M(AIORead, "Number of reads with Linux or FreeBSD AIO interface") \
-    M(AIOReadBytes, "Number of bytes read with Linux or FreeBSD AIO interface") \
     M(IOBufferAllocs, "") \
     M(IOBufferAllocBytes, "") \
     M(ArenaAllocChunks, "") \
@@ -43,8 +43,8 @@
     M(MarkCacheHits, "") \
     M(MarkCacheMisses, "") \
     M(CreatedReadBufferOrdinary, "") \
-    M(CreatedReadBufferDirectIO, "") \
-    M(CreatedReadBufferDirectIOFailed, "") \
+    M(CreatedReadBufferAIO, "") \
+    M(CreatedReadBufferAIOFailed, "") \
     M(CreatedReadBufferMMap, "") \
     M(CreatedReadBufferMMapFailed, "") \
     M(DiskReadElapsedMicroseconds, "Total time spent waiting for read syscall. This include reads from page cache.") \
@@ -224,7 +224,7 @@
     M(PerfLocalMemoryReferences, "Local NUMA node memory reads") \
     M(PerfLocalMemoryMisses, "Local NUMA node memory read misses") \
     \
-    M(CreatedHTTPConnections, "Total amount of created HTTP connections (counter increase every time connection is created).") \
+    M(CreatedHTTPConnections, "Total amount of created HTTP connections (closed or opened).") \
     \
     M(CannotWriteToWriteBufferDiscard, "Number of stack traces dropped by query profiler or signal handler because pipe is full or cannot write to pipe.") \
     M(QueryProfilerSignalOverruns, "Number of times we drop processing of a signal due to overrun plus the number of signals that OS has not delivered due to overrun.") \
@@ -248,18 +248,6 @@
     M(S3WriteRequestsThrottling, "Number of 429 and 503 errors in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(S3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
-    \
-    M(SleepFunctionCalls, "Number of times a sleep function (sleep, sleepEachRow) has been called.") \
-    M(SleepFunctionMicroseconds, "Time spent sleeping due to a sleep function call.") \
-    \
-    M(ThreadPoolReaderPageCacheHit, "Number of times the read inside ThreadPoolReader was done from page cache.") \
-    M(ThreadPoolReaderPageCacheHitBytes, "Number of bytes read inside ThreadPoolReader when it was done from page cache.") \
-    M(ThreadPoolReaderPageCacheHitElapsedMicroseconds, "Time spent reading data from page cache in ThreadPoolReader.") \
-    M(ThreadPoolReaderPageCacheMiss, "Number of times the read inside ThreadPoolReader was not done from page cache and was hand off to thread pool.") \
-    M(ThreadPoolReaderPageCacheMissBytes, "Number of bytes read inside ThreadPoolReader when read was not done from page cache and was hand off to thread pool.") \
-    M(ThreadPoolReaderPageCacheMissElapsedMicroseconds, "Time spent reading data inside the asynchronous job in ThreadPoolReader - when read was not done from page cache.") \
-    \
-    M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
 
 
 namespace ProfileEvents
@@ -301,15 +289,11 @@ void Counters::reset()
     resetCounters();
 }
 
-Counters::Snapshot::Snapshot()
-    : counters_holder(new Count[num_counters] {})
-{}
-
-Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
+Counters Counters::getPartiallyAtomicSnapshot() const
 {
-    Snapshot res;
+    Counters res(VariableContext::Snapshot, nullptr);
     for (Event i = 0; i < num_counters; ++i)
-        res.counters_holder[i] = counters[i].load(std::memory_order_relaxed);
+        res.counters[i].store(counters[i].load(std::memory_order_relaxed), std::memory_order_relaxed);
     return res;
 }
 

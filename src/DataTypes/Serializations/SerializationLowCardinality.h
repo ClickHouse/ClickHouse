@@ -17,11 +17,7 @@ private:
 public:
     SerializationLowCardinality(const DataTypePtr & dictionary_type);
 
-    void enumerateStreams(
-        SubstreamPath & path,
-        const StreamCallback & callback,
-        DataTypePtr type,
-        ColumnPtr column) const override;
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 
     void serializeBinaryBulkStatePrefix(
             SerializeBinaryBulkSettings & settings,

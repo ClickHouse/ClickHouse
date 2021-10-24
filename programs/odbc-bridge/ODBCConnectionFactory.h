@@ -1,9 +1,9 @@
 #pragma once
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <nanodbc/nanodbc.h>
 #include <mutex>
-#include <base/BorrowedObjectPool.h>
+#include <common/BorrowedObjectPool.h>
 #include <unordered_map>
 
 

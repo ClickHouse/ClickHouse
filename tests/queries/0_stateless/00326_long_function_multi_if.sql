@@ -1,4 +1,3 @@
--- Tags: long
 
 SELECT 'Trivial case';
 

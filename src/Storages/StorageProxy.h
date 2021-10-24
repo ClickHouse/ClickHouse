@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -40,7 +40,7 @@ public:
         return getNested()->getQueryProcessingStage(context, to_stage, getNested()->getInMemoryMetadataPtr(), info);
     }
 
-    Pipe watch(
+    BlockInputStreams watch(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -63,7 +63,7 @@ public:
         return getNested()->read(column_names, metadata_snapshot, query_info, context, processed_stage, max_block_size, num_streams);
     }
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) override
     {
         return getNested()->write(query, metadata_snapshot, context);
     }

@@ -32,8 +32,7 @@ protected:
 
     /// Read compressed data into compressed_buffer. Get size of decompressed data from block header. Checksum if need.
     ///
-    /// If always_copy is true then even if the compressed block is already stored in compressed_in.buffer()
-    /// it will be copied into own_compressed_buffer.
+    /// If always_copy is true then even if the compressed block is already stored in compressed_in.buffer() it will be copied into own_compressed_buffer.
     /// This is required for CheckingCompressedReadBuffer, since this is just a proxy.
     ///
     /// Returns number of compressed bytes read.

@@ -357,7 +357,7 @@ def map_func(self, data_type, node=None):
             exitcode, message = 0, None
 
             if data_type.startswith("Decimal"):
-                exitcode, message = 43, "Exception:"
+                exitcode, message = 43, "Exception:"        
             node.query(sql, exitcode=exitcode, message=message)
 
         execute_query(f"""SELECT * FROM {table_name} ORDER BY a ASC""")
@@ -393,13 +393,9 @@ def map_func(self, data_type, node=None):
         execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 
     with Scenario(f"mapPopulateSeries with {data_type}"):
-        sql = (f"SELECT mapPopulateSeries([1,2,3], [{to_data_type(data_type,1)},"
-            f"{to_data_type(data_type,2)}, {to_data_type(data_type,3)}], 5)")
-
-        exitcode, message = 0, None
-        if data_type.startswith("Decimal"):
-            exitcode, message = 44, "Exception:"
-        node.query(sql, exitcode=exitcode, message=message)
+        node.query(f"SELECT mapPopulateSeries([1,2,3], [{to_data_type(data_type,1)},"
+            f"{to_data_type(data_type,2)}, {to_data_type(data_type,3)}], 5)",
+            exitcode = 44, message='Exception:')
 
     with Scenario(f"mapPopulateSeries with {data_type} on a table"):
         table_name = get_table_name()
@@ -407,13 +403,9 @@ def map_func(self, data_type, node=None):
         table(name = table_name, data_type = f'Tuple(Array({data_type}), Array({data_type}))')
 
         with When("I insert the output into a table"):
-            sql = (f"INSERT INTO {table_name} SELECT mapPopulateSeries([1,2,3],"
-                f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}, {to_data_type(data_type,3)}], 5)")
-
-            exitcode, message = 0, None
-            if data_type.startswith("Decimal"):
-                exitcode, message = 44, "Exception:"
-            node.query(sql, exitcode=exitcode, message=message)
+            node.query(f"INSERT INTO {table_name} SELECT mapPopulateSeries([1,2,3],"
+                f"[{to_data_type(data_type,1)}, {to_data_type(data_type,2)}, {to_data_type(data_type,3)}], 5)",
+                exitcode = 44, message='Exception:')
 
         execute_query(f"SELECT * FROM {table_name} ORDER BY a ASC")
 

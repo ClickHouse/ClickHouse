@@ -7,7 +7,6 @@
 #include <Common/SettingsChanges.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <base/removeDuplicates.h>
 
 
 namespace DB
@@ -172,22 +171,5 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
     }
     return res;
 }
-
-std::vector<UUID> SettingsProfileElements::toProfileIDs() const
-{
-    std::vector<UUID> res;
-    for (const auto & elem : *this)
-    {
-        if (elem.parent_profile)
-            res.push_back(*elem.parent_profile);
-    }
-
-    /// If some profile occurs multiple times (with some other settings in between),
-    /// the latest occurrence overrides all the previous ones.
-    removeDuplicatesKeepLast(res);
-
-    return res;
-}
-
 
 }

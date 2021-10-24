@@ -25,14 +25,14 @@ namespace
 template <typename T, typename LimitNumberOfElements>
 struct MovingSum
 {
-    using Data = MovingSumData<std::conditional_t<is_decimal<T>, Decimal128, NearestFieldType<T>>>;
+    using Data = MovingSumData<std::conditional_t<IsDecimalNumber<T>, Decimal128, NearestFieldType<T>>>;
     using Function = MovingImpl<T, LimitNumberOfElements, Data>;
 };
 
 template <typename T, typename LimitNumberOfElements>
 struct MovingAvg
 {
-    using Data = MovingAvgData<std::conditional_t<is_decimal<T>, Decimal128, Float64>>;
+    using Data = MovingAvgData<std::conditional_t<IsDecimalNumber<T>, Decimal128, Float64>>;
     using Function = MovingImpl<T, LimitNumberOfElements, Data>;
 };
 

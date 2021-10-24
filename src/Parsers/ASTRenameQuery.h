@@ -34,9 +34,6 @@ public:
     bool database{false};   /// For RENAME DATABASE
     bool dictionary{false};   /// For RENAME DICTIONARY
 
-    /// Special flag for CREATE OR REPLACE. Do not throw if the second table does not exist.
-    bool rename_if_cannot_exchange{false};
-
     /** Get the text that identifies this element. */
     String getID(char) const override { return "Rename"; }
 
@@ -63,8 +60,6 @@ public:
 
         return query_ptr;
     }
-
-    const char * getQueryKindString() const override { return "Rename"; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override
