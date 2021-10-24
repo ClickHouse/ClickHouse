@@ -13,6 +13,7 @@
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context_fwd.h>
 #include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 #include <Server/TCPInterfaceConfig.h>
 #include <Server/IndirectServerConnection.h>
 

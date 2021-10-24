@@ -25,6 +25,7 @@ class ProxyConfig
 {
 public:
     explicit ProxyConfig(const std::string & name_, const std::string & protocol_);
+    ProxyConfig(const ProxyConfig &) = default;
     virtual ~ProxyConfig() = default;
 
     virtual std::unique_ptr<ProxyConfig> clone() const = 0;

@@ -122,7 +122,6 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
-    extern const int INCORRECT_DATA;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int SYSTEM_ERROR;
     extern const int FAILED_TO_GETPWUID;
