@@ -8,7 +8,31 @@ toc_title: "Функции разбиения и слияния строк и м
 ## splitByChar(separator, s) {#splitbycharseparator-s}
 
 Разбивает строку на подстроки, используя в качестве разделителя `separator`.
-separator должен быть константной строкой из ровно одного символа.
+separator должен быть константной строкой из ## tokens {#tokens}
+
+Split string into tokens using non-alpha numeric ASCII characters as separators.
+
+**Arguments**
+
+-   `input_string` — The set of bytes. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+Returnes an array of tokens from input string.
+
+Type: [Array(String)](../data-types/array.md).
+
+**Example**
+
+``` sql
+SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
+```
+
+``` text
+┌─tokens────────────────────────────┐
+│ ['test1','test2','test3','test4'] │
+└───────────────────────────────────┘
+```ровно одного символа.
 Возвращается массив выделенных подстрок. Могут выделяться пустые подстроки, если разделитель идёт в начале или в конце строки, или если идёт более одного разделителя подряд.
 
 **Синтаксис**
@@ -231,4 +255,30 @@ SELECT alphaTokens('abca1abc');
 ┌─alphaTokens('abca1abc')─┐
 │ ['abca','abc']          │
 └─────────────────────────┘
+```
+
+## tokens {#tokens}
+
+Разбивает строку на  токены, используя в качестве разделителей не буквенно-цифровые символы ASCII.
+
+**Аргументы**
+
+-   `input_string` — набор байтов. [String](../../sql-reference/data-types/string.md).
+
+**Возвращаемые значения**
+
+Возвращает массив токенов.
+
+Тип: [Array](../data-types/array.md).
+
+**Пример**
+
+``` sql
+SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
+```
+
+``` text
+┌─tokens────────────────────────────┐
+│ ['test1','test2','test3','test4'] │
+└───────────────────────────────────┘
 ```

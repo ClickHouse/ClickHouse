@@ -232,6 +232,32 @@ SELECT alphaTokens('abca1abc');
 └─────────────────────────┘
 ```
 
+## tokens {#tokens}
+
+Splits a string into tokens using non-alphanumeric ASCII characters as separators.
+
+**Arguments**
+
+-   `input_string` — The set of bytes. [String](../../sql-reference/data-types/string.md).
+
+**Returned value**
+
+Returns an array of tokens from input string.
+
+Type: [Array](../data-types/array.md).
+
+**Example**
+
+``` sql
+SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
+```
+
+``` text
+┌─tokens────────────────────────────┐
+│ ['test1','test2','test3','test4'] │
+└───────────────────────────────────┘
+```
+
 ## extractAllGroups(text, regexp) {#extractallgroups}
 
 Extracts all groups from non-overlapping substrings matched by a regular expression.
