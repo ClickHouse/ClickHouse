@@ -8,9 +8,9 @@ Contains information about all successful and failed login and logout events.
 Columns:
 
 -   `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Login/logout result. Values:
-    -   `'LoginFailure' = 0` — Login error.
-    -   `'LoginSuccess' = 1` — Successful login.
-    -   `'Logout' = 2` — Logout of the system.
+    -   `LoginFailure` — Login error.
+    -   `LoginSuccess` — Successful login.
+    -   `Logout` — Logout from the system.
 -   `session_id` ([UUID](../../sql-reference/data-types/uuid.md)) — Session id.
 -   `session_name` ([String](../../sql-reference/data-types/string.md)) — Session name.
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — Login/logout date.
