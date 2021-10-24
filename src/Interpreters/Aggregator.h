@@ -19,8 +19,7 @@
 #include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
 
-#include <DataStreams/IBlockStream_fwd.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 
 #include <Disks/SingleDiskVolume.h>
 
@@ -43,8 +42,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
 }
-
-class IBlockOutputStream;
 
 /** Different data structures that can be used for aggregation
   * For efficiency, the aggregation data itself is put into the pool.
