@@ -54,8 +54,6 @@ add_library(minizip OBJECT
 target_link_libraries(minizip zlib)
 target_compile_definitions(minizip PRIVATE "-Dz_crc_t=unsigned long")
 
-list(APPEND INCLUDE_DIRS ${CASS_SRC_DIR}/third_party/sparsehash/src)
-
 list(APPEND INCLUDE_DIRS
   ${CASS_SRC_DIR}/third_party/curl
   ${CASS_SRC_DIR}/third_party/hdr_histogram
@@ -66,6 +64,18 @@ list(APPEND INCLUDE_DIRS
   ${CASS_SRC_DIR}/third_party/sparsehash/src)
 
 list(APPEND INCLUDE_DIRS ${CASS_INCLUDE_DIR} ${CASS_SRC_DIR})
+
+set(HASH_NAME hash)
+set(HASH_NAMESPACE "std")
+set(HAVE_INTTYPES_H 1)
+set(HAVE_STDINT_H 1)
+set(HAVE_SYS_TYPES_H 1)
+set(HAVE_MEMCPY 1)
+set(HAVE_LONG_LONG 1)
+set(HAVE_UINT16_T 1)
+
+configure_file("${CASS_SRC_DIR}/third_party/sparsehash/config.h.cmake" "${CMAKE_CURRENT_BINARY_DIR}/sparsehash/internal/sparseconfig.h")
+
 
 
 # Determine random availability
