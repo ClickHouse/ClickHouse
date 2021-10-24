@@ -1792,9 +1792,18 @@ See also:
 
 ## distributed_push_down_limit {#distributed-push-down-limit}
 
-Enables or disables [LIMIT](#limit) applying on each shard separatelly. It works for `GROUP BY`, but only if enabled [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key) or [distributed_group_by_no_merge](#distributed-group-by-no-merge) settings.
+Enables or disables [LIMIT](#limit) applying on each shard separatelly.
 
-Usually you don't need to use it, since this will be done automatically if it is possible, i.e. for simple query SELECT FROM LIMIT.
+This will allow to avoid:
+- sending extra rows over network;
+- processing rows behind the limit on the initiator.
+
+You cannot get inaccurate results anymore, since `distributed_push_down_limit` changes query execution only if at least one of the conditions met:
+- [distributed_group_by_no_merge](#distributed-group-by-no-merge) > 0.
+- Query **does not have** `GROUP BY`/`DISTINCT`/`LIMIT BY`, but it has `ORDER BY`/`LIMIT`.
+- Query **has** `GROUP BY`/`DISTINCT`/`LIMIT BY` with `ORDER BY`/`LIMIT` and:
+  - [optimize_skip_unused_shards](#optimize-skip-unused-shards) is enabled.
+  - [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key) is enabled.
 
 Possible values:
 
@@ -1803,8 +1812,11 @@ Possible values:
 
 Default value: `1`.
 
-!!! note "Note"
-    That with this setting the result of the query may be inaccurate.
+See also:
+
+-   [distributed_group_by_no_merge](#distributed-group-by-no-merge)
+-   [optimize_skip_unused_shards](#optimize-skip-unused-shards)
+-   [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key)
 
 ## optimize_skip_unused_shards_limit {#optimize-skip-unused-shards-limit}
 
