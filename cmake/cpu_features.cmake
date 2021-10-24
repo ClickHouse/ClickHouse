@@ -18,6 +18,10 @@ option (ENABLE_PCLMULQDQ "Use pclmulqdq instructions on x86_64" 1)
 option (ENABLE_POPCNT "Use popcnt instructions on x86_64" 1)
 option (ENABLE_AVX "Use AVX instructions on x86_64" 0)
 option (ENABLE_AVX2 "Use AVX2 instructions on x86_64" 0)
+option (ENABLE_AVX512 "Use AVX512 instructions on x86_64" 0)
+option (ENABLE_BMI "Use BMI instructions on x86_64" 0)
+option (ENABLE_AVX2_FOR_SPEC_OP "Use avx2 instructions for specific operations on x86_64" 0)
+option (ENABLE_AVX512_FOR_SPEC_OP "Use avx512 instructions for specific operations on x86_64" 0)
 
 option (ARCH_NATIVE "Add -march=native compiler flag. This makes your binaries non-portable but more performant code may be generated. This option overrides ENABLE_* options for specific instruction set. Highly not recommended to use." 0)
 
@@ -126,6 +130,57 @@ else ()
     " HAVE_AVX2)
     if (HAVE_AVX2 AND ENABLE_AVX2)
         set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    endif ()
+
+    set (TEST_FLAG "-mavx512f -mavx512bw")
+    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
+    check_cxx_source_compiles("
+        #include <immintrin.h>
+        int main() {
+            auto a = _mm512_setzero_epi32();
+            (void)a;            
+            auto b = _mm512_add_epi16(__m512i(), __m512i());
+            (void)b;
+            return 0;
+        }
+    " HAVE_AVX512)
+    if (HAVE_AVX512 AND ENABLE_AVX512)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    endif ()
+
+    set (TEST_FLAG "-mbmi")
+    set (CMAKE_REQUIRED_FLAGS "${TEST_FLAG} -O0")
+    check_cxx_source_compiles("
+        #include <immintrin.h>
+        int main() {
+            auto a = _blsr_u32(0);
+            (void)a;
+            return 0;
+        }
+    " HAVE_BMI)
+    if (HAVE_BMI AND ENABLE_BMI)
+        set (COMPILER_FLAGS "${COMPILER_FLAGS} ${TEST_FLAG}")
+    endif ()   
+
+#Limit avx2/avx512 flag for specific source build
+    set (X86_INTRINSICS_FLAGS "")
+    if (ENABLE_AVX2_FOR_SPEC_OP)
+        if (HAVE_BMI)
+            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mbmi")
+        endif ()
+        if (HAVE_AVX AND HAVE_AVX2)
+            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mavx -mavx2")
+        endif ()
+    endif ()
+
+    if (ENABLE_AVX512_FOR_SPEC_OP)
+        set (X86_INTRINSICS_FLAGS "")
+        if (HAVE_BMI)
+            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mbmi")
+        endif ()
+        if (HAVE_AVX512)
+            set (X86_INTRINSICS_FLAGS "${X86_INTRINSICS_FLAGS} -mavx512f -mavx512bw")
+        endif ()
     endif ()
 endif ()
 
