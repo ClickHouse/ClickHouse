@@ -344,7 +344,7 @@ endif ()
 # falign-functions=32 prevents from random performance regressions with the code change. Thus, providing more stable
 # benchmarks.
 if (COMPILER_GCC OR COMPILER_CLANG)
-    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32 -mbranches-within-32B-boundaries")
 endif ()
 
 if (COMPILER_GCC)
