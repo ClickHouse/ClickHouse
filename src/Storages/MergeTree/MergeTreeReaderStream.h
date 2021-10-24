@@ -30,7 +30,7 @@ public:
 
     void seekToStart();
 
-    void adjustForRange(size_t left_mark, size_t right_mark);
+    void adjustForRange(MarkRange range);
 
     ReadBuffer * data_buffer;
 

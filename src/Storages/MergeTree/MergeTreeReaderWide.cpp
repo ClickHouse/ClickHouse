@@ -210,7 +210,7 @@ static ReadBuffer * getStream(
         return nullptr;
 
     MergeTreeReaderStream & stream = *it->second;
-    stream.adjustForRange(seek_to_start ? 0 : from_mark, current_task_last_mark);
+    stream.adjustForRange(MarkRange(seek_to_start ? 0 : from_mark, current_task_last_mark));
 
     if (seek_to_start)
         stream.seekToStart();
