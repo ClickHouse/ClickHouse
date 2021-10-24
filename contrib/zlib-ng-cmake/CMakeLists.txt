@@ -133,10 +133,7 @@ set(ZLIB_SRCS
 set(ZLIB_ALL_SRCS ${ZLIB_SRCS} ${ZLIB_ARCH_SRCS})
 
 add_library(zlib ${ZLIB_ALL_SRCS})
-
-if(NOT BUILD_SHARED_LIBS)
-    add_library(zlibstatic ALIAS zlib)
-endif()
+add_library(zlibstatic ALIAS zlib)
 
 
 if(HAVE_UNISTD_H)
