@@ -67,26 +67,17 @@ const std::unordered_set<String> possibly_injective_function_names
   * Instead, leave `GROUP BY const`.
   * Next, see deleting the constants in the analyzeAggregation method.
   */
-void appendUnusedGroupByColumn(ASTSelectQuery * select_query, const NameSet & source_columns)
+void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
 {
     /// You must insert a constant that is not the name of the column in the table. Such a case is rare, but it happens.
-    /// Also start unused_column integer from source_columns.size() + 1, because lower numbers ([1, source_columns.size()])
+    /// Also start unused_column integer must not intersect with ([1, source_columns.size()])
     /// might be in positional GROUP BY.
-    UInt64 unused_column = source_columns.size() + 1;
-    String unused_column_name = toString(unused_column);
-
-    while (source_columns.count(unused_column_name))
-    {
-        ++unused_column;
-        unused_column_name = toString(unused_column);
-    }
-
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(UInt64(unused_column)));
+    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(Int64(-1)));
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
-void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, ContextPtr context)
+void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
 {
     const FunctionFactory & function_factory = FunctionFactory::instance();
 
@@ -191,7 +182,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
     }
 
     if (group_exprs.empty())
-        appendUnusedGroupByColumn(select_query, source_columns);
+        appendUnusedGroupByColumn(select_query);
 }
 
 struct GroupByKeysInfo
@@ -710,7 +701,7 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
         optimizeAggregationFunctions(query);
 
     /// GROUP BY injective function elimination.
-    optimizeGroupBy(select_query, result.source_columns_set, context);
+    optimizeGroupBy(select_query, context);
 
     /// GROUP BY functions of other keys elimination.
     if (settings.optimize_group_by_function_keys)

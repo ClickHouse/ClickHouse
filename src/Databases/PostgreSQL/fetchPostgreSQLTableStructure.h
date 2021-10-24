@@ -24,11 +24,11 @@ using PostgreSQLTableStructurePtr = std::unique_ptr<PostgreSQLTableStructure>;
 std::set<String> fetchPostgreSQLTablesList(pqxx::connection & connection, const String & postgres_schema);
 
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-    pqxx::connection & connection, const String & postgres_table_name, bool use_nulls = true);
+    pqxx::connection & connection, const String & postgres_table, const String & postgres_schema, bool use_nulls = true);
 
 template<typename T>
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-    T & tx, const String & postgres_table_name, bool use_nulls = true,
+    T & tx, const String & postgres_table, const String & postgres_schema, bool use_nulls = true,
     bool with_primary_key = false, bool with_replica_identity_index = false);
 
 template<typename T>

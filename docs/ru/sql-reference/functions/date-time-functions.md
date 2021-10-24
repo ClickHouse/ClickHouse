@@ -335,7 +335,7 @@ SELECT toStartOfISOYear(toDate('2017-01-01')) AS ISOYear20170101;
 **Синтаксис**
 
 ``` sql
-toStartOfSecond(value[, timezone])
+toStartOfSecond(value, [timezone])
 ```
 
 **Аргументы**
