@@ -245,11 +245,7 @@ SET(LIBMARIADB_SOURCES ${LIBMARIADB_SOURCES} ${CC_SOURCE_DIR}/libmariadb/mariadb
 ADD_LIBRARY(mariadbclient STATIC ${LIBMARIADB_SOURCES})
 TARGET_LINK_LIBRARIES(mariadbclient ${SYSTEM_LIBS})
 
+target_include_directories(mariadbclient PUBLIC ${CC_BINARY_DIR} ${CC_SOURCE_DIR}/include ${CC_SOURCE_DIR}/libmariadb)
+
+
 SET_TARGET_PROPERTIES(mariadbclient PROPERTIES IMPORTED_INTERFACE_LINK_LIBRARIES "${SYSTEM_LIBS}")
-
-
-IF(WITH_EXTERNAL_ZLIB)
-  SET(zlib_status ${WITH_EXTERNAL_ZLIB})
-ELSE()
-  SET(zlib_status "yes (using bundled zlib)")
-ENDIF()
