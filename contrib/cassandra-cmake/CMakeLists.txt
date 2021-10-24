@@ -54,6 +54,8 @@ add_library(minizip OBJECT
 target_link_libraries(minizip zlib)
 target_compile_definitions(minizip PRIVATE "-Dz_crc_t=unsigned long")
 
+list(APPEND INCLUDE_DIRS ${CASS_SRC_DIR}/third_party/sparsehash/src)
+
 list(APPEND INCLUDE_DIRS
   ${CASS_SRC_DIR}/third_party/curl
   ${CASS_SRC_DIR}/third_party/hdr_histogram
