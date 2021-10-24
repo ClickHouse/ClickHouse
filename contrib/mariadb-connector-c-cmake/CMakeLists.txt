@@ -1,0 +1,312 @@
+set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC)
+set(CLIENT_PLUGIN_SHA256_PASSWORD STATIC)
+set(CLIENT_PLUGIN_REMOTE_IO OFF)
+set(CLIENT_PLUGIN_DIALOG OFF)
+set(CLIENT_PLUGIN_AUTH_GSSAPI_CLIENT OFF)
+set(CLIENT_PLUGIN_CLIENT_ED25519 OFF)
+set(CLIENT_PLUGIN_MYSQL_CLEAR_PASSWORD OFF)
+
+set(SKIP_TESTS 1)
+
+if (GLIBC_COMPATIBILITY)
+    set(LIBM glibc-compatibility)
+endif()
+
+if (USE_INTERNAL_ZLIB_LIBRARY)
+    set(ZLIB_FOUND ON)
+    set(ZLIB_LIBRARY ${ZLIB_LIBRARIES})
+    set(WITH_EXTERNAL_ZLIB ON)
+endif()
+
+# This is the LGPL libmariadb project.
+
+# Is C/C built as subproject?
+get_directory_property(IS_SUBPROJECT PARENT_DIRECTORY)
+
+SET(CC_SOURCE_DIR ${CMAKE_SOURCE_DIR}/contrib/mariadb-connector-c)
+SET(CC_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
+
+MACRO(ADD_OPTION _name _text _default)
+  IF(NOT DEFINED ${_name})
+    OPTION(${OPT}${_name} "${_text}" "${_default}")
+  ELSE()
+    OPTION(${OPT}${_name} "${_text}" "${${_name}}")
+  ENDIF()
+ENDMACRO()
+
+### Options ###
+ADD_OPTION(WITH_MYSQLCOMPAT "creates libmysql* symbolic links" OFF)
+ADD_OPTION(WITH_UNIT_TESTS "build test suite" ON)
+ADD_OPTION(WITH_DYNCOL "Enables support of dynamic coluumns" ON)
+ADD_OPTION(WITH_EXTERNAL_ZLIB "Enables use of external zlib" OFF)
+SET(WITH_CURL OFF)
+ADD_OPTION(WITH_SSL "Enables use of TLS/SSL library" ON)
+###############
+
+INCLUDE(${CC_SOURCE_DIR}/cmake/misc.cmake)
+INCLUDE(FindCURL)
+
+SET(MARIADB_CONNECTOR_C_COPYRIGHT "2013-2017 MariaDB Corporation Ab")
+
+IF(NOT WIN32)
+  INCLUDE(${CC_SOURCE_DIR}/cmake/FindGSSAPI.cmake)
+  IF(GSSAPI_FOUND)
+    INCLUDE_DIRECTORIES(${GSSAPI_INCS})
+  ENDIF()
+ENDIF()
+
+INCLUDE(${CC_SOURCE_DIR}/cmake/plugins.cmake)
+
+IF(AUTH_GSSAPI_PLUGIN_TYPE MATCHES "STATIC")
+  SET(SYSTEM_LIBS ${SYSTEM_LIBS} ${GSSAPI_LIBS})
+ENDIF()
+
+
+# various defines for generating include/mysql_version.h
+INCLUDE(FindGit)
+IF(GIT_EXECUTABLE AND EXISTS ${CC_SOURCE_DIR}/.git)
+  EXECUTE_PROCESS(
+    COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
+      WORKING_DIRECTORY ${CC_SOURCE_DIR}
+       OUTPUT_VARIABLE OUT RESULT_VARIABLE RES)
+   IF(RES EQUAL 0)
+    STRING(REGEX REPLACE "\n$" "" CC_SOURCE_REVISION "${OUT}")
+  ENDIF()
+ENDIF()
+SET(PROTOCOL_VERSION 10) # we adapted new password option from PHP's mysqlnd !
+
+# if C/C is build as subproject inside MariaDB server tree we will
+# use the version defined by server
+IF(MAJOR_VERSION)
+  SET(MARIADB_CLIENT_VERSION_MAJOR ${MAJOR_VERSION})
+  SET(MARIADB_CLIENT_VERSION_MINOR ${MINOR_VERSION})
+  SET(MARIADB_CLIENT_VERSION_PATCH ${PATCH_VERSION})
+  SET(MARIADB_CLIENT_VERSION_EXTRA ${EXTRA_VERSION})
+ELSE()
+  SET(MARIADB_CLIENT_VERSION_MAJOR "10")
+  SET(MARIADB_CLIENT_VERSION_MINOR "4")
+  SET(MARIADB_CLIENT_VERSION_PATCH "3")
+  SET(MARIADB_CLIENT_VERSION_EXTRA "")
+ENDIF()
+SET(MARIADB_CLIENT_VERSION "${MARIADB_CLIENT_VERSION_MAJOR}.${MARIADB_CLIENT_VERSION_MINOR}.${MARIADB_CLIENT_VERSION_PATCH}${MARIADB_CLIENT_VERSION_EXTRA}")
+SET(MARIADB_BASE_VERSION "mariadb-${MARIADB_CLIENT_VERSION_MAJOR}.${MARIADB_CLIENT_VERSION_MINOR}")
+MATH(EXPR MARIADB_VERSION_ID "${MARIADB_CLIENT_VERSION_MAJOR} * 10000 +
+                              ${MARIADB_CLIENT_VERSION_MINOR} * 100   +
+                              ${MARIADB_CLIENT_VERSION_PATCH}")
+
+IF (NOT MARIADB_PORT)
+  SET(MARIADB_PORT 3306)
+ENDIF ()
+IF(NOT MARIADB_UNIX_ADDR)
+  SET(MARIADB_UNIX_ADDR "/tmp/mysql.sock")
+ENDIF()
+
+INCLUDE("${CC_SOURCE_DIR}/cmake/install.cmake")
+IF(NOT PLUGINDIR)
+  SET(PLUGINDIR "${CMAKE_INSTALL_PREFIX}/${INSTALL_PLUGINDIR}")
+ENDIF()
+
+# todo: we don't character sets in share - all is compiled in
+SET(SHAREDIR "share")
+SET(DEFAULT_CHARSET_HOME "${CMAKE_INSTALL_PREFIX}")
+
+INCLUDE(${CC_SOURCE_DIR}/cmake/SearchLibrary.cmake)
+
+IF(WITH_EXTERNAL_ZLIB)
+  IF(NOT ZLIB_FOUND)
+    FIND_PACKAGE(ZLIB)
+  ENDIF()
+  IF(ZLIB_FOUND)
+    INCLUDE_DIRECTORIES(${ZLIB_INCLUDE_DIR})
+    SET(LIBZ ${ZLIB_LIBRARY})
+  ENDIF()
+ENDIF()
+
+
+# check for various include files
+INCLUDE(${CC_SOURCE_DIR}/cmake/CheckIncludeFiles.cmake)
+# check for various functions
+INCLUDE(${CC_SOURCE_DIR}/cmake/CheckFunctions.cmake)
+# check for various types
+INCLUDE(${CC_SOURCE_DIR}/cmake/CheckTypes.cmake)
+
+IF(UNIX)
+  SEARCH_LIBRARY(LIBNSL gethostbyname_r "nsl_r;nsl")
+  SEARCH_LIBRARY(LIBSOCKET setsockopt socket)
+  FIND_PACKAGE(Threads)
+  SET(CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} ${LIBNSL} ${LIBBIND} ${LIBICONV} ${LIBZ} ${LIBSOCKET})
+  SET(SYSTEM_LIBS ${SYSTEM_LIBS} ${LIBNSL} ${LIBBIND} ${LIBICONV} ${LIBZ} ${LIBSOCKET})
+  #remove possible dups from required libraries
+  LIST(LENGTH CMAKE_REQUIRED_LIBRARIES rllength)
+  IF(${rllength} GREATER 0)
+    LIST(REMOVE_DUPLICATES CMAKE_REQUIRED_LIBRARIES)
+  ENDIF()
+ENDIF()
+
+
+IF(CMAKE_HAVE_PTHREAD_H)
+  SET(CMAKE_REQUIRED_INCLUDES pthread.h)
+ENDIF()
+
+ADD_DEFINITIONS(-DMARIADB_SYSTEM_TYPE="${CMAKE_SYSTEM_NAME}")
+ADD_DEFINITIONS(-DMARIADB_MACHINE_TYPE="${CMAKE_SYSTEM_PROCESSOR}")
+
+SET(HAVE_THREADS 1)
+SET(DEFAULT_CHARSET "utf8mb4")
+
+
+# convert SSL options to uppercase
+IF(WITH_SSL)
+  STRING(TOUPPER ${WITH_SSL} WITH_SSL)
+ENDIF()
+IF(WITH_SSL STREQUAL "ON")
+  SET(WITH_SSL "OPENSSL")
+ENDIF()
+
+IF(NOT WITH_SSL STREQUAL "OFF")
+  IF(WITH_SSL STREQUAL "OPENSSL")
+    IF (NOT OPENSSL_FOUND)
+      FIND_PACKAGE(OpenSSL)
+    ENDIF()
+    IF(OPENSSL_FOUND)
+      ADD_DEFINITIONS(-DHAVE_OPENSSL -DHAVE_TLS)
+      SET(SSL_SOURCES "${CC_SOURCE_DIR}/libmariadb/secure/openssl.c")
+      SET(SSL_LIBRARIES ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
+      INCLUDE_DIRECTORIES(BEFORE ${OPENSSL_INCLUDE_DIR})
+
+      TRY_RUN(LIBRESSL_RESULT HAVE_LIBRESSL
+              ${CMAKE_BINARY_DIR}
+              ${CC_SOURCE_DIR}/cmake/libressl_version.c
+              COMPILE_DEFINITIONS "-I${OPENSSL_INCLUDE_DIR}"
+              RUN_OUTPUT_VARIABLE LIBRESSL_VERSION)
+      IF(HAVE_LIBRESSL)
+        ADD_DEFINITIONS(-DHAVE_LIBRESSL)
+        SET(TLS_LIBRARY_VERSION ${LIBRESSL_VERSION})
+      ELSE()
+        SET(TLS_LIBRARY_VERSION "OpenSSL ${OPENSSL_VERSION}")
+      ENDIF()
+    ELSE()
+      MESSAGE1(TLS_LIBRARY_VERSION "OpenSSL/LibreSSL not found")
+    ENDIF()
+  ENDIF()
+  MESSAGE1(TLS_LIBRARY_VERSION "TLS library/version: ${TLS_LIBRARY_VERSION}")
+
+  MARK_AS_ADVANCED(SSL_SOURCES)
+ENDIF()
+
+SET(ENABLED_LOCAL_INFILE OFF)
+
+IF(NOT WIN32)
+  INCLUDE(${CC_SOURCE_DIR}/cmake/FindIconv.cmake)
+ENDIF()
+
+CONFIGURE_FILE(${CC_SOURCE_DIR}/include/ma_config.h.in
+               ${CC_BINARY_DIR}/include/ma_config.h)
+CONFIGURE_FILE(${CC_SOURCE_DIR}/include/ma_config.h.in
+               ${CC_BINARY_DIR}/include/config.h)
+CONFIGURE_FILE(${CC_SOURCE_DIR}/include/mariadb_version.h.in
+               ${CC_BINARY_DIR}/include/mariadb_version.h)
+
+INCLUDE_DIRECTORIES(${CC_BINARY_DIR}/include)
+
+IF(WITH_SSL)
+  SET(SYSTEM_LIBS ${SYSTEM_LIBS} ${SSL_LIBRARIES})
+ENDIF()
+MESSAGE1(SYSTEM_LIBS "SYSTEM_LIBS ${SYSTEM_LIBS}")
+MARK_AS_ADVANCED(SYSTEM_LIBS)
+
+IF(NOT WIN32)
+  IF(NOT AUTH_GSSAPI_PLUGIN_TYPE MATCHES "OFF")
+    INCLUDE(${CC_SOURCE_DIR}/cmake/FindGSSAPI.cmake)
+    IF(GSSAPI_FOUND)
+      INCLUDE_DIRECTORIES(${GSSAPI_INCS})
+      IF(AUTH_GSSAPI_PLUGIN_TYPE MATCHES "STATIC")
+        SET(SYSTEM_LIBS ${SYSTEM_LIBS} ${GSSAPI_LIBS})
+      ENDIF()
+    ENDIF()
+  ENDIF()
+ENDIF()
+
+INCLUDE(${CC_SOURCE_DIR}/plugins/CMakeLists.txt)
+
+
+INCLUDE_DIRECTORIES(${CC_SOURCE_DIR}/include
+                    ${CC_SOURCE_DIR}/libmariadb)
+
+ADD_DEFINITIONS(-D HAVE_COMPRESS)
+ADD_DEFINITIONS(-D LIBMARIADB)
+ADD_DEFINITIONS(-D THREAD)
+
+INCLUDE(${CC_SOURCE_DIR}/cmake/sign.cmake)
+
+
+# handle static plugins
+SET(LIBMARIADB_SOURCES ${LIBMARIADB_PLUGIN_SOURCES})
+SET(SYSTEM_LIBS ${SYSTEM_LIBS} ${LIBMARIADB_PLUGIN_LIBS})
+ADD_DEFINITIONS(${LIBMARIADB_PLUGIN_DEFS})
+FOREACH(plugin ${PLUGINS_STATIC})
+  SET(EXTERNAL_PLUGINS "${EXTERNAL_PLUGINS} extern struct st_mysql_client_plugin ${plugin}_client_plugin;\n")
+  SET(BUILTIN_PLUGINS "${BUILTIN_PLUGINS}   (struct st_mysql_client_plugin *)&${plugin}_client_plugin,\n")
+ENDFOREACH()
+CONFIGURE_FILE(${CC_SOURCE_DIR}/libmariadb/ma_client_plugin.c.in
+               ${CC_BINARY_DIR}/libmariadb/ma_client_plugin.c)
+
+SET(LIBMARIADB_SOURCES ${LIBMARIADB_SOURCES}
+${CC_SOURCE_DIR}/plugins/auth/my_auth.c
+${CC_SOURCE_DIR}/libmariadb/ma_array.c
+${CC_SOURCE_DIR}/libmariadb/ma_charset.c
+${CC_SOURCE_DIR}/libmariadb/ma_hash.c
+${CC_SOURCE_DIR}/libmariadb/ma_net.c
+${CC_SOURCE_DIR}/libmariadb/mariadb_charset.c
+${CC_SOURCE_DIR}/libmariadb/ma_time.c
+${CC_SOURCE_DIR}/libmariadb/ma_default.c
+${CC_SOURCE_DIR}/libmariadb/ma_errmsg.c
+${CC_SOURCE_DIR}/libmariadb/mariadb_lib.c
+${CC_SOURCE_DIR}/libmariadb/ma_list.c
+${CC_SOURCE_DIR}/libmariadb/ma_pvio.c
+${CC_SOURCE_DIR}/libmariadb/ma_tls.c
+${CC_SOURCE_DIR}/libmariadb/ma_alloc.c
+${CC_SOURCE_DIR}/libmariadb/ma_compress.c
+${CC_SOURCE_DIR}/libmariadb/ma_init.c
+${CC_SOURCE_DIR}/libmariadb/ma_password.c
+${CC_SOURCE_DIR}/libmariadb/ma_ll2str.c
+${CC_SOURCE_DIR}/libmariadb/ma_sha1.c
+${CC_SOURCE_DIR}/libmariadb/mariadb_stmt.c
+${CC_SOURCE_DIR}/libmariadb/ma_loaddata.c
+${CC_SOURCE_DIR}/libmariadb/ma_stmt_codec.c
+${CC_SOURCE_DIR}/libmariadb/ma_string.c
+${CC_SOURCE_DIR}/libmariadb/ma_dtoa.c
+${CC_SOURCE_DIR}/libmariadb/mariadb_rpl.c
+${CC_SOURCE_DIR}/libmariadb/ma_io.c
+${CC_BINARY_DIR}/libmariadb/ma_client_plugin.c
+${SSL_SOURCES}
+)
+
+IF(ICONV_INCLUDE_DIR)
+   INCLUDE_DIRECTORIES(BEFORE ${ICONV_INCLUDE_DIR})
+ENDIF()
+ADD_DEFINITIONS(-DLIBICONV_PLUG)
+
+IF(ZLIB_FOUND AND WITH_EXTERNAL_ZLIB)
+  INCLUDE_DIRECTORIES(${ZLIB_INCLUDE_DIR})
+ENDIF()
+
+IF(WITH_DYNCOL)
+  SET(MARIADB_LIB_SYMBOLS ${MARIADB_LIB_SYMBOLS} ${MARIADB_DYNCOL_SYMBOLS})
+  SET(LIBMARIADB_SOURCES ${LIBMARIADB_SOURCES} ${CC_SOURCE_DIR}/libmariadb/mariadb_dyncol.c)
+ENDIF()
+
+SET(LIBMARIADB_SOURCES ${LIBMARIADB_SOURCES} ${CC_SOURCE_DIR}/libmariadb/mariadb_async.c ${CC_SOURCE_DIR}/libmariadb/ma_context.c)
+
+
+ADD_LIBRARY(mariadbclient STATIC ${LIBMARIADB_SOURCES})
+TARGET_LINK_LIBRARIES(mariadbclient ${SYSTEM_LIBS})
+
+SET_TARGET_PROPERTIES(mariadbclient PROPERTIES IMPORTED_INTERFACE_LINK_LIBRARIES "${SYSTEM_LIBS}")
+
+
+IF(WITH_EXTERNAL_ZLIB)
+  SET(zlib_status ${WITH_EXTERNAL_ZLIB})
+ELSE()
+  SET(zlib_status "yes (using bundled zlib)")
+ENDIF()
