@@ -18,12 +18,12 @@ Columns:
 -   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Login/logout starting time with microseconds precision.
 -   `user` ([String](../../sql-reference/data-types/string.md)) — User name.
 -   `auth_type` ([Enum8](../../sql-reference/data-types/enum.md)) — The authentication type. There are multiple ways of user identification:
-    -   `'NO_PASSWORD'`.
-    -   `'PLAINTEXT_PASSWORD'`.
-    -   `'SHA256_PASSWORD'`.
-    -   `'DOUBLE_SHA1_PASSWORD'`.
-    -   `'LDAP'`.
-    -   `'KERBEROS'`.
+    -   `NO_PASSWORD`
+    -   `PLAINTEXT_PASSWORD`
+    -   `SHA256_PASSWORD`
+    -   `DOUBLE_SHA1_PASSWORD`
+    -   `LDAP`
+    -   `KERBEROS`
 -   `profiles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — The list of profiles is set for all roles and/or users.
 -   `roles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — The list of roles to which the profile is applied.
 -   `changed_settings` ([Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md), [String](../../sql-reference/data-types/string.md)))) — Settings that were changed when the client logged in/out.
