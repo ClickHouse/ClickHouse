@@ -7,7 +7,7 @@ Contains information about all successful and failed login and logout events.
 
 Columns:
 
--   `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Login/logout result. Values:
+-   `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Login/logout result. Possible values:
     -   `LoginFailure` — Login error.
     -   `LoginSuccess` — Successful login.
     -   `Logout` — Logout from the system.
