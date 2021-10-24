@@ -1,20 +1,5 @@
 #include <base/demangle.h>
 
-#if defined(_MSC_VER)
-
-DemangleResult tryDemangle(const char *)
-{
-    return DemangleResult{};
-}
-
-std::string demangle(const char * name, int & status)
-{
-    status = 0;
-    return name;
-}
-
-#else
-
 #include <stdlib.h>
 #include <cxxabi.h>
 
@@ -39,6 +24,3 @@ std::string demangle(const char * name, int & status)
 
     return name;
 }
-
-
-#endif

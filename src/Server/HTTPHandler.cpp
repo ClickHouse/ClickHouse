@@ -21,6 +21,7 @@
 #include <Interpreters/QueryParameterVisitor.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Session.h>
+#include <Server/HTTP/HTTPResponse.h>
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
@@ -31,7 +32,9 @@
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
+
 #include <base/getFQDNOrHostName.h>
+#include <base/logger_useful.h>
 #include <base/scope_guard.h>
 
 #if !defined(ARCADIA_BUILD)
@@ -107,6 +110,45 @@ namespace ErrorCodes
     extern const int BAD_REQUEST_PARAMETER;
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
+}
+
+namespace
+{
+bool tryAddHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+{
+    if (config.has("http_options_response"))
+    {
+        Strings config_keys;
+        config.keys("http_options_response", config_keys);
+        for (const std::string & config_key : config_keys)
+        {
+            if (config_key == "header" || config_key.starts_with("header["))
+            {
+                /// If there is empty header name, it will not be processed and message about it will be in logs
+                if (config.getString("http_options_response." + config_key + ".name", "").empty())
+                    LOG_WARNING(&Poco::Logger::get("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
+                else
+                    response.add(config.getString("http_options_response." + config_key + ".name", ""),
+                                    config.getString("http_options_response." + config_key + ".value", ""));
+
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+/// Process options request. Useful for CORS.
+void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+{
+    /// If can add some headers from config
+    if (tryAddHeadersFromConfig(response, config))
+    {
+        response.setKeepAlive(false);
+        response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
+        response.send();
+    }
+}
 }
 
 static String base64Decode(const String & encoded)
@@ -705,9 +747,16 @@ void HTTPHandler::processQuery(
     if (in_post_compressed && settings.http_native_compression_disable_checksumming_on_decompress)
         static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
-    /// Add CORS header if 'add_http_cors_header' setting is turned on and the client passed
-    /// Origin header.
-    used_output.out->addHeaderCORS(settings.add_http_cors_header && !request.get("Origin", "").empty());
+    /// Add CORS header if 'add_http_cors_header' setting is turned on send * in Access-Control-Allow-Origin,
+    /// or if config has http_options_response, which means that there
+    /// are some headers to be sent, and the client passed Origin header.
+    if (!request.get("Origin", "").empty())
+    {
+        if (config.has("http_options_response"))
+            tryAddHeadersFromConfig(response, config);
+        else if (settings.add_http_cors_header)
+            used_output.out->addHeaderCORS(true);
+    }
 
     auto append_callback = [context = context] (ProgressCallback callback)
     {
@@ -856,6 +905,11 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     try
     {
+        if (request.getMethod() == HTTPServerRequest::HTTP_OPTIONS)
+        {
+            processOptionsRequest(response, server.config());
+            return;
+        }
         response.setContentType("text/plain; charset=UTF-8");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
         /// For keep-alive to work.

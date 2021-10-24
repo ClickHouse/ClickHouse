@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <tuple>
 #include <mutex>
 #include "FnTraits.h"
 
@@ -17,7 +18,8 @@ struct CachedFn
 {
 private:
     using Traits = FnTraits<decltype(Func)>;
-    using Key = typename Traits::DecayedArgs;
+    using DecayedArgs = TLMap<std::decay_t, typename Traits::Args>;
+    using Key = TLChangeRoot<std::tuple, DecayedArgs>;
     using Result = typename Traits::Ret;
 
     std::map<Key, Result> cache; // Can't use hashmap as tuples are unhashable by default

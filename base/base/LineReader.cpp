@@ -5,6 +5,10 @@
 
 #include <string.h>
 #include <unistd.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#include <sys/types.h>
+
 
 #ifdef OS_LINUX
 /// We can detect if code is linked with one or another readline variants or open the library dynamically.
@@ -16,7 +20,7 @@ extern "C"
 }
 #endif
 
-#if defined(__clang__) && __clang_major__ >= 13
+#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 

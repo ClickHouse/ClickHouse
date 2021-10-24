@@ -1,5 +1,8 @@
 #pragma once
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+
 #if !defined(ARCADIA_BUILD)
 #    include <miniselect/floyd_rivest_select.h>  // Y_IGNORE
 #else
@@ -34,4 +37,7 @@ void partial_sort(RandomIt first, RandomIt middle, RandomIt last, Compare compar
 #else
     ::std::partial_sort(first, middle, last, compare);
 #endif
+
+#pragma GCC diagnostic pop
+
 }

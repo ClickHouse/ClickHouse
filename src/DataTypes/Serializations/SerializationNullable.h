@@ -13,7 +13,11 @@ private:
 public:
     SerializationNullable(const SerializationPtr & nested_) : nested(nested_) {}
 
-    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
+    void enumerateStreams(
+        SubstreamPath & path,
+        const StreamCallback & callback,
+        DataTypePtr type,
+        ColumnPtr column) const override;
 
     void serializeBinaryBulkStatePrefix(
             SerializeBinaryBulkSettings & settings,
@@ -80,6 +84,18 @@ public:
     static ReturnType deserializeTextCSVImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested);
     template <typename ReturnType = bool>
     static ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested);
+
+private:
+    struct SubcolumnCreator : public ISubcolumnCreator
+    {
+        const ColumnPtr null_map;
+
+        SubcolumnCreator(const ColumnPtr & null_map_) : null_map(null_map_) {}
+
+        DataTypePtr create(const DataTypePtr & prev) const override;
+        SerializationPtr create(const SerializationPtr & prev) const override;
+        ColumnPtr create(const ColumnPtr & prev) const override;
+    };
 };
 
 }

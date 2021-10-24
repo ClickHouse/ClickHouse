@@ -22,6 +22,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/TreeOptimizer.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
+#include <Interpreters/PredicateExpressionsOptimizer.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -249,6 +250,61 @@ struct FuseSumCountAggregatesVisitorData
 using CustomizeAggregateFunctionsOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsSuffixData>, true>;
 using CustomizeAggregateFunctionsMoveOrNullVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeAggregateFunctionsMoveSuffixData>, true>;
 using FuseSumCountAggregatesVisitor = InDepthNodeVisitor<OneTypeMatcher<FuseSumCountAggregatesVisitorData>, true>;
+
+
+struct ExistsExpressionData
+{
+    using TypeToVisit = ASTFunction;
+
+    static void visit(ASTFunction & func, ASTPtr)
+    {
+        bool exists_expression = func.name == "exists"
+            && func.arguments && func.arguments->children.size() == 1
+            && typeid_cast<const ASTSubquery *>(func.arguments->children[0].get());
+
+        if (!exists_expression)
+            return;
+
+        /// EXISTS(subquery) --> 1 IN (SELECT 1 FROM subquery LIMIT 1)
+
+        auto subquery_node = func.arguments->children[0];
+        auto table_expression = std::make_shared<ASTTableExpression>();
+        table_expression->subquery = std::move(subquery_node);
+        table_expression->children.push_back(table_expression->subquery);
+
+        auto tables_in_select_element = std::make_shared<ASTTablesInSelectQueryElement>();
+        tables_in_select_element->table_expression = std::move(table_expression);
+        tables_in_select_element->children.push_back(tables_in_select_element->table_expression);
+
+        auto tables_in_select = std::make_shared<ASTTablesInSelectQuery>();
+        tables_in_select->children.push_back(std::move(tables_in_select_element));
+
+        auto select_expr_list = std::make_shared<ASTExpressionList>();
+        select_expr_list->children.push_back(std::make_shared<ASTLiteral>(1u));
+
+        auto select_query = std::make_shared<ASTSelectQuery>();
+        select_query->children.push_back(select_expr_list);
+
+        select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_expr_list);
+        select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables_in_select);
+
+        ASTPtr limit_length_ast = std::make_shared<ASTLiteral>(Field(UInt64(1)));
+        select_query->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, std::move(limit_length_ast));
+
+        auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
+        select_with_union_query->list_of_selects = std::make_shared<ASTExpressionList>();
+        select_with_union_query->list_of_selects->children.push_back(std::move(select_query));
+        select_with_union_query->children.push_back(select_with_union_query->list_of_selects);
+
+        auto new_subquery = std::make_shared<ASTSubquery>();
+        new_subquery->children.push_back(select_with_union_query);
+
+        auto function = makeASTFunction("in", std::make_shared<ASTLiteral>(1u), new_subquery);
+        func = *function;
+    }
+};
+
+using ExistsExpressionVisitor = InDepthNodeVisitor<OneTypeMatcher<ExistsExpressionData>, false>;
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
 /// Expand asterisks and qualified asterisks with column names.
@@ -981,7 +1037,12 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (settings.legacy_column_name_of_tuple_literal)
         markTupleLiteralsAsLegacy(query);
 
-    TreeOptimizer::apply(query, result, tables_with_columns, getContext());
+    /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
+    result.rewrite_subqueries = PredicateExpressionsOptimizer(getContext(), tables_with_columns, settings).optimize(*select_query);
+
+    /// Only apply AST optimization for initial queries.
+    if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        TreeOptimizer::apply(query, result, tables_with_columns, getContext());
 
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
@@ -1090,6 +1151,9 @@ void TreeRewriter::normalize(
 
     CustomizeIfDistinctVisitor::Data data_distinct_if{"DistinctIf"};
     CustomizeIfDistinctVisitor(data_distinct_if).visit(query);
+
+    ExistsExpressionVisitor::Data exists;
+    ExistsExpressionVisitor(exists).visit(query);
 
     if (settings.transform_null_in)
     {

@@ -57,14 +57,6 @@ std::shared_ptr<ASTStorage> createASTStorageDistributed(
 }
 
 
-BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream)
-{
-    return std::make_shared<SquashingBlockInputStream>(
-            stream,
-            std::numeric_limits<size_t>::max(),
-            std::numeric_limits<size_t>::max());
-}
-
 Block getBlockWithAllStreamData(QueryPipeline pipeline)
 {
     QueryPipelineBuilder builder;
@@ -81,7 +73,6 @@ Block getBlockWithAllStreamData(QueryPipeline pipeline)
 
     return block;
 }
-
 
 bool isExtendedDefinitionStorage(const ASTPtr & storage_ast)
 {

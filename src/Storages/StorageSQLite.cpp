@@ -3,16 +3,16 @@
 #if USE_SQLITE
 #include <base/range.h>
 #include <base/logger_useful.h>
-#include <DataStreams/SQLiteSource.h>
+#include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
@@ -121,7 +121,7 @@ public:
 
         sqlbuf << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputStream("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
+        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
         writer->write(block);
 
         sqlbuf << ";";

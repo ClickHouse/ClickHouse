@@ -1,7 +1,5 @@
-#include <DataStreams/RemoteBlockOutputStream.h>
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <QueryPipeline/RemoteInserter.h>
+#include <Formats/NativeReader.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
@@ -16,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cluster.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -190,7 +189,7 @@ namespace
 
             if (header_buf.hasPendingData())
             {
-                NativeBlockInputStream header_block_in(header_buf, DBMS_TCP_PROTOCOL_VERSION);
+                NativeReader header_block_in(header_buf, DBMS_TCP_PROTOCOL_VERSION);
                 distributed_header.block_header = header_block_in.read();
                 if (!distributed_header.block_header)
                     throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read header from the {} batch", in.getFileName());
@@ -269,20 +268,19 @@ namespace
     void writeAndConvert(RemoteInserter & remote, ReadBufferFromFile & in)
     {
         CompressedReadBuffer decompressing_in(in);
-        NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
-        block_in.readPrefix();
+        NativeReader block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
 
         while (Block block = block_in.read())
         {
-            ConvertingBlockInputStream convert(
-                std::make_shared<OneBlockInputStream>(block),
-                remote.getHeader(),
-                ConvertingBlockInputStream::MatchColumnsMode::Name);
-            auto adopted_block = convert.read();
-            remote.write(adopted_block);
-        }
+            auto converting_dag = ActionsDAG::makeConvertingActions(
+                block.cloneEmpty().getColumnsWithTypeAndName(),
+                remote.getHeader().getColumnsWithTypeAndName(),
+                ActionsDAG::MatchColumnsMode::Name);
 
-        block_in.readSuffix();
+            auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+            converting_actions->execute(block);
+            remote.write(block);
+        }
     }
 
     void writeRemoteConvert(
@@ -908,7 +906,7 @@ public:
     {
         std::unique_ptr<ReadBufferFromFile> in;
         std::unique_ptr<CompressedReadBuffer> decompressing_in;
-        std::unique_ptr<NativeBlockInputStream> block_in;
+        std::unique_ptr<NativeReader> block_in;
 
         Poco::Logger * log = nullptr;
 
@@ -918,12 +916,11 @@ public:
         {
             in = std::make_unique<ReadBufferFromFile>(file_name);
             decompressing_in = std::make_unique<CompressedReadBuffer>(*in);
-            block_in = std::make_unique<NativeBlockInputStream>(*decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
+            block_in = std::make_unique<NativeReader>(*decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
             log = &Poco::Logger::get("DirectoryMonitorSource");
 
             readDistributedHeader(*in, log);
 
-            block_in->readPrefix();
             first_block = block_in->read();
         }
 
@@ -956,10 +953,7 @@ protected:
 
         auto block = data.block_in->read();
         if (!block)
-        {
-            data.block_in->readSuffix();
             return {};
-        }
 
         size_t num_rows = block.rows();
         return Chunk(block.getColumns(), num_rows);
@@ -1047,8 +1041,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                 LOG_DEBUG(log, "Processing batch {} with old format (no header/rows)", in.getFileName());
 
                 CompressedReadBuffer decompressing_in(in);
-                NativeBlockInputStream block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
-                block_in.readPrefix();
+                NativeReader block_in(decompressing_in, DBMS_TCP_PROTOCOL_VERSION);
 
                 while (Block block = block_in.read())
                 {
@@ -1058,7 +1051,6 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                     if (!header)
                         header = block.cloneEmpty();
                 }
-                block_in.readSuffix();
             }
         }
         catch (const Exception & e)
