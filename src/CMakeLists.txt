@@ -109,6 +109,10 @@ if (USE_HDFS)
     add_headers_and_sources(dbms Disks/HDFS)
 endif()
 
+if(USE_FILELOG)
+    add_headers_and_sources(dbms Storages/FileLog)
+endif()
+
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
