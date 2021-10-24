@@ -29,12 +29,12 @@ Columns:
 -   `changed_settings` ([Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md), [String](../../sql-reference/data-types/string.md)))) — Settings that were changed when the client logged in/out.
 -   `client_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — The IP address that was used to log in/out.
 -   `client_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The client port that was used to log in/out.
--   `interface` ([Enum8](../../sql-reference/data-types/enum.md)) — The interface from which the login was initiated. Values:
-    -   `'TCP'`.
-    -   `'HTTP'`.
-    -   `'gRPC'`.
-    -   `'MySQL'`.
-    -   `'PostgreSQL'`.
+-   `interface` ([Enum8](../../sql-reference/data-types/enum.md)) — The interface from which the login was initiated. Possible values:
+    -   `TCP`
+    -   `HTTP`
+    -   `gRPC`
+    -   `MySQL`
+    -   `PostgreSQL`
 -   `client_hostname` ([String](../../sql-reference/data-types/string.md)) — The hostname of the client machine where the [clickhouse-client](../../interfaces/cli.md) or another TCP client is run.
 -   `client_name` ([String](../../sql-reference/data-types/string.md)) — The `clickhouse-client` or another TCP client name.
 -   `client_revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Revision of the `clickhouse-client` or another TCP client.
