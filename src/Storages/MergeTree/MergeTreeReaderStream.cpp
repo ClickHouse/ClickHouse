@@ -186,9 +186,9 @@ void MergeTreeReaderStream::seekToStart()
 }
 
 
-void MergeTreeReaderStream::adjustForRange(size_t left_mark, size_t right_mark)
+void MergeTreeReaderStream::adjustForRange(MarkRange range)
 {
-    auto [right_offset, mark_range_bytes] = getRightOffsetAndBytesRange(left_mark, right_mark);
+    auto [right_offset, mark_range_bytes] = getRightOffsetAndBytesRange(range.begin, range.end);
     if (!right_offset)
     {
         if (cached_buffer)

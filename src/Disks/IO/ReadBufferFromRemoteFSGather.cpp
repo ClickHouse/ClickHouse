@@ -52,7 +52,7 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(const RemoteMetadata 
 }
 
 
-size_t ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t read_until_position_, size_t ignore)
+size_t ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t offset, size_t ignore)
 {
     /**
      * Set `data` to current working and internal buffers.
@@ -60,7 +60,7 @@ size_t ReadBufferFromRemoteFSGather::readInto(char * data, size_t size, size_t r
      */
     set(data, size);
 
-    absolute_position = read_until_position_;
+    absolute_position = offset;
     bytes_to_ignore = ignore;
 
     auto result = nextImpl();

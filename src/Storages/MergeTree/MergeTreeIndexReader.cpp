@@ -58,7 +58,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     for (const auto mark_range : all_mark_ranges_)
         current_task_last_mark = std::max(current_task_last_mark, mark_range.end);
 
-    stream->adjustForRange(0, current_task_last_mark);
+    stream->adjustForRange(MarkRange(0, current_task_last_mark));
     stream->seekToStart();
 }
 
