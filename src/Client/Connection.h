@@ -32,6 +32,9 @@ struct ConnectionParameters;
 using ConnectionPtr = std::shared_ptr<Connection>;
 using Connections = std::vector<ConnectionPtr>;
 
+class NativeReader;
+class NativeWriter;
+
 
 /** Connection with database server, to use by client.
   * How to use - see Core/Protocol.h
@@ -53,25 +56,11 @@ public:
         const String & client_name_,
         Protocol::Compression compression_,
         Protocol::Secure secure_,
-        Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0))
-        :
-        host(host_), port(port_), default_database(default_database_),
-        user(user_), password(password_),
-        cluster(cluster_),
-        cluster_secret(cluster_secret_),
-        client_name(client_name_),
-        compression(compression_),
-        secure(secure_),
-        sync_request_timeout(sync_request_timeout_),
-        log_wrapper(*this)
-    {
-        /// Don't connect immediately, only on first need.
+        Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0));
 
-        if (user.empty())
-            user = "default";
+    ~Connection() override;
 
-        setDescription();
-    }
+    IServerConnection::Type getConnectionType() const override { return IServerConnection::Type::SERVER; }
 
     static ServerConnectionPtr createConnection(const ConnectionParameters & parameters, ContextPtr context);
 
@@ -217,12 +206,13 @@ private:
 
     /// From where to read query execution result.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
-    BlockInputStreamPtr block_in;
-    BlockInputStreamPtr block_logs_in;
+    std::unique_ptr<NativeReader> block_in;
+    std::unique_ptr<NativeReader> block_logs_in;
+    std::unique_ptr<NativeReader> block_profile_events_in;
 
     /// Where to write data for INSERT.
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
-    BlockOutputStreamPtr block_out;
+    std::unique_ptr<NativeWriter> block_out;
 
     /// Logger is created lazily, for avoid to run DNS request in constructor.
     class LoggerWrapper
@@ -261,16 +251,18 @@ private:
 
     Block receiveData();
     Block receiveLogData();
-    Block receiveDataImpl(BlockInputStreamPtr & stream);
+    Block receiveDataImpl(NativeReader & reader);
+    Block receiveProfileEvents();
 
     std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
-    BlockStreamProfileInfo receiveProfileInfo() const;
+    ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();
     void initBlockInput();
     void initBlockLogsInput();
+    void initBlockProfileEventsInput();
 
     [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
 };

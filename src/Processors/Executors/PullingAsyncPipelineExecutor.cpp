@@ -3,7 +3,7 @@
 #include <Processors/Formats/LazyOutputFormat.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 #include <Common/setThreadName.h>
 #include <base/scope_guard_safe.h>
@@ -225,12 +225,12 @@ Block PullingAsyncPipelineExecutor::getExtremesBlock()
     return header.cloneWithColumns(extremes.detachColumns());
 }
 
-BlockStreamProfileInfo & PullingAsyncPipelineExecutor::getProfileInfo()
+ProfileInfo & PullingAsyncPipelineExecutor::getProfileInfo()
 {
     if (lazy_format)
         return lazy_format->getProfileInfo();
 
-    static BlockStreamProfileInfo profile_info;
+    static ProfileInfo profile_info;
     static std::once_flag flag;
     /// Calculate rows before limit here to avoid race.
     std::call_once(flag, []() { profile_info.getRowsBeforeLimit(); });

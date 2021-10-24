@@ -4,7 +4,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/MaskOperations.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/WeakHash.h>
