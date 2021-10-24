@@ -86,7 +86,7 @@ SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0
 
 ## max2 {#max2}
 
-Сравнивает два числа и возвращает максимум. Возвращаемое значение приводится к [Float64](../../sql-reference/data-types/float.md)
+Сравнивает два числа и возвращает максимум. Возвращаемое значение приводится к типу [Float64](../../sql-reference/data-types/float.md).
 
 **Синтаксис**
 
@@ -123,7 +123,7 @@ SELECT max2(-1, 2);
 
 ## min2 {#min2}
 
-Сравнивает два числа и возвращает минимум. Возвращаемое значение приводится к [Float64](../../sql-reference/data-types/float.md)
+Сравнивает два числа и возвращает минимум. Возвращаемое значение приводится к типу [Float64](../../sql-reference/data-types/float.md).
 
 **Синтаксис**
 
