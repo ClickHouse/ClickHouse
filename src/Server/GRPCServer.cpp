@@ -1,4 +1,6 @@
 #include "GRPCServer.h"
+#include <limits>
+#include <memory>
 #if USE_GRPC
 
 #include <Columns/ColumnString.h>
@@ -9,7 +11,7 @@
 #include <Common/Stopwatch.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataStreams/BlockStreamProfileInfo.h>
+#include <QueryPipeline/ProfileInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/executeQuery.h>
@@ -27,10 +29,10 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sinks/EmptySink.h>
-#include <Processors/QueryPipelineBuilder.h>
-#include <Formats/FormatFactory.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Server/IServer.h>
 #include <Storages/IStorage.h>
 #include <Poco/FileStream.h>
@@ -585,6 +587,7 @@ namespace
         void finishQuery();
         void onException(const Exception & exception);
         void onFatalError();
+        void releaseQueryIDAndSessionID();
         void close();
 
         void readQueryInfo();
@@ -594,7 +597,7 @@ namespace
         void addProgressToResult();
         void addTotalsToResult(const Block & totals);
         void addExtremesToResult(const Block & extremes);
-        void addProfileInfoToResult(const BlockStreamProfileInfo & info);
+        void addProfileInfoToResult(const ProfileInfo & info);
         void addLogsToResult();
         void sendResult();
         void throwIfFailedToSendResult();
@@ -634,7 +637,7 @@ namespace
         std::optional<WriteBufferFromString> write_buffer;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> pipeline_executor;
-        BlockOutputStreamPtr block_output_stream;
+        std::shared_ptr<IOutputFormat> output_format_processor;
         bool need_input_data_from_insert_query = true;
         bool need_input_data_from_query_info = true;
         bool need_input_data_delimiter = false;
@@ -943,8 +946,8 @@ namespace
         });
 
         assert(!pipeline);
-        auto source = FormatFactory::instance().getInput(
-            input_format, *read_buffer, header, query_context, query_context->getSettings().max_insert_block_size);
+        auto source = query_context->getInputFormat(
+            input_format, *read_buffer, header, query_context->getSettings().max_insert_block_size);
         QueryPipelineBuilder builder;
         builder.init(Pipe(source));
 
@@ -1030,9 +1033,9 @@ namespace
                         external_table_context->checkSettingsConstraints(settings_changes);
                         external_table_context->applySettingsChanges(settings_changes);
                     }
-                    auto in = FormatFactory::instance().getInput(
+                    auto in = external_table_context->getInputFormat(
                         format, data, metadata_snapshot->getSampleBlock(),
-                        external_table_context, external_table_context->getSettings().max_insert_block_size);
+                        external_table_context->getSettings().max_insert_block_size);
 
                     QueryPipelineBuilder cur_pipeline;
                     cur_pipeline.init(Pipe(std::move(in)));
@@ -1086,8 +1089,8 @@ namespace
             header = io.pipeline.getHeader();
 
         write_buffer.emplace(*result.mutable_output());
-        block_output_stream = query_context->getOutputStream(output_format, *write_buffer, header);
-        block_output_stream->writePrefix();
+        output_format_processor = query_context->getOutputFormat(output_format, *write_buffer, header);
+        output_format_processor->doWritePrefix();
         Stopwatch after_send_progress;
 
         /// Unless the input() function is used we are not going to receive input data anymore.
@@ -1118,7 +1121,7 @@ namespace
                     break;
 
                 if (block && !io.null_format)
-                    block_output_stream->write(block);
+                    output_format_processor->write(materializeBlock(block));
 
                 if (after_send_progress.elapsedMicroseconds() >= interactive_delay)
                 {
@@ -1166,7 +1169,7 @@ namespace
             executor->execute();
         }
 
-        block_output_stream->writeSuffix();
+        output_format_processor->doWriteSuffix();
     }
 
     void Call::finishQuery()
@@ -1176,6 +1179,7 @@ namespace
         addProgressToResult();
         query_scope->logPeakMemoryUsage();
         addLogsToResult();
+        releaseQueryIDAndSessionID();
         sendResult();
         close();
 
@@ -1206,6 +1210,8 @@ namespace
                 LOG_WARNING(log, "Couldn't send logs to client");
             }
 
+            releaseQueryIDAndSessionID();
+
             try
             {
                 sendException(exception);
@@ -1225,7 +1231,7 @@ namespace
         {
             try
             {
-                finalize = true;
+                result.mutable_exception()->set_name("FatalError");
                 addLogsToResult();
                 sendResult();
             }
@@ -1235,12 +1241,23 @@ namespace
         }
     }
 
+    void Call::releaseQueryIDAndSessionID()
+    {
+        /// releaseQueryIDAndSessionID() should be called before sending the final result to the client
+        /// because the client may decide to send another query with the same query ID or session ID
+        /// immediately after it receives our final result, and it's prohibited to have
+        /// two queries executed at the same time with the same query ID or session ID.
+        io.process_list_entry.reset();
+        if (session)
+            session->releaseSessionID();
+    }
+
     void Call::close()
     {
         responder.reset();
         pipeline_executor.reset();
         pipeline.reset();
-        block_output_stream.reset();
+        output_format_processor.reset();
         read_buffer.reset();
         write_buffer.reset();
         io = {};
@@ -1362,10 +1379,10 @@ namespace
             return;
 
         WriteBufferFromString buf{*result.mutable_totals()};
-        auto stream = query_context->getOutputStream(output_format, buf, totals);
-        stream->writePrefix();
-        stream->write(totals);
-        stream->writeSuffix();
+        auto format = query_context->getOutputFormat(output_format, buf, totals);
+        format->doWritePrefix();
+        format->write(materializeBlock(totals));
+        format->doWriteSuffix();
     }
 
     void Call::addExtremesToResult(const Block & extremes)
@@ -1374,13 +1391,13 @@ namespace
             return;
 
         WriteBufferFromString buf{*result.mutable_extremes()};
-        auto stream = query_context->getOutputStream(output_format, buf, extremes);
-        stream->writePrefix();
-        stream->write(extremes);
-        stream->writeSuffix();
+        auto format = query_context->getOutputFormat(output_format, buf, extremes);
+        format->doWritePrefix();
+        format->write(materializeBlock(extremes));
+        format->doWriteSuffix();
     }
 
-    void Call::addProfileInfoToResult(const BlockStreamProfileInfo & info)
+    void Call::addProfileInfoToResult(const ProfileInfo & info)
     {
         auto & stats = *result.mutable_stats();
         stats.set_rows(info.rows);
