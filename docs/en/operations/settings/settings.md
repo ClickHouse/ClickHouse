@@ -1786,10 +1786,6 @@ FORMAT PrettyCompactMonoBlock
 └───────┘
 ```
 
-See also:
-
--   [distributed_group_by_no_merge](#distributed-group-by-no-merge)
-
 ## distributed_push_down_limit {#distributed-push-down-limit}
 
 Enables or disables [LIMIT](#limit) applying on each shard separatelly.
