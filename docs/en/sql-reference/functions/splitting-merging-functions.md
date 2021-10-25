@@ -213,7 +213,7 @@ SELECT splitByNonAlpha('  1!  a,  b.  ');
 
 ## arrayStringConcat(arr\[, separator\]) {#arraystringconcatarr-separator}
 
-Concatenates the strings listed in the array with the separator.’separator’ is an optional parameter: a constant string, set to an empty string by default.
+Concatenates the strings (values of type String or Nullable(String)) listed in the array with the separator. ’separator’ is an optional parameter: a constant string, set to an empty string by default.
 Returns the string.
 
 ## alphaTokens(s) {#alphatokenss}
