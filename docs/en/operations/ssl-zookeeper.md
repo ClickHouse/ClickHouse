@@ -5,30 +5,9 @@ toc_title: Secured communication with Zookeeper
 
 # Optional secured communication between ClickHouse and Zookeeper {#secured-communication-with-zookeeper}
 
-You should specified `ssl.keyStore.location`, `ssl.keyStore.password` and `ssl.trustStore.location`, `ssl.trustStore.password` for communication with ClickHouse client over SSL. These options are available from Zookeeper version 3.5.2.
+You should specify `ssl.keyStore.location`, `ssl.keyStore.password` and `ssl.trustStore.location`, `ssl.trustStore.password` for communication with ClickHouse client over SSL. These options are available from Zookeeper version 3.5.2.
 
-You have two options how to handle custom certificate verification on the ClickHouse-side:
-
-1. Turn off certificate verification.
-
-Client section in `config.xml` will look like:
-
-``` xml
-<client>
-    <certificateFile>/etc/clickhouse-server/client.crt</certificateFile>
-    <privateKeyFile>/etc/clickhouse-server/client.key</privateKeyFile>
-    <loadDefaultCAFile>true</loadDefaultCAFile>
-    <cacheSessions>true</cacheSessions>
-    <disableProtocols>sslv2,sslv3</disableProtocols>
-    <preferServerCiphers>true</preferServerCiphers>
-    <verificationMode>none</verificationMode> 
-    <invalidCertificateHandler>
-        <name>RejectCertificateHandler</name>
-    </invalidCertificateHandler>
-</client>
-```
-
-2. Add `zookeeper.crt` to trusted certificates.
+You can add `zookeeper.crt` to trusted certificates.
 
 ``` bash
 sudo cp zookeeper.crt /usr/local/share/ca-certificates/zookeeper.crt
