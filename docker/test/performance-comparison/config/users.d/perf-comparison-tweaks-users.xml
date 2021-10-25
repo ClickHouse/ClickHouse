@@ -24,6 +24,13 @@
 
             <!-- Don't fail some prewarm queries too early -->
             <timeout_before_checking_execution_speed>60</timeout_before_checking_execution_speed>
+
+            <!--
+                Call profiler more frequently to unhide possible issues in it.
+                By default it is called /1s, changed value /100ms
+            -->
+            <query_profiler_real_time_period_ns>100000000</query_profiler_real_time_period_ns>
+            <query_profiler_cpu_time_period_ns>100000000</query_profiler_cpu_time_period_ns>
         </default>
     </profiles>
     <users>
