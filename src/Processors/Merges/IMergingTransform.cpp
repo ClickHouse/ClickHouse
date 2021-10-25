@@ -135,7 +135,7 @@ IProcessor::Status IMergingTransformBase::prepare()
     bool is_port_full = !output.canPush();
 
     /// Push if has data.
-    if (state.output_chunk && !is_port_full)
+    if ((state.output_chunk || state.output_chunk.hasChunkInfo()) && !is_port_full)
         output.push(std::move(state.output_chunk));
 
     if (!is_initialized)

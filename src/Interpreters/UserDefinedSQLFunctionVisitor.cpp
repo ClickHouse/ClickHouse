@@ -18,7 +18,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-void UserDefinedSQLFunctionMatcher::visit(ASTPtr & ast, Data &)
+void UserDefinedSQLFunctionMatcher::visit(ASTPtr & ast, Data & data)
 {
     auto * function = ast->as<ASTFunction>();
     if (!function)
@@ -27,7 +27,10 @@ void UserDefinedSQLFunctionMatcher::visit(ASTPtr & ast, Data &)
     auto result = tryToReplaceFunction(*function);
 
     if (result)
+    {
         ast = result;
+        visit(ast, data);
+    }
 }
 
 bool UserDefinedSQLFunctionMatcher::needChildVisit(const ASTPtr &, const ASTPtr &)
