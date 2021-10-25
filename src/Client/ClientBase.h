@@ -202,7 +202,6 @@ protected:
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.
 
-    bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the
     /// return code in batch mode.
     std::unique_ptr<Exception> server_exception;
