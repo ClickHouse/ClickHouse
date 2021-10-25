@@ -165,3 +165,26 @@ Result:
 │               2 │
 └─────────────────┘
 ```
+
+## tupleToNameValuePairs {#tupletonamevaluepairs}
+
+Turns a named tuple into an array of name-value pairs. For a `Tuple(a T, b T, ..., c T)` return an `Array(Tuple(String, T), ...)`
+in which the `Strings` represent the named fields of the tuple and the `T`s are the values associated to those names.
+
+**Syntax**
+
+``` sql
+tupleToNameValuePairs()
+```
+
+**Arguments**
+
+-   `x` — Named tuple.
+
+**Returned value**
+
+-   
+
+Type: 
+
+**Example**
