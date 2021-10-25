@@ -18,17 +18,11 @@ toc_title: "Операторы"
 
 `-a` - функция `negate(a)`.
 
-Для отрицания чисел в кортеже: [tupleNegate](../../sql-reference/functions/tuple-functions.md#tuplenegate).
-
 ## Операторы умножения и деления {#operatory-umnozheniia-i-deleniia}
 
 `a * b` - функция `multiply(a, b)`
 
-Для умножения кортежа на число: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), для скалярного произведения: [dotProduct](../../sql-reference/functions/tuple-functions.md#dotproduct).
-
 `a / b` - функция `divide(a, b)`
-
-Для деления кортежа на число: [tupleDivideByNumber](../../sql-reference/functions/tuple-functions.md#tupledividebynumber).
 
 `a % b` - функция `modulo(a, b)`
 
@@ -36,11 +30,7 @@ toc_title: "Операторы"
 
 `a + b` - функция `plus(a, b)`
 
-Для сложения кортежей: [tuplePlus](../../sql-reference/functions/tuple-functions.md#tupleplus).
-
 `a - b` - функция `minus(a, b)`
-
-Для вычитания кортежей: [tupleMinus](../../sql-reference/functions/tuple-functions.md#tupleminus).
 
 ## Операторы сравнения {#operatory-sravneniia}
 
