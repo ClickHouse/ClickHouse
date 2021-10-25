@@ -1,4 +1,5 @@
 #include <IO/WriteBufferFromString.h>
+#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/Serializations/SerializationEnum.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -133,8 +134,7 @@ Field DataTypeEnum<Type>::castToName(const Field & value_or_name) const
         return this->getNameForValue(static_cast<Type>(value)).toString();
     }
     else
-        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
-            "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
+        throw Exception(String("DataTypeEnum: Unsupported type of field ") + value_or_name.getTypeName(), ErrorCodes::BAD_TYPE_OF_FIELD);
 }
 
 template <typename Type>
@@ -153,8 +153,7 @@ Field DataTypeEnum<Type>::castToValue(const Field & value_or_name) const
         return value;
     }
     else
-        throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD,
-            "DataTypeEnum: Unsupported type of field {}", value_or_name.getTypeName());
+        throw Exception(String("DataTypeEnum: Unsupported type of field ") + value_or_name.getTypeName(), ErrorCodes::BAD_TYPE_OF_FIELD);
 }
 
 

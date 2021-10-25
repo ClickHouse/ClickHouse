@@ -68,10 +68,6 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 void registerStorageExternalDistributed(StorageFactory & factory);
 #endif
 
-#if USE_FILELOG
-void registerStorageFileLog(StorageFactory & factory);
-#endif
-
 #if USE_SQLITE
 void registerStorageSQLite(StorageFactory & factory);
 #endif
@@ -123,11 +119,7 @@ void registerStorages()
     registerStorageKafka(factory);
     #endif
 
-#if USE_FILELOG
-    registerStorageFileLog(factory);
-#endif
-
-#if USE_AMQPCPP
+    #if USE_AMQPCPP
     registerStorageRabbitMQ(factory);
     #endif
 

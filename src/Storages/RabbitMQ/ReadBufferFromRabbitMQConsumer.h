@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/Names.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <IO/ReadBuffer.h>
 #include <amqpcpp.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
@@ -15,13 +15,16 @@ namespace Poco
 namespace DB
 {
 
+using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
+using HandlerPtr = std::shared_ptr<RabbitMQHandler>;
+
 class ReadBufferFromRabbitMQConsumer : public ReadBuffer
 {
 
 public:
     ReadBufferFromRabbitMQConsumer(
             ChannelPtr consumer_channel_,
-            RabbitMQHandler & event_handler_,
+            HandlerPtr event_handler_,
             std::vector<String> & queues_,
             size_t channel_id_base_,
             const String & channel_base_,
@@ -75,12 +78,6 @@ public:
     auto getMessageID() const { return current.message_id; }
     auto getTimestamp() const { return current.timestamp; }
 
-    void initialize()
-    {
-        if (!initialized)
-            setupChannel();
-    }
-
 private:
     bool nextImpl() override;
 
@@ -88,7 +85,7 @@ private:
     void iterateEventLoop();
 
     ChannelPtr consumer_channel;
-    RabbitMQHandler & event_handler; /// Used concurrently, but is thread safe.
+    HandlerPtr event_handler;
     std::vector<String> queues;
     const String channel_base;
     const size_t channel_id_base;
@@ -105,9 +102,6 @@ private:
 
     AckTracker last_inserted_record_info;
     UInt64 prev_tag = 0, channel_id_counter = 0;
-
-    /// Has initial setup after constructor been made?
-    bool initialized = false;
 };
 
 }

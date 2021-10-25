@@ -1,10 +1,10 @@
 #pragma once
 
-#include <base/logger_useful.h>
-#include <base/shared_ptr_helper.h>
+#include <common/logger_useful.h>
+#include <common/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
-#include <Processors/Sources/ShellCommandSource.h>
-#include <Storages/ExecutableSettings.h>
+#include <DataStreams/ShellCommandSource.h>
+#include <Storages/ExecutablePoolSettings.h>
 
 
 namespace DB
@@ -55,7 +55,7 @@ protected:
         const std::vector<String> & arguments_,
         const String & format_,
         const std::vector<ASTPtr> & input_queries_,
-        const ExecutableSettings & settings_,
+        const ExecutablePoolSettings & pool_settings_,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints);
 
@@ -64,7 +64,7 @@ private:
     std::vector<String> arguments;
     String format;
     std::vector<ASTPtr> input_queries;
-    ExecutableSettings settings;
+    ExecutablePoolSettings pool_settings;
     std::shared_ptr<ProcessPool> process_pool;
     Poco::Logger * log;
 };

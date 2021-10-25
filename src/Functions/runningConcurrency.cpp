@@ -10,7 +10,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
-#include <base/defines.h>
+#include <common/defines.h>
 #include <set>
 
 namespace DB

@@ -7,7 +7,7 @@
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/CoordinationSettings.h>
 #include <unordered_map>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -79,12 +79,6 @@ public:
 
     /// Wait server initialization (see callbackFunc)
     void waitInit();
-
-    /// Return true if KeeperServer initialized
-    bool checkInit() const
-    {
-        return initialized_flag;
-    }
 
     void shutdown();
 

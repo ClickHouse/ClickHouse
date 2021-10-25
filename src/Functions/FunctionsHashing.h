@@ -20,7 +20,6 @@
 #endif
 
 #if USE_SSL
-#    include <openssl/md4.h>
 #    include <openssl/md5.h>
 #    include <openssl/sha.h>
 #endif
@@ -45,8 +44,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/TargetSpecific.h>
 #include <Functions/PerformanceAdaptors.h>
-#include <base/range.h>
-#include <base/bit_cast.h>
+#include <common/range.h>
+#include <common/bit_cast.h>
 
 
 namespace DB
@@ -139,24 +138,10 @@ struct HalfMD5Impl
     static constexpr bool use_int_hash_for_pods = false;
 };
 
-struct MD4Impl
-{
-    static constexpr auto name = "MD4";
-    enum { length = MD4_DIGEST_LENGTH };
-
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
-    {
-        MD4_CTX ctx;
-        MD4_Init(&ctx);
-        MD4_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        MD4_Final(out_char_data, &ctx);
-    }
-};
-
 struct MD5Impl
 {
     static constexpr auto name = "MD5";
-    enum { length = MD5_DIGEST_LENGTH };
+    enum { length = 16 };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -170,7 +155,7 @@ struct MD5Impl
 struct SHA1Impl
 {
     static constexpr auto name = "SHA1";
-    enum { length = SHA_DIGEST_LENGTH };
+    enum { length = 20 };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -184,7 +169,7 @@ struct SHA1Impl
 struct SHA224Impl
 {
     static constexpr auto name = "SHA224";
-    enum { length = SHA224_DIGEST_LENGTH };
+    enum { length = 28 };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -198,7 +183,7 @@ struct SHA224Impl
 struct SHA256Impl
 {
     static constexpr auto name = "SHA256";
-    enum { length = SHA256_DIGEST_LENGTH };
+    enum { length = 32 };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -206,20 +191,6 @@ struct SHA256Impl
         SHA256_Init(&ctx);
         SHA256_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
         SHA256_Final(out_char_data, &ctx);
-    }
-};
-
-struct SHA384Impl
-{
-    static constexpr auto name = "SHA384";
-    enum { length = SHA384_DIGEST_LENGTH };
-
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
-    {
-        SHA512_CTX ctx;
-        SHA384_Init(&ctx);
-        SHA384_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        SHA384_Final(out_char_data, &ctx);
     }
 };
 
@@ -664,7 +635,7 @@ private:
     template <typename FromType>
     ColumnPtr executeType(const ColumnsWithTypeAndName & arguments) const
     {
-        using ColVecType = ColumnVectorOrDecimal<FromType>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
 
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(arguments[0].column.get()))
         {
@@ -791,7 +762,7 @@ private:
     template <typename FromType, bool first>
     void executeIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
-        using ColVecType = ColumnVectorOrDecimal<FromType>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
 
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
@@ -848,7 +819,7 @@ private:
     template <typename FromType, bool first>
     void executeBigIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
-        using ColVecType = ColumnVectorOrDecimal<FromType>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
 
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
@@ -1350,17 +1321,17 @@ private:
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
 
+#if USE_SSL
+using FunctionHalfMD5 = FunctionAnyHash<HalfMD5Impl>;
+#endif
 using FunctionSipHash64 = FunctionAnyHash<SipHash64Impl>;
 using FunctionIntHash32 = FunctionIntHash<IntHash32Impl, NameIntHash32>;
 using FunctionIntHash64 = FunctionIntHash<IntHash64Impl, NameIntHash64>;
 #if USE_SSL
-using FunctionMD4 = FunctionStringHashFixedString<MD4Impl>;
-using FunctionHalfMD5 = FunctionAnyHash<HalfMD5Impl>;
 using FunctionMD5 = FunctionStringHashFixedString<MD5Impl>;
 using FunctionSHA1 = FunctionStringHashFixedString<SHA1Impl>;
 using FunctionSHA224 = FunctionStringHashFixedString<SHA224Impl>;
 using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
-using FunctionSHA384 = FunctionStringHashFixedString<SHA384Impl>;
 using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
 #endif
 using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;

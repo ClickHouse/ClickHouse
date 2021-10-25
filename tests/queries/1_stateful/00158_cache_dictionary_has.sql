@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 CREATE DATABASE IF NOT EXISTS db_dict;
 DROP DICTIONARY IF EXISTS db_dict.cache_hits;
 

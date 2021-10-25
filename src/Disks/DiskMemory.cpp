@@ -103,8 +103,6 @@ public:
         /// str() finalizes buffer.
         String value = impl.str();
 
-        std::lock_guard lock(disk->mutex);
-
         auto iter = disk->files.find(path);
 
         if (iter == disk->files.end())

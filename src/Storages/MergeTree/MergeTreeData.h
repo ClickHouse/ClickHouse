@@ -3,7 +3,6 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/MultiVersion.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -39,7 +38,6 @@ namespace DB
 
 class AlterCommands;
 class MergeTreePartsMover;
-class MergeTreeDataMergerMutator;
 class MutationCommands;
 class Context;
 struct JobAndPool;
@@ -59,6 +57,7 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 using ManyExpressionActions = std::vector<ExpressionActionsPtr>;
 class MergeTreeDeduplicationLog;
+class IBackgroundJobExecutor;
 
 namespace ErrorCodes
 {
@@ -274,8 +273,6 @@ public:
         void clear() { precommitted_parts.clear(); }
     };
 
-    using TransactionUniquePtr = std::unique_ptr<Transaction>;
-
     using PathWithDisk = std::pair<String, DiskPtr>;
 
     struct PartsTemporaryRename : private boost::noncopyable
@@ -365,22 +362,10 @@ public:
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
-    /// Build a block of minmax and count values of a MergeTree table. These values are extracted
-    /// from minmax_indices, the first expression of primary key, and part rows.
-    ///
-    /// query_info - used to filter unneeded parts
-    ///
-    /// parts - part set to filter
-    ///
-    /// normal_parts - collects parts that don't have all the needed values to form the block.
-    /// Specifically, this is when a part doesn't contain a final mark and the related max value is
-    /// required.
     Block getMinMaxCountProjectionBlock(
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
         const SelectQueryInfo & query_info,
-        const DataPartsVector & parts,
-        DataPartsVector & normal_parts,
         ContextPtr query_context) const;
 
     bool getQueryProcessingStageWithAggregateProjection(
@@ -406,7 +391,6 @@ public:
             || merging_params.mode == MergingParams::Summing
             || merging_params.mode == MergingParams::Aggregating
             || merging_params.mode == MergingParams::Replacing
-            || merging_params.mode == MergingParams::Graphite
             || merging_params.mode == MergingParams::VersionedCollapsing;
     }
 
@@ -550,7 +534,7 @@ public:
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
-    void clearOldTemporaryDirectories(const MergeTreeDataMergerMutator & merger_mutator, size_t custom_directories_lifetime_seconds);
+    void clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds);
 
     void clearEmptyParts();
 
@@ -666,12 +650,6 @@ public:
     {
         auto lock = lockParts();
         return column_sizes;
-    }
-
-    IndexSizeByName getSecondaryIndexSizes() const override
-    {
-        auto lock = lockParts();
-        return secondary_index_sizes;
     }
 
     /// For ATTACH/DETACH/DROP PARTITION.
@@ -854,9 +832,9 @@ public:
     PinnedPartUUIDsPtr getPinnedPartUUIDs() const;
 
     /// Schedules background job to like merge/mutate/fetch an executor
-    virtual bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) = 0;
+    virtual bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) = 0;
     /// Schedules job to move parts between disks/volumes and so on.
-    bool scheduleDataMovingJob(BackgroundJobsAssignee & assignee);
+    bool scheduleDataMovingJob(IBackgroundJobExecutor & executor);
     bool areBackgroundMovesNeeded() const;
 
     /// Lock part in zookeeper for shared data in several nodes
@@ -886,7 +864,6 @@ protected:
     friend struct ReplicatedMergeTreeTableMetadata;
     friend class StorageReplicatedMergeTree;
     friend class MergeTreeDataWriter;
-    friend class MergeTask;
 
     bool require_part_metadata;
 
@@ -897,9 +874,6 @@ protected:
 
     /// Current column sizes in compressed and uncompressed form.
     ColumnSizeByName column_sizes;
-
-    /// Current secondary index sizes in compressed and uncompressed form.
-    IndexSizeByName secondary_index_sizes;
 
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
@@ -953,23 +927,6 @@ protected:
     DataPartsIndexes::index<TagByStateAndInfo>::type & data_parts_by_state_and_info;
 
     MergeTreePartsMover parts_mover;
-
-    /// Executors are common for both ReplicatedMergeTree and plain MergeTree
-    /// but they are being started and finished in derived classes, so let them be protected.
-    ///
-    /// Why there are two executors, not one? Or an executor for each kind of operation?
-    /// It is historically formed.
-    /// Another explanation is that moving operations are common for Replicated and Plain MergeTree classes.
-    /// Task that schedules this operations is executed with its own timetable and triggered in a specific places in code.
-    /// And for ReplicatedMergeTree we don't have LogEntry type for this operation.
-    BackgroundJobsAssignee background_operations_assignee;
-    BackgroundJobsAssignee background_moves_assignee;
-
-    /// Strongly connected with two fields above.
-    /// Every task that is finished will ask to assign a new one into an executor.
-    /// These callbacks will be passed to the constructor of each task.
-    std::function<void(bool)> common_assignee_trigger;
-    std::function<void(bool)> moves_assignee_trigger;
 
     using DataPartIteratorByInfo = DataPartsIndexes::index<TagByInfo>::type::iterator;
     using DataPartIteratorByStateAndInfo = DataPartsIndexes::index<TagByStateAndInfo>::type::iterator;
@@ -1033,12 +990,11 @@ protected:
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
-    /// Calculates column and secondary indexes sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
-    void calculateColumnAndSecondaryIndexSizesImpl();
-
-    /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.
-    void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part);
-    void removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part);
+    /// Calculates column sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
+    void calculateColumnSizesImpl();
+    /// Adds or subtracts the contribution of the part to compressed column sizes.
+    void addPartContributionToColumnSizes(const DataPartPtr & part);
+    void removePartContributionToColumnSizes(const DataPartPtr & part);
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
     DataPartPtr getAnyPartInPartition(const String & partition_id, DataPartsLock & data_parts_lock) const;
@@ -1157,21 +1113,6 @@ private:
 
     /// Returns default settings for storage with possible changes from global config.
     virtual std::unique_ptr<MergeTreeSettings> getDefaultSettings() const = 0;
-
-    void loadDataPartsFromDisk(
-        DataPartsVector & broken_parts_to_detach,
-        DataPartsVector & duplicate_parts_to_remove,
-        ThreadPool & pool,
-        size_t num_parts,
-        std::queue<std::vector<std::pair<String, DiskPtr>>> & parts_queue,
-        bool skip_sanity_checks,
-        const MergeTreeSettingsPtr & settings);
-
-    void loadDataPartsFromWAL(
-        DataPartsVector & broken_parts_to_detach,
-        DataPartsVector & duplicate_parts_to_remove,
-        MutableDataPartsVector & parts_from_wal,
-        DataPartsLock & part_lock);
 };
 
 /// RAII struct to record big parts that are submerging or emerging.
@@ -1191,13 +1132,5 @@ struct CurrentlySubmergingEmergingTagger
 
     ~CurrentlySubmergingEmergingTagger();
 };
-
-
-/// TODO: move it somewhere
-[[ maybe_unused ]] static bool needSyncPart(size_t input_rows, size_t input_bytes, const MergeTreeSettings & settings)
-{
-    return ((settings.min_rows_to_fsync_after_merge && input_rows >= settings.min_rows_to_fsync_after_merge)
-        || (settings.min_compressed_bytes_to_fsync_after_merge && input_bytes >= settings.min_compressed_bytes_to_fsync_after_merge));
-}
 
 }

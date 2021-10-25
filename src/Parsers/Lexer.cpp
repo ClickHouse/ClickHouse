@@ -1,6 +1,6 @@
 #include <Parsers/Lexer.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 
 namespace DB
 {

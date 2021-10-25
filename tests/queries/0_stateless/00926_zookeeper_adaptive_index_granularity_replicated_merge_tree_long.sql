@@ -1,5 +1,3 @@
--- Tags: long, replica
-
 ----- Group of very similar simple tests ------
 select '----HORIZONTAL MERGE TESTS----';
 DROP TABLE IF EXISTS zero_rows_per_granule1;

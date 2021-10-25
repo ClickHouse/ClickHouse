@@ -41,7 +41,6 @@ public:
         RESET_SETTING,
         MODIFY_QUERY,
         REMOVE_TTL,
-        REMOVE_SAMPLE_BY,
 
         ADD_INDEX,
         DROP_INDEX,
@@ -71,10 +70,6 @@ public:
         NO_TYPE,
 
         LIVE_VIEW_REFRESH,
-
-        MODIFY_DATABASE_SETTING,
-
-        MODIFY_COMMENT,
     };
 
     Type type = NO_TYPE;
@@ -215,15 +210,7 @@ protected:
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    enum class AlterObjectType
-    {
-        TABLE,
-        DATABASE,
-        LIVE_VIEW,
-        UNKNOWN,
-    };
-
-    AlterObjectType alter_object = AlterObjectType::UNKNOWN;
+    bool is_live_view{false}; /// true for ALTER LIVE VIEW
 
     ASTExpressionList * command_list = nullptr;
 

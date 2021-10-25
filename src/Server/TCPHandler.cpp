@@ -1,12 +1,5 @@
-#include <algorithm>
 #include <iomanip>
-#include <iterator>
-#include <memory>
-#include <mutex>
-#include <vector>
-#include <string.h>
-#include <base/types.h>
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/CurrentThread.h>
@@ -23,14 +16,15 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
+#include <DataStreams/AsynchronousBlockInputStream.h>
+#include <DataStreams/NativeBlockInputStream.h>
+#include <DataStreams/NativeBlockOutputStream.h>
+#include <DataStreams/PushingToSinkBlockOutputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Session.h>
-#include <Interpreters/ProfileEventsExt.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Cluster.h>
@@ -38,17 +32,11 @@
 #include <Access/Credentials.h>
 #include <Storages/ColumnDefault.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <Compression/CompressionFactory.h>
-#include <base/logger_useful.h>
-#include <Common/CurrentMetrics.h>
+#include <common/logger_useful.h>
 #include <fmt/format.h>
 
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Executors/PushingAsyncPipelineExecutor.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Sinks/SinkToStorage.h>
 
 #include "Core/Protocol.h"
 #include "TCPHandler.h"
@@ -57,10 +45,6 @@
 #    include <Common/config_version.h>
 #endif
 
-namespace CurrentMetrics
-{
-    extern const Metric QueryThread;
-}
 
 namespace DB
 {
@@ -231,8 +215,6 @@ void TCPHandler::runImpl()
             /// NOTE: these settings are applied only for current connection (not for distributed tables' connections)
             state.timeout_setter = std::make_unique<TimeoutSetter>(socket(), receive_timeout, send_timeout);
 
-            std::mutex fatal_error_mutex;
-
             /// Should we send internal logs to client?
             const auto client_logs_level = query_context->getSettingsRef().send_logs_level;
             if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
@@ -241,16 +223,7 @@ void TCPHandler::runImpl()
                 state.logs_queue = std::make_shared<InternalTextLogsQueue>();
                 state.logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
                 CurrentThread::attachInternalTextLogsQueue(state.logs_queue, client_logs_level);
-                CurrentThread::setFatalErrorCallback([this, &fatal_error_mutex]
-                {
-                    std::lock_guard lock(fatal_error_mutex);
-                    sendLogs();
-                });
-            }
-            if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS)
-            {
-                state.profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
-                CurrentThread::attachInternalProfileEventsQueue(state.profile_queue);
+                CurrentThread::setFatalErrorCallback([this]{ sendLogs(); });
             }
 
             query_context->setExternalTablesInitializer([this] (ContextPtr context)
@@ -312,45 +285,28 @@ void TCPHandler::runImpl()
                 return receiveReadTaskResponseAssumeLocked();
             });
 
+            bool may_have_embedded_data = client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_CLIENT_SUPPORT_EMBEDDED_DATA;
             /// Processing Query
-            state.io = executeQuery(state.query, query_context, false, state.stage);
+            state.io = executeQuery(state.query, query_context, false, state.stage, may_have_embedded_data);
 
             after_check_cancelled.restart();
             after_send_progress.restart();
 
-            if (state.io.pipeline.pushing())
-            /// FIXME: check explicitly that insert query suggests to receive data via native protocol,
+            if (state.io.out)
             {
                 state.need_receive_data_for_insert = true;
                 processInsertQuery();
             }
-            else if (state.io.pipeline.pulling())
+            else if (state.need_receive_data_for_input) // It implies pipeline execution
             {
+                /// It is special case for input(), all works for reading data from client will be done in callbacks.
+                auto executor = state.io.pipeline.execute();
+                executor->execute(state.io.pipeline.getNumThreads());
+            }
+            else if (state.io.pipeline.initialized())
                 processOrdinaryQueryWithProcessors();
-            }
-            else if (state.io.pipeline.completed())
-            {
-                CompletedPipelineExecutor executor(state.io.pipeline);
-                /// Should not check for cancel in case of input.
-                if (!state.need_receive_data_for_input)
-                {
-                    auto callback = [this, &fatal_error_mutex]()
-                    {
-                        std::lock_guard lock(fatal_error_mutex);
-
-                        if (isQueryCancelled())
-                            return true;
-
-                        sendProgress();
-                        sendLogs();
-
-                        return false;
-                    };
-
-                    executor.setCancelCallback(callback, interactive_delay / 1000);
-                }
-                executor.execute();
-            }
+            else if (state.io.in)
+                processOrdinaryQuery();
 
             state.io.onFinish();
 
@@ -585,61 +541,110 @@ void TCPHandler::skipData()
 
 void TCPHandler::processInsertQuery()
 {
-    size_t num_threads = state.io.pipeline.getNumThreads();
+    /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
+      *  client receive exception before sending data.
+      */
+    state.io.out->writePrefix();
 
-    auto send_table_columns = [&]()
+    /// Send ColumnsDescription for insertion table
+    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
     {
-        /// Send ColumnsDescription for insertion table
-        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
+        const auto & table_id = query_context->getInsertionTable();
+        if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
         {
-            const auto & table_id = query_context->getInsertionTable();
-            if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
+            if (!table_id.empty())
             {
-                if (!table_id.empty())
-                {
-                    auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
-                    sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
-                }
+                auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, query_context);
+                sendTableColumns(storage_ptr->getInMemoryMetadataPtr()->getColumns());
             }
         }
-    };
-
-    if (num_threads > 1)
-    {
-        PushingAsyncPipelineExecutor executor(state.io.pipeline);
-        /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
-        *  client receive exception before sending data.
-        */
-        executor.start();
-
-        send_table_columns();
-
-        /// Send block to the client - table structure.
-        sendData(executor.getHeader());
-
-        sendLogs();
-
-        while (readDataNext())
-            executor.push(std::move(state.block_for_insert));
-
-        executor.finish();
     }
-    else
+
+    /// Send block to the client - table structure.
+    sendData(state.io.out->getHeader());
+
+    try
     {
-        PushingPipelineExecutor executor(state.io.pipeline);
-        executor.start();
-
-        send_table_columns();
-
-        sendData(executor.getHeader());
-
-        sendLogs();
-
-        while (readDataNext())
-            executor.push(std::move(state.block_for_insert));
-
-        executor.finish();
+        readData();
     }
+    catch (...)
+    {
+        /// To avoid flushing from the destructor, that may lead to uncaught exception.
+        state.io.out->writeSuffix();
+        throw;
+    }
+    state.io.out->writeSuffix();
+}
+
+
+void TCPHandler::processOrdinaryQuery()
+{
+    OpenTelemetrySpanHolder span(__PRETTY_FUNCTION__);
+
+    /// Pull query execution result, if exists, and send it to network.
+    if (state.io.in)
+    {
+
+        if (query_context->getSettingsRef().allow_experimental_query_deduplication)
+            sendPartUUIDs();
+
+        /// This allows the client to prepare output format
+        if (Block header = state.io.in->getHeader())
+            sendData(header);
+
+        /// Use of async mode here enables reporting progress and monitoring client cancelling the query
+        AsynchronousBlockInputStream async_in(state.io.in);
+
+        async_in.readPrefix();
+        while (true)
+        {
+            if (isQueryCancelled())
+            {
+                async_in.cancel(false);
+                break;
+            }
+
+            if (after_send_progress.elapsed() / 1000 >= interactive_delay)
+            {
+                /// Some time passed.
+                after_send_progress.restart();
+                sendProgress();
+            }
+
+            sendLogs();
+
+            if (async_in.poll(interactive_delay / 1000))
+            {
+                const auto block = async_in.read();
+                if (!block)
+                    break;
+
+                if (!state.io.null_format)
+                    sendData(block);
+            }
+        }
+        async_in.readSuffix();
+
+        /** When the data has run out, we send the profiling data and totals up to the terminating empty block,
+          * so that this information can be used in the suffix output of stream.
+          * If the request has been interrupted, then sendTotals and other methods should not be called,
+          * because we have not read all the data.
+          */
+        if (!isQueryCancelled())
+        {
+            sendTotals(state.io.in->getTotals());
+            sendExtremes(state.io.in->getExtremes());
+            sendProfileInfo(state.io.in->getProfileInfo());
+            sendProgress();
+        }
+
+        if (state.is_connection_closed)
+            return;
+
+        sendData({});
+    }
+
+    sendProgress();
 }
 
 
@@ -679,7 +684,6 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
                 /// Some time passed and there is a progress.
                 after_send_progress.restart();
                 sendProgress();
-                sendProfileEvents();
             }
 
             sendLogs();
@@ -705,7 +709,6 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
             sendProfileInfo(executor.getProfileInfo());
             sendProgress();
             sendLogs();
-            sendProfileEvents();
         }
 
         if (state.is_connection_closed)
@@ -788,7 +791,7 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
     out->next();
 }
 
-void TCPHandler::sendProfileInfo(const ProfileInfo & info)
+void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
 {
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
     info.write(*out);
@@ -823,160 +826,6 @@ void TCPHandler::sendExtremes(const Block & extremes)
 
         state.block_out->write(extremes);
         state.maybe_compressed_out->next();
-        out->next();
-    }
-}
-
-
-namespace
-{
-    using namespace ProfileEvents;
-
-    constexpr size_t NAME_COLUMN_INDEX  = 4;
-    constexpr size_t VALUE_COLUMN_INDEX = 5;
-
-    struct ProfileEventsSnapshot
-    {
-        UInt64 thread_id;
-        ProfileEvents::Counters::Snapshot counters;
-        Int64 memory_usage;
-        time_t current_time;
-    };
-
-    /*
-     * Add records about provided non-zero ProfileEvents::Counters.
-     */
-    void dumpProfileEvents(
-        ProfileEventsSnapshot const & snapshot,
-        MutableColumns & columns,
-        String const & host_name)
-    {
-        size_t rows = 0;
-        auto & name_column = columns[NAME_COLUMN_INDEX];
-        auto & value_column = columns[VALUE_COLUMN_INDEX];
-        for (ProfileEvents::Event event = 0; event < ProfileEvents::Counters::num_counters; ++event)
-        {
-            UInt64 value = snapshot.counters[event];
-
-            if (value == 0)
-                continue;
-
-            const char * desc = ProfileEvents::getName(event);
-            name_column->insertData(desc, strlen(desc));
-            value_column->insert(value);
-            rows++;
-        }
-
-        // Fill the rest of the columns with data
-        for (size_t row = 0; row < rows; ++row)
-        {
-            size_t i = 0;
-            columns[i++]->insertData(host_name.data(), host_name.size());
-            columns[i++]->insert(UInt64(snapshot.current_time));
-            columns[i++]->insert(UInt64{snapshot.thread_id});
-            columns[i++]->insert(ProfileEvents::Type::INCREMENT);
-        }
-    }
-
-    void dumpMemoryTracker(
-        ProfileEventsSnapshot const & snapshot,
-        MutableColumns & columns,
-        String const & host_name)
-    {
-        {
-            size_t i = 0;
-            columns[i++]->insertData(host_name.data(), host_name.size());
-            columns[i++]->insert(UInt64(snapshot.current_time));
-            columns[i++]->insert(UInt64{snapshot.thread_id});
-            columns[i++]->insert(ProfileEvents::Type::GAUGE);
-
-            columns[i++]->insertData(MemoryTracker::USAGE_EVENT_NAME, strlen(MemoryTracker::USAGE_EVENT_NAME));
-            columns[i++]->insert(snapshot.memory_usage);
-        }
-    }
-}
-
-
-void TCPHandler::sendProfileEvents()
-{
-    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS)
-        return;
-
-    NamesAndTypesList column_names_and_types = {
-        { "host_name",    std::make_shared<DataTypeString>()   },
-        { "current_time", std::make_shared<DataTypeDateTime>() },
-        { "thread_id",    std::make_shared<DataTypeUInt64>()   },
-        { "type",         ProfileEvents::TypeEnum              },
-        { "name",         std::make_shared<DataTypeString>()   },
-        { "value",        std::make_shared<DataTypeUInt64>()   },
-    };
-
-    ColumnsWithTypeAndName temp_columns;
-    for (auto const & name_and_type : column_names_and_types)
-        temp_columns.emplace_back(name_and_type.type, name_and_type.name);
-
-    Block block(std::move(temp_columns));
-
-    MutableColumns columns = block.mutateColumns();
-    auto thread_group = CurrentThread::getGroup();
-    auto const current_thread_id = CurrentThread::get().thread_id;
-    std::vector<ProfileEventsSnapshot> snapshots;
-    ProfileEventsSnapshot group_snapshot;
-    {
-        std::lock_guard guard(thread_group->mutex);
-        snapshots.reserve(thread_group->threads.size());
-        for (auto * thread : thread_group->threads)
-        {
-            auto const thread_id = thread->thread_id;
-            if (thread_id == current_thread_id)
-                continue;
-            auto current_time = time(nullptr);
-            auto counters = thread->performance_counters.getPartiallyAtomicSnapshot();
-            auto memory_usage = thread->memory_tracker.get();
-            snapshots.push_back(ProfileEventsSnapshot{
-                thread_id,
-                std::move(counters),
-                memory_usage,
-                current_time
-            });
-        }
-
-        group_snapshot.thread_id    = 0;
-        group_snapshot.current_time = time(nullptr);
-        group_snapshot.memory_usage = thread_group->memory_tracker.get();
-        group_snapshot.counters     = thread_group->performance_counters.getPartiallyAtomicSnapshot();
-    }
-
-    for (auto & snapshot : snapshots)
-    {
-        dumpProfileEvents(snapshot, columns, server_display_name);
-        dumpMemoryTracker(snapshot, columns, server_display_name);
-    }
-    dumpProfileEvents(group_snapshot, columns, server_display_name);
-    dumpMemoryTracker(group_snapshot, columns, server_display_name);
-
-    MutableColumns logs_columns;
-    Block curr_block;
-    size_t rows = 0;
-
-    for (; state.profile_queue->tryPop(curr_block); ++rows)
-    {
-        auto curr_columns = curr_block.getColumns();
-        for (size_t j = 0; j < curr_columns.size(); ++j)
-            columns[j]->insertRangeFrom(*curr_columns[j], 0, curr_columns[j]->size());
-    }
-
-    bool empty = columns[0]->empty();
-    if (!empty)
-    {
-        block.setColumns(std::move(columns));
-
-        initProfileEventsBlockOutput(block);
-
-        writeVarUInt(Protocol::Server::ProfileEvents, *out);
-        writeStringBinary("", *out);
-
-        state.profile_events_block_out->write(block);
         out->next();
     }
 }
@@ -1508,11 +1357,10 @@ bool TCPHandler::receiveData(bool scalar)
         }
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         /// The data will be written directly to the table.
-        QueryPipeline temporary_table_out(storage->write(ASTPtr(), metadata_snapshot, query_context));
-        PushingPipelineExecutor executor(temporary_table_out);
-        executor.start();
-        executor.push(block);
-        executor.finish();
+        auto temporary_table_out = std::make_shared<PushingToSinkBlockOutputStream>(storage->write(ASTPtr(), metadata_snapshot, query_context));
+        temporary_table_out->write(block);
+        temporary_table_out->writeSuffix();
+
     }
     else if (state.need_receive_data_for_input)
     {
@@ -1522,7 +1370,7 @@ bool TCPHandler::receiveData(bool scalar)
     else
     {
         /// INSERT query.
-        state.block_for_insert = block;
+        state.io.out->write(block);
     }
     return true;
 }
@@ -1539,7 +1387,7 @@ bool TCPHandler::receiveUnexpectedData(bool throw_exception)
     else
         maybe_compressed_in = in;
 
-    auto skip_block_in = std::make_shared<NativeReader>(*maybe_compressed_in, client_tcp_protocol_version);
+    auto skip_block_in = std::make_shared<NativeBlockInputStream>(*maybe_compressed_in, client_tcp_protocol_version);
     bool read_ok = skip_block_in->read();
 
     if (!read_ok)
@@ -1564,12 +1412,12 @@ void TCPHandler::initBlockInput()
             state.maybe_compressed_in = in;
 
         Block header;
-        if (state.io.pipeline.pushing())
-            header = state.io.pipeline.getHeader();
+        if (state.io.out)
+            header = state.io.out->getHeader();
         else if (state.need_receive_data_for_input)
             header = state.input_header;
 
-        state.block_in = std::make_unique<NativeReader>(
+        state.block_in = std::make_shared<NativeBlockInputStream>(
             *state.maybe_compressed_in,
             header,
             client_tcp_protocol_version);
@@ -1600,7 +1448,7 @@ void TCPHandler::initBlockOutput(const Block & block)
                 state.maybe_compressed_out = out;
         }
 
-        state.block_out = std::make_unique<NativeWriter>(
+        state.block_out = std::make_shared<NativeBlockOutputStream>(
             *state.maybe_compressed_out,
             client_tcp_protocol_version,
             block.cloneEmpty(),
@@ -1614,21 +1462,7 @@ void TCPHandler::initLogsBlockOutput(const Block & block)
     {
         /// Use uncompressed stream since log blocks usually contain only one row
         const Settings & query_settings = query_context->getSettingsRef();
-        state.logs_block_out = std::make_unique<NativeWriter>(
-            *out,
-            client_tcp_protocol_version,
-            block.cloneEmpty(),
-            !query_settings.low_cardinality_allow_in_native_format);
-    }
-}
-
-
-void TCPHandler::initProfileEventsBlockOutput(const Block & block)
-{
-    if (!state.profile_events_block_out)
-    {
-        const Settings & query_settings = query_context->getSettingsRef();
-        state.profile_events_block_out = std::make_unique<NativeWriter>(
+        state.logs_block_out = std::make_shared<NativeBlockOutputStream>(
             *out,
             client_tcp_protocol_version,
             block.cloneEmpty(),

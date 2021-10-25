@@ -1,5 +1,3 @@
--- Tags: long, replica
-
 -- Testing basic functionality with compact parts
 set replication_alter_partitions_sync = 2;
 drop table if exists mt_compact;

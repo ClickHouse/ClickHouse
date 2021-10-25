@@ -1,4 +1,5 @@
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <DataStreams/materializeBlock.h>
 
 namespace DB
 {

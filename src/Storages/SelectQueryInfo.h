@@ -133,7 +133,6 @@ struct SelectQueryInfo
 {
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query
-    ASTPtr original_query; /// Unmodified query for projection analysis
 
     /// Cluster for the query.
     ClusterPtr cluster;

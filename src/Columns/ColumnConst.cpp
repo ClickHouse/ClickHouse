@@ -6,7 +6,7 @@
 #include <Common/WeakHash.h>
 #include <Common/HashTable/Hash.h>
 
-#include <base/defines.h>
+#include <common/defines.h>
 
 #if defined(MEMORY_SANITIZER)
     #include <sanitizer/msan_interface.h>
@@ -93,7 +93,15 @@ ColumnPtr ColumnConst::replicate(const Offsets & offsets) const
 
 ColumnPtr ColumnConst::permute(const Permutation & perm, size_t limit) const
 {
-    limit = getLimitForPermutation(size(), perm.size(), limit);
+    if (limit == 0)
+        limit = s;
+    else
+        limit = std::min(s, limit);
+
+    if (perm.size() < limit)
+        throw Exception("Size of permutation (" + toString(perm.size()) + ") is less than required (" + toString(limit) + ")",
+            ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+
     return ColumnConst::create(data, limit);
 }
 

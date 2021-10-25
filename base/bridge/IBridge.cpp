@@ -4,12 +4,12 @@
 #include <Poco/Net/NetException.h>
 #include <Poco/Util/HelpFormatter.h>
 
-#include <base/logger_useful.h>
-#include <base/range.h>
+#include <common/logger_useful.h>
+#include <common/range.h>
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SensitiveDataMasker.h>
-#include <base/errnoToString.h>
+#include <common/errnoToString.h>
 #include <IO/ReadHelpers.h>
 #include <Formats/registerFormats.h>
 #include <Server/HTTP/HTTPServer.h>

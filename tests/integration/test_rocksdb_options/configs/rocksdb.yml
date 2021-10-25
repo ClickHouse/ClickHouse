@@ -1,0 +1,13 @@
+---
+rocksdb:
+    options:
+        max_background_jobs: 8
+    column_family_options:
+        num_levels: 2
+    tables:
+        - table:
+              name: test
+              options:
+                  max_open_files: 10000
+              column_family_options:
+                  max_bytes_for_level_base: 14

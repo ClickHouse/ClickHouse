@@ -43,7 +43,7 @@ struct StorageInMemoryMetadata
     TTLColumnsDescription column_ttls_by_name;
     /// TTL expressions for table (Move and Rows)
     TTLTableDescription table_ttl;
-    /// SETTINGS expression. Supported for MergeTree, Buffer, Kafka, RabbitMQ.
+    /// SETTINGS expression. Supported for MergeTree, Buffer and Kafka.
     ASTPtr settings_changes;
     /// SELECT QUERY. Supported for MaterializedView and View (have to support LiveView).
     SelectQueryDescription select;

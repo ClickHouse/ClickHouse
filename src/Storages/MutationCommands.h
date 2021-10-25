@@ -1,15 +1,13 @@
 #pragma once
 
-#include <optional>
-#include <vector>
-#include <memory>
-#include <unordered_map>
-
-#include <base/shared_ptr_helper.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Storages/IStorage_fwd.h>
 #include <DataTypes/IDataType.h>
 #include <Core/Names.h>
+
+#include <optional>
+#include <unordered_map>
+
 
 namespace DB
 {
@@ -70,7 +68,7 @@ struct MutationCommand
 };
 
 /// Multiple mutation commands, possible from different ALTER queries
-class MutationCommands : public shared_ptr_helper<MutationCommands>, public std::vector<MutationCommand>
+class MutationCommands : public std::vector<MutationCommand>
 {
 public:
     std::shared_ptr<ASTExpressionList> ast() const;
@@ -78,7 +76,5 @@ public:
     void writeText(WriteBuffer & out) const;
     void readText(ReadBuffer & in);
 };
-
-using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;
 
 }

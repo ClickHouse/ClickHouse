@@ -9,8 +9,7 @@
 
 #include <boost/algorithm/string.hpp>
 
-#include <base/unit.h>
-#include <base/FnTraits.h>
+#include <common/unit.h>
 
 #include <Common/checkStackSize.h>
 #include <Common/createHardLink.h>
@@ -75,7 +74,7 @@ public:
         chunks.back().push_back(obj);
     }
 
-    void removePaths(Fn<void(Chunk &&)> auto && remove_chunk_func)
+    void removePaths(const std::function<void(Chunk &&)> & remove_chunk_func)
     {
         for (auto & chunk : chunks)
             remove_chunk_func(std::move(chunk));

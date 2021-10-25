@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 #include <Interpreters/ActionsDAG.h>
@@ -134,7 +134,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
                     " input expected", ErrorCodes::LOGICAL_ERROR);
 }
 
-QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
+QueryPipelinePtr QueryPlan::buildQueryPipeline(
     const QueryPlanOptimizationSettings & optimization_settings,
     const BuildQueryPipelineSettings & build_pipeline_settings)
 {
@@ -144,10 +144,10 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     struct Frame
     {
         Node * node = {};
-        QueryPipelineBuilders pipelines = {};
+        QueryPipelines pipelines = {};
     };
 
-    QueryPipelineBuilderPtr last_pipeline;
+    QueryPipelinePtr last_pipeline;
 
     std::stack<Frame> stack;
     stack.push(Frame{.node = root});
@@ -193,10 +193,10 @@ Pipe QueryPlan::convertToPipe(
     if (isCompleted())
         throw Exception("Cannot convert completed QueryPlan to Pipe", ErrorCodes::LOGICAL_ERROR);
 
-    return QueryPipelineBuilder::getPipe(std::move(*buildQueryPipeline(optimization_settings, build_pipeline_settings)));
+    return QueryPipeline::getPipe(std::move(*buildQueryPipeline(optimization_settings, build_pipeline_settings)));
 }
 
-void QueryPlan::addInterpreterContext(ContextPtr context)
+void QueryPlan::addInterpreterContext(std::shared_ptr<Context> context)
 {
     interpreter_context.emplace_back(std::move(context));
 }

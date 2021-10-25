@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <!-- Config for test server -->
-<clickhouse>
+<yandex>
     <query_masking_rules>
         <rule>
             <regexp>TOPSECRET.TOPSECRET</regexp>
             <replace>[hidden]</replace>
         </rule>
     </query_masking_rules>
-</clickhouse>
+</yandex>

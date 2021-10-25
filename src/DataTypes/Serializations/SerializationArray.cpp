@@ -1,8 +1,5 @@
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
-#include <DataTypes/Serializations/SerializationNamed.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -180,53 +177,16 @@ ColumnPtr arrayOffsetsToSizes(const IColumn & column)
     return column_sizes;
 }
 
-DataTypePtr SerializationArray::SubcolumnCreator::create(const DataTypePtr & prev) const
-{
-    return std::make_shared<DataTypeArray>(prev);
-}
 
-SerializationPtr SerializationArray::SubcolumnCreator::create(const SerializationPtr & prev) const
+void SerializationArray::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
-    return std::make_shared<SerializationArray>(prev);
-}
-
-ColumnPtr SerializationArray::SubcolumnCreator::create(const ColumnPtr & prev) const
-{
-    return ColumnArray::create(prev, offsets);
-}
-
-void SerializationArray::enumerateStreams(
-    SubstreamPath & path,
-    const StreamCallback & callback,
-    DataTypePtr type,
-    ColumnPtr column) const
-{
-    const auto * type_array = type ? &assert_cast<const DataTypeArray &>(*type) : nullptr;
-    const auto * column_array = column ? &assert_cast<const ColumnArray &>(*column) : nullptr;
-    auto offsets_column = column_array ? column_array->getOffsetsPtr() : nullptr;
-
     path.push_back(Substream::ArraySizes);
-    path.back().data =
-    {
-        type ? std::make_shared<DataTypeUInt64>() : nullptr,
-        offsets_column ? arrayOffsetsToSizes(*offsets_column) : nullptr,
-        std::make_shared<SerializationNamed>(
-            std::make_shared<SerializationNumber<UInt64>>(),
-                "size" + std::to_string(getArrayLevel(path)), false),
-        nullptr,
-    };
-
     callback(path);
-
     path.back() = Substream::ArrayElements;
-    path.back().data = {type, column, getPtr(), std::make_shared<SubcolumnCreator>(offsets_column)};
-
-    auto next_type = type_array ? type_array->getNestedType() : nullptr;
-    auto next_column = column_array ? column_array->getDataPtr() : nullptr;
-
-    nested->enumerateStreams(path, callback, next_type, next_column);
+    nested->enumerateStreams(callback, path);
     path.pop_back();
 }
+
 
 void SerializationArray::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,

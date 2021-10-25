@@ -82,7 +82,6 @@ public:
     MutableColumns cloneEmptyColumns() const;
 
     const ChunkInfoPtr & getChunkInfo() const { return chunk_info; }
-    bool hasChunkInfo() const { return chunk_info != nullptr; }
     void setChunkInfo(ChunkInfoPtr chunk_info_) { chunk_info = std::move(chunk_info_); }
 
     UInt64 getNumRows() const { return num_rows; }

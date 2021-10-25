@@ -16,6 +16,7 @@
 
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 
@@ -34,10 +35,9 @@
 #include <filesystem>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Sources/NullSource.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
@@ -340,7 +340,8 @@ public:
                     /// Special case for distributed format. Defaults are not needed here.
                     if (storage->format_name == "Distributed")
                     {
-                        pipeline = std::make_unique<QueryPipeline>(StorageDistributedDirectoryMonitor::createSourceFromFile(current_path));
+                        pipeline = std::make_unique<QueryPipeline>();
+                        pipeline->init(Pipe(StorageDistributedDirectoryMonitor::createSourceFromFile(current_path)));
                         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                         continue;
                     }
@@ -394,21 +395,19 @@ public:
                     return metadata_snapshot->getSampleBlock();
                 };
 
-                auto format = context->getInputFormat(
-                    storage->format_name, *read_buf, get_block_for_format(), max_block_size, storage->format_settings);
+                auto format = FormatFactory::instance().getInput(
+                    storage->format_name, *read_buf, get_block_for_format(), context, max_block_size, storage->format_settings);
 
-                QueryPipelineBuilder builder;
-                builder.init(Pipe(format));
+                pipeline = std::make_unique<QueryPipeline>();
+                pipeline->init(Pipe(format));
 
                 if (columns_description.hasDefaults())
                 {
-                    builder.addSimpleTransform([&](const Block & header)
+                    pipeline->addSimpleTransform([&](const Block & header)
                     {
                         return std::make_shared<AddingDefaultsTransform>(header, columns_description, *format, context);
                     });
                 }
-
-                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
 
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
@@ -482,6 +481,8 @@ Pipe StorageFile::read(
     size_t max_block_size,
     unsigned num_streams)
 {
+    BlockInputStreams blocks_input;
+
     if (use_table_fd)   /// need to call ctr BlockInputStream
         paths = {""};   /// when use fd, paths are empty
     else
@@ -576,7 +577,7 @@ public:
 
         write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
-        writer = FormatFactory::instance().getOutputFormatParallelIfPossible(storage.format_name,
+        writer = FormatFactory::instance().getOutputStreamParallelIfPossible(storage.format_name,
             *write_buf, metadata_snapshot->getSampleBlock(), context,
             {}, format_settings);
     }
@@ -586,18 +587,18 @@ public:
     void onStart() override
     {
         if (!prefix_written)
-            writer->doWritePrefix();
+            writer->writePrefix();
         prefix_written = true;
     }
 
     void consume(Chunk chunk) override
     {
-        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+        writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onFinish() override
     {
-        writer->doWriteSuffix();
+        writer->writeSuffix();
     }
 
     // void flush() override
@@ -610,7 +611,7 @@ private:
     StorageMetadataPtr metadata_snapshot;
     std::unique_lock<std::shared_timed_mutex> lock;
     std::unique_ptr<WriteBuffer> write_buf;
-    OutputFormatPtr writer;
+    BlockOutputStreamPtr writer;
     bool prefix_written{false};
 };
 

@@ -39,14 +39,16 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         const String & metadata_path_,
         const ASTStorage * database_engine_define_,
         const String & dbname_,
-        const StoragePostgreSQLConfiguration & configuration_,
+        const String & postgres_dbname_,
+        const String & postgres_schema_,
         postgres::PoolWithFailoverPtr pool_,
         bool cache_tables_)
     : IDatabase(dbname_)
     , WithContext(context_->getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
-    , configuration(configuration_)
+    , postgres_dbname(postgres_dbname_)
+    , postgres_schema(postgres_schema_)
     , pool(std::move(pool_))
     , cache_tables(cache_tables_)
 {
@@ -57,18 +59,17 @@ DatabasePostgreSQL::DatabasePostgreSQL(
 
 String DatabasePostgreSQL::getTableNameForLogs(const String & table_name) const
 {
-    if (configuration.schema.empty())
-        return fmt::format("{}.{}", configuration.database, table_name);
-    return fmt::format("{}.{}.{}", configuration.database, configuration.schema, table_name);
+    if (postgres_schema.empty())
+        return fmt::format("{}.{}", postgres_dbname, table_name);
+    return fmt::format("{}.{}.{}", postgres_dbname, postgres_schema, table_name);
 }
 
 
-String DatabasePostgreSQL::formatTableName(const String & table_name, bool quoted) const
+String DatabasePostgreSQL::formatTableName(const String & table_name) const
 {
-    if (configuration.schema.empty())
-        return quoted ? doubleQuoteString(table_name) : table_name;
-    return quoted ? fmt::format("{}.{}", doubleQuoteString(configuration.schema), doubleQuoteString(table_name))
-                  : fmt::format("{}.{}", configuration.schema, table_name);
+    if (postgres_schema.empty())
+        return doubleQuoteString(table_name);
+    return fmt::format("{}.{}", doubleQuoteString(postgres_schema), doubleQuoteString(table_name));
 }
 
 
@@ -77,7 +78,7 @@ bool DatabasePostgreSQL::empty() const
     std::lock_guard<std::mutex> lock(mutex);
 
     auto connection_holder = pool->get();
-    auto tables_list = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+    auto tables_list = fetchPostgreSQLTablesList(connection_holder->get(), postgres_schema);
 
     for (const auto & table_name : tables_list)
         if (!detached_or_dropped.count(table_name))
@@ -90,23 +91,14 @@ bool DatabasePostgreSQL::empty() const
 DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */) const
 {
     std::lock_guard<std::mutex> lock(mutex);
+
     Tables tables;
+    auto connection_holder = pool->get();
+    auto table_names = fetchPostgreSQLTablesList(connection_holder->get(), postgres_schema);
 
-    /// Do not allow to throw here, because this might be, for example, a query to system.tables.
-    /// It must not fail on case of some postgres error.
-    try
-    {
-        auto connection_holder = pool->get();
-        auto table_names = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
-
-        for (const auto & table_name : table_names)
-            if (!detached_or_dropped.count(table_name))
-                tables[table_name] = fetchTable(table_name, local_context, true);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    for (const auto & table_name : table_names)
+        if (!detached_or_dropped.count(table_name))
+            tables[table_name] = fetchTable(table_name, local_context, true);
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 }
@@ -133,7 +125,7 @@ bool DatabasePostgreSQL::checkPostgresTable(const String & table_name) const
                     "WHERE schemaname != 'pg_catalog' AND {} "
                     "AND tablename = '{}'",
                     formatTableName(table_name),
-                    (configuration.schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(configuration.schema)),
+                    (postgres_schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(postgres_schema)),
                     formatTableName(table_name)));
     }
     catch (pqxx::undefined_table const &)
@@ -180,14 +172,14 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr,
             return StoragePtr{};
 
         auto connection_holder = pool->get();
-        auto columns = fetchPostgreSQLTableStructure(connection_holder->get(), table_name, configuration.schema).columns;
+        auto columns = fetchPostgreSQLTableStructure(connection_holder->get(), formatTableName(table_name)).columns;
 
         if (!columns)
             return StoragePtr{};
 
         auto storage = StoragePostgreSQL::create(
                 StorageID(database_name, table_name), pool, table_name,
-                ColumnsDescription{*columns}, ConstraintsDescription{}, String{}, configuration.schema, configuration.on_conflict);
+                ColumnsDescription{*columns}, ConstraintsDescription{}, String{}, postgres_schema);
 
         if (cache_tables)
             cached_tables[table_name] = storage;
@@ -314,7 +306,7 @@ void DatabasePostgreSQL::removeOutdatedTables()
 {
     std::lock_guard<std::mutex> lock{mutex};
     auto connection_holder = pool->get();
-    auto actual_tables = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+    auto actual_tables = fetchPostgreSQLTablesList(connection_holder->get(), postgres_schema);
 
     if (cache_tables)
     {
@@ -357,10 +349,6 @@ ASTPtr DatabasePostgreSQL::getCreateDatabaseQuery() const
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->database = getDatabaseName();
     create_query->set(create_query->storage, database_engine_define);
-
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
-
     return create_query;
 }
 
