@@ -18,7 +18,9 @@
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ThreadStatus.h>
+#include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
+#include <Common/randomSeed.h>
 #include <loggers/Loggers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -35,7 +37,6 @@
 #include <Formats/registerFormats.h>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
-#include <Common/randomSeed.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -283,6 +284,11 @@ void LocalServer::tryInitPath()
     global_context->setFlagsPath(path + "flags");
 
     global_context->setUserFilesPath(""); // user's files are everywhere
+
+    /// top_level_domains_lists
+    const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/");
+    if (!top_level_domains_path.empty())
+        TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
 }
 
 
@@ -671,6 +677,7 @@ void LocalServer::addOptions(OptionsDescription & options_description)
 
         ("no-system-tables", "do not attach system tables (better startup time)")
         ("path", po::value<std::string>(), "Storage path")
+        ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
         ;
 }
 
