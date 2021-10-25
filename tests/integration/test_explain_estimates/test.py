@@ -14,11 +14,12 @@ def start_cluster():
     finally:
         cluster.shutdown()
 
-
 def test_explain_estimates(start_cluster):
-    node1.query("CREATE TABLE test (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16, write_final_mark = 0")
+    node1.query("CREATE TABLE test (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16")
     node1.query("INSERT INTO test SELECT number FROM numbers(128)")
     node1.query("OPTIMIZE TABLE test")
-    system_parts_result = node1.query("SELECT any(database), any(table), count() as parts, sum(rows) as rows, sum(marks) as marks FROM system.parts WHERE database = 'default' AND table = 'test' and active = 1 GROUP BY (database, table)")
+    # sum(marks) - 1 because EXPLAIN ESIMATES does not include final mark.
+    system_parts_result = node1.query("SELECT any(database), any(table), count() as parts, sum(rows) as rows, sum(marks)-1 as marks FROM system.parts WHERE database = 'default' AND table = 'test' and active = 1 GROUP BY (database, table)")
     explain_estimates_result = node1.query("EXPLAIN ESTIMATE SELECT * FROM test")
     assert(system_parts_result == explain_estimates_result)
+
