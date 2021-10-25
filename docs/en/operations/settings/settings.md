@@ -3834,7 +3834,7 @@ Default value: `0`.
 
 ## async_insert_threads {#async-insert-threads}
 
-The maximum number of threads for backgroung data parsing and insertion.
+The maximum number of threads for background data parsing and insertion.
 
 Possible values:
 
@@ -3858,6 +3858,8 @@ Default value: `1`.
 
 The timeout in seconds for waiting for processing of asynchronous insertion.
 
+Possible values:
+
 -   Positive integer.
 -   0 — Disabled.
 
@@ -3878,6 +3880,8 @@ Default value: `1000000`.
 
 The maximum timeout in milliseconds since the first `INSERT` query before inserting collected data.
 
+Possible values:
+
 -   Positive integer.
 -   0 — Timeout disabled.
 
@@ -3886,6 +3890,8 @@ Default value: `200`.
 ## async_insert_stale_timeout {#async-insert-stale-timeout}
 
 The maximum timeout in milliseconds since the last `INSERT` query before dumping collected data. If enabled, the settings prolongs the [async_insert_busy_timeout](#async-insert-busy-timeout) with every `INSERT` query as long as [async_insert_max_data_size](#async-insert-max-data-size) is not exceeded.
+
+Possible values:
 
 -   Positive integer.
 -   0 — Timeout disabled.
