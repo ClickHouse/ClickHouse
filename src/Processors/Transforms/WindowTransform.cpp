@@ -36,30 +36,6 @@ public:
     // Must insert the result for current_row.
     virtual void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) = 0;
-
-    /// Get `sizeof` of structure with data.
-    virtual size_t sizeOfData() const
-    {
-        return 0;
-    }
-
-    /// How the data structure should be aligned.
-    virtual size_t alignOfData() const
-    {
-        return 1;
-    }
-
-    /** Create empty data for aggregation with `placement new` at the specified location.
-      * You will have to destroy them using the `destroy` method.
-      */
-    virtual void create(AggregateDataPtr __restrict /*place*/) const
-    {
-    }
-
-    /// Delete data for aggregation.
-    virtual void destroy(AggregateDataPtr __restrict /*place*/) const noexcept
-    {
-    }
 };
 
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
@@ -256,7 +232,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
 
         if (workspace.window_function_impl)
         {
-            auto window_function_impl = workspace.window_function_impl;
+            auto * window_function_impl = dynamic_cast<IAggregateFunction *>(workspace.window_function_impl);
             workspace.aggregate_function_state.reset(
                 window_function_impl->sizeOfData(),
                 window_function_impl->alignOfData());
@@ -343,7 +319,7 @@ WindowTransform::~WindowTransform()
     {
         if (ws.window_function_impl)
         {
-            ws.window_function_impl->destroy(
+            dynamic_cast<IAggregateFunction *>(ws.window_function_impl)->destroy(
                 ws.aggregate_function_state.data());
         }
         else
@@ -1495,7 +1471,7 @@ struct WindowFunction
     }
 
     String getName() const override { return name; }
-    void create(AggregateDataPtr __restrict) const override { fail(); }
+    void create(AggregateDataPtr __restrict) const override {}
     void destroy(AggregateDataPtr __restrict) const noexcept override {}
     bool hasTrivialDestructor() const override { return true; }
     size_t sizeOfData() const override { return 0; }
