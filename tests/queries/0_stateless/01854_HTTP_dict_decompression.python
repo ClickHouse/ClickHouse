@@ -13,11 +13,18 @@ import urllib.request
 import subprocess
 import lzma
 
-def get_local_port(host):
-    family = socket.AF_INET
+
+def is_ipv6(host):
     try:
         socket.inet_aton(host)
+        return False
     except:
+        return True
+
+def get_local_port(host):
+    if is_ipv6(host):
+        family = socket.AF_INET
+    else:
         family = socket.AF_INET6
 
     with socket.socket(family) as fd:
@@ -104,8 +111,14 @@ class HttpProcessor(SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         return
 
+class HTTPServerV6(HTTPServer):
+    address_family = socket.AF_INET6
+
 def start_server(requests_amount):
-    httpd = HTTPServer(HTTP_SERVER_ADDRESS, HttpProcessor)
+    if is_ipv6(HTTP_SERVER_HOST):
+        httpd = HTTPServerV6(HTTP_SERVER_ADDRESS, HttpProcessor)
+    else:
+        httpd = HTTPServer(HTTP_SERVER_ADDRESS, HttpProcessor)
 
     def real_func():
         for i in range(requests_amount):
