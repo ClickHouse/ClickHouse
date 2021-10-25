@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # All replicas are localhost, disable `prefer_localhost_replica` option to test network interface
 # Currently this feature could not work with hedged requests
 # Enabling `enable_sample_offset_parallel_processing` feature could lead to intersecting marks, so some of them would be thrown away and it will lead to incorrect result of SELECT query
-SETTINGS="--max_parallel_replicas=3 --prefer_localhost_replica=false --use_hedged_requests=false --async_socket_for_remote=false --enable_sample_offset_parallel_processing=false --optimize_read_in_order=false"
+SETTINGS="--max_parallel_replicas=3 --prefer_localhost_replica=false --use_hedged_requests=false --async_socket_for_remote=false --enable_sample_offset_parallel_processing=false --parallel_reading_from_replicas=false"
 
 # Prepare tables
 
@@ -24,19 +24,19 @@ $CLICKHOUSE_CLIENT $SETTINGS -nm -q '''
 
 FAILED=()
 
-PreviouslyFailed=(
-    "00011_sorting.sql"
-    # "00013_sorting_of_nested.sql"
-    # "00014_filtering_arrays.sql"
-    # "00031_array_enumerate_uniq.sql"
-    # "00061_storage_buffer.sql"
-    # "00068_subquery_in_prewhere.sql"
-    # "00075_left_array_join.sql"
-    # "00079_array_join_not_used_joined_column.sql"
-)
+# PreviouslyFailed=(
+#     # "00011_sorting.sql"
+#     # "00013_sorting_of_nested.sql"
+#     "00014_filtering_arrays.sql"
+#     # "00031_array_enumerate_uniq.sql"
+#     # "00061_storage_buffer.sql"
+#     # "00068_subquery_in_prewhere.sql"
+#     # "00075_left_array_join.sql"
+#     # "00079_array_join_not_used_joined_column.sql"
+# )
 
-for TESTNAME in "${PreviouslyFailed[@]}"
-# for TESTNAME in *.sql
+# for TESTNAME in "${PreviouslyFailed[@]}"
+for TESTNAME in *.sql
 do
     echo -n "Testing $TESTNAME ----> "
 
