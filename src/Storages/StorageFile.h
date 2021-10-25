@@ -16,7 +16,9 @@ class StorageFileBlockOutputStream;
 
 class StorageFile final : public shared_ptr_helper<StorageFile>, public IStorage
 {
-    friend struct shared_ptr_helper<StorageFile>;
+friend struct shared_ptr_helper<StorageFile>;
+friend class PartitionedStorageFileSink;
+
 public:
     std::string getName() const override { return "File"; }
 
@@ -65,6 +67,8 @@ public:
     /// So we can create a header of only required columns in read method and ask
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool isColumnOriented() const;
+
+    bool supportsPartitionBy() const override { return true; }
 
 protected:
     friend class StorageFileSource;

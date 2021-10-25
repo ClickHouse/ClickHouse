@@ -2,30 +2,44 @@
 
 #if USE_HDFS
 
-#include <Storages/StorageFactory.h>
-#include <Storages/HDFS/StorageHDFS.h>
+#include <Common/parseGlobs.h>
+#include <DataTypes/DataTypeString.h>
+
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/IInputFormat.h>
+
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTLiteral.h>
-#include <IO/ReadHelpers.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
+
+#include <Storages/StorageFactory.h>
+#include <Storages/HDFS/StorageHDFS.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
-#include <IO/WriteHelpers.h>
-#include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/ExternalDataSourceUtils.h>
+#include <Storages/PartitionedSink.h>
+
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <DataTypes/DataTypeString.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Common/parseGlobs.h>
+#include <Functions/FunctionsConversion.h>
+
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/Pipe.h>
+
 #include <Poco/URI.h>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 #include <hdfs/hdfs.h>
-#include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/Pipe.h>
+
 #include <filesystem>
 
 
@@ -224,6 +238,43 @@ private:
     bool is_first_chunk = true;
 };
 
+
+class PartitionedHDFSSink : public PartitionedSink
+{
+public:
+    PartitionedHDFSSink(
+        const ASTPtr & partition_by,
+        const String & uri_,
+        const String & format_,
+        const Block & sample_block_,
+        ContextPtr context_,
+        const CompressionMethod compression_method_)
+            : PartitionedSink(partition_by, context_, sample_block_)
+            , uri(uri_)
+            , format(format_)
+            , sample_block(sample_block_)
+            , context(context_)
+            , compression_method(compression_method_)
+    {
+    }
+
+    SinkPtr createSinkForPartition(const String & partition_id) override
+    {
+        auto path = PartitionedSink::replaceWildcards(uri, partition_id);
+        PartitionedSink::validatePartitionKey(path, true);
+        return std::make_shared<HDFSSink>(path, format, sample_block, context, compression_method);
+    }
+
+private:
+    const String uri;
+
+    const String format;
+    const Block sample_block;
+    ContextPtr context;
+    const CompressionMethod compression_method;
+};
+
+
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageFile.
  */
@@ -315,13 +366,32 @@ Pipe StorageHDFS::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-SinkToStoragePtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    return std::make_shared<HDFSSink>(uri,
-        format_name,
-        metadata_snapshot->getSampleBlock(),
-        getContext(),
-        chooseCompressionMethod(uri, compression_method));
+    bool has_wildcards = uri.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
+    const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
+    bool is_partitioned_implementation = insert_query && insert_query->partition_by && has_wildcards;
+
+    if (is_partitioned_implementation)
+    {
+        std::cerr << "partitioned implementation\n";
+        return std::make_shared<PartitionedHDFSSink>(
+            insert_query->partition_by,
+            uri,
+            format_name,
+            metadata_snapshot->getSampleBlock(),
+            getContext(),
+            chooseCompressionMethod(uri, compression_method));
+    }
+    else
+    {
+        std::cerr << "non partitioned implementation\n";
+        return std::make_shared<HDFSSink>(uri,
+            format_name,
+            metadata_snapshot->getSampleBlock(),
+            getContext(),
+            chooseCompressionMethod(uri, compression_method));
+    }
 }
 
 void StorageHDFS::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr context_, TableExclusiveLockHolder &)
