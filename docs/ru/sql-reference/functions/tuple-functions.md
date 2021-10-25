@@ -163,3 +163,78 @@ SELECT tupleHammingDistance(wordShingleMinHash(string), wordShingleMinHashCaseIn
 │               2 │
 └─────────────────┘
 ```
+
+## tupleToNameValuePairs {#tupletonamevaluepairs}
+
+Приводит именованный кортеж к списку пар (имя, значение). Для `Tuple(a T, b T, ..., c T)` возвращает `Array(Tuple(String, T), ...)`, где `Strings` — это названия именованных полей, а `T` — это соответствующие значения. Все значения в кортеже должны быть одинакового типа.
+
+**Синтаксис**
+
+``` sql
+tupleToNameValuePairs(tuple)
+```
+
+**Аргументы**
+
+-   `tuple` — именованный кортеж. [Tuple](../../sql-reference/data-types/tuple.md) с любым типом значений.
+
+**Возвращаемое значение**
+
+-   Список пар (имя, значение).
+
+Тип: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md), ...)).
+
+**Пример**
+
+Запрос:
+
+``` sql
+CREATE TABLE tupletest (`col` Tuple(user_ID UInt64, session_ID UInt64) ENGINE = Memory;
+
+INSERT INTO tupletest VALUES (tuple( 100, 2502)), (tuple(1,100));
+
+SELECT tupleToNameValuePairs(col) FROM tupletest;
+``` 
+
+Результат:
+
+``` text
+┌─tupleToNameValuePairs(col)────────────┐
+│ [('user_ID',100),('session_ID',2502)] │
+│ [('user_ID',1),('session_ID',100)]    │
+└───────────────────────────────────────┘
+```
+
+С помощью этой функции возможно приводить колонки к строкам:
+
+``` sql
+CREATE TABLE tupletest (`col` Tuple(CPU Float64, Memory Float64, Disk Float64)) ENGINE = Memory;
+
+INSERT INTO tupletest VALUES(tuple(3.3, 5.5, 6.6));
+
+SELECT arrayJoin(tupleToNameValuePairs(col))FROM tupletest;
+```
+
+Результат:
+
+``` text
+┌─arrayJoin(tupleToNameValuePairs(col))─┐
+│ ('CPU',3.3)                           │
+│ ('Memory',5.5)                        │
+│ ('Disk',6.6)                          │
+└───────────────────────────────────────┘
+```
+
+При передаче функции обычный кортеж ClickHouse использует индексы значений как их имена:
+
+``` sql
+SELECT tupleToNameValuePairs(tuple(3, 2, 1));
+```
+
+Результат:
+
+``` text
+┌─tupleToNameValuePairs(tuple(3, 2, 1))─┐
+│ [('1',3),('2',2),('3',1)]             │
+└───────────────────────────────────────┘
+```
