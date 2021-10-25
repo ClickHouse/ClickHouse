@@ -863,6 +863,9 @@ if (ThreadFuzzer::instance().isEffective())
             if (config->has("max_concurrent_queries"))
                 global_context->getProcessList().setMaxSize(config->getInt("max_concurrent_queries", 0));
 
+            if (config->has("keeper_server"))
+                global_context->updateKeeperConfiguration(*config);
+
             if (!initial_loading)
             {
                 /// We do not load ZooKeeper configuration on the first config loading
@@ -919,7 +922,7 @@ if (ThreadFuzzer::instance().isEffective())
 
     /// Initialize background executors after we load default_profile config.
     /// This is needed to load proper values of background_pool_size etc.
-    global_context->initializeBackgroundExecutors();
+    global_context->initializeBackgroundExecutorsIfNeeded();
 
     if (settings.async_insert_threads)
         global_context->setAsynchronousInsertQueue(std::make_shared<AsynchronousInsertQueue>(
