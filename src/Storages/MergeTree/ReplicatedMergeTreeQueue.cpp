@@ -1004,7 +1004,7 @@ bool ReplicatedMergeTreeQueue::checkReplaceRangeCanBeRemoved(const MergeTreePart
 void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     zkutil::ZooKeeperPtr zookeeper,
     const MergeTreePartInfo & part_info,
-    const std::optional<ReplicatedMergeTreeLogEntryData> & current)
+    const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry)
 {
     /// TODO is it possible to simplify it?
     Queue to_wait;
@@ -1015,8 +1015,9 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
     /// Remove operations with parts, contained in the range to be deleted, from the queue.
     std::unique_lock lock(state_mutex);
 
-    [[maybe_unused]] bool called_from_alter_query_directly = current && current->replace_range_entry && current->replace_range_entry->columns_version < 0;
-    [[maybe_unused]] bool called_for_broken_part = !current;
+    [[maybe_unused]] bool called_from_alter_query_directly = covering_entry && covering_entry->replace_range_entry
+        && covering_entry->replace_range_entry->columns_version < 0;
+    [[maybe_unused]] bool called_for_broken_part = !covering_entry;
     assert(currently_executing_drop_or_replace_range || called_from_alter_query_directly || called_for_broken_part);
 
     for (Queue::iterator it = queue.begin(); it != queue.end();)
@@ -1028,7 +1029,7 @@ void ReplicatedMergeTreeQueue::removePartProducingOpsInRange(
                                       type == LogEntry::MUTATE_PART;
 
         bool simple_op_covered = is_simple_producing_op && part_info.contains(MergeTreePartInfo::fromPartName((*it)->new_part_name, format_version));
-        bool replace_range_covered = current && checkReplaceRangeCanBeRemoved(part_info, *it, *current);
+        bool replace_range_covered = covering_entry && checkReplaceRangeCanBeRemoved(part_info, *it, *covering_entry);
         if (simple_op_covered || replace_range_covered)
         {
             if ((*it)->currently_executing)
