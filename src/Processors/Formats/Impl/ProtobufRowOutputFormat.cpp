@@ -64,9 +64,7 @@ void registerOutputFormatProtobuf(FormatFactory & factory)
             {
                 return std::make_shared<ProtobufRowOutputFormat>(
                     buf, header, params,
-                    FormatSchemaInfo(settings.schema.format_schema, "Protobuf",
-                        true, settings.schema.is_server,
-                        settings.schema.format_schema_path),
+                    FormatSchemaInfo(settings, "Protobuf", true),
                     settings,
                     with_length_delimiter);
             });

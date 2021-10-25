@@ -32,6 +32,8 @@ WITH dates AS
     select 1, 'max_2', older_date - number * 60 - 30, number, 1, number from dates, numbers(1200) union all
     select 2, 'max_2', older_date - number * 60 - 30, number, 1, number from dates, numbers(1200);
 
+select key, Path, Value, Version, col from test_graphite final order by key, Path, Time desc;
+
 optimize table test_graphite final;
 
 select key, Path, Value, Version, col from test_graphite order by key, Path, Time desc;

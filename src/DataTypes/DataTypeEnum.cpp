@@ -1,5 +1,4 @@
 #include <IO/WriteBufferFromString.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/Serializations/SerializationEnum.h>
 #include <DataTypes/DataTypeFactory.h>

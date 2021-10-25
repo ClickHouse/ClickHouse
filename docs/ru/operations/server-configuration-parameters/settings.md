@@ -71,9 +71,9 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## encryption {#server-settings-encryption}
 
-Настраивает комманду для получения ключа используемого [кодеками шифрования](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Ключ (или несколько ключей) должны быть записаны в переменные окружения или установлены в конфигурационном файле .
+Настраивает команду для получения ключа, используемого [кодеками шифрования](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Ключ (или несколько ключей) должен быть записан в переменные окружения или установлен в конфигурационном файле.
 
-Ключи могут быть представлены в шестнадцатеричной или строковой форме. Их длинна должна быть равна 16.
+Ключи могут быть представлены в шестнадцатеричной или строковой форме. Их длина должна быть равна 16 байтам.
 
 **Пример**
 
@@ -146,7 +146,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 </encryption_codecs>
 ```
 
-Все вышеперечисленное можно применить также для алгоритма `aes_256_gcm_siv` (но ключ должен быть длинной 32 байта).
+Всё вышеперечисленное также применимо для алгоритма `aes_256_gcm_siv` (но ключ должен быть длиной 32 байта).
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
@@ -611,7 +611,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`. Запросы также могут быть ограничены настройками: [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`. Запросы также могут быть ограничены настройками: [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
 
 !!! info "Примечание"
 	Параметры этих настроек могут быть изменены во время выполнения запросов и вступят в силу немедленно. Запросы, которые уже запущены, выполнятся без изменений.
@@ -625,6 +625,21 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ``` xml
 <max_concurrent_queries>100</max_concurrent_queries>
+```
+
+## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
+
+Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`, для пользователя.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — выключена.
+
+**Пример**
+
+``` xml
+<max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
 ```
 
 ## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
