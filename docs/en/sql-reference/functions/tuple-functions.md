@@ -169,7 +169,7 @@ Result:
 ## tupleToNameValuePairs {#tupletonamevaluepairs}
 
 Turns a named tuple into an array of (name, value) pairs. For a `Tuple(a T, b T, ..., c T)` returns `Array(Tuple(String, T), ...)`
-in which the `Strings` represents the named fields of the tuple and the `T`s are the values associated with those names. All values in the tuple should be of the same type.
+in which the `Strings` represents the named fields of the tuple and `T` are the values associated with those names. All values in the tuple should be of the same type.
 
 **Syntax**
 
