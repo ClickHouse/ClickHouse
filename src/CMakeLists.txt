@@ -109,6 +109,10 @@ if (USE_HDFS)
     add_headers_and_sources(dbms Disks/HDFS)
 endif()
 
+if(USE_FILELOG)
+    add_headers_and_sources(dbms Storages/FileLog)
+endif()
+
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
@@ -284,6 +288,13 @@ target_link_libraries (clickhouse_common_io
             ${DOUBLE_CONVERSION_LIBRARIES}
             dragonbox_to_chars
 )
+
+# Use X86 AVX2/AVX512 instructions to accelerate filter operations
+set_source_files_properties(
+        Columns/ColumnFixedString.cpp
+        Columns/ColumnsCommon.cpp
+        Columns/ColumnVector.cpp
+        PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
 if(RE2_LIBRARY)
     target_link_libraries(clickhouse_common_io PUBLIC ${RE2_LIBRARY})
