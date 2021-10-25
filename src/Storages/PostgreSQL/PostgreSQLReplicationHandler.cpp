@@ -598,7 +598,7 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
     PostgreSQLTableStructure structure;
     try
     {
-        structure = fetchPostgreSQLTableStructure(tx, table_name, postgres_schema, true, true, true);
+        structure = fetchPostgreSQLTableStructure(tx, table_name, "", true, true, true);
     }
     catch (...)
     {
