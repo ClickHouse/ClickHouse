@@ -45,11 +45,11 @@
 </yandex>
 ```
 
-**注意**
+!!! warning "注意"
 
 您只能定义一个 `kerberos` 部分. 多个 `kerberos` 部分的存在将强制 ClickHouse 禁用 Kerberos 身份验证.
 
-**注意**
+!!! warning "注意"
 
 `主体`和`领域`部分不能同时指定. `主体`和`领域`的出现将迫使ClickHouse禁用Kerberos身份验证.
 
@@ -84,11 +84,11 @@ Kerberos主体名称格式通常遵循以下模式:
 </yandex>
 ```
 
-**警告**
+!!! warning "警告"
 
 注意, Kerberos身份验证不能与任何其他身份验证机制一起使用. 任何其他部分(如`密码`和`kerberos`)的出现都会迫使ClickHouse关闭.
 
-**提醒**
+!!! info "提醒"
 
 请注意, 现在, 一旦用户 `my_user` 使用 `kerberos`, 必须在主 `config.xml` 文件中启用 Kerberos，如前所述.
 
