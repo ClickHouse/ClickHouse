@@ -788,7 +788,7 @@ SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1
 **Синтаксис**
 
 ``` sql
-normalizeUTF8NFKD(words)
+normalizeUTF8NFC(words)
 ```
 
 **Аргументы**
