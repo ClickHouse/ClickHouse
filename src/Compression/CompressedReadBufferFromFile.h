@@ -47,9 +47,6 @@ private:
 public:
     CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_ = false);
 
-    CompressedReadBufferFromFile(
-        const std::string & path, const ReadSettings & settings, size_t estimated_size, bool allow_different_codecs_ = false);
-
     /// Seek is lazy in some sense. We move position in compressed file_in to offset_in_compressed_file, but don't
     /// read data into working_buffer and don't shit our position to offset_in_decompressed_block. Instead
     /// we store this offset inside nextimpl_working_buffer_offset.
