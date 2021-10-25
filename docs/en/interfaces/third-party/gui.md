@@ -131,7 +131,7 @@ Features:
 
 ### Bytebase {#bytebase}
 
-[Bytebase](https://bytebase.com)is a web-based, open source schema change and version control tool for teams. It supports various databases including ClickHouse.
+[Bytebase](https://bytebase.com) is a web-based, open source schema change and version control tool for teams. It supports various databases including ClickHouse.
 
 Features:
 
