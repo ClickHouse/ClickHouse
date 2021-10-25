@@ -336,13 +336,6 @@ void ExpressionAnalyzer::analyzeAggregation()
                         replaceForPositionalArguments(group_asts[i], select_query, ASTSelectQuery::Expression::GROUP_BY);
                     getRootActionsNoMakeSet(group_asts[i], true, temp_actions, false);
 
-                    if (getContext()->getSettingsRef().enable_positional_arguments)
-                    {
-                        auto new_argument = checkPositionalArgument(group_asts[i], select_query, ASTSelectQuery::Expression::GROUP_BY);
-                        if (new_argument)
-                            group_asts[i] = new_argument;
-                    }
-
                     const auto & column_name = group_asts[i]->getColumnName();
                     const auto * node = temp_actions->tryFindInIndex(column_name);
 
