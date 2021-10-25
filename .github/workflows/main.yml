@@ -16,7 +16,9 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Labels check
-        run: cd $GITHUB_WORKSPACE/tests/ci && python3 run_check.py
+        run: |
+          cd $GITHUB_WORKSPACE/tests/ci
+          python3 run_check.py
   DockerHubPush:
     needs: CheckLabels
     runs-on: [self-hosted, style-checker]
@@ -24,7 +26,9 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Images check
-        run: cd $GITHUB_WORKSPACE/tests/ci && python3 docker_images_check.py
+        run: |
+          cd $GITHUB_WORKSPACE/tests/ci
+          python3 docker_images_check.py
       - name: Upload images files to artifacts
         uses: actions/upload-artifact@v2
         with:
@@ -42,7 +46,9 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Style Check
-        run: cd $GITHUB_WORKSPACE/tests/ci && python3 style_check.py
+        run: |
+          cd $GITHUB_WORKSPACE/tests/ci
+          python3 style_check.py
   Builder:
     needs: DockerHubPush
     runs-on: [self-hosted, builder]
@@ -66,7 +72,10 @@ jobs:
           REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH: ${{runner.temp}}/../ccaches
           CHECK_NAME: 'ClickHouse build check (actions)'
-        run: mkdir -p $TEMP_PATH && cp -r $GITHUB_WORKSPACE $TEMP_PATH && cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" ${{ matrix.build_number }}
+        run: |
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" ${{ matrix.build_number }}
       - name: Upload build URLs to artifacts
         uses: actions/upload-artifact@v2
         with:
@@ -87,7 +96,10 @@ jobs:
           TEMP_PATH: ${{runner.temp}}/report_check
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'ClickHouse build check (actions)'
-        run: mkdir -p $TEMP_PATH && cd $GITHUB_WORKSPACE/tests/ci && python3 build_report_check.py "$CHECK_NAME"
+        run: |
+          mkdir -p $TEMP_PATH
+          cd $GITHUB_WORKSPACE/tests/ci
+          python3 build_report_check.py "$CHECK_NAME"
   FastTest:
     needs: DockerHubPush
     runs-on: [self-hosted, builder]
@@ -99,8 +111,10 @@ jobs:
           TEMP_PATH: ${{runner.temp}}/fasttest
           REPO_COPY: ${{runner.temp}}/fasttest/ClickHouse
           CACHES_PATH: ${{runner.temp}}/../ccaches
-        run: mkdir -p $TEMP_PATH && cp -r $GITHUB_WORKSPACE $TEMP_PATH && cd $REPO_COPY/tests/ci && python3 fast_test_check.py
-
+        run: |
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci && python3 fast_test_check.py
   FinishCheck:
     needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport, FastTest]
     runs-on: [self-hosted, style-checker]
@@ -108,4 +122,6 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Finish label
-        run: cd $GITHUB_WORKSPACE/tests/ci && python3 finish_check.py
+        run: |
+          cd $GITHUB_WORKSPACE/tests/ci
+          python3 finish_check.py
