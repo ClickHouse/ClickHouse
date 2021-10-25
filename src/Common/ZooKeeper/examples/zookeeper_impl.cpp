@@ -5,7 +5,8 @@
 int main()
 try
 {
-    Coordination::ZooKeeper zookeeper({Coordination::ZooKeeper::Node{Poco::Net::SocketAddress{"localhost:2181"}, false}}, "", "", "", {30, 0}, {0, 50000}, {0, 50000}, nullptr);
+    zkutil::ZooKeeperArgs args;
+    Coordination::ZooKeeper zookeeper({Coordination::ZooKeeper::Node{Poco::Net::SocketAddress{"localhost:2181"}, false}}, args, nullptr);
 
     zookeeper.create("/test", "hello", false, false, {}, [](const Coordination::CreateResponse & response)
     {
