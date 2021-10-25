@@ -80,7 +80,7 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
     try
     {
         auto connection_holder = pool->get();
-        auto table_names = fetchPostgreSQLTablesList(connection_holder->get(), "");
+        auto table_names = fetchPostgreSQLTablesList(connection_holder->get());
 
         for (const auto & table_name : table_names)
             if (!detached_or_dropped.count(table_name))
