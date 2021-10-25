@@ -257,6 +257,24 @@ def test_truncate_table(started_cluster):
     node1.query("drop table test_truncate")
 
 
+def test_partition_by(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+
+    table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
+    file_name = "test_{_partition_id}"
+    partition_by = "column3"
+    values = "(1, 2, 3), (3, 2, 1), (1, 3, 2)"
+    table_function = f"hdfs('hdfs://hdfs1:9000/{file_name}', 'TSV', '{table_format}')"
+
+    node1.query(f"insert into table function {table_function} PARTITION BY {partition_by} values {values}")
+    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test_1', 'TSV', '{table_format}')")
+    assert(result.strip() == "3\t2\t1")
+    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test_2', 'TSV', '{table_format}')")
+    assert(result.strip() == "1\t3\t2")
+    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test_3', 'TSV', '{table_format}')")
+    assert(result.strip() == "1\t2\t3")
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")

@@ -7,6 +7,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInsertQuery.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -25,6 +26,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/PartitionedSink.h>
 
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -189,7 +191,11 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
     : StorageFile(args)
 {
     is_db_table = false;
-    paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
+    bool has_wildcards = table_path_.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
+    if (has_wildcards)
+        paths = {table_path_};
+    else
+        paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
 
     if (args.format_name == "Distributed")
     {
@@ -541,22 +547,48 @@ Pipe StorageFile::read(
 class StorageFileSink final : public SinkToStorage
 {
 public:
-    explicit StorageFileSink(
+    StorageFileSink(
         StorageFile & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        std::unique_lock<std::shared_timed_mutex> && lock_,
-        const CompressionMethod compression_method,
-        ContextPtr context,
-        const std::optional<FormatSettings> & format_settings,
-        int & flags)
+        const CompressionMethod compression_method_,
+        ContextPtr context_,
+        const std::optional<FormatSettings> & format_settings_,
+        int flags_)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
+        , compression_method(compression_method_)
+        , context(context_)
+        , format_settings(format_settings_)
+        , flags(flags_)
+    {
+        initialize();
+    }
+
+    StorageFileSink(
+        StorageFile & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        std::unique_lock<std::shared_timed_mutex> && lock_,
+        const CompressionMethod compression_method_,
+        ContextPtr context_,
+        const std::optional<FormatSettings> & format_settings_,
+        int flags_)
+        : SinkToStorage(metadata_snapshot_->getSampleBlock())
+        , storage(storage_)
+        , metadata_snapshot(metadata_snapshot_)
+        , compression_method(compression_method_)
+        , context(context_)
+        , format_settings(format_settings_)
+        , flags(flags_)
         , lock(std::move(lock_))
     {
         if (!lock)
             throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+        initialize();
+    }
 
+    void initialize()
+    {
         std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer = nullptr;
         if (storage.use_table_fd)
         {
@@ -608,14 +640,66 @@ public:
 private:
     StorageFile & storage;
     StorageMetadataPtr metadata_snapshot;
+    const CompressionMethod compression_method;
+    ContextPtr context;
+    std::optional<FormatSettings> format_settings;
+    int flags;
+
     std::unique_lock<std::shared_timed_mutex> lock;
+
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
     bool prefix_written{false};
 };
 
+class PartitionedStorageFileSink : public PartitionedSink
+{
+public:
+    PartitionedStorageFileSink(
+        const ASTPtr & partition_by,
+        StorageFile & storage_,
+        const StorageMetadataPtr & metadata_snapshot_,
+        std::unique_lock<std::shared_timed_mutex> && lock_,
+        const CompressionMethod compression_method_,
+        ContextPtr context_,
+        const std::optional<FormatSettings> & format_settings_,
+        int & flags_)
+        : PartitionedSink(partition_by, context_, metadata_snapshot_->getSampleBlock())
+        , path(storage_.paths[0])
+        , storage(storage_)
+        , metadata_snapshot(metadata_snapshot_)
+        , lock(std::move(lock_))
+        , compression_method(compression_method_)
+        , context(context_)
+        , format_settings(format_settings_)
+        , flags(flags_)
+    {
+    }
+
+    SinkPtr createSinkForPartition(const String & partition_id) override
+    {
+        auto partition_path = PartitionedSink::replaceWildcards(path, partition_id);
+        PartitionedSink::validatePartitionKey(partition_path, true);
+        storage.paths[0] = partition_path;
+        return std::make_shared<StorageFileSink>(
+            storage, metadata_snapshot, compression_method, context, format_settings, flags);
+    }
+
+private:
+    const String path;
+    StorageFile & storage;
+    StorageMetadataPtr metadata_snapshot;
+    std::unique_lock<std::shared_timed_mutex> lock;
+    const CompressionMethod compression_method;
+
+    ContextPtr context;
+    std::optional<FormatSettings> format_settings;
+    int flags;
+};
+
+
 SinkToStoragePtr StorageFile::write(
-    const ASTPtr & /*query*/,
+    const ASTPtr & query,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context)
 {
@@ -634,14 +718,38 @@ SinkToStoragePtr StorageFile::write(
         fs::create_directories(fs::path(path).parent_path());
     }
 
-    return std::make_shared<StorageFileSink>(
-        *this,
-        metadata_snapshot,
-        std::unique_lock{rwlock, getLockTimeout(context)},
-        chooseCompressionMethod(path, compression_method),
-        context,
-        format_settings,
-        flags);
+    bool has_wildcards = path.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
+    const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
+    bool is_partitioned_implementation = insert_query && insert_query->partition_by && has_wildcards;
+
+    if (is_partitioned_implementation)
+    {
+        if (paths.size() != 1)
+            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
+                            "Table '{}' is in readonly mode because of globs in filepath",
+                            getStorageID().getNameForLogs());
+
+        return std::make_shared<PartitionedStorageFileSink>(
+            insert_query->partition_by,
+            *this,
+            metadata_snapshot,
+            std::unique_lock{rwlock, getLockTimeout(context)},
+            chooseCompressionMethod(path, compression_method),
+            context,
+            format_settings,
+            flags);
+    }
+    else
+    {
+        return std::make_shared<StorageFileSink>(
+            *this,
+            metadata_snapshot,
+            std::unique_lock{rwlock, getLockTimeout(context)},
+            chooseCompressionMethod(path, compression_method),
+            context,
+            format_settings,
+            flags);
+    }
 }
 
 bool StorageFile::storesDataOnDisk() const
