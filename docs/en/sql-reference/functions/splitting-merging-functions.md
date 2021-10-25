@@ -270,3 +270,66 @@ Result:
 │ [['abc','123'],['8','"hkl"']]                                         │
 └───────────────────────────────────────────────────────────────────────┘
 ```
+
+## ngrams {#ngrams}
+
+Splits the UTF-8 string into n-grams of `ngramsize` symbols.
+
+**Syntax** 
+
+``` sql
+ngrams(string, ngramsize)
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+-   `ngramsize` — The size of an n-gram. [UInt](../../sql-reference/data-types/int-uint.md).
+
+**Returned values**
+
+-   Array with n-grams.
+
+Type: [Array](../../sql-reference/data-types/array.md)([FixedString](../../sql-reference/data-types/fixedstring.md)).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT ngrams('ClickHouse', 3);
+```
+
+Result:
+
+``` text
+┌─ngrams('ClickHouse', 3)───────────────────────────┐
+│ ['Cli','lic','ick','ckH','kHo','Hou','ous','use'] │
+└───────────────────────────────────────────────────┘
+```
+
+## tokens {#tokens}
+
+Splits a string into tokens using non-alphanumeric ASCII characters as separators.
+
+**Arguments**
+
+-   `input_string` — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
+
+**Returned value**
+
+-   The resulting array of tokens from input string.
+
+Type: [Array](../data-types/array.md).
+
+**Example**
+
+``` sql
+SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
+```
+
+``` text
+┌─tokens────────────────────────────┐
+│ ['test1','test2','test3','test4'] │
+└───────────────────────────────────┘
+```
