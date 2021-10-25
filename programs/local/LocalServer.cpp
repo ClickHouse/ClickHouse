@@ -179,7 +179,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
         ConfigProcessor config_processor(config_path, false, true);
         config_processor.setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration->getString("path", "."));
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
@@ -380,7 +379,6 @@ void LocalServer::setupUsers()
         const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
         ConfigProcessor config_processor(users_config_path);
         const auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
         users_config = loaded_config.configuration;
     }
     else
