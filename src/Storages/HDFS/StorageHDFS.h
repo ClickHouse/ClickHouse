@@ -38,6 +38,8 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
+    bool supportsPartitionBy() const override { return true; }
+
 protected:
     StorageHDFS(
         const String & uri_,
