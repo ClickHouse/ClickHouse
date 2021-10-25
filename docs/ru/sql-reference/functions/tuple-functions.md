@@ -205,7 +205,7 @@ SELECT tupleToNameValuePairs(col) FROM tupletest;
 └───────────────────────────────────────┘
 ```
 
-С помощью этой функции возможно приводить колонки к строкам:
+С помощью этой функции возможно приводить столбцы к строкам:
 
 ``` sql
 CREATE TABLE tupletest (`col` Tuple(CPU Float64, Memory Float64, Disk Float64)) ENGINE = Memory;
