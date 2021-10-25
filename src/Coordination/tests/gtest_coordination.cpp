@@ -962,7 +962,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotSimple)
 
     auto debuf = manager.deserializeSnapshotBufferFromDisk(2);
 
-    auto [snapshot_meta, restored_storage] = manager.deserializeSnapshotFromBuffer(debuf);
+    auto [restored_storage, snapshot_meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 3);
     EXPECT_EQ(restored_storage->container.getValue("/").children.size(), 1);
@@ -1011,7 +1011,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMoreWrites)
 
 
     auto debuf = manager.deserializeSnapshotBufferFromDisk(50);
-    auto [meta, restored_storage] = manager.deserializeSnapshotFromBuffer(debuf);
+    auto [restored_storage, meta, _] = manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 51);
     for (size_t i = 0; i < 50; ++i)
@@ -1050,7 +1050,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotManySnapshots)
     EXPECT_TRUE(fs::exists("./snapshots/snapshot_250.bin" + params.extension));
 
 
-    auto [meta, restored_storage] = manager.restoreFromLatestSnapshot();
+    auto [restored_storage, meta, _] = manager.restoreFromLatestSnapshot();
 
     EXPECT_EQ(restored_storage->container.size(), 251);
 
@@ -1103,7 +1103,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotMode)
             EXPECT_FALSE(storage.container.contains("/hello_" + std::to_string(i)));
     }
 
-    auto [meta, restored_storage] = manager.restoreFromLatestSnapshot();
+    auto [restored_storage, meta, _] = manager.restoreFromLatestSnapshot();
 
     for (size_t i = 0; i < 50; ++i)
     {
@@ -1498,7 +1498,7 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
 
     auto debuf = new_manager.deserializeSnapshotBufferFromDisk(2);
 
-    auto [snapshot_meta, restored_storage] = new_manager.deserializeSnapshotFromBuffer(debuf);
+    auto [restored_storage, snapshot_meta, _] = new_manager.deserializeSnapshotFromBuffer(debuf);
 
     EXPECT_EQ(restored_storage->container.size(), 3);
     EXPECT_EQ(restored_storage->container.getValue("/").children.size(), 1);
