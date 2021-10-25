@@ -19,44 +19,50 @@ SHOW TABLES FROM INFORMATION_SCHEMA;
 
 `INFORMATION_SCHEMA` contains the following views:
 
--   `SCHEMATA` — The view that can be used to get all the current database schemas.
+-   [COLUMNS](#columns)
+-   [SCHEMATA](#schemata)
+-   [TABLES](#tables)
+-   [VIEWS](#views)
 
-``` sql
-SELECT * FROM information_schema.schemata WHERE schema_name ILIKE 'information_schema' LIMIT 1 FORMAT Vertical;
-```
+## COLUMNS {#columns}
 
-``` text
-Row 1:
-──────
-catalog_name:                  INFORMATION_SCHEMA
-schema_name:                   INFORMATION_SCHEMA
-schema_owner:                  default
-default_character_set_catalog: ᴺᵁᴸᴸ
-default_character_set_schema:  ᴺᵁᴸᴸ
-default_character_set_name:    ᴺᵁᴸᴸ
-sql_path:                      ᴺᵁᴸᴸ
-```
+Allows to get a list of table columns read using this view.
 
--   `TABLES` — The view that can be used to get all tables in the current database.
+Columns:
 
-``` sql
-SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE (table_schema = currentDatabase() OR table_schema = '') AND table_name NOT LIKE '%inner%' LIMIT 1 FORMAT Vertical;
-```
+-   `table_catalog` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
+-   `table_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the schema is located.
+-   `table_name` ([String](../../sql-reference/data-types/string.md)) — Table name.
+-   `column_name` ([String](../../sql-reference/data-types/string.md)) — Column name.
+-   `ordinal_position` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Ordinal position of a column in a table starting with 1.
+-   `column_default` ([String](../../sql-reference/data-types/string.md)) — Expression for the default value, or an empty string if it is not defined.
+-   `is_nullable` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the column type is `Nullable`.
+-   `data_type` ([String](../../sql-reference/data-types/string.md)) — Column type.
+-   `character_maximum_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum length in bytes for binary data, character data, or text data and images.
+-   `character_octet_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum length in bytes for binary data, character data, or text data and images.
+-   `numeric_precision` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Accuracy of approximate numeric data, exact numeric data, integer data, or monetary data. Otherwise, the `NULL` value is returned.
+-   `numeric_precision_radix` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The base of the number system is the accuracy of approximate numeric data, exact numeric data, integer data or monetary data. Otherwise, the `NULL` value is returned.
+-   `numeric_scale` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The scale of approximate numeric data, exact numeric data, integer data, or monetary data. Otherwise, the `NULL` value is returned.
+-   `datetime_precision` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Subtype code for `DateTime` and `ISO` interval data types. For other data types, the `NULL` value is returned.
+-   `character_set_catalog` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+-   `character_set_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+-   `character_set_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+-   `collation_catalog` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+-   `collation_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+-   `collation_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+-   `domain_catalog` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+-   `domain_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+-   `domain_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
 
-``` text
-Row 1:
-──────
-table_catalog: default
-table_schema:  default
-table_name:    describe_example
-table_type:    BASE TABLE
-```
+**Example**
 
--   `COLUMNS` — The view that can be used to get a list of table columns in the current database.
+Query:
 
 ``` sql
 SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE (table_schema=currentDatabase() OR table_schema='') AND table_name NOT LIKE '%inner%' LIMIT 1 FORMAT Vertical;
 ```
+
+Result:
 
 ``` text
 Row 1:
@@ -86,13 +92,107 @@ domain_schema:            ᴺᵁᴸᴸ
 domain_name:              ᴺᵁᴸᴸ
 ```
 
--   `VIEWS` — The view that can be used to get a list of all views in the current database.
+## SCHEMATA {#schemata}
+
+Allows to get a list of schemas read using this view.
+
+Columns:
+
+-   `catalog_name` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
+-   `schema_name` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the schema is located.
+-   `schema_owner` ([String](../../sql-reference/data-types/string.md)) — Schema owner name.
+-   `default_character_set_catalog` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+-   `default_character_set_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+-   `default_character_set_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+-   `sql_path` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT * FROM information_schema.schemata WHERE schema_name ILIKE 'information_schema' LIMIT 1 FORMAT Vertical;
+```
+
+Result:
+
+``` text
+Row 1:
+──────
+catalog_name:                  INFORMATION_SCHEMA
+schema_name:                   INFORMATION_SCHEMA
+schema_owner:                  default
+default_character_set_catalog: ᴺᵁᴸᴸ
+default_character_set_schema:  ᴺᵁᴸᴸ
+default_character_set_name:    ᴺᵁᴸᴸ
+sql_path:                      ᴺᵁᴸᴸ
+```
+
+## TABLES {#tables}
+
+Allows to get a list of tables read using this view.
+
+Columns:
+
+-   `table_catalog` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
+-   `table_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the schema is located.
+-   `table_name` ([String](../../sql-reference/data-types/string.md)) — Table name.
+-   `table_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Table type. Possible values:
+    -   `BASE TABLE`
+    -   `VIEW`
+    -   `FOREIGN TABLE`
+    -   `LOCAL TEMPORARY`
+    -   `SYSTEM VIEW`
+
+**Example**
+
+Query:
+
+``` sql
+SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE (table_schema = currentDatabase() OR table_schema = '') AND table_name NOT LIKE '%inner%' LIMIT 1 FORMAT Vertical;
+```
+
+Result:
+
+``` text
+Row 1:
+──────
+table_catalog: default
+table_schema:  default
+table_name:    describe_example
+table_type:    BASE TABLE
+```
+
+## VIEWS {#views}
+
+Allows to get a list of views read using this view.
+
+Columns:
+
+-   `table_catalog` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
+-   `table_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the schema is located.
+-   `table_name` ([String](../../sql-reference/data-types/string.md)) — Table name.
+-   `view_definition` ([String](../../sql-reference/data-types/string.md)) — `SELECT` query for view.
+-   `check_option` ([String](../../sql-reference/data-types/string.md)) — `NONE`, no checking.
+-   `is_updatable` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, the view is not updated.
+-   `is_insertable_into` ([Enum8](../../sql-reference/data-types/enum.md)) — Shows whether the created view is materialized. Possible values:
+    -   `NO` — The created view is not materialized.
+    -   `YES` — The created view is materialized.
+-   `is_trigger_updatable` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, the trigger is not updated.
+-   `is_trigger_deletable` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, the trigger is not deleted.
+-   `is_trigger_insertable_into` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, no data is inserted into the trigger.
+
+**Example**
+
+Query:
 
 ``` sql
 CREATE VIEW v (n Nullable(Int32), f Float64) AS SELECT n, f FROM t;
 CREATE MATERIALIZED VIEW mv ENGINE = Null AS SELECT * FROM system.one;
-SELECT * FROM information_schema.views WHERE table_schema = currentDatabase();
+SELECT * FROM information_schema.views WHERE table_schema = currentDatabase() LIMIT 1 FORMAT Vertical;
 ```
+
+Result:
 
 ``` text
 Row 1:
