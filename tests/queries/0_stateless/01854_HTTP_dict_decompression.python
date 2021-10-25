@@ -21,8 +21,8 @@ def is_ipv6(host):
     except:
         return True
 
-def get_local_port(host):
-    if is_ipv6(host):
+def get_local_port(host, ipv6):
+    if ipv6:
         family = socket.AF_INET6
     else:
         family = socket.AF_INET
@@ -43,11 +43,15 @@ CLICKHOUSE_PORT_HTTP = os.environ.get('CLICKHOUSE_PORT_HTTP', '8123')
 
 # IP-address of this host accessible from the outside world. Get the first one
 HTTP_SERVER_HOST = subprocess.check_output(['hostname', '-i']).decode('utf-8').strip().split()[0]
-HTTP_SERVER_PORT = get_local_port(HTTP_SERVER_HOST)
+IS_IPV6 = is_ipv6(HTTP_SERVER_HOST)
+HTTP_SERVER_PORT = get_local_port(HTTP_SERVER_HOST, IS_IPV6)
 
 # IP address and port of the HTTP server started from this script.
 HTTP_SERVER_ADDRESS = (HTTP_SERVER_HOST, HTTP_SERVER_PORT)
-HTTP_SERVER_URL_STR = 'http://' + ':'.join(str(s) for s in HTTP_SERVER_ADDRESS) + "/"
+if IS_IPV6:
+    HTTP_SERVER_URL_STR = 'http://' + f'[{str(HTTP_SERVER_ADDRESS[0])}]:{str(HTTP_SERVER_ADDRESS[1])}' + "/"
+else:
+    HTTP_SERVER_URL_STR = 'http://' + f'{str(HTTP_SERVER_ADDRESS[0])}:{str(HTTP_SERVER_ADDRESS[1])}' + "/"
 
 # Because we need to check the content of file.csv we can create this content and avoid reading csv
 CSV_DATA = "Hello, 1\nWorld, 2\nThis, 152\nis, 9283\ntesting, 2313213\ndata, 555\n"
@@ -61,6 +65,10 @@ ENDINGS = ['.gz', '.xz']
 SEND_ENCODING = True
 
 def get_ch_answer(query):
+    host = CLICKHOUSE_HOST
+    if IS_IPV6:
+        host = f'[{host}]'
+
     url = os.environ.get('CLICKHOUSE_URL', 'http://{host}:{port}'.format(host=CLICKHOUSE_HOST, port=CLICKHOUSE_PORT_HTTP))
     return urllib.request.urlopen(url, data=query.encode()).read().decode()
 
@@ -115,7 +123,7 @@ class HTTPServerV6(HTTPServer):
     address_family = socket.AF_INET6
 
 def start_server(requests_amount):
-    if is_ipv6(HTTP_SERVER_HOST):
+    if IS_IPV6:
         httpd = HTTPServerV6(HTTP_SERVER_ADDRESS, HttpProcessor)
     else:
         httpd = HTTPServer(HTTP_SERVER_ADDRESS, HttpProcessor)
@@ -146,7 +154,7 @@ def test_select(dict_name="", schema="word String, counter UInt32", requests=[],
             PRIMARY KEY word
             SOURCE(HTTP(url '{}' format 'CSV'))
             LAYOUT(complex_key_hashed())
-            LIFETIME(0)'''.format(dict_name, schema, HTTP_SERVER_URL_STR+'/test.csv' + ADDING_ENDING))
+            LIFETIME(0)'''.format(dict_name, schema, HTTP_SERVER_URL_STR + '/test.csv' + ADDING_ENDING))
 
         COMPRESS_METHOD = requests[i]
         print(i, COMPRESS_METHOD, ADDING_ENDING, SEND_ENCODING)
