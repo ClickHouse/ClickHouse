@@ -459,8 +459,8 @@ catch (const DB::Exception & e)
 {
     cleanup();
 
-    bool print_stack_trace = config().getBool("stacktrace", false);
-    std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl;
+    bool need_print_stack_trace = config().getBool("stacktrace", false);
+    std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl;
     return e.code() ? e.code() : -1;
 }
 catch (...)
