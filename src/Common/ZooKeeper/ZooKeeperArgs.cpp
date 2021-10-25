@@ -65,6 +65,9 @@ ZooKeeperArgs::ZooKeeperArgs(const Poco::Util::AbstractConfiguration & config, c
         if (chroot.back() == '/')
             chroot.pop_back();
     }
+
+    if (session_timeout_ms < 0 || operation_timeout_ms < 0 || connection_timeout_ms < 0)
+        throw KeeperException("Timeout cannot be negative", Coordination::Error::ZBADARGUMENTS);
 }
 
 ZooKeeperArgs::ZooKeeperArgs(const String & hosts_string)
