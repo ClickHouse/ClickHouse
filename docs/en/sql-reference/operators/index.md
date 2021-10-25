@@ -17,11 +17,17 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 `-a` – The `negate (a)` function.
 
+For tuple negation: [tupleNegate](../../sql-reference/functions/tuple-functions.md#tuplenegate).
+
 ## Multiplication and Division Operators {#multiplication-and-division-operators}
 
 `a * b` – The `multiply (a, b)` function.
 
+For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar profuct: [dotProduct](../../sql-reference/functions/tuple-functions.md#dotproduct).
+
 `a / b` – The `divide(a, b)` function.
+
+For dividing tuple by number: [tupleDivideByNumber](../../sql-reference/functions/tuple-functions.md#tupledividebynumber).
 
 `a % b` – The `modulo(a, b)` function.
 
@@ -29,7 +35,11 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 `a + b` – The `plus(a, b)` function.
 
+For tuple addiction: [tuplePlus](../../sql-reference/functions/tuple-functions.md#tupleplus).
+
 `a - b` – The `minus(a, b)` function.
+
+For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-functions.md#tupleminus).
 
 ## Comparison Operators {#comparison-operators}
 
