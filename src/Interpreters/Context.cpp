@@ -161,8 +161,8 @@ struct ContextSharedPart
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
 #if USE_NURAFT
-    mutable std::mutex keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperDispatcher> keeper_storage_dispatcher;
+    mutable std::mutex keeper_dispatcher_mutex;
+    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
 #endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
@@ -1901,10 +1901,9 @@ void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
 void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
 
-
-    if (shared->keeper_storage_dispatcher)
+    if (shared->keeper_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
 
     const auto & config = getConfigRef();
@@ -1923,8 +1922,8 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
                      "will wait for Keeper synchronously");
         }
 
-        shared->keeper_storage_dispatcher = std::make_shared<KeeperDispatcher>();
-        shared->keeper_storage_dispatcher->initialize(config, is_standalone_app, start_async);
+        shared->keeper_dispatcher = std::make_shared<KeeperDispatcher>();
+        shared->keeper_dispatcher->initialize(config, is_standalone_app, start_async);
     }
 #endif
 }
@@ -1932,23 +1931,35 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
 #if USE_NURAFT
 std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
 {
-    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
-    if (!shared->keeper_storage_dispatcher)
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
+    if (!shared->keeper_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
 
-    return shared->keeper_storage_dispatcher;
+    return shared->keeper_dispatcher;
 }
 #endif
 
 void Context::shutdownKeeperDispatcher() const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
-    if (shared->keeper_storage_dispatcher)
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
+    if (shared->keeper_dispatcher)
     {
-        shared->keeper_storage_dispatcher->shutdown();
-        shared->keeper_storage_dispatcher.reset();
+        shared->keeper_dispatcher->shutdown();
+        shared->keeper_dispatcher.reset();
     }
+#endif
+}
+
+
+void Context::updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+#if USE_NURAFT
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
+    if (!shared->keeper_dispatcher)
+        return;
+
+    shared->keeper_dispatcher->updateConfiguration(config);
 #endif
 }
 
