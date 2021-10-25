@@ -36,6 +36,30 @@ public:
     // Must insert the result for current_row.
     virtual void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) = 0;
+
+    /// Get `sizeof` of structure with data.
+    virtual size_t sizeOfData() const
+    {
+        return 0;
+    }
+
+    /// How the data structure should be aligned.
+    virtual size_t alignOfData() const
+    {
+        return 1;
+    }
+
+    /** Create empty data for aggregation with `placement new` at the specified location.
+      * You will have to destroy them using the `destroy` method.
+      */
+    virtual void create(AggregateDataPtr __restrict /*place*/) const
+    {
+    }
+
+    /// Delete data for aggregation.
+    virtual void destroy(AggregateDataPtr __restrict /*place*/) const noexcept
+    {
+    }
 };
 
 // Compares ORDER BY column values at given rows to find the boundaries of frame:
@@ -230,7 +254,15 @@ WindowTransform::WindowTransform(const Block & input_header_,
         /// Currently we have slightly wrong mixup of the interfaces of Window and Aggregate functions.
         workspace.window_function_impl = dynamic_cast<IWindowFunction *>(const_cast<IAggregateFunction *>(aggregate_function.get()));
 
-        if (!workspace.window_function_impl)
+        if (workspace.window_function_impl)
+        {
+            auto window_function_impl = workspace.window_function_impl;
+            workspace.aggregate_function_state.reset(
+                window_function_impl->sizeOfData(),
+                window_function_impl->alignOfData());
+            window_function_impl->create(workspace.aggregate_function_state.data());
+        }
+        else
         {
             workspace.aggregate_function_state.reset(
                 aggregate_function->sizeOfData(),
@@ -309,7 +341,12 @@ WindowTransform::~WindowTransform()
     // Some states may be not created yet if the creation failed.
     for (auto & ws : workspaces)
     {
-        if (!ws.window_function_impl)
+        if (ws.window_function_impl)
+        {
+            ws.window_function_impl->destroy(
+                ws.aggregate_function_state.data());
+        }
+        else
         {
             ws.aggregate_function->destroy(
                 ws.aggregate_function_state.data());
@@ -1550,23 +1587,27 @@ namespace recurrent_detail
 
     template<> Float64 getLastValueFromOutputColumn<Float64>(const WindowTransform * transform, size_t function_index)
     {
-        auto current_row = transform->current_row;
-
-        if (current_row.row == 0)
+        auto & workspace = transform->workspaces[function_index];
+        if (workspace.aggregate_function_state.data() == nullptr)
         {
-            if (current_row.block > 0)
-            {
-                const auto & column = transform->blockAt(current_row.block-1).output_columns[function_index];
-                return column->getFloat64(column->size()-1);
-            }
+            return 0.0;
         }
         else
         {
-            const auto & column = transform->blockAt(current_row.block).output_columns[function_index];
-            return column->getFloat64(current_row.row-1);
+            return *static_cast<const Float64 *>(static_cast<const void *>(workspace.aggregate_function_state.data()));
         }
+    }
 
-        return 0;
+    template<typename T> void setLastValueToOutputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/, T /*value*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getLastValueFromInputColumn() is not implemented");
+    }
+
+    template<> void setLastValueToOutputColumn<Float64>(const WindowTransform * transform, size_t function_index, Float64 value)
+    {
+        auto & workspace = transform->workspaces[function_index];
+
+        *static_cast<Float64 *>(static_cast<void *>(workspace.aggregate_function_state.data())) = value;
     }
 }
 
@@ -1578,6 +1619,20 @@ struct RecurrentWindowFunction : public WindowFunction
     {
     }
 
+    size_t sizeOfData() const override { return sizeof(Float64); }
+    size_t alignOfData() const override { return 1; }
+
+    void create(AggregateDataPtr __restrict place) const override
+    {
+        *static_cast<Float64 *>(static_cast<void *>(place)) = 0.0;
+    }
+
+    template<typename T>
+    static T getLastValueFromInputColumn(const WindowTransform * transform, size_t function_index, size_t column_index)
+    {
+        return recurrent_detail::getLastValueFromInputColumn<T>(transform, function_index, column_index);
+    }
+
     template<typename T>
     static T getLastValueFromOutputColumn(const WindowTransform * transform, size_t function_index)
     {
@@ -1585,9 +1640,9 @@ struct RecurrentWindowFunction : public WindowFunction
     }
 
     template<typename T>
-    static T getLastValueFromInputColumn(const WindowTransform * transform, size_t function_index, size_t column_index)
+    static void setLastValueToOutputColumn(const WindowTransform * transform, size_t function_index, T value)
     {
-        return recurrent_detail::getLastValueFromInputColumn<T>(transform, function_index, column_index);
+        recurrent_detail::setLastValueToOutputColumn<T>(transform, function_index, value);
     }
 };
 
@@ -1650,8 +1705,11 @@ struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFun
         Float64 x = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_VALUE]]).getFloat64(transform->current_row.row);
         Float64 t = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_TIME]]).getFloat64(transform->current_row.row);
 
-        Float64 c = exp((last_t-t)/decay_length);
-        assert_cast<ColumnFloat64 &>(to).getData().push_back(x + c * last_val);
+        Float64 c = exp((last_t - t) / decay_length);
+        Float64 result = x + c * last_val;
+
+        assert_cast<ColumnFloat64 &>(to).getData().push_back(result);
+        setLastValueToOutputColumn(transform, function_index, result);
     }
 
     private:
@@ -1717,8 +1775,11 @@ struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFun
         Float64 x = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_VALUE]]).getFloat64(transform->current_row.row);
         Float64 t = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_TIME]]).getFloat64(transform->current_row.row);
 
-        Float64 c = exp((last_t-t)/decay_length);
-        assert_cast<ColumnFloat64 &>(to).getData().push_back(std::max(x, c * last_val));
+        Float64 c = exp((last_t - t) / decay_length);
+        Float64 result = std::max(x, c * last_val);
+
+        assert_cast<ColumnFloat64 &>(to).getData().push_back(result);
+        setLastValueToOutputColumn(transform, function_index, result);
     }
 
     private:
@@ -1773,8 +1834,10 @@ struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowF
 
         Float64 t = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_TIME]]).getFloat64(transform->current_row.row);
 
-        Float64 c = exp((last_t-t)/decay_length);
-        assert_cast<ColumnFloat64 &>(to).getData().push_back(c);
+        Float64 result = exp((last_t - t) / decay_length);
+
+        assert_cast<ColumnFloat64 &>(to).getData().push_back(result);
+        setLastValueToOutputColumn(transform, function_index, result);
     }
 
     private:
@@ -1840,8 +1903,11 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFun
         Float64 x = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_VALUE]]).getFloat64(transform->current_row.row);
         Float64 t = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_TIME]]).getFloat64(transform->current_row.row);
 
-        Float64 c = exp((last_t-t)/decay_length);
-        assert_cast<ColumnFloat64 &>(to).getData().push_back((x + c * last_val)/c);
+        Float64 c = exp((last_t - t) / decay_length);
+        Float64 result = (x + c * last_val) / c;
+
+        assert_cast<ColumnFloat64 &>(to).getData().push_back(result);
+        setLastValueToOutputColumn(transform, function_index, result);
     }
 
     private:
