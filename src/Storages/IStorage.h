@@ -585,6 +585,10 @@ public:
     /// Does not takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
+    /// Should table->drop be called at once or with delay (in case of atomic database engine).
+    /// Needed for integration engines, when there must be no delay for calling drop() method.
+    virtual bool dropTableImmediately() { return false; }
+
 private:
     /// Lock required for alter queries (lockForAlter). Always taken for write
     /// (actually can be replaced with std::mutex, but for consistency we use
