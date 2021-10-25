@@ -153,6 +153,7 @@ if __name__ == "__main__":
         os.makedirs(logs_path)
 
     run_log_path = os.path.join(logs_path, 'runlog.log')
+    subprocess.check_call(f"sudo chown -R root:root {temp_path}", shell=True)
     with open(run_log_path, 'w') as log:
         retcode = subprocess.Popen(run_cmd, shell=True, stderr=log, stdout=log).wait()
         if retcode == 0:
