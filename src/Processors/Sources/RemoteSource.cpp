@@ -93,27 +93,29 @@ std::optional<Chunk> RemoteSource::tryGenerate()
         return {};
     }
 
-    // String anime;
+    String anime;
 
-    // anime += block.dumpStructure();
+    anime += block.dumpStructure();
 
-    // for (const auto & column : block.getColumnsWithTypeAndName())
-    // {
+    for (const auto & column : block.getColumnsWithTypeAndName())
+    {
 
-    //     for (size_t i = 0; i < column.column->size(); ++i)
-    //     {
-    //         auto field = column.column->operator[](i).get<AggregateFunctionStateData>();
-    //         ReadBufferFromString ss(field.data);
+        for (size_t i = 0; i < column.column->size(); ++i)
+        {
+            // auto field = column.column->operator[](i).get<AggregateFunctionStateData>();
+            // ReadBufferFromString ss(field.data);
 
-    //         AggregateFunctionSumData<Int64> sumdata;
+            // AggregateFunctionSumData<Int64> sumdata;
 
-    //         sumdata.read(ss);
+            // sumdata.read(ss);
 
-    //         anime += fmt::format("size = {} value = {} \n", toString(field.data.size()), toString(sumdata.sum));
-    //     }
-    // }
+            // anime += fmt::format("size = {} value = {} \n", toString(field.data.size()), toString(sumdata.sum));
 
-    // LOG_FATAL(&Poco::Logger::get("RemoteQueryExecutor"), anime);
+            anime += column.column->operator[](i).dump() + '\n';
+        }
+    }
+
+    LOG_FATAL(&Poco::Logger::get("RemoteQueryExecutor"), anime);
 
     UInt64 num_rows = block.rows();
     Chunk chunk(block.getColumns(), num_rows);

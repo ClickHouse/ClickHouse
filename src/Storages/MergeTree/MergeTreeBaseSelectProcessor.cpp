@@ -76,7 +76,43 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
 
 bool MergeTreeBaseSelectProcessor::getNewTask()
 {
-    prepareNewTask();
+
+    String anime = "Buffered ranges \n";
+    for (const auto & buff: buffered_ranges)
+    {
+        for (const auto & range : buff)
+        {
+            anime += fmt::format("({} {}) \n", range.begin, range.end);
+        }
+        anime += "\n";
+    }
+
+
+    // LOG_FATAL(&Poco::Logger::get("MergeTreeBaseSelectProcessor"), anime);
+
+
+    // SCOPE_EXIT({
+    //     String result;
+
+    //     result += fmt::format("After coordination\n");
+    //     for (auto range : task->mark_ranges)
+    //         result += fmt::format("({} {}), ", range.begin, range.end);
+    //     result += fmt::format("\n");
+
+    //     // LOG_FATAL(&Poco::Logger::get("MergeTreeBaseSelectProcessor"), result);
+    // });
+
+    /// Try to get from buffer
+    while (!buffered_ranges.empty())
+    {
+        auto ranges = std::move(buffered_ranges.front());
+        buffered_ranges.pop_front();
+
+        assert(!ranges.empty());
+
+        if (Status::Accepted == performRequestToCoordinator(ranges))
+            return true;
+    }
 
     while (true)
     {
@@ -104,65 +140,21 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
         if (!res)
             return false;
 
-        // String result;
-
-        // result += fmt::format("Got task with ranges \n");
-        // for (auto range : task->mark_ranges)
-        //     result += fmt::format("({} {}), ", range.begin, range.end);
-        // result += fmt::format("\n");
-
-        String partition_id = task->data_part->info.partition_id;
-        String part_name;
-        String projection_name;
-
-        if (task->data_part->isProjectionPart())
-        {
-            part_name = task->data_part->getParentPart()->name;
-            projection_name  = task->data_part->name;
-        }
-        else
-        {
-            part_name = task->data_part->name;
-            projection_name = "";
-        }
-
-        PartBlockRange block_range
-        {
-            .begin = task->data_part->info.min_block,
-            .end = task->data_part->info.max_block
-        };
-
-        PartitionReadRequest request
-        {
-            .partition_id = std::move(partition_id),
-            .part_name = std::move(part_name),
-            .projection_name = std::move(projection_name),
-            .block_range = std::move(block_range),
-            .mark_ranges = std::move(task->mark_ranges)
-        };
-
-        auto responce = read_task_callback.value()(std::move(request));
-
-        task->mark_ranges = std::move(responce.mark_ranges);
-
-        if (responce.denied)
-        {
-            // result += fmt::format("Is is denied !!!");
-            // LOG_FATAL(&Poco::Logger::get("MergeTreeBaseSelectProcessor"), result);
+        if (task->mark_ranges.empty())
             continue;
+
+        fillBufferedRanged(task->mark_ranges);
+
+        while (!buffered_ranges.empty())
+        {
+            auto ranges = std::move(buffered_ranges.front());
+            buffered_ranges.pop_front();
+
+            assert(!ranges.empty());
+
+            if (Status::Accepted == performRequestToCoordinator(ranges))
+                return true;
         }
-
-
-        // result += fmt::format("After coordination\n");
-        // for (auto range : task->mark_ranges)
-        //     result += fmt::format("({} {}), ", range.begin, range.end);
-        // result += fmt::format("\n");
-
-
-        // LOG_FATAL(&Poco::Logger::get("MergeTreeBaseSelectProcessor"), result);
-
-        finalizeNewTask();
-        return true;
     }
 }
 
@@ -573,6 +565,115 @@ std::unique_ptr<MergeTreeBlockSizePredictor> MergeTreeBaseSelectProcessor::getSi
 
     return std::make_unique<MergeTreeBlockSizePredictor>(
         data_part, Names(complete_column_names.begin(), complete_column_names.end()), sample_block);
+}
+
+
+MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performRequestToCoordinator(MarkRanges request_ranges)
+{
+    String partition_id = task->data_part->info.partition_id;
+    String part_name;
+    String projection_name;
+
+    if (task->data_part->isProjectionPart())
+    {
+        part_name = task->data_part->getParentPart()->name;
+        projection_name  = task->data_part->name;
+    }
+    else
+    {
+        part_name = task->data_part->name;
+        projection_name = "";
+    }
+
+    PartBlockRange block_range
+    {
+        .begin = task->data_part->info.min_block,
+        .end = task->data_part->info.max_block
+    };
+
+    PartitionReadRequest request
+    {
+        .partition_id = std::move(partition_id),
+        .part_name = std::move(part_name),
+        .projection_name = std::move(projection_name),
+        .block_range = std::move(block_range),
+        .mark_ranges = std::move(request_ranges)
+    };
+
+    auto responce = read_task_callback.value()(std::move(request));
+
+    task->mark_ranges = std::move(responce.mark_ranges);
+
+    if (responce.denied)
+        return Status::Denied;
+
+    if (task->mark_ranges.empty())
+        return Status::Denied;
+
+    assert(!task->mark_ranges.empty());
+
+    finalizeNewTask();
+
+    return Status::Accepted;
+}
+
+void MergeTreeBaseSelectProcessor::fillBufferedRanged(MarkRanges ranges)
+{
+    // const size_t max_batch_size = 10;
+    // size_t current_batch_size = 0;
+
+    // buffered_ranges.emplace_back();
+
+    // for (const auto & range : ranges)
+    // {
+    //     auto expand_if_needed = [&]
+    //     {
+    //         if (current_batch_size > max_batch_size)
+    //         {
+    //             buffered_ranges.emplace_back();
+    //             current_batch_size = 0;
+    //         }
+
+    //     };
+
+    //     expand_if_needed();
+
+    //     if (range.end - range.begin < max_batch_size)
+    //     {
+    //         buffered_ranges.back().push_back(range);
+    //         current_batch_size += range.end - range.begin;
+    //         continue;
+    //     }
+
+    //     auto current_begin = range.begin;
+    //     auto current_end = range.begin + max_batch_size;
+
+    //     while (current_end < range.end)
+    //     {
+    //         buffered_ranges.back().emplace_back(current_begin, current_end);
+    //         current_batch_size += current_end - current_begin;
+    //         current_begin = current_end;
+    //         current_end = current_end + max_batch_size;
+
+    //         expand_if_needed();
+    //     }
+
+    //     if (range.end - current_begin > 0)
+    //     {
+    //         buffered_ranges.back().emplace_back(current_begin, range.end);
+    //         current_batch_size += range.end - current_begin;
+
+    //         /// Do not need to update current_begin and current_end
+
+    //         expand_if_needed();
+    //     }
+    // }
+
+    // if (buffered_ranges.back().empty())
+    //     buffered_ranges.pop_back();
+
+    std::sort(ranges.begin(), ranges.end());
+    buffered_ranges.emplace_back(ranges);
 }
 
 MergeTreeBaseSelectProcessor::~MergeTreeBaseSelectProcessor() = default;

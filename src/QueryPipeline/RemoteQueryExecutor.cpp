@@ -360,7 +360,36 @@ std::optional<Block> RemoteQueryExecutor::processPacket(Packet packet)
         case Protocol::Server::Data:
             /// If the block is not empty and is not a header block
             if (packet.block && (packet.block.rows() > 0))
-                return adaptBlockStructure(packet.block, header);
+            {
+                auto result = adaptBlockStructure(packet.block, header);
+
+                String anime;
+
+                anime += result.dumpStructure();
+
+                for (const auto & column : result.getColumnsWithTypeAndName())
+                {
+
+                    for (size_t i = 0; i < column.column->size(); ++i)
+                    {
+                        // auto field = column.column->operator[](i).get<AggregateFunctionStateData>();
+                        // ReadBufferFromString ss(field.data);
+
+                        // AggregateFunctionSumData<Int64> sumdata;
+
+                        // sumdata.read(ss);
+
+                        // anime += fmt::format("size = {} value = {} \n", toString(field.data.size()), toString(sumdata.sum));
+
+                        anime += column.column->operator[](i).dump() + '\n';
+                    }
+                }
+
+                LOG_FATAL(&Poco::Logger::get("RemoteQueryExecutor"), anime);
+
+                return result;
+            }
+
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
         case Protocol::Server::Exception:

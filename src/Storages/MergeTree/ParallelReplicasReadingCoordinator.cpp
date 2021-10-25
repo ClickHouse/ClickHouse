@@ -76,10 +76,11 @@ PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
         String result;
         for (const auto & partition : partitions)
         {
+            result += '\n';
             result += partition.first;
             result += partition.second.part_ranges.describe();
             for (const auto & ranges : partition.second.mark_ranges_in_part)
-                result += fmt::format("{} {} \n", ranges.first, ranges.second.describe());
+                result += fmt::format("({} {}), ", ranges.first, ranges.second.describe());
         }
 
         LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Current state {}", result);

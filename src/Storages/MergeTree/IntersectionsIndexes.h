@@ -98,9 +98,10 @@ public:
 
     String describe() const
     {
-        String result;
+        String result = "[";
         for (const auto & it : by_begin)
-            result += fmt::format("{} {} {} \n", it.name, it.range.begin, it.range.end);
+            result += fmt::format("({} {} {}), ", it.name, it.range.begin, it.range.end);
+        result += "]";
         return result;
     }
 
@@ -241,7 +242,8 @@ struct MarkRangesIntersectionsIndex
     {
         String result = "Mark ranges: ";
         for (const auto & it : by_begin)
-            result += fmt::format("{}, {} \n", it.begin, it.end);
+            result += fmt::format("({}, {}) ", it.begin, it.end);
+        result += "End! ";
         return result;
     }
 

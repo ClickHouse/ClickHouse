@@ -23,6 +23,12 @@ struct MarkRange
     {
       return begin == rhs.begin && end == rhs.end;
     }
+
+    bool operator<(const MarkRange & rhs) const
+    {
+      /// Some assert?
+      return begin < rhs.begin && end < rhs.begin;
+    }
 };
 
 using MarkRanges = std::deque<MarkRange>;

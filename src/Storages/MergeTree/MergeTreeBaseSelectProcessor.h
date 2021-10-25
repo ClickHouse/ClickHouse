@@ -96,9 +96,21 @@ protected:
     MergeTreeReaderPtr reader;
     MergeTreeReaderPtr pre_reader;
 
-
     MergeTreeReadTaskPtr task;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
+
+private:
+
+    enum class Status {
+        Accepted,
+        Denied
+    };
+
+    /// It will reinitialize
+    Status performRequestToCoordinator(MarkRanges requested_ranges);
+    void fillBufferedRanged(MarkRanges ranges);
+
+    std::deque<MarkRanges> buffered_ranges;
 };
 
 }

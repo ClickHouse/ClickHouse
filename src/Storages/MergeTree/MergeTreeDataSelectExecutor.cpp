@@ -391,6 +391,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     bool sample_factor_column_queried,
     Poco::Logger * log)
 {
+    // LOG_FATAL(&Poco::Logger::get("MergeTreeDataSelectExecutor"), "getSampling");
+
     const Settings & settings = context->getSettingsRef();
     /// Sampling.
     MergeTreeDataSelectSamplingData sampling;
@@ -493,6 +495,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
 
     if (sampling.use_sampling)
     {
+        // LOG_FATAL(&Poco::Logger::get("MergeTreeDataSelectExecutor"), "Using sampling");
+
         if (sample_factor_column_queried && relative_sample_size != RelativeSize(0))
             sampling.used_sample_factor = 1.0 / boost::rational_cast<Float64>(relative_sample_size);
 

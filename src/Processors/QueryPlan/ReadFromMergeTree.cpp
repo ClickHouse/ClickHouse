@@ -233,18 +233,19 @@ Pipe ReadFromMergeTree::read(
     RangesInDataParts parts_with_range, Names required_columns, ReadType read_type,
     size_t max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache)
 {
-    if (read_type == ReadType::Default && max_streams > 1)
+    (void)read_type;
+    // if (read_type == ReadType::Default && max_streams > 1)
         return readFromPool(parts_with_range, required_columns, max_streams,
                             min_marks_for_concurrent_read, use_uncompressed_cache);
 
-    auto pipe = readInOrder(parts_with_range, required_columns, read_type, use_uncompressed_cache, 0);
+    // auto pipe = readInOrder(parts_with_range, required_columns, read_type, use_uncompressed_cache, 0);
 
-    /// Use ConcatProcessor to concat sources together.
-    /// It is needed to read in parts order (and so in PK order) if single thread is used.
-    if (read_type == ReadType::Default && pipe.numOutputPorts() > 1)
-        pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getHeader(), pipe.numOutputPorts()));
+    // /// Use ConcatProcessor to concat sources together.
+    // /// It is needed to read in parts order (and so in PK order) if single thread is used.
+    // if (read_type == ReadType::Default && pipe.numOutputPorts() > 1)
+    //     pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getHeader(), pipe.numOutputPorts()));
 
-    return pipe;
+    // return pipe;
 }
 
 namespace

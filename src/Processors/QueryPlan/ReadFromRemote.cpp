@@ -165,9 +165,12 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
         {
             /// FIXME: Don't know what to do with it, because it could read data without asking an initiator
             auto plan = createLocalPlan(query, header, context, stage, shard_num, shard_count);
-            return QueryPipelineBuilder::getPipe(std::move(*plan->buildQueryPipeline(
-                QueryPlanOptimizationSettings::fromContext(context),
-                BuildQueryPipelineSettings::fromContext(context))));
+
+            std::terminate();
+
+            // return QueryPipelineBuilder::getPipe(std::move(*plan->buildQueryPipeline(
+            //     QueryPlanOptimizationSettings::fromContext(context),
+            //     BuildQueryPipelineSettings::fromContext(context))));
         }
         else
         {
