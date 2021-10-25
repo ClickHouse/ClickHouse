@@ -111,6 +111,18 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
     bool found_part_with_the_same_max_block = false;
 
     Strings replicas = zookeeper->getChildren(storage.zookeeper_path + "/replicas");
+    /// Move our replica to the end of replicas
+    for (auto it = replicas.begin(); it != replicas.end(); ++it)
+    {
+        String replica_path = storage.zookeeper_path + "/replicas/" + *it;
+        if (replica_path == storage.replica_path)
+        {
+            std::iter_swap(it, replicas.rbegin());
+            break;
+        }
+    }
+
+    /// Check all replicas and our replica must be this last one
     for (const String & replica : replicas)
     {
         String replica_path = storage.zookeeper_path + "/replicas/" + replica;
@@ -146,7 +158,7 @@ ReplicatedMergeTreePartCheckThread::MissingPartSearchResult ReplicatedMergeTreeP
                 if (found_part_with_the_same_min_block && found_part_with_the_same_max_block)
                 {
                     /// FIXME It may never appear
-                    LOG_WARNING(log, "Found parts with the same min block and with the same max block as the missing part {}. Hoping that it will eventually appear as a result of a merge.", part_name);
+                    LOG_WARNING(log, "Found parts with the same min block and with the same max block as the missing part {} on replica {}. Hoping that it will eventually appear as a result of a merge.", part_name, replica);
                     return MissingPartSearchResult::FoundAndDontNeedFetch;
                 }
             }

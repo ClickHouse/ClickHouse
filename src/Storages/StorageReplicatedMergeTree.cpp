@@ -1226,34 +1226,24 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
 
         Coordination::Requests ops;
 
-        String has_replica = findReplicaHavingPart(part_name, true);
-        if (!has_replica.empty())
+        LOG_ERROR(log, "Removing locally missing part from ZooKeeper and queueing a fetch: {}", part_name);
+        time_t part_create_time = 0;
+        Coordination::ExistsResponse exists_resp = exists_futures[i].get();
+        if (exists_resp.error == Coordination::Error::ZOK)
         {
-            LOG_ERROR(log, "Removing locally missing part from ZooKeeper and queueing a fetch: {}", part_name);
-            time_t part_create_time = 0;
-            Coordination::ExistsResponse exists_resp = exists_futures[i].get();
-            if (exists_resp.error == Coordination::Error::ZOK)
-            {
-                part_create_time = exists_resp.stat.ctime / 1000;
-                removePartFromZooKeeper(part_name, ops, exists_resp.stat.numChildren > 0);
-            }
-            LogEntry log_entry;
-            log_entry.type = LogEntry::GET_PART;
-            log_entry.source_replica = "";
-            log_entry.new_part_name = part_name;
-            log_entry.create_time = part_create_time;
-
-            /// We assume that this occurs before the queue is loaded (queue.initialize).
-            ops.emplace_back(zkutil::makeCreateRequest(
-                fs::path(replica_path) / "queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
-            enqueue_futures.emplace_back(zookeeper->asyncMulti(ops));
+            part_create_time = exists_resp.stat.ctime / 1000;
+            removePartFromZooKeeper(part_name, ops, exists_resp.stat.numChildren > 0);
         }
-        else
-        {
-            LOG_ERROR(log, "Not found active replica having part {}", part_name);
-            enqueuePartForCheck(part_name);
-        }
+        LogEntry log_entry;
+        log_entry.type = LogEntry::GET_PART;
+        log_entry.source_replica = "";
+        log_entry.new_part_name = part_name;
+        log_entry.create_time = part_create_time;
 
+        /// We assume that this occurs before the queue is loaded (queue.initialize).
+        ops.emplace_back(zkutil::makeCreateRequest(
+            fs::path(replica_path) / "queue/queue-", log_entry.toString(), zkutil::CreateMode::PersistentSequential));
+        enqueue_futures.emplace_back(zookeeper->asyncMulti(ops));
     }
 
     for (auto & future : enqueue_futures)
@@ -4318,8 +4308,6 @@ void StorageReplicatedMergeTree::startup()
 
     try
     {
-        queue.initialize(getDataParts());
-
         InterserverIOEndpointPtr data_parts_exchange_ptr = std::make_shared<DataPartsExchange::Service>(*this);
         [[maybe_unused]] auto prev_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, data_parts_exchange_ptr);
         assert(prev_ptr == nullptr);
