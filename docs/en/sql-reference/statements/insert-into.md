@@ -120,3 +120,13 @@ Performance will not decrease if:
 -   You upload data that is usually sorted by time.
 
 It's also possible to asynchronously insert data in small but frequent inserts from multiple concurrent connections. The data from such insertions is combined into batches and then safely inserted into a table. To enable the asynchronous mode, switch on the [async_insert](../../operations/settings/settings.md#async-insert) setting. Note that asynchronous insertions are supported only over HTTP protocol, and deduplication is not supported for them.
+
+**See Also**
+
+-   [async_insert](../../operations/settings/settings.md#async-insert)
+-   [async_insert_threads](../../operations/settings/settings.md#async-insert-threads)
+-   [wait_for_async_insert](../../operations/settings/settings.md#wait-for-async-insert)
+-   [wait_for_async_insert_timeout](../../operations/settings/settings.md#wait-for-async-insert-timeout)
+-   [async_insert_max_data_size](../../operations/settings/settings.md#async-insert-max-data-size)
+-   [async_insert_busy_timeout](../../operations/settings/settings.md#async-insert-busy-timeout)
+-   [async_insert_stale_timeout](../../operations/settings/settings.md#async-insert-stale-timeout)
