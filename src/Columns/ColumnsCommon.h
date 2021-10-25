@@ -15,6 +15,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Transform 64-byte mask to 64-bit mask
+UInt64 Bytes64MaskToBits64Mask(const UInt8 * bytes64);
 /// Counts how many bytes of `filt` are greater than zero.
 size_t countBytesInFilter(const UInt8 * filt, size_t sz);
 size_t countBytesInFilter(const IColumn::Filter & filt);
