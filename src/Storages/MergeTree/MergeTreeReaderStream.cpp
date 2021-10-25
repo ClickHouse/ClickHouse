@@ -71,6 +71,10 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         sum_mark_range_bytes += mark_range_bytes;
     }
 
+    std::optional<size_t> estimated_sum_mark_range_bytes;
+    if (sum_mark_range_bytes)
+        estimated_sum_mark_range_bytes.emplace(sum_mark_range_bytes);
+
     /// Avoid empty buffer. May happen while reading dictionary for DataTypeLowCardinality.
     /// For example: part has single dictionary and all marks point to the same position.
     ReadSettings read_settings = settings.read_settings;
@@ -86,12 +90,12 @@ MergeTreeReaderStream::MergeTreeReaderStream(
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             fullPath(disk, path_prefix + data_file_extension),
-            [this, sum_mark_range_bytes, read_settings]()
+            [this, estimated_sum_mark_range_bytes, read_settings]()
             {
                 return disk->readFile(
                     path_prefix + data_file_extension,
                     read_settings,
-                    sum_mark_range_bytes);
+                    estimated_sum_mark_range_bytes);
             },
             uncompressed_cache);
 
@@ -110,7 +114,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
             disk->readFile(
                 path_prefix + data_file_extension,
                 read_settings,
-                sum_mark_range_bytes));
+                estimated_sum_mark_range_bytes));
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
