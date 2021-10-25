@@ -271,7 +271,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 void StorageMergeTree::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
-    TableLockHolder & table_lock_holder)
+    AlterLockHolder & table_lock_holder)
 {
     auto table_id = getStorageID();
     auto old_storage_settings = getSettings();
