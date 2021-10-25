@@ -20,6 +20,8 @@ def get_build_config(build_check_name, build_number, repo_path):
         build_config_name = 'build_config'
     elif build_check_name == 'ClickHouse special build check (actions)':
         build_config_name = 'special_build_config'
+    else:
+        raise Exception(f"Unknown build check name {build_check_name}")
 
     ci_config_path = os.path.join(repo_path, "tests/ci/ci_config.json")
     with open(ci_config_path, 'r') as ci_config:
