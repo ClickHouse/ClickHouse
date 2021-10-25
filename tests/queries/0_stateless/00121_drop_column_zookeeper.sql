@@ -1,6 +1,3 @@
--- Tags: zookeeper, no-replicated-database
--- Tag no-replicated-database: Old syntax is not allowed
-
 DROP TABLE IF EXISTS alter_00121;
 CREATE TABLE alter_00121 (d Date, x UInt8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test/alter_00121/t1', 'r1', d, (d), 8192);
 

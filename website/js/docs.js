@@ -27,7 +27,7 @@ function onResize() {
         single_page_switch.removeClass('float-right');
     }
     if (window_height < 800 && is_wide) {
-        docs_top_nav.removeClass('fixed-top');
+        docs_top_nav.removeClass('sticky-top');
         $('#sidebar, #toc.toc-right').css({
             'height': window_height,
             'position': 'sticky',
@@ -35,7 +35,7 @@ function onResize() {
         });
     } else {
         var top_nav_height = docs_top_nav.height();
-        docs_top_nav.addClass('fixed-top');
+        docs_top_nav.addClass('sticky-top');
         $('#sidebar, #toc.toc-right').css({
             'height': (window_height - top_nav_height) + 'px',
             'position': 'fixed',

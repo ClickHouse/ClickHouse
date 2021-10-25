@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 
-#include <Formats/NativeWriter.h>
+#include <DataStreams/NativeBlockOutputStream.h>
 #include <Disks/IDiskRemote.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/createVolume.h>
@@ -14,7 +14,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <IO/createReadBufferFromFileBase.h>
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <iterator>
 #include <regex>
@@ -57,8 +57,6 @@ constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION = 4;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID = 5;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY = 6;
 constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION = 7;
-// Reserved for ALTER PRIMARY KEY
-// constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PRIMARY_KEY = 8;
 
 
 std::string getEndpointId(const std::string & node_id)
@@ -112,8 +110,28 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
     /// Validation of the input that may come from malicious replica.
     MergeTreePartInfo::fromPartName(part_name, data.format_version);
 
+    static std::atomic_uint total_sends {0};
+
+    if ((data_settings->replicated_max_parallel_sends
+            && total_sends >= data_settings->replicated_max_parallel_sends)
+        || (data_settings->replicated_max_parallel_sends_for_table
+            && data.current_table_sends >= data_settings->replicated_max_parallel_sends_for_table))
+    {
+        response.setStatus(std::to_string(HTTP_TOO_MANY_REQUESTS));
+        response.setReason("Too many concurrent fetches, try again later");
+        response.set("Retry-After", "10");
+        response.setChunkedTransferEncoding(false);
+        return;
+    }
+
     /// We pretend to work as older server version, to be sure that client will correctly process our version
     response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION))});
+
+    ++total_sends;
+    SCOPE_EXIT({--total_sends;});
+
+    ++data.current_table_sends;
+    SCOPE_EXIT({--data.current_table_sends;});
 
     LOG_TRACE(log, "Sending part {}", part_name);
 
@@ -163,7 +181,7 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
             client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
         {
             auto disk = part->volume->getDisk();
-            auto disk_type = toString(disk->getType());
+            auto disk_type = DiskType::toString(disk->getType());
             if (disk->supportZeroCopyReplication() && std::find(capability.begin(), capability.end(), disk_type) != capability.end())
             {
                 /// Send metadata if the receiver's capability covers the source disk type.
@@ -222,7 +240,7 @@ void Service::sendPartFromMemory(
 
         writeStringBinary(name, out);
         projection->checksums.write(out);
-        NativeWriter block_out(out, 0, projection_sample_block);
+        NativeBlockOutputStream block_out(out, 0, projection_sample_block);
         block_out.write(part_in_memory->block);
     }
 
@@ -230,7 +248,7 @@ void Service::sendPartFromMemory(
     if (!part_in_memory)
         throw Exception("Part " + part->name + " is not stored in memory", ErrorCodes::LOGICAL_ERROR);
 
-    NativeWriter block_out(out, 0, metadata_snapshot->getSampleBlock());
+    NativeBlockOutputStream block_out(out, 0, metadata_snapshot->getSampleBlock());
     part->checksums.write(out);
     block_out.write(part_in_memory->block);
 
@@ -344,7 +362,7 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
         writeStringBinary(it.first, out);
         writeBinary(file_size, out);
 
-        auto file_in = createReadBufferFromFileBase(metadata_file, {}, 0);
+        auto file_in = createReadBufferFromFileBase(metadata_file, 0, 0, 0, nullptr, DBMS_DEFAULT_BUFFER_SIZE);
         HashingWriteBuffer hashing_out(out);
         copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
         if (blocker.isCancelled())
@@ -411,20 +429,23 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
     {
         if (!disk)
         {
-            Disks disks = data.getDisks();
-            for (const auto & data_disk : disks)
-                if (data_disk->supportZeroCopyReplication())
-                    capability.push_back(toString(data_disk->getType()));
+            DiskType::Type zero_copy_disk_types[] = {DiskType::Type::S3, DiskType::Type::HDFS};
+            for (auto disk_type: zero_copy_disk_types)
+            {
+                Disks disks = data.getDisksByType(disk_type);
+                if (!disks.empty())
+                {
+                    capability.push_back(DiskType::toString(disk_type));
+                }
+            }
         }
         else if (disk->supportZeroCopyReplication())
         {
-            capability.push_back(toString(disk->getType()));
+            capability.push_back(DiskType::toString(disk->getType()));
         }
     }
     if (!capability.empty())
     {
-        std::sort(capability.begin(), capability.end());
-        capability.erase(std::unique(capability.begin(), capability.end()), capability.end());
         const String & remote_fs_metadata = boost::algorithm::join(capability, ", ");
         uri.addQueryParameter("remote_fs_metadata", remote_fs_metadata);
     }
@@ -569,7 +590,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
         if (!checksums.read(in))
             throw Exception("Cannot deserialize checksums", ErrorCodes::CORRUPTED_DATA);
 
-        NativeReader block_in(in, 0);
+        NativeBlockInputStream block_in(in, 0);
         auto block = block_in.read();
         throttler->add(block.bytes());
 
@@ -580,8 +601,9 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
         new_projection_part->is_temp = false;
         new_projection_part->setColumns(block.getNamesAndTypesList());
         MergeTreePartition partition{};
+        IMergeTreeDataPart::MinMaxIndex minmax_idx{};
         new_projection_part->partition = std::move(partition);
-        new_projection_part->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
+        new_projection_part->minmax_idx = std::move(minmax_idx);
 
         MergedBlockOutputStream part_out(
             new_projection_part,
@@ -589,6 +611,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
             block.getNamesAndTypesList(),
             {},
             CompressionCodecFactory::instance().get("NONE", {}));
+        part_out.writePrefix();
         part_out.write(block);
         part_out.writeSuffixAndFinalizePart(new_projection_part);
         new_projection_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
@@ -599,18 +622,19 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     if (!checksums.read(in))
         throw Exception("Cannot deserialize checksums", ErrorCodes::CORRUPTED_DATA);
 
-    NativeReader block_in(in, 0);
+    NativeBlockInputStream block_in(in, 0);
     auto block = block_in.read();
     throttler->add(block.bytes());
 
     new_data_part->uuid = part_uuid;
     new_data_part->is_temp = true;
     new_data_part->setColumns(block.getNamesAndTypesList());
-    new_data_part->minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+    new_data_part->minmax_idx.update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
     new_data_part->partition.create(metadata_snapshot, block, 0, context);
 
     MergedBlockOutputStream part_out(
         new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, CompressionCodecFactory::instance().get("NONE", {}));
+    part_out.writePrefix();
     part_out.write(block);
     part_out.writeSuffixAndFinalizePart(new_data_part);
     new_data_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);

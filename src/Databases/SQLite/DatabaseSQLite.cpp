@@ -2,7 +2,7 @@
 
 #if USE_SQLITE
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
@@ -44,7 +44,7 @@ bool DatabaseSQLite::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &) const
+DatabaseTablesIteratorPtr DatabaseSQLite::getTablesIterator(ContextPtr local_context, const IDatabase::FilterByNameFunction &)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -162,10 +162,6 @@ ASTPtr DatabaseSQLite::getCreateDatabaseQuery() const
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->database = getDatabaseName();
     create_query->set(create_query->storage, database_engine_define);
-
-    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
-
     return create_query;
 }
 

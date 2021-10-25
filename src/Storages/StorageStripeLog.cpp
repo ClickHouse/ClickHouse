@@ -14,8 +14,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
+#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/NativeBlockInputStream.h>
+#include <DataStreams/NativeBlockOutputStream.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -31,7 +32,7 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 
 #include <cassert>
 
@@ -77,7 +78,7 @@ public:
         StorageStripeLog & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const Names & column_names,
-        ReadSettings read_settings_,
+        size_t max_read_buffer_size_,
         std::shared_ptr<const IndexForNativeFormat> & index_,
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
         IndexForNativeFormat::Blocks::const_iterator index_end_)
@@ -85,7 +86,7 @@ public:
             getHeader(storage_, metadata_snapshot_, column_names, index_begin_, index_end_))
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
-        , read_settings(std::move(read_settings_))
+        , max_read_buffer_size(max_read_buffer_size_)
         , index(index_)
         , index_begin(index_begin_)
         , index_end(index_end_)
@@ -119,7 +120,7 @@ protected:
 private:
     StorageStripeLog & storage;
     StorageMetadataPtr metadata_snapshot;
-    ReadSettings read_settings;
+    size_t max_read_buffer_size;
 
     std::shared_ptr<const IndexForNativeFormat> index;
     IndexForNativeFormat::Blocks::const_iterator index_begin;
@@ -132,7 +133,7 @@ private:
       */
     bool started = false;
     std::optional<CompressedReadBufferFromFile> data_in;
-    std::optional<NativeReader> block_in;
+    std::optional<NativeBlockInputStream> block_in;
 
     void start()
     {
@@ -141,7 +142,9 @@ private:
             started = true;
 
             String data_file_path = storage.table_path + "data.bin";
-            data_in.emplace(storage.disk->readFile(data_file_path, read_settings.adjustBufferSize(storage.disk->getFileSize(data_file_path))));
+            size_t buffer_size = std::min(max_read_buffer_size, storage.disk->getFileSize(data_file_path));
+
+            data_in.emplace(storage.disk->readFile(data_file_path, buffer_size));
             block_in.emplace(*data_in, 0, index_begin, index_end);
         }
     }
@@ -202,7 +205,7 @@ public:
 
     void consume(Chunk chunk) override
     {
-        block_out.write(getHeader().cloneWithColumns(chunk.detachColumns()));
+        block_out.write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onFinish() override
@@ -210,6 +213,7 @@ public:
         if (done)
             return;
 
+        block_out.writeSuffix();
         data_out->next();
         data_out_compressed->next();
         data_out_compressed->finalize();
@@ -240,7 +244,7 @@ private:
     String index_out_file;
     std::unique_ptr<WriteBuffer> index_out_compressed;
     std::unique_ptr<CompressedWriteBuffer> index_out;
-    NativeWriter block_out;
+    NativeBlockOutputStream block_out;
 
     bool done = false;
 };
@@ -338,9 +342,7 @@ Pipe StorageStripeLog::read(
         return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
     }
 
-    ReadSettings read_settings = context->getReadSettings();
-
-    CompressedReadBufferFromFile index_in(disk->readFile(index_file, read_settings.adjustBufferSize(4096)));
+    CompressedReadBufferFromFile index_in(disk->readFile(index_file, 4096));
     std::shared_ptr<const IndexForNativeFormat> index{std::make_shared<IndexForNativeFormat>(index_in, column_names_set)};
 
     size_t size = index->blocks.size();
@@ -356,7 +358,7 @@ Pipe StorageStripeLog::read(
         std::advance(end, (stream + 1) * size / num_streams);
 
         pipes.emplace_back(std::make_shared<StripeLogSource>(
-            *this, metadata_snapshot, column_names, read_settings, index, begin, end));
+            *this, metadata_snapshot, column_names, context->getSettingsRef().max_read_buffer_size, index, begin, end));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.

@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 SELECT '--allow_simdjson=1--';
 SET allow_simdjson=1;
 
@@ -230,12 +228,6 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b
 SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300]}');
 SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}');
 SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}', 'c');
-
-SELECT '--JSONExtractKeys--';
-SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}');
-SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}', 'b');
-SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}', 'a');
-SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300], "c":{"d":[121,144]}}', 'c');
 
 SELECT '--const/non-const mixed--';
 SELECT JSONExtractString('["a", "b", "c", "d", "e"]', idx) FROM (SELECT arrayJoin([1,2,3,4,5]) AS idx);

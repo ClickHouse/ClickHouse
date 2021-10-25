@@ -2,7 +2,7 @@
 #include <Core/Field.h>
 #include <Core/MySQL/PacketsReplication.h>
 #include <Core/MySQL/MySQLGtid.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 

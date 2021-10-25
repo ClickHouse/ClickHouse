@@ -1,5 +1,3 @@
--- Tags: zookeeper, no-replicated-database, no-parallel
-
 DROP TABLE IF EXISTS rmt;
 
 CREATE TABLE rmt (n UInt64, s String) ENGINE = ReplicatedMergeTree('/clickhouse/test_01148/{shard}/{database}/{table}', '{replica}') ORDER BY n;

@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-    #include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_HDFS
 #include <IO/WriteBuffer.h>
@@ -21,7 +19,7 @@ class WriteBufferFromHDFS final : public BufferWithOwnMemory<WriteBuffer>
 
 public:
     WriteBufferFromHDFS(
-        const String & hdfs_name_,
+        const std::string & hdfs_name_,
         const Poco::Util::AbstractConfiguration & config_,
         size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         int flags = O_WRONLY);

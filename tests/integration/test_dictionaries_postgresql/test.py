@@ -8,7 +8,7 @@ from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1',
-                             main_configs=['configs/config.xml', 'configs/dictionaries/postgres_dict.xml', 'configs/named_collections.xml'],
+                             main_configs=['configs/config.xml', 'configs/dictionaries/postgres_dict.xml'],
                              with_postgres=True, with_postgres_cluster=True)
 
 postgres_dict_table_template = """
@@ -300,73 +300,6 @@ def test_postgres_schema(started_cluster):
     result = node1.query("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))")
     assert(int(result.strip()) == 99)
     node1.query("DROP DICTIONARY IF EXISTS postgres_dict")
-
-
-def test_predefined_connection_configuration(started_cluster):
-    conn = get_postgres_conn(ip=started_cluster.postgres_ip, port=started_cluster.postgres_port, database=True)
-    cursor = conn.cursor()
-
-    cursor.execute('DROP TABLE IF EXISTS test_table')
-    cursor.execute('CREATE TABLE test_table (id integer, value integer)')
-    cursor.execute('INSERT INTO test_table SELECT i, i FROM generate_series(0, 99) as t(i)')
-
-    node1.query('''
-    CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
-    PRIMARY KEY id
-    SOURCE(POSTGRESQL(NAME postgres1))
-        LIFETIME(MIN 1 MAX 2)
-        LAYOUT(HASHED());
-    ''')
-    result = node1.query("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))")
-    assert(int(result.strip()) == 99)
-
-    cursor.execute('DROP SCHEMA IF EXISTS test_schema CASCADE')
-    cursor.execute('CREATE SCHEMA test_schema')
-    cursor.execute('CREATE TABLE test_schema.test_table (id integer, value integer)')
-    cursor.execute('INSERT INTO test_schema.test_table SELECT i, 100 FROM generate_series(0, 99) as t(i)')
-
-    node1.query('''
-    DROP DICTIONARY postgres_dict;
-    CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
-    PRIMARY KEY id
-    SOURCE(POSTGRESQL(NAME postgres1 SCHEMA test_schema))
-        LIFETIME(MIN 1 MAX 2)
-        LAYOUT(HASHED());
-    ''')
-    result = node1.query("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))")
-    assert(int(result.strip()) == 100)
-
-    node1.query('''
-    DROP DICTIONARY postgres_dict;
-    CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
-    PRIMARY KEY id
-    SOURCE(POSTGRESQL(NAME postgres2))
-        LIFETIME(MIN 1 MAX 2)
-        LAYOUT(HASHED());
-    ''')
-    result = node1.query("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))")
-    assert(int(result.strip()) == 100)
-
-    node1.query('DROP DICTIONARY postgres_dict')
-    node1.query('''
-    CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
-    PRIMARY KEY id
-    SOURCE(POSTGRESQL(NAME postgres4))
-        LIFETIME(MIN 1 MAX 2)
-        LAYOUT(HASHED());
-    ''')
-    result = node1.query_and_get_error("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))")
-
-    node1.query('''
-    DROP DICTIONARY postgres_dict;
-    CREATE DICTIONARY postgres_dict (id UInt32, value UInt32)
-    PRIMARY KEY id
-    SOURCE(POSTGRESQL(NAME postgres1 PORT 5432))
-        LIFETIME(MIN 1 MAX 2)
-        LAYOUT(HASHED());
-    ''')
-    result = node1.query("SELECT dictGetUInt32(postgres_dict, 'value', toUInt64(99))")
-    assert(int(result.strip()) == 99)
 
 
 if __name__ == '__main__':

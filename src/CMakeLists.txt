@@ -45,11 +45,10 @@ if (COMPILER_GCC)
 endif ()
 
 add_subdirectory (Access)
-add_subdirectory (Backups)
 add_subdirectory (Columns)
 add_subdirectory (Common)
 add_subdirectory (Core)
-add_subdirectory (QueryPipeline)
+add_subdirectory (DataStreams)
 add_subdirectory (DataTypes)
 add_subdirectory (Dictionaries)
 add_subdirectory (Disks)
@@ -107,10 +106,6 @@ endif()
 if (USE_HDFS)
     add_headers_and_sources(dbms Storages/HDFS)
     add_headers_and_sources(dbms Disks/HDFS)
-endif()
-
-if(USE_FILELOG)
-    add_headers_and_sources(dbms Storages/FileLog)
 endif()
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
@@ -185,11 +180,10 @@ macro(add_object_library name common_path)
 endmacro()
 
 add_object_library(clickhouse_access Access)
-add_object_library(clickhouse_backups Backups)
 add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
-add_object_library(clickhouse_querypipeline QueryPipeline)
+add_object_library(clickhouse_datastreams DataStreams)
 add_object_library(clickhouse_datatypes DataTypes)
 add_object_library(clickhouse_datatypes_serializations DataTypes/Serializations)
 add_object_library(clickhouse_databases Databases)
@@ -216,9 +210,7 @@ add_object_library(clickhouse_processors_formats Processors/Formats)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
 add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_sources Processors/Sources)
-add_object_library(clickhouse_processors_sinks Processors/Sinks)
 add_object_library(clickhouse_processors_merges Processors/Merges)
-add_object_library(clickhouse_processors_ttl Processors/TTL)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
@@ -267,7 +259,7 @@ dbms_target_include_directories (PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickH
 target_include_directories (clickhouse_common_io PUBLIC "${ClickHouse_SOURCE_DIR}/src" "${ClickHouse_BINARY_DIR}/src")
 
 if (USE_EMBEDDED_COMPILER)
-    dbms_target_link_libraries (PUBLIC ${REQUIRED_LLVM_LIBRARIES})
+    dbms_target_link_libraries (PRIVATE ${REQUIRED_LLVM_LIBRARIES})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${LLVM_INCLUDE_DIRS})
 endif ()
 
@@ -288,13 +280,6 @@ target_link_libraries (clickhouse_common_io
             ${DOUBLE_CONVERSION_LIBRARIES}
             dragonbox_to_chars
 )
-
-# Use X86 AVX2/AVX512 instructions to accelerate filter operations
-set_source_files_properties(
-        Columns/ColumnFixedString.cpp
-        Columns/ColumnsCommon.cpp
-        Columns/ColumnVector.cpp
-        PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
 if(RE2_LIBRARY)
     target_link_libraries(clickhouse_common_io PUBLIC ${RE2_LIBRARY})
@@ -362,20 +347,10 @@ dbms_target_link_libraries (
         clickhouse_common_io
 )
 
-if (NOT_UNBUNDLED)
-    dbms_target_link_libraries (
-        PUBLIC
-            boost::circular_buffer
-            boost::heap
-    )
-endif()
-
 target_include_directories(clickhouse_common_io PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include") # uses some includes from core
 dbms_target_include_directories(PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include")
 
-target_include_directories(clickhouse_common_io BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${PDQSORT_INCLUDE_DIR})
-target_include_directories(clickhouse_common_io BEFORE PUBLIC ${MINISELECT_INCLUDE_DIR})
 dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${MINISELECT_INCLUDE_DIR})
 
 if (ZSTD_LIBRARY)
@@ -498,8 +473,6 @@ endif()
 if (USE_DATASKETCHES)
     target_include_directories (clickhouse_aggregate_functions SYSTEM BEFORE PRIVATE ${DATASKETCHES_INCLUDE_DIR})
 endif ()
-
-target_link_libraries (clickhouse_common_io PRIVATE lz4)
 
 dbms_target_link_libraries(PRIVATE _boost_context)
 

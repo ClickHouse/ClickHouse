@@ -17,7 +17,7 @@ void MergeTreeSink::onStart()
 
 void MergeTreeSink::consume(Chunk chunk)
 {
-    auto block = getHeader().cloneWithColumns(chunk.detachColumns());
+    auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
 
     auto part_blocks = storage.writer.splitBlockIntoParts(block, max_parts_per_block, metadata_snapshot, context);
     for (auto & current_block : part_blocks)
@@ -37,7 +37,7 @@ void MergeTreeSink::consume(Chunk chunk)
             PartLog::addNewPart(storage.getContext(), part, watch.elapsed());
 
             /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
-            storage.background_operations_assignee.trigger();
+            storage.background_executor.triggerTask();
         }
     }
 }

@@ -1,0 +1,23 @@
+OWNER(g:clickhouse)
+
+LIBRARY()
+
+ADDINCL(
+    contrib/libs/icu/common
+    contrib/libs/icu/i18n
+    contrib/libs/pdqsort
+    contrib/libs/lz4
+)
+
+PEERDIR(
+    clickhouse/src/Common
+    contrib/libs/icu
+    contrib/libs/pdqsort
+    contrib/libs/lz4
+)
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests | grep -v -F examples | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

@@ -10,7 +10,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <Dictionaries//DictionarySource.h>
@@ -322,7 +322,8 @@ void FlatDictionary::updateData()
 {
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
+        QueryPipeline pipeline;
+        pipeline.init(source_ptr->loadUpdatedAll());
 
         PullingPipelineExecutor executor(pipeline);
         Block block;
@@ -357,7 +358,8 @@ void FlatDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        QueryPipeline pipeline(source_ptr->loadAll());
+        QueryPipeline pipeline;
+        pipeline.init(source_ptr->loadAll());
         PullingPipelineExecutor executor(pipeline);
 
         Block block;
@@ -560,7 +562,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
                             const Poco::Util::AbstractConfiguration & config,
                             const std::string & config_prefix,
                             DictionarySourcePtr source_ptr,
-                            ContextPtr /* global_context */,
+                            ContextPtr /* context */,
                             bool /* created_from_ddl */) -> DictionaryPtr
     {
         if (dict_struct.key)

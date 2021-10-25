@@ -4,7 +4,7 @@
 #   include "config_core.h"
 #endif
 
-#include <base/types.h>
+#include <common/types.h>
 
 #if USE_LDAP
 #   include <ldap.h>

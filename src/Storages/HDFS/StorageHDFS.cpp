@@ -13,19 +13,17 @@
 #include <IO/WriteHelpers.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <DataStreams/OwningBlockInputStream.h>
 #include <Common/parseGlobs.h>
 #include <Poco/URI.h>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 #include <hdfs/hdfs.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 #include <filesystem>
 
 
@@ -125,14 +123,13 @@ public:
 
                 auto compression = chooseCompressionMethod(path, compression_method);
                 read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri, path, getContext()->getGlobalContext()->getConfigRef()), compression);
-                auto input_format = getContext()->getInputFormat(format, *read_buf, sample_block, max_block_size);
-                pipeline = QueryPipeline(std::move(input_format));
+                auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, getContext(), max_block_size);
 
-                reader = std::make_unique<PullingPipelineExecutor>(pipeline);
+                reader = std::make_shared<InputStreamFromInputFormat>(input_format);
+                reader->readPrefix();
             }
 
-            Block res;
-            if (reader->pull(res))
+            if (auto res = reader->read())
             {
                 Columns columns = res.getColumns();
                 UInt64 num_rows = res.rows();
@@ -156,16 +153,15 @@ public:
                 return Chunk(std::move(columns), num_rows);
             }
 
+            reader->readSuffix();
             reader.reset();
-            pipeline.reset();
             read_buf.reset();
         }
     }
 
 private:
     std::unique_ptr<ReadBuffer> read_buf;
-    QueryPipeline pipeline;
-    std::unique_ptr<PullingPipelineExecutor> reader;
+    BlockInputStreamPtr reader;
     SourcesInfoPtr source_info;
     String uri;
     String format;
@@ -187,7 +183,7 @@ public:
         : SinkToStorage(sample_block)
     {
         write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context->getGlobalContext()->getConfigRef()), compression_method, 3);
-        writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context);
+        writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, *write_buf, sample_block, context);
     }
 
     String getName() const override { return "HDFSSink"; }
@@ -196,17 +192,17 @@ public:
     {
         if (is_first_chunk)
         {
-            writer->doWritePrefix();
+            writer->writePrefix();
             is_first_chunk = false;
         }
-        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+        writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onFinish() override
     {
         try
         {
-            writer->doWriteSuffix();
+            writer->writeSuffix();
             writer->flush();
             write_buf->sync();
             write_buf->finalize();
@@ -220,7 +216,7 @@ public:
 
 private:
     std::unique_ptr<WriteBuffer> write_buf;
-    OutputFormatPtr writer;
+    BlockOutputStreamPtr writer;
     bool is_first_chunk = true;
 };
 

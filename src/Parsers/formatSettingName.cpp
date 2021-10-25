@@ -1,7 +1,7 @@
 #include <Parsers/formatSettingName.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 #include <IO/Operators.h>
 
 

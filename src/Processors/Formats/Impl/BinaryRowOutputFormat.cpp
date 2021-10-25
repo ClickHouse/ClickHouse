@@ -47,9 +47,9 @@ void BinaryRowOutputFormat::writeField(const IColumn & column, const ISerializat
 }
 
 
-void registerOutputFormatRowBinary(FormatFactory & factory)
+void registerOutputFormatProcessorRowBinary(FormatFactory & factory)
 {
-    factory.registerOutputFormat("RowBinary", [](
+    factory.registerOutputFormatProcessor("RowBinary", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -58,7 +58,7 @@ void registerOutputFormatRowBinary(FormatFactory & factory)
         return std::make_shared<BinaryRowOutputFormat>(buf, sample, false, false, params);
     });
 
-    factory.registerOutputFormat("RowBinaryWithNamesAndTypes", [](
+    factory.registerOutputFormatProcessor("RowBinaryWithNamesAndTypes", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,

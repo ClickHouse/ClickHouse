@@ -8,7 +8,6 @@
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/interpretSubquery.h>
-#include <Interpreters/SubqueryForSet.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -16,7 +15,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Common/typeid_cast.h>
 
@@ -159,9 +158,14 @@ public:
                 auto external_table = external_storage_holder->getTable();
                 auto table_out = external_table->write({}, external_table->getInMemoryMetadataPtr(), getContext());
                 auto io = interpreter->execute();
-                io.pipeline.complete(std::move(table_out));
-                CompletedPipelineExecutor executor(io.pipeline);
-                executor.execute();
+                io.pipeline.dropTotalsAndExtremes();
+                io.pipeline.resize(1);
+                io.pipeline.setSinks([&](const Block &, Pipe::StreamType) -> ProcessorPtr
+                {
+                    return table_out;
+                });
+                auto executor = io.pipeline.execute();
+                executor->execute(io.pipeline.getNumThreads());
             }
             else
             {
