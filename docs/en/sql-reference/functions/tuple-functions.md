@@ -343,7 +343,7 @@ Type: [Tuple](../../sql-reference/data-types/tuple.md).
 Query:
 
 ```sql
-SELECT tupleDivide((1, 2));
+SELECT tupleNegate((1,  2));
 ```
 
 Result:
@@ -596,7 +596,7 @@ Alias: `normLp`.
 **Arguments**
 
 -   `tuple` — [Tuple](../../sql-reference/data-types/tuple.md).
--   `p` — The power. Possible values: any number from [1;inf). [UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+-   `p` — The power. Possible values: real number in `[1; inf)`. [UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
 
 **Returned value**
 
@@ -609,7 +609,7 @@ Type: [Float](../../sql-reference/data-types/float.md).
 Query:
 
 ```sql
-SELECT LpNorm((1, -2),2);
+SELECT LpNorm((1, -2), 2);
 ```
 
 Result:
@@ -622,7 +622,7 @@ Result:
 
 ## L1Distance {#l1distance}
 
-Calculates the distance between two points (the values of the tuples are the coordinates) in 1-norm ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance).
+Calculates the distance between two points (the values of the tuples are the coordinates) in `L1` space (1-norm ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance)).
 
 **Syntax**
 
@@ -661,7 +661,7 @@ Result:
 
 ## L2Distance {#l2distance}
 
-Calculates the distance between two points (the values of the tuples are the coordinates) in 2-norm ([Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
+Calculates the distance between two points (the values of the tuples are the coordinates) in Euclidean space ([Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
 
 **Syntax**
 
@@ -700,7 +700,7 @@ Result:
 
 ## LinfDistance {#linfdistance}
 
-Calculates the distance between two points (the values of the tuples are the coordinates) in [infinity-norm distance](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm)).
+Calculates the distance between two points (the values of the tuples are the coordinates) in `L_{inf}` space ([maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
 
 **Syntax**
 
@@ -739,7 +739,7 @@ Result:
 
 ## LpDistance {#lpdistance}
 
-Calculates the distance between two points (the values of the tuples are the coordinates) in [p-norm distance](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm).
+Calculates the distance between two points (the values of the tuples are the coordinates) in `Lp` space ([p-norm distance](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
 
 **Syntax**
 
@@ -753,7 +753,7 @@ Alias: `distanceLp`.
 
 -   `tuple1` — First tuple. [Tuple](../../sql-reference/data-types/tuple.md).
 -   `tuple1` — Second tuple. [Tuple](../../sql-reference/data-types/tuple.md).
--   `p` — The power. Possible values: any number from [1;inf). [UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+-   `p` — The power. Possible values: real number from `[1; inf)`. [UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
 
 **Returned value**
 
@@ -779,7 +779,7 @@ Result:
 
 ## L1Normalize {#l1normalize}
 
-Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in 1-norm ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry)).
+Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `L1` space ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry)).
 
 **Syntax**
 
@@ -817,7 +817,7 @@ Result:
 
 ## L2Normalize {#l2normalize}
 
-Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in 2-norm ([Euclidean geometry](https://en.wikipedia.org/wiki/Euclidean_space)).
+Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in Euclidean space (using [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
 
 **Syntax**
 
@@ -855,7 +855,7 @@ Result:
 
 ## LinfNormalize {#linfnormalize}
 
-Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in [infinity-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm)).
+Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `L_{inf}` space (using [maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
 
 **Syntax**
 
@@ -893,7 +893,8 @@ Result:
 
 ## LpNormalize {#lpnormalize}
 
-Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in [p-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm).
+Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `Lp` space (using [p-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
+
 
 **Syntax**
 
@@ -956,7 +957,7 @@ Type: [Float](../../sql-reference/data-types/float.md).
 Query:
 
 ```sql
-SELECT cosineDistance((1, 2),(2,3));
+SELECT cosineDistance((1, 2), (2, 3));
 ```
 
 Result:
