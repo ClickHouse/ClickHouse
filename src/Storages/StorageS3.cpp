@@ -30,12 +30,12 @@
 
 #include <Formats/FormatFactory.h>
 
-#include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <DataStreams/narrowBlockInputStreams.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <QueryPipeline/narrowBlockInputStreams.h>
 
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <DataTypes/DataTypeString.h>
@@ -52,8 +52,7 @@
 
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
 
@@ -751,9 +750,9 @@ StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPt
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "access_key_id")
-                configuration.access_key_id = arg_value.safeGet<String>();
+                configuration.access_key_id = arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else if (arg_name == "secret_access_key")
-                configuration.secret_access_key = arg_value.safeGet<String>();
+                configuration.secret_access_key = arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                     "Unknown key-value argument `{}` for StorageS3, expected: url, [access_key_id, secret_access_key], name of used format and [compression_method].",

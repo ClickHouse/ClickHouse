@@ -180,6 +180,8 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
 
             if (metadata.sampling_key.definition_ast)
                 storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
+            else if (storage_ast.sample_by != nullptr) /// SAMPLE BY was removed
+                storage_ast.sample_by = nullptr;
 
             if (metadata.table_ttl.definition_ast)
                 storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);

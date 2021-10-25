@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/OffsetTransform.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 

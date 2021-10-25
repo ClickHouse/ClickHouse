@@ -50,6 +50,7 @@ const char * auto_config_build[]
     "USE_LDAP", "@USE_LDAP@",
     "TZDATA_VERSION", "@TZDATA_VERSION@",
     "USE_KRB5", "@USE_KRB5@",
+    "USE_FILELOG", "@USE_FILELOG@",
     "USE_BZIP2", "@USE_BZIP2@",
 
     nullptr, nullptr
