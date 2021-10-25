@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 
 #include <chrono>
 #include <list>
@@ -34,10 +34,6 @@ using RWLock = std::shared_ptr<RWLockImpl>;
 /// - SELECT thread 1 locks in the Read mode
 /// - ALTER tries to lock in the Write mode (waits for SELECT thread 1)
 /// - SELECT thread 2 tries to lock in the Read mode (waits for ALTER)
-///
-/// NOTE: it is dangerous to acquire lock with NO_QUERY, because FastPath doesn't
-/// exist for this case and deadlock, described in previous note,
-/// may accur in case of recursive locking.
 class RWLockImpl : public std::enable_shared_from_this<RWLockImpl>
 {
 public:
@@ -78,6 +74,7 @@ private:
     using GroupsContainer = std::list<Group>;
     using OwnerQueryIds = std::unordered_map<String, size_t>;
 
+private:
     mutable std::mutex internal_state_mtx;
 
     GroupsContainer readers_queue;
@@ -88,6 +85,7 @@ private:
                                                                   /// or writers_queue.end() otherwise
     OwnerQueryIds owner_queries;
 
+private:
     RWLockImpl() = default;
     void unlock(GroupsContainer::iterator group_it, const String & query_id) noexcept;
     void dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it) noexcept;

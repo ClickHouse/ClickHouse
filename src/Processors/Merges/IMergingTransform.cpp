@@ -15,10 +15,10 @@ IMergingTransformBase::IMergingTransformBase(
     const Block & input_header,
     const Block & output_header,
     bool have_all_inputs_,
-    UInt64 limit_hint_)
+    bool has_limit_below_one_block_)
     : IProcessor(InputPorts(num_inputs, input_header), {output_header})
     , have_all_inputs(have_all_inputs_)
-    , limit_hint(limit_hint_)
+    , has_limit_below_one_block(has_limit_below_one_block_)
 {
 }
 
@@ -79,10 +79,7 @@ IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
         /// setNotNeeded after reading first chunk, because in optimismtic case
         /// (e.g. with optimized 'ORDER BY primary_key LIMIT n' and small 'n')
         /// we won't have to read any chunks anymore;
-        auto chunk = input.pull(limit_hint != 0);
-        if (limit_hint && chunk.getNumRows() < limit_hint)
-            input.setNeeded();
-
+        auto chunk = input.pull(has_limit_below_one_block);
         if (!chunk.hasRows())
         {
             if (!input.isFinished())

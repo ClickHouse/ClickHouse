@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <remote_servers>
         <source_trivial_cluster>
             <shard>
@@ -18,4 +18,4 @@
             </shard>
         </destination_trivial_cluster>
     </remote_servers>
-</clickhouse>
+</yandex>

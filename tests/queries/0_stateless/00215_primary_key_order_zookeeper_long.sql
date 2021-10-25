@@ -1,6 +1,3 @@
--- Tags: long, zookeeper, no-replicated-database
--- Tag no-replicated-database: Old syntax is not allowed
-
 DROP TABLE IF EXISTS primary_key;
 CREATE TABLE primary_key (d Date DEFAULT today(), x Int8) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_00215/primary_key', 'r1', d, -x, 1);
 

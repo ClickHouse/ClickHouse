@@ -1,4 +1,4 @@
-# docker build -t clickhouse/kerberized-hadoop .
+# docker build -t yandex/clickhouse-kerberized-hadoop .
 
 FROM sequenceiq/hadoop-docker:2.7.0
 

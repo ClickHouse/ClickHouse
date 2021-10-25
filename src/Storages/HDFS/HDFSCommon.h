@@ -10,7 +10,7 @@
 #include <vector>
 
 #include <hdfs/hdfs.h> // Y_IGNORE
-#include <base/types.h>
+#include <common/types.h>
 #include <mutex>
 
 #include <Interpreters/Context.h>

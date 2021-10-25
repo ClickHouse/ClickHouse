@@ -1,7 +1,7 @@
-<clickhouse>
+<yandex>
     <profiles>
         <default>
             <log_queries>1</log_queries>
         </default>
     </profiles>
-</clickhouse>
+</yandex>

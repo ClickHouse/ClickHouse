@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <cassert>
 #include <type_traits>
-#include <base/defines.h>
+#include <common/defines.h>
 
 
 /** For zero argument, result is zero.

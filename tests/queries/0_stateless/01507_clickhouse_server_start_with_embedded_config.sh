@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
 
 CLICKHOUSE_PORT_TCP=50111
 CLICKHOUSE_DATABASE=default

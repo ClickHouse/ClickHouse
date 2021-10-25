@@ -1,5 +1,4 @@
 #pragma once
-
 #include <Interpreters/IExternalLoadable.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnsNumber.h>

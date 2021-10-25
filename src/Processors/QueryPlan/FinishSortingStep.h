@@ -14,11 +14,12 @@ public:
         SortDescription prefix_description_,
         SortDescription result_description_,
         size_t max_block_size_,
-        UInt64 limit_);
+        UInt64 limit_,
+        bool has_filtration_);
 
     String getName() const override { return "FinishSorting"; }
 
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
@@ -31,6 +32,7 @@ private:
     SortDescription result_description;
     size_t max_block_size;
     UInt64 limit;
+    bool has_filtration;
 };
 
 }

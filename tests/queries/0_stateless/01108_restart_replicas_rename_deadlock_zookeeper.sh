@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: deadlock, replica, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

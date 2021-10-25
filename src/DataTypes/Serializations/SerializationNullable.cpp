@@ -1,8 +1,5 @@
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
-#include <DataTypes/Serializations/SerializationNamed.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnNullable.h>
 #include <Core/Field.h>
@@ -23,50 +20,15 @@ namespace ErrorCodes
     extern const int CANNOT_READ_ALL_DATA;
 }
 
-DataTypePtr SerializationNullable::SubcolumnCreator::create(const DataTypePtr & prev) const
+void SerializationNullable::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
-    return std::make_shared<DataTypeNullable>(prev);
-}
-
-SerializationPtr SerializationNullable::SubcolumnCreator::create(const SerializationPtr & prev) const
-{
-    return std::make_shared<SerializationNullable>(prev);
-}
-
-ColumnPtr SerializationNullable::SubcolumnCreator::create(const ColumnPtr & prev) const
-{
-    return ColumnNullable::create(prev, null_map);
-}
-
-void SerializationNullable::enumerateStreams(
-    SubstreamPath & path,
-    const StreamCallback & callback,
-    DataTypePtr type,
-    ColumnPtr column) const
-{
-    const auto * type_nullable = type ? &assert_cast<const DataTypeNullable &>(*type) : nullptr;
-    const auto * column_nullable = column ? &assert_cast<const ColumnNullable &>(*column) : nullptr;
-
     path.push_back(Substream::NullMap);
-    path.back().data =
-    {
-        type_nullable ? std::make_shared<DataTypeUInt8>() : nullptr,
-        column_nullable ? column_nullable->getNullMapColumnPtr() : nullptr,
-        std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<UInt8>>(), "null", false),
-        nullptr,
-    };
-
     callback(path);
-
     path.back() = Substream::NullableElements;
-    path.back().data = {type, column, getPtr(), std::make_shared<SubcolumnCreator>(path.back().data.column)};
-
-    auto next_type = type_nullable ? type_nullable->getNestedType() : nullptr;
-    auto next_column = column_nullable ? column_nullable->getNestedColumnPtr() : nullptr;
-
-    nested->enumerateStreams(path, callback, next_type, next_column);
+    nested->enumerateStreams(callback, path);
     path.pop_back();
 }
+
 
 void SerializationNullable::serializeBinaryBulkStatePrefix(
         SerializeBinaryBulkSettings & settings,
@@ -365,7 +327,7 @@ void SerializationNullable::serializeTextCSV(const IColumn & column, size_t row_
     const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
 
     if (col.isNullAt(row_num))
-        writeString(settings.csv.null_representation, ostr);
+        writeCString("\\N", ostr);
     else
         nested->serializeTextCSV(col.getNestedColumn(), row_num, ostr, settings);
 }

@@ -154,7 +154,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 3) FROM 
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-In this case, the function couldn’t find the event chain matching the pattern, because the event for number 3 occurred between 1 and 2. If in the same case we checked the condition for number 4, the sequence would match the pattern.
+In this case, the function couldn’t find the event chain matching the pattern, because the event for number 3 occured between 1 and 2. If in the same case we checked the condition for number 4, the sequence would match the pattern.
 
 ``` sql
 SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM t

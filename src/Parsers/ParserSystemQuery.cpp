@@ -6,8 +6,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 
-#include <magic_enum.hpp>
-#include <base/EnumReflection.h>
 
 namespace ErrorCodes
 {
@@ -69,14 +67,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
     auto res = std::make_shared<ASTSystemQuery>();
 
     bool found = false;
-
-    for (const auto & type : magic_enum::enum_values<Type>())
+    for (int i = static_cast<int>(Type::UNKNOWN) + 1; i < static_cast<int>(Type::END); ++i)
     {
-        if (ParserKeyword{ASTSystemQuery::typeToString(type)}.ignore(pos, expected))
+        Type t = static_cast<Type>(i);
+        if (ParserKeyword{ASTSystemQuery::typeToString(t)}.ignore(pos, expected))
         {
-            res->type = type;
+            res->type = t;
             found = true;
-            break;
         }
     }
 
@@ -115,35 +112,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     return false;
 
                 if (!tryGetIdentifierNameInto(model, res->target_model))
-                    return false;
-            }
-
-            break;
-        }
-        case Type::RELOAD_FUNCTION:
-        {
-            String cluster_str;
-            if (ParserKeyword{"ON"}.ignore(pos, expected))
-            {
-                if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
-                    return false;
-            }
-            res->cluster = cluster_str;
-            ASTPtr ast;
-            if (ParserStringLiteral{}.parse(pos, ast, expected))
-            {
-                res->target_function = ast->as<ASTLiteral &>().value.safeGet<String>();
-            }
-            else
-            {
-                ParserIdentifier function_parser;
-                ASTPtr function;
-                String target_function;
-
-                if (!function_parser.parse(pos, function, expected))
-                    return false;
-
-                if (!tryGetIdentifierNameInto(function, res->target_function))
                     return false;
             }
 
