@@ -57,11 +57,18 @@ def process_report(build_report):
     build_urls = []
     build_logs_urls = []
     urls_groups = group_by_artifacts(build_report['build_urls'])
+    found_group = False
     for _, group_urls in urls_groups.items():
         if group_urls:
             build_results.append(build_result)
             build_urls.append(group_urls)
             build_logs_urls.append(build_report['log_url'])
+            found_group = True
+
+    if not found_group:
+        build_results.append(build_result)
+        build_urls.append([""])
+        build_logs_urls.append(build_report['log_url'])
 
     return build_results, build_urls, build_logs_urls
 
