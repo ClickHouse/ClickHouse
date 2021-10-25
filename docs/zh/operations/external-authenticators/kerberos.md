@@ -1,4 +1,4 @@
-# Kerberos认证 {#kerberos} 
+# Kerberos认证 {#external-authenticators-kerberos} 
 现有正确配置的 ClickHouse 用户可以通过 Kerberos 身份验证协议进行身份验证.
 
 目前, Kerberos 只能用作现有用户的外部身份验证器，这些用户在 `users.xml` 或本地访问控制路径中定义.
@@ -6,10 +6,10 @@
 
 对于这种方法, 必须在系统中配置 Kerberos, 且必须在 ClickHouse 配置中启用.
 
-# 开启Kerberos {#enabling-kerberos-in-clickHouse}
+## 开启Kerberos {#enabling-kerberos-in-clickHouse}
 要启用 Kerberos, 应该在 `config.xml` 中包含 `kerberos` 部分. 此部分可能包含其他参数.
 
-## 参数: {#parameters}
+#### 参数: {#parameters}
 - `principal` - 将在接受安全上下文时获取和使用的规范服务主体名称.
 - 此参数是可选的, 如果省略, 将使用默认主体.
 
@@ -18,7 +18,7 @@
 - 此参数是可选的，如果省略，则不会应用其他领域的过滤.
 
 示例 (进入 `config.xml`):
-```
+```xml
 <yandex>
     <!- ... -->
     <kerberos />
@@ -26,7 +26,7 @@
 ```
 
 主体规范:
-```
+```xml
 <yandex>
     <!- ... -->
     <kerberos>
@@ -36,7 +36,7 @@
 ```
 
 按领域过滤:
-```
+```xml
 <yandex>
     <!- ... -->
     <kerberos>
@@ -53,7 +53,7 @@
 
 `主体`和`领域`部分不能同时指定. `主体`和`领域`的出现将迫使ClickHouse禁用Kerberos身份验证.
 
-# Kerberos作为现有用户的外部身份验证器 {#kerberos-as-an-external-authenticator-for-existing-users}
+## Kerberos作为现有用户的外部身份验证器 {#kerberos-as-an-external-authenticator-for-existing-users}
 Kerberos可以用作验证本地定义用户(在`users.xml`或本地访问控制路径中定义的用户)身份的方法。目前，**只有**通过HTTP接口的请求才能被认证(通过GSS-SPNEGO机制).
 
 Kerberos主体名称格式通常遵循以下模式:
@@ -61,7 +61,7 @@ Kerberos主体名称格式通常遵循以下模式:
 
 */instance* 部分可能出现零次或多次. **发起者的规范主体名称的主要部分应与被认证用户名匹配, 以便身份验证成功**.
 
-# `users.xml`中启用Kerberos {#enabling-kerberos-in-users.xml}
+### `users.xml`中启用Kerberos {#enabling-kerberos-in-users-xml}
 为了启用用户的 Kerberos 身份验证, 请在用户定义中指定 `kerberos` 部分而不是`密码`或类似部分.
 
 参数:
@@ -92,14 +92,14 @@ Kerberos主体名称格式通常遵循以下模式:
 
 请注意, 现在, 一旦用户 `my_user` 使用 `kerberos`, 必须在主 `config.xml` 文件中启用 Kerberos，如前所述.
 
-# 使用 SQL 启用 Kerberos {#enabling-kerberos-using-sql}
+### 使用 SQL 启用 Kerberos {#enabling-kerberos-using-sql}
 在 ClickHouse 中启用 [SQL 驱动的访问控制和帐户管理](./access-rights.md#access-control)后, 也可以使用 SQL 语句创建由 Kerberos 识别的用户.
 
-```
+```sql
 CREATE USER my_user IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'
 ```
 
 ...或者, 不按领域过滤:
-```
+```sql
 CREATE USER my_user IDENTIFIED WITH kerberos
 ```
