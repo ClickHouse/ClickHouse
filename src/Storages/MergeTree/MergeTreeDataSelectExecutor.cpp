@@ -162,7 +162,8 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
 
     LOG_DEBUG(
         log,
-        "Choose {} projection {}",
+        "Choose {} {} projection {}",
+        query_info.projection->complete ? "complete" : "incomplete",
         query_info.projection->desc->type,
         query_info.projection->desc->name);
 
@@ -849,6 +850,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         if (settings.read_overflow_mode_leaf == OverflowMode::THROW && settings.max_rows_to_read_leaf)
             leaf_limits = SizeLimits(settings.max_rows_to_read_leaf, 0, settings.read_overflow_mode_leaf);
 
+        auto mark_cache = context->getIndexMarkCache();
+        auto uncompressed_cache = context->getIndexUncompressedCache();
+
         auto process_part = [&](size_t part_index)
         {
             auto & part = parts[part_index];
@@ -885,6 +889,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     reader_settings,
                     total_granules,
                     granules_dropped,
+                    mark_cache.get(),
+                    uncompressed_cache.get(),
                     log);
 
                 index_and_condition.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
@@ -1424,6 +1430,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     const MergeTreeReaderSettings & reader_settings,
     size_t & total_granules,
     size_t & granules_dropped,
+    MarkCache * mark_cache,
+    UncompressedCache * uncompressed_cache,
     Poco::Logger * log)
 {
     const std::string & path_prefix = part->getFullRelativePath() + index_helper->getFileName();
@@ -1449,6 +1457,8 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         index_helper, part,
         index_marks_count,
         ranges,
+        mark_cache,
+        uncompressed_cache,
         reader_settings);
 
     MarkRanges res;

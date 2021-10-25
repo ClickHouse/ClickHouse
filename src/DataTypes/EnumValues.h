@@ -80,6 +80,10 @@ public:
     }
 
     Names getAllRegisteredNames() const override;
+
+    std::unordered_set<String> getSetOfAllNames(bool to_lower) const;
+
+    std::unordered_set<T> getSetOfAllValues() const;
 };
 
 }

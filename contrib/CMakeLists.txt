@@ -1,16 +1,5 @@
 # Third-party libraries may have substandard code.
 
-# Put all targets defined here and in added subfolders under "contrib/" folder in GUI-based IDEs by default.
-# Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they will
-# appear not in "contrib/" as originally planned here.
-get_filename_component (_current_dir_name "${CMAKE_CURRENT_LIST_DIR}" NAME)
-if (CMAKE_FOLDER)
-    set (CMAKE_FOLDER "${CMAKE_FOLDER}/${_current_dir_name}")
-else ()
-    set (CMAKE_FOLDER "${_current_dir_name}")
-endif ()
-unset (_current_dir_name)
-
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
@@ -48,6 +37,14 @@ add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
 add_subdirectory (nanodbc-cmake)
+
+if (USE_INTERNAL_CAPNP_LIBRARY AND NOT MISSING_INTERNAL_CAPNP_LIBRARY)
+    add_subdirectory(capnproto-cmake)
+endif ()
+
+if (ENABLE_FUZZING)
+    add_subdirectory (libprotobuf-mutator-cmake)
+endif()
 
 if (USE_YAML_CPP)
     add_subdirectory (yaml-cpp-cmake)
@@ -348,3 +345,76 @@ endif()
 if (USE_S2_GEOMETRY)
     add_subdirectory(s2geometry-cmake)
 endif()
+
+# Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
+# Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
+# in "contrib/..." as originally planned, so we workaround this by fixing FOLDER properties of all targets manually,
+# instead of controlling it via CMAKE_FOLDER.
+
+function (ensure_target_rooted_in _target _folder)
+    # Skip INTERFACE library targets, since FOLDER property is not available for them.
+    get_target_property (_target_type "${_target}" TYPE)
+    if (_target_type STREQUAL "INTERFACE_LIBRARY")
+        return ()
+    endif ()
+
+    # Read the original FOLDER property value, if any.
+    get_target_property (_folder_prop "${_target}" FOLDER)
+
+    # Normalize that value, so we avoid possible repetitions in folder names.
+
+    if (NOT _folder_prop)
+        set (_folder_prop "")
+    endif ()
+
+    if (CMAKE_FOLDER AND _folder_prop MATCHES "^${CMAKE_FOLDER}/(.*)\$")
+        set (_folder_prop "${CMAKE_MATCH_1}")
+    endif ()
+
+    if (_folder AND _folder_prop MATCHES "^${_folder}/(.*)\$")
+        set (_folder_prop "${CMAKE_MATCH_1}")
+    endif ()
+
+    if (_folder)
+        set (_folder_prop "${_folder}/${_folder_prop}")
+    endif ()
+
+    if (CMAKE_FOLDER)
+        set (_folder_prop "${CMAKE_FOLDER}/${_folder_prop}")
+    endif ()
+
+    # Set the updated FOLDER property value back.
+    set_target_properties ("${_target}" PROPERTIES FOLDER "${_folder_prop}")
+endfunction ()
+
+function (ensure_own_targets_are_rooted_in _dir _folder)
+    get_directory_property (_targets DIRECTORY "${_dir}" BUILDSYSTEM_TARGETS)
+    foreach (_target IN LISTS _targets)
+        ensure_target_rooted_in ("${_target}" "${_folder}")
+    endforeach ()
+endfunction ()
+
+function (ensure_all_targets_are_rooted_in _dir _folder)
+    ensure_own_targets_are_rooted_in ("${_dir}" "${_folder}")
+
+    get_property (_sub_dirs DIRECTORY "${_dir}" PROPERTY SUBDIRECTORIES)
+    foreach (_sub_dir IN LISTS _sub_dirs)
+        ensure_all_targets_are_rooted_in ("${_sub_dir}" "${_folder}")
+    endforeach ()
+endfunction ()
+
+function (organize_ide_folders_2_level _dir)
+    get_filename_component (_dir_name "${_dir}" NAME)
+    ensure_own_targets_are_rooted_in ("${_dir}" "${_dir_name}")
+
+    # Note, that we respect only first two levels of nesting, we don't want to
+    # reorganize target folders further within each third-party dir.
+
+    get_property (_sub_dirs DIRECTORY "${_dir}" PROPERTY SUBDIRECTORIES)
+    foreach (_sub_dir IN LISTS _sub_dirs)
+        get_filename_component (_sub_dir_name "${_sub_dir}" NAME)
+        ensure_all_targets_are_rooted_in ("${_sub_dir}" "${_dir_name}/${_sub_dir_name}")
+    endforeach ()
+endfunction ()
+
+organize_ide_folders_2_level ("${CMAKE_CURRENT_LIST_DIR}")

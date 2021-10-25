@@ -8,7 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/parseAddress.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Common/parseRemoteDescription.h>
 #include <Storages/StorageMySQL.h>
 #include <Storages/MySQL/MySQLSettings.h>
@@ -233,7 +233,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                 for (const auto & [name, value] : storage_specific_args)
                 {
                     if (name == "description")
-                        cluster_description = value.safeGet<String>();
+                        cluster_description = value->as<ASTLiteral>()->value.safeGet<String>();
                     else
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                         "Unknown key-value argument {} for table engine URL", name);
@@ -279,7 +279,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                 for (const auto & [name, value] : storage_specific_args)
                 {
                     if (name == "description")
-                        cluster_description = value.safeGet<String>();
+                        cluster_description = value->as<ASTLiteral>()->value.safeGet<String>();
                     else
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                         "Unknown key-value argument {} for table function URL", name);
