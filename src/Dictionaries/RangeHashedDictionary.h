@@ -90,7 +90,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
     template <typename T>
@@ -175,12 +175,11 @@ private:
         PaddedPODArray<RangeType> & end_dates) const;
 
     template <typename RangeType>
-    Pipe readImpl(const Names & column_names, size_t max_block_size) const;
+    PaddedPODArray<Int64> makeDateKeys(
+        const PaddedPODArray<RangeType> & block_start_dates,
+        const PaddedPODArray<RangeType> & block_end_dates) const;
 
     StringRef copyKeyInArena(StringRef key);
-
-    template <DictionaryKeyType>
-    friend struct RangeHashedDictionaryCallGetSourceImpl;
 
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;

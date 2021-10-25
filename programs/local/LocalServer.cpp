@@ -62,7 +62,6 @@ void LocalServer::processError(const String &) const
         String message;
         if (server_exception)
         {
-            bool print_stack_trace = config().getBool("stacktrace", false);
             message = getExceptionMessage(*server_exception, print_stack_trace, true);
         }
         else if (client_exception)
@@ -131,9 +130,12 @@ bool LocalServer::executeMultiQuery(const String & all_queries_text)
                 }
                 catch (...)
                 {
+                    if (!is_interactive && !ignore_error)
+                        throw;
+
                     // Surprisingly, this is a client error. A server error would
                     // have been reported w/o throwing (see onReceiveSeverException()).
-                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
 
@@ -287,23 +289,30 @@ void LocalServer::tryInitPath()
 
 void LocalServer::cleanup()
 {
-    connection.reset();
-
-    if (global_context)
+    try
     {
-        global_context->shutdown();
-        global_context.reset();
+        connection.reset();
+
+        if (global_context)
+        {
+            global_context->shutdown();
+            global_context.reset();
+        }
+
+        status.reset();
+
+        // Delete the temporary directory if needed.
+        if (temporary_directory_to_delete)
+        {
+            const auto dir = *temporary_directory_to_delete;
+            temporary_directory_to_delete.reset();
+            LOG_DEBUG(&logger(), "Removing temporary directory: {}", dir.string());
+            remove_all(dir);
+        }
     }
-
-    status.reset();
-
-    // Delete the temporary directory if needed.
-    if (temporary_directory_to_delete)
+    catch (...)
     {
-        const auto dir = *temporary_directory_to_delete;
-        temporary_directory_to_delete.reset();
-        LOG_DEBUG(&logger(), "Removing temporary directory: {}", dir.string());
-        remove_all(dir);
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
@@ -446,23 +455,20 @@ try
     cleanup();
     return Application::EXIT_OK;
 }
+catch (const DB::Exception & e)
+{
+    cleanup();
+
+    bool need_print_stack_trace = config().getBool("stacktrace", false);
+    std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl;
+    return e.code() ? e.code() : -1;
+}
 catch (...)
 {
-    try
-    {
-        cleanup();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    cleanup();
 
-    if (!ignore_error)
-        std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
-
-    auto code = getCurrentExceptionCode();
-    /// If exception code isn't zero, we should return non-zero return code anyway.
-    return code ? code : -1;
+    std::cerr << getCurrentExceptionMessage(false) << std::endl;
+    return getCurrentExceptionCode();
 }
 
 
@@ -485,6 +491,7 @@ void LocalServer::processConfig()
         ignore_error = config().getBool("ignore-error", false);
         is_multiquery = true;
     }
+    print_stack_trace = config().getBool("stacktrace", false);
 
     shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
@@ -502,18 +509,15 @@ void LocalServer::processConfig()
 
     format = config().getString("output-format", config().getString("format", is_interactive ? "PrettyCompact" : "TSV"));
     insert_format = "Values";
+
     /// Setting value from cmd arg overrides one from config
     if (global_context->getSettingsRef().max_insert_block_size.changed)
         insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
     else
         insert_format_max_block_size = config().getInt("insert_format_max_block_size", global_context->getSettingsRef().max_insert_block_size);
 
-    /// Skip networking
-
     /// Sets external authenticators config (LDAP, Kerberos).
     global_context->setExternalAuthenticatorsConfig(config());
-
-    global_context->initializeBackgroundExecutors();
 
     setupUsers();
 
