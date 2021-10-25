@@ -23,9 +23,9 @@ def is_ipv6(host):
 
 def get_local_port(host):
     if is_ipv6(host):
-        family = socket.AF_INET
-    else:
         family = socket.AF_INET6
+    else:
+        family = socket.AF_INET
 
     with socket.socket(family) as fd:
         fd.bind((host, 0))
