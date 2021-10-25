@@ -236,12 +236,12 @@ void HedgedConnections::sendCancel()
     if (!sent_query || cancelled)
         throw Exception("Cannot cancel. Either no query sent or already cancelled.", ErrorCodes::LOGICAL_ERROR);
 
+    cancelled = true;
+
     for (auto & offset_status : offset_states)
         for (auto & replica : offset_status.replicas)
             if (replica.connection)
                 replica.connection->sendCancel();
-
-    cancelled = true;
 }
 
 Packet HedgedConnections::drain()

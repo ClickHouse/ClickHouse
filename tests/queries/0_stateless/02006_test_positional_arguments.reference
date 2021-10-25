@@ -46,5 +46,102 @@ select x1, x2, x3 from test order by 3 limit 1 by 1;
 100	100	1
 10	1	10
 1	10	100
-select max(x3), max(x2), max(x1) from test group by 1; -- { serverError 43 }
-select max(x1) from test order by 1; -- { serverError 43 }
+explain syntax select x3, x2, x1 from test order by 1 + 1;
+SELECT
+    x3,
+    x2,
+    x1
+FROM test
+ORDER BY x3 + x3 ASC
+explain syntax select x3, x2, x1 from test order by (1 + 1) * 3;
+SELECT
+    x3,
+    x2,
+    x1
+FROM test
+ORDER BY (x3 + x3) * x1 ASC
+select x2, x1 from test group by x2 + x1; -- { serverError 215 }
+select x2, x1 from test group by 1 + 2; -- { serverError 215 }
+explain syntax select x3, x2, x1 from test order by 1;
+SELECT
+    x3,
+    x2,
+    x1
+FROM test
+ORDER BY x3 ASC
+explain syntax select x3 + 1, x2, x1 from test order by 1;
+SELECT
+    x3 + 1,
+    x2,
+    x1
+FROM test
+ORDER BY x3 + 1 ASC
+explain syntax select x3, x3 - x2, x2, x1 from test order by 2;
+SELECT
+    x3,
+    x3 - x2,
+    x2,
+    x1
+FROM test
+ORDER BY x3 - x2 ASC
+explain syntax select x3, if(x3 > 10, x3, plus(x1, x2)), x1 + x2 from test order by 2;
+SELECT
+    x3,
+    if(x3 > 10, x3, x1 + x2),
+    x1 + x2
+FROM test
+ORDER BY if(x3 > 10, x3, x1 + x2) ASC
+explain syntax select max(x1), x2 from test group by 2 order by 1, 2;
+SELECT
+    max(x1),
+    x2
+FROM test
+GROUP BY x2
+ORDER BY
+    max(x1) ASC,
+    x2 ASC
+explain syntax select 1 + greatest(x1, 1), x2 from test group by 1, 2;
+SELECT
+    1 + greatest(x1, 1),
+    x2
+FROM test
+GROUP BY
+    1 + greatest(x1, 1),
+    x2
+select max(x1), x2 from test group by 1, 2; -- { serverError 43 }
+select 1 + max(x1), x2 from test group by 1, 2; -- { serverError 43 }
+select x1 + x2, x3 from test group by x1 + x2, x3;
+11	100
+200	1
+11	200
+11	10
+select x3, x2, x1 from test order by x3 * 2, x2, x1; -- check x3 * 2 does not become x3 * x2
+1	100	100
+1	100	100
+10	1	10
+100	10	1
+200	1	10
+200	10	1
+explain syntax select x1, x3 from test group by 1 + 2, 1, 2;
+SELECT
+    x1,
+    x3
+FROM test
+GROUP BY
+    x1 + x3,
+    x1,
+    x3
+explain syntax select x1 + x3, x3 from test group by 1, 2;
+SELECT
+    x1 + x3,
+    x3
+FROM test
+GROUP BY
+    x1 + x3,
+    x3
+create table test2(x1 Int, x2 Int, x3 Int) engine=Memory;
+insert into test2 values (1, 10, 100), (10, 1, 10), (100, 100, 1);
+select x1, x1 * 2, max(x2), max(x3) from test2 group by 2, 1, x1 order by 1, 2, 4 desc, 3 asc;
+1	2	10	100
+10	20	1	10
+100	200	100	1

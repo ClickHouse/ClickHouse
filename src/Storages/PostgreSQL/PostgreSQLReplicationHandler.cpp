@@ -229,7 +229,9 @@ ASTPtr PostgreSQLReplicationHandler::getCreateNestedTableQuery(StorageMaterializ
 {
     postgres::Connection connection(connection_info);
     pqxx::nontransaction tx(connection.getRef());
-    auto table_structure = std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, true, true, true));
+    auto table_structure = std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, postgres_schema, true, true, true));
+    if (!table_structure)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to get PostgreSQL table structure");
     return storage->getCreateNestedTableQuery(std::move(table_structure));
 }
 
@@ -649,7 +651,17 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
     if (!is_materialized_postgresql_database)
         return nullptr;
 
-    return std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, true, true, true));
+    PostgreSQLTableStructure structure;
+    try
+    {
+        structure = fetchPostgreSQLTableStructure(tx, table_name, postgres_schema, true, true, true);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    return std::make_unique<PostgreSQLTableStructure>(std::move(structure));
 }
 
 
