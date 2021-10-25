@@ -817,7 +817,7 @@ Converts a string to [NFC normalized form](https://en.wikipedia.org/wiki/Unicode
 **Syntax**
 
 ``` sql
-normalizeUTF8NFKD(words)
+normalizeUTF8NFC(words)
 ```
 
 **Arguments**
