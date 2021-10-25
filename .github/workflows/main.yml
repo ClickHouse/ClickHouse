@@ -10,13 +10,6 @@ on: # yamllint disable-line rule:truthy
     branches:
       - master
 jobs:
-  Cancel:
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.9.1
-        with:
-          access_token: ${{ github.token }}
   CheckLabels:
     runs-on: [self-hosted, style-checker]
     steps:
