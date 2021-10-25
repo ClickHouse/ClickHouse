@@ -835,14 +835,14 @@ Type: [String](../../sql-reference/data-types/string.md).
 Query:
 
 ``` sql
-SELECT length('ё'), normalizeUTF8NFC('ё') AS nfc, length(nfc) AS nfc_len;
+SELECT length('â'), normalizeUTF8NFC('â') AS nfc, length(nfc) AS nfc_len;
 ```
 
 Result:
 
 ``` text
-┌─length('ё')─┬─nfc─┬─nfc_len─┐
-│           2 │ ё   │       2 │
+┌─length('â')─┬─nfc─┬─nfc_len─┐
+│           2 │ â   │       2 │
 └─────────────┴─────┴─────────┘
 ```
 
@@ -871,14 +871,14 @@ Type: [String](../../sql-reference/data-types/string.md).
 Query:
 
 ``` sql
-SELECT length('ё'), normalizeUTF8NFD('ё') AS nfd, length(nfd) AS nfd_len;
+SELECT length('â'), normalizeUTF8NFD('â') AS nfd, length(nfd) AS nfd_len;
 ```
 
 Result:
 
 ``` text
-┌─length('ё')─┬─nfd─┬─nfd_len─┐
-│           2 │ ё   │       4 │
+┌─length('â')─┬─nfd─┬─nfd_len─┐
+│           2 │ â   │       3 │
 └─────────────┴─────┴─────────┘
 ```
 
@@ -907,20 +907,18 @@ Type: [String](../../sql-reference/data-types/string.md).
 Query:
 
 ``` sql
-SELECT length('ё'), normalizeUTF8NFKC('ё') AS nfkc, length(nfkc) AS nfkc_len;
+SELECT length('â'), normalizeUTF8NFKC('â') AS nfkc, length(nfkc) AS nfkc_len;
 ```
 
 Result:
 
 ``` text
-┌─length('ё')─┬─nfkc─┬─nfkc_len─┐
-│           2 │ ё    │        2 │
+┌─length('â')─┬─nfkc─┬─nfkc_len─┐
+│           2 │ â    │        2 │
 └─────────────┴──────┴──────────┘
-
 ```
 
 ## normalizeUTF8NFKD {#normalizeutf8nfkd}
-
 
 Converts a string to [NFKD normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string contains a set of bytes that make up a UTF-8 encoded text.
 
@@ -945,14 +943,14 @@ Type: [String](../../sql-reference/data-types/string.md).
 Query:
 
 ``` sql
-SELECT length('ё'), normalizeUTF8NFKD('ё') AS nfkd, length(nfkd) AS nfkd_len;
+SELECT length('â'), normalizeUTF8NFKD('â') AS nfkd, length(nfkd) AS nfkd_len;
 ```
 
 Result:
 
 ``` text
-┌─length('ё')─┬─nfkd─┬─nfkd_len─┐
-│           2 │ ё    │        4 │
+┌─length('â')─┬─nfkd─┬─nfkd_len─┐
+│           2 │ â    │        3 │
 └─────────────┴──────┴──────────┘
 ```
 
