@@ -15,7 +15,7 @@ import csv
 NAME = 'Fast test (actions)'
 
 def get_fasttest_cmd(workspace, output_path, ccache_path, repo_path, pr_number, commit_sha, image):
-    return "docker run --cap-add=SYS_PTRACE " \
+    return "docker run -u {os.geteuid()}:{os.getegid()} --cap-add=SYS_PTRACE " \
         f"-e FASTTEST_WORKSPACE=/fasttest-workspace -e FASTTEST_OUTPUT=/test_output " \
         f"-e FASTTEST_SOURCE=/ClickHouse --cap-add=SYS_PTRACE " \
         f"-e PULL_REQUEST_NUMBER={pr_number} -e COMMIT_SHA={commit_sha} -e COPY_CLICKHOUSE_BINARY_TO_OUTPUT=1 " \
@@ -153,7 +153,6 @@ if __name__ == "__main__":
         os.makedirs(logs_path)
 
     run_log_path = os.path.join(logs_path, 'runlog.log')
-    subprocess.check_call(f"sudo chown -R root:root {temp_path}", shell=True)
     with open(run_log_path, 'w') as log:
         retcode = subprocess.Popen(run_cmd, shell=True, stderr=log, stdout=log).wait()
         if retcode == 0:
