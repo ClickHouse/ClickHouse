@@ -28,11 +28,13 @@ namespace ErrorCodes
 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     const std::string & filename,
     const ReadSettings & settings,
-    size_t estimated_size,
+    std::optional<size_t> size,
     int flags,
     char * existing_memory,
     size_t alignment)
 {
+    size_t estimated_size = size.has_value() ? *size : 0;
+
     if (!existing_memory
         && settings.local_fs_method == ReadMethod::mmap
         && settings.mmap_threshold
