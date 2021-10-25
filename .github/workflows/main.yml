@@ -73,6 +73,7 @@ jobs:
           CACHES_PATH: ${{runner.temp}}/../ccaches
           CHECK_NAME: 'ClickHouse build check (actions)'
         run: |
+          sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" ${{ matrix.build_number }}
@@ -97,6 +98,7 @@ jobs:
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'ClickHouse build check (actions)'
         run: |
+          sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cd $GITHUB_WORKSPACE/tests/ci
           python3 build_report_check.py "$CHECK_NAME"
@@ -112,6 +114,7 @@ jobs:
           REPO_COPY: ${{runner.temp}}/fasttest/ClickHouse
           CACHES_PATH: ${{runner.temp}}/../ccaches
         run: |
+          sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 fast_test_check.py
