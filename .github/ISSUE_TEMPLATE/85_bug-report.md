@@ -2,14 +2,14 @@
 name: Bug report
 about: Wrong behaviour (visible to users) in official ClickHouse release.
 title: ''
-labels: bug
+labels: 'potential bug'
 assignees: ''
 
 ---
 
 > You have to provide the following information whenever possible.
 
-**Describe the bug**
+**Describe what's wrong**
 
 > A clear and concise description of what works not as it is supposed to.
 

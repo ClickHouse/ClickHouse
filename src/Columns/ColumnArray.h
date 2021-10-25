@@ -28,6 +28,8 @@ private:
 
     ColumnArray(const ColumnArray &) = default;
 
+    template <bool positive> struct Cmp;
+
 public:
     /** Create immutable column using immutable arguments. This arguments may be shared with other columns.
       * Use IColumn::mutate in order to make mutable column and mutate shared nested columns.
@@ -71,6 +73,7 @@ public:
     void insertDefault() override;
     void popBack(size_t n) override;
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+    void expand(const Filter & mask, bool inverted) override;
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
     template <typename Type> ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
@@ -184,9 +187,6 @@ private:
 
     template <typename Comparator>
     void getPermutationImpl(size_t limit, Permutation & res, Comparator cmp) const;
-
-    template <typename Comparator>
-    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_range, Comparator cmp) const;
 };
 
 

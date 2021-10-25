@@ -2,6 +2,10 @@
 
 #if USE_EMBEDDED_COMPILER
 
+#include <sys/mman.h>
+
+#include <boost/noncopyable.hpp>
+
 #include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>
@@ -22,7 +26,10 @@
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 #include <llvm/Support/SmallVectorMemoryBuffer.h>
 
+#include <base/getPageSize.h>
 #include <Common/Exception.h>
+#include <Common/formatReadable.h>
+
 
 namespace DB
 {
@@ -31,6 +38,8 @@ namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_CODE;
     extern const int LOGICAL_ERROR;
+    extern const int CANNOT_ALLOCATE_MEMORY;
+    extern const int CANNOT_MPROTECT;
 }
 
 /** Simple module to object file compiler.
@@ -80,6 +89,161 @@ private:
     llvm::TargetMachine & target_machine;
 };
 
+/** Arena that allocate all memory with system page_size.
+  * All allocated pages can be protected with protection_flags using protect method.
+  * During destruction all allocated pages protection_flags will be reset.
+  */
+class PageArena : private boost::noncopyable
+{
+public:
+    PageArena() : page_size(::getPageSize()) {}
+
+    char * allocate(size_t size, size_t alignment)
+    {
+        /** First check if in some allocated page blocks there are enough free memory to make allocation.
+          * If there is no such block create it and then allocate from it.
+          */
+
+        for (size_t i = 0; i < page_blocks.size(); ++i)
+        {
+            char * result = tryAllocateFromPageBlockWithIndex(size, alignment, i);
+            if (result)
+                return result;
+        }
+
+        allocateNextPageBlock(size);
+        size_t allocated_page_index = page_blocks.size() - 1;
+        char * result = tryAllocateFromPageBlockWithIndex(size, alignment, allocated_page_index);
+        assert(result);
+
+        return result;
+    }
+
+    inline size_t getAllocatedSize() const { return allocated_size; }
+
+    inline size_t getPageSize() const { return page_size; }
+
+    ~PageArena()
+    {
+        protect(PROT_READ | PROT_WRITE);
+
+        for (auto & page_block : page_blocks)
+            free(page_block.base());
+    }
+
+    void protect(int protection_flags)
+    {
+        /** The code is partially based on the LLVM codebase
+              * The LLVM Project is under the Apache License v2.0 with LLVM Exceptions.
+              */
+
+#    if defined(__NetBSD__) && defined(PROT_MPROTECT)
+        protection_flags |= PROT_MPROTECT(PROT_READ | PROT_WRITE | PROT_EXEC);
+#    endif
+
+        bool invalidate_cache = (protection_flags & PROT_EXEC);
+
+        for (const auto & block : page_blocks)
+        {
+#    if defined(__arm__) || defined(__aarch64__)
+            /// Certain ARM implementations treat icache clear instruction as a memory read,
+            /// and CPU segfaults on trying to clear cache on !PROT_READ page.
+            /// Therefore we need to temporarily add PROT_READ for the sake of flushing the instruction caches.
+            if (invalidate_cache && !(protection_flags & PROT_READ))
+            {
+                int res = mprotect(block.base(), block.blockSize(), protection_flags | PROT_READ);
+                if (res != 0)
+                    throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
+
+                llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
+                invalidate_cache = false;
+            }
+#    endif
+            int res = mprotect(block.base(), block.blockSize(), protection_flags);
+            if (res != 0)
+                throwFromErrno("Cannot mprotect memory region", ErrorCodes::CANNOT_MPROTECT);
+
+            if (invalidate_cache)
+                llvm::sys::Memory::InvalidateInstructionCache(block.base(), block.blockSize());
+        }
+    }
+
+private:
+    struct PageBlock
+    {
+    public:
+        PageBlock(void * pages_base_, size_t pages_size_, size_t page_size_)
+            : pages_base(pages_base_), pages_size(pages_size_), page_size(page_size_)
+        {
+        }
+
+        inline void * base() const { return pages_base; }
+        inline size_t pagesSize() const { return pages_size; }
+        inline size_t pageSize() const { return page_size; }
+        inline size_t blockSize() const { return pages_size * page_size; }
+
+    private:
+        void * pages_base;
+        size_t pages_size;
+        size_t page_size;
+    };
+
+    std::vector<PageBlock> page_blocks;
+
+    std::vector<size_t> page_blocks_allocated_size;
+
+    size_t page_size = 0;
+
+    size_t allocated_size = 0;
+
+    char * tryAllocateFromPageBlockWithIndex(size_t size, size_t alignment, size_t page_block_index)
+    {
+        assert(page_block_index < page_blocks.size());
+        auto & pages_block = page_blocks[page_block_index];
+
+        size_t block_size = pages_block.blockSize();
+        size_t & block_allocated_size = page_blocks_allocated_size[page_block_index];
+        size_t block_free_size = block_size - block_allocated_size;
+
+        uint8_t * pages_start = static_cast<uint8_t *>(pages_block.base());
+        void * pages_offset = pages_start + block_allocated_size;
+
+        auto * result = std::align(alignment, size, pages_offset, block_free_size);
+
+        if (result)
+        {
+            block_allocated_size = reinterpret_cast<uint8_t *>(result) - pages_start;
+            block_allocated_size += size;
+
+            return static_cast<char *>(result);
+        }
+        else
+        {
+            return nullptr;
+        }
+    }
+
+    void allocateNextPageBlock(size_t size)
+    {
+        size_t pages_to_allocate_size = ((size / page_size) + 1) * 2;
+        size_t allocate_size = page_size * pages_to_allocate_size;
+
+        void * buf = nullptr;
+        int res = posix_memalign(&buf, page_size, allocate_size);
+
+        if (res != 0)
+            throwFromErrno(
+                fmt::format("Cannot allocate memory (posix_memalign) alignment {} size {}.", page_size, ReadableSize(allocate_size)),
+                ErrorCodes::CANNOT_ALLOCATE_MEMORY,
+                res);
+
+        page_blocks.emplace_back(buf, pages_to_allocate_size, page_size);
+        page_blocks_allocated_size.emplace_back(0);
+
+        allocated_size += allocate_size;
+    }
+};
+
 // class AssemblyPrinter
 // {
 // public:
@@ -104,46 +268,43 @@ private:
 
 /** MemoryManager for module.
   * Keep total allocated size during RuntimeDyld linker execution.
-  * Actual compiled code memory is stored in llvm::SectionMemoryManager member, we cannot use ZeroBase optimization here
-  * because it is required for llvm::SectionMemoryManager::MemoryMapper to live longer than llvm::SectionMemoryManager.
   */
-class JITModuleMemoryManager
+class JITModuleMemoryManager : public llvm::RTDyldMemoryManager
 {
-    class DefaultMMapper final : public llvm::SectionMemoryManager::MemoryMapper
-    {
-    public:
-        llvm::sys::MemoryBlock allocateMappedMemory(
-            llvm::SectionMemoryManager::AllocationPurpose Purpose [[maybe_unused]],
-            size_t NumBytes,
-            const llvm::sys::MemoryBlock * const NearBlock,
-            unsigned Flags,
-            std::error_code & EC) override
-        {
-            auto allocated_memory_block = llvm::sys::Memory::allocateMappedMemory(NumBytes, NearBlock, Flags, EC);
-            allocated_size += allocated_memory_block.allocatedSize();
-            return allocated_memory_block;
-        }
-
-        std::error_code protectMappedMemory(const llvm::sys::MemoryBlock & Block, unsigned Flags) override
-        {
-            return llvm::sys::Memory::protectMappedMemory(Block, Flags);
-        }
-
-        std::error_code releaseMappedMemory(llvm::sys::MemoryBlock & M) override { return llvm::sys::Memory::releaseMappedMemory(M); }
-
-        size_t allocated_size = 0;
-    };
-
 public:
-    JITModuleMemoryManager() : manager(&mmaper) { }
 
-    inline size_t getAllocatedSize() const { return mmaper.allocated_size; }
+    uint8_t * allocateCodeSection(uintptr_t size, unsigned alignment, unsigned, llvm::StringRef) override
+    {
+        return reinterpret_cast<uint8_t *>(ex_page_arena.allocate(size, alignment));
+    }
 
-    inline llvm::SectionMemoryManager & getManager() { return manager; }
+    uint8_t * allocateDataSection(uintptr_t size, unsigned alignment, unsigned, llvm::StringRef, bool is_read_only) override
+    {
+        if (is_read_only)
+            return reinterpret_cast<uint8_t *>(ro_page_arena.allocate(size, alignment));
+        else
+            return reinterpret_cast<uint8_t *>(rw_page_arena.allocate(size, alignment));
+    }
+
+    bool finalizeMemory(std::string *) override
+    {
+        ro_page_arena.protect(PROT_READ);
+        ex_page_arena.protect(PROT_READ | PROT_EXEC);
+        return true;
+    }
+
+    inline size_t allocatedSize() const
+    {
+        size_t data_size = rw_page_arena.getAllocatedSize() + ro_page_arena.getAllocatedSize();
+        size_t code_size = ex_page_arena.getAllocatedSize();
+
+        return data_size + code_size;
+    }
 
 private:
-    DefaultMMapper mmaper;
-    llvm::SectionMemoryManager manager;
+    PageArena rw_page_arena;
+    PageArena ro_page_arena;
+    PageArena ex_page_arena;
 };
 
 class JITSymbolResolver : public llvm::LegacyJITSymbolResolver
@@ -249,12 +410,12 @@ CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
     }
 
     std::unique_ptr<JITModuleMemoryManager> module_memory_manager = std::make_unique<JITModuleMemoryManager>();
-    llvm::RuntimeDyld dynamic_linker = {module_memory_manager->getManager(), *symbol_resolver};
+    llvm::RuntimeDyld dynamic_linker = {*module_memory_manager, *symbol_resolver};
 
     std::unique_ptr<llvm::RuntimeDyld::LoadedObjectInfo> linked_object = dynamic_linker.loadObject(*object.get());
 
     dynamic_linker.resolveRelocations();
-    module_memory_manager->getManager().finalizeMemory();
+    module_memory_manager->finalizeMemory(nullptr);
 
     CompiledModule compiled_module;
 
@@ -275,7 +436,7 @@ CHJIT::CompiledModule CHJIT::compileModule(std::unique_ptr<llvm::Module> module)
         compiled_module.function_name_to_symbol.emplace(std::move(function_name), jit_symbol_address);
     }
 
-    compiled_module.size = module_memory_manager->getAllocatedSize();
+    compiled_module.size = module_memory_manager->allocatedSize();
     compiled_module.identifier = current_module_key;
 
     module_identifier_to_memory_manager[current_module_key] = std::move(module_memory_manager);

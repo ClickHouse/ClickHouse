@@ -110,7 +110,7 @@ void insertPostgreSQLValue(
             readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
             if (time < 0)
                 time = 0;
-            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(time);
+            assert_cast<DataTypeDateTime64::ColumnType &>(column).insertValue(time);
             break;
         }
         case ExternalResultDescription::ValueType::vtDecimal32: [[fallthrough]];

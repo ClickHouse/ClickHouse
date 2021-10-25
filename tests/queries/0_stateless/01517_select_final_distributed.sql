@@ -1,3 +1,5 @@
+-- Tags: distributed
+
 DROP TABLE IF EXISTS test5346;
 
 CREATE TABLE test5346 (`Id` String, `Timestamp` DateTime, `updated` DateTime) 

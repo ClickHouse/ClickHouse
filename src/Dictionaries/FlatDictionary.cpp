@@ -10,7 +10,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <Dictionaries//DictionarySource.h>
@@ -289,8 +289,8 @@ void FlatDictionary::blockToAttributes(const Block & block)
 {
     const auto keys_column = block.safeGetByPosition(0).column;
 
-    DictionaryKeysArenaHolder<DictionaryKeyType::simple> arena_holder;
-    DictionaryKeysExtractor<DictionaryKeyType::simple> keys_extractor({ keys_column }, arena_holder.getComplexKeyArena());
+    DictionaryKeysArenaHolder<DictionaryKeyType::Simple> arena_holder;
+    DictionaryKeysExtractor<DictionaryKeyType::Simple> keys_extractor({ keys_column }, arena_holder.getComplexKeyArena());
     auto keys = keys_extractor.extractAllKeys();
 
     HashSet<UInt64> already_processed_keys;
@@ -322,8 +322,7 @@ void FlatDictionary::updateData()
 {
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline;
-        pipeline.init(source_ptr->loadUpdatedAll());
+        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
 
         PullingPipelineExecutor executor(pipeline);
         Block block;
@@ -344,7 +343,7 @@ void FlatDictionary::updateData()
     else
     {
         Pipe pipe(source_ptr->loadUpdatedAll());
-        mergeBlockWithPipe<DictionaryKeyType::simple>(
+        mergeBlockWithPipe<DictionaryKeyType::Simple>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
             std::move(pipe));
@@ -358,8 +357,7 @@ void FlatDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        QueryPipeline pipeline;
-        pipeline.init(source_ptr->loadAll());
+        QueryPipeline pipeline(source_ptr->loadAll());
         PullingPipelineExecutor executor(pipeline);
 
         Block block;
@@ -405,6 +403,11 @@ void FlatDictionary::calculateBytesAllocated()
         };
 
         callOnDictionaryAttributeType(attribute.type, type_call);
+
+        bytes_allocated += sizeof(attribute.is_nullable_set);
+
+        if (attribute.is_nullable_set.has_value())
+            bytes_allocated = attribute.is_nullable_set->getBufferSizeInBytes();
     }
 
     if (update_field_loaded_block)
@@ -557,7 +560,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
                             const Poco::Util::AbstractConfiguration & config,
                             const std::string & config_prefix,
                             DictionarySourcePtr source_ptr,
-                            ContextPtr /* context */,
+                            ContextPtr /* global_context */,
                             bool /* created_from_ddl */) -> DictionaryPtr
     {
         if (dict_struct.key)

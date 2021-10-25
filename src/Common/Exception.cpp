@@ -4,14 +4,14 @@
 #include <cxxabi.h>
 #include <cstdlib>
 #include <Poco/String.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromFile.h>
-#include <common/demangle.h>
-#include <common/errnoToString.h>
+#include <base/demangle.h>
+#include <base/errnoToString.h>
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ErrorCodes.h>
@@ -92,6 +92,22 @@ std::string getExceptionStackTraceString(const std::exception & e)
         return db_exception->getStackTraceString();
     return {};
 #endif
+}
+
+std::string getExceptionStackTraceString(std::exception_ptr e)
+{
+    try
+    {
+        std::rethrow_exception(e);
+    }
+    catch (const std::exception & exception)
+    {
+        return getExceptionStackTraceString(exception);
+    }
+    catch (...)
+    {
+        return {};
+    }
 }
 
 
@@ -380,6 +396,30 @@ int getCurrentExceptionCode()
     }
 }
 
+int getExceptionErrorCode(std::exception_ptr e)
+{
+    try
+    {
+        std::rethrow_exception(e);
+    }
+    catch (const Exception & exception)
+    {
+        return exception.code();
+    }
+    catch (const Poco::Exception &)
+    {
+        return ErrorCodes::POCO_EXCEPTION;
+    }
+    catch (const std::exception &)
+    {
+        return ErrorCodes::STD_EXCEPTION;
+    }
+    catch (...)
+    {
+        return ErrorCodes::UNKNOWN_EXCEPTION;
+    }
+}
+
 
 void rethrowFirstException(const Exceptions & exceptions)
 {
@@ -492,6 +532,13 @@ ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_
 {
     String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(false, true);
     return ExecutionStatus(getCurrentExceptionCode(), msg);
+}
+
+ExecutionStatus ExecutionStatus::fromText(const std::string & data)
+{
+    ExecutionStatus status;
+    status.deserializeText(data);
+    return status;
 }
 
 ParsingException::ParsingException() = default;

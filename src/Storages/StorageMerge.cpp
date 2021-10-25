@@ -1,5 +1,5 @@
-#include <DataStreams/narrowBlockInputStreams.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <QueryPipeline/narrowBlockInputStreams.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -22,7 +22,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Databases/IDatabase.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <algorithm>
 #include <Parsers/queryToString.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -35,6 +35,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_PREWHERE;
@@ -49,7 +50,7 @@ StorageMerge::StorageMerge(
     const String & comment,
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,
-    const DbToTableSetMap & source_databases_and_tables_,
+    const DBToTableSetMap & source_databases_and_tables_,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -209,7 +210,7 @@ Pipe StorageMerge::read(
       * since there is no certainty that it works when one of table is MergeTree and other is not.
       */
     auto modified_context = Context::createCopy(local_context);
-    modified_context->setSetting("optimize_move_to_prewhere", Field{false});
+    modified_context->setSetting("optimize_move_to_prewhere", false);
 
     /// What will be result structure depending on query processed stage in source tables?
     Block header = getHeaderForProcessingStage(*this, column_names, metadata_snapshot, query_info, local_context, processed_stage);
@@ -338,9 +339,10 @@ Pipe StorageMerge::read(
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
 
-    if (!pipe.empty())
+    if (!pipe.empty() && !query_info.input_order_info)
         // It's possible to have many tables read from merge, resize(num_streams) might open too many files at the same time.
-        // Using narrowPipe instead.
+        // Using narrowPipe instead. But in case of reading in order of primary key, we cannot do it,
+        // because narrowPipe doesn't preserve order.
         narrowPipe(pipe, num_streams);
 
     return pipe;
@@ -379,10 +381,10 @@ Pipe StorageMerge::createSources(
 
     if (!storage)
     {
-        pipe = QueryPipeline::getPipe(InterpreterSelectQuery(
+        pipe = QueryPipelineBuilder::getPipe(InterpreterSelectQuery(
             modified_query_info.query, modified_context,
-            std::make_shared<OneBlockInputStream>(header),
-            SelectQueryOptions(processed_stage).analyze()).execute().pipeline);
+            Pipe(std::make_shared<SourceFromSingleChunk>(header)),
+            SelectQueryOptions(processed_stage).analyze()).buildQueryPipeline());
 
         pipe.addInterpreterContext(modified_context);
         return pipe;
@@ -423,7 +425,7 @@ Pipe StorageMerge::createSources(
         InterpreterSelectQuery interpreter{modified_query_info.query, modified_context, SelectQueryOptions(processed_stage)};
 
 
-        pipe = QueryPipeline::getPipe(interpreter.execute().pipeline);
+        pipe = QueryPipelineBuilder::getPipe(interpreter.buildQueryPipeline());
 
         /** Materialization is needed, since from distributed storage the constants come materialized.
           * If you do not do this, different types (Const and non-Const) columns will be produced in different threads,
@@ -435,11 +437,17 @@ Pipe StorageMerge::createSources(
     if (!pipe.empty())
     {
         if (concat_streams && pipe.numOutputPorts() > 1)
+        {
             // It's possible to have many tables read from merge, resize(1) might open too many files at the same time.
             // Using concat instead.
             pipe.addTransform(std::make_shared<ConcatProcessor>(pipe.getHeader(), pipe.numOutputPorts()));
+        }
 
-        if (has_database_virtual_column)
+        /// Add virtual columns if we don't already have them.
+
+        Block pipe_header = pipe.getHeader();
+
+        if (has_database_virtual_column && !pipe_header.has("_database"))
         {
             ColumnWithTypeAndName column;
             column.name = "_database";
@@ -457,7 +465,7 @@ Pipe StorageMerge::createSources(
             });
         }
 
-        if (has_table_virtual_column)
+        if (has_table_virtual_column && !pipe_header.has("_table"))
         {
             ColumnWithTypeAndName column;
             column.name = "_table";
@@ -566,11 +574,14 @@ DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator(const String & datab
 {
     auto database = DatabaseCatalog::instance().getDatabase(database_name);
 
-    auto table_name_match = [this, &database_name](const String & table_name_) -> bool {
+    auto table_name_match = [this, database_name](const String & table_name_) -> bool
+    {
         if (source_databases_and_tables)
         {
-            const auto & source_tables = (*source_databases_and_tables).at(database_name);
-            return source_tables.count(table_name_);
+            if (auto it = source_databases_and_tables->find(database_name); it != source_databases_and_tables->end())
+                return it->second.count(table_name_);
+            else
+                return false;
         }
         else
             return source_table_regexp->match(table_name_);
@@ -618,11 +629,13 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, ContextP
     auto name_deps = getDependentViewsByColumn(local_context);
     for (const auto & command : commands)
     {
-        if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::MODIFY_COLUMN
-            && command.type != AlterCommand::Type::DROP_COLUMN && command.type != AlterCommand::Type::COMMENT_COLUMN)
-            throw Exception(
-                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
-                ErrorCodes::NOT_IMPLEMENTED);
+        if (command.type != AlterCommand::Type::ADD_COLUMN
+            && command.type != AlterCommand::Type::MODIFY_COLUMN
+            && command.type != AlterCommand::Type::DROP_COLUMN
+            && command.type != AlterCommand::Type::COMMENT_COLUMN)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
+                command.type, getName());
+
         if (command.type == AlterCommand::Type::DROP_COLUMN && !command.clear)
         {
             const auto & deps_mv = name_deps[command.column_name];
@@ -733,6 +746,26 @@ IStorage::ColumnSizeByName StorageMerge::getColumnSizes() const
     return first_materialized_mysql->getColumnSizes();
 }
 
+
+std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(const ASTPtr & node, ContextPtr context_)
+{
+    if (const auto * func = node->as<ASTFunction>(); func && func->name == "REGEXP")
+    {
+        if (func->arguments->children.size() != 1)
+            throw Exception("REGEXP in Merge ENGINE takes only one argument", ErrorCodes::BAD_ARGUMENTS);
+
+        auto * literal = func->arguments->children[0]->as<ASTLiteral>();
+        if (!literal || literal->value.safeGet<String>().empty())
+            throw Exception("Argument for REGEXP in Merge ENGINE should be a non empty String Literal", ErrorCodes::BAD_ARGUMENTS);
+
+        return {true, func->arguments->children[0]};
+    }
+
+    auto ast = evaluateConstantExpressionForDatabaseName(node, context_);
+    return {false, ast};
+}
+
+
 void registerStorageMerge(StorageFactory & factory)
 {
     factory.registerStorage("Merge", [](const StorageFactory::Arguments & args)
@@ -748,10 +781,11 @@ void registerStorageMerge(StorageFactory & factory)
                 " - name of source database and regexp for table names.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        auto [is_regexp, database_ast] = evaluateDatabaseNameForMergeEngine(engine_args[0], args.getLocalContext());
+        auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(engine_args[0], args.getLocalContext());
 
         if (!is_regexp)
             engine_args[0] = database_ast;
+
         String source_database_name_or_regexp = database_ast->as<ASTLiteral &>().value.safeGet<String>();
 
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());

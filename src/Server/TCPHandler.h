@@ -2,16 +2,17 @@
 
 #include <Poco/Net/TCPServerConnection.h>
 
-#include <common/getFQDNOrHostName.h>
+#include <base/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Core/Protocol.h>
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
 #include <IO/TimeoutSetter.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/Context_fwd.h>
+#include <Formats/NativeReader.h>
 
 #include "IServer.h"
 
@@ -26,7 +27,10 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
+class Session;
+struct Settings;
 class ColumnsDescription;
+struct ProfileInfo;
 
 /// State of query processing.
 struct QueryState
@@ -41,15 +45,19 @@ struct QueryState
     /// destroyed after input/output blocks, because they may contain other
     /// threads that use this queue.
     InternalTextLogsQueuePtr logs_queue;
-    BlockOutputStreamPtr logs_block_out;
+    std::unique_ptr<NativeWriter> logs_block_out;
+
+    InternalProfileEventsQueuePtr profile_queue;
+    std::unique_ptr<NativeWriter> profile_events_block_out;
 
     /// From where to read data for INSERT.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
-    BlockInputStreamPtr block_in;
+    std::unique_ptr<NativeReader> block_in;
 
     /// Where to write result data.
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
-    BlockOutputStreamPtr block_out;
+    std::unique_ptr<NativeWriter> block_out;
+    Block block_for_insert;
 
     /// Query text.
     String query;
@@ -65,11 +73,11 @@ struct QueryState
     bool sent_all_data = false;
     /// Request requires data from the client (INSERT, but not INSERT SELECT).
     bool need_receive_data_for_insert = false;
-    /// Temporary tables read
-    bool temporary_tables_read = false;
+    /// Data was read.
+    bool read_all_data = false;
 
     /// A state got uuids to exclude from a query
-    bool part_uuids = false;
+    std::optional<std::vector<UUID>> part_uuids_to_ignore;
 
     /// Request requires data from client for function input()
     bool need_receive_data_for_input = false;
@@ -77,6 +85,9 @@ struct QueryState
     Block block_for_input;
     /// sample block from StorageInput
     Block input_header;
+
+    /// If true, the data packets will be skipped instead of reading. Used to recover after errors.
+    bool skipping_data = false;
 
     /// To output progress, the difference after the previous sending of progress.
     Progress progress;
@@ -99,7 +110,6 @@ struct QueryState
 struct LastBlockInputParameters
 {
     Protocol::Compression compression = Protocol::Compression::Disable;
-    Block header;
 };
 
 class TCPHandler : public Poco::Net::TCPServerConnection
@@ -132,10 +142,19 @@ private:
     UInt64 client_version_patch = 0;
     UInt64 client_tcp_protocol_version = 0;
 
-    ContextMutablePtr connection_context;
-    ContextMutablePtr query_context;
+    /// Connection settings, which are extracted from a context.
+    bool send_exception_with_stack_trace = true;
+    Poco::Timespan send_timeout = DBMS_DEFAULT_SEND_TIMEOUT_SEC;
+    Poco::Timespan receive_timeout = DBMS_DEFAULT_RECEIVE_TIMEOUT_SEC;
+    UInt64 poll_interval = DBMS_DEFAULT_POLL_INTERVAL;
+    UInt64 idle_connection_timeout = 3600;
+    UInt64 interactive_delay = 100000;
+    Poco::Timespan sleep_in_send_tables_status;
+    UInt64 unknown_packet_in_send_data = 0;
+    Poco::Timespan sleep_in_receive_cancel;
 
-    size_t unknown_packet_in_send_data = 0;
+    std::unique_ptr<Session> session;
+    ContextMutablePtr query_context;
 
     /// Streams for reading/writing from/to client connection socket.
     std::shared_ptr<ReadBuffer> in;
@@ -148,6 +167,7 @@ private:
     String default_database;
 
     /// For inter-server secret (remote_server.*.secret)
+    bool is_interserver_mode = false;
     String salt;
     String cluster;
     String cluster_secret;
@@ -167,6 +187,8 @@ private:
 
     void runImpl();
 
+    void extractConnectionSettingsFromContext(const ContextPtr & context);
+
     bool receiveProxyHeader();
     void receiveHello();
     bool receivePacket();
@@ -174,18 +196,19 @@ private:
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
-    bool readDataNext(size_t poll_interval, time_t receive_timeout);
-    void readData(const Settings & connection_settings);
+    bool readDataNext();
+    void readData();
+    void skipData();
     void receiveClusterNameAndSalt();
-    std::tuple<size_t, int> getReadTimeouts(const Settings & connection_settings);
 
-    [[noreturn]] void receiveUnexpectedData();
+    bool receiveUnexpectedData(bool throw_exception = true);
     [[noreturn]] void receiveUnexpectedQuery();
+    [[noreturn]] void receiveUnexpectedIgnoredPartUUIDs();
     [[noreturn]] void receiveUnexpectedHello();
     [[noreturn]] void receiveUnexpectedTablesStatusRequest();
 
     /// Process INSERT query
-    void processInsertQuery(const Settings & connection_settings);
+    void processInsertQuery();
 
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();
@@ -204,14 +227,16 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendProfileInfo(const BlockStreamProfileInfo & info);
+    void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
+    void sendProfileEvents();
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();
     void initBlockOutput(const Block & block);
     void initLogsBlockOutput(const Block & block);
+    void initProfileEventsBlockOutput(const Block & block);
 
     bool isQueryCancelled();
 

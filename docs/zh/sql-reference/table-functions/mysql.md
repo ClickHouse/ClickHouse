@@ -106,4 +106,4 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 -   [该 ‘MySQL’ 表引擎](../../engines/table-engines/integrations/mysql.md)
 -   [使用MySQL作为外部字典的来源](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-mysql)
 
-[原始文章](https://clickhouse.tech/docs/en/query_language/table_functions/mysql/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/query_language/table_functions/mysql/) <!--hide-->

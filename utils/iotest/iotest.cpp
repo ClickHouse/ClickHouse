@@ -6,7 +6,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
 #include <Common/randomSeed.h>
-#include <common/getPageSize.h>
+#include <base/getPageSize.h>
 
 #include <cstdlib>
 #include <iomanip>

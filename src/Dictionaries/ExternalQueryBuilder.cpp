@@ -133,6 +133,29 @@ void ExternalQueryBuilder::composeLoadAllQuery(WriteBuffer & out) const
 
             writeQuoted(key.name, out);
         }
+
+        if (dict_struct.range_min && dict_struct.range_max)
+        {
+            writeString(", ", out);
+
+            if (!dict_struct.range_min->expression.empty())
+            {
+                writeParenthesisedString(dict_struct.range_min->expression, out);
+                writeString(" AS ", out);
+            }
+
+            writeQuoted(dict_struct.range_min->name, out);
+
+            writeString(", ", out);
+
+            if (!dict_struct.range_max->expression.empty())
+            {
+                writeParenthesisedString(dict_struct.range_max->expression, out);
+                writeString(" AS ", out);
+            }
+
+            writeQuoted(dict_struct.range_max->name, out);
+        }
     }
 
     for (const auto & attr : dict_struct.attributes)

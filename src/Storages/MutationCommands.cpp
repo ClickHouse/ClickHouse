@@ -15,7 +15,7 @@
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/queryToString.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -73,6 +73,15 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.partition = command->partition;
         res.predicate = nullptr;
         res.projection_name = command->projection->as<ASTIdentifier &>().name();
+        return res;
+    }
+    else if (command->type == ASTAlterCommand::MATERIALIZE_COLUMN)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = MATERIALIZE_COLUMN;
+        res.partition = command->partition;
+        res.column_name = getIdentifierName(command->column);
         return res;
     }
     else if (parse_alter_commands && command->type == ASTAlterCommand::MODIFY_COLUMN)

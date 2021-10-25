@@ -85,7 +85,7 @@ public:
         */
 
         String host_name;
-        UInt16 port;
+        UInt16 port{0};
         String user;
         String password;
 

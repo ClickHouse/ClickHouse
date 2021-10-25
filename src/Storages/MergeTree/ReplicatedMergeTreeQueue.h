@@ -31,6 +31,8 @@ class ReplicatedMergeTreeQueue
 private:
     friend class CurrentlyExecuting;
     friend class ReplicatedMergeTreeMergePredicate;
+    friend class MergeFromLogEntryTask;
+    friend class ReplicatedMergeMutateTaskBase;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
@@ -277,8 +279,8 @@ public:
     /// Clears queue state
     void clear();
 
-    /// Put a set of (already existing) parts in virtual_parts.
-    void initialize(const MergeTreeData::DataParts & parts);
+    /// Get set of parts from zookeeper
+    void initialize(zkutil::ZooKeeperPtr zookeeper);
 
     /** Inserts an action to the end of the queue.
       * To restore broken parts during operation.
@@ -294,13 +296,22 @@ public:
 
     bool removeFailedQuorumPart(const MergeTreePartInfo & part_info);
 
+    enum PullLogsReason
+    {
+        LOAD,
+        UPDATE,
+        MERGE_PREDICATE,
+        SYNC,
+        OTHER,
+    };
+
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
       * If watch_callback is not empty, will call it when new entries appear in the log.
       * If there were new entries, notifies storage.queue_task_handle.
       * Additionally loads mutations (so that the set of mutations is always more recent than the queue).
       * Return the version of "logs" node (that is updated for every merge/mutation/... added to the log)
       */
-    int32_t pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
+    int32_t pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {}, PullLogsReason reason = OTHER);
 
     /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task.
     /// If watch_callback is not empty, will call it when new mutations appear in ZK.

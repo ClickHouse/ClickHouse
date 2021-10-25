@@ -1,4 +1,6 @@
 #!/usr/bin/expect -f
+# Tags: no-fasttest
+# Tag no-fasttest: requires mysql client
 
 log_user 0
 set timeout 60
@@ -33,6 +35,14 @@ expect "ERROR 395 (00000): Code: 395"
 # other formats
 send -- "select * from system.one format TSV;\r"
 expect "ERROR 1 (00000): Code: 1"
+
+send -- "select * from system.one format JSON;\r"
+expect "ERROR 1 (00000): Code: 1"
+
+send -- "select * from system.one format MySQLWire;\r"
+expect "| dummy |"
+expect "|     0 |"
+expect "1 row in set"
 
 send -- "select count(number), sum(number) from numbers(10);\r"
 expect "+---------------+-------------+"

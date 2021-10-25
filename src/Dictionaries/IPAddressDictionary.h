@@ -10,8 +10,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Poco/Net/IPAddress.h>
-#include <common/StringRef.h>
-#include <common/logger_useful.h>
+#include <base/StringRef.h>
+#include <base/logger_useful.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
@@ -64,10 +64,10 @@ public:
 
     bool isInjective(const std::string & attribute_name) const override
     {
-        return dict_struct.attributes[&getAttribute(attribute_name) - attributes.data()].injective;
+        return dict_struct.getAttribute(attribute_name).injective;
     }
 
-    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::complex; }
+    DictionaryKeyType getKeyType() const override { return DictionaryKeyType::Complex; }
 
     ColumnPtr getColumn(
         const std::string& attribute_name,

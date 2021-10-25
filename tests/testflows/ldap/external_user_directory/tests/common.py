@@ -93,7 +93,7 @@ def create_entries_ldap_external_user_directory_config_content(entries, config_d
     path = os.path.join(config_d_dir, config_file)
     name = config_file
 
-    root = xmltree.fromstring("<yandex><user_directories></user_directories></yandex>")
+    root = xmltree.fromstring("<clickhouse><user_directories></user_directories></clickhouse>")
     xml_user_directories = root.find("user_directories")
     xml_user_directories.append(xmltree.Comment(text=f"LDAP external user directories {uid}"))
 

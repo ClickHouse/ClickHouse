@@ -1,5 +1,5 @@
-<yandex>
+<clickhouse>
     <remote_url_allow_hosts>
         <host_regexp>^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.|$)){4}$</host_regexp>
     </remote_url_allow_hosts>
-</yandex>
+</clickhouse>

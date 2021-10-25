@@ -5,6 +5,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/URI.h>
 #include <filesystem>
+#include <thread>
 
 namespace fs = std::filesystem;
 
@@ -112,7 +113,11 @@ std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand()
 
     LOG_TRACE(getLog(), "Starting {}", serviceAlias());
 
-    return ShellCommand::executeDirect(path.string(), cmd_args, ShellCommandDestructorStrategy(true));
+    ShellCommand::Config command_config(path.string());
+    command_config.arguments = cmd_args;
+    command_config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy(true);
+
+    return ShellCommand::executeDirect(command_config);
 }
 
 }

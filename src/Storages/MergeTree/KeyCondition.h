@@ -55,8 +55,8 @@ private:
     static bool less(const Field & lhs, const Field & rhs);
 
 public:
-    FieldRef left = NegativeInfinity{};   /// the left border
-    FieldRef right = PositiveInfinity{};  /// the right border
+    FieldRef left = NEGATIVE_INFINITY;   /// the left border
+    FieldRef right = POSITIVE_INFINITY;  /// the right border
     bool left_included = false;           /// includes the left border
     bool right_included = false;          /// includes the right border
 
@@ -185,9 +185,9 @@ public:
     {
         std::swap(left, right);
         if (left.isPositiveInfinity())
-            left = NegativeInfinity{};
+            left = NEGATIVE_INFINITY;
         if (right.isNegativeInfinity())
-            right = PositiveInfinity{};
+            right = POSITIVE_INFINITY;
         std::swap(left_included, right_included);
     }
 
@@ -374,6 +374,14 @@ private:
         size_t & out_key_column_num,
         DataTypePtr & out_key_column_type,
         std::vector<const ASTFunction *> & out_functions_chain);
+
+    bool transformConstantWithValidFunctions(
+        const String & expr_name,
+        size_t & out_key_column_num,
+        DataTypePtr & out_key_column_type,
+        Field & out_value,
+        DataTypePtr & out_type,
+        std::function<bool(IFunctionBase &, const IDataType &)> always_monotonic) const;
 
     bool canConstantBeWrappedByMonotonicFunctions(
         const ASTPtr & node,

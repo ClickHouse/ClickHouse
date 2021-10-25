@@ -641,6 +641,7 @@ create view partial_query_times as select * from
 -- Report for partial queries that we could only run on the new server (e.g.
 -- queries with new functions added in the tested PR).
 create table partial_queries_report engine File(TSV, 'report/partial-queries-report.tsv')
+    settings output_format_decimal_trailing_zeros = 1
     as select toDecimal64(time_median, 3) time,
         toDecimal64(time_stddev / time_median, 3) relative_time_stddev,
         test, query_index, query_display_name
@@ -713,8 +714,9 @@ create table queries engine File(TSVWithNamesAndTypes, 'report/queries.tsv')
     order by test, query_index, metric_name
     ;
 
-create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv') as
-    with
+create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv')
+    settings output_format_decimal_trailing_zeros = 1
+    as with
         -- server_time is sometimes reported as zero (if it's less than 1 ms),
         -- so we have to work around this to not get an error about conversion
         -- of NaN to decimal.
@@ -730,8 +732,9 @@ create table changed_perf_report engine File(TSV, 'report/changed-perf.tsv') as
         changed_fail, test, query_index, query_display_name
     from queries where changed_show order by abs(diff) desc;
 
-create table unstable_queries_report engine File(TSV, 'report/unstable-queries.tsv') as
-    select
+create table unstable_queries_report engine File(TSV, 'report/unstable-queries.tsv')
+    settings output_format_decimal_trailing_zeros = 1
+    as select
         toDecimal64(left, 3), toDecimal64(right, 3), toDecimal64(diff, 3),
         toDecimal64(stat_threshold, 3), unstable_fail, test, query_index, query_display_name
     from queries where unstable_show order by stat_threshold desc;
@@ -761,8 +764,9 @@ create view total_speedup as
     from test_speedup
     ;
 
-create table test_perf_changes_report engine File(TSV, 'report/test-perf-changes.tsv') as
-    with
+create table test_perf_changes_report engine File(TSV, 'report/test-perf-changes.tsv')
+    settings output_format_decimal_trailing_zeros = 1
+    as with
         (times_speedup >= 1
             ? '-' || toString(toDecimal64(times_speedup, 3)) || 'x'
             : '+' || toString(toDecimal64(1 / times_speedup, 3)) || 'x')
@@ -788,8 +792,9 @@ create view total_client_time_per_query as select *
     from file('analyze/client-times.tsv', TSV,
         'test text, query_index int, client float, server float');
 
-create table slow_on_client_report engine File(TSV, 'report/slow-on-client.tsv') as
-    select client, server, toDecimal64(client/server, 3) p,
+create table slow_on_client_report engine File(TSV, 'report/slow-on-client.tsv')
+    settings output_format_decimal_trailing_zeros = 1
+    as select client, server, toDecimal64(client/server, 3) p,
         test, query_display_name
     from total_client_time_per_query left join query_display_names using (test, query_index)
     where p > toDecimal64(1.02, 3) order by p desc;
@@ -874,8 +879,9 @@ create view test_times_view_total as
     from test_times_view
     ;
 
-create table test_times_report engine File(TSV, 'report/test-times.tsv') as
-    select
+create table test_times_report engine File(TSV, 'report/test-times.tsv')
+    settings output_format_decimal_trailing_zeros = 1
+    as select
         test,
         toDecimal64(real, 3),
         toDecimal64(total_client_time, 3),
@@ -893,8 +899,9 @@ create table test_times_report engine File(TSV, 'report/test-times.tsv') as
     ;
 
 -- report for all queries page, only main metric
-create table all_tests_report engine File(TSV, 'report/all-queries.tsv') as
-    with
+create table all_tests_report engine File(TSV, 'report/all-queries.tsv')
+    settings output_format_decimal_trailing_zeros = 1
+    as with
         -- server_time is sometimes reported as zero (if it's less than 1 ms),
         -- so we have to work around this to not get an error about conversion
         -- of NaN to decimal.
@@ -1057,9 +1064,10 @@ create table unstable_run_traces engine File(TSVWithNamesAndTypes,
     ;
 
 create table metric_devation engine File(TSVWithNamesAndTypes,
-        'report/metric-deviation.$version.tsv') as
+        'report/metric-deviation.$version.tsv')
+    settings output_format_decimal_trailing_zeros = 1
     -- first goes the key used to split the file with grep
-    select test, query_index, query_display_name,
+    as select test, query_index, query_display_name,
         toDecimal64(d, 3) d, q, metric
     from (
         select
@@ -1187,8 +1195,9 @@ create table metrics engine File(TSV, 'metrics/metrics.tsv') as
     ;
 
 -- Show metrics that have changed
-create table changes engine File(TSV, 'metrics/changes.tsv') as
-    select metric, left, right,
+create table changes engine File(TSV, 'metrics/changes.tsv')
+    settings output_format_decimal_trailing_zeros = 1
+    as select metric, left, right,
         toDecimal64(diff, 3), toDecimal64(times_diff, 3)
     from (
         select metric, median(left) as left, median(right) as right,

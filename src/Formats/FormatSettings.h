@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 
 
 namespace DB
@@ -28,6 +28,7 @@ struct FormatSettings
     bool write_statistics = true;
     bool import_nested_json = false;
     bool null_as_default = true;
+    bool decimal_trailing_zeros = false;
 
     enum class DateTimeInputFormat
     {
@@ -53,6 +54,7 @@ struct FormatSettings
     {
         UInt64 row_group_size = 1000000;
         bool low_cardinality_as_dictionary = false;
+        bool import_nested = false;
     } arrow;
 
     struct
@@ -74,6 +76,7 @@ struct FormatSettings
         bool crlf_end_of_line = false;
         bool input_format_enum_as_number = false;
         bool input_format_arrays_as_nested_csv = false;
+        String null_representation = "\\N";
     } csv;
 
     struct Custom
@@ -100,6 +103,7 @@ struct FormatSettings
     struct
     {
         UInt64 row_group_size = 1000000;
+        bool import_nested = false;
     } parquet;
 
     struct Pretty
@@ -174,6 +178,25 @@ struct FormatSettings
         bool deduce_templates_of_expressions = true;
         bool accurate_types_of_literals = true;
     } values;
+
+    struct
+    {
+        bool import_nested = false;
+    } orc;
+
+    /// For capnProto format we should determine how to
+    /// compare ClickHouse Enum and Enum from schema.
+    enum class EnumComparingMode
+    {
+        BY_NAMES, // Names in enums should be the same, values can be different.
+        BY_NAMES_CASE_INSENSITIVE, // Case-insensitive name comparison.
+        BY_VALUES, // Values should be the same, names can be different.
+    };
+
+    struct
+    {
+        EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
+    } capn_proto;
 };
 
 }

@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: Unsupported type of ALTER query
+
 DROP TABLE IF EXISTS merge_tree_deduplication;
 
 CREATE TABLE merge_tree_deduplication

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
@@ -9,7 +9,7 @@
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Parsers/ASTFunction.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Interpreters/Cluster.h>
 
@@ -83,7 +83,7 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
-    QueryPipelinePtr distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
+    QueryPipelineBuilderPtr distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
 
     /// Removes temporary data in local filesystem.
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
@@ -101,7 +101,7 @@ public:
     void flush() override;
     void drop() override;
 
-    bool storesDataOnDisk() const override { return true; }
+    bool storesDataOnDisk() const override { return data_volume != nullptr; }
     Strings getDataPaths() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
@@ -136,7 +136,8 @@ private:
         const String & relative_data_path_,
         const DistributedSettings & distributed_settings_,
         bool attach_,
-        ClusterPtr owned_cluster_ = {});
+        ClusterPtr owned_cluster_ = {},
+        ASTPtr remote_table_function_ptr_ = {});
 
     StorageDistributed(
         const StorageID & id_,
@@ -174,8 +175,9 @@ private:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
     ClusterPtr getOptimizedCluster(ContextPtr, const StorageMetadataPtr & metadata_snapshot, const ASTPtr & query_ptr) const;
-    ClusterPtr
-    skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const;
+
+    ClusterPtr skipUnusedShards(
+        ClusterPtr cluster, const ASTPtr & query_ptr, const StorageMetadataPtr & metadata_snapshot, ContextPtr context) const;
 
     /// This method returns optimal query processing stage.
     ///

@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database, no-parallel
+-- Tag no-replicated-database: Unsupported type of ALTER query
+
 DROP TABLE IF EXISTS src;
 DROP TABLE IF EXISTS dst;
 

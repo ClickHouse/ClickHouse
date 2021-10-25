@@ -1,15 +1,18 @@
 #include "PostgreSQLDictionarySource.h"
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Core/QualifiedTableName.h>
 #include "DictionarySourceFactory.h"
 #include "registerDictionaries.h"
 
 #if USE_LIBPQXX
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/PostgreSQLBlockInputStream.h>
+#include <Processors/Transforms/PostgreSQLSource.h>
 #include "readInvalidateQuery.h"
 #include <Interpreters/Context.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #endif
 
 
@@ -29,19 +32,13 @@ namespace
 {
     ExternalQueryBuilder makeExternalQueryBuilder(const DictionaryStructure & dict_struct, const String & schema, const String & table, const String & query, const String & where)
     {
-        auto schema_value = schema;
-        auto table_value = table;
+        QualifiedTableName qualified_name{schema, table};
 
-        if (schema_value.empty())
-        {
-            if (auto pos = table_value.find('.'); pos != std::string::npos)
-            {
-                schema_value = table_value.substr(0, pos);
-                table_value = table_value.substr(pos + 1);
-            }
-        }
+        if (qualified_name.database.empty() && !qualified_name.table.empty())
+            qualified_name = QualifiedTableName::parseFromString(qualified_name.table);
+
         /// Do not need db because it is already in a connection string.
-        return {dict_struct, "", schema_value, table_value, query, where, IdentifierQuotingStyle::DoubleQuotes};
+        return {dict_struct, "", qualified_name.database, qualified_name.table, query, where, IdentifierQuotingStyle::DoubleQuotes};
     }
 }
 
@@ -129,7 +126,7 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    return readInvalidateQuery(Pipe(std::make_unique<PostgreSQLSource<>>(pool->get(), request, invalidate_sample_block, 1)));
+    return readInvalidateQuery(QueryPipeline(std::make_unique<PostgreSQLSource<>>(pool->get(), request, invalidate_sample_block, 1)));
 }
 
 
@@ -188,16 +185,18 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
     {
 #if USE_LIBPQXX
         const auto settings_config_prefix = config_prefix + ".postgresql";
+
+        auto configuration = getExternalDataSourceConfigurationByPriority(config, settings_config_prefix, context);
         auto pool = std::make_shared<postgres::PoolWithFailover>(
-                    config, settings_config_prefix,
+                    configuration.replicas_configurations,
                     context->getSettingsRef().postgresql_connection_pool_size,
                     context->getSettingsRef().postgresql_connection_pool_wait_timeout);
 
-        PostgreSQLDictionarySource::Configuration configuration
+        PostgreSQLDictionarySource::Configuration dictionary_configuration
         {
-            .db = config.getString(fmt::format("{}.db", settings_config_prefix), ""),
-            .schema = config.getString(fmt::format("{}.schema", settings_config_prefix), ""),
-            .table = config.getString(fmt::format("{}.table", settings_config_prefix), ""),
+            .db = configuration.database,
+            .schema = configuration.schema,
+            .table = configuration.table,
             .query = config.getString(fmt::format("{}.query", settings_config_prefix), ""),
             .where = config.getString(fmt::format("{}.where", settings_config_prefix), ""),
             .invalidate_query = config.getString(fmt::format("{}.invalidate_query", settings_config_prefix), ""),
@@ -205,7 +204,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             .update_lag = config.getUInt64(fmt::format("{}.update_lag", settings_config_prefix), 1)
         };
 
-        return std::make_unique<PostgreSQLDictionarySource>(dict_struct, configuration, pool, sample_block);
+        return std::make_unique<PostgreSQLDictionarySource>(dict_struct, dictionary_configuration, pool, sample_block);
 #else
         (void)dict_struct;
         (void)config;

@@ -17,7 +17,7 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
                                    [[maybe_unused]] const Poco::Util::AbstractConfiguration & config,
                                    [[maybe_unused]] const std::string & config_prefix,
                                    [[maybe_unused]] Block & sample_block,
-                                                    ContextPtr /* context */,
+                                                    ContextPtr /* global_context */,
                                                     const std::string & /* default_database */,
                                                     bool /*created_from_ddl*/) -> DictionarySourcePtr
     {
@@ -36,10 +36,10 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
 
 #if USE_CASSANDRA
 
-#include <IO/WriteHelpers.h>
+#include <base/logger_useful.h>
 #include <Common/SipHash.h>
-#include "CassandraBlockInputStream.h"
-#include <common/logger_useful.h>
+#include <IO/WriteHelpers.h>
+#include <Dictionaries/CassandraSource.h>
 
 namespace DB
 {

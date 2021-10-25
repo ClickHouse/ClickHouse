@@ -27,6 +27,7 @@ void registerStorageView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
 void registerStorageLiveView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
+void registerStorageExecutable(StorageFactory & factory);
 
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
@@ -67,6 +68,10 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 void registerStorageExternalDistributed(StorageFactory & factory);
 #endif
 
+#if USE_FILELOG
+void registerStorageFileLog(StorageFactory & factory);
+#endif
+
 #if USE_SQLITE
 void registerStorageSQLite(StorageFactory & factory);
 #endif
@@ -94,6 +99,7 @@ void registerStorages()
     registerStorageMaterializedView(factory);
     registerStorageLiveView(factory);
     registerStorageGenerateRandom(factory);
+    registerStorageExecutable(factory);
 
     #if USE_AWS_S3
     registerStorageS3(factory);
@@ -117,7 +123,11 @@ void registerStorages()
     registerStorageKafka(factory);
     #endif
 
-    #if USE_AMQPCPP
+#if USE_FILELOG
+    registerStorageFileLog(factory);
+#endif
+
+#if USE_AMQPCPP
     registerStorageRabbitMQ(factory);
     #endif
 

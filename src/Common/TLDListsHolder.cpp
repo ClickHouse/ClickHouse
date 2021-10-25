@@ -1,6 +1,6 @@
 #include <Common/TLDListsHolder.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <string_view>
@@ -64,7 +64,8 @@ size_t TLDListsHolder::parseAndAddTldList(const std::string & name, const std::s
     while (!in.eof())
     {
         readEscapedStringUntilEOL(line, in);
-        ++in.position();
+        if (!in.eof())
+            ++in.position();
         /// Skip comments
         if (line.size() > 2 && line[0] == '/' && line[1] == '/')
             continue;

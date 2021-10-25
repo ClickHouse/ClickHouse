@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 --
 -- Atomic no SYNC
 -- (should go first to check that thread for DROP TABLE does not hang)

@@ -3,6 +3,7 @@ import os.path
 import timeit
 
 import pytest
+import logging
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV
@@ -10,6 +11,8 @@ from helpers.test_tools import TSV
 cluster = ClickHouseCluster(__file__)
 
 NODES = {'node' + str(i): None for i in (1, 2)}
+
+IS_DEBUG = False
 
 CREATE_TABLES_SQL = '''
 CREATE DATABASE test;
@@ -104,6 +107,11 @@ def started_cluster(request):
     try:
         cluster.start()
 
+        if cluster.instances["node1"].is_debug_build():
+            global IS_DEBUG
+            IS_DEBUG = True
+            logging.warning("Debug build is too slow to show difference in timings. We disable checks.")
+
         for node_id, node in list(NODES.items()):
             node.query(CREATE_TABLES_SQL)
             node.query(INSERT_SQL_TEMPLATE.format(node_id=node_id))
@@ -133,8 +141,9 @@ def _check_timeout_and_exception(node, user, query_base, query):
     # And it should timeout no faster than:
     measured_timeout = timeit.default_timer() - start
 
-    assert expected_timeout - measured_timeout <= TIMEOUT_MEASUREMENT_EPS
-    assert measured_timeout - expected_timeout <= TIMEOUT_DIFF_UPPER_BOUND[user][query_base]
+    if not IS_DEBUG:
+        assert expected_timeout - measured_timeout <= TIMEOUT_MEASUREMENT_EPS
+        assert measured_timeout - expected_timeout <= TIMEOUT_DIFF_UPPER_BOUND[user][query_base]
 
     # And exception should reflect connection attempts:
     _check_exception(exception, repeats)

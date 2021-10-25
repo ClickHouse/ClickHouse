@@ -3,7 +3,7 @@
 #include <Common/TerminalSize.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Formats/registerFormats.h>
-#include <common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 #include <unistd.h>
 #include <filesystem>
 
@@ -31,6 +31,10 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
         move_fault_probability = std::max(std::min(config().getDouble("move-fault-probability"), 1.0), 0.0);
     base_dir = (config().has("base-dir")) ? config().getString("base-dir") : fs::current_path().string();
 
+    max_table_tries = std::max<size_t>(config().getUInt("max-table-tries", 3), 1);
+    max_shard_partition_tries = std::max<size_t>(config().getUInt("max-shard-partition-tries", 3), 1);
+    max_shard_partition_piece_tries_for_alter = std::max<size_t>(config().getUInt("max-shard-partition-piece-tries-for-alter", 10), 1);
+    retry_delay_ms = std::chrono::milliseconds(std::max<size_t>(config().getUInt("retry-delay-ms", 1000), 100));
 
     if (config().has("experimental-use-sample-offset"))
         experimental_use_sample_offset = config().getBool("experimental-use-sample-offset");
@@ -100,6 +104,15 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
                           .argument("experimental-use-sample-offset").binding("experimental-use-sample-offset"));
     options.addOption(Poco::Util::Option("status", "", "Get for status for current execution").binding("status"));
 
+    options.addOption(Poco::Util::Option("max-table-tries", "", "Number of tries for the copy table task")
+                          .argument("max-table-tries").binding("max-table-tries"));
+    options.addOption(Poco::Util::Option("max-shard-partition-tries", "", "Number of tries for the copy one partition task")
+                          .argument("max-shard-partition-tries").binding("max-shard-partition-tries"));
+    options.addOption(Poco::Util::Option("max-shard-partition-piece-tries-for-alter", "", "Number of tries for final ALTER ATTACH to destination table")
+                          .argument("max-shard-partition-piece-tries-for-alter").binding("max-shard-partition-piece-tries-for-alter"));
+    options.addOption(Poco::Util::Option("retry-delay-ms", "", "Delay between task retries")
+                          .argument("retry-delay-ms").binding("retry-delay-ms"));
+
     using Me = std::decay_t<decltype(*this)>;
     options.addOption(Poco::Util::Option("help", "", "produce this help message").binding("help")
                           .callback(Poco::Util::OptionCallback<Me>(this, &Me::handleHelp)));
@@ -161,7 +174,10 @@ void ClusterCopierApp::mainImpl()
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
     copier->setMoveFaultProbability(move_fault_probability);
-
+    copier->setMaxTableTries(max_table_tries);
+    copier->setMaxShardPartitionTries(max_shard_partition_tries);
+    copier->setMaxShardPartitionPieceTriesForAlter(max_shard_partition_piece_tries_for_alter);
+    copier->setRetryDelayMs(retry_delay_ms);
     copier->setExperimentalUseSampleOffset(experimental_use_sample_offset);
 
     auto task_file = config().getString("task-file", "");

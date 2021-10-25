@@ -1,0 +1,9 @@
+<clickhouse>
+    <named_collections>
+        <s3_conf1>
+            <url>http://minio1:9001/root/test_table</url>
+            <access_key_id>minio</access_key_id>
+            <secret_access_key>minio123</secret_access_key>
+        </s3_conf1>
+    </named_collections>
+</clickhouse>

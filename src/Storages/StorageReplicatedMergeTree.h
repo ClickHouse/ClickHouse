@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <atomic>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
@@ -21,6 +21,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Storages/MergeTree/LeaderElection.h>
 #include <Storages/MergeTree/PartMovesBetweenShardsOrchestrator.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/MergeFromLogEntryTask.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
@@ -28,8 +30,8 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Throttler.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Processors/Pipe.h>
-#include <Storages/MergeTree/BackgroundJobsExecutor.h>
+#include <QueryPipeline/Pipe.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
 
 namespace DB
@@ -174,6 +176,7 @@ public:
         UInt64 absolute_delay;
         UInt8 total_replicas;
         UInt8 active_replicas;
+        String last_queue_update_exception;
         /// If the error has happened fetching the info from ZooKeeper, this field will be set.
         String zookeeper_exception;
         std::unordered_map<std::string, bool> replica_is_active;
@@ -217,7 +220,7 @@ public:
                                               const zkutil::EphemeralNodeHolder::Ptr & metadata_drop_lock, Poco::Logger * logger);
 
     /// Schedules job to execute in background pool (merge, mutate, drop range and so on)
-    bool scheduleDataProcessingJob(IBackgroundJobExecutor & executor) override;
+    bool scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) override;
 
     /// Checks that fetches are not disabled with action blocker and pool for fetches
     /// is not overloaded
@@ -238,7 +241,7 @@ public:
     bool tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
 
     /// Get best replica having this partition on a same type remote disk
-    String getSharedDataReplica(const IMergeTreeDataPart & part, DiskType::Type disk_type) const;
+    String getSharedDataReplica(const IMergeTreeDataPart & part, DiskType disk_type) const;
 
     inline String getReplicaName() const { return replica_name; }
 
@@ -281,6 +284,9 @@ private:
     friend class ReplicatedMergeTreeQueue;
     friend class PartMovesBetweenShardsOrchestrator;
     friend class MergeTreeData;
+    friend class MergeFromLogEntryTask;
+    friend class MutateFromLogEntryTask;
+    friend class ReplicatedMergeMutateTaskBase;
 
     using MergeStrategyPicker = ReplicatedMergeTreeMergeStrategyPicker;
     using LogEntry = ReplicatedMergeTreeLogEntry;
@@ -331,6 +337,10 @@ private:
     std::atomic<time_t> last_queue_update_start_time{0};
     std::atomic<time_t> last_queue_update_finish_time{0};
 
+    mutable std::mutex last_queue_update_exception_lock;
+    String last_queue_update_exception;
+    String getLastQueueUpdateException() const;
+
     DataPartsExchange::Fetcher fetcher;
 
     /// When activated, replica is initialized and startup() method could exit
@@ -342,17 +352,8 @@ private:
     /// Event that is signalled (and is reset) by the restarting_thread when the ZooKeeper session expires.
     Poco::Event partial_shutdown_event {false};     /// Poco::Event::EVENT_MANUALRESET
 
-    /// Limiting parallel fetches per node
-    static inline std::atomic_uint total_fetches {0};
-
-    /// Limiting parallel fetches per one table
-    std::atomic_uint current_table_fetches {0};
-
     int metadata_version = 0;
     /// Threads.
-
-    BackgroundJobsExecutor background_executor;
-    BackgroundMovesExecutor background_moves_executor;
 
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;
@@ -474,18 +475,10 @@ private:
 
     void executeDropRange(const LogEntry & entry);
 
-    /// Do the merge or recommend to make the fetch instead of the merge
-    bool tryExecuteMerge(const LogEntry & entry);
-
     /// Execute alter of table metadata. Set replica/metadata and replica/columns
     /// nodes in zookeeper and also changes in memory metadata.
     /// New metadata and columns values stored in entry.
     bool executeMetadataAlter(const LogEntry & entry);
-
-    /// Execute MUTATE_PART entry. Part name and mutation commands
-    /// stored in entry. This function relies on MergerMutator class.
-    bool tryExecutePartMutation(const LogEntry & entry);
-
 
     /// Fetch part from other replica (inserted or merged/mutated)
     /// NOTE: Attention! First of all tries to find covering part on other replica
@@ -515,6 +508,9 @@ private:
 
 
     ReplicatedMergeTreeQueue::SelectedEntryPtr selectQueueEntry();
+
+
+    MergeFromLogEntryTaskPtr getTaskToProcessMergeQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr entry);
 
     bool processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr entry);
 
@@ -609,7 +605,6 @@ private:
     std::unordered_set<String> currently_fetching_parts;
     std::mutex currently_fetching_parts_mutex;
 
-
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name, bool is_parallel);
 
@@ -630,22 +625,27 @@ private:
         const String & zookeeper_block_id_path = "", const String & zookeeper_path_prefix = "") const;
 
     /** Wait until all replicas, including this, execute the specified action from the log.
-      * If replicas are added at the same time, it can not wait the added replica .
+      * If replicas are added at the same time, it can not wait the added replica.
+      *
+      * Waits for inactive replicas no more than wait_for_inactive_timeout.
+      * Returns list of inactive replicas that have not executed entry or throws exception.
       *
       * NOTE: This method must be called without table lock held.
       * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
-      * TODO: There are wrong usages of this method that are not fixed yet.
-      *
-      * One method for convenient use on current table, another for waiting on foreign shards.
       */
-    Strings waitForAllTableReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
-    Strings waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
+    void waitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
+                                             Int64 wait_for_inactive_timeout, const String & error_context = {});
+    Strings tryWaitForAllReplicasToProcessLogEntry(const String & table_zookeeper_path, const ReplicatedMergeTreeLogEntryData & entry,
+                                                   Int64 wait_for_inactive_timeout);
 
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
       */
-    bool waitForTableReplicaToProcessLogEntry(const String & table_zookeeper_path, const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
-    bool waitForReplicaToProcessLogEntry(const String & replica_name, const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
+    bool tryWaitForReplicaToProcessLogEntry(const String & table_zookeeper_path, const String & replica_name,
+                                            const ReplicatedMergeTreeLogEntryData & entry, Int64 wait_for_inactive_timeout = 0);
+
+    /// Depending on settings, do nothing or wait for this replica or all replicas process log entry.
+    void waitForLogEntryToBeProcessedIfNecessary(const ReplicatedMergeTreeLogEntryData & entry, ContextPtr query_context, const String & error_context = {});
 
     /// Throw an exception if the table is readonly.
     void assertNotReadonly() const;

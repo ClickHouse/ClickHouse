@@ -20,11 +20,11 @@
 #include <Access/Role.h>
 #include <Access/SettingsProfile.h>
 #include <Columns/ColumnString.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/Defines.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <boost/range/algorithm/sort.hpp>
 
 
@@ -241,12 +241,12 @@ InterpreterShowCreateAccessEntityQuery::InterpreterShowCreateAccessEntityQuery(c
 BlockIO InterpreterShowCreateAccessEntityQuery::execute()
 {
     BlockIO res;
-    res.in = executeImpl();
+    res.pipeline = executeImpl();
     return res;
 }
 
 
-BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
+QueryPipeline InterpreterShowCreateAccessEntityQuery::executeImpl()
 {
     /// Build a create queries.
     ASTs create_queries = getCreateQueries();
@@ -270,7 +270,7 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
     if (startsWith(desc, prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.
 
-    return std::make_shared<OneBlockInputStream>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}});
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{std::move(column), std::make_shared<DataTypeString>(), desc}}));
 }
 
 

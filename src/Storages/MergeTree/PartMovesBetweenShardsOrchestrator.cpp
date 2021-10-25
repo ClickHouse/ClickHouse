@@ -194,7 +194,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
                 /// This wait in background schedule pool is useless. It'd be
                 /// better to have some notification which will call `step`
                 /// function when all replicated will finish. TODO.
-                storage.waitForAllReplicasToProcessLogEntry(log_entry, true);
+                storage.waitForAllReplicasToProcessLogEntry(zookeeper_path, log_entry, -1);
             }
 
             {
@@ -231,7 +231,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
                 String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
                 log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
-                storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
+                storage.waitForAllReplicasToProcessLogEntry(entry.to_shard, log_entry, -1);
             }
 
             {
@@ -269,7 +269,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
                 String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
                 log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
-                storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
+                storage.waitForAllReplicasToProcessLogEntry(entry.to_shard, log_entry, -1);
             }
 
             {
@@ -318,7 +318,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
                 String log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*responses.back()).path_created;
                 log_entry.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
-                storage.waitForAllTableReplicasToProcessLogEntry(entry.to_shard, log_entry, true);
+                storage.waitForAllReplicasToProcessLogEntry(entry.to_shard, log_entry, -1);
             }
 
             {
@@ -348,7 +348,7 @@ void PartMovesBetweenShardsOrchestrator::stepEntry(const Entry & entry, zkutil::
             {
                 ReplicatedMergeTreeLogEntry log_entry;
                 if (storage.dropPartImpl(zk, entry.part_name, log_entry, false, false))
-                    storage.waitForAllReplicasToProcessLogEntry(log_entry, true);
+                    storage.waitForAllReplicasToProcessLogEntry(zookeeper_path, log_entry, -1);
             }
 
             {

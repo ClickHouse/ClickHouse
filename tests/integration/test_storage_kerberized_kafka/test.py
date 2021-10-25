@@ -55,6 +55,9 @@ def kafka_produce(kafka_cluster, topic, messages, timestamp=None):
 def kafka_cluster():
     try:
         cluster.start()
+        if instance.is_debug_build():
+            # https://github.com/ClickHouse/ClickHouse/issues/27651
+            pytest.skip("librdkafka calls system function for kinit which does not pass harmful check in debug build")
         yield cluster
     finally:
         cluster.shutdown()
