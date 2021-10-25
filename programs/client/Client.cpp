@@ -488,8 +488,8 @@ try
 }
 catch (const Exception & e)
 {
-    bool print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
-    std::cerr << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+    bool need_print_stack_trace = config().getBool("stacktrace", false) && e.code() != ErrorCodes::NETWORK_ERROR;
+    std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl << std::endl;
     /// If exception code isn't zero, we should return non-zero return code anyway.
     return e.code() ? e.code() : -1;
 }
