@@ -72,13 +72,13 @@ toc_title: "Операторы"
 
 `a GLOBAL NOT IN ...` - функция `globalNotIn(a, b)`
 
-`a = ANY (subquery)` – функция `in(a, subquery)`
+`a = ANY (subquery)` – функция `in(a, subquery)`.  
 
-`a != ANY (subquery)` – функция `notIn(a, subquery)`
+`a != ANY (subquery)` – равнозначно `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
 
-`a = ALL (subquery)` –  равнозначно `a IN (SELECT singleValueOrNull(*) FROM subquery)`
+`a = ALL (subquery)` – равнозначно `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
 
-`a != ALL (subquery)` –  равнозначно `a NOT IN (subquery)`
+`a != ALL (subquery)` – функция `notIn(a, subquery)`. 
 
 
 **Примеры**
