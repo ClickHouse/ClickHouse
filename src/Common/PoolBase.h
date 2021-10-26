@@ -89,6 +89,10 @@ public:
 
         bool isNull() const { return data == nullptr; }
 
+        ObjectPtr getObject() {
+            return data->data.object;
+        }
+
         PoolBase * getPool() const
         {
             if (!data)
@@ -163,4 +167,3 @@ protected:
     /** Creates a new object to put into the pool. */
     virtual ObjectPtr allocObject() = 0;
 };
-

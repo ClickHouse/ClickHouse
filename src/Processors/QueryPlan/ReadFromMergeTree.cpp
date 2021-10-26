@@ -131,6 +131,21 @@ Pipe ReadFromMergeTree::readFromPool(
     const auto & settings = context->getSettingsRef();
     MergeTreeReadPool::BackoffSettings backoff_settings(settings);
 
+    // LOG_FATAL(&Poco::Logger::get("ReadFromMergeTree"), "Here!!!");
+
+    // String anime;
+    // for (const auto & part : parts_with_range)
+    // {
+    //     anime += part.data_part->name + '\n';
+    //     for (const auto & range : part.ranges)
+    //     {
+    //         anime += fmt::format("({} {}), ", range.begin, range.end);
+    //     }
+    //     anime += '\n';
+    // }
+
+    // LOG_TRACE(&Poco::Logger::get("ReadFromMergeTree"), anime);
+
     auto pool = std::make_shared<MergeTreeReadPool>(
         max_streams,
         sum_marks,
@@ -177,7 +192,7 @@ ProcessorPtr ReadFromMergeTree::createSource(
     return std::make_shared<TSource>(
             data, metadata_snapshot, part.data_part, max_block_size, preferred_block_size_bytes,
             preferred_max_column_in_block_size_bytes, required_columns, part.ranges, use_uncompressed_cache, prewhere_info,
-            actions_settings, reader_settings, virt_column_names, part.part_index_in_query, has_limit_below_one_block);
+            actions_settings, reader_settings, virt_column_names, part.part_index_in_query, has_limit_below_one_block, read_task_callback);
 }
 
 Pipe ReadFromMergeTree::readInOrder(
@@ -218,6 +233,7 @@ Pipe ReadFromMergeTree::read(
     RangesInDataParts parts_with_range, Names required_columns, ReadType read_type,
     size_t max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache)
 {
+    // (void)read_type;
     if (read_type == ReadType::Default && max_streams > 1)
         return readFromPool(parts_with_range, required_columns, max_streams,
                             min_marks_for_concurrent_read, use_uncompressed_cache);

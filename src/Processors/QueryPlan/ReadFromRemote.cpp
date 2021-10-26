@@ -197,7 +197,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
     addConvertingActions(pipes.back(), output_stream->header);
 }
 
-void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard)
+void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard, std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator, std::optional<ConnectionPtr> connection)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -211,17 +211,31 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::
 
     String query_string = formattedAST(shard.query);
 
-    auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
-
     scalars["_shard_num"]
         = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
-    auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-        shard.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage, nullptr, std::move(coordinator));
-    remote_query_executor->setLogger(log);
 
-    remote_query_executor->setPoolMode(PoolMode::GET_MANY);
-    if (!table_func_ptr)
-        remote_query_executor->setMainTable(main_table);
+    std::shared_ptr<RemoteQueryExecutor> remote_query_executor;
+    if (connection.has_value())
+    {
+        remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+            std::move(*connection), query_string, shard.header, context, throttler, scalars, external_tables, stage, nullptr, std::move(coordinator));
+
+        remote_query_executor->setLogger(log);
+
+        if (!table_func_ptr)
+            remote_query_executor->setMainTable(main_table);
+    }
+    else
+    {
+        remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+            shard.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage, nullptr, std::move(coordinator));
+
+        remote_query_executor->setLogger(log);
+
+        remote_query_executor->setPoolMode(PoolMode::GET_MANY);
+        if (!table_func_ptr)
+            remote_query_executor->setMainTable(main_table);
+    }
 
     pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read));
     pipes.back().addInterpreterContext(context);
@@ -231,12 +245,41 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::
 void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     Pipes pipes;
-    for (const auto & shard : shards)
+
+    /// We have to create a pipe for each replica
+    if (context->getSettingsRef().max_parallel_replicas > 0)
     {
-        if (shard.lazy)
-            addLazyPipe(pipes, shard);
-        else
-            addPipe(pipes, shard);
+        const Settings & current_settings = context->getSettingsRef();
+        auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
+
+        for (const auto & shard : shards)
+        {
+            auto connection_entries = shard.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
+
+            auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
+
+            // FIXME
+            assert(!shard.lazy);
+
+            for (size_t replica_num = 0; replica_num < shard.num_replicas; ++replica_num)
+            {
+                auto connection = connection_entries[replica_num];
+                auto connection_ptr = connection.getObject();
+                addPipe(pipes, shard, coordinator, std::move(connection_ptr));
+            }
+        }
+    }
+    else
+    {
+        for (const auto & shard : shards)
+        {
+            auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
+
+            if (shard.lazy)
+                addLazyPipe(pipes, shard);
+            else
+                addPipe(pipes, shard, std::move(coordinator), {});
+        }
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));

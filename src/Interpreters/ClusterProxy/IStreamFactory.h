@@ -37,6 +37,7 @@ public:
         Block header;
 
         size_t shard_num = 0;
+        size_t num_replicas = 0;
         ConnectionPoolWithFailoverPtr pool;
 
         /// If we connect to replicas lazily.

@@ -4,6 +4,7 @@
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/IStreamFactory.h>
+#include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 
 namespace DB
 {
@@ -37,6 +38,12 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
+    enum class Mode
+    {
+        PerReplica,
+        PerShard
+    };
+
     ClusterProxy::IStreamFactory::Shards shards;
     QueryProcessingStage::Enum stage;
 
@@ -53,7 +60,9 @@ private:
 
     UInt32 shard_count;
     void addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard);
-    void addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard);
+    void addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard, std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator, std::optional<ConnectionPtr> connection);
+
+    void addPipeForReplica();
 };
 
 }

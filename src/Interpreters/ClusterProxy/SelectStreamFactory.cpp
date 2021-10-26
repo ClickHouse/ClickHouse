@@ -117,6 +117,7 @@ void SelectStreamFactory::createForShard(
             .query = modified_query_ast,
             .header = header,
             .shard_num = shard_info.shard_num,
+            .num_replicas = shard_info.getAllNodeCount(),
             .pool = shard_info.pool,
             .lazy = lazy,
             .local_delay = local_delay,
