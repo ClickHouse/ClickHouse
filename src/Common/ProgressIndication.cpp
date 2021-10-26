@@ -14,17 +14,19 @@
 
 namespace
 {
-    constexpr UInt64 ZERO = 0;
+    constexpr UInt64 ALL_THREADS = 0;
 
     UInt64 calculateNewCoresNumber(DB::ThreadIdToTimeMap const & prev, DB::ThreadIdToTimeMap const& next)
     {
-        if (next.find(ZERO) == next.end())
-            return ZERO;
-        auto accumulated = std::accumulate(next.cbegin(), next.cend(), ZERO,
-            [&prev](UInt64 acc, auto const & elem)
+        if (next.find(ALL_THREADS) == next.end())
+            return 0;
+
+        auto accumulated = std::accumulate(next.cbegin(), next.cend(), 0,
+            [&prev](UInt64 acc, const auto & elem)
             {
-                if (elem.first == ZERO)
+                if (elem.first == ALL_THREADS)
                     return acc;
+
                 auto thread_time = elem.second.time();
                 auto it = prev.find(elem.first);
                 if (it != prev.end())
@@ -32,9 +34,9 @@ namespace
                 return acc + thread_time;
             });
 
-        auto elapsed = next.at(ZERO).time() - (prev.contains(ZERO) ? prev.at(ZERO).time() : ZERO);
-        if (elapsed == ZERO)
-            return ZERO;
+        auto elapsed = next.at(ALL_THREADS).time() - (prev.contains(ALL_THREADS) ? prev.at(ALL_THREADS).time() : 0);
+        if (elapsed == 0)
+            return 0;
         return (accumulated + elapsed - 1) / elapsed;
     }
 }
@@ -109,7 +111,7 @@ size_t ProgressIndication::getUsedThreadsCount() const
 
 UInt64 ProgressIndication::getApproximateCoresNumber() const
 {
-    return std::accumulate(host_active_cores.cbegin(), host_active_cores.cend(), ZERO,
+    return std::accumulate(host_active_cores.cbegin(), host_active_cores.cend(), 0,
         [](UInt64 acc, auto const & elem)
         {
             return acc + elem.second;
@@ -125,7 +127,7 @@ ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
             // In ProfileEvents packets thread id 0 specifies common profiling information
             // for all threads executing current query on specific host. So instead of summing per thread
             // memory consumption it's enough to look for data with thread id 0.
-            if (auto it = host_data.second.find(ZERO); it != host_data.second.end())
+            if (auto it = host_data.second.find(ALL_THREADS); it != host_data.second.end())
                 host_usage = it->second.memory_usage;
             return MemoryUsage{.total = acc.total + host_usage, .max = std::max(acc.max, host_usage)};
         });
