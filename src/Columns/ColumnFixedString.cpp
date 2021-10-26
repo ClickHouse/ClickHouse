@@ -239,40 +239,10 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     static constexpr size_t SIMD_BYTES = 64;
     const UInt8 * filt_end_aligned = filt_pos + col_size / SIMD_BYTES * SIMD_BYTES;
     const size_t chars_per_simd_elements = SIMD_BYTES * n;
-    UInt64 mask = 0;
-#if defined(__AVX512F__) && defined(__AVX512BW__)
-    static const __m512i zero64 = _mm512_setzero_epi32();
-#elif defined(__AVX__) && defined(__AVX2__)
-    static const __m256i zero32 = _mm256_setzero_si256();
-#elif defined(__SSE2__) && defined(__POPCNT__)
-    static const __m128i zero16 = _mm_setzero_si128();
-#endif
 
     while (filt_pos < filt_end_aligned)
     {
-        /*Generate 64 bits mask*/
-    #if defined(__AVX512F__) && defined(__AVX512BW__)
-        mask = _mm512_cmp_epi8_mask(_mm512_loadu_si512(reinterpret_cast<const __m512i *>(filt_pos)), zero64, _MM_CMPINT_GT);
-    #elif defined(__AVX__) && defined(__AVX2__)
-        mask = (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(
-            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(filt_pos)), zero32))) & 0xffffffff)
-            | (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(
-            _mm256_loadu_si256(reinterpret_cast<const __m256i *>(filt_pos+32)), zero32))) << 32);
-    #elif defined(__SSE2__) && defined(__POPCNT__)
-        mask = static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
-            _mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16)))
-            | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
-            _mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos + 16)), zero16))) << 16)
-            | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
-            _mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos + 32)), zero16))) << 32)
-            | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
-            _mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos + 48)), zero16))) << 48);
-    #else
-        const UInt8 * pos = filt_pos;
-        const UInt8 * end = pos + 64;
-        for (; pos < end; ++pos)
-            mask |= (*pos > 0) << (pos - filt_pos));
-    #endif
+        UInt64 mask = bytes64MaskTobits64Mask(filt_pos);
 
         if (0xffffffffffffffff == mask)
         {
