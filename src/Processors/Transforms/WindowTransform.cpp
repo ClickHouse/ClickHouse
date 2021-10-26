@@ -1563,7 +1563,7 @@ namespace recurrent_detail
 
     template<> Float64 getLastValueFromOutputColumn<Float64>(const WindowTransform * transform, size_t function_index)
     {
-        auto & workspace = transform->workspaces[function_index];
+        const auto & workspace = transform->workspaces[function_index];
         if (workspace.aggregate_function_state.data() == nullptr)
         {
             return 0.0;
