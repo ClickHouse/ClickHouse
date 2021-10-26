@@ -46,10 +46,9 @@ inline size_t seqLength(const UInt8 first_octet)
     if (first_octet < 0x80 || first_octet >= 0xF8)  /// The specs of UTF-8.
         return 1;
 
-    const size_t bits = 8;
-    const auto first_zero = bitScanReverse(static_cast<UInt8>(~first_octet));
-
-    return bits - 1 - first_zero;
+    // Possible first bytes are: 110xxxxx, 1110xxxx, 11110xxx
+    static constexpr size_t seq_length[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 3, 4};
+    return seq_length[first_octet >> 4];
 }
 
 inline size_t countCodePoints(const UInt8 * data, size_t size)
