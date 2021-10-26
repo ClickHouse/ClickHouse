@@ -9,11 +9,14 @@
 #include <base/LocalDate.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
+#include "Common/Exception.h"
 #include "Common/getNumberOfPhysicalCPUCores.h"
+#include "Common/tests/gtest_global_context.h"
 #include "Columns/ColumnString.h"
 #include "Columns/ColumnsNumber.h"
 #include "Core/Block.h"
 #include "Core/Protocol.h"
+#include "Formats/FormatFactory.h"
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -826,6 +829,13 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 
 void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
 {
+    /// Get columns description from variable or (if it was empty) create it from sample.
+    auto columns_description_for_query = columns_description.empty() ? ColumnsDescription(sample.getNamesAndTypesList()) : columns_description;
+    if (columns_description_for_query.empty())
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column description is empty and it can't be built from sample from table. Cannot execute query.");
+    }
+
     /// If INSERT data must be sent.
     auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
     if (!parsed_insert_query)
@@ -860,11 +870,11 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         /// Create temporary storage file, to support globs and parallel reading
         StorageFile::CommonArguments args{
             WithContext(global_context),
-            StorageID("_from_infile", table_name),
+            parsed_insert_query->table_id,
             parsed_insert_query->format,
-            std::nullopt /*format settings*/,
+            getFormatSettings(global_context),
             compression_method,
-            columns_description,
+            columns_description_for_query,
             ConstraintsDescription{},
             String{},
         };
@@ -881,7 +891,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
                         query_info,
                         global_context,
                         {},
-                        DEFAULT_BLOCK_SIZE,
+                        global_context->getSettingsRef().max_block_size,
                         getNumberOfPhysicalCPUCores()
                     ),
                 parsed_query
@@ -899,7 +909,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
         try
         {
-            sendDataFrom(data_in, sample, columns_description, parsed_query);
+            sendDataFrom(data_in, sample, columns_description_for_query, parsed_query);
         }
         catch (Exception & e)
         {
@@ -924,7 +934,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         /// Send data read from stdin.
         try
         {
-            sendDataFrom(std_in, sample, columns_description, parsed_query);
+            sendDataFrom(std_in, sample, columns_description_for_query, parsed_query);
         }
         catch (Exception & e)
         {
