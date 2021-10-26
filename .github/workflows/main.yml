@@ -21,6 +21,7 @@ jobs:
           python3 run_check.py
   DockerHubPush:
     needs: CheckLabels
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
