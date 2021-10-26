@@ -242,7 +242,7 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
 
     while (filt_pos < filt_end_aligned)
     {
-        UInt64 mask = bytes64MaskTobits64Mask(filt_pos);
+        uint64_t mask = Bytes64MaskToBits64Mask(filt_pos);
 
         if (0xffffffffffffffff == mask)
         {

@@ -295,7 +295,7 @@ set_source_files_properties(
         Columns/ColumnsCommon.cpp
         Columns/ColumnVector.cpp
         Columns/ColumnDecimal.cpp
-        PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS} -mprefer-vector-width=256")
+        PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
 if(RE2_LIBRARY)
     target_link_libraries(clickhouse_common_io PUBLIC ${RE2_LIBRARY})
