@@ -80,6 +80,7 @@ protected:
     friend class ThreadStatus;
     friend class CurrentThread;
     friend class ProcessListEntry;
+    friend struct ::GlobalOvercommitTracker;
 
     String query;
     ClientInfo client_info;

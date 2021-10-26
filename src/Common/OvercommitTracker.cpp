@@ -39,7 +39,7 @@ void UserOvercommitTracker::pickQueryToExcludeImpl()
 {
     MemoryTracker * current_tracker = nullptr;
     OvercommitRatio current_ratio{0, 0};
-    //TODO: ensure this container is not being modified
+    // At this moment query list must be read only
     for (auto const & query : user_process_list->queries)
     {
         auto * memory_tracker = query.second->getMemoryTracker();
@@ -61,7 +61,11 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
     process_list->processEachQueryStatus([&](DB::QueryStatus const & query)
     {
         auto * memory_tracker = query.getMemoryTracker();
-        auto ratio = memory_tracker->getOvercommitRatio();
+        Int64 user_soft_limit = 0;
+        if (auto const * user_process_list = query.getUserProcessList())
+            user_soft_limit = user_process_list->user_memory_tracker.getSoftLimit();
+
+        auto ratio = memory_tracker->getOvercommitRatio(user_soft_limit);
         if (current_ratio < ratio)
         {
             current_tracker = memory_tracker;

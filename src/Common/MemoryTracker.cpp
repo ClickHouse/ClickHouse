@@ -365,6 +365,12 @@ OvercommitRatio MemoryTracker::getOvercommitRatio()
 }
 
 
+OvercommitRatio MemoryTracker::getOvercommitRatio(Int64 limit)
+{
+    return { amount.load(std::memory_order_relaxed), limit };
+}
+
+
 void MemoryTracker::resetCounters()
 {
     amount.store(0, std::memory_order_relaxed);
