@@ -2,8 +2,8 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/ShellCommandSource.h>
-#include <DataStreams/formatBlock.h>
+#include <Processors/Sources/ShellCommandSource.h>
+#include <Formats/formatBlock.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -100,8 +100,8 @@ public:
                 writeChar('\n', out);
             }
 
-            auto output_stream = context->getOutputStream(configuration.format, out, arguments_block.cloneEmpty());
-            formatBlock(output_stream, arguments_block);
+            auto output_format = context->getOutputFormat(configuration.format, out, arguments_block.cloneEmpty());
+            formatBlock(output_format, arguments_block);
             if (!is_executable_pool_function)
                 out.close();
         }};

@@ -19,7 +19,6 @@
 #include <Compression/ICompressionCodec.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Formats/FormatFactory.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 #include <Storages/MarkCache.h>
@@ -162,8 +161,8 @@ struct ContextSharedPart
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
 #if USE_NURAFT
-    mutable std::mutex keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperDispatcher> keeper_storage_dispatcher;
+    mutable std::mutex keeper_dispatcher_mutex;
+    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
 #endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
@@ -211,6 +210,8 @@ struct ContextSharedPart
     std::unique_ptr<AccessControlManager> access_control_manager;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
+    mutable UncompressedCachePtr index_uncompressed_cache;  /// The cache of decompressed blocks for MergeTree indices.
+    mutable MarkCachePtr index_mark_cache;                  /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache; /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     ProcessList process_list;                               /// Executing queries at the moment.
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
@@ -265,6 +266,9 @@ struct ContextSharedPart
     std::map<String, UInt16> server_ports;
 
     bool shutdown_called = false;
+
+    /// Has background executors for MergeTree tables been initialized?
+    bool is_background_executors_initialized = false;
 
     Stopwatch uptime_watch;
 
@@ -1573,6 +1577,56 @@ void Context::dropMarkCache() const
 }
 
 
+void Context::setIndexUncompressedCache(size_t max_size_in_bytes)
+{
+    auto lock = getLock();
+
+    if (shared->index_uncompressed_cache)
+        throw Exception("Index uncompressed cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->index_uncompressed_cache = std::make_shared<UncompressedCache>(max_size_in_bytes);
+}
+
+
+UncompressedCachePtr Context::getIndexUncompressedCache() const
+{
+    auto lock = getLock();
+    return shared->index_uncompressed_cache;
+}
+
+
+void Context::dropIndexUncompressedCache() const
+{
+    auto lock = getLock();
+    if (shared->index_uncompressed_cache)
+        shared->index_uncompressed_cache->reset();
+}
+
+
+void Context::setIndexMarkCache(size_t cache_size_in_bytes)
+{
+    auto lock = getLock();
+
+    if (shared->index_mark_cache)
+        throw Exception("Index mark cache has been already created.", ErrorCodes::LOGICAL_ERROR);
+
+    shared->index_mark_cache = std::make_shared<MarkCache>(cache_size_in_bytes);
+}
+
+MarkCachePtr Context::getIndexMarkCache() const
+{
+    auto lock = getLock();
+    return shared->index_mark_cache;
+}
+
+void Context::dropIndexMarkCache() const
+{
+    auto lock = getLock();
+    if (shared->index_mark_cache)
+        shared->index_mark_cache->reset();
+}
+
+
 void Context::setMMappedFileCache(size_t cache_size_in_num_entries)
 {
     auto lock = getLock();
@@ -1606,6 +1660,12 @@ void Context::dropCaches() const
 
     if (shared->mark_cache)
         shared->mark_cache->reset();
+
+    if (shared->index_uncompressed_cache)
+        shared->index_uncompressed_cache->reset();
+
+    if (shared->index_mark_cache)
+        shared->index_mark_cache->reset();
 
     if (shared->mmap_cache)
         shared->mmap_cache->reset();
@@ -1749,6 +1809,68 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+namespace
+{
+
+bool checkZooKeeperConfigIsLocal(const Poco::Util::AbstractConfiguration & config, const std::string & config_name)
+{
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_name, keys);
+
+    for (const auto & key : keys)
+    {
+        if (startsWith(key, "node"))
+        {
+            String host = config.getString(config_name + "." + key + ".host");
+            if (isLocalAddress(DNSResolver::instance().resolveHost(host)))
+                return true;
+        }
+    }
+    return false;
+}
+
+}
+
+
+bool Context::tryCheckClientConnectionToMyKeeperCluster() const
+{
+    try
+    {
+        /// If our server is part of main Keeper cluster
+        if (checkZooKeeperConfigIsLocal(getConfigRef(), "zookeeper"))
+        {
+            LOG_DEBUG(shared->log, "Keeper server is participant of the main zookeeper cluster, will try to connect to it");
+            getZooKeeper();
+            /// Connected, return true
+            return true;
+        }
+        else
+        {
+            Poco::Util::AbstractConfiguration::Keys keys;
+            getConfigRef().keys("auxiliary_zookeepers", keys);
+
+            /// If our server is part of some auxiliary_zookeeper
+            for (const auto & aux_zk_name : keys)
+            {
+                if (checkZooKeeperConfigIsLocal(getConfigRef(), "auxiliary_zookeepers." + aux_zk_name))
+                {
+                    LOG_DEBUG(shared->log, "Our Keeper server is participant of the auxiliary zookeeper cluster ({}), will try to connect to it", aux_zk_name);
+                    getAuxiliaryZooKeeper(aux_zk_name);
+                    /// Connected, return true
+                    return true;
+                }
+            }
+        }
+
+        /// Our server doesn't depend on our Keeper cluster
+        return true;
+    }
+    catch (...)
+    {
+        return false;
+    }
+}
+
 UInt32 Context::getZooKeeperSessionUptime() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
@@ -1776,19 +1898,32 @@ void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
         zk.second->setZooKeeperLog(shared->system_logs->zookeeper_log);
 }
 
-void Context::initializeKeeperDispatcher() const
+void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
 
-    if (shared->keeper_storage_dispatcher)
+    if (shared->keeper_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
 
     const auto & config = getConfigRef();
     if (config.has("keeper_server"))
     {
-        shared->keeper_storage_dispatcher = std::make_shared<KeeperDispatcher>();
-        shared->keeper_storage_dispatcher->initialize(config, getApplicationType() == ApplicationType::KEEPER);
+        bool is_standalone_app = getApplicationType() == ApplicationType::KEEPER;
+        if (start_async)
+        {
+            assert(!is_standalone_app);
+            LOG_INFO(shared->log, "Connected to ZooKeeper (or Keeper) before internal Keeper start or we don't depend on our Keeper cluster, "
+                     "will wait for Keeper asynchronously");
+        }
+        else
+        {
+            LOG_INFO(shared->log, "Cannot connect to ZooKeeper (or Keeper) before internal Keeper start, "
+                     "will wait for Keeper synchronously");
+        }
+
+        shared->keeper_dispatcher = std::make_shared<KeeperDispatcher>();
+        shared->keeper_dispatcher->initialize(config, is_standalone_app, start_async);
     }
 #endif
 }
@@ -1796,23 +1931,35 @@ void Context::initializeKeeperDispatcher() const
 #if USE_NURAFT
 std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
 {
-    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
-    if (!shared->keeper_storage_dispatcher)
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
+    if (!shared->keeper_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
 
-    return shared->keeper_storage_dispatcher;
+    return shared->keeper_dispatcher;
 }
 #endif
 
 void Context::shutdownKeeperDispatcher() const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
-    if (shared->keeper_storage_dispatcher)
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
+    if (shared->keeper_dispatcher)
     {
-        shared->keeper_storage_dispatcher->shutdown();
-        shared->keeper_storage_dispatcher.reset();
+        shared->keeper_dispatcher->shutdown();
+        shared->keeper_dispatcher.reset();
     }
+#endif
+}
+
+
+void Context::updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+#if USE_NURAFT
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
+    if (!shared->keeper_dispatcher)
+        return;
+
+    shared->keeper_dispatcher->updateConfiguration(config);
 #endif
 }
 
@@ -1853,7 +2000,7 @@ static void reloadZooKeeperIfChangedImpl(const ConfigurationPtr & config, const 
     if (!zk || zk->configChanged(*config, config_name))
     {
         if (zk)
-            zk->finalize();
+            zk->finalize("Config changed");
 
         zk = std::make_shared<zkutil::ZooKeeper>(*config, config_name, std::move(zk_log));
     }
@@ -2428,20 +2575,14 @@ void Context::checkPartitionCanBeDropped(const String & database, const String &
 }
 
 
-BlockInputStreamPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size) const
+InputFormatPtr Context::getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size, const std::optional<FormatSettings> & format_settings) const
 {
-    return std::make_shared<InputStreamFromInputFormat>(
-        FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size));
+    return FormatFactory::instance().getInput(name, buf, sample, shared_from_this(), max_block_size, format_settings);
 }
 
-BlockOutputStreamPtr Context::getOutputStreamParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
+OutputFormatPtr Context::getOutputFormat(const String & name, WriteBuffer & buf, const Block & sample) const
 {
-    return FormatFactory::instance().getOutputStreamParallelIfPossible(name, buf, sample, shared_from_this());
-}
-
-BlockOutputStreamPtr Context::getOutputStream(const String & name, WriteBuffer & buf, const Block & sample) const
-{
-    return FormatFactory::instance().getOutputStream(name, buf, sample, shared_from_this());
+    return FormatFactory::instance().getOutputFormat(name, buf, sample, shared_from_this());
 }
 
 OutputFormatPtr Context::getOutputFormatParallelIfPossible(const String & name, WriteBuffer & buf, const Block & sample) const
@@ -2538,6 +2679,7 @@ void Context::setFormatSchemaPath(const String & path)
 
 Context::SampleBlockCache & Context::getSampleBlockCache() const
 {
+    assert(hasQueryContext());
     return getQueryContext()->sample_block_cache;
 }
 
@@ -2843,8 +2985,12 @@ void Context::setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInser
     shared->async_insert_queue = ptr;
 }
 
-void Context::initializeBackgroundExecutors()
+void Context::initializeBackgroundExecutorsIfNeeded()
 {
+    auto lock = getLock();
+    if (shared->is_background_executors_initialized)
+        return;
+
     const size_t max_merges_and_mutations = getSettingsRef().background_pool_size * getSettingsRef().background_merges_mutations_concurrency_ratio;
 
     /// With this executor we can execute more tasks than threads we have
@@ -2891,6 +3037,8 @@ void Context::initializeBackgroundExecutors()
 
     LOG_INFO(shared->log, "Initialized background executor for common operations (e.g. clearing old parts) with num_threads={}, num_tasks={}",
         getSettingsRef().background_common_pool_size, getSettingsRef().background_common_pool_size);
+
+    shared->is_background_executors_initialized = true;
 }
 
 

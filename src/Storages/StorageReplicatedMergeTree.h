@@ -30,7 +30,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Throttler.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
 

@@ -1,7 +1,7 @@
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <Core/Settings.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
@@ -9,7 +9,7 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -407,13 +407,19 @@ try
     }
 
     StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
-    std::unique_ptr<ReadBuffer> buffer;
+    std::unique_ptr<ReadBuffer> last_buffer;
     for (const auto & entry : data->entries)
     {
-        buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
+        auto buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
         current_entry = entry;
         total_rows += executor.execute(*buffer);
+
+        /// Keep buffer, because it still can be used
+        /// in destructor, while resetting buffer at next iteration.
+        last_buffer = std::move(buffer);
     }
+
+    format->addBuffer(std::move(last_buffer));
 
     auto chunk = Chunk(executor.getResultColumns(), total_rows);
     size_t total_bytes = chunk.bytes();

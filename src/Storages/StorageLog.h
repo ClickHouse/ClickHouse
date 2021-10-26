@@ -82,6 +82,8 @@ private:
         size_t column_index;
 
         String data_file_path;
+
+        std::mutex marks_mutex;
         Marks marks;
     };
     using Files = std::map<String, ColumnData>; /// file name -> column data
