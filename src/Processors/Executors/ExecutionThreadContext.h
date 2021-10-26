@@ -45,7 +45,7 @@ class ExecutionThreadContext
 {
 private:
     /// Will store context for all expand pipeline tasks (it's easy and we don't expect many).
-    /// This can be solved by using atomic shard ptr.
+    /// This can be solved by using atomic shared ptr.
     std::list<StoppingPipelineTask> task_list;
 
     /// A queue of async tasks. Task is added to queue when waited.
