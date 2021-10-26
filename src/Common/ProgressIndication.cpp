@@ -121,11 +121,12 @@ ProgressIndication::MemoryUsage ProgressIndication::getMemoryUsage() const
     return std::accumulate(thread_data.cbegin(), thread_data.cend(), MemoryUsage{},
         [](MemoryUsage const & acc, auto const & host_data)
         {
-            auto host_usage = std::accumulate(host_data.second.cbegin(), host_data.second.cend(), ZERO,
-                [](UInt64 memory, auto const & data)
-                {
-                    return memory + data.second.memory_usage;
-                });
+            UInt64 host_usage = 0;
+            // In ProfileEvents packets thread id 0 specifies common profiling information
+            // for all threads executing current query on specific host. So instead of summing per thread
+            // memory consumption it's enough to look for data with thread id 0.
+            if (auto it = host_data.second.find(ZERO); it != host_data.second.end())
+                host_usage = it->second.memory_usage;
             return MemoryUsage{.total = acc.total + host_usage, .max = std::max(acc.max, host_usage)};
         });
 }
