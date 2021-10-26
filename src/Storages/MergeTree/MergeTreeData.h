@@ -630,7 +630,7 @@ public:
         TableLockHolder & table_lock_holder);
 
     /// Prepares entries to backup data of the storage.
-    BackupEntries backup(const ASTs & partitions, ContextPtr context) const override;
+    BackupEntries backup(const ASTs & partitions, ContextPtr context) override;
     static BackupEntries backupDataParts(const DataPartsVector & data_parts);
 
     /// Extract data from the backup and put it to the storage.
