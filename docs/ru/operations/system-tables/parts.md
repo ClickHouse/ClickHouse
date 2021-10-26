@@ -38,11 +38,11 @@
 
 -   `marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – размер файла с засечками.
 
--   `secondary_indices_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – общий размер сжатых данных для вторичных индексов в куске данных. Вспомогательные файлы (например, файлы с метками) не включены.
+-   `secondary_indices_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – общий размер сжатых данных для вторичных индексов в куске данных. Вспомогательные файлы (например, файлы с засечками) не включены.
 
--   `secondary_indices_uncompressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – общий размер несжатых данных для вторичных индексов в куске данных. Вспомогательные файлы (например, файлы с метками) не включены.
+-   `secondary_indices_uncompressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – общий размер несжатых данных для вторичных индексов в куске данных. Вспомогательные файлы (например, файлы с засечками) не включены.
 
-- `secondary_indices_marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – размер файла с метками для вторичных индексов.
+- `secondary_indices_marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – размер файла с засечками для вторичных индексов.
 
 -   `modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) – время модификации директории с куском данных. Обычно соответствует времени создания куска.
 
