@@ -274,6 +274,16 @@ def test_partition_by(started_cluster):
     result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test_3', 'TSV', '{table_format}')")
     assert(result.strip() == "1\t2\t3")
 
+    file_name = "test2_{_partition_id}"
+    node1.query(f"create table p(column1 UInt32, column2 UInt32, column3 UInt32) engine = HDFS('hdfs://hdfs1:9000/{file_name}', 'TSV') partition by column3")
+    node1.query(f"insert into p values {values}")
+    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test2_1', 'TSV', '{table_format}')")
+    assert(result.strip() == "3\t2\t1")
+    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test2_2', 'TSV', '{table_format}')")
+    assert(result.strip() == "1\t3\t2")
+    result = node1.query(f"select * from hdfs('hdfs://hdfs1:9000/test2_3', 'TSV', '{table_format}')")
+    assert(result.strip() == "1\t2\t3")
+
 
 if __name__ == '__main__':
     cluster.start()
