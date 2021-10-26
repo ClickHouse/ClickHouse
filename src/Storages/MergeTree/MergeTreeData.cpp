@@ -250,7 +250,7 @@ MergeTreeData::MergeTreeData(
     {
         /// This is for backward compatibility.
         checkSampleExpression(metadata_, attach || settings->compatibility_allow_sampling_expression_not_in_primary_key,
-                              settings->check_sample_column_is_correct);
+                              settings->check_sample_column_is_correct && !attach);
     }
 
     checkTTLExpressions(metadata_, metadata_);
@@ -4472,16 +4472,6 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         }
 
         size_t pos = 0;
-        if (!primary_key_max_column_name.empty())
-        {
-            const auto & primary_key_column = *part->index[0];
-            auto primary_key_column_size = primary_key_column.size();
-            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
-            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
-            insert(min_column, primary_key_column[0]);
-            insert(max_column, primary_key_column[primary_key_column_size - 1]);
-        }
-
         size_t minmax_idx_size = part->minmax_idx->hyperrectangle.size();
         for (size_t i = 0; i < minmax_idx_size; ++i)
         {
@@ -4490,6 +4480,16 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             const auto & range = part->minmax_idx->hyperrectangle[i];
             insert(min_column, range.left);
             insert(max_column, range.right);
+        }
+
+        if (!primary_key_max_column_name.empty())
+        {
+            const auto & primary_key_column = *part->index[0];
+            auto primary_key_column_size = primary_key_column.size();
+            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
+            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
+            insert(min_column, primary_key_column[0]);
+            insert(max_column, primary_key_column[primary_key_column_size - 1]);
         }
 
         {
@@ -4531,7 +4531,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query)
         return false;
 
-    const auto & query_ptr = query_info.query;
+    const auto & query_ptr = query_info.original_query;
 
     if (auto * select = query_ptr->as<ASTSelectQuery>(); select)
     {

@@ -279,29 +279,39 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
         {
             case '+':
             {
-                if (has_sign || has_number)
+                /// 123+ or +123+, just stop after 123 or +123.
+                if (has_number)
+                    goto end;
+
+                /// No digits read yet, but we already read sign, like ++, -+.
+                if (has_sign)
                 {
                     if constexpr (throw_exception)
                         throw ParsingException(
-                            "Cannot parse number with multiple sign (+/-) characters or intermediate sign character",
+                            "Cannot parse number with multiple sign (+/-) characters",
                             ErrorCodes::CANNOT_PARSE_NUMBER);
                     else
                         return ReturnType(false);
                 }
+
                 has_sign = true;
                 break;
             }
             case '-':
             {
-                if (has_sign || has_number)
+                if (has_number)
+                    goto end;
+
+                if (has_sign)
                 {
                     if constexpr (throw_exception)
                         throw ParsingException(
-                            "Cannot parse number with multiple sign (+/-) characters or intermediate sign character",
+                            "Cannot parse number with multiple sign (+/-) characters",
                             ErrorCodes::CANNOT_PARSE_NUMBER);
                     else
                         return ReturnType(false);
                 }
+
                 if constexpr (is_signed_v<T>)
                     negative = true;
                 else
