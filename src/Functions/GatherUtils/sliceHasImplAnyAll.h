@@ -85,7 +85,7 @@ bool sliceHasImplAnyAll(const FirstSliceType & first, const SecondSliceType & se
 }
 
 
-#if defined(__AVX2__) || defined(__SSE4_2__)
+#if (defined(__AVX2__) && defined(ENABLE_AVX2)) || defined(__SSE4_2__)
 
 namespace
 {
@@ -127,7 +127,7 @@ inline ALWAYS_INLINE bool hasAllIntegralLoopRemainder(
 
 #endif
 
-#if defined(__AVX2__)
+#if defined(__AVX2__) && defined(ENABLE_AVX2)
 
 // TODO: Discuss about
 // raise an error : "error: no viable conversion from 'const NumericArraySlice<unsigned int>' to 'const NumericArraySlice<int>'"
