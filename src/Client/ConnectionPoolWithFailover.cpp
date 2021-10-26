@@ -50,7 +50,6 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
         return tryGetEntry(pool, timeouts, fail_message, settings);
     };
 
-    GetPriorityForLoadBalancing get_priority_local(get_priority_load_balancing);
     size_t offset = 0;
     LoadBalancing load_balancing = get_priority_load_balancing.load_balancing;
     if (settings)
@@ -59,7 +58,7 @@ IConnectionPool::Entry ConnectionPoolWithFailover::get(const ConnectionTimeouts 
         load_balancing = LoadBalancing(settings->load_balancing);
     }
 
-    GetPriorityFunc get_priority = get_priority_local.getPriorityFunc(load_balancing, offset, nested_pools.size());
+    GetPriorityFunc get_priority = get_priority_load_balancing.getPriorityFunc(load_balancing, offset, nested_pools.size());
 
     UInt64 max_ignored_errors = settings ? settings->distributed_replica_max_ignored_errors.value : 0;
     bool fallback_to_stale_replicas = settings ? settings->fallback_to_stale_replicas_for_distributed_queries.value : true;
