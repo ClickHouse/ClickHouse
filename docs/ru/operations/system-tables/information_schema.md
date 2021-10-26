@@ -1,4 +1,4 @@
-# information_schema {#information-schema}
+# INFORMATION_SCHEMA {#information-schema}
 
 `INFORMATION_SCHEMA` (`information_schema`) — это системная база данных, содержащая представления. Используя эти представления, вы можете получить информацию о метаданных объектов базы данных. Эти представления считывают данные из столбцов системных таблиц [system.columns](../../operations/system-tables/columns.md), [system.databases](../../operations/system-tables/databases.md) и [system.tables](../../operations/system-tables/tables.md).
 
@@ -165,7 +165,7 @@ table_type:    BASE TABLE
 
 ## VIEWS {#views}
 
-Содержит столбцы, которые считываются из системной таблицы `system.tables`, если использован движок [View](../../engines/table-engines/special/view.md)).
+Содержит столбцы, которые считываются из системной таблицы `system.tables`, если использован движок [View](../../engines/table-engines/special/view.md).
 
 Столбцы:
 
