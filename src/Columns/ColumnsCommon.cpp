@@ -41,7 +41,7 @@ UInt64 Bytes64MaskToBits64Mask(const UInt8 * bytes64)
     const UInt8 * pos = bytes64;
     const UInt8 * end = pos + 64;
     for (; pos < end; ++pos)
-        res |= (*pos == 0)<<(pos-bytes64));
+        res |= ((*pos == 0)<<(pos-bytes64));
 #endif
     return ~res;
 }
