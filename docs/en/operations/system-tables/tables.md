@@ -58,7 +58,7 @@ Columns:
 
 -   `comment` ([String](../../sql-reference/data-types/string.md)) - The comment for the table.
 
--   `has_own_data` ([UInt8](../../sql-reference/data-types/int-uint.md)) - Flag that indicates whether the table itself stores some data on disk or only accesses some other source.
+-   `has_own_data` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the table itself stores some data on disk or only accesses some other source.
 
 The `system.tables` table is used in `SHOW TABLES` query implementation.
 
