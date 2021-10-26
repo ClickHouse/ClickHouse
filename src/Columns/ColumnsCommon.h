@@ -2,12 +2,8 @@
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
-#ifdef __SSE2__
-#include <emmintrin.h>
-#endif
-#if defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX__) || defined(__AVX2__)
-#include <immintrin.h>
-#endif
+
+
 /// Common helper methods for implementation of different columns.
 
 namespace DB
@@ -19,39 +15,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// Transform 64-byte mask to 64-bit mask
-inline UInt64 Bytes64MaskToBits64Mask(const UInt8 * bytes64)
-{
-#if defined(__AVX512F__) && defined(__AVX512BW__)
-    static const __m512i zero64 = _mm512_setzero_epi32();
-    UInt64 res = _mm512_cmp_epi8_mask(_mm512_loadu_si512(reinterpret_cast<const __m512i *>(bytes64)), zero64, _MM_CMPINT_GT);
-#elif defined(__AVX__) && defined(__AVX2__)
-    static const __m256i zero32 = _mm256_setzero_si256();
-    UInt64 res =
-        (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(
-        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(bytes64)), zero32))) & 0xffffffff)
-        | (static_cast<UInt64>(_mm256_movemask_epi8(_mm256_cmpgt_epi8(
-        _mm256_loadu_si256(reinterpret_cast<const __m256i *>(bytes64+32)), zero32))) << 32);
-#elif defined(__SSE2__) && defined(__POPCNT__)
-    static const __m128i zero16 = _mm_setzero_si128();
-    UInt64 res =
-        static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64)), zero16)))
-        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 16)), zero16))) << 16)
-        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 32)), zero16))) << 32)
-        | (static_cast<UInt64>(_mm_movemask_epi8(_mm_cmpgt_epi8(
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(bytes64 + 48)), zero16))) << 48);
-#else
-    UInt64 res = 0;
-    const UInt8 * pos = bytes64;
-    const UInt8 * end = pos + 64;
-    for (; pos < end; ++pos)
-        res |= ((*pos != 0)<<(pos-bytes64));
-#endif
-    return res;
-}
 /// Counts how many bytes of `filt` are greater than zero.
 size_t countBytesInFilter(const UInt8 * filt, size_t sz);
 size_t countBytesInFilter(const IColumn::Filter & filt);

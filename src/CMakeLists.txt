@@ -290,7 +290,6 @@ target_link_libraries (clickhouse_common_io
 )
 
 # Use X86 AVX2/AVX512 instructions to accelerate filter operations
-# Add flag:-force-vector-width=16 due to clang13 not support auto vectorize with AVX512, maybe remove it in future.
 set_source_files_properties(
         Columns/ColumnFixedString.cpp
         Columns/ColumnsCommon.cpp
