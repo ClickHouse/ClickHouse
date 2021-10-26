@@ -205,7 +205,7 @@ public:
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 
     /// Prepares entries to backup data of the storage.
-    virtual BackupEntries backup(const ASTs & partitions, ContextPtr context) const;
+    virtual BackupEntries backup(const ASTs & partitions, ContextPtr context);
 
     /// Extract data from the backup and put it to the storage.
     virtual RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context);
