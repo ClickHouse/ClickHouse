@@ -3647,7 +3647,7 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 Если включено, данные собираются в пачки перед вставкой в таблицу. Это позволяет производить мелкие и частые вставки в ClickHouse (до 15000 запросов в секунду) без промежуточных таблиц.
 
-Вставка данных происходит либо как только объем вставляемых данных превышает [async_insert_max_data_size](#async-insert-max-data-size), либо через [async_insert_busy_timeout](#async-insert-busy-timeout) миллисекунд после первого запроса `INSERT`. Если в [async_insert_stale_timeout](#async-insert-stale-timeout) задано ненулевое значение, то данные вставляются через `async_insert_stale_timeout` миллисекунд после последнего запроса.
+Вставка данных происходит либо как только объем вставляемых данных превышает [async_insert_max_data_size](#async-insert-max-data-size), либо через [async_insert_busy_timeout_ms](#async-insert-busy-timeout-ms) миллисекунд после первого запроса `INSERT`. Если в [async_insert_stale_timeout_ms](#async-insert-stale-timeout-ms) задано ненулевое значение, то данные вставляются через `async_insert_stale_timeout_ms` миллисекунд после последнего запроса.
 
 Если включен параметр [wait_for_async_insert](#wait-for-async-insert), каждый клиент ждет, пока данные будут сброшены в таблицу. Иначе запрос будет обработан почти моментально, даже если данные еще не вставлены.
 
@@ -3702,7 +3702,7 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 Значение по умолчанию: `1000000`.
 
-## async_insert_busy_timeout {#async-insert-busy-timeout}
+## async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
 
 Максимальное время ожидания в миллисекундах после первого запроса `INSERT` и перед вставкой данных.
 
@@ -3713,9 +3713,9 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 Значение по умолчанию: `200`.
 
-## async_insert_stale_timeout {#async-insert-stale-timeout}
+## async_insert_stale_timeout_ms {#async-insert-stale-timeout-ms}
 
-Максимальное время ожидания в миллисекундах после последнего запроса `INSERT` и перед вставкой данных. Если установлено ненулевое значение, [async_insert_busy_timeout](#async-insert-busy-timeout) будет продлеваться с каждым запросом `INSERT`, пока не будет превышен [async_insert_max_data_size](#async-insert-max-data-size).
+Максимальное время ожидания в миллисекундах после последнего запроса `INSERT` и перед вставкой данных. Если установлено ненулевое значение, [async_insert_busy_timeout_ms](#async-insert-busy-timeout-ms) будет продлеваться с каждым запросом `INSERT`, пока не будет превышен [async_insert_max_data_size](#async-insert-max-data-size).
 
 Возможные значения:
 
