@@ -94,7 +94,7 @@ def exec_query_with_retry(instance, query, retry_count=40, sleep_time=0.5, silen
         except Exception as ex:
             exception = ex
             if not silent:
-                logging.exception(f"Failed to -['execute query '{query}' on instance '{instance.name}' will retry")
+                logging.exception(f"Failed to execute query '{query}' on instance '{instance.name}' will retry")
             time.sleep(sleep_time)
     else:
         raise exception

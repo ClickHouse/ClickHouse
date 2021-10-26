@@ -108,9 +108,9 @@ def test_table_function_remote(start_cluster):
                   "connect_timeout_with_failover_secure_ms": 1000, "connect_timeout": 1, "send_timeout": 1})
     assert node6.query("SELECT * FROM remote('localhost', system, events)") != ""
     assert node6.query("SELECT * FROM remoteSecure('localhost', system, metrics)") != ""
-    assert "URL \"localhost:800\" is not allowed in config.xml" in node6.query_and_get_error(
+    assert "URL \"localhost:800\" is not allowed in configuration file, see <remote_url_allow_hosts>" in node6.query_and_get_error(
         "SELECT * FROM remoteSecure('localhost:800', system, events)")
-    assert "URL \"localhost:800\" is not allowed in config.xml" in node6.query_and_get_error(
+    assert "URL \"localhost:800\" is not allowed in configuration file, see <remote_url_allow_hosts>" in node6.query_and_get_error(
         "SELECT * FROM remote('localhost:800', system, metrics)")
 
 

@@ -227,6 +227,7 @@ class ClickHouseCluster:
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
         self.env_variables = {}
         self.env_variables["TSAN_OPTIONS"] = "second_deadlock_stack=1"
+        self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.up_called = False
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get('CLICKHOUSE_TESTS_DOCKERD_HOST')
@@ -415,6 +416,10 @@ class ClickHouseCluster:
         logging.debug(f"CLUSTER INIT base_config_dir:{self.base_config_dir}")
 
     def cleanup(self):
+        if os.environ and 'DISABLE_CLEANUP' in os.environ and os.environ['DISABLE_CLEANUP'] == "1":
+            logging.warning("Cleanup is disabled")
+            return
+
         # Just in case kill unstopped containers from previous launch
         try:
             # docker-compose names containers using the following formula:
@@ -1425,7 +1430,7 @@ class ClickHouseCluster:
             _create_env_file(os.path.join(self.env_file), self.env_variables)
             self.docker_client = docker.DockerClient(base_url='unix:///var/run/docker.sock', version=self.docker_api_version, timeout=600)
 
-            common_opts = ['up', '-d']
+            common_opts = ['--verbose', 'up', '-d']
 
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug('Setup ZooKeeper Secure')
@@ -1686,7 +1691,7 @@ class ClickHouseCluster:
             try:
                 subprocess_check_call(self.base_cmd + ['down', '--volumes'])
             except Exception as e:
-                logging.debug("Down + remove orphans failed durung shutdown. {}".format(repr(e)))
+                logging.debug("Down + remove orphans failed during shutdown. {}".format(repr(e)))
         else:
             logging.warning("docker-compose up was not called. Trying to export docker.log for running containers")
 
@@ -2033,7 +2038,7 @@ class ClickHouseInstance:
         if not self.stay_alive:
             raise Exception("clickhouse can be stopped only with stay_alive=True instance")
         try:
-            ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
+            ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], nothrow=True, user='root')
             if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND" :
                 logging.warning("ClickHouse process already stopped")
                 return
@@ -2043,18 +2048,23 @@ class ClickHouseInstance:
             start_time = time.time()
             stopped = False
             while time.time() <= start_time + stop_wait_sec:
-                ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
-                if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND":
+                pid = self.get_process_pid("clickhouse")
+                if pid is None:
                     stopped = True
                     break
-                time.sleep(1)
+                else:
+                    time.sleep(1)
 
             if not stopped:
-                logging.warning(f"Force kill clickhouse in stop_clickhouse. ps:{ps_clickhouse}")
                 pid = self.get_process_pid("clickhouse")
                 if pid is not None:
-                    self.exec_in_container(["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"], user='root')
-                self.stop_clickhouse(kill=True)
+                    logging.warning(f"Force kill clickhouse in stop_clickhouse. ps:{pid}")
+                    self.exec_in_container(["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid} > {os.path.join(self.path, 'logs/stdout.log')}"], user='root')
+                    self.stop_clickhouse(kill=True)
+                else:
+                    ps_all = self.exec_in_container(["bash", "-c", "ps aux"], nothrow=True, user='root')
+                    logging.warning(f"We want force stop clickhouse, but no clickhouse-server is running\n{ps_all}")
+                    return
         except Exception as e:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 
@@ -2064,19 +2074,28 @@ class ClickHouseInstance:
 
         self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
         # wait start
-        from helpers.test_tools import assert_eq_with_retry
-        try:
-            pid = self.get_process_pid("clickhouse")
-            if pid is None:
-                raise Exception("ClickHouse server is not running. Check logs.")
-            exec_query_with_retry(self, "select 1", retry_count = int(start_wait_sec / 0.5))
-        except QueryRuntimeException as err:
-            pid = self.get_process_pid("clickhouse")
-            if pid is not None:
-                self.exec_in_container(["bash", "-c", "gdb -batch -ex 'thread apply all bt full' -p `pgrep clickhouse`"], user='root')
-            else:
-                raise Exception("ClickHouse server is not running. Check logs.")
-            raise err
+        start_time = time.time()
+        last_err = None
+        while time.time() <= start_time + start_wait_sec:
+            try:
+                pid = self.get_process_pid("clickhouse")
+                if pid is None:
+                    raise Exception("ClickHouse server is not running. Check logs.")
+                exec_query_with_retry(self, "select 1", retry_count = 10, silent=True)
+                time.sleep(1)
+            except QueryRuntimeException as err:
+                last_err = err
+                pid = self.get_process_pid("clickhouse")
+                if pid is not None:
+                    logging.warning(f"ERROR {err}")
+                else:
+                    raise Exception("ClickHouse server is not running. Check logs.")
+        logging.error(f"No time left to start. But process is still running. Will dump threads.")
+        pid = self.get_process_pid("clickhouse")
+        if pid is not None:
+            self.exec_in_container(["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"], user='root')
+        if last_err is not None:
+            raise last_err
 
     def restart_clickhouse(self, stop_start_wait_sec=60, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
