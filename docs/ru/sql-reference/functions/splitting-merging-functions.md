@@ -286,6 +286,8 @@ SELECT ngrams('ClickHouse', 3);
 
 **Пример**
 
+Запрос:
+
 ``` sql
 SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
 ```
