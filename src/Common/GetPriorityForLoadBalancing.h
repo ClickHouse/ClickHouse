@@ -16,7 +16,7 @@ public:
         return load_balancing != other.load_balancing || hostname_differences != other.hostname_differences;
     }
 
-    std::function<size_t(size_t index)> getPriorityFunc(LoadBalancing load_balancing, size_t offset, size_t pool_size) const;
+    std::function<size_t(size_t index)> getPriorityFunc(LoadBalancing load_balance, size_t offset, size_t pool_size) const;
 
     std::vector<size_t> hostname_differences; /// Distances from name of this host to the names of hosts of pools.
 

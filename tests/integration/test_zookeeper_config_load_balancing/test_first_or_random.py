@@ -38,7 +38,7 @@ def wait_zookeeper_node_to_start(started_cluster, zk_nodes, timeout=60):
 
 def test_first_or_random(started_cluster):
     wait_zookeeper_node_to_start(started_cluster, ["zoo1", "zoo2", "zoo3"])
-    time.sleep(2)
+    time.sleep(10)
     zoo1_ip = started_cluster.get_instance_ip("zoo1")
     for i, node in enumerate([node1, node3]):
         node.query('DROP TABLE IF EXISTS simple SYNC')
