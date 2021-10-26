@@ -22,13 +22,31 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker)
 
     pickQueryToExclude();
     assert(cancelation_state == QueryCancelationState::RUNNING);
-    if (tracker == picked_tracker)
+    if (picked_tracker == tracker || picked_tracker == nullptr)
+    {
+        ++waiting_to_stop;
         return true;
+    }
 
     return cv.wait_for(lk, max_wait_time, [this]()
     {
         return cancelation_state == QueryCancelationState::NONE;
     });
+}
+
+void OvercommitTracker::unsubscribe(MemoryTracker * tracker)
+{
+    std::unique_lock<std::mutex> lk(overcommit_m);
+    if (picked_tracker == tracker || picked_tracker == nullptr)
+    {
+        --waiting_to_stop;
+        if (waiting_to_stop == 0)
+        {
+            picked_tracker = nullptr;
+            cancelation_state = QueryCancelationState::NONE;
+            cv.notify_all();
+        }
+    }
 }
 
 UserOvercommitTracker::UserOvercommitTracker(DB::ProcessListForUser * user_process_list_)
@@ -50,7 +68,6 @@ void UserOvercommitTracker::pickQueryToExcludeImpl()
             current_ratio   = ratio;
         }
     }
-    assert(current_tracker != nullptr);
     picked_tracker = current_tracker;
 }
 
@@ -72,6 +89,5 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
             current_ratio   = ratio;
         }
     });
-    assert(current_tracker != nullptr);
     picked_tracker = current_tracker;
 }

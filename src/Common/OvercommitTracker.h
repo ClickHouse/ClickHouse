@@ -34,16 +34,7 @@ struct OvercommitTracker : boost::noncopyable
 
     bool needToStopQuery(MemoryTracker * tracker);
 
-    void unsubscribe(MemoryTracker * tracker)
-    {
-        std::unique_lock<std::mutex> lk(overcommit_m);
-        if (tracker == picked_tracker)
-        {            
-            picked_tracker = nullptr;
-            cancelation_state = QueryCancelationState::NONE;
-            cv.notify_all();
-        }
-    }
+    void unsubscribe(MemoryTracker * tracker);
 
     virtual ~OvercommitTracker() = default;
 
@@ -61,10 +52,18 @@ protected:
         RUNNING,
     };
 
+    // Specifies memory tracker of the choosen to stop query.
+    // If soft limit is not set, all the queries which reach hard limit must stop.
+    // This case is represented as picked tracker pointer is set to nullptr and
+    // overcommit tracker is in RUNNING state.
     MemoryTracker * picked_tracker;
     QueryCancelationState cancelation_state;
 
 private:
+
+    // Number of queries are being canceled at the moment. Overcommit tracker
+    // must be in RUNNING state until this counter is not equal to 0.
+    UInt64 waiting_to_stop = 0;
 
     void pickQueryToExclude()
     {
