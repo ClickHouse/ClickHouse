@@ -85,15 +85,6 @@ def get_commit(gh, commit_sha):
     commit = repo.get_commit(commit_sha)
     return commit
 
-def update_check_with_curl(check_id):
-    cmd_template = ("curl -v --request PATCH --url https://api.github.com/repos/ClickHouse/ClickHouse/check-runs/{} "
-           "--header 'authorization: Bearer {}' "
-           "--header 'Accept: application/vnd.github.v3+json' "
-           "--header 'content-type: application/json' "
-           "-d '{{\"name\" : \"hello-world-name\"}}'")
-    cmd = cmd_template.format(check_id, os.getenv("GITHUB_TOKEN"))
-    subprocess.check_call(cmd, shell=True)
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     repo_path = os.path.join(os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../")))
