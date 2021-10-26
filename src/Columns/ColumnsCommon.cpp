@@ -1,7 +1,3 @@
-#ifdef __SSE2__
-    #include <emmintrin.h>
-#endif
-
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
