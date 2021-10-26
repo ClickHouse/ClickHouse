@@ -14,7 +14,7 @@ export INSTANCE_ID=`curl -s http://169.254.169.254/latest/meta-data/instance-id`
 cd $RUNNER_HOME
 
 echo "Going to configure runner"
-sudo -u ubuntu ./config.sh --url $RUNNER_URL --token $RUNNER_TOKEN --name $INSTANCE_ID --runnergroup Default --labels 'self-hosted,Linux,X64' --work _work
+sudo -u ubuntu ./config.sh --url $RUNNER_URL --token $RUNNER_TOKEN --name $INSTANCE_ID --runnergroup Default --labels 'self-hosted,Linux,X64,style-checker' --work _work
 
 echo "Run"
 sudo -u ubuntu ./run.sh
