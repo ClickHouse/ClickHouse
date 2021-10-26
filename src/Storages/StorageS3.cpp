@@ -464,7 +464,8 @@ StorageS3::StorageS3(
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
     const String & compression_method_,
-    bool distributed_processing_)
+    bool distributed_processing_,
+    ASTPtr partition_by_)
     : IStorage(table_id_)
     , client_auth{uri_, access_key_id_, secret_access_key_, max_connections_, {}, {}} /// Client and settings will be updated later
     , format_name(format_name_)
@@ -475,6 +476,7 @@ StorageS3::StorageS3(
     , name(uri_.storage_name)
     , distributed_processing(distributed_processing_)
     , format_settings(format_settings_)
+    , partition_by(partition_by_)
 {
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
@@ -559,12 +561,13 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
     bool has_wildcards = client_auth.uri.bucket.find(PARTITION_ID_WILDCARD) != String::npos || client_auth.uri.key.find(PARTITION_ID_WILDCARD) != String::npos;
     auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query);
 
-    bool is_partitioned_implementation = insert_query && insert_query->partition_by && has_wildcards;
+    auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
+    bool is_partitioned_implementation = partition_by_ast && has_wildcards;
 
     if (is_partitioned_implementation)
     {
         return std::make_shared<PartitionedStorageS3Sink>(
-            insert_query->partition_by,
+            partition_by_ast,
             format_name,
             sample_block,
             local_context,
@@ -746,6 +749,10 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
         auto max_single_part_upload_size = args.getLocalContext()->getSettingsRef().s3_max_single_part_upload_size;
         auto max_connections = args.getLocalContext()->getSettingsRef().s3_max_connections;
 
+        ASTPtr partition_by;
+        if (args.storage_def->partition_by)
+            partition_by = args.storage_def->partition_by->clone();
+
         return StorageS3::create(
             s3_uri,
             configuration.access_key_id,
@@ -761,10 +768,13 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             args.comment,
             args.getContext(),
             format_settings,
-            configuration.compression_method);
+            configuration.compression_method,
+            /* distributed_processing_ */false,
+            partition_by);
     },
     {
         .supports_settings = true,
+        .supports_sort_order = true, // for partition by
         .source_access_type = AccessType::S3,
     });
 }

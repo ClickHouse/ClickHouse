@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Formats/IOutputFormat.h>
@@ -26,7 +27,6 @@
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
-#include <Storages/ExternalDataSourceUtils.h>
 #include <Storages/PartitionedSink.h>
 
 #include <Formats/FormatFactory.h>
@@ -61,8 +61,10 @@ StorageHDFS::StorageHDFS(
     const ConstraintsDescription & constraints_,
     const String & comment,
     ContextPtr context_,
-    const String & compression_method_ = "")
+    const String & compression_method_ = "",
+    ASTPtr partition_by_)
     : IStorage(table_id_), WithContext(context_), uri(uri_), format_name(format_name_), compression_method(compression_method_)
+    , partition_by(partition_by_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
 
@@ -370,12 +372,13 @@ SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataP
 {
     bool has_wildcards = uri.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
-    bool is_partitioned_implementation = insert_query && insert_query->partition_by && has_wildcards;
+    auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
+    bool is_partitioned_implementation = partition_by_ast && has_wildcards;
 
     if (is_partitioned_implementation)
     {
         return std::make_shared<PartitionedHDFSSink>(
-            insert_query->partition_by,
+            partition_by_ast,
             uri,
             format_name,
             metadata_snapshot->getSampleBlock(),
@@ -432,10 +435,15 @@ void registerStorageHDFS(StorageFactory & factory)
             compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         } else compression_method = "auto";
 
+        ASTPtr partition_by;
+        if (args.storage_def->partition_by)
+            partition_by = args.storage_def->partition_by->clone();
+
         return StorageHDFS::create(
-            url, args.table_id, format_name, args.columns, args.constraints, args.comment, args.getContext(), compression_method);
+            url, args.table_id, format_name, args.columns, args.constraints, args.comment, args.getContext(), compression_method, partition_by);
     },
     {
+        .supports_sort_order = true, // for partition by
         .source_access_type = AccessType::HDFS,
     });
 }
