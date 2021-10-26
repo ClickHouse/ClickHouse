@@ -316,6 +316,10 @@ void TCPHandler::runImpl()
             {
                 std::lock_guard lock(task_callback_mutex);
 
+                if (state.is_cancelled) {
+                    throw std::runtime_error("Cancelled!");
+                }
+
                 sendMergeTreeReadTaskRequstAssumeLocked(std::move(request));
                 return receivePartitionMergeTreeReadTaskResponseAssumeLocked();
             });
@@ -1726,7 +1730,7 @@ bool TCPHandler::isQueryCancelled()
                 return true;
 
             default:
-                throw NetException("Unknown packet from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+                throw NetException("Unknown packet from client " + toString(packet_type), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
         }
     }
 

@@ -89,10 +89,6 @@ public:
 
         bool isNull() const { return data == nullptr; }
 
-        ObjectPtr getObject() {
-            return data->data.object;
-        }
-
         PoolBase * getPool() const
         {
             if (!data)

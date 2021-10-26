@@ -60,7 +60,8 @@ private:
 
     UInt32 shard_count;
     void addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard);
-    void addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard, std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator, std::optional<ConnectionPtr> connection);
+    void addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
+        std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator, Connection * connection);
 
     void addPipeForReplica();
 };

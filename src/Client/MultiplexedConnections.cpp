@@ -249,7 +249,7 @@ Packet MultiplexedConnections::drain()
 
     while (hasActiveConnections())
     {
-        Packet packet = receivePacketUnlocked(DrainCallback{drain_timeout}, false /* is_draining */);
+        Packet packet = receivePacketUnlocked(DrainCallback{drain_timeout}, true /* is_draining */);
 
         switch (packet.type)
         {

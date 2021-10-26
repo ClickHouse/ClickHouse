@@ -24,20 +24,31 @@ $CLICKHOUSE_CLIENT $SETTINGS -nm -q '''
 
 FAILED=()
 
-# PreviouslyFailed=(
+PreviouslyFailed=(
 #     # "00011_sorting.sql"
 #     # "00013_sorting_of_nested.sql"
 #     "00014_filtering_arrays.sql"
-#     # "00031_array_enumerate_uniq.sql"
+    # "00031_array_enumerate_uniq.sql"
 #     # "00061_storage_buffer.sql"
 #     # "00068_subquery_in_prewhere.sql"
 #     # "00075_left_array_join.sql"
 #     # "00079_array_join_not_used_joined_column.sql"
-# )
+    # "00032_aggregate_key64.sql"
+    "00043_any_left_join.sql"
+)
 
-# for TESTNAME in "${PreviouslyFailed[@]}"
-for TESTNAME in *.sql
+SkipList=(
+    "00031_array_enumerate_uniq.sql"
+)
+
+for TESTNAME in "${PreviouslyFailed[@]}"
+# for TESTNAME in *.sql
 do
+    if [[ " ${SkipList[*]} " =~ " ${TESTNAME} " ]]; then
+        echo  "Skipping $TESTNAME "
+        continue
+    fi
+
     echo -n "Testing $TESTNAME ----> "
 
     # prepare test

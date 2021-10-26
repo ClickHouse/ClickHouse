@@ -39,6 +39,7 @@ public:
         size_t shard_num = 0;
         size_t num_replicas = 0;
         ConnectionPoolWithFailoverPtr pool;
+        ConnectionPoolPtrs per_replica_pools;
 
         /// If we connect to replicas lazily.
         /// (When there is a local replica with big delay).

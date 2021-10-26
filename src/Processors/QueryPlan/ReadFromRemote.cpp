@@ -197,7 +197,8 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
     addConvertingActions(pipes.back(), output_stream->header);
 }
 
-void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard, std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator, std::optional<ConnectionPtr> connection)
+void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
+    std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator, Connection * connection)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -215,10 +216,10 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::
         = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
 
     std::shared_ptr<RemoteQueryExecutor> remote_query_executor;
-    if (connection.has_value())
+    if (connection)
     {
         remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            std::move(*connection), query_string, shard.header, context, throttler, scalars, external_tables, stage, nullptr, std::move(coordinator));
+            *connection, query_string, shard.header, context, throttler, scalars, external_tables, stage, nullptr, std::move(coordinator));
 
         remote_query_executor->setLogger(log);
 
@@ -254,7 +255,7 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 
         for (const auto & shard : shards)
         {
-            auto connection_entries = shard.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
+            // auto connection_entries = shard.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
 
             auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
 
@@ -263,9 +264,8 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 
             for (size_t replica_num = 0; replica_num < shard.num_replicas; ++replica_num)
             {
-                auto connection = connection_entries[replica_num];
-                auto connection_ptr = connection.getObject();
-                addPipe(pipes, shard, coordinator, std::move(connection_ptr));
+                auto connection = shard.per_replica_pools[replica_num];
+                addPipe(pipes, shard, coordinator, &*connection);
             }
         }
     }
