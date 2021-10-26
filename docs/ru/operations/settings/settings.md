@@ -3606,7 +3606,7 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 ## describe_include_subcolumns {#describe_include_subcolumns}
 
-Разрешает описание подстолбцов при выполнении запроса [DESCRIBE](../../sql-reference/statements/describe-table.md). Настройка действует на подстолбцы внутри столбцов типов [Tuple](../../sql-reference/data-types/tuple.md) или [Map](../../sql-reference/data-types/map.md#map-subcolumns).
+Включает или отключает описание подстолбцов при выполнении запроса [DESCRIBE](../../sql-reference/statements/describe-table.md). Настройка действует на подстолбцы внутри столбцов типов [Tuple](../../sql-reference/data-types/tuple.md) или [Map](../../sql-reference/data-types/map.md#map-subcolumns).
 
 Возможные значения:
 
