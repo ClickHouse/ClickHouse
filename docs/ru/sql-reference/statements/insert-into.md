@@ -130,5 +130,5 @@ INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 -   [wait_for_async_insert](../../operations/settings/settings.md#wait-for-async-insert)
 -   [wait_for_async_insert_timeout](../../operations/settings/settings.md#wait-for-async-insert-timeout)
 -   [async_insert_max_data_size](../../operations/settings/settings.md#async-insert-max-data-size)
--   [async_insert_busy_timeout](../../operations/settings/settings.md#async-insert-busy-timeout)
--   [async_insert_stale_timeout](../../operations/settings/settings.md#async-insert-stale-timeout)
+-   [async_insert_busy_timeout_ms](../../operations/settings/settings.md#async-insert-busy-timeout-ms)
+-   [async_insert_stale_timeout_ms](../../operations/settings/settings.md#async-insert-stale-timeout-ms)
