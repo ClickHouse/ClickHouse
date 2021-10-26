@@ -366,7 +366,7 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
   <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
 </http_server_default_response>
 ```  
-## hsts_max_age  
+## hsts_max_age  {#hsts-max-age}
   
 Expired time for HSTS in seconds. The default value is 0 means clickhouse disabled HSTS. If you set a positive number, the HSTS will be enabled and the max-age is the number you set.  
   
