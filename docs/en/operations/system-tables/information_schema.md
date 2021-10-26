@@ -1,6 +1,6 @@
 # information_schema {#information-schema}
 
-`INFORMATION_SCHEMA` (`information_schema`) is a system database that contains views. Using these views, you can get information about the metadata of database objects.
+`INFORMATION_SCHEMA` (`information_schema`) is a system database that contains views. Using these views, you can get information about the metadata of database objects. These views read data from the columns of the [system.columns](../../operations/system-tables/columns.md), [system.databases](../../operations/system-tables/databases.md) and [system.tables](../../operations/system-tables/tables.md) system tables.
 
 The structure and composition of system tables may change in different versions of the product, but the support of the `information_schema` makes it possible to change the structure of system tables without changing the method of access to metadata. Metadata requests do not depend on the DBMS used.
 
@@ -26,7 +26,7 @@ SHOW TABLES FROM INFORMATION_SCHEMA;
 
 ## COLUMNS {#columns}
 
-Allows to get a list of table columns read using this view.
+Contains columns read from the `system.columns` system table and columns that are not supported in ClickHouse or do not make sense (always `NULL`), but must be by the standard.
 
 Columns:
 
@@ -94,13 +94,13 @@ domain_name:              ᴺᵁᴸᴸ
 
 ## SCHEMATA {#schemata}
 
-Allows to get a list of schemas read using this view.
+Contains columns read from the `system.databases` system table and columns that are not supported in ClickHouse or do not make sense (always `NULL`), but must be by the standard.
 
 Columns:
 
 -   `catalog_name` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
 -   `schema_name` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the schema is located.
--   `schema_owner` ([String](../../sql-reference/data-types/string.md)) — Schema owner name.
+-   `schema_owner` ([String](../../sql-reference/data-types/string.md)) — Schema owner name, always `'default'`.
 -   `default_character_set_catalog` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
 -   `default_character_set_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
 -   `default_character_set_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
@@ -130,7 +130,7 @@ sql_path:                      ᴺᵁᴸᴸ
 
 ## TABLES {#tables}
 
-Allows to get a list of tables read using this view.
+Contains columns read from the `system.tables` system table.
 
 Columns:
 
@@ -165,7 +165,7 @@ table_type:    BASE TABLE
 
 ## VIEWS {#views}
 
-Allows to get a list of views read using this view.
+Contains columns read from the `system.tables` system table, when the table engine [View](../../engines/table-engines/special/view.md) is used.
 
 Columns:
 
@@ -175,7 +175,7 @@ Columns:
 -   `view_definition` ([String](../../sql-reference/data-types/string.md)) — `SELECT` query for view.
 -   `check_option` ([String](../../sql-reference/data-types/string.md)) — `NONE`, no checking.
 -   `is_updatable` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, the view is not updated.
--   `is_insertable_into` ([Enum8](../../sql-reference/data-types/enum.md)) — Shows whether the created view is materialized. Possible values:
+-   `is_insertable_into` ([Enum8](../../sql-reference/data-types/enum.md)) — Shows whether the created view is [materialized](../../sql-reference/statements/create/view/#materialized). Possible values:
     -   `NO` — The created view is not materialized.
     -   `YES` — The created view is materialized.
 -   `is_trigger_updatable` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, the trigger is not updated.
@@ -208,10 +208,3 @@ is_trigger_updatable:       NO
 is_trigger_deletable:       NO
 is_trigger_insertable_into: NO
 ```
-
-**See Also**
-
--   [View](../../sql-reference/statements/create/view.md).
--   [system.tables](../../operations/system-tables/tables.md).
--   [system.columns](../../operations/system-tables/columns.md).
--   [system.query_views_log](../../operations/system-tables/query_views_log.md).
