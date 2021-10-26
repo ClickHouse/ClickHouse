@@ -119,6 +119,8 @@ protected:
 
     ProcessListForUser * user_process_list = nullptr;
 
+    bool enable_profile_counters = false;
+
 public:
 
     QueryStatus(
@@ -176,6 +178,9 @@ public:
 
     /// Removes a pipeline to the QueryStatus
     void removePipelineExecutor(PipelineExecutor * e);
+
+    void enableProfileCounters() { enable_profile_counters = true; }
+    bool shouldEnableProfileCounters() const { return enable_profile_counters; }
 };
 
 

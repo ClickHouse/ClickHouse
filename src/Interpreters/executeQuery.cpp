@@ -544,6 +544,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
             process_list_entry = context->getProcessList().insert(query_for_logging, ast.get(), context);
+
+            if (settings.enable_profile_counters)
+                process_list_entry->get().enableProfileCounters();
+
             context->setProcessListElement(&process_list_entry->get());
         }
 

@@ -47,6 +47,8 @@ public:
     /// Cancel execution. May be called from another thread.
     void cancel();
 
+    void enableProfileCounters() { enable_profile_counters = true; }
+
 private:
     Processors & processors;
     std::mutex processors_mutex;
@@ -111,13 +113,11 @@ private:
         /// Exception from executing thread itself.
         std::exception_ptr exception;
 
-#ifndef NDEBUG
         /// Time for different processing stages.
         UInt64 total_time_ns = 0;
         UInt64 execution_time_ns = 0;
         UInt64 processing_time_ns = 0;
         UInt64 wait_time_ns = 0;
-#endif
     };
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;
@@ -129,6 +129,8 @@ private:
 
     /// Now it's used to check if query was killed.
     QueryStatus * const process_list_element = nullptr;
+
+    bool enable_profile_counters = false;
 
     /// Graph related methods.
     bool expandPipeline(Stack & stack, UInt64 pid);

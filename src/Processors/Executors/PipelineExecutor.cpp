@@ -11,9 +11,7 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <base/scope_guard_safe.h>
 
-#ifndef NDEBUG
-    #include <Common/Stopwatch.h>
-#endif
+#include <Common/Stopwatch.h>
 
 namespace DB
 {
@@ -46,7 +44,10 @@ PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
     {
         graph = std::make_unique<ExecutingGraph>(processors);
         if (process_list_element)
+        {
+            enable_profile_counters = process_list_element->shouldEnableProfileCounters();
             process_list_element->addPipelineExecutor(this);
+        }
     }
     catch (Exception & exception)
     {
@@ -213,9 +214,9 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
     std::vector<ExecutingGraph::Edge *> updated_direct_edges;
 
     {
-#ifndef NDEBUG
-        Stopwatch watch;
-#endif
+        std::optional<Stopwatch> watch;
+        if (enable_profile_counters)
+            watch.emplace();
 
         std::unique_lock<std::mutex> lock(std::move(node_lock));
 
@@ -229,9 +230,8 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             return false;
         }
 
-#ifndef NDEBUG
-        node.preparation_time_ns += watch.elapsed();
-#endif
+        if (watch)
+            node.preparation_time_ns += watch->elapsed();
 
         node.updated_input_ports.clear();
         node.updated_output_ports.clear();
@@ -416,11 +416,17 @@ void PipelineExecutor::execute(size_t num_threads)
             if (executor_context->exception)
                 std::rethrow_exception(executor_context->exception);
     }
+    catch (DB::Exception & e)
+    {
+        if (enable_profile_counters)
+            e.addMessage(dumpPipeline());
+
+        throw;
+    }
     catch (...)
     {
-#ifndef NDEBUG
-        LOG_TRACE(log, "Exception while executing query. Current state:\n{}", dumpPipeline());
-#endif
+        if (enable_profile_counters)
+            LOG_TRACE(log, "Exception while executing query. Current state:\n{}", dumpPipeline());
         throw;
     }
 
@@ -486,17 +492,18 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 {
     executeStepImpl(thread_num, num_threads);
 
-#ifndef NDEBUG
-    auto & context = executor_contexts[thread_num];
-    LOG_TRACE(log, "Thread finished. Total time: {} sec. Execution time: {} sec. Processing time: {} sec. Wait time: {} sec.", (context->total_time_ns / 1e9), (context->execution_time_ns / 1e9), (context->processing_time_ns / 1e9), (context->wait_time_ns / 1e9));
-#endif
+    if (enable_profile_counters)
+    {
+        auto & context = executor_contexts[thread_num];
+        LOG_TRACE(log, "Thread finished. Total time: {} sec. Execution time: {} sec. Processing time: {} sec. Wait time: {} sec.", (context->total_time_ns / 1e9), (context->execution_time_ns / 1e9), (context->processing_time_ns / 1e9), (context->wait_time_ns / 1e9));
+    }
 }
 
 void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, std::atomic_bool * yield_flag)
 {
-#ifndef NDEBUG
-    Stopwatch total_time_watch;
-#endif
+    std::optional<Stopwatch> total_time_watch;
+    if (enable_profile_counters)
+        total_time_watch.emplace();
 
     auto & context = executor_contexts[thread_num];
     auto & node = context->node;
@@ -592,15 +599,14 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
             addJob(node);
 
             {
-#ifndef NDEBUG
-                Stopwatch execution_time_watch;
-#endif
+                std::optional<Stopwatch> execution_time_watch;
+                if (enable_profile_counters)
+                    execution_time_watch.emplace();
 
                 node->job();
 
-#ifndef NDEBUG
-                context->execution_time_ns += execution_time_watch.elapsed();
-#endif
+                if (execution_time_watch)
+                    context->execution_time_ns += execution_time_watch->elapsed();
             }
 
             if (node->exception)
@@ -609,9 +615,10 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
             if (finished)
                 break;
 
-#ifndef NDEBUG
-            Stopwatch processing_time_watch;
-#endif
+            std::optional<Stopwatch> processing_time_watch;
+            if (enable_profile_counters)
+                processing_time_watch.emplace();
+
 
             /// Try to execute neighbour processor.
             {
@@ -677,9 +684,8 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                     doExpandPipeline(task, false);
             }
 
-#ifndef NDEBUG
-            context->processing_time_ns += processing_time_watch.elapsed();
-#endif
+            if (processing_time_watch)
+                context->processing_time_ns += processing_time_watch->elapsed();
 
             /// We have executed single processor. Check if we need to yield execution.
             if (yield_flag && *yield_flag)
@@ -687,10 +693,9 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
         }
     }
 
-#ifndef NDEBUG
-    context->total_time_ns += total_time_watch.elapsed();
+    if (total_time_watch)
+        context->total_time_ns += total_time_watch->elapsed();
     context->wait_time_ns = context->total_time_ns - context->execution_time_ns - context->processing_time_ns;
-#endif
 }
 
 void PipelineExecutor::initializeExecution(size_t num_threads)
@@ -836,10 +841,11 @@ String PipelineExecutor::dumpPipeline() const
             WriteBufferFromOwnString buffer;
             buffer << "(" << node->num_executed_jobs << " jobs";
 
-#ifndef NDEBUG
-            buffer << ", execution time: " << node->execution_time_ns / 1e9 << " sec.";
-            buffer << ", preparation time: " << node->preparation_time_ns / 1e9 << " sec.";
-#endif
+            if (enable_profile_counters)
+            {
+                buffer << ", execution time: " << node->execution_time_ns / 1e9 << " sec.";
+                buffer << ", preparation time: " << node->preparation_time_ns / 1e9 << " sec.";
+            }
 
             buffer << ")";
             node->processor->setDescription(buffer.str());
