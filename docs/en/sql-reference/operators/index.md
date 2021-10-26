@@ -73,11 +73,11 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 `a = ANY (subquery)` – The `in(a, subquery)` function.  
 
-`a != ANY (subquery)` – The `notIn(a, subquery)` function. 
+`a != ANY (subquery)` – The same as `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
 
-`a = ALL (subquery)` –  The same as `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
+`a = ALL (subquery)` – The same as `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
 
-`a != ALL (subquery)` –  The same as `a NOT IN (subquery)`.
+`a != ALL (subquery)` – The `notIn(a, subquery)` function. 
 
 
 **Examples**
