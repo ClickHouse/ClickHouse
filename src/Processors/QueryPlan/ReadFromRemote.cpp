@@ -255,7 +255,7 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 
         for (const auto & shard : shards)
         {
-            // auto connection_entries = shard.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
+            auto connection_entries = shard.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
 
             auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
 
@@ -264,7 +264,7 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 
             for (size_t replica_num = 0; replica_num < shard.num_replicas; ++replica_num)
             {
-                auto connection = shard.per_replica_pools[replica_num];
+                auto connection = connection_entries[replica_num];
                 addPipe(pipes, shard, coordinator, &*connection);
             }
         }
