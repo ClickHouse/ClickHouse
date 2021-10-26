@@ -187,13 +187,20 @@ bool ReplicatedMergeTreeQueue::load(zkutil::ZooKeeperPtr zookeeper)
 
 void ReplicatedMergeTreeQueue::createLogEntriesToFetchBrokenParts()
 {
-    std::lock_guard lock(state_mutex);
-    if (broken_parts_to_enqueue_fetches_on_loading.empty())
-        return;
+    Strings broken_parts;
+    {
+        std::lock_guard lock(state_mutex);
+        broken_parts = broken_parts_to_enqueue_fetches_on_loading;
+    }
 
-    for (const auto & broken_part_name : broken_parts_to_enqueue_fetches_on_loading)
+    /// It will lock state_mutex
+    for (const auto & broken_part_name : broken_parts)
         storage.removePartAndEnqueueFetch(broken_part_name);
 
+    std::lock_guard lock(state_mutex);
+    /// broken_parts_to_enqueue_fetches_on_loading can be assigned only once on table startup,
+    /// so actually no race conditions are possible
+    assert(broken_parts == broken_parts_to_enqueue_fetches_on_loading);
     broken_parts_to_enqueue_fetches_on_loading.clear();
 }
 
