@@ -3849,8 +3849,8 @@ Enables or disables waiting for processing of asynchronous insertion. If enabled
 
 Possible values:
 
--   0 — Disabled.
--   1 — Enabled.
+-   0 — Client returns `OK` even if the data is not yet inserted.
+-   1 — Client returns `OK` only after the data is inserted.
 
 Default value: `1`.
 
