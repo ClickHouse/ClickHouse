@@ -21,3 +21,10 @@ ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_infile_parallel;"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_infile_parallel (word String) ENGINE=Memory();"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO test_infile_parallel FROM INFILE '${CLICKHOUSE_TMP}/test_infile_parallel*' FORMAT CSV;"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM test_infile_parallel;"
+
+${CLICKHOUSE_LOCAL} --multiquery <<EOF
+DROP TABLE IF EXISTS test_infile_parallel; 
+CREATE TABLE test_infile_parallel (word String) ENGINE=Memory(); 
+INSERT INTO test_infile_parallel FROM INFILE '${CLICKHOUSE_TMP}/test_infile_parallel*' FORMAT CSV;
+SELECT count() FROM test_infile_parallel;
+EOF
