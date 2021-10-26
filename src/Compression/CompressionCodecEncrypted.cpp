@@ -344,7 +344,7 @@ void CompressionCodecEncrypted::Configuration::loadImpl(
         new_params->nonce[method] = config.getString(config_prefix + ".nonce", "");
 
     if (new_params->nonce[method].size() != actual_nonce_size && !new_params->nonce[method].empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got nonce with unexpected size {}, the size should be 12", new_params->nonce[method].size());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Got nonce with unexpected size {}, the size should be {}", new_params->nonce[method].size(), actual_nonce_size);
 }
 
 bool CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
