@@ -65,7 +65,7 @@ protected:
 
     static String getBinaryRepresentation(const String & abs_path)
     {
-        auto buf = createReadBufferFromFileBase(abs_path, {}, 0);
+        auto buf = createReadBufferFromFileBase(abs_path, /* settings= */ {});
         String str;
         readStringUntilEOF(str, *buf);
         return str;
