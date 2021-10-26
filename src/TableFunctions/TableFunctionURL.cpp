@@ -24,11 +24,17 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr co
     if (!func_args.arguments)
         throw Exception("Table function 'URL' must have arguments.", ErrorCodes::BAD_ARGUMENTS);
 
-    URLBasedDataSourceConfiguration configuration;
     if (auto with_named_collection = getURLBasedDataSourceConfiguration(func_args.arguments->children, context))
     {
         auto [common_configuration, storage_specific_args] = with_named_collection.value();
         configuration.set(common_configuration);
+
+        if (!configuration.method.empty()
+            && configuration.method != Poco::Net::HTTPRequest::HTTP_POST
+            && configuration.method != Poco::Net::HTTPRequest::HTTP_PUT)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Method can be POST or PUT (current: {}). For insert default is POST, for select GET",
+                            configuration.method);
 
         if (!storage_specific_args.empty())
         {
@@ -58,33 +64,25 @@ StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
     const std::string & table_name, const String & compression_method_) const
 {
-    /// If url contains {1..k} or failover options with separator `|`, use a separate storage
-    if ((source.find('{') == std::string::npos || source.find('}') == std::string::npos) && source.find('|') == std::string::npos)
+    ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
+    for (const auto & [header, value] : configuration.headers)
     {
-        Poco::URI uri(source);
-        return StorageURL::create(
-            uri,
-            StorageID(getDatabaseName(), table_name),
-            format_,
-            std::nullopt /*format settings*/,
-            columns,
-            ConstraintsDescription{},
-            String{},
-            global_context,
-            compression_method_);
+        auto value_literal = value.safeGet<String>();
+        headers.emplace_back(std::make_pair(header, value_literal));
     }
-    else
-    {
-        return StorageExternalDistributed::create(
-            source,
-            StorageID(getDatabaseName(), table_name),
-            format_,
-            std::nullopt,
-            compression_method_,
-            columns,
-            ConstraintsDescription{},
-            global_context);
-    }
+
+    return StorageURL::create(
+        source,
+        StorageID(getDatabaseName(), table_name),
+        format_,
+        std::nullopt /*format settings*/,
+        columns,
+        ConstraintsDescription{},
+        String{},
+        global_context,
+        compression_method_,
+        headers,
+        configuration.method);
 }
 
 void registerTableFunctionURL(TableFunctionFactory & factory)
