@@ -118,7 +118,8 @@ public:
         ContextPtr context_,
         std::optional<FormatSettings> format_settings_,
         const String & compression_method_ = "",
-        bool distributed_processing_ = false);
+        bool distributed_processing_ = false,
+        ASTPtr partition_by_ = nullptr);
 
     String getName() const override
     {
@@ -169,6 +170,7 @@ private:
     String name;
     const bool distributed_processing;
     std::optional<FormatSettings> format_settings;
+    ASTPtr partition_by;
 
     static void updateClientAndAuthSettings(ContextPtr, ClientAuthentication &);
 };

@@ -53,7 +53,8 @@ protected:
         const String & comment,
         const String & compression_method_,
         const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
-        const String & method_ = "");
+        const String & method_ = "",
+        ASTPtr partition_by = nullptr);
 
     String uri;
     String compression_method;
@@ -65,6 +66,7 @@ protected:
     std::optional<FormatSettings> format_settings;
     ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
     String method; /// For insert can choose Put instead of default Post.
+    ASTPtr partition_by;
 
     virtual std::string getReadMethod() const;
 
@@ -127,7 +129,8 @@ public:
         ContextPtr context_,
         const String & compression_method_,
         const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_ = {},
-        const String & method_ = "");
+        const String & method_ = "",
+        ASTPtr partition_by_ = nullptr);
 
     String getName() const override
     {

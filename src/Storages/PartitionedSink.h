@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/Context_fwd.h>

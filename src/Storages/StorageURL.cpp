@@ -49,7 +49,8 @@ IStorageURLBase::IStorageURLBase(
     const String & comment,
     const String & compression_method_,
     const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_,
-    const String & method_)
+    const String & method_,
+    ASTPtr partition_by_)
     : IStorage(table_id_)
     , uri(uri_)
     , compression_method(compression_method_)
@@ -57,6 +58,7 @@ IStorageURLBase::IStorageURLBase(
     , format_settings(format_settings_)
     , headers(headers_)
     , method(method_)
+    , partition_by(partition_by_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -413,12 +415,13 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
 
     bool has_wildcards = uri.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
-    bool is_partitioned_implementation = insert_query && insert_query->partition_by && has_wildcards;
+    auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
+    bool is_partitioned_implementation = partition_by_ast && has_wildcards;
 
     if (is_partitioned_implementation)
     {
         return std::make_shared<PartitionedStorageURLSink>(
-            insert_query->partition_by,
+            partition_by_ast,
             uri, format_name,
             format_settings, metadata_snapshot->getSampleBlock(), context,
             ConnectionTimeouts::getHTTPTimeouts(context),
@@ -444,8 +447,10 @@ StorageURL::StorageURL(
     ContextPtr context_,
     const String & compression_method_,
     const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_,
-    const String & method_)
-    : IStorageURLBase(uri_, context_, table_id_, format_name_, format_settings_, columns_, constraints_, comment, compression_method_, headers_, method_)
+    const String & method_,
+    ASTPtr partition_by_)
+    : IStorageURLBase(uri_, context_, table_id_, format_name_, format_settings_,
+        columns_, constraints_, comment, compression_method_, headers_, method_, partition_by_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
 }
@@ -570,6 +575,10 @@ void registerStorageURL(StorageFactory & factory)
             headers.emplace_back(std::make_pair(header, value_literal));
         }
 
+        ASTPtr partition_by;
+        if (args.storage_def->partition_by)
+            partition_by = args.storage_def->partition_by->clone();
+
         return StorageURL::create(
             configuration.url,
             args.table_id,
@@ -580,10 +589,13 @@ void registerStorageURL(StorageFactory & factory)
             args.comment,
             args.getContext(),
             configuration.compression_method,
-            headers, configuration.method);
+            headers,
+            configuration.method,
+            partition_by);
     },
     {
         .supports_settings = true,
+        .supports_sort_order = true, // for partition by
         .source_access_type = AccessType::URL,
     });
 }
