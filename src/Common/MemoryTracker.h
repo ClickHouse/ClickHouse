@@ -114,6 +114,11 @@ public:
     void setSoftLimit(Int64 value);
     void setHardLimit(Int64 value);
 
+    Int64 getSoftLimit() const
+    {
+        return soft_limit.load(std::memory_order_relaxed);
+    }
+
     /** Set limit if it was not set.
       * Otherwise, set limit to new value, if new value is greater than previous limit.
       */
@@ -164,6 +169,7 @@ public:
     }
 
     OvercommitRatio getOvercommitRatio();
+    OvercommitRatio getOvercommitRatio(Int64 limit);
 
     void setOvercommitTracker(OvercommitTracker * tracker) noexcept
     {
