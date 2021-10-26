@@ -581,6 +581,7 @@ include (cmake/find/yaml-cpp.cmake)
 include (cmake/find/s2geometry.cmake)
 include (cmake/find/nlp.cmake)
 include (cmake/find/bzip2.cmake)
+include (cmake/find/filelog.cmake)
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")

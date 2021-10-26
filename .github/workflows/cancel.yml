@@ -1,0 +1,13 @@
+name: Cancel
+on: # yamllint disable-line rule:truthy
+  workflow_run:
+    workflows: ["CIGithubActions"]
+    types:
+      - requested
+jobs:
+  cancel:
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - uses: styfle/cancel-workflow-action@0.9.1
+        with:
+          workflow_id: ${{ github.event.workflow.id }}
