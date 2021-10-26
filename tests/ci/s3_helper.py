@@ -56,7 +56,8 @@ class S3Helper(object):
 
         self.client.upload_file(file_path, bucket_name, s3_path, ExtraArgs=metadata)
         logging.info("Upload {} to {}. Meta: {}".format(file_path, s3_path, metadata))
-        return "https://s3.amazonaws.com/{bucket}/{path}".format(bucket=bucket_name, path=s3_path)
+        # last two replacements are specifics of AWS urls: https://jamesd3142.wordpress.com/2018/02/28/amazon-s3-and-the-plus-symbol/
+        return "https://s3.amazonaws.com/{bucket}/{path}".format(bucket=bucket_name, path=s3_path).replace('+', '%2B').replace(' ', '%20')
 
     def upload_test_report_to_s3(self, file_path, s3_path):
         return self._upload_file_to_s3('clickhouse-test-reports', file_path, s3_path)
