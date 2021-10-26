@@ -324,6 +324,8 @@ Type: [Array](../data-types/array.md).
 
 **Example**
 
+Query:
+
 ``` sql
 SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
 ```
