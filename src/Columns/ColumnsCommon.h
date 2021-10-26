@@ -2,7 +2,12 @@
 
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
-
+#ifdef __SSE2__
+#include <emmintrin.h>
+#endif
+#if defined(__AVX512F__) || defined(__AVX512BW__) || defined(__AVX__) || defined(__AVX2__)
+#include <immintrin.h>
+#endif
 
 /// Common helper methods for implementation of different columns.
 
