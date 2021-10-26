@@ -41,6 +41,7 @@ public:
 
     std::string getName() const override;
 private:
+    Poco::URI poco_uri;
 
     BridgeHelperPtr bridge_helper;
     std::string remote_database_name;

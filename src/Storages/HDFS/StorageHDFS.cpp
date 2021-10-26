@@ -374,7 +374,6 @@ SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataP
 
     if (is_partitioned_implementation)
     {
-        std::cerr << "partitioned implementation\n";
         return std::make_shared<PartitionedHDFSSink>(
             insert_query->partition_by,
             uri,
@@ -385,7 +384,6 @@ SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataP
     }
     else
     {
-        std::cerr << "non partitioned implementation\n";
         return std::make_shared<HDFSSink>(uri,
             format_name,
             metadata_snapshot->getSampleBlock(),

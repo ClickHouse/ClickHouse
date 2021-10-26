@@ -22,6 +22,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageS3.h>
 #include <Storages/StorageS3Settings.h>
+#include <Storages/PartitionedSink.h>
 
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
@@ -353,7 +354,7 @@ private:
 };
 
 
-class PartitionedStorageS3Sink : public SinkToStorage
+class PartitionedStorageS3Sink : public PartitionedSink
 {
 public:
     PartitionedStorageS3Sink(
@@ -368,7 +369,7 @@ public:
         const String & key_,
         size_t min_upload_part_size_,
         size_t max_single_part_upload_size_)
-        : SinkToStorage(sample_block_)
+        : PartitionedSink(partition_by, context_, sample_block_)
         , format(format_)
         , sample_block(sample_block_)
         , context(context_)
@@ -380,74 +381,36 @@ public:
         , max_single_part_upload_size(max_single_part_upload_size_)
         , format_settings(format_settings_)
     {
-        std::vector<ASTPtr> arguments(1, partition_by);
-        ASTPtr partition_by_string = makeASTFunction(FunctionToString::name, std::move(arguments));
-
-        auto syntax_result = TreeRewriter(context).analyze(partition_by_string, sample_block.getNamesAndTypesList());
-        partition_by_expr = ExpressionAnalyzer(partition_by_string, syntax_result, context).getActions(false);
-        partition_by_column_name = partition_by_string->getColumnName();
     }
 
-    String getName() const override { return "PartitionedStorageS3Sink"; }
-
-    void consume(Chunk chunk) override
+    SinkPtr createSinkForPartition(const String & partition_id) override
     {
-        const auto & columns = chunk.getColumns();
+        auto partition_bucket = replaceWildcards(bucket, partition_id);
+        validateBucket(partition_bucket);
 
-        Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
-        block_with_partition_by_expr.setColumns(columns);
-        partition_by_expr->execute(block_with_partition_by_expr);
+        auto partition_key = replaceWildcards(key, partition_id);
+        validateKey(partition_key);
 
-        const auto * column = block_with_partition_by_expr.getByName(partition_by_column_name).column.get();
-
-        std::unordered_map<String, size_t> sub_chunks_indices;
-        IColumn::Selector selector;
-        for (size_t row = 0; row < chunk.getNumRows(); ++row)
-        {
-            auto value = column->getDataAt(row);
-            auto [it, inserted] = sub_chunks_indices.emplace(value, sub_chunks_indices.size());
-            selector.push_back(it->second);
-        }
-
-        Chunks sub_chunks;
-        sub_chunks.reserve(sub_chunks_indices.size());
-        for (size_t column_index = 0; column_index < columns.size(); ++column_index)
-        {
-            MutableColumns column_sub_chunks = columns[column_index]->scatter(sub_chunks_indices.size(), selector);
-            if (column_index == 0) /// Set sizes for sub-chunks.
-            {
-                for (const auto & column_sub_chunk : column_sub_chunks)
-                {
-                    sub_chunks.emplace_back(Columns(), column_sub_chunk->size());
-                }
-            }
-            for (size_t sub_chunk_index = 0; sub_chunk_index < column_sub_chunks.size(); ++sub_chunk_index)
-            {
-                sub_chunks[sub_chunk_index].addColumn(std::move(column_sub_chunks[sub_chunk_index]));
-            }
-        }
-
-        for (const auto & [partition_id, sub_chunk_index] : sub_chunks_indices)
-        {
-            getSinkForPartition(partition_id)->consume(std::move(sub_chunks[sub_chunk_index]));
-        }
-    }
-
-    void onFinish() override
-    {
-        for (auto & [partition_id, sink] : sinks)
-        {
-            sink->onFinish();
-        }
+        return std::make_shared<StorageS3Sink>(
+            format,
+            sample_block,
+            context,
+            format_settings,
+            compression_method,
+            client,
+            partition_bucket,
+            partition_key,
+            min_upload_part_size,
+            max_single_part_upload_size
+        );
     }
 
 private:
-    using SinkPtr = std::shared_ptr<StorageS3Sink>;
-
     const String format;
     const Block sample_block;
     ContextPtr context;
     const CompressionMethod compression_method;
+
     std::shared_ptr<Aws::S3::S3Client> client;
     const String bucket;
     const String key;
@@ -457,41 +420,6 @@ private:
 
     ExpressionActionsPtr partition_by_expr;
     String partition_by_column_name;
-
-    std::unordered_map<String, SinkPtr> sinks;
-
-    static String replaceWildcards(const String & haystack, const String & partition_id)
-    {
-        return boost::replace_all_copy(haystack, PARTITION_ID_WILDCARD, partition_id);
-    }
-
-    SinkPtr getSinkForPartition(const String & partition_id)
-    {
-        auto it = sinks.find(partition_id);
-        if (it == sinks.end())
-        {
-            auto partition_bucket = replaceWildcards(bucket, partition_id);
-            validateBucket(partition_bucket);
-
-            auto partition_key = replaceWildcards(key, partition_id);
-            validateKey(partition_key);
-
-            std::tie(it, std::ignore) = sinks.emplace(partition_id, std::make_shared<StorageS3Sink>(
-                format,
-                sample_block,
-                context,
-                format_settings,
-                compression_method,
-                client,
-                partition_bucket,
-                partition_key,
-                min_upload_part_size,
-                max_single_part_upload_size
-            ));
-        }
-
-        return it->second;
-    }
 
     static void validateBucket(const String & str)
     {
@@ -516,21 +444,6 @@ private:
             throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Incorrect non-UTF8 sequence in key");
 
         validatePartitionKey(str, true);
-    }
-
-    static void validatePartitionKey(const StringRef & str, bool allow_slash)
-    {
-        for (const char * i = str.data; i != str.data + str.size; ++i)
-        {
-            if (static_cast<UInt8>(*i) < 0x20 || *i == '{' || *i == '}' || *i == '*' || *i == '?' || (!allow_slash && *i == '/'))
-            {
-                /// Need to convert to UInt32 because UInt8 can't be passed to format due to "mixing character types is disallowed".
-                UInt32 invalid_char_byte = static_cast<UInt32>(static_cast<UInt8>(*i));
-                throw DB::Exception(
-                    ErrorCodes::CANNOT_PARSE_TEXT, "Illegal character '\\x{:02x}' in partition id starting with '{}'",
-                    invalid_char_byte, StringRef(str.data, i - str.data));
-            }
-        }
     }
 };
 
