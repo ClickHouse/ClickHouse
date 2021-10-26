@@ -290,6 +290,8 @@ SELECT ngrams('ClickHouse', 3);
 SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
 ```
 
+Результат:
+
 ``` text
 ┌─tokens────────────────────────────┐
 │ ['test1','test2','test3','test4'] │
