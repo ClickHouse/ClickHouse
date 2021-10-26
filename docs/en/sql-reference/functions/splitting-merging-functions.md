@@ -330,6 +330,8 @@ Query:
 SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
 ```
 
+Result:
+
 ``` text
 ┌─tokens────────────────────────────┐
 │ ['test1','test2','test3','test4'] │
