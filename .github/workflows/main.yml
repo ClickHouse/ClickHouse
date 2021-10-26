@@ -49,13 +49,9 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/tests/ci
           python3 style_check.py
-  Builder:
+  BuilderDebDebug:
     needs: DockerHubPush
     runs-on: [self-hosted, builder]
-    strategy:
-      fail-fast: false
-      matrix:
-        build_number: [3, 7]
     steps:
       - name: Download changed images
         uses: actions/download-artifact@v2
@@ -72,18 +68,19 @@ jobs:
           REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH: ${{runner.temp}}/../ccaches
           CHECK_NAME: 'ClickHouse build check (actions)'
+          BUILD_NUMBER: 7
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" ${{ matrix.build_number }}
+          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NUMBER
       - name: Upload build URLs to artifacts
         uses: actions/upload-artifact@v2
         with:
           name: ${{ env.BUILD_NAME }}
           path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
   BuilderReport:
-    needs: Builder
+    needs: [BuilderDebDebug]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Download json reports
