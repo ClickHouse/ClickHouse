@@ -1,5 +1,5 @@
 # 持续集成检查 {#continuous-integration-checks}
-当你提交一个pull请求时, ClickHouse[持续集成(CI)系统](../tests.md#test-automation)会对您的代码运行一些自动检查.
+当你提交一个pull请求时, ClickHouse[持续集成(CI)系统](https://clickhouse.com/docs/en/development/tests/#test-automation)会对您的代码运行一些自动检查.
 
 这在存储库维护者(来自ClickHouse团队的人)筛选了您的代码并将可测试标签添加到您的pull请求之后发生.
 
@@ -28,7 +28,7 @@ git push
 -  `docs_output.txt`包含构建日志信息. [成功结果案例](https://clickhouse-test-reports.s3.yandex.net/12550/eabcc293eb02214caa6826b7c15f101643f67a6b/docs_check/docs_output.txt)
 
 ## 描述信息检查 {#description-check}
-检查pull请求的描述是否符合[PULL_REQUEST_TEMPLATE.md](../../../.github/PULL_REQUEST_TEMPLATE.md)模板.
+检查pull请求的描述是否符合[PULL_REQUEST_TEMPLATE.md](https://github.com/ClickHouse/ClickHouse/blob/master/.github/PULL_REQUEST_TEMPLATE.md)模板.
 
 您必须为您的更改指定一个更改日志类别(例如，Bug修复), 并且为[CHANGELOG.md](../whats-new/changelog/)编写一条用户可读的消息用来描述更改.
 
@@ -118,7 +118,7 @@ git push
 运行[集成测试](./tests.md#integration-tests).
 
 ## Testflows 检查{#testflows-check}
-使用Testflows测试系统去运行一些测试, 在[此处](../../../tests/testflows/README.md#running-tests-locally)查看如何在本地运行它们.
+使用Testflows测试系统去运行一些测试, 在[此处](https://github.com/ClickHouse/ClickHouse/tree/master/tests/testflows#running-tests-locally)查看如何在本地运行它们.
 
 ## 压力测试 {#stress-test}
 从多个客户端并发运行无状态功能测试, 用以检测与并发相关的错误.如果失败:
@@ -143,7 +143,7 @@ git push
 运行随机生成的查询来捕获程序错误.如果失败, 请向维护人员寻求帮助.
 
 ## 性能测试 {#performance-tests}
-测量查询性能的变化. 这是最长的检查, 只需不到 6 小时即可运行.性能测试报告在[此处](../../../docker/test/performance-comparison/README.md#how-to-read-the-report)有详细描述.
+测量查询性能的变化. 这是最长的检查, 只需不到 6 小时即可运行.性能测试报告在[此处](https://github.com/ClickHouse/ClickHouse/tree/master/docker/test/performance-comparison#how-to-read-the-report)有详细描述.
 
 ## 质量保证 {#qa}
 什么是状态页面上的任务(专用网络)项目?
