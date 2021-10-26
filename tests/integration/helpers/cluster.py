@@ -2066,7 +2066,7 @@ class ClickHouseInstance:
 
         for i in range(start_tries):
             # sometimes after SIGKILL (hard reset) server may refuse to start for some time
-            # for different reasons
+            # for different reasons.
             self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
             started = False
             for _ in range(query_tries):
@@ -2079,7 +2079,7 @@ class ClickHouseInstance:
             if started:
                 break
         else:
-            raise Exception("Cannot start ClickHouse, se additional info in logs")
+            raise Exception("Cannot start ClickHouse, see additional info in logs")
 
 
     def restart_clickhouse(self, stop_start_wait_sec=30, kill=False):
