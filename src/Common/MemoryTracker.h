@@ -58,10 +58,15 @@ private:
     /// This description will be used as prefix into log messages (if isn't nullptr)
     std::atomic<const char *> description_ptr = nullptr;
 
-    void updatePeak(Int64 will_be, bool log_memory_usage);
+    bool updatePeak(Int64 will_be, bool log_memory_usage);
     void logMemoryUsage(Int64 current) const;
 
+    void setOrRaiseProfilerLimit(Int64 value);
+
 public:
+
+    static constexpr auto USAGE_EVENT_NAME = "MemoryTrackerUsage";
+
     explicit MemoryTracker(VariableContext level_ = VariableContext::Thread);
     explicit MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
 
@@ -106,7 +111,6 @@ public:
       * Otherwise, set limit to new value, if new value is greater than previous limit.
       */
     void setOrRaiseHardLimit(Int64 value);
-    void setOrRaiseProfilerLimit(Int64 value);
 
     void setFaultProbability(double value)
     {
@@ -121,6 +125,7 @@ public:
     void setProfilerStep(Int64 value)
     {
         profiler_step = value;
+        setOrRaiseProfilerLimit(value);
     }
 
     /// next should be changed only once: from nullptr to some value.
@@ -139,6 +144,11 @@ public:
     void setMetric(CurrentMetrics::Metric metric_)
     {
         metric.store(metric_, std::memory_order_relaxed);
+    }
+
+    CurrentMetrics::Metric getMetric()
+    {
+        return metric.load(std::memory_order_relaxed);
     }
 
     void setDescription(const char * description)

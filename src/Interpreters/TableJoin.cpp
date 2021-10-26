@@ -352,7 +352,7 @@ bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTT
 
 bool TableJoin::oneDisjunct() const
 {
-    if (!isComma(kind()) && !isCross(kind()))
+    if (!isCrossOrComma(kind()))
         assert(!clauses.empty());
     return clauses.size() <= 1;
 }

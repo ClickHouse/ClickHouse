@@ -35,9 +35,11 @@ CacheDictionaryUpdateQueue<dictionary_key_type>::CacheDictionaryUpdateQueue(
 template <DictionaryKeyType dictionary_key_type>
 CacheDictionaryUpdateQueue<dictionary_key_type>::~CacheDictionaryUpdateQueue()
 {
+    if (update_queue.isFinished())
+        return;
+
     try {
-        if (!finished)
-            stopAndWait();
+        stopAndWait();
     }
     catch (...)
     {
@@ -48,7 +50,7 @@ CacheDictionaryUpdateQueue<dictionary_key_type>::~CacheDictionaryUpdateQueue()
 template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::tryPushToUpdateQueueOrThrow(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr)
 {
-    if (finished)
+    if (update_queue.isFinished())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "CacheDictionaryUpdateQueue finished");
 
     if (!update_queue.tryPush(update_unit_ptr, configuration.update_queue_push_timeout_milliseconds))
@@ -63,7 +65,7 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::tryPushToUpdateQueueOrThro
 template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::waitForCurrentUpdateFinish(CacheDictionaryUpdateUnitPtr<dictionary_key_type> & update_unit_ptr) const
 {
-    if (finished)
+    if (update_queue.isFinished())
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "CacheDictionaryUpdateQueue finished");
 
     std::unique_lock<std::mutex> update_lock(update_mutex);
@@ -108,15 +110,10 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::waitForCurrentUpdateFinish
 template <DictionaryKeyType dictionary_key_type>
 void CacheDictionaryUpdateQueue<dictionary_key_type>::stopAndWait()
 {
-    finished = true;
-    update_queue.clear();
+    if (update_queue.isFinished())
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "CacheDictionaryUpdateQueue finished");
 
-    for (size_t i = 0; i < configuration.max_threads_for_updates; ++i)
-    {
-        auto empty_finishing_ptr = std::make_shared<CacheDictionaryUpdateUnit<dictionary_key_type>>();
-        update_queue.push(empty_finishing_ptr);
-    }
-
+    update_queue.clearAndFinish();
     update_pool.wait();
 }
 
@@ -125,12 +122,10 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::updateThreadFunction()
 {
     setThreadName("UpdQueue");
 
-    while (!finished)
+    while (!update_queue.isFinished())
     {
         CacheDictionaryUpdateUnitPtr<dictionary_key_type> unit_to_update;
-        update_queue.pop(unit_to_update);
-
-        if (finished)
+        if (!update_queue.pop(unit_to_update))
             break;
 
         try

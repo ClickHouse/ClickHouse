@@ -10,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 
@@ -70,23 +71,31 @@ MergeTreeReaderStream::MergeTreeReaderStream(
         sum_mark_range_bytes += mark_range_bytes;
     }
 
+    std::optional<size_t> estimated_sum_mark_range_bytes;
+    if (sum_mark_range_bytes)
+        estimated_sum_mark_range_bytes.emplace(sum_mark_range_bytes);
+
     /// Avoid empty buffer. May happen while reading dictionary for DataTypeLowCardinality.
     /// For example: part has single dictionary and all marks point to the same position.
     ReadSettings read_settings = settings.read_settings;
     if (max_mark_range_bytes != 0)
         read_settings = read_settings.adjustBufferSize(max_mark_range_bytes);
 
+    //// Empty buffer does not makes progress.
+    if (!read_settings.local_fs_buffer_size || !read_settings.remote_fs_buffer_size)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
+
     /// Initialize the objects that shall be used to perform read operations.
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             fullPath(disk, path_prefix + data_file_extension),
-            [this, sum_mark_range_bytes, read_settings]()
+            [this, estimated_sum_mark_range_bytes, read_settings]()
             {
                 return disk->readFile(
                     path_prefix + data_file_extension,
                     read_settings,
-                    sum_mark_range_bytes);
+                    estimated_sum_mark_range_bytes);
             },
             uncompressed_cache);
 
@@ -105,7 +114,7 @@ MergeTreeReaderStream::MergeTreeReaderStream(
             disk->readFile(
                 path_prefix + data_file_extension,
                 read_settings,
-                sum_mark_range_bytes));
+                estimated_sum_mark_range_bytes));
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);

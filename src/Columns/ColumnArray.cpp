@@ -13,7 +13,7 @@
 #include <base/unaligned.h>
 #include <base/sort.h>
 
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <Common/Exception.h>
 #include <Common/Arena.h>
@@ -760,39 +760,7 @@ ColumnPtr ColumnArray::filterTuple(const Filter & filt, ssize_t result_size_hint
 
 ColumnPtr ColumnArray::permute(const Permutation & perm, size_t limit) const
 {
-    size_t size = getOffsets().size();
-
-    if (limit == 0)
-        limit = size;
-    else
-        limit = std::min(size, limit);
-
-    if (perm.size() < limit)
-        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
-
-    if (limit == 0)
-        return ColumnArray::create(data);
-
-    Permutation nested_perm(getOffsets().back());
-
-    auto res = ColumnArray::create(data->cloneEmpty());
-
-    Offsets & res_offsets = res->getOffsets();
-    res_offsets.resize(limit);
-    size_t current_offset = 0;
-
-    for (size_t i = 0; i < limit; ++i)
-    {
-        for (size_t j = 0; j < sizeAt(perm[i]); ++j)
-            nested_perm[current_offset + j] = offsetAt(perm[i]) + j;
-        current_offset += sizeAt(perm[i]);
-        res_offsets[i] = current_offset;
-    }
-
-    if (current_offset != 0)
-        res->data = data->permute(nested_perm, current_offset);
-
-    return res;
+    return permuteImpl(*this, perm, limit);
 }
 
 ColumnPtr ColumnArray::index(const IColumn & indexes, size_t limit) const
@@ -803,8 +771,9 @@ ColumnPtr ColumnArray::index(const IColumn & indexes, size_t limit) const
 template <typename T>
 ColumnPtr ColumnArray::indexImpl(const PaddedPODArray<T> & indexes, size_t limit) const
 {
+    assert(limit <= indexes.size());
     if (limit == 0)
-        return ColumnArray::create(data);
+        return ColumnArray::create(data->cloneEmpty());
 
     /// Convert indexes to UInt64 in case of overflow.
     auto nested_indexes_column = ColumnUInt64::create();

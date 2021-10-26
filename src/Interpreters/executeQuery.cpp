@@ -9,11 +9,9 @@
 #include <IO/LimitReadBuffer.h>
 #include <IO/copyData.h>
 
-#include <DataStreams/BlockIO.h>
-#include <DataStreams/copyData.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <QueryPipeline/BlockIO.h>
+#include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
-#include <DataStreams/CountingBlockOutputStream.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -51,7 +49,6 @@
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
-#include <DataStreams/materializeBlock.h>
 #include <IO/CompressionMethod.h>
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
