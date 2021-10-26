@@ -1,7 +1,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/PullingOutputFormat.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
 
@@ -118,7 +118,7 @@ Block PullingPipelineExecutor::getExtremesBlock()
     return header.cloneWithColumns(extremes.detachColumns());
 }
 
-BlockStreamProfileInfo & PullingPipelineExecutor::getProfileInfo()
+ProfileInfo & PullingPipelineExecutor::getProfileInfo()
 {
     return pulling_format->getProfileInfo();
 }

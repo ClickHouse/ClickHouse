@@ -229,23 +229,16 @@ namespace
             memcpy(&res_elems[elems_size_old], &src_elems[arr_offset], arr_size * sizeof(T));
         };
 
-    #ifdef __SSE2__
-        const __m128i zero_vec = _mm_setzero_si128();
-        static constexpr size_t SIMD_BYTES = 16;
+    #if defined(__AVX512F__) && defined(__AVX512BW__)
+        const __m512i zero_vec = _mm512_setzero_epi32();
+        static constexpr size_t SIMD_BYTES = 64;
         const auto * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
 
         while (filt_pos < filt_end_aligned)
         {
-            UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
-                _mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)),
-                zero_vec));
-            mask = ~mask;
+            uint64_t mask = _mm512_cmp_epi8_mask(_mm512_loadu_si512(reinterpret_cast<const __m512i *>(filt_pos)), zero_vec, _MM_CMPINT_GT);
 
-            if (mask == 0)
-            {
-                /// SIMD_BYTES consecutive rows do not pass the filter
-            }
-            else if (mask == 0xffff)
+            if (mask == 0xffffffffffffffff)
             {
                 /// SIMD_BYTES consecutive rows pass the filter
                 const auto first = offsets_pos == offsets_begin;
@@ -262,9 +255,97 @@ namespace
             }
             else
             {
-                for (size_t i = 0; i < SIMD_BYTES; ++i)
-                    if (filt_pos[i])
-                        copy_array(offsets_pos + i);
+                while (mask)
+                {
+                    size_t index = __builtin_ctzll(mask);
+                    copy_array(offsets_pos + index);
+                #ifdef __BMI__
+                    mask = _blsr_u64(mask);
+                #else
+                    mask = mask & (mask-1);
+                #endif
+                }
+            }
+
+            filt_pos += SIMD_BYTES;
+            offsets_pos += SIMD_BYTES;
+        }
+    #elif defined(__AVX__) && defined(__AVX2__)
+        const __m256i zero_vec = _mm256_setzero_si256();
+        static constexpr size_t SIMD_BYTES = 32;
+        const auto * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
+
+        while (filt_pos < filt_end_aligned)
+        {
+            uint32_t mask = _mm256_movemask_epi8(_mm256_cmpgt_epi8(_mm256_loadu_si256(reinterpret_cast<const __m256i *>(filt_pos)), zero_vec));
+
+            if (mask == 0xffffffff)
+            {
+                /// SIMD_BYTES consecutive rows pass the filter
+                const auto first = offsets_pos == offsets_begin;
+
+                const auto chunk_offset = first ? 0 : offsets_pos[-1];
+                const auto chunk_size = offsets_pos[SIMD_BYTES - 1] - chunk_offset;
+
+                result_offsets_builder.template insertChunk<SIMD_BYTES>(offsets_pos, first, chunk_offset, chunk_size);
+
+                /// copy elements for SIMD_BYTES arrays at once
+                const auto elems_size_old = res_elems.size();
+                res_elems.resize(elems_size_old + chunk_size);
+                memcpy(&res_elems[elems_size_old], &src_elems[chunk_offset], chunk_size * sizeof(T));
+            }
+            else
+            {
+                while (mask)
+                {
+                    size_t index = __builtin_ctz(mask);
+                    copy_array(offsets_pos + index);
+                #ifdef __BMI__
+                    mask = _blsr_u32(mask);
+                #else
+                    mask = mask & (mask-1);
+                #endif
+                }
+            }
+
+            filt_pos += SIMD_BYTES;
+            offsets_pos += SIMD_BYTES;
+        }
+    #elif defined(__SSE2__)
+        const __m128i zero_vec = _mm_setzero_si128();
+        static constexpr size_t SIMD_BYTES = 16;
+        const auto * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
+
+        while (filt_pos < filt_end_aligned)
+        {
+            UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(
+                _mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)),
+                zero_vec));
+            mask = ~mask;
+
+            if (mask == 0xffff)
+            {
+                /// SIMD_BYTES consecutive rows pass the filter
+                const auto first = offsets_pos == offsets_begin;
+
+                const auto chunk_offset = first ? 0 : offsets_pos[-1];
+                const auto chunk_size = offsets_pos[SIMD_BYTES - 1] - chunk_offset;
+
+                result_offsets_builder.template insertChunk<SIMD_BYTES>(offsets_pos, first, chunk_offset, chunk_size);
+
+                /// copy elements for SIMD_BYTES arrays at once
+                const auto elems_size_old = res_elems.size();
+                res_elems.resize(elems_size_old + chunk_size);
+                memcpy(&res_elems[elems_size_old], &src_elems[chunk_offset], chunk_size * sizeof(T));
+            }
+            else
+            {
+                while (mask)
+                {
+                    size_t index = __builtin_ctz(mask);
+                    copy_array(offsets_pos + index);
+                    mask = mask & (mask - 1);
+                }
             }
 
             filt_pos += SIMD_BYTES;
@@ -344,5 +425,20 @@ namespace detail
     template const PaddedPODArray<UInt32> * getIndexesData<UInt32>(const IColumn & indexes);
     template const PaddedPODArray<UInt64> * getIndexesData<UInt64>(const IColumn & indexes);
 }
+
+size_t getLimitForPermutation(size_t column_size, size_t perm_size, size_t limit)
+{
+    if (limit == 0)
+        limit = column_size;
+    else
+        limit = std::min(column_size, limit);
+
+    if (perm_size < limit)
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+            "Size of permutation ({}) is less than required ({})", perm_size, limit);
+
+    return limit;
+}
+
 
 }

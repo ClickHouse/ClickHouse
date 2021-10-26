@@ -8,7 +8,7 @@
 
 #    include <mutex>
 #    include <Core/MySQL/MySQLClient.h>
-#    include <DataStreams/BlockIO.h>
+#    include <QueryPipeline/BlockIO.h>
 #    include <DataTypes/DataTypeString.h>
 #    include <DataTypes/DataTypesNumber.h>
 #    include <Databases/DatabaseOrdinary.h>

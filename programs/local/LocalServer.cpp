@@ -1,8 +1,6 @@
 #include "LocalServer.h"
 
 #include <Poco/Util/XMLConfiguration.h>
-#include <Poco/Util/HelpFormatter.h>
-#include <Poco/Util/OptionCallback.h>
 #include <Poco/String.h>
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
@@ -10,7 +8,6 @@
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/getFQDNOrHostName.h>
@@ -20,19 +17,15 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/escapeForFileName.h>
-#include <Common/ClickHouseRevision.h>
 #include <Common/ThreadStatus.h>
-#include <Common/UnicodeBar.h>
-#include <Common/config_version.h>
+#include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
+#include <Common/randomSeed.h>
 #include <loggers/Loggers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
-#include <IO/ReadHelpers.h>
 #include <IO/UseSSL.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/IAST.h>
 #include <base/ErrorHandlers.h>
 #include <Functions/registerFunctions.h>
@@ -43,10 +36,7 @@
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
 #include <boost/program_options/options_description.hpp>
-#include <boost/program_options.hpp>
 #include <base/argsToConfig.h>
-#include <Common/TerminalSize.h>
-#include <Common/randomSeed.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -73,7 +63,6 @@ void LocalServer::processError(const String &) const
         String message;
         if (server_exception)
         {
-            bool print_stack_trace = config().getBool("stacktrace", false);
             message = getExceptionMessage(*server_exception, print_stack_trace, true);
         }
         else if (client_exception)
@@ -128,10 +117,9 @@ bool LocalServer::executeMultiQuery(const String & all_queries_text)
             }
             case MultiQueryProcessingStage::PARSING_EXCEPTION:
             {
-                this_query_end = find_first_symbols<'\n'>(this_query_end, all_queries_end);
-                this_query_begin = this_query_end; /// It's expected syntax error, skip the line
-                current_exception.reset();
-                continue;
+                if (current_exception)
+                    current_exception->rethrow();
+                return true;
             }
             case MultiQueryProcessingStage::EXECUTE_QUERY:
             {
@@ -143,9 +131,12 @@ bool LocalServer::executeMultiQuery(const String & all_queries_text)
                 }
                 catch (...)
                 {
+                    if (!is_interactive && !ignore_error)
+                        throw;
+
                     // Surprisingly, this is a client error. A server error would
                     // have been reported w/o throwing (see onReceiveSeverException()).
-                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
 
@@ -189,7 +180,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
         ConfigProcessor config_processor(config_path, false, true);
         config_processor.setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration->getString("path", "."));
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
     }
 
@@ -294,28 +284,40 @@ void LocalServer::tryInitPath()
     global_context->setFlagsPath(path + "flags");
 
     global_context->setUserFilesPath(""); // user's files are everywhere
+
+    /// top_level_domains_lists
+    const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/");
+    if (!top_level_domains_path.empty())
+        TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
 }
 
 
 void LocalServer::cleanup()
 {
-    connection.reset();
-
-    if (global_context)
+    try
     {
-        global_context->shutdown();
-        global_context.reset();
+        connection.reset();
+
+        if (global_context)
+        {
+            global_context->shutdown();
+            global_context.reset();
+        }
+
+        status.reset();
+
+        // Delete the temporary directory if needed.
+        if (temporary_directory_to_delete)
+        {
+            const auto dir = *temporary_directory_to_delete;
+            temporary_directory_to_delete.reset();
+            LOG_DEBUG(&logger(), "Removing temporary directory: {}", dir.string());
+            remove_all(dir);
+        }
     }
-
-    status.reset();
-
-    // Delete the temporary directory if needed.
-    if (temporary_directory_to_delete)
+    catch (...)
     {
-        const auto dir = *temporary_directory_to_delete;
-        temporary_directory_to_delete.reset();
-        LOG_DEBUG(&logger(), "Removing temporary directory: {}", dir.string());
-        remove_all(dir);
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
@@ -383,7 +385,6 @@ void LocalServer::setupUsers()
         const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
         ConfigProcessor config_processor(users_config_path);
         const auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
         users_config = loaded_config.configuration;
     }
     else
@@ -458,23 +459,20 @@ try
     cleanup();
     return Application::EXIT_OK;
 }
+catch (const DB::Exception & e)
+{
+    cleanup();
+
+    bool need_print_stack_trace = config().getBool("stacktrace", false);
+    std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl;
+    return e.code() ? e.code() : -1;
+}
 catch (...)
 {
-    try
-    {
-        cleanup();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    cleanup();
 
-    if (!ignore_error)
-        std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
-
-    auto code = getCurrentExceptionCode();
-    /// If exception code isn't zero, we should return non-zero return code anyway.
-    return code ? code : -1;
+    std::cerr << getCurrentExceptionMessage(false) << std::endl;
+    return getCurrentExceptionCode();
 }
 
 
@@ -497,6 +495,7 @@ void LocalServer::processConfig()
         ignore_error = config().getBool("ignore-error", false);
         is_multiquery = true;
     }
+    print_stack_trace = config().getBool("stacktrace", false);
 
     shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
@@ -514,18 +513,15 @@ void LocalServer::processConfig()
 
     format = config().getString("output-format", config().getString("format", is_interactive ? "PrettyCompact" : "TSV"));
     insert_format = "Values";
+
     /// Setting value from cmd arg overrides one from config
     if (global_context->getSettingsRef().max_insert_block_size.changed)
         insert_format_max_block_size = global_context->getSettingsRef().max_insert_block_size;
     else
         insert_format_max_block_size = config().getInt("insert_format_max_block_size", global_context->getSettingsRef().max_insert_block_size);
 
-    /// Skip networking
-
     /// Sets external authenticators config (LDAP, Kerberos).
     global_context->setExternalAuthenticatorsConfig(config());
-
-    global_context->initializeBackgroundExecutors();
 
     setupUsers();
 
@@ -543,6 +539,17 @@ void LocalServer::processConfig()
     size_t mark_cache_size = config().getUInt64("mark_cache_size", 5368709120);
     if (mark_cache_size)
         global_context->setMarkCache(mark_cache_size);
+
+    /// Size of cache for uncompressed blocks of MergeTree indices. Zero means disabled.
+    size_t index_uncompressed_cache_size = config().getUInt64("index_uncompressed_cache_size", 0);
+    if (index_uncompressed_cache_size)
+        global_context->setIndexUncompressedCache(index_uncompressed_cache_size);
+
+    /// Size of cache for index marks (index of MergeTree skip indices). It is necessary.
+    /// Specify default value for index_mark_cache_size explicitly!
+    size_t index_mark_cache_size = config().getUInt64("index_mark_cache_size", 0);
+    if (index_mark_cache_size)
+        global_context->setIndexMarkCache(index_mark_cache_size);
 
     /// A cache for mmapped files.
     size_t mmap_cache_size = config().getUInt64("mmap_cache_size", 1000);   /// The choice of default is arbitrary.
@@ -565,6 +572,8 @@ void LocalServer::processConfig()
     global_context->setCurrentDatabase(default_database);
     applyCmdOptions(global_context);
 
+    bool enable_objects_loader = false;
+
     if (config().has("path"))
     {
         String path = global_context->getPath();
@@ -576,6 +585,7 @@ void LocalServer::processConfig()
         LOG_DEBUG(log, "Loading user defined objects from {}", path);
         Poco::File(path + "user_defined/").createDirectories();
         UserDefinedSQLObjectsLoader::instance().loadObjects(global_context);
+        enable_objects_loader = true;
         LOG_DEBUG(log, "Loaded user defined objects.");
 
         LOG_DEBUG(log, "Loading metadata from {}", path);
@@ -598,6 +608,9 @@ void LocalServer::processConfig()
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
+
+    /// Persist SQL user defined objects only if user_defined folder was created
+    UserDefinedSQLObjectsLoader::instance().enable(enable_objects_loader);
 
     server_display_name = config().getString("display_name", getFQDNOrHostName());
     prompt_by_server_display_name = config().getRawString("prompt_by_server_display_name.default", "{display_name} :) ");
@@ -645,7 +658,7 @@ void LocalServer::printHelpMessage(const OptionsDescription & options_descriptio
 }
 
 
-void LocalServer::addAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
+void LocalServer::addOptions(OptionsDescription & options_description)
 {
     options_description.main_description->add_options()
         ("database,d", po::value<std::string>(), "database")
@@ -663,11 +676,9 @@ void LocalServer::addAndCheckOptions(OptionsDescription & options_description, p
         ("logger.level", po::value<std::string>(), "Log level")
 
         ("no-system-tables", "do not attach system tables (better startup time)")
+        ("path", po::value<std::string>(), "Storage path")
+        ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
         ;
-
-    cmd_settings.addProgramOptions(options_description.main_description.value());
-    po::parsed_options parsed = po::command_line_parser(arguments).options(options_description.main_description.value()).run();
-    po::store(parsed, options);
 }
 
 
@@ -721,6 +732,17 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
     {
         app.init(argc, argv);
         return app.run();
+    }
+    catch (const DB::Exception & e)
+    {
+        std::cerr << DB::getExceptionMessage(e, false) << std::endl;
+        auto code = DB::getCurrentExceptionCode();
+        return code ? code : 1;
+    }
+    catch (const boost::program_options::error & e)
+    {
+        std::cerr << "Bad arguments: " << e.what() << std::endl;
+        return DB::ErrorCodes::BAD_ARGUMENTS;
     }
     catch (...)
     {

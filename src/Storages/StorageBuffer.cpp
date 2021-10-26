@@ -24,8 +24,8 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -130,6 +130,8 @@ StorageBuffer::StorageBuffer(
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
+
+    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
 }
 
 
@@ -444,7 +446,8 @@ static void appendBlock(const Block & from, Block & to)
     if (!to)
         throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
 
-    assertBlocksHaveEqualStructure(from, to, "Buffer");
+    if (to.rows())
+        assertBlocksHaveEqualStructure(from, to, "Buffer");
 
     from.checkNumberOfRows();
     to.checkNumberOfRows();
@@ -462,14 +465,21 @@ static void appendBlock(const Block & from, Block & to)
     {
         MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
-        for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
+        if (to.rows() == 0)
         {
-            const IColumn & col_from = *from.getByPosition(column_no).column.get();
-            last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
+            to = from;
+        }
+        else
+        {
+            for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
+            {
+                const IColumn & col_from = *from.getByPosition(column_no).column.get();
+                last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
 
-            last_col->insertRangeFrom(col_from, 0, rows);
+                last_col->insertRangeFrom(col_from, 0, rows);
 
-            to.getByPosition(column_no).column = std::move(last_col);
+                to.getByPosition(column_no).column = std::move(last_col);
+            }
         }
     }
     catch (...)
@@ -667,7 +677,6 @@ void StorageBuffer::startup()
         LOG_WARNING(log, "Storage {} is run with readonly settings, it will not be able to insert data. Set appropriate buffer_profile to fix this.", getName());
     }
 
-    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ backgroundFlush(); });
     flush_handle->activateAndSchedule();
 }
 
