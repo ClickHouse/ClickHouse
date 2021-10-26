@@ -368,6 +368,16 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 </http_server_default_response>
 ```
 
+## hsts_max_age  {#hsts-max-age}
+  
+Срок действия HSTS в секундах. Значение по умолчанию `0` (HSTS выключен). Для включения HSTS задайте положительное число. Срок действия HSTS  будет равен введенному числу.  
+  
+**Пример**  
+
+```xml
+<hsts_max_age>600000</hsts_max_age>
+```
+
 ## include_from {#server_configuration_parameters-include_from}
 
 Путь к файлу с подстановками.
