@@ -15,22 +15,62 @@
 #include <functional>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/CoordinationSettings.h>
-
+#include <Coordination/KeeperInfos.h>
 
 namespace DB
 {
-
 using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr & response)>;
 
 /// Highlevel wrapper for ClickHouse Keeper.
 /// Process user requests via consensus and return responses.
-class KeeperDispatcher
+class KeeperDispatcher : public IKeeperInfo
 {
 
-private:
-    std::mutex push_request_mutex;
+public:
 
-    CoordinationSettingsPtr coordination_settings;
+    /// Request statistics
+    class KeeperStats
+    {
+    public:
+        explicit KeeperStats() = default;
+
+        UInt64 getMinLatency() const;
+        UInt64 getMaxLatency() const;
+
+        UInt64 getAvgLatency() const;
+
+        UInt64 getPacketsReceived() const;
+        UInt64 getPacketsSent() const;
+
+        void incrementPacketsReceived();
+        void incrementPacketsSent();
+
+        void updateLatency(UInt64 latency_ms);
+        void reset();
+
+    private:
+        void inline resetLatency();
+        void inline resetRequestCounters();
+
+        mutable std::shared_mutex mutex;
+
+        /// all response with watch response excluded
+        UInt64 packets_sent = 0;
+        /// All client request include ordinary requests, heart beat and session establish etc.
+        UInt64 packets_received = 0;
+
+        /// For consistent with zookeeper measured by millisecond,
+        /// otherwise maybe microsecond is better
+        UInt64 total_latency = 0;
+        UInt64 max_latency = 0;
+        UInt64 min_latency = 0;
+
+        UInt64 count = 0;
+    };
+
+private:
+    mutable std::mutex push_request_mutex;
+
     using RequestsQueue = ConcurrentBoundedQueue<KeeperStorage::RequestForSession>;
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
     using UpdateConfigurationQueue = ConcurrentBoundedQueue<ConfigUpdateAction>;
@@ -45,7 +85,7 @@ private:
 
     std::atomic<bool> shutdown_called{false};
 
-    std::mutex session_to_response_callback_mutex;
+    mutable std::mutex session_to_response_callback_mutex;
     /// These two maps looks similar, but serves different purposes.
     /// The first map is subscription map for normal responses like
     /// (get, set, list, etc.). Dispatcher determines callback for each response
@@ -71,6 +111,10 @@ private:
 
     /// RAFT wrapper.
     std::unique_ptr<KeeperServer> server;
+
+    std::shared_ptr<KeeperStats> keeper_stats;
+
+    KeeperSettingsPtr settings;
 
     Poco::Logger * log;
 
@@ -104,7 +148,7 @@ public:
     KeeperDispatcher();
 
     /// Call shutdown
-    ~KeeperDispatcher();
+    ~KeeperDispatcher() override;
 
     /// Initialization from config.
     /// standalone_keeper -- we are standalone keeper application (not inside clickhouse server)
@@ -125,17 +169,6 @@ public:
     /// Put request to ClickHouse Keeper
     bool putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id);
 
-    /// Are we leader
-    bool isLeader() const
-    {
-        return server->isLeader();
-    }
-
-    bool hasLeader() const
-    {
-        return server->isLeaderAlive();
-    }
-
     /// Get new session ID
     int64_t getSessionID(int64_t session_timeout_ms);
 
@@ -144,8 +177,52 @@ public:
 
     /// Call if we don't need any responses for this session no more (session was expired)
     void finishSession(int64_t session_id);
+
+    /// Invoked when a request completes.
+    void updateKeeperStat(UInt64 process_time_ms);
+
+    /// Are we leader
+    bool isLeader() const override
+    {
+        return server->isLeader();
+    }
+
+    bool hasLeader() const override
+    {
+        return server->isLeaderAlive();
+    }
+
+    ///
+    String getRole() const override;
+
+    UInt64 getOutstandingRequests() const override;
+    UInt64 getNumAliveConnections() const override;
+
+    /// Request statistics such as qps, latency etc.
+    std::shared_ptr<KeeperStats> getKeeperStats() const
+    {
+        return keeper_stats;
+    }
+
+    const IKeeperInfo & getKeeperInfo() const
+    {
+        return *this;
+    }
+
+    IRaftInfo & getRaftInfo() const
+    {
+        return *server;
+    }
+
+    const IStateMachineInfo & getStateMachineInfo() const
+    {
+        return *server->getKeeperStateMachine();
+    }
+
+    void dumpConf(WriteBufferFromOwnString & buf) const;
 };
 
+using KeeperStatsPtr = std::shared_ptr<KeeperDispatcher::KeeperStats>;
 }
 
 #endif

@@ -5,6 +5,7 @@
 #include <Core/SettingsEnums.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -50,5 +51,33 @@ struct CoordinationSettings : public BaseSettings<CoordinationSettingsTraits>
 };
 
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
+
+struct KeeperSettings
+{
+    static constexpr int NO_PORT = -1;
+
+    KeeperSettings() = default;
+    int server_id;
+
+    int tcp_port{NO_PORT};
+    int tcp_port_secure{NO_PORT};
+
+    String super_digest;
+
+    bool standalone_keeper;
+    CoordinationSettingsPtr coordination_settings;
+
+    String log_storage_path;
+    String snapshot_storage_path;
+
+    void dump(WriteBufferFromOwnString & buf) const;
+    static std::shared_ptr<KeeperSettings> loadFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
+
+private:
+    static String getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
+    static String getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
+};
+
+using KeeperSettingsPtr = std::shared_ptr<KeeperSettings>;
 
 }

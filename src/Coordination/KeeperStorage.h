@@ -39,6 +39,17 @@ public:
         Coordination::Stat stat{};
         int32_t seq_num = 0;
         ChildrenSet children{};
+
+        /// object memory size
+        UInt64 size() const
+        {
+            UInt64 child_size{0};
+            for(auto & child : children)
+            {
+                child_size += child.size();
+            }
+            return data.size() + sizeof (Node) + child_size;
+        }
     };
 
     struct ResponseForSession
@@ -175,6 +186,41 @@ public:
     std::vector<int64_t> getDeadSessions()
     {
         return session_expiry_queue.getExpiredSessions();
+    }
+
+    UInt64 getNodeCount() const
+    {
+        return container.size();
+    }
+
+    UInt64 getWatchCount() const
+    {
+        return watches.size() + list_watches.size();
+    }
+
+    UInt64 getEphemeralCount() const
+    {
+        UInt64 ret{0};
+        for(const auto & ephs : ephemerals)
+        {
+            ret += ephs.second.size();
+        }
+        return ret;
+    }
+
+    UInt64 getApproximateDataSize() const
+    {
+        UInt64 size{0};
+        for (const auto & it : container)
+        {
+            size += (it.key.size() + it.value.size() + 1);
+        }
+        /// hash map key size
+        if (container.size())
+        {
+            size += sizeof(StringRef) * container.size();
+        }
+        return size;
     }
 };
 

@@ -12,11 +12,98 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int SYSTEM_ERROR;
+    extern const int UNKNOWN_SETTING;
+}
+
+UInt64 KeeperDispatcher::KeeperStats::getMinLatency() const
+{
+    std::shared_lock lock(mutex);
+    return min_latency;
+}
+
+UInt64 KeeperDispatcher::KeeperStats::getMaxLatency() const
+{
+    std::shared_lock lock(mutex);
+    return max_latency;
+}
+
+UInt64 KeeperDispatcher::KeeperStats::getAvgLatency() const
+{
+    std::shared_lock lock(mutex);
+    if (count != 0)
+    {
+        return total_latency / count;
+    }
+    return 0;
+}
+
+UInt64 KeeperDispatcher::KeeperStats::getPacketsReceived() const
+{
+    std::shared_lock lock(mutex);
+    return packets_received;
+}
+
+UInt64 KeeperDispatcher::KeeperStats::getPacketsSent() const
+{
+    std::shared_lock lock(mutex);
+    return packets_sent;
+}
+
+void KeeperDispatcher::KeeperStats::incrementPacketsReceived()
+{
+    std::unique_lock lock(mutex);
+    packets_received++;
+}
+
+void KeeperDispatcher::KeeperStats::incrementPacketsSent()
+{
+    std::unique_lock lock(mutex);
+    packets_sent++;
+}
+
+void KeeperDispatcher::KeeperStats::updateLatency(UInt64 latency_ms)
+{
+    std::unique_lock lock(mutex);
+
+    total_latency += (latency_ms);
+    count++;
+
+    if (latency_ms < min_latency)
+    {
+        min_latency = latency_ms;
+    }
+
+    if (latency_ms > max_latency)
+    {
+        max_latency = latency_ms;
+    }
+}
+
+void KeeperDispatcher::KeeperStats::reset()
+{
+    std::unique_lock lock(mutex);
+    resetLatency();
+    resetRequestCounters();
+}
+
+void KeeperDispatcher::KeeperStats::resetLatency()
+{
+    total_latency = 0;
+    count = 0;
+    max_latency = 0;
+    min_latency = 0;
+}
+
+void KeeperDispatcher::KeeperStats::resetRequestCounters()
+{
+    packets_received = 0;
+    packets_sent = 0;
 }
 
 KeeperDispatcher::KeeperDispatcher()
-    : coordination_settings(std::make_shared<CoordinationSettings>())
-    , responses_queue(std::numeric_limits<size_t>::max())
+    : responses_queue(std::numeric_limits<size_t>::max())
+    , keeper_stats(std::make_shared<KeeperStats>())
+    , settings(std::make_shared<KeeperSettings>())
     , log(&Poco::Logger::get("KeeperDispatcher"))
 {
 }
@@ -36,8 +123,8 @@ void KeeperDispatcher::requestThread()
     {
         KeeperStorage::RequestForSession request;
 
-        UInt64 max_wait = UInt64(coordination_settings->operation_timeout_ms.totalMilliseconds());
-        uint64_t max_batch_size = coordination_settings->max_requests_batch_size;
+        UInt64 max_wait = UInt64(settings->coordination_settings->operation_timeout_ms.totalMilliseconds());
+        uint64_t max_batch_size = settings->coordination_settings->max_requests_batch_size;
 
         /// The code below do a very simple thing: batch all write (quorum) requests into vector until
         /// previous write batch is not finished or max_batch size achieved. The main complexity goes from
@@ -58,7 +145,7 @@ void KeeperDispatcher::requestThread()
 
                 /// If new request is not read request or we must to process it through quorum.
                 /// Otherwise we will process it locally.
-                if (coordination_settings->quorum_reads || !request.request->isReadRequest())
+                if (settings->coordination_settings->quorum_reads || !request.request->isReadRequest())
                 {
                     current_batch.emplace_back(request);
 
@@ -71,7 +158,7 @@ void KeeperDispatcher::requestThread()
                         if (requests_queue->tryPop(request, 1))
                         {
                             /// Don't append read request into batch, we have to process them separately
-                            if (!coordination_settings->quorum_reads && request.request->isReadRequest())
+                            if (!settings->coordination_settings->quorum_reads && request.request->isReadRequest())
                             {
                                 has_read_request = true;
                                 break;
@@ -141,7 +228,7 @@ void KeeperDispatcher::responseThread()
     {
         KeeperStorage::ResponseForSession response_for_session;
 
-        UInt64 max_wait = UInt64(coordination_settings->operation_timeout_ms.totalMilliseconds());
+        UInt64 max_wait = UInt64(settings->coordination_settings->operation_timeout_ms.totalMilliseconds());
 
         if (responses_queue.tryPop(response_for_session, max_wait))
         {
@@ -216,6 +303,7 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
             session_to_response_callback.erase(session_response_callback);
         }
     }
+    keeper_stats->incrementPacketsSent();
 }
 
 bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
@@ -246,24 +334,22 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     {
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
     }
-
+    keeper_stats->incrementPacketsReceived();
     return true;
 }
 
 void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async)
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
-    int myid = config.getInt("keeper_server.server_id");
 
-    coordination_settings->loadFromConfig("keeper_server.coordination_settings", config);
-    requests_queue = std::make_unique<RequestsQueue>(coordination_settings->max_requests_batch_size);
+    settings = KeeperSettings::loadFromConfig(config_, standalone_keeper);
+    requests_queue = std::make_unique<RequestsQueue>(settings->coordination_settings->max_requests_batch_size);
 
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
-    server = std::make_unique<KeeperServer>(
-        myid, coordination_settings, config, responses_queue, snapshots_queue, standalone_keeper);
+    server = std::make_unique<KeeperServer>(settings, config_, responses_queue, snapshots_queue);
 
     try
     {
@@ -410,7 +496,7 @@ void KeeperDispatcher::sessionCleanerTask()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(coordination_settings->dead_session_check_period_ms.totalMilliseconds()));
+        std::this_thread::sleep_for(std::chrono::milliseconds(settings->coordination_settings->dead_session_check_period_ms.totalMilliseconds()));
     }
 }
 
@@ -575,6 +661,33 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
         if (!push_result)
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
     }
+}
+
+void KeeperDispatcher::updateKeeperStat(UInt64 process_time_stopwatch)
+{
+    keeper_stats->updateLatency(process_time_stopwatch);
+}
+
+String KeeperDispatcher::getRole() const
+{
+    return server->getRole();
+}
+
+UInt64 KeeperDispatcher::getOutstandingRequests() const
+{
+    std::lock_guard lock(push_request_mutex);
+    return requests_queue->size();
+}
+
+UInt64 KeeperDispatcher::getNumAliveConnections() const
+{
+    std::lock_guard lock(session_to_response_callback_mutex);
+    return session_to_response_callback.size();
+}
+
+void KeeperDispatcher::dumpConf(WriteBufferFromOwnString & buf) const
+{
+    settings->dump(buf);
 }
 
 }

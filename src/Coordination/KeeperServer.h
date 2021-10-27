@@ -8,13 +8,14 @@
 #include <Coordination/CoordinationSettings.h>
 #include <unordered_map>
 #include <base/logger_useful.h>
+#include <Coordination/KeeperInfos.h>
 
 namespace DB
 {
 
 using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
 
-class KeeperServer
+class KeeperServer : public IRaftInfo
 {
 private:
     const int server_id;
@@ -52,12 +53,10 @@ private:
 
 public:
     KeeperServer(
-        int server_id_,
-        const CoordinationSettingsPtr & coordination_settings_,
-        const Poco::Util::AbstractConfiguration & config,
+        const KeeperSettingsPtr & settings_,
+        const Poco::Util::AbstractConfiguration & config_,
         ResponsesQueue & responses_queue_,
-        SnapshotsQueue & snapshots_queue_,
-        bool standalone_keeper);
+        SnapshotsQueue & snapshots_queue_);
 
     /// Load state machine from the latest snapshot and load log storage. Start NuRaft with required settings.
     void startup();
@@ -73,9 +72,24 @@ public:
     /// Return set of the non-active sessions
     std::vector<int64_t> getDeadSessions();
 
-    bool isLeader() const;
+    /// Return set of the non-active sessions
+    nuraft::ptr<KeeperStateMachine> getKeeperStateMachine() const
+    {
+        return state_machine;
+    }
 
-    bool isLeaderAlive() const;
+    bool isLeader() const override;
+
+    bool isLeaderAlive() const override;
+
+    /// server role ignore zookeeper state "read-only" and "standalone"
+    String getRole() const override;
+
+    /// @return follower count if node is not leader return 0
+    UInt64 getFollowerCount() const override;
+
+    /// @return synced follower count if node is not leader return 0
+    UInt64 getSyncedFollowerCount() const override;
 
     /// Wait server initialization (see callbackFunc)
     void waitInit();

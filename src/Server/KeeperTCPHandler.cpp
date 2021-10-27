@@ -18,6 +18,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <queue>
 #include <mutex>
+#include <Coordination/FourLetterCommand.h>
 
 #ifdef POCO_HAVE_FD_EPOLL
     #include <sys/epoll.h>
@@ -222,16 +223,15 @@ void KeeperTCPHandler::run()
     runImpl();
 }
 
-Poco::Timespan KeeperTCPHandler::receiveHandshake()
+Poco::Timespan KeeperTCPHandler::receiveHandshake(int32_t handshake_length)
 {
-    int32_t handshake_length;
     int32_t protocol_version;
     int64_t last_zxid_seen;
     int32_t timeout_ms;
     int64_t previous_session_id = 0;    /// We don't support session restore. So previous session_id is always zero.
     std::array<char, Coordination::PASSWORD_LENGTH> passwd {};
-    Coordination::read(handshake_length, *in);
-    if (handshake_length != Coordination::CLIENT_HANDSHAKE_LENGTH && handshake_length != Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY)
+
+    if (!isHandShake(handshake_length))
         throw Exception("Unexpected handshake length received: " + toString(handshake_length), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 
     Coordination::read(protocol_version, *in);
@@ -274,9 +274,32 @@ void KeeperTCPHandler::runImpl()
         return;
     }
 
+    int32_t header;
     try
     {
-        auto client_timeout = receiveHandshake();
+        Coordination::read(header, *in);
+    }
+    catch (const Exception & e)
+    {
+        LOG_WARNING(log, "Error while read connection header {}", e.displayText());
+        return;
+    }
+
+    /// All four letter word command code is larger than 2^24 or lower than 0.
+    /// Hand shake package length must be lower than 2^24 and larger than 0.
+    /// So collision never happens.
+    int32_t four_letter_cmd = header;
+    if (!isHandShake(four_letter_cmd))
+    {
+        tryExecuteFourLetterWordCmd(four_letter_cmd);
+        return;
+    }
+
+    try
+    {
+        int32_t handshake_length = header;
+        auto client_timeout = receiveHandshake(handshake_length);
+
         if (client_timeout != 0)
             session_timeout = std::min(client_timeout, session_timeout);
     }
@@ -328,6 +351,8 @@ void KeeperTCPHandler::runImpl()
 
     session_stopwatch.start();
     bool close_received = false;
+    Stopwatch process_time_stopwatch;
+
     try
     {
         while (true)
@@ -337,6 +362,7 @@ void KeeperTCPHandler::runImpl()
             PollResult result = poll_wrapper->poll(session_timeout, in);
             if (result.has_requests && !close_received)
             {
+                process_time_stopwatch.start();
                 auto [received_op, received_xid] = receiveRequest();
 
                 if (received_op == Coordination::OpNum::Close)
@@ -354,6 +380,13 @@ void KeeperTCPHandler::runImpl()
                 session_stopwatch.restart();
             }
 
+            /// Do request statistics,
+            /// not accurate when there is watch response in the channel
+            if(result.responses_count != 0)
+            {
+                process_time_stopwatch.stop();
+                keeper_dispatcher->updateKeeperStat(process_time_stopwatch.elapsedMilliseconds());
+            }
             /// Process exact amount of responses from pipe
             /// otherwise state of responses queue and signaling pipe
             /// became inconsistent and race condition is possible.
@@ -397,6 +430,47 @@ void KeeperTCPHandler::runImpl()
         LOG_INFO(log, "Got exception processing session #{}: {}", session_id, getExceptionMessage(ex, true));
         keeper_dispatcher->finishSession(session_id);
     }
+}
+
+bool KeeperTCPHandler::isHandShake(Int32 & handshake_length)
+{
+    return handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH
+    || handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY;
+}
+
+bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(Int32 & four_letter_cmd)
+{
+    if (FourLetterCommandFactory::instance().isKnown(four_letter_cmd))
+    {
+        auto command = FourLetterCommandFactory::instance().get(four_letter_cmd);
+        LOG_DEBUG(log, "receive four letter command {}", command->name());
+
+        String res;
+        try
+        {
+            res = command->run();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Error when executing four letter command " + command->name());
+        }
+
+        try
+        {
+            out->write(res.data(), res.size());
+        }
+        catch (const Exception &)
+        {
+            tryLogCurrentException(log, "Error when send 4 letter command response");
+        }
+
+        return true;
+    }
+    else
+    {
+        LOG_WARNING(log, "invalid four letter command {}", std::to_string(four_letter_cmd));
+    }
+    return false;
 }
 
 std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveRequest()
