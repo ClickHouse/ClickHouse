@@ -3,9 +3,15 @@ toc_priority: 65
 toc_title: Build on Mac OS X
 ---
 
+# You don't have to build ClickHouse
+
+You can install ClickHouse as follows: https://clickhouse.com/#quick-start
+Choose Mac x86 or M1.
+
 # How to Build ClickHouse on Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
-Build should work on x86_64 (Intel) and arm64 (Apple Silicon) based macOS 10.15 (Catalina) and higher with recent Xcode's native AppleClang, or Homebrew's vanilla Clang or GCC compilers.
+Build should work on x86_64 (Intel) and arm64 (Apple Silicon) based macOS 10.15 (Catalina) and higher with Homebrew's vanilla Clang.
+It is always recommended to use `clang` compiler. It is possible to use XCode's `AppleClang` or `gcc` but it's strongly discouraged.
 
 ## Install Homebrew {#install-homebrew}
 
@@ -45,18 +51,6 @@ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 
 ## Build ClickHouse {#build-clickhouse}
 
-To build using Xcode's native AppleClang compiler:
-
-``` bash
-cd ClickHouse
-rm -rf build
-mkdir build
-cd build
-cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
-cmake --build . --config RelWithDebInfo
-cd ..
-```
-
 To build using Homebrew's vanilla Clang compiler:
 
 ``` bash
@@ -69,7 +63,19 @@ cmake --build . --config RelWithDebInfo
 cd ..
 ```
 
-To build using Homebrew's vanilla GCC compiler:
+To build using Xcode's native AppleClang compiler (this option is strongly not recommended; use the option above):
+
+``` bash
+cd ClickHouse
+rm -rf build
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+cmake --build . --config RelWithDebInfo
+cd ..
+```
+
+To build using Homebrew's vanilla GCC compiler (this option is absolutely not recommended, I'm wondering why do we ever have it):
 
 ``` bash
 cd ClickHouse
