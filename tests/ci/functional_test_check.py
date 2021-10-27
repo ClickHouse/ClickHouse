@@ -315,8 +315,6 @@ if __name__ == "__main__":
         os.makedirs(result_path)
 
     run_log_path = os.path.join(result_path, "runlog.log")
-    if not os.path.exists(run_log_path):
-        os.makedirs(run_log_path)
 
     download_builds(packages_path, urls)
     run_command = get_run_command(packages_path, result_path, server_log_path, kill_timeout, [], docker_image)
