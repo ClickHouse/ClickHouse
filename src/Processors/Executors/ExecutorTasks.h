@@ -4,7 +4,7 @@
 #include <Processors/Executors/PollingQueue.h>
 #include <Processors/Executors/ThreadsQueue.h>
 #include <Processors/Executors/TasksQueue.h>
-
+#include <boost/thread/shared_mutex.hpp>
 #include <stack>
 
 namespace DB
@@ -20,9 +20,6 @@ class ExecutorTasks
     std::vector<std::unique_ptr<ExecutionThreadContext>> executor_contexts;
     /// This mutex protects only executor_contexts vector. Needed to avoid race between init() and finish().
     std::mutex executor_contexts_mutex;
-
-    /// Data used by stopping pipeline task.
-    StoppingPipelineTask::Data stopping_pipeline_task_data;
 
     /// Common mutex for all the following fields.
     std::mutex mutex;
@@ -49,10 +46,8 @@ public:
     using Stack = std::stack<UInt64>;
     using Queue = std::queue<ExecutingGraph::Node *>;
 
-    bool executeStoppingTask(ExecutionThreadContext & context, std::function<bool()> callback);
-
-    void enterConcurrentReadSection();
-    void exitConcurrentReadSection();
+    /// Data used by stopping pipeline task.
+    boost::shared_mutex stopping_pipeline_mutex;
 
     void finish();
     bool isFinished() const { return finished; }

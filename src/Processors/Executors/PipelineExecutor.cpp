@@ -10,6 +10,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <base/scope_guard_safe.h>
+#include <boost/thread/locks.hpp>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -125,7 +126,7 @@ bool PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
     return true;
 }
 
-bool PipelineExecutor::prepareProcessor(UInt64 pid, ExecutionThreadContext & thread_context, Queue & queue, Queue & async_queue)
+bool PipelineExecutor::prepareProcessor(UInt64 pid, Queue & queue, Queue & async_queue, boost::upgrade_lock<boost::shared_mutex> & pipeline_lock)
 {
     std::stack<ExecutingGraph::Edge *> updated_edges;
     Stack updated_processors;
@@ -265,13 +266,11 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, ExecutionThreadContext & thr
 
             if (need_expand_pipeline)
             {
-                auto callback = [this, &updated_processors, pid = node.processors_id]()
                 {
-                    return expandPipeline(updated_processors, pid);
-                };
-
-                if (!tasks.executeStoppingTask(thread_context, std::move(callback)))
-                    return false;
+                    boost::upgrade_to_unique_lock lock(pipeline_lock);
+                    if (!expandPipeline(updated_processors, pid))
+                        return false;
+                }
 
                 /// Add itself back to be prepared again.
                 updated_processors.push(pid);
@@ -425,13 +424,13 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
                 Queue queue;
                 Queue async_queue;
 
-                tasks.enterConcurrentReadSection();
+                {
+                    boost::upgrade_lock<boost::shared_mutex> pipeline_read_lock(tasks.stopping_pipeline_mutex);
 
-                /// Prepare processor after execution.
-                if (!prepareProcessor(context.getProcessorID(), context, queue, async_queue))
-                    finish();
-
-                tasks.exitConcurrentReadSection();
+                    /// Prepare processor after execution.
+                    if (!prepareProcessor(context.getProcessorID(), queue, async_queue, pipeline_read_lock))
+                        finish();
+                }
 
                 /// Push other tasks to global queue.
                 tasks.pushTasks(queue, async_queue, context);
@@ -462,17 +461,17 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
     addChildlessProcessorsToStack(stack);
 
     tasks.init(num_threads);
-    auto & context = tasks.getThreadContext(0);
 
     Queue queue;
     Queue async_queue;
+    boost::upgrade_lock<boost::shared_mutex> pipeline_read_lock(tasks.stopping_pipeline_mutex);
 
     while (!stack.empty())
     {
         UInt64 proc = stack.top();
         stack.pop();
 
-        prepareProcessor(proc, context, queue, async_queue);
+        prepareProcessor(proc, queue, async_queue, pipeline_read_lock);
 
         if (!async_queue.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Async is only possible after work() call. Processor {}",

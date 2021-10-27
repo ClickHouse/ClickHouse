@@ -14,11 +14,12 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
         context
         coroutine
         graph
+        thread
     )
 
     if(Boost_INCLUDE_DIR AND Boost_FILESYSTEM_LIBRARY AND
         Boost_PROGRAM_OPTIONS_LIBRARY AND Boost_REGEX_LIBRARY AND Boost_SYSTEM_LIBRARY AND Boost_CONTEXT_LIBRARY AND
-        Boost_COROUTINE_LIBRARY AND Boost_GRAPH_LIBRARY)
+        Boost_COROUTINE_LIBRARY AND Boost_GRAPH_LIBRARY AND Boost_THREAD_LIBRARY)
 
         set(EXTERNAL_BOOST_FOUND 1)
 
@@ -34,6 +35,7 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
         add_library (_boost_context INTERFACE)
         add_library (_boost_coroutine INTERFACE)
         add_library (_boost_graph INTERFACE)
+        add_library (_boost_thread INTERFACE)
 
         target_link_libraries (_boost_filesystem INTERFACE ${Boost_FILESYSTEM_LIBRARY})
         target_link_libraries (_boost_iostreams INTERFACE ${Boost_IOSTREAMS_LIBRARY})
@@ -43,6 +45,7 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
         target_link_libraries (_boost_context INTERFACE ${Boost_CONTEXT_LIBRARY})
         target_link_libraries (_boost_coroutine INTERFACE ${Boost_COROUTINE_LIBRARY})
         target_link_libraries (_boost_graph INTERFACE ${Boost_GRAPH_LIBRARY})
+        target_link_libraries (_boost_thread INTERFACE ${Boost_THREAD_LIBRARY})
 
         add_library (boost::filesystem ALIAS _boost_filesystem)
         add_library (boost::iostreams ALIAS _boost_iostreams)
@@ -52,6 +55,7 @@ if (NOT USE_INTERNAL_BOOST_LIBRARY)
         add_library (boost::context ALIAS _boost_context)
         add_library (boost::coroutine ALIAS _boost_coroutine)
         add_library (boost::graph ALIAS _boost_graph)
+        add_library (boost::thread ALIAS _boost_thread)
     else()
         set(EXTERNAL_BOOST_FOUND 0)
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find system boost")
@@ -247,5 +251,19 @@ if (NOT EXTERNAL_BOOST_FOUND)
     add_library(_boost_heap INTERFACE)
     add_library(boost::heap ALIAS _boost_heap)
     target_include_directories(_boost_heap SYSTEM BEFORE INTERFACE ${LIBRARY_DIR})
+
+    # thread
+
+    set (SRCS_THREAD
+        "${LIBRARY_DIR}/libs/thread/src/future.cpp"
+        "${LIBRARY_DIR}/libs/thread/src/tss_null.cpp"
+        "${LIBRARY_DIR}/libs/thread/src/pthread/once_atomic.cpp"
+        "${LIBRARY_DIR}/libs/thread/src/pthread/once.cpp"
+        "${LIBRARY_DIR}/libs/thread/src/pthread/thread.cpp"
+    )
+
+    add_library (_boost_thread ${SRCS_THREAD})
+    add_library (boost::thread ALIAS _boost_thread)
+    target_include_directories (_boost_thread PRIVATE ${LIBRARY_DIR})
 
 endif ()
