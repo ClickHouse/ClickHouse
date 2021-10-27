@@ -203,9 +203,15 @@ void ReplicatedMergeTreeQueue::insertUnlocked(
         drop_ranges.addDropRange(entry);
 
         /// DROP PART remove parts, so we remove it from virtual parts to
-        /// preserve invariant virtual_parts = current_parts + queue
+        /// preserve invariant virtual_parts = current_parts + queue.
+        /// Also remove it from parts_to_do to avoid intersecting parts in parts_to_do
+        /// if fast replica will execute DROP PART and assign a merge that contains dropped blocks.
         if (entry->isDropPart(format_version))
-            virtual_parts.removePartAndCoveredParts(*entry->getDropRange(format_version));
+        {
+            String drop_part_name = *entry->getDropRange(format_version);
+            virtual_parts.removePartAndCoveredParts(drop_part_name);
+            removeCoveredPartsFromMutations(drop_part_name, /*remove_part = */ true, /*remove_covered_parts = */ true);
+        }
 
         queue.push_front(entry);
     }
