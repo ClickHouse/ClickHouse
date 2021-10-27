@@ -5,10 +5,10 @@ import json
 import os
 import time
 import shutil
+from github import Github
 from report import create_test_html_report
 from s3_helper import S3Helper
 from pr_info import PRInfo
-from github import Github
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 
 NAME = "Push to Dockerhub (actions)"
