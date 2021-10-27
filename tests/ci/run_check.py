@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 import os
 import json
-import requests
-from pr_info import PRInfo
 import sys
 import logging
 from github import Github
+from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 
 NAME = 'Run Check (actions)'
@@ -70,16 +69,16 @@ TRUSTED_CONTRIBUTORS = {
 
 def pr_is_by_trusted_user(pr_user_login, pr_user_orgs):
     if pr_user_login in TRUSTED_CONTRIBUTORS:
-        logging.info("User '{}' is trusted".format(pr_user_login))
+        logging.info("User '%s' is trusted", pr_user_login)
         return True
 
-    logging.info("User '{}' is not trusted".format(pr_user_login))
+    logging.info("User '%s' is not trusted", pr_user_login)
 
     for org_id in pr_user_orgs:
         if org_id in TRUSTED_ORG_IDS:
-            logging.info("Org '{}' is trusted; will mark user {} as trusted".format(org_id, pr_user_login))
+            logging.info("Org '%s' is trusted; will mark user %s as trusted", org_id, pr_user_login)
             return True
-        logging.info("Org '{}' is not trusted".format(org_id))
+        logging.info("Org '%s' is not trusted", org_id)
 
     return False
 
