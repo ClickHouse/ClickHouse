@@ -279,8 +279,11 @@ mark_cache_size: 5368709120
 # also it can be dropped manually by the SYSTEM DROP MMAP CACHE query.
 mmap_cache_size: 1000
 
-# Cache size for compiled expressions.
+# Cache size in bytes for compiled expressions.
 compiled_expression_cache_size: 134217728
+
+# Cache size in elements for compiled expressions.
+compiled_expression_cache_elements_size: 10000
 
 # Path to data directory, with trailing slash.
 path: /var/lib/clickhouse/
