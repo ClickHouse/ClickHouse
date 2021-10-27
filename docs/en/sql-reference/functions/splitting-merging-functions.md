@@ -213,7 +213,7 @@ SELECT splitByNonAlpha('  1!  a,  b.  ');
 
 ## arrayStringConcat(arr\[, separator\]) {#arraystringconcatarr-separator}
 
-Concatenates the strings listed in the array with the separator.’separator’ is an optional parameter: a constant string, set to an empty string by default.
+Concatenates the strings (values of type String or Nullable(String)) listed in the array with the separator. ’separator’ is an optional parameter: a constant string, set to an empty string by default.
 Returns the string.
 
 ## alphaTokens(s) {#alphatokenss}
@@ -269,4 +269,41 @@ Result:
 ┌─extractAllGroups('abc=123, 8="hkl"', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')─┐
 │ [['abc','123'],['8','"hkl"']]                                         │
 └───────────────────────────────────────────────────────────────────────┘
+```
+
+## ngrams {#ngrams}
+
+Splits the UTF-8 string into n-grams of `ngramsize` symbols.
+
+**Syntax** 
+
+``` sql
+ngrams(string, ngramsize)
+```
+
+**Arguments**
+
+-   `string` — String. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+-   `ngramsize` — The size of an n-gram. [UInt](../../sql-reference/data-types/int-uint.md).
+
+**Returned values**
+
+-   Array with n-grams.
+
+Type: [Array](../../sql-reference/data-types/array.md)([FixedString](../../sql-reference/data-types/fixedstring.md)).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT ngrams('ClickHouse', 3);
+```
+
+Result:
+
+``` text
+┌─ngrams('ClickHouse', 3)───────────────────────────┐
+│ ['Cli','lic','ick','ckH','kHo','Hou','ous','use'] │
+└───────────────────────────────────────────────────┘
 ```
