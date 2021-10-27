@@ -54,7 +54,7 @@ std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
                            settings.tcp_keep_alive_timeout,
                            http_keep_alive_timeout),
         0,
-        Poco::Net::HTTPBasicCredentials{},
+        credentials,
         buf_size,
         read_settings);
 }

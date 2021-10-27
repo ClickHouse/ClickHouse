@@ -107,15 +107,16 @@ namespace detail
         std::function<void(size_t)> next_callback;
 
         size_t buffer_size;
-        size_t bytes_read = 0;
-        /// Read from offset with range header if needed.
-        size_t start_byte = 0;
 
+        size_t bytes_read = 0;
+        /// Read from offset with range header if needed (for disk web).
+        size_t start_byte = 0;
         /// Non-empty if content-length header was received.
         std::optional<size_t> total_bytes_to_read;
 
         /// Delayed exception in case retries with partial content are not satisfiable.
         std::exception_ptr exception;
+        bool retry_with_range_header = false;
 
         ReadSettings settings;
         Poco::Logger * log;
@@ -137,14 +138,18 @@ namespace detail
                 request.set(std::get<0>(http_header_entry), std::get<1>(http_header_entry));
             }
 
-            bool with_partial_content = bytes_read && total_bytes_to_read;
+            /**
+              * Add range header if we have start offset (for disk web)
+              * or if we want to retry GET request on purpose.
+              */
+            bool with_partial_content = start_byte || retry_with_range_header;
             if (with_partial_content)
                 request.set("Range", fmt::format("bytes={}-", start_byte + bytes_read));
 
             if (!credentials.getUsername().empty())
                 credentials.authenticate(request);
 
-            LOG_TRACE((&Poco::Logger::get("ReadWriteBufferFromHTTP")), "Sending request to {}", uri_.toString());
+            LOG_TRACE(log, "Sending request to {}", uri_.toString());
 
             auto sess = session->getSession();
 
@@ -205,7 +210,13 @@ namespace detail
             , settings {settings_}
             , log(&Poco::Logger::get("ReadWriteBufferFromHTTP"))
         {
-            initialize();
+            if (settings.http_max_tries <= 0 || settings.http_retry_initial_backoff_ms <= 0
+                || settings.http_retry_initial_backoff_ms >= settings.http_retry_max_backoff_ms)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid setting for http backoff, "
+                                "must be http_max_tries >= 1 (current is {}) and "
+                                "0 < http_retry_initial_backoff_ms < settings.http_retry_max_backoff_ms (but now {} > {})",
+                                settings.http_max_tries, settings.http_retry_initial_backoff_ms, settings.http_retry_max_backoff_ms)
         }
 
         void initialize()
@@ -272,12 +283,28 @@ namespace detail
                     }
                     catch (const Poco::Exception & e)
                     {
-                        bool can_retry_request = !bytes_read || total_bytes_to_read.has_value();
+                        /**
+                         * Retry request unconditionally if nothing has beed read yet.
+                         * Otherwise if it is GET method retry with range header starting from bytes_read.
+                         */
+                        bool can_retry_request = !bytes_read || method == Poco::Net::HTTPRequest::HTTP_GET;
                         if (!can_retry_request)
                             throw;
 
-                        LOG_ERROR(&Poco::Logger::get("ReadBufferFromHTTP"), "Error: {}, code: {}", e.what(), e.code());
+                        /**
+                         * if total_size is not known, last write can fail if we retry with
+                         * bytes_read == total_size and header `bytes=bytes_read-`
+                         * (we will get an error code 416 - range not satisfiable).
+                         * In this case rethrow previous exception.
+                         */
+                        if (exception && !total_bytes_to_read.has_value() && e.code() == 416)
+                            std::rethrow_exception(exception);
 
+                        LOG_ERROR(log, "HTTP request to `{}` failed at try {}/{}. Error: {}, code: {}. (Current backoff wait is {}/{} ms)",
+                                  uri.toString(), i, settings.http_max_tries, e.what(), e.code(),
+                                  milliseconds_to_wait, settings.http_retry_max_backoff_ms);
+
+                        retry_with_range_header = true;
                         exception = std::current_exception();
                         impl.reset();
                         sleepForMilliseconds(milliseconds_to_wait);

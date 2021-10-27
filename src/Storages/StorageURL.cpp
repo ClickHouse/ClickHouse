@@ -122,7 +122,7 @@ namespace
                                 callback,
                                 timeouts,
                                 context->getSettingsRef().max_http_get_redirects,
-                                Poco::Net::HTTPBasicCredentials{},
+                                credentials,
                                 DBMS_DEFAULT_BUFFER_SIZE,
                                 context->getReadSettings(),
                                 headers,
@@ -189,6 +189,8 @@ namespace
         std::unique_ptr<ReadBuffer> read_buf;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
+
+        Poco::Net::HTTPBasicCredentials credentials{};
     };
 }
 
