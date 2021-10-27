@@ -3845,12 +3845,12 @@ Default value: `16`.
 
 ## wait_for_async_insert {#wait-for-async-insert}
 
-Enables or disables waiting for processing of asynchronous insertion. If enabled, client will return `OK` only after the data is inserted. Otherwise, it will return `OK` even if the data wasn't inserted.
+Enables or disables waiting for processing of asynchronous insertion. If enabled, server will return `OK` only after the data is inserted. Otherwise, it will return `OK` even if the data wasn't inserted.
 
 Possible values:
 
--   0 — Client returns `OK` even if the data is not yet inserted.
--   1 — Client returns `OK` only after the data is inserted.
+-   0 — Server returns `OK` even if the data is not yet inserted.
+-   1 — Server returns `OK` only after the data is inserted.
 
 Default value: `1`.
 
@@ -3867,7 +3867,7 @@ Default value: [lock_acquire_timeout](#lock_acquire_timeout).
 
 ## async_insert_max_data_size {#async-insert-max-data-size}
 
-The maximum size of the uparsed data in bytes collected per query before being inserted.
+The maximum size of the unparsed data in bytes collected per query before being inserted.
 
 Possible values:
 
