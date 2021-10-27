@@ -100,6 +100,29 @@ jobs:
           mkdir -p $TEMP_PATH
           cd $GITHUB_WORKSPACE/tests/ci
           python3 build_report_check.py "$CHECK_NAME"
+  FunctionalStatelessTestDebug:
+    needs: [BuilderDebDebug]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Report Builder
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (debug, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
+          REQUIRED_BUILD_NUMBER: 7
+          KILL_TIMEOUT: 10800
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py $CHECK_NAME $REQUIRED_BUILD_NUMBER $KILL_TIMEOUT
   FastTest:
     needs: DockerHubPush
     runs-on: [self-hosted, builder]
@@ -117,7 +140,7 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 fast_test_check.py
   FinishCheck:
-    needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport, FastTest]
+    needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport, FastTest, FunctionalStatelessTestDebug]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
