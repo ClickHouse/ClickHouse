@@ -30,6 +30,10 @@ public:
 
     void seekToStart();
 
+    /**
+     * Does buffer need to know something about mark ranges bounds it is going to read?
+     * (In case of MergeTree* tables). Mostly needed for reading from remote fs.
+     */
     void adjustForRange(MarkRange range);
 
     ReadBuffer * data_buffer;
