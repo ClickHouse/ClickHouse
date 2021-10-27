@@ -118,6 +118,9 @@ private:
         UInt64 execution_time_ns = 0;
         UInt64 processing_time_ns = 0;
         UInt64 wait_time_ns = 0;
+
+        ExecutingGraph::Node * longest_node = nullptr;
+        UInt64 longest_exec_time = 0;
     };
 
     std::vector<std::unique_ptr<ExecutorContext>> executor_contexts;

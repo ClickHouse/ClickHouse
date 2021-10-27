@@ -496,6 +496,10 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
     {
         auto & context = executor_contexts[thread_num];
         LOG_TRACE(log, "Thread finished. Total time: {} sec. Execution time: {} sec. Processing time: {} sec. Wait time: {} sec.", (context->total_time_ns / 1e9), (context->execution_time_ns / 1e9), (context->processing_time_ns / 1e9), (context->wait_time_ns / 1e9));
+        if (context->longest_node)
+        {
+            LOG_TRACE(log, "Longest execution time: {} sec. for {}", context->longest_exec_time, context->longest_node->processor->getName());
+        }
     }
 }
 
@@ -606,7 +610,17 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, size_t num_threads, st
                 node->job();
 
                 if (execution_time_watch)
-                    context->execution_time_ns += execution_time_watch->elapsed();
+                {
+                    auto exec_time = execution_time_watch->elapsed();
+                    context->execution_time_ns += exec_time;
+                    node->execution_time_ns += exec_time;
+
+                    if (exec_time > context->longest_exec_time)
+                    {
+                        context->longest_exec_time = exec_time;
+                        context->longest_node = node;
+                    }
+                }
             }
 
             if (node->exception)
