@@ -281,5 +281,9 @@ def test_cmd_conf(started_cluster):
         assert result["quorum_reads"] == "false"
         assert result["force_sync"] == "true"
 
+        assert result["compress_logs"] == "true"
+        assert result["compress_snapshots_with_zstd_format"] == "true"
+        assert result["configuration_change_tries_count"] == "20"
+
     finally:
         close_keeper_socket(client)

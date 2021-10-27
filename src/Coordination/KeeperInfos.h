@@ -6,7 +6,6 @@
 #include <unordered_set>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Stopwatch.h>
-#include <common/types.h>
 
 
 /// Contains some useful interfaces which are helpful to get keeper information.
