@@ -86,7 +86,7 @@ public:
     void drop() override;
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
-    void alter(const AlterCommands & commands, ContextPtr context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     void checkTableCanBeDropped() const override;
 

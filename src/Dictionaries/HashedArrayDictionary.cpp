@@ -634,7 +634,7 @@ void HashedArrayDictionary<dictionary_key_type>::calculateBytesAllocated()
 }
 
 template <DictionaryKeyType dictionary_key_type>
-Pipe HashedArrayDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size) const
+Pipe HashedArrayDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     PaddedPODArray<HashedArrayDictionary::KeyType> keys;
     keys.reserve(key_attribute.container.size());
@@ -642,7 +642,25 @@ Pipe HashedArrayDictionary<dictionary_key_type>::read(const Names & column_names
     for (auto & [key, _] : key_attribute.container)
         keys.emplace_back(key);
 
-    return Pipe(std::make_shared<DictionarySource>(DictionarySourceData(shared_from_this(), std::move(keys), column_names), max_block_size));
+    ColumnsWithTypeAndName key_columns;
+
+    if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+        key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+    else
+        key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
+
+    std::shared_ptr<const IDictionary> dictionary = shared_from_this();
+    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
+
+    Pipes pipes;
+
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        auto source = std::make_shared<DictionarySource>(coordinator);
+        pipes.emplace_back(Pipe(std::move(source)));
+    }
+
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 template class HashedArrayDictionary<DictionaryKeyType::Simple>;
