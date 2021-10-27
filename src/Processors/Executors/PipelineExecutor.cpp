@@ -236,16 +236,24 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, ExecutionThreadContext & thr
 
                 if (!need_expand_pipeline)
                 {
-                    for (auto & edge_id : node.post_updated_input_ports)
+                    /// If you wonder why edges are pushed in reverse order,
+                    /// it is because updated_edges is a stack, and we prefer to get from stack
+                    /// input ports firstly, and then outputs, both in-order.
+                    ///
+                    /// Actually, there should be no difference in which order we process edges.
+                    /// However, some tests are sensitive to it (e.g. something like SELECT 1 UNION ALL 2).
+                    /// Let's not break this behaviour so far.
+
+                    for (auto it = node.post_updated_output_ports.rbegin(); it != node.post_updated_output_ports.rend(); ++it)
                     {
-                        auto * edge = static_cast<ExecutingGraph::Edge *>(edge_id);
+                        auto * edge = static_cast<ExecutingGraph::Edge *>(*it);
                         updated_edges.push(edge);
                         edge->update_info.trigger();
                     }
 
-                    for (auto & edge_id : node.post_updated_output_ports)
+                    for (auto it = node.post_updated_input_ports.rbegin(); it != node.post_updated_input_ports.rend(); ++it)
                     {
-                        auto * edge = static_cast<ExecutingGraph::Edge *>(edge_id);
+                        auto * edge = static_cast<ExecutingGraph::Edge *>(*it);
                         updated_edges.push(edge);
                         edge->update_info.trigger();
                     }
