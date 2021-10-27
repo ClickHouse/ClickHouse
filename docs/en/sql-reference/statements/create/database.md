@@ -27,3 +27,32 @@ ClickHouse creates the `db_name` database on all the servers of a specified clus
 ### ENGINE {#engine}
 
 [MySQL](../../../engines/database-engines/mysql.md) allows you to retrieve data from the remote MySQL server. By default, ClickHouse uses its own [database engine](../../../engines/database-engines/index.md). There’s also a [lazy](../../../engines/database-engines/lazy.md) engine.
+
+### COMMENT {#comment}
+
+You can add a comment to the database when you creating it.
+
+The comment is supported for all database engines.
+
+**Syntax**
+
+``` sql
+CREATE DATABASE db_name ENGINE = engine(...) COMMENT 'Comment'
+```
+
+**Example**
+
+Query:
+
+``` sql
+CREATE DATABASE db_comment ENGINE = Memory COMMENT 'The temporary database';
+SELECT name, comment FROM system.databases WHERE name = 'db_comment';
+```
+
+Result:
+
+```text
+┌─name───────┬─comment────────────────┐
+│ db_comment │ The temporary database │
+└────────────┴────────────────────────┘
+```
