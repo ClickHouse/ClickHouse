@@ -63,27 +63,12 @@ void setSSLParams(nuraft::asio_service::options & asio_opts)
 }
 #endif
 
-std::string getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper)
+
+std::string checkAndGetSuperdigest(const String & user_and_digest)
 {
-    /// the most specialized path
-    if (config.has("keeper_server.snapshot_storage_path"))
-        return config.getString("keeper_server.snapshot_storage_path");
-
-    if (config.has("keeper_server.storage_path"))
-        return std::filesystem::path{config.getString("keeper_server.storage_path")} / "snapshots";
-
-    if (standalone_keeper)
-        return std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "snapshots";
-    else
-        return std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/snapshots";
-}
-
-std::string checkAndGetSuperdigest(const Poco::Util::AbstractConfiguration & config)
-{
-    if (!config.has("keeper_server.superdigest"))
+    if (user_and_digest.empty())
         return "";
 
-    auto user_and_digest = config.getString("keeper_server.superdigest");
     std::vector<std::string> scheme_and_id;
     boost::split(scheme_and_id, user_and_digest, [](char c) { return c == ':'; });
     if (scheme_and_id.size() != 2 || scheme_and_id[0] != "super")
@@ -95,20 +80,18 @@ std::string checkAndGetSuperdigest(const Poco::Util::AbstractConfiguration & con
 }
 
 KeeperServer::KeeperServer(
-    int server_id_,
-    const CoordinationSettingsPtr & coordination_settings_,
+    const KeeperSettingsPtr & settings_,
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
-    SnapshotsQueue & snapshots_queue_,
-    bool standalone_keeper)
-    : server_id(server_id_)
-    , coordination_settings(coordination_settings_)
+    SnapshotsQueue & snapshots_queue_)
+    : server_id(settings_->server_id)
+    , coordination_settings(settings_->coordination_settings)
     , state_machine(nuraft::cs_new<KeeperStateMachine>(
                         responses_queue_, snapshots_queue_,
-                        getSnapshotsPathFromConfig(config, standalone_keeper),
+                        settings_->log_storage_path,
                         coordination_settings,
-                        checkAndGetSuperdigest(config)))
-    , state_manager(nuraft::cs_new<KeeperStateManager>(server_id, "keeper_server", config, coordination_settings, standalone_keeper))
+                        checkAndGetSuperdigest(settings_->super_digest)))
+                        , state_manager(nuraft::cs_new<KeeperStateManager>(server_id, "keeper_server", settings_->log_storage_path, config, coordination_settings))
     , log(&Poco::Logger::get("KeeperServer"))
 {
     if (coordination_settings->quorum_reads)
@@ -307,6 +290,40 @@ bool KeeperServer::isLeader() const
 bool KeeperServer::isLeaderAlive() const
 {
     return raft_instance->is_leader_alive();
+}
+
+String KeeperServer::getRole() const
+{
+    auto srv_config = state_manager->get_srv_config();
+    if (srv_config->is_learner())
+    {
+        /// zookeeper call read only node "observer"
+        return "observer";
+    }
+    return isLeader() ? "leader" : "follower";
+}
+
+/// TODO test whether taking failed peer in count
+UInt64 KeeperServer::getFollowerCount() const
+{
+    return raft_instance->get_peer_info_all().size();
+}
+
+UInt64 KeeperServer::getSyncedFollowerCount() const
+{
+    UInt64 last_log_idx = raft_instance->get_last_log_idx();
+    auto followers = raft_instance->get_peer_info_all();
+
+    size_t stale_followers = 0;
+
+    for (auto & fl : followers)
+    {
+        if (last_log_idx > fl.last_log_idx_ + raft_instance->get_current_params().stale_log_gap_)
+        {
+            stale_followers++;
+        }
+    }
+    return followers.size() - stale_followers;
 }
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)

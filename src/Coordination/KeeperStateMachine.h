@@ -6,6 +6,7 @@
 #include <base/logger_useful.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>
+#include <Coordination/KeeperInfos.h>
 
 
 namespace DB
@@ -16,7 +17,7 @@ using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
 /// ClickHouse Keeper state machine. Wrapper for KeeperStorage.
 /// Responsible for entries commit, snapshots creation and so on.
-class KeeperStateMachine : public nuraft::state_machine
+class KeeperStateMachine : public nuraft::state_machine, public IStateMachineInfo
 {
 public:
     KeeperStateMachine(
@@ -67,6 +68,7 @@ public:
         nuraft::ptr<nuraft::buffer> & data_out,
         bool & is_last_obj) override;
 
+    /// just for test
     KeeperStorage & getStorage()
     {
         return *storage;
@@ -76,6 +78,13 @@ public:
     void processReadRequest(const KeeperStorage::RequestForSession & request_for_session);
 
     std::vector<int64_t> getDeadSessions();
+    UInt64 getLastProcessedZxid() const override;
+
+    UInt64 getNodeCount() const override;
+    UInt64 getWatchCount() const override;
+
+    UInt64 getEphemeralCount() const override;
+    UInt64 getApproximateDataSize() const override;
 
     void shutdownStorage();
 
@@ -110,7 +119,7 @@ private:
     /// we can get strange cases when, for example client send read request with
     /// watch and after that receive watch response and only receive response
     /// for request.
-    std::mutex storage_and_responses_lock;
+    mutable std::mutex storage_and_responses_lock;
 
     /// Last committed Raft log number.
     std::atomic<uint64_t> last_committed_idx;

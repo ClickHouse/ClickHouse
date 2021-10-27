@@ -52,9 +52,9 @@ public:
     KeeperStateManager(
         int server_id_,
         const std::string & config_prefix_,
+        const std::string & log_storage_path,
         const Poco::Util::AbstractConfiguration & config,
-        const CoordinationSettingsPtr & coordination_settings,
-        bool standalone_keeper);
+        const CoordinationSettingsPtr & coordination_settings);
 
     /// Constructor for tests
     KeeperStateManager(

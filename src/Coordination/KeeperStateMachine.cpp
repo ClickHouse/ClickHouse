@@ -326,16 +326,46 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response.session_id);
 }
 
+void KeeperStateMachine::shutdownStorage()
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    storage->finalize();
+}
+
 std::vector<int64_t> KeeperStateMachine::getDeadSessions()
 {
     std::lock_guard lock(storage_and_responses_lock);
     return storage->getDeadSessions();
 }
 
-void KeeperStateMachine::shutdownStorage()
+UInt64 KeeperStateMachine::getLastProcessedZxid() const
 {
     std::lock_guard lock(storage_and_responses_lock);
-    storage->finalize();
+    return storage->getZXID();
+}
+
+UInt64 KeeperStateMachine::getNodeCount() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getNodeCount();
+}
+
+UInt64 KeeperStateMachine::getWatchCount() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getWatchCount();
+}
+
+UInt64 KeeperStateMachine::getEphemeralCount() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getEphemeralCount();
+}
+
+UInt64 KeeperStateMachine::getApproximateDataSize() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getApproximateDataSize();
 }
 
 ClusterConfigPtr KeeperStateMachine::getClusterConfig() const
