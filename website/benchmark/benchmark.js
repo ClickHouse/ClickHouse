@@ -58,7 +58,7 @@ function generate_selectors(elem) {
         var available = available_systems_for_current_data_size.indexOf(systems[i]) != -1;
         var button_class = 'btn-outline-dark';
         if (system_kinds[i] == 'cloud' || system_kinds[i] == 'vps') {
-            button_class = 'btn-outline-primary';
+            button_class = 'btn-light';
         } else if (system_kinds[i] == 'desktop' || system_kinds[i] == 'laptop') {
             button_class = 'btn-outline-secondary';
         };
@@ -424,11 +424,11 @@ function generate_diagram() {
             }
 
 
-            table_row += '<div class="progress ml-2 my-2" style="height:1rem;"><div class="progress-bar ';
+            table_row += '<div class="progress bg-light ml-2 my-2" style="height:1rem;"><div class="progress-bar ';
 
             var bg = 'bg-dark';
             if (filtered_results[j].kind == 'cloud' || filtered_results[j].kind == 'vps') {
-                bg = 'bg-primary';
+                bg = 'bg-medium';
             } else if (filtered_results[j].kind == 'desktop' || filtered_results[j].kind == 'laptop' || filtered_results[j].kind == 'phone') {
                 bg = 'bg-secondary';
             }
