@@ -12,6 +12,8 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Common/checkStackSize.h>
+#include <Client/ConnectionPool.h>
+#include <Client/ConnectionPoolWithFailover.h>
 
 namespace DB
 {
@@ -198,7 +200,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
 }
 
 void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
-    std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator, Connection * connection)
+    std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator, std::shared_ptr<ConnectionPoolWithFailover> pool)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -216,10 +218,10 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::
         = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
 
     std::shared_ptr<RemoteQueryExecutor> remote_query_executor;
-    if (connection)
+    if (pool)
     {
         remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            *connection, query_string, shard.header, context, throttler, scalars, external_tables, stage, nullptr, std::move(coordinator));
+            pool, query_string, shard.header, context, throttler, scalars, external_tables, stage, nullptr, std::move(coordinator));
 
         remote_query_executor->setLogger(log);
 
@@ -255,8 +257,6 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 
         for (const auto & shard : shards)
         {
-            auto connection_entries = shard.pool->getMany(timeouts, &current_settings, PoolMode::GET_MANY);
-
             auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
 
             // FIXME
@@ -264,8 +264,10 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 
             for (size_t replica_num = 0; replica_num < shard.num_replicas; ++replica_num)
             {
-                auto connection = connection_entries[replica_num];
-                addPipe(pipes, shard, coordinator, &*connection);
+                auto pool = shard.per_replica_pools[replica_num];
+                auto pool_with_failover =  std::make_shared<ConnectionPoolWithFailover>(
+                    ConnectionPoolPtrs{pool}, current_settings.load_balancing);
+                addPipe(pipes, shard, coordinator, pool_with_failover);
             }
         }
     }

@@ -14,8 +14,8 @@ SETTINGS="--max_parallel_replicas=3 --prefer_localhost_replica=false --use_hedge
 # Prepare tables
 
 $CLICKHOUSE_CLIENT $SETTINGS -nm -q '''
-    drop table if exists test.dist_hits;
-    drop table if exists test.dist_visits;
+    drop table if exists test.dist_hits SYNC;
+    drop table if exists test.dist_visits SYNC;
 
     create table test.dist_hits as test.hits engine = Distributed('test_cluster_one_shard_three_replicas', test, hits, rand());
     create table test.dist_visits as test.visits engine = Distributed('test_cluster_one_shard_three_replicas', test, visits, rand());
@@ -25,20 +25,20 @@ $CLICKHOUSE_CLIENT $SETTINGS -nm -q '''
 FAILED=()
 
 PreviouslyFailed=(
-#     # "00011_sorting.sql"
-#     # "00013_sorting_of_nested.sql"
-#     "00014_filtering_arrays.sql"
-    # "00031_array_enumerate_uniq.sql"
-#     # "00061_storage_buffer.sql"
-#     # "00068_subquery_in_prewhere.sql"
-#     # "00075_left_array_join.sql"
-#     # "00079_array_join_not_used_joined_column.sql"
-    # "00032_aggregate_key64.sql"
-    "00043_any_left_join.sql"
+    "00148_monotonic_functions_and_index.sql"
 )
 
 SkipList=(
-    "00031_array_enumerate_uniq.sql"
+    "00061_storage_buffer.sql"
+    "00095_hyperscan_profiler.sql" # too long in debug (there is a --no-debug tag inside a test)
+    "00154_avro.sql" # Plain select * with limit with Distributed table is not deterministic
+    "00151_replace_partition_with_different_granularity.sql" # Replace partition from Distributed is not allowed
+    "00152_insert_different_granularity.sql" # The same as above
+
+    "00157_cache_dictionary.sql" # Too long in debug mode, but result is correct
+    "00158_cache_dictionary_has.sql" # The same as above
+
+    "00166_explain_estimate.sql" # Distributed table returns nothing
 )
 
 for TESTNAME in "${PreviouslyFailed[@]}"
@@ -53,7 +53,8 @@ do
 
     # prepare test
     NEW_TESTNAME="/tmp/dist_$TESTNAME"
-    cat $TESTNAME | sed -e 's/test.hits/test.dist_hits/'  | sed -e 's/test.visits/test.dist_visits/' > $NEW_TESTNAME
+    # Added g to sed command to replace all tables, not the first
+    cat $TESTNAME | sed -e 's/test.hits/test.dist_hits/g'  | sed -e 's/test.visits/test.dist_visits/g' > $NEW_TESTNAME
 
     TESTNAME_RESULT="/tmp/result_$TESTNAME"
     NEW_TESTNAME_RESULT="/tmp/result_dist_$TESTNAME"
@@ -61,7 +62,7 @@ do
     $CLICKHOUSE_CLIENT $SETTINGS -nm --testmode < $TESTNAME > $TESTNAME_RESULT
     $CLICKHOUSE_CLIENT $SETTINGS -nm --testmode < $NEW_TESTNAME > $NEW_TESTNAME_RESULT
 
-    expected=$(cat $TESTNAME_RESULT < $TESTNAME | md5sum)
+    expected=$(cat $TESTNAME_RESULT | md5sum)
     actual=$(cat $NEW_TESTNAME_RESULT | md5sum)
 
     if [[ $expected != $actual ]]; then
@@ -71,10 +72,9 @@ do
         cat $TESTNAME_RESULT
         echo "Distributed:"
         cat $NEW_TESTNAME_RESULT
-        continue
+    else
+        echo "Ok! ✅"
     fi
-
-    echo "Ok! ✅"
 done
 
 
@@ -88,6 +88,6 @@ done
 # Drop tables
 
 $CLICKHOUSE_CLIENT $SETTINGS -nm -q '''
-    drop table if exists test.dist_hits;
-    drop table if exists test.dist_visits;
+    drop table if exists test.dist_hits SYNC;
+    drop table if exists test.dist_visits SYNC;
 ''';
