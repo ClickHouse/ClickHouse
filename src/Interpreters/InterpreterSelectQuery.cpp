@@ -69,6 +69,7 @@
 
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
+#include <Core/ProtocolDefines.h>
 #include <base/types.h>
 #include <Columns/Collator.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
@@ -2556,6 +2557,19 @@ void InterpreterSelectQuery::initSettings()
     auto & query = getSelectQuery();
     if (query.settings())
         InterpreterSetQuery(query.settings(), context).executeForCurrentContext();
+
+    auto & client_info = context->getClientInfo();
+    auto min_major = DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
+    auto min_minor = DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
+
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+        std::forward_as_tuple(client_info.connection_client_version_major, client_info.connection_client_version_minor) < std::forward_as_tuple(min_major, min_minor))
+    {
+        /// Disable two-level aggregation due to version incompatibility.
+        context->setSetting("group_by_two_level_threshold", Field(0));
+        context->setSetting("group_by_two_level_threshold_bytes", Field(0));
+
+    }
 }
 
 }

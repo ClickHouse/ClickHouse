@@ -238,7 +238,8 @@ public:
 
     /// Lock table for alter. This lock must be acuqired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
-    TableLockHolder lockForAlter(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
+    using AlterLockHolder = std::unique_lock<std::timed_mutex>;
+    AlterLockHolder lockForAlter(const std::chrono::milliseconds & acquire_timeout);
 
     /// Lock table exclusively. This lock must be acquired if you want to be
     /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something
@@ -417,7 +418,7 @@ public:
     /** ALTER tables in the form of column changes that do not affect the change
       * to Storage or its parameters. Executes under alter lock (lockForAlter).
       */
-    virtual void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & alter_lock_holder);
+    virtual void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder);
 
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
@@ -465,6 +466,12 @@ public:
     virtual CancellationCode killMutation(const String & /*mutation_id*/)
     {
         throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /// Cancel a part move to shard.
+    virtual CancellationCode killPartMoveToShard(const UUID & /*task_uuid*/)
+    {
+        throw Exception("Part moves between shards are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** If the table have to do some complicated work on startup,
@@ -590,12 +597,9 @@ public:
     virtual bool dropTableImmediately() { return false; }
 
 private:
-    /// Lock required for alter queries (lockForAlter). Always taken for write
-    /// (actually can be replaced with std::mutex, but for consistency we use
-    /// RWLock). Allows to execute only one simultaneous alter query. Also it
-    /// should be taken by DROP-like queries, to be sure, that all alters are
-    /// finished.
-    mutable RWLock alter_lock = RWLockImpl::create();
+    /// Lock required for alter queries (lockForAlter).
+    /// Allows to execute only one simultaneous alter query.
+    mutable std::timed_mutex alter_lock;
 
     /// Lock required for drop queries. Every thread that want to ensure, that
     /// table is not dropped have to table this lock for read (lockForShare).
