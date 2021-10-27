@@ -37,13 +37,15 @@ void KeeperSettings::dump(WriteBufferFromOwnString & buf) const
 {
     auto write = [&buf](const String & content) { buf.write(content.data(), content.size()); };
 
-    auto write_int = [&buf](Int64 value) {
+    auto write_int = [&buf](Int64 value)
+    {
         String str_val = std::to_string(value);
         buf.write(str_val.data(), str_val.size());
         buf.write('\n');
     };
 
-    auto write_bool = [&buf](bool value) {
+    auto write_bool = [&buf](bool value)
+    {
         String str_val = value ? "true" : "false";
         buf.write(str_val.data(), str_val.size());
         buf.write('\n');
@@ -52,17 +54,17 @@ void KeeperSettings::dump(WriteBufferFromOwnString & buf) const
     write("server_id=");
     write_int(server_id);
 
-    if(tcp_port != NO_PORT)
+    if (tcp_port != NO_PORT)
     {
         write("tcp_port=");
         write_int(tcp_port);
     }
-    if(tcp_port_secure != NO_PORT)
+    if (tcp_port_secure != NO_PORT)
     {
         write("tcp_port_secure=");
         write_int(tcp_port_secure);
     }
-    if(!super_digest.empty())
+    if (!super_digest.empty())
     {
         write("superdigest=");
         write(super_digest);
@@ -136,15 +138,15 @@ KeeperSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
     ret->server_id = config.getInt("keeper_server.server_id");
     ret->standalone_keeper = standalone_keeper_;
 
-    if(config.has("keeper_server.tcp_port"))
+    if (config.has("keeper_server.tcp_port"))
     {
         ret->tcp_port = config.getInt("keeper_server.tcp_port");
     }
-    if(config.has("keeper_server.tcp_port_secure"))
+    if (config.has("keeper_server.tcp_port_secure"))
     {
         ret->tcp_port_secure = config.getInt("keeper_server.tcp_port_secure");
     }
-    if(config.has("keeper_server.superdigest"))
+    if (config.has("keeper_server.superdigest"))
     {
         ret->super_digest = config.getString("keeper_server.tcp_port_secure");
     }

@@ -44,7 +44,7 @@ public:
         UInt64 size() const
         {
             UInt64 child_size{0};
-            for(auto & child : children)
+            for (auto & child : children)
             {
                 child_size += child.size();
             }
@@ -201,7 +201,7 @@ public:
     UInt64 getEphemeralCount() const
     {
         UInt64 ret{0};
-        for(const auto & ephs : ephemerals)
+        for (const auto & ephs : ephemerals)
         {
             ret += ephs.second.size();
         }
