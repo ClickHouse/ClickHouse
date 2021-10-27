@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
+
+# pylint: disable=line-too-long
+
 import subprocess
 import os
 import json
 import logging
+import sys
 from github import Github
 from report import create_test_html_report
 from s3_helper import S3Helper
 from pr_info import PRInfo
-import shutil
-import sys
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 
 NAME = 'PVS Studio (actions)'
@@ -34,10 +36,12 @@ def _process_txt_report(path):
         for line in report_file:
             if 'viva64' in line:
                 continue
-            elif 'warn' in line:
+
+            if 'warn' in line:
                 warnings.append(':'.join(line.split('\t')[0:2]))
             elif 'err' in line:
                 errors.append(':'.join(line.split('\t')[0:2]))
+
     return warnings, errors
 
 def get_commit(gh, commit_sha):
