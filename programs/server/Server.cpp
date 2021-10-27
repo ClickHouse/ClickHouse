@@ -863,6 +863,9 @@ if (ThreadFuzzer::instance().isEffective())
             if (config->has("max_concurrent_queries"))
                 global_context->getProcessList().setMaxSize(config->getInt("max_concurrent_queries", 0));
 
+            if (config->has("keeper_server"))
+                global_context->updateKeeperConfiguration(*config);
+
             if (!initial_loading)
             {
                 /// We do not load ZooKeeper configuration on the first config loading
@@ -957,9 +960,14 @@ if (ThreadFuzzer::instance().isEffective())
         global_context->setMMappedFileCache(mmap_cache_size);
 
 #if USE_EMBEDDED_COMPILER
+    /// 128 MB
     constexpr size_t compiled_expression_cache_size_default = 1024 * 1024 * 128;
     size_t compiled_expression_cache_size = config().getUInt64("compiled_expression_cache_size", compiled_expression_cache_size_default);
-    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size);
+
+    constexpr size_t compiled_expression_cache_elements_size_default = 10000;
+    size_t compiled_expression_cache_elements_size = config().getUInt64("compiled_expression_cache_elements_size", compiled_expression_cache_elements_size_default);
+
+    CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_size, compiled_expression_cache_elements_size);
 #endif
 
     /// Set path for format schema files
