@@ -16,7 +16,7 @@
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse 服务器订正版本.
 -   `build_id` ([String](../../sql-reference/data-types/string.md)) — 编译器生成的 BuildID.
 
-**Example**
+**案例**
 
 查询:
 
