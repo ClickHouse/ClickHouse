@@ -9,8 +9,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ /*= DBMS_DEFAULT_BUFFER_SIZE*/)
-        : BufferWithOwnMemory(start_size_), sub_buf(sub_buf_)
+PeekableReadBuffer::PeekableReadBuffer(ReadBuffer & sub_buf_, bool use_existing_memory /*= false*/, size_t start_size_ /*= DBMS_DEFAULT_BUFFER_SIZE*/)
+        : BufferWithOwnMemory(use_existing_memory ? sizeof(existing_memory) : start_size_, use_existing_memory ? existing_memory : nullptr), sub_buf(sub_buf_)
 {
     padded &= sub_buf.isPadded();
     /// Read from sub-buffer

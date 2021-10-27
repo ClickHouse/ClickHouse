@@ -261,6 +261,7 @@ ReturnType SerializationNullable::deserializeTextEscapedImpl(IColumn & column, R
 {
     const String & null_representation = settings.tsv.null_representation;
 
+    /// Some data types can deserialize absence of data (e.g. empty string), so eof is ok.
     if (istr.eof() || (!null_representation.empty() && *istr.position() != null_representation[0]))
     {
         /// This is not null, surely.
@@ -269,7 +270,28 @@ ReturnType SerializationNullable::deserializeTextEscapedImpl(IColumn & column, R
             [&nested, &istr, &settings] (IColumn & nested_column) { nested->deserializeTextEscaped(nested_column, istr, settings); });
     }
 
-    PeekableReadBuffer buf(istr);
+    /// Check if we have enough data in buffer to check if it's a null.
+    if (istr.available() > null_representation.size())
+    {
+        auto check_for_null = [&istr, &null_representation]()
+        {
+            auto * pos = istr.position();
+            if (checkString(null_representation, istr) && (*istr.position() == '\t' || *istr.position() == '\n'))
+                return true;
+            istr.position() = pos;
+            return false;
+        };
+        auto deserialize_nested = [&nested, &settings, &istr] (IColumn & nested_column)
+        {
+            nested->deserializeTextEscaped(nested_column, istr, settings);
+        };
+        return safeDeserialize<ReturnType>(column, *nested, check_for_null, deserialize_nested);
+    }
+
+    /// We don't have enough data in buffer to check if it's a null.
+    /// Use PeekableReadBuffer to make a checkpoint before checking null
+    /// representation and rollback if check was failed.
+    PeekableReadBuffer buf(istr, true);
     auto check_for_null = [&buf, &null_representation]()
     {
         buf.setCheckpoint();
@@ -281,7 +303,7 @@ ReturnType SerializationNullable::deserializeTextEscapedImpl(IColumn & column, R
         return false;
     };
 
-    auto deserialize_nested = [&nested, &settings, &buf, &null_representation] (IColumn & nested_column)
+    auto deserialize_nested = [&nested, &settings, &buf, &null_representation, &istr] (IColumn & nested_column)
     {
         auto * pos = buf.position();
         nested->deserializeTextEscaped(nested_column, buf, settings);
@@ -299,8 +321,8 @@ ReturnType SerializationNullable::deserializeTextEscapedImpl(IColumn & column, R
 
         WriteBufferFromOwnString parsed_value;
         nested->serializeTextEscaped(nested_column, nested_column.size() - 1, parsed_value, settings);
-        throw DB::ParsingException("Error while parsing \"" + std::string(pos, std::min(size_t{10}, buf.available())) + "\" as Nullable"
-                                       + " at position " + std::to_string(buf.count()) + ": got \"" + std::string(pos, buf.position() - pos)
+        throw DB::ParsingException("Error while parsing \"" + std::string(pos, buf.buffer().end()) + std::string(istr.position(), std::min(size_t(10), istr.available())) + "\" as Nullable"
+                                       + " at position " + std::to_string(istr.count()) + ": got \"" + std::string(pos, buf.position() - pos)
                                        + "\", which was deserialized as \""
                                        + parsed_value.str() + "\". It seems that input data is ill-formatted.",
                                    ErrorCodes::CANNOT_READ_ALL_DATA);
@@ -347,7 +369,7 @@ template <typename ReturnType>
 ReturnType SerializationNullable::deserializeWholeTextImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
                                                   const SerializationPtr & nested)
 {
-    PeekableReadBuffer buf(istr);
+    PeekableReadBuffer buf(istr, true);
     auto check_for_null = [&buf]()
     {
         buf.setCheckpoint();
@@ -402,7 +424,28 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
             [&nested, &istr, &settings] (IColumn & nested_column) { nested->deserializeTextCSV(nested_column, istr, settings); });
     }
 
-    PeekableReadBuffer buf(istr);
+    /// Check if we have enough data in buffer to check if it's a null.
+    if (istr.available() > null_representation.size())
+    {
+        auto check_for_null = [&istr, &null_representation, &settings]()
+        {
+            auto * pos = istr.position();
+            if (checkString(null_representation, istr) && (*istr.position() == settings.csv.delimiter || *istr.position() == '\r' || *istr.position() == '\n'))
+                return true;
+            istr.position() = pos;
+            return false;
+        };
+        auto deserialize_nested = [&nested, &settings, &istr] (IColumn & nested_column)
+        {
+            nested->deserializeTextCSV(nested_column, istr, settings);
+        };
+        return safeDeserialize<ReturnType>(column, *nested, check_for_null, deserialize_nested);
+    }
+
+    /// We don't have enough data in buffer to check if it's a null.
+    /// Use PeekableReadBuffer to make a checkpoint before checking null
+    /// representation and rollback if the check was failed.
+    PeekableReadBuffer buf(istr, true);
     auto check_for_null = [&buf, &null_representation, &settings]()
     {
         buf.setCheckpoint();
@@ -414,7 +457,7 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
         return false;
     };
 
-    auto deserialize_nested = [&nested, &settings, &buf, &null_representation] (IColumn & nested_column)
+    auto deserialize_nested = [&nested, &settings, &buf, &null_representation, &istr] (IColumn & nested_column)
     {
         auto * pos = buf.position();
         nested->deserializeTextCSV(nested_column, buf, settings);
@@ -433,8 +476,8 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
 
         WriteBufferFromOwnString parsed_value;
         nested->serializeTextCSV(nested_column, nested_column.size() - 1, parsed_value, settings);
-        throw DB::ParsingException("Error while parsing \"" + std::string(pos, std::min(size_t{10}, buf.available())) + "\" as Nullable"
-                                       + " at position " + std::to_string(buf.count()) + ": got \"" + std::string(pos, buf.position() - pos)
+        throw DB::ParsingException("Error while parsing \"" + std::string(pos, buf.buffer().end()) + std::string(istr.position(), std::min(size_t(10), istr.available())) + "\" as Nullable"
+                                       + " at position " + std::to_string(istr.count()) + ": got \"" + std::string(pos, buf.position() - pos)
                                        + "\", which was deserialized as \""
                                        + parsed_value.str() + "\". It seems that input data is ill-formatted.",
                                    ErrorCodes::CANNOT_READ_ALL_DATA);
