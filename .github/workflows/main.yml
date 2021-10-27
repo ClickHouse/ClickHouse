@@ -123,7 +123,7 @@ jobs:
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py $CHECK_NAME $REQUIRED_BUILD_NUMBER $KILL_TIMEOUT
+          python3 functional_test_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER $KILL_TIMEOUT
   FastTest:
     needs: DockerHubPush
     runs-on: [self-hosted, builder]
