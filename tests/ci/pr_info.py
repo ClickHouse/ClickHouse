@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
-import requests
-import json
-import os
-import subprocess
 import urllib
+import requests
 from unidiff import PatchSet
 
 
@@ -15,7 +12,7 @@ class PRInfo:
         else:
             self.sha = github_event['pull_request']['head']['sha']
 
-        self.labels = set([l['name'] for l in github_event['pull_request']['labels']])
+        self.labels = { l['name'] for l in github_event['pull_request']['labels'] }
         self.user_login = github_event['pull_request']['user']['login']
         self.user_orgs = set([])
         if need_orgs:
@@ -27,9 +24,9 @@ class PRInfo:
         self.changed_files = set([])
         if need_changed_files:
             diff_url = github_event['pull_request']['diff_url']
-            diff = urllib.request.urlopen(github_event['pull_request']['diff_url'])
+            diff = urllib.request.urlopen(diff_url)
             diff_object = PatchSet(diff, diff.headers.get_charsets()[0])
-            self.changed_files = set([f.path for f in diff_object])
+            self.changed_files = { f.path for f in diff_object }
 
     def get_dict(self):
         return {
