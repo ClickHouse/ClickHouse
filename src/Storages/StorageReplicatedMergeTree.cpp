@@ -1769,8 +1769,10 @@ bool StorageReplicatedMergeTree::executeFetchShared(
 
 void StorageReplicatedMergeTree::executeDropRange(const LogEntry & entry)
 {
+    LOG_TRACE(log, "Executing DROP_RANGE {}", entry.new_part_name);
     auto drop_range_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
     getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range_info.partition_id, drop_range_info.max_block);
+    part_check_thread.cancelRemovedPartsCheck(drop_range_info);
     queue.removePartProducingOpsInRange(getZooKeeper(), drop_range_info, entry);
 
     /// Delete the parts contained in the range to be deleted.
@@ -1838,6 +1840,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
     if (replace)
     {
         getContext()->getMergeList().cancelInPartition(getStorageID(), drop_range.partition_id, drop_range.max_block);
+        part_check_thread.cancelRemovedPartsCheck(drop_range);
         queue.removePartProducingOpsInRange(getZooKeeper(), drop_range, entry);
     }
     else
