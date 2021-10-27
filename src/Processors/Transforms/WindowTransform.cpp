@@ -1581,7 +1581,7 @@ namespace recurrent_detail
 
     template<> void setLastValueToOutputColumn<Float64>(const WindowTransform * transform, size_t function_index, Float64 value)
     {
-        auto & workspace = transform->workspaces[function_index];
+        const auto & workspace = transform->workspaces[function_index];
 
         *static_cast<Float64 *>(static_cast<void *>(workspace.aggregate_function_state.data())) = value;
     }
