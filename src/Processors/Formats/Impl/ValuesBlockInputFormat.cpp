@@ -182,7 +182,6 @@ bool ValuesBlockInputFormat::tryReadValue(IColumn & column, size_t column_idx)
         const auto & serialization = serializations[column_idx];
         if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
             read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
-            read = SerializationNullable::deserializeTextQuotedImpl(column, *buf, format_settings, serialization);
         else
             serialization->deserializeTextQuoted(column, *buf, format_settings);
 
