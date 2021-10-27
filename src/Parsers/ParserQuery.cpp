@@ -1,6 +1,7 @@
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
 #include <Parsers/ParserBackupQuery.h>
+#include <Parsers/ParserBackslashLetter.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserCreateQuotaQuery.h>
 #include <Parsers/ParserCreateRoleQuery.h>
@@ -46,6 +47,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserSetRoleQuery set_role_p;
     ParserExternalDDLQuery external_ddl_p;
     ParserBackupQuery backup_p;
+    ParserBackslashLetter backslash_letter_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
@@ -63,7 +65,8 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || drop_access_entity_p.parse(pos, node, expected)
         || grant_p.parse(pos, node, expected)
         || external_ddl_p.parse(pos, node, expected)
-        || backup_p.parse(pos, node, expected);
+        || backup_p.parse(pos, node, expected)
+        || backslash_letter_p.parse(pos, node, expected);
 
     return res;
 }

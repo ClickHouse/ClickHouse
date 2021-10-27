@@ -187,6 +187,8 @@ Token Lexer::nextTokenImpl()
             return Token(TokenType::Comma, token_begin, ++pos);
         case ';':
             return Token(TokenType::Semicolon, token_begin, ++pos);
+        case '\\':
+            return Token(TokenType::Backslash, token_begin, ++pos);
 
         case '.':   /// qualifier, tuple access operator or start of floating point number
         {
