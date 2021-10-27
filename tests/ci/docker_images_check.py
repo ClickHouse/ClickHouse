@@ -5,6 +5,7 @@ from report import create_test_html_report
 from s3_helper import S3Helper
 import json
 import os
+import time
 from pr_info import PRInfo
 from github import Github
 import shutil
