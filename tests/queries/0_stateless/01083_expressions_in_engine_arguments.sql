@@ -83,7 +83,7 @@ INSERT INTO buffer VALUES (1);
 SELECT sum(n) from rich_syntax;
 
 -- Clear cache to avoid future errors in the logs
-SYSTEM DROP DNS CACHE
+SYSTEM DROP DNS CACHE;
 
 DROP TABLE file;
 DROP TABLE url;
