@@ -9,7 +9,7 @@ from s3_helper import S3Helper
 from pr_info import PRInfo
 import shutil
 import sys
-from get_robot_token import get_best_robot_token
+from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 
 NAME = 'PVS Studio (actions)'
 LICENCE_NAME = 'Free license: ClickHouse, Yandex'
@@ -97,7 +97,7 @@ if __name__ == "__main__":
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
 
-    licence_key = os.getenv('PVS_STUDIO_KEY')
+    licence_key = get_parameter_from_ssm('pvs_studio_key')
     cmd = f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --volume={repo_path}:/repo_folder --volume={temp_path}:/test_output -e LICENCE_NAME='{LICENCE_NAME}' -e LICENCE_KEY='{licence_key}' {docker_image}"
     commit = get_commit(gh, pr_info.sha)
 
