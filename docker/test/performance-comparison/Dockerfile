@@ -33,7 +33,7 @@ RUN apt-get update \
             tzdata \
             vim \
             wget \
-    && pip3 --no-cache-dir install 'git+https://github.com/mymarilyn/clickhouse-driver.git' scipy \
+    && pip3 --no-cache-dir install tzlocal==3.0 clickhouse-driver==0.2.2 scipy \
     && apt-get purge --yes python3-dev g++ \
     && apt-get autoremove --yes \
     && apt-get clean \
