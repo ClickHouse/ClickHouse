@@ -16,10 +16,13 @@ The supported formats are:
 | [TabSeparatedRaw](#tabseparatedraw)                                                     | ✔     | ✔      |
 | [TabSeparatedWithNames](#tabseparatedwithnames)                                         | ✔     | ✔      |
 | [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes)                         | ✔     | ✔      |
+| [TabSeparatedRawWithNames](#tabseparatedrawwithnames)                                                     | ✔     | ✔      |
+| [TabSeparatedRawWithNamesAndTypes](#tabseparatedrawwithnamesandtypes)                                                     | ✔     | ✔      |
 | [Template](#format-template)                                                            | ✔     | ✔      |
 | [TemplateIgnoreSpaces](#templateignorespaces)                                           | ✔     | ✗      |
 | [CSV](#csv)                                                                             | ✔     | ✔      |
 | [CSVWithNames](#csvwithnames)                                                           | ✔     | ✔      |
+| [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                                           | ✔     | ✔      |
 | [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
 | [Values](#data-format-values)                                                           | ✔     | ✔      |
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
@@ -33,8 +36,10 @@ The supported formats are:
 | [JSONStringsEachRow](#jsonstringseachrow)                                               | ✔     | ✔      |
 | [JSONStringsEachRowWithProgress](#jsonstringseachrowwithprogress)                       | ✗     | ✔      |
 | [JSONCompactEachRow](#jsoncompacteachrow)                                               | ✔     | ✔      |
+| [JSONCompactEachRowWithNames](#jsoncompacteachrowwithnames)             | ✔     | ✔      |
 | [JSONCompactEachRowWithNamesAndTypes](#jsoncompacteachrowwithnamesandtypes)             | ✔     | ✔      |
 | [JSONCompactStringsEachRow](#jsoncompactstringseachrow)                                   | ✔     | ✔      |
+| [JSONCompactStringsEachRowWithNames](#jsoncompactstringseachrowwithnames) | ✔     | ✔      |
 | [JSONCompactStringsEachRowWithNamesAndTypes](#jsoncompactstringseachrowwithnamesandtypes) | ✔     | ✔      |
 | [TSKV](#tskv)                                                                           | ✔     | ✔      |
 | [Pretty](#pretty)                                                                       | ✗     | ✔      |
@@ -51,6 +56,7 @@ The supported formats are:
 | [ArrowStream](#data-format-arrow-stream)                                                | ✔     | ✔      |
 | [ORC](#data-format-orc)                                                                 | ✔     | ✔      |
 | [RowBinary](#rowbinary)                                                                 | ✔     | ✔      |
+| [RowBinaryWithNames](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
 | [RowBinaryWithNamesAndTypes](#rowbinarywithnamesandtypes)                               | ✔     | ✔      |
 | [Native](#native)                                                                       | ✔     | ✔      |
 | [Null](#null)                                                                           | ✗     | ✔      |
@@ -126,6 +132,9 @@ Arrays are written as a list of comma-separated values in square brackets. Numbe
 
 [NULL](../sql-reference/syntax.md) is formatted as `\N`.
 
+If setting [input_format_tsv_empty_as_default](../operations/settings/settings.md#settings-input_format_tsv_empty_as_default) is enabled,
+empty input fields are replaced with default values. For complex default expressions [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#settings-input_format_defaults_for_omitted_fields) must be enabled too.
+
 Each element of [Nested](../sql-reference/data-types/nested-data-structures/nested.md) structures is represented as array.
 
 For example:
@@ -164,17 +173,34 @@ This format is also available under the name `TSVRaw`.
 ## TabSeparatedWithNames {#tabseparatedwithnames}
 
 Differs from the `TabSeparated` format in that the column names are written in the first row.
-During parsing, the first row is completely ignored. You can’t use column names to determine their position or to check their correctness.
-(Support for parsing the header row may be added in the future.)
+If setting [input_format_with_names_use_header](../operations/settings/settings.md#settings-input_format_with_names_use_header) is set to 1,
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](../operations/settings/settings.md#settings-input_format_skip_unknown_fields) is set to 1.
+Otherwise, the first row will be skipped.
 
 This format is also available under the name `TSVWithNames`.
 
 ## TabSeparatedWithNamesAndTypes {#tabseparatedwithnamesandtypes}
 
 Differs from the `TabSeparated` format in that the column names are written to the first row, while the column types are in the second row.
-During parsing, the first and second rows are completely ignored.
+The first row with names is processed the same way as in `TabSeparatedWithNames` format.
+If setting [input_format_with_types_use_header](../operations/settings/settings.md#settings-input_format_with_types_use_header) is set to 1,
+the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped. 
 
 This format is also available under the name `TSVWithNamesAndTypes`.
+
+## TabSeparatedRawWithNames {#tabseparatedrawwithnames}
+
+Differs from `TabSeparatedWithNames` format in that the rows are written without escaping.
+When parsing with this format, tabs or linefeeds are not allowed in each field.
+
+This format is also available under the name `TSVRawWithNames`.
+
+## TabSeparatedWithNamesAndTypes {#tabseparatedwithnamesandtypes}
+
+Differs from `TabSeparatedWithNamesAndTypes` format in that the rows are written without escaping.
+When parsing with this format, tabs or linefeeds are not allowed in each field.
+
+This format is also available under the name `TSVRawWithNamesAndNames`.
 
 ## Template {#format-template}
 
@@ -196,7 +222,7 @@ where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as 
 -   `Raw` (without escaping, similarly to `TSVRaw`)
 -   `None` (no escaping rule, see further)
 
-If an escaping rule is omitted, then `None` will be used. `XML` and `Raw` are suitable only for output.
+If an escaping rule is omitted, then `None` will be used. `XML` is suitable only for output.
 
 So, for the following format string:
 
@@ -376,9 +402,8 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 
 When parsing, all values can be parsed either with or without quotes. Both double and single quotes are supported. Rows can also be arranged without quotes. In this case, they are parsed up to the delimiter character or line feed (CR or LF). In violation of the RFC, when parsing rows without quotes, the leading and trailing spaces and tabs are ignored. For the line feed, Unix (LF), Windows (CR LF) and Mac OS Classic (CR LF) types are all supported.
 
-Empty unquoted input values are replaced with default values for the respective columns, if
-[input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)
-is enabled.
+If setting [input_format_csv_empty_as_default](../operations/settings/settings.md#settings-input_format_csv_empty_as_default) is enabled,
+empty unquoted input values are replaced with default values. For complex default expressions [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#settings-input_format_defaults_for_omitted_fields) must be enabled too.
 
 `NULL` is formatted as `\N` or `NULL` or an empty unquoted string (see settings [input_format_csv_unquoted_null_literal_as_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) and [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
 
@@ -386,7 +411,11 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 
 ## CSVWithNames {#csvwithnames}
 
-Also prints the header row, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
+Also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
+
+## CSVWithNamesAndTypes {#csvwithnamesandtypes}
+
+Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
 
 ## CustomSeparated {#format-customseparated}
 
@@ -658,7 +687,14 @@ Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yie
 {"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3"}}
 ```
 
+## JSONCompactEachRowWithNames {#jsoncompacteachrowwithnames}
+
+Differs from `JSONCompactEachRow` format in that the also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
+
 ## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
+
+Differs from `JSONCompactEachRow` format in that the also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
+
 ## JSONCompactStringsEachRowWithNamesAndTypes {#jsoncompactstringseachrowwithnamesandtypes}
 
 Differs from `JSONCompactEachRow`/`JSONCompactStringsEachRow` in that the column names and types are written as the first two rows.
@@ -910,6 +946,13 @@ FixedString is represented simply as a sequence of bytes.
 Array is represented as a varint length (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128)), followed by successive elements of the array.
 
 For [NULL](../sql-reference/syntax.md#null-literal) support, an additional byte containing 1 or 0 is added before each [Nullable](../sql-reference/data-types/nullable.md) value. If 1, then the value is `NULL` and this byte is interpreted as a separate value. If 0, the value after the byte is not `NULL`.
+
+## RowBinaryWithNames {#rowbinarywithnames}
+
+Similar to [RowBinary](#rowbinary), but with added header:
+
+-   [LEB128](https://en.wikipedia.org/wiki/LEB128)-encoded number of columns (N)
+-   N `String`s specifying column names
 
 ## RowBinaryWithNamesAndTypes {#rowbinarywithnamesandtypes}
 
