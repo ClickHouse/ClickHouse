@@ -4,6 +4,7 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadSettings.h>
 #include <Interpreters/Context.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
 
 
 namespace DB
@@ -43,6 +44,8 @@ private:
 
     off_t offset = 0;
     ReadSettings read_settings;
+
+    Poco::Net::HTTPBasicCredentials credentials{};
 };
 
 }

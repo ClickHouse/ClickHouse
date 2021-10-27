@@ -256,7 +256,7 @@ Pipe LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTT
         std::move(out_stream_callback),
         http_timeouts,
         0,
-        Poco::Net::HTTPBasicCredentials{},
+        credentials,
         DBMS_DEFAULT_BUFFER_SIZE,
         getContext()->getReadSettings(),
         ReadWriteBufferFromHTTP::HTTPHeaderEntries{});
