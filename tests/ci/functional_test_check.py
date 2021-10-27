@@ -17,30 +17,6 @@ import sys
 
 DOWNLOAD_RETRIES_COUNT = 5
 
-def process_results(result_folder):
-    test_results = []
-    additional_files = []
-    # Just upload all files from result_folder.
-    # If task provides processed results, then it's responsible for content of result_folder.
-    if os.path.exists(result_folder):
-        test_files = [f for f in os.listdir(result_folder) if os.path.isfile(os.path.join(result_folder, f))]
-        additional_files = [os.path.join(result_folder, f) for f in test_files]
-
-    status_path = os.path.join(result_folder, "check_status.tsv")
-    logging.info("Found test_results.tsv")
-    status = list(csv.reader(open(status_path, 'r'), delimiter='\t'))
-    if len(status) != 1 or len(status[0]) != 2:
-        return "error", "Invalid check_status.tsv", test_results, additional_files
-    state, description = status[0][0], status[0][1]
-
-    results_path = os.path.join(result_folder, "test_results.tsv")
-    test_results = list(csv.reader(open(results_path, 'r'), delimiter='\t'))
-    if len(test_results) == 0:
-        raise Exception("Empty results")
-
-    return state, description, test_results, additional_files
-
-
 def process_logs(s3_client, additional_logs, s3_path_prefix):
     additional_urls = []
     for log_path in additional_logs:
@@ -210,49 +186,6 @@ def process_results(result_folder, server_log_path):
     return state, description, test_results, additional_files
 
 
-def process_logs(s3_client, additional_logs, s3_path_prefix):
-    additional_urls = []
-    for log_path in additional_logs:
-        if log_path:
-            additional_urls.append(
-                s3_client.upload_test_report_to_s3(
-                    log_path,
-                    s3_path_prefix + "/" + os.path.basename(log_path)))
-
-    return additional_urls
-
-
-def upload_results(s3_client, pr_number, commit_sha, test_results, raw_log, additional_files):
-    additional_files = [raw_log] + additional_files
-    s3_path_prefix = f"{pr_number}/{commit_sha}/fasttest"
-    additional_urls = process_logs(s3_client, additional_files, s3_path_prefix)
-
-    branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
-    branch_name = "master"
-    if pr_number != 0:
-        branch_name = "PR #{}".format(pr_number)
-        branch_url = "https://github.com/ClickHouse/ClickHouse/pull/" + str(pr_number)
-    commit_url = f"https://github.com/ClickHouse/ClickHouse/commit/{commit_sha}"
-
-    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
-
-    raw_log_url = additional_urls[0]
-    additional_urls.pop(0)
-
-    html_report = create_test_html_report(NAME, test_results, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls, True)
-    with open('report.html', 'w') as f:
-        f.write(html_report)
-
-    url = s3_client.upload_test_report_to_s3('report.html', s3_path_prefix + ".html")
-    logging.info("Search result in url %s", url)
-    return url
-
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
-
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
@@ -330,8 +263,8 @@ if __name__ == "__main__":
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
-    state, description, test_results, additional_logs = process_results(output_path, server_log_path)
-    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, run_log_path, additional_logs)
+    state, description, test_results, additional_logs = process_results(result_path, server_log_path)
+    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, run_log_path, additional_logs, check_name)
     print("::notice ::Report url: {}".format(report_url))
     commit = get_commit(gh, pr_info.sha)
     commit.create_status(context=check_name, description=description, state=state, target_url=report_url)
