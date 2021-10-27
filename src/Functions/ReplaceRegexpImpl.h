@@ -5,10 +5,8 @@
 #include <Columns/ColumnString.h>
 #include <IO/WriteHelpers.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#    include <Common/config.h>
-#endif
+#include "config_functions.h"
+#include <Common/config.h>
 
 #if USE_RE2_ST
 #    include <re2_st/re2.h>
