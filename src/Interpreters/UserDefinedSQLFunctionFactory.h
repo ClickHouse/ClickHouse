@@ -6,6 +6,8 @@
 #include <Common/NamePrompter.h>
 
 #include <Parsers/ASTCreateFunctionQuery.h>
+#include <Interpreters/Context_fwd.h>
+
 
 namespace DB
 {
@@ -17,13 +19,17 @@ public:
     static UserDefinedSQLFunctionFactory & instance();
 
     /** Register function for function_name in factory for specified create_function_query.
-      * If replace = true and function with function_name already exists replace it with create_function_query.
-      * Otherwise throws exception.
+      * If function exists and if_not_exists = false and replace = false throws exception.
+      * If replace = true and sql user defined function with function_name already exists replace it with create_function_query.
+      * If persist = true persist function on disk.
       */
-    void registerFunction(const String & function_name, ASTPtr create_function_query, bool replace);
+    void registerFunction(ContextPtr context, const String & function_name, ASTPtr create_function_query, bool replace, bool if_not_exists, bool persist);
 
-    /// Unregister function for function_name
-    void unregisterFunction(const String & function_name);
+    /** Unregister function for function_name.
+      * If if_exists = true then do not throw exception if function is not registered.
+      * If if_exists = false then throw exception if function is not registered.
+      */
+    void unregisterFunction(ContextPtr context, const String & function_name, bool if_exists);
 
     /// Get function create query for function_name. If no function registered with function_name throws exception.
     ASTPtr get(const String & function_name) const;

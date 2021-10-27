@@ -22,12 +22,13 @@ def test_sql_user_defined_functions_on_cluster():
     assert "Unknown function test_function" in ch2.query_and_get_error("SELECT test_function(1);")
     assert "Unknown function test_function" in ch3.query_and_get_error("SELECT test_function(1);")
 
-    ch1.query_with_retry("CREATE FUNCTION test_function ON CLUSTER 'cluster' AS x -> x + 1;", retry_count=5)
+    ch1.query_with_retry("CREATE FUNCTION test_function ON CLUSTER 'cluster' AS x -> x + 1;")
+
     assert ch1.query("SELECT test_function(1);") == "2\n"
     assert ch2.query("SELECT test_function(1);") == "2\n"
     assert ch3.query("SELECT test_function(1);") == "2\n"
 
-    ch2.query_with_retry("DROP FUNCTION test_function ON CLUSTER 'cluster'", retry_count=5)
+    ch2.query_with_retry("DROP FUNCTION test_function ON CLUSTER 'cluster'")
     assert "Unknown function test_function" in ch1.query_and_get_error("SELECT test_function(1);")
     assert "Unknown function test_function" in ch2.query_and_get_error("SELECT test_function(1);")
     assert "Unknown function test_function" in ch3.query_and_get_error("SELECT test_function(1);")
