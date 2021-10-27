@@ -88,6 +88,8 @@ def get_image_name(check_name):
         return 'clickhouse/stateless-test'
     if 'stateful' in  check_name.lower():
         return 'clickhouse/stateful-test'
+    else:
+        raise Exception(f"Cannot deduce image name based on check name {check_name}")
 
 
 def dowload_build_with_progress(url, path):

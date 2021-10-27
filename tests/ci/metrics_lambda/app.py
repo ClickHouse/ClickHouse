@@ -136,7 +136,9 @@ def main(github_secret_key, github_app_id, push_to_cloudwatch):
         if push_to_cloudwatch:
             push_metrics_to_cloudwatch(group_runners, 'RunnersMetrics/' + group)
         else:
-            print(group, group_runners)
+            print(group)
+            for runner in group_runners:
+                print('\t', runner)
 
 
 if __name__ == "__main__":
