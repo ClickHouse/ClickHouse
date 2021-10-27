@@ -1,7 +1,5 @@
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
 
-#include <stack>
-
 #include <Access/ContextAccess.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -11,6 +9,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/UserDefinedSQLFunctionFactory.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 
 
 namespace DB
@@ -24,14 +23,20 @@ namespace ErrorCodes
 
 BlockIO InterpreterCreateFunctionQuery::execute()
 {
-    auto current_context = getContext();
-    current_context->checkAccess(AccessType::CREATE_FUNCTION);
-
     FunctionNameNormalizer().visit(query_ptr.get());
     auto * create_function_query = query_ptr->as<ASTCreateFunctionQuery>();
 
     if (!create_function_query)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Expected CREATE FUNCTION query");
+
+    AccessRightsElements access_rights_elements;
+    access_rights_elements.emplace_back(AccessType::CREATE_FUNCTION);
+
+    if (!create_function_query->cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, getContext(), access_rights_elements);
+
+    auto current_context = getContext();
+    current_context->checkAccess(access_rights_elements);
 
     auto & user_defined_function_factory = UserDefinedSQLFunctionFactory::instance();
 
