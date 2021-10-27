@@ -6,9 +6,9 @@ import json
 import os
 import sys
 import time
+from github import Github
 from s3_helper import S3Helper
 from pr_info import PRInfo
-from github import Github
 from get_robot_token import get_best_robot_token
 from version_helper import get_version_from_repo, update_version_local
 
