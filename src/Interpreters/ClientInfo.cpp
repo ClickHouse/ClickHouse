@@ -7,9 +7,7 @@
 #include <base/getFQDNOrHostName.h>
 #include <unistd.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 
 namespace DB
