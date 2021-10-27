@@ -85,13 +85,13 @@ SELECT sum(n) from rich_syntax;
 -- Clear cache to avoid future errors in the logs
 SYSTEM DROP DNS CACHE
 
-DROP TABLE IF EXISTS file;
-DROP TABLE IF EXISTS url;
-DROP TABLE IF EXISTS view;
-DROP TABLE IF EXISTS buffer;
-DROP TABLE IF EXISTS merge;
-DROP TABLE IF EXISTS merge_tf;
-DROP TABLE IF EXISTS distributed;
-DROP TABLE IF EXISTS distributed_tf;
-DROP TABLE IF EXISTS rich_syntax;
-DROP DICTIONARY IF EXISTS dict;
+DROP TABLE file;
+DROP TABLE url;
+DROP TABLE view;
+DROP TABLE buffer;
+DROP TABLE merge;
+DROP TABLE merge_tf;
+DROP TABLE distributed;
+DROP TABLE distributed_tf;
+DROP TABLE rich_syntax;
+DROP DICTIONARY dict;
