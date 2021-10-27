@@ -409,8 +409,8 @@ class TestCase:
         self.runs_count = 0
 
     # Check if test contains tag "backward-incompatible" and we should skip it
-    def check_backward_incompatible_tag(self, tags) -> bool:
-        for tag in tags:
+    def check_backward_incompatible_tag(self) -> bool:
+        for tag in self.tags:
             if tag.startswith("backward-incompatible"):
                 split = tag.split(':')
 
@@ -462,7 +462,7 @@ class TestCase:
         elif tags and ('no-replicated-database' in tags) and args.replicated_database:
             return FailureReason.REPLICATED_DB
 
-        elif args.backward_compatibility_check and self.check_backward_incompatible_tag(tags):
+        elif args.backward_compatibility_check and self.check_backward_incompatible_tag():
             return FailureReason.BACKWARD_INCOMPATIBLE
 
         elif tags:
