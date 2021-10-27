@@ -1512,10 +1512,6 @@ When `output_format_json_quote_denormals = 1`, the query returns:
 
 The character is interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
 
-## input_format_csv_unquoted_null_literal_as_null {#settings-input_format_csv_unquoted_null_literal_as_null}
-
-For CSV input format enables or disables parsing of unquoted `NULL` as literal (synonym for `\N`).
-
 ## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
 
 Enables or disables parsing enum values as enum ids for CSV input format.
@@ -2859,9 +2855,9 @@ Possible values:
 
 Default value: `1`.
 
-## output_format_csv_null_representation {#output_format_csv_null_representation}
+## format_csv_null_representation {#format_csv_null_representation}
 
-Defines the representation of `NULL` for [CSV](../../interfaces/formats.md#csv) output format. User can set any string as a value, for example, `My NULL`.
+Defines the representation of `NULL` for [CSV](../../interfaces/formats.md#csv) output and input formats. User can set any string as a value, for example, `My NULL`.
 
 Default value: `\N`.
 
@@ -2884,7 +2880,7 @@ Result
 Query
 
 ```sql
-SET output_format_csv_null_representation = 'My NULL';
+SET format_csv_null_representation = 'My NULL';
 SELECT * FROM csv_custom_null FORMAT CSV;
 ```
 
@@ -2896,9 +2892,9 @@ My NULL
 My NULL
 ```
 
-## output_format_tsv_null_representation {#output_format_tsv_null_representation}
+## format_tsv_null_representation {#format_tsv_null_representation}
 
-Defines the representation of `NULL` for [TSV](../../interfaces/formats.md#tabseparated) output format. User can set any string as a value, for example, `My NULL`.
+Defines the representation of `NULL` for [TSV](../../interfaces/formats.md#tabseparated) output and input formats. User can set any string as a value, for example, `My NULL`.
 
 Default value: `\N`.
 
@@ -2921,7 +2917,7 @@ Result
 Query
 
 ```sql
-SET output_format_tsv_null_representation = 'My NULL';
+SET format_tsv_null_representation = 'My NULL';
 SELECT * FROM tsv_custom_null FORMAT TSV;
 ```
 

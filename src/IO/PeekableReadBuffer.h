@@ -20,7 +20,7 @@ class PeekableReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
     friend class PeekableReadBufferCheckpoint;
 public:
-    explicit PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+    explicit PeekableReadBuffer(ReadBuffer & sub_buf_, bool use_existing_memory = false, size_t start_size_ = DBMS_DEFAULT_BUFFER_SIZE);
 
     ~PeekableReadBuffer() override;
 
@@ -89,6 +89,11 @@ private:
     size_t peeked_size = 0;
     std::optional<Position> checkpoint = std::nullopt;
     bool checkpoint_in_own_memory = false;
+
+    /// Small amount of memory on stack to use in BufferWithOwnMemory on
+    /// it's creation to prevent unnecessary allocation if PeekableReadBuffer
+    /// is often created.
+    char existing_memory[16];
 };
 
 
