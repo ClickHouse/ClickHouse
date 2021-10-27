@@ -179,7 +179,7 @@ def get_run_command(builds_path, result_path, server_log_path, kill_timeout, add
 
     return f"docker run --volume={builds_path}:/package_folder " \
         f"--volume={result_path}:/test_output --volume={server_log_path}:/var/log/clickhouse-server " \
-        f"--cap-add=SYS_PTRACE {env_str} {additional_options} {image}"
+        f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
 
 
 def process_results(result_folder, server_log_path):
