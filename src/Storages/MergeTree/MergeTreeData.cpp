@@ -2211,7 +2211,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
 
 void MergeTreeData::changeSettings(
         const ASTPtr & new_settings,
-        TableLockHolder & /* table_lock_holder */)
+        AlterLockHolder & /* table_lock_holder */)
 {
     if (new_settings)
     {
