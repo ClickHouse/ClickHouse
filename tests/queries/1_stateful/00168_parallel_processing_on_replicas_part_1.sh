@@ -41,8 +41,8 @@ SkipList=(
     "00166_explain_estimate.sql" # Distributed table returns nothing
 )
 
-for TESTNAME in "${PreviouslyFailed[@]}"
-# for TESTNAME in *.sql
+# for TESTNAME in "${PreviouslyFailed[@]}"
+for TESTNAME in *.sql
 do
     if [[ " ${SkipList[*]} " =~ " ${TESTNAME} " ]]; then
         echo  "Skipping $TESTNAME "
