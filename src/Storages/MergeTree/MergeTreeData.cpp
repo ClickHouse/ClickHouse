@@ -250,7 +250,7 @@ MergeTreeData::MergeTreeData(
     {
         /// This is for backward compatibility.
         checkSampleExpression(metadata_, attach || settings->compatibility_allow_sampling_expression_not_in_primary_key,
-                              settings->check_sample_column_is_correct);
+                              settings->check_sample_column_is_correct && !attach);
     }
 
     checkTTLExpressions(metadata_, metadata_);
@@ -2211,7 +2211,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
 
 void MergeTreeData::changeSettings(
         const ASTPtr & new_settings,
-        TableLockHolder & /* table_lock_holder */)
+        AlterLockHolder & /* table_lock_holder */)
 {
     if (new_settings)
     {
@@ -4531,7 +4531,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query)
         return false;
 
-    const auto & query_ptr = query_info.query;
+    const auto & query_ptr = query_info.original_query;
 
     if (auto * select = query_ptr->as<ASTSelectQuery>(); select)
     {

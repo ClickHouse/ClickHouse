@@ -79,7 +79,7 @@ private:
 
     String getTableNameForLogs(const String & table_name) const;
 
-    String formatTableName(const String & table_name) const;
+    String formatTableName(const String & table_name, bool quoted = true) const;
 
     bool checkPostgresTable(const String & table_name) const;
 
