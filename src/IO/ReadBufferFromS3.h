@@ -48,7 +48,6 @@ public:
         bool use_external_buffer = false,
         size_t read_until_position_ = 0);
 
-    size_t right = 0;
     bool nextImpl() override;
 
     off_t seek(off_t off, int whence) override;
