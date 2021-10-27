@@ -8,6 +8,16 @@ namespace DB
 {
 
 /// Base class for input formats with -WithNames and -WithNamesAndTypes suffixes.
+/// It accepts 2 parameters in constructor - with_names and with_types and implements
+/// input format depending on them:
+///  - if with_names is true, it will expect that the first row of data contains column
+///    names. If setting input_format_with_names_use_header is set to 1, columns mapping
+///    will be performed.
+///  - if with_types is true, it will expect that the second row of data contains column
+///    types. If setting input_format_with_types_use_header is set to 1, types from input
+///    will be compared types from header.
+/// It's important that firstly this class reads/skips names and only
+/// then reads/skips types. So you can this invariant.
 class RowInputFormatWithNamesAndTypes : public RowInputFormatWithDiagnosticInfo
 {
 public:
@@ -25,12 +35,17 @@ public:
     void resetParser() override;
 
 protected:
-    /// Return false if there was no real value and we inserted default value.
+    /// Read single field from input. Return false if there was no real value and we inserted default value.
     virtual bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) = 0;
 
+    /// Skip single field, it's used to skip unknown columns.
     virtual void skipField(size_t file_column) = 0;
+    /// Skip the whole row with names.
     virtual void skipNames() = 0;
+    /// Skip the whole row with types.
     virtual void skipTypes() = 0;
+
+    /// Skip delimiters, if any.
     virtual void skipRowStartDelimiter() {}
     virtual void skipFieldDelimiter() {}
     virtual void skipRowEndDelimiter() {}
@@ -43,9 +58,10 @@ protected:
     virtual bool parseRowEndWithDiagnosticInfo(WriteBuffer &) { return true;}
     bool isGarbageAfterField(size_t, ReadBuffer::Position) override {return false; }
 
+    /// Read row with names and return the list of them.
     virtual std::vector<String> readNames() = 0;
+    /// Read row with types and return the list of them.
     virtual std::vector<String> readTypes() = 0;
-
 
     const FormatSettings format_settings;
     DataTypes data_types;

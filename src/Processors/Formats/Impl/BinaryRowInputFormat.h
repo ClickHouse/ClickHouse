@@ -37,6 +37,7 @@ private:
     std::vector<String> readTypes() override;
     std::vector<String> readHeaderRow();
 
+    /// Data types read from input data.
     DataTypes read_data_types;
     UInt64 read_columns = 0;
 };
