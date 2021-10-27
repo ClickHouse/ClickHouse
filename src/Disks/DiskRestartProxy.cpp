@@ -1,7 +1,7 @@
 #include "DiskRestartProxy.h"
 
+#include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/WriteBufferFromFileDecorator.h>
-#include <IO/RestartAwareReadBuffer.h>
 
 namespace DB
 {
@@ -12,6 +12,21 @@ namespace ErrorCodes
 
 using Millis = std::chrono::milliseconds;
 using Seconds = std::chrono::seconds;
+
+/// Holds restart read lock till buffer destruction.
+class RestartAwareReadBuffer : public ReadBufferFromFileDecorator
+{
+public:
+    RestartAwareReadBuffer(const DiskRestartProxy & disk, std::unique_ptr<ReadBufferFromFileBase> impl_)
+        : ReadBufferFromFileDecorator(std::move(impl_)), lock(disk.mutex) { }
+
+    void prefetch() override { impl->prefetch(); }
+
+    void setReadUntilPosition(size_t position) override { impl->setReadUntilPosition(position); }
+
+private:
+    ReadLock lock;
+};
 
 /// Holds restart read lock till buffer finalize.
 class RestartAwareWriteBuffer : public WriteBufferFromFileDecorator

@@ -243,7 +243,7 @@ namespace detail
                 if (use_external_buffer)
                 {
                     /**
-                    * See comment 30 lines lower.
+                    * See comment 30 lines below.
                     */
                     impl->set(internal_buffer.begin(), internal_buffer.size());
                     assert(working_buffer.begin() != nullptr);
@@ -301,6 +301,7 @@ namespace detail
             bool result = false;
             bool successful_read = false;
             size_t milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
+            settings.http_max_tries = 10;
 
             /// Default http_max_tries = 1.
             for (size_t i = 0; (i < settings.http_max_tries) && !successful_read; ++i)
@@ -318,8 +319,7 @@ namespace detail
                     }
                     catch (const Poco::Exception & e)
                     {
-                        if (i == settings.http_max_tries - 1
-                            || (bytes_read && !settings.http_retriable_read))
+                        if (i == settings.http_max_tries - 1)
                             throw;
 
                         LOG_ERROR(&Poco::Logger::get("ReadBufferFromHTTP"), "Error: {}, code: {}", e.what(), e.code());

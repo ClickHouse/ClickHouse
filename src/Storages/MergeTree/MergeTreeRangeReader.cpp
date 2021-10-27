@@ -54,6 +54,15 @@ static void filterColumns(Columns & columns, const ColumnPtr & filter)
 }
 
 
+static size_t getLastMark(const MergeTreeRangeReader::ReadResult::RangesInfo & ranges)
+{
+    size_t current_task_last_mark = 0;
+    for (const auto & mark_range : ranges)
+        current_task_last_mark = std::max(current_task_last_mark, mark_range.range.end);
+    return current_task_last_mark;
+}
+
+
 MergeTreeRangeReader::DelayedStream::DelayedStream(
     size_t from_mark,
     size_t current_task_last_mark_,
@@ -754,9 +763,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
     ReadResult result;
     result.columns.resize(merge_tree_reader->getColumns().size());
 
-    size_t current_task_last_mark = 0;
-    for (const auto mark_range : ranges)
-        current_task_last_mark = std::max(current_task_last_mark, mark_range.end);
+    size_t current_task_last_mark = getLastMark(ranges);
 
     /// Stream is lazy. result.num_added_rows is the number of rows added to block which is not equal to
     /// result.num_rows_read until call to stream.finalize(). Also result.num_added_rows may be less than
@@ -815,10 +822,7 @@ Columns MergeTreeRangeReader::continueReadingChain(ReadResult & result, size_t &
     const auto & rows_per_granule = result.rowsPerGranule();
     const auto & started_ranges = result.startedRanges();
 
-    size_t current_task_last_mark = 0;
-    for (const auto mark_range : started_ranges)
-        current_task_last_mark = std::max(current_task_last_mark, mark_range.range.end);
-
+    size_t current_task_last_mark = getLastMark(started_ranges);
     size_t next_range_to_start = 0;
 
     auto size = rows_per_granule.size();
