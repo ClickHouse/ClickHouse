@@ -1786,7 +1786,7 @@ FORMAT PrettyCompactMonoBlock
 
 Default value: 0
 
-## distributed_push_down_limit (#distributed-push-down-limit}
+## distributed_push_down_limit {#distributed-push-down-limit}
 
 LIMIT will be applied on each shard separatelly.
 
