@@ -55,95 +55,13 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getColumn(
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
 
-    const size_t size = extractor.getKeysSize();
+    const size_t keys_size = extractor.getKeysSize();
 
     const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
     const size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
     auto & attribute = attributes[attribute_index];
 
-    bool is_attribute_nullable = attribute.is_index_null.has_value();
-
-    ColumnUInt8::MutablePtr col_null_map_to;
-    ColumnUInt8::Container * vec_null_map_to = nullptr;
-    if (attribute.is_index_null)
-    {
-        col_null_map_to = ColumnUInt8::create(size, false);
-        vec_null_map_to = &col_null_map_to->getData();
-    }
-
-    auto type_call = [&](const auto & dictionary_attribute_type)
-    {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
-        using ValueType = DictionaryValueType<AttributeType>;
-        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
-
-        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(dictionary_attribute.null_value, default_values_column);
-
-        auto column = ColumnProvider::getColumn(dictionary_attribute, size);
-
-        if constexpr (std::is_same_v<ValueType, Array>)
-        {
-            auto * out = column.get();
-
-            getItemsImpl<ValueType, false>(
-                attribute,
-                extractor,
-                [&](const size_t, const Array & value, bool) { out->insert(value); },
-                default_value_extractor);
-        }
-        else if constexpr (std::is_same_v<ValueType, StringRef>)
-        {
-            auto * out = column.get();
-
-            if (is_attribute_nullable)
-                getItemsImpl<ValueType, true>(
-                    attribute,
-                    extractor,
-                    [&](size_t row, const StringRef value, bool is_null)
-                    {
-                        (*vec_null_map_to)[row] = is_null;
-                        out->insertData(value.data, value.size);
-                    },
-                    default_value_extractor);
-            else
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    extractor,
-                    [&](size_t, const StringRef value, bool) { out->insertData(value.data, value.size); },
-                    default_value_extractor);
-        }
-        else
-        {
-            auto & out = column->getData();
-
-            if (is_attribute_nullable)
-                getItemsImpl<ValueType, true>(
-                    attribute,
-                    extractor,
-                    [&](size_t row, const auto value, bool is_null)
-                    {
-                        (*vec_null_map_to)[row] = is_null;
-                        out[row] = value;
-                    },
-                    default_value_extractor);
-            else
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    extractor,
-                    [&](size_t row, const auto value, bool) { out[row] = value; },
-                    default_value_extractor);
-        }
-
-        result = std::move(column);
-    };
-
-    callOnDictionaryAttributeType(attribute.type, type_call);
-
-    if (is_attribute_nullable)
-        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
-
-    return result;
+    return getAttributeColumn(attribute, dictionary_attribute, keys_size, default_values_column, extractor);
 }
 
 template <DictionaryKeyType dictionary_key_type>
