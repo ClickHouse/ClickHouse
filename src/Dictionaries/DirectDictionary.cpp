@@ -290,7 +290,7 @@ Pipe DirectDictionary<dictionary_key_type>::getSourceBlockInputStream(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */) const
+Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */, size_t /* num_streams */) const
 {
     return source_ptr->loadAll();
 }

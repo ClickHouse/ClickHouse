@@ -1126,6 +1126,11 @@ void TCPHandler::receiveHello()
     client_info.client_version_patch = client_version_patch;
     client_info.client_tcp_protocol_version = client_tcp_protocol_version;
 
+    client_info.connection_client_version_major = client_version_major;
+    client_info.connection_client_version_minor = client_version_minor;
+    client_info.connection_client_version_patch = client_version_patch;
+    client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
+
     is_interserver_mode = (user == USER_INTERSERVER_MARKER);
     if (is_interserver_mode)
     {
