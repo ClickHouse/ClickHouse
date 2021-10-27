@@ -2,6 +2,7 @@
 #include <Core/Settings.h>
 #include <base/logger_useful.h>
 #include <filesystem>
+#include <Coordination/Defines.h>
 
 namespace DB
 {
@@ -128,6 +129,13 @@ void KeeperSettings::dump(WriteBufferFromOwnString & buf) const
     write_bool(coordination_settings->quorum_reads);
     write("force_sync=");
     write_bool(coordination_settings->force_sync);
+
+    write("compress_logs=");
+    write_bool(coordination_settings->compress_logs);
+    write("compress_snapshots_with_zstd_format=");
+    write_bool(coordination_settings->compress_snapshots_with_zstd_format);
+    write("configuration_change_tries_count=");
+    write_int(coordination_settings->configuration_change_tries_count);
 }
 
 std::shared_ptr<KeeperSettings>

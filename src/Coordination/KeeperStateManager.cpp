@@ -11,8 +11,6 @@ namespace ErrorCodes
     extern const int RAFT_ERROR;
 }
 
-namespace
-{
 KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
 {
     KeeperConfigurationWrapper result;
@@ -58,8 +56,6 @@ KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const P
     return result;
 }
 
-}
-
 KeeperStateManager::KeeperStateManager(int server_id_, const std::string & host, int port, const std::string & logs_path)
 : my_server_id(server_id_)
 , secure(false)
@@ -79,12 +75,12 @@ KeeperStateManager::KeeperStateManager(
     const Poco::Util::AbstractConfiguration & config,
     const CoordinationSettingsPtr & coordination_settings)
     : my_server_id(my_server_id_)
-    , secure(config.getBool(config_prefix + ".raft_configuration.secure", false))
+    , secure(config.getBool(config_prefix_ + ".raft_configuration.secure", false))
     , config_prefix(config_prefix_)
     , configuration_wrapper(parseServersConfiguration(config, false))
     , log_store(nuraft::cs_new<KeeperLogStore>(
                     log_storage_path,
-                    coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync))
+                    coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync, coordination_settings->compress_logs))
 {
 }
 

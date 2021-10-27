@@ -77,7 +77,7 @@ public:
     /// Process local read request
     void processReadRequest(const KeeperStorage::RequestForSession & request_for_session);
 
-    std::vector<int64_t> getDeadSessions();
+    std::vector<int64_t> getDeadSessions() override;
     UInt64 getLastProcessedZxid() const override;
 
     UInt64 getNodeCount() const override;
