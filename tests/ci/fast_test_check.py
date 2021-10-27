@@ -114,7 +114,6 @@ if __name__ == "__main__":
             logging.info("Got images %s", images)
             if 'clickhouse/fasttest' in images:
                 docker_image += ':' + images['clickhouse/fasttest']
-                break
 
     logging.info("Got docker image %s", docker_image)
     for i in range(10):
