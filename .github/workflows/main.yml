@@ -110,7 +110,7 @@ jobs:
           path: ${{runner.temp}}/reports_dir
       - name: Check out repository code
         uses: actions/checkout@v2
-      - name: Report Builder
+      - name: Functional test
         env:
           TEMP_PATH: ${{runner.temp}}/stateless_debug
           REPORTS_PATH: ${{runner.temp}}/reports_dir
