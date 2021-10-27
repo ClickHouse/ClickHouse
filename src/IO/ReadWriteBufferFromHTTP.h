@@ -216,7 +216,7 @@ namespace detail
                                 "Invalid setting for http backoff, "
                                 "must be http_max_tries >= 1 (current is {}) and "
                                 "0 < http_retry_initial_backoff_ms < settings.http_retry_max_backoff_ms (but now {} > {})",
-                                settings.http_max_tries, settings.http_retry_initial_backoff_ms, settings.http_retry_max_backoff_ms)
+                                settings.http_max_tries, settings.http_retry_initial_backoff_ms, settings.http_retry_max_backoff_ms);
         }
 
         void initialize()
@@ -292,7 +292,7 @@ namespace detail
                             throw;
 
                         /**
-                         * if total_size is not known, last write can fail if we retry with
+                         * if total_size is not known, last read can fail if we retry with
                          * bytes_read == total_size and header `bytes=bytes_read-`
                          * (we will get an error code 416 - range not satisfiable).
                          * In this case rethrow previous exception.
@@ -300,8 +300,10 @@ namespace detail
                         if (exception && !total_bytes_to_read.has_value() && e.code() == 416)
                             std::rethrow_exception(exception);
 
-                        LOG_ERROR(log, "HTTP request to `{}` failed at try {}/{}. Error: {}, code: {}. (Current backoff wait is {}/{} ms)",
-                                  uri.toString(), i, settings.http_max_tries, e.what(), e.code(),
+                        LOG_ERROR(log,
+                                  "HTTP request to `{}` failed at try {}/{} with bytes read: {}. "
+                                  "Error: {}, code: {}. (Current backoff wait is {}/{} ms)",
+                                  uri.toString(), i, settings.http_max_tries, bytes_read, e.what(), e.code(),
                                   milliseconds_to_wait, settings.http_retry_max_backoff_ms);
 
                         retry_with_range_header = true;
