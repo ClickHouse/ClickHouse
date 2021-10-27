@@ -5,10 +5,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include "Regexps.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#    include <Common/config.h>
-#endif
+#include "config_functions.h"
+#include <Common/config.h>
 
 #if USE_HYPERSCAN
 #    include <hs.h>
