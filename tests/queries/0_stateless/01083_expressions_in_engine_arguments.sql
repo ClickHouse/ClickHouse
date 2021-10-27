@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS merge;
 DROP TABLE IF EXISTS merge_tf;
 DROP TABLE IF EXISTS distributed;
 DROP TABLE IF EXISTS distributed_tf;
+DROP TABLE IF EXISTS rich_syntax;
 DROP DICTIONARY IF EXISTS dict;
 
 CREATE TABLE file (n Int8) ENGINE = File(upper('tsv') || 'WithNames' || 'AndTypes');
