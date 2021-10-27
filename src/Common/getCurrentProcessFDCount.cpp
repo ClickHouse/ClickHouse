@@ -20,7 +20,7 @@ int getCurrentProcessFDCount()
     WriteBufferFromOwnString out;
     copyData(command->out, out);
 
-    if(!out.str().empty())
+    if (!out.str().empty())
     {
         return std::stoi(out.str());
     }

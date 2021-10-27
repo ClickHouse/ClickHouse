@@ -382,7 +382,7 @@ void KeeperTCPHandler::runImpl()
 
             /// Do request statistics,
             /// not accurate when there is watch response in the channel
-            if(result.responses_count != 0)
+            if (result.responses_count != 0)
             {
                 process_time_stopwatch.stop();
                 keeper_dispatcher->updateKeeperStat(process_time_stopwatch.elapsedMilliseconds());

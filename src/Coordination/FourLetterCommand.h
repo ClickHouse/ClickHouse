@@ -7,7 +7,6 @@
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperInfos.h>
 #include <IO/WriteBufferFromString.h>
-#include <common/types.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>
@@ -98,9 +97,6 @@ struct RuokCommand : public IFourLetterCommand
  * zk_followers 2                      - only exposed by the Leader
  * zk_synced_followers  2              - only exposed by the Leader
  * zk_pending_syncs 0                  - only exposed by the Leader
- * zk_last_proposal_size -1
- * zk_max_proposal_size	-1
- * zk_min_proposal_size	-1
  */
 struct MonitorCommand : public IFourLetterCommand
 {
@@ -143,7 +139,5 @@ struct ConfCommand : public IFourLetterCommand
     String run() override;
     ~ConfCommand() override;
 };
-
-
 
 }

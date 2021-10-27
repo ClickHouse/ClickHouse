@@ -12,7 +12,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int SYSTEM_ERROR;
-    extern const int UNKNOWN_SETTING;
 }
 
 UInt64 KeeperDispatcher::KeeperStats::getMinLatency() const
@@ -330,7 +329,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
         if (!requests_queue->push(std::move(request_info)))
             throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
     }
-    else if (!requests_queue->tryPush(std::move(request_info), coordination_settings->operation_timeout_ms.totalMilliseconds()))
+    else if (!requests_queue->tryPush(std::move(request_info), settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
     {
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
     }
@@ -342,14 +341,14 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
-    settings = KeeperSettings::loadFromConfig(config_, standalone_keeper);
+    settings = KeeperSettings::loadFromConfig(config, standalone_keeper);
     requests_queue = std::make_unique<RequestsQueue>(settings->coordination_settings->max_requests_batch_size);
 
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
-    server = std::make_unique<KeeperServer>(settings, config_, responses_queue, snapshots_queue);
+    server = std::make_unique<KeeperServer>(settings, config, responses_queue, snapshots_queue);
 
     try
     {
