@@ -5,12 +5,12 @@ import subprocess
 import os
 import json
 import time
+import csv
 from pr_info import PRInfo
 from report import create_test_html_report
 from s3_helper import S3Helper
 from github import Github
-from get_robot_token import get_best_robot_token, get_parameter_from_ssm
-import csv
+from get_robot_token import get_best_robot_token
 
 NAME = 'Fast test (actions)'
 
