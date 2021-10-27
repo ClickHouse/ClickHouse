@@ -321,7 +321,7 @@ if __name__ == "__main__":
     logging.info("Going to run func tests: %s", run_command)
 
     with open(run_log_path, 'w') as log:
-        retcode = subprocess.Popen(run_cmd, shell=True, stderr=log, stdout=log).wait()
+        retcode = subprocess.Popen(run_command, shell=True, stderr=log, stdout=log).wait()
         if retcode == 0:
             logging.info("Run successfully")
         else:
