@@ -16,7 +16,7 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include "array/arrayIndex.h"
-#include "Functions/MatchImpl.h"
+#include "Functions/like.h"
 #include "Functions/FunctionsStringSearch.h"
 
 
@@ -30,9 +30,6 @@ namespace ErrorCodes
 
 namespace
 {
-
-using LikeImpl = MatchImpl<NameLike, /*SQL LIKE */ true, /*revert*/false>;
-using FunctionLike = FunctionsStringSearch<LikeImpl>;
 
 // map(x, y, ...) is a function that allows you to make key-value pair
 class FunctionMap : public IFunction
@@ -347,20 +344,10 @@ public:
                 };
 
             auto res = func_like.executeImpl(new_arguments, result_type, input_rows_count);
-
             const auto & container = checkAndGetColumn<ColumnUInt8>(res.get())->getData();
 
-            bool exist = 0;
-            for (auto iter = container.begin(); iter != container.end(); iter++)
-            {
-                if (*iter == 1)
-                {
-                    exist = 1;
-                    break;
-                }
-            }
-
-            vec_res[row] = exist;
+            const auto it = std::find_if(container.begin(), container.end(), [](int element){ return element == 1; });  // NOLINT
+            vec_res[row] = it == container.end() ? 0 : 1;
         }
 
         return col_res;
