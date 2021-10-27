@@ -196,7 +196,6 @@ function run_tests
         test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
     elif [ "$PR_TO_TEST" -ne 0 ] \
         && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
-        && [ "$(wc -l < changed-test-scripts.txt)" -eq 0 ] \
         && [ "$(wc -l < other-changed-files.txt)" -eq 0 ]
     then
         # If only the perf tests were changed in the PR, we will run only these
@@ -208,15 +207,15 @@ function run_tests
         test_files=$(ls "$test_prefix"/*.xml)
     fi
 
-    # For PRs w/o changes in test definitons and scripts, test only a subset of
-    # queries, and run them less times. If the corresponding environment variables
-    # are already set, keep those values.
-    if [ "$PR_TO_TEST" -ne 0 ] \
-        && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ] \
-        && [ "$(wc -l < changed-test-scripts.txt)" -eq 0 ]
+    # For PRs w/o changes in test definitons, test only a subset of queries,
+    # and run them less times. If the corresponding environment variables are
+    # already set, keep those values.
+    #
+    # NOTE: too high CHPC_RUNS/CHPC_MAX_QUERIES may hit internal CI timeout.
+    if [ "$PR_TO_TEST" -ne 0 ] && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ]
     then
         CHPC_RUNS=${CHPC_RUNS:-7}
-        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-20}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
     else
         CHPC_RUNS=${CHPC_RUNS:-13}
         CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
