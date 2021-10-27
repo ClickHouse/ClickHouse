@@ -3,8 +3,8 @@ import os
 import json
 import sys
 import logging
-from pr_info import PRInfo
 from github import Github
+from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 
 NAME = 'Run Check (actions)'
