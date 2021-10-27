@@ -2,6 +2,7 @@
 #include <set>
 #include <optional>
 #include <memory>
+#include <ThriftHiveMetastore.h>
 #include <Poco/Mutex.h>
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
@@ -26,6 +27,7 @@
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/Hive/HiveCommon.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
@@ -79,8 +81,12 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Storages/MergeTree/BackgroundJobsExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
+#include <thrift/protocol/TBinaryProtocol.h>
+#include <thrift/transport/TBufferTransports.h>
+#include <thrift/transport/TSocket.h>
 #include <filesystem>
 
 
@@ -140,6 +146,10 @@ struct ContextSharedPart
     mutable std::mutex storage_policies_mutex;
     /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
+    /// Separate mutex for re-initialization of hive metastore client. This operation could take a long time and must not interfere with another operations.
+    mutable std::mutex hive_metastore_mutex;
+    /// Separate mutex for re-initialization of hdfs file system. This operation could take a long time and must not interfere with another operations.
+    mutable std::mutex hdfs_filesystem_mutex;
 
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
@@ -151,6 +161,9 @@ struct ContextSharedPart
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
+
+    mutable std::map<String, HMSClientPtr> hive_metastore_clients; /// Map for hive metastore clients
+    // mutable std::map<String, HDFSFileSystemPtr> hdfs_filesystems; /// Map for hdfs file systems.
 
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
@@ -1644,6 +1657,54 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
         shared->zookeeper = shared->zookeeper->startNewSession();
 
     return shared->zookeeper;
+}
+
+HMSClientPtr Context::getHMSClient(const String & name) const
+{
+    using namespace apache::thrift;
+    using namespace apache::thrift::protocol;
+    using namespace apache::thrift::transport;
+    using namespace Apache::Hadoop::Hive;
+
+    std::lock_guard lock(shared->hive_metastore_mutex);
+    auto it = shared->hive_metastore_clients.find(name);
+    if (it == shared->hive_metastore_clients.end() || it->second->isExpired())
+    {
+        // connect to hive metastore
+        Poco::URI hms_url(name);
+        const auto& host = hms_url.getHost();
+        auto port = hms_url.getPort();
+
+        std::shared_ptr<TSocket> socket = std::make_shared<TSocket>(host, port);
+        socket->setKeepAlive(true);
+        socket->setConnTimeout(60000);
+        socket->setRecvTimeout(60000);
+        socket->setSendTimeout(60000);
+        std::shared_ptr<TTransport> transport(new TBufferedTransport(socket));
+        std::shared_ptr<TProtocol> protocol(new TBinaryProtocol(transport));
+        std::shared_ptr<ThriftHiveMetastoreClient> client = std::make_shared<ThriftHiveMetastoreClient>(protocol);
+        try
+        {
+            transport->open();
+        }
+        catch (TException & tx)
+        {
+            throw Exception("connect to hive metastore:" + name + " failed." + tx.what(), ErrorCodes::BAD_ARGUMENTS);
+        }
+
+        if (it == shared->hive_metastore_clients.end())
+        {
+            HMSClientPtr hms_client = std::make_shared<HMSClient>(std::move(client), shared_from_this());
+            shared->hive_metastore_clients[name] = hms_client;
+            return hms_client;
+        }
+        else
+        {
+            it->second->setClient(std::move(client));
+            return it->second;
+        }
+    }
+    return it->second;
 }
 
 void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()

@@ -33,6 +33,7 @@ SRCS(
     FileEncryptionCommon.cpp
     HTTPChunkedReadBuffer.cpp
     HTTPCommon.cpp
+    HadoopSnappyReadBuffer.cpp
     HashingWriteBuffer.cpp
     LZMADeflatingWriteBuffer.cpp
     LZMAInflatingReadBuffer.cpp
@@ -52,6 +53,7 @@ SRCS(
     OpenedFile.cpp
     PeekableReadBuffer.cpp
     Progress.cpp
+    ReadBufferFromAlluxio.cpp
     ReadBufferFromEncryptedFile.cpp
     ReadBufferFromFile.cpp
     ReadBufferFromFileBase.cpp
@@ -62,7 +64,10 @@ SRCS(
     ReadBufferFromPocoSocket.cpp
     ReadHelpers.cpp
     ReadSettings.cpp
+    RemoteReadBufferCache.cpp
     SeekAvoidingReadBuffer.cpp
+    SnappyReadBuffer.cpp
+    SnappyWriteBuffer.cpp
     SynchronousReader.cpp
     ThreadPoolReader.cpp
     TimeoutSetter.cpp

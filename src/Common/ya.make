@@ -74,7 +74,6 @@ SRCS(
     StackTrace.cpp
     StatusFile.cpp
     StatusInfo.cpp
-    Stopwatch.cpp
     StringUtils/StringUtils.cpp
     StudentTTest.cpp
     SymbolIndex.cpp

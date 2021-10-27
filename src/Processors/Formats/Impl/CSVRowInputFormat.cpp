@@ -99,6 +99,36 @@ static void skipEndOfLine(ReadBuffer & in)
         throw Exception("Expected end of line", ErrorCodes::INCORRECT_DATA);
 }
 
+// try to skip end of line. If not end of line, reset position and return false, otherwise skip and return true.
+static bool trySkipEndOfLine(ReadBuffer & in)
+{
+    /// \n (Unix) or \r\n (DOS/Windows) or \n\r (Mac OS Classic)
+    bool end_of_line = false;
+    char * old_pos = in.position();
+
+    if (*in.position() == '\n')
+    {
+        ++in.position();
+        if (!in.eof() && *in.position() == '\r')
+            ++in.position();
+        end_of_line = true;
+    }
+    else if (*in.position() == '\r')
+    {
+        ++in.position();
+        if (!in.eof() && *in.position() == '\n')
+        {
+            ++in.position();
+            end_of_line = true;
+        }
+    }
+
+    if (!end_of_line)
+    {
+        in.position() = old_pos;
+    }
+    return end_of_line;
+}
 
 static void skipDelimiter(ReadBuffer & in, const char delimiter, bool is_last_column)
 {
@@ -119,6 +149,28 @@ static void skipDelimiter(ReadBuffer & in, const char delimiter, bool is_last_co
     }
     else
         assertChar(delimiter, in);
+}
+
+
+// try skip delimiter and possible end of line. if there are end of line after delimiter, return true, otherwise return false.
+static bool trySkipDelimiter(ReadBuffer & in, const char delimiter)
+{
+    if (in.eof())
+        return false;
+
+    /// we support the extra delimiter at the end of the line
+    if (*in.position() == delimiter)
+    {
+        ++in.position();
+        if (in.eof())
+            return false;
+        return trySkipEndOfLine(in);
+    }
+    else if (!trySkipEndOfLine(in))
+    {
+        throw Exception("Expected end of line", ErrorCodes::INCORRECT_DATA);
+    }
+    return true;
 }
 
 
@@ -176,18 +228,27 @@ void CSVRowInputFormat::readPrefix()
             /// Look at the file header to see which columns we have there.
             /// The missing columns are filled with defaults.
             column_mapping->read_columns.assign(header.columns(), false);
-            do
+            if (format_settings.csv.input_field_names.empty())
             {
-                String column_name;
-                skipWhitespacesAndTabs(in);
-                readCSVString(column_name, in, format_settings.csv);
-                skipWhitespacesAndTabs(in);
+                do
+                {
+                    String column_name;
+                    skipWhitespacesAndTabs(in);
+                    readCSVString(column_name, in, format_settings.csv);
+                    skipWhitespacesAndTabs(in);
 
-                addInputColumn(column_name);
+                    addInputColumn(column_name);
+                } while (checkChar(format_settings.csv.delimiter, in));
+
+                skipDelimiter(in, format_settings.csv.delimiter, true);
             }
-            while (checkChar(format_settings.csv.delimiter, in));
-
-            skipDelimiter(in, format_settings.csv.delimiter, true);
+            else
+            {
+                for (const auto & column_name : format_settings.csv.input_field_names)
+                {
+                    addInputColumn(column_name);
+                }
+            }
 
             for (auto read_column : column_mapping->read_columns)
             {
@@ -225,11 +286,23 @@ bool CSVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext
 
     ext.read_columns.assign(column_mapping->read_columns.size(), true);
     const auto delimiter = format_settings.csv.delimiter;
+    bool met_end_of_line = false;
+    auto local_read_columns = column_mapping->read_columns;
     for (size_t file_column = 0; file_column < column_mapping->column_indexes_for_input_fields.size(); ++file_column)
     {
         const auto & table_column = column_mapping->column_indexes_for_input_fields[file_column];
         const bool is_last_file_column = file_column + 1 == column_mapping->column_indexes_for_input_fields.size();
 
+        // After encountering a newline, mark the remaining unread columns as false, so that they can be filled with default values
+        if (met_end_of_line)
+        {
+            have_default_columns = true;
+            if (table_column)
+            {
+                local_read_columns[*table_column] = false;
+            }
+            continue;
+        }
         if (table_column)
         {
             skipWhitespacesAndTabs(in);
@@ -247,14 +320,14 @@ bool CSVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext
             readCSVString(tmp, in, format_settings.csv);
         }
 
-        skipDelimiter(in, delimiter, is_last_file_column);
+        met_end_of_line = trySkipDelimiter(in, delimiter);
     }
 
     if (have_default_columns)
     {
-        for (size_t i = 0; i < column_mapping->read_columns.size(); i++)
+        for (size_t i = 0; i < local_read_columns.size(); i++)
         {
-            if (!column_mapping->read_columns[i])
+            if (!local_read_columns[i])
             {
                 /// The column value for this row is going to be overwritten
                 /// with default by the caller, but the general assumption is

@@ -19,6 +19,10 @@ SRCS(
     Distributed/DistributedSettings.cpp
     Distributed/DistributedSink.cpp
     ExecutablePoolSettings.cpp
+    Hive/HiveCommon.cpp
+    Hive/HiveFile.cpp
+    Hive/HiveSettings.cpp
+    Hive/StorageHive.cpp
     IStorage.cpp
     IndicesDescription.cpp
     JoinSettings.cpp
@@ -223,6 +227,7 @@ SRCS(
     extractKeyExpressionList.cpp
     getStructureOfRemoteTable.cpp
     registerStorages.cpp
+    test_hms/CMakeFiles/3.16.3/CompilerIdCXX/CMakeCXXCompilerId.cpp
     transformQueryForExternalDatabase.cpp
 
 )
