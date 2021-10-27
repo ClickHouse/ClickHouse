@@ -8,12 +8,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-bool ExecutorTasks::executeStoppingTask(ExecutionThreadContext & context, std::function<bool()> callback)
-{
-    auto & task = context.addStoppingPipelineTask(std::move(callback));
-    return task.executeTask(stopping_pipeline_task_data);
-}
-
 void ExecutorTasks::finish()
 {
     {
@@ -32,16 +26,6 @@ void ExecutorTasks::rethrowFirstThreadException()
 {
     for (auto & executor_context : executor_contexts)
         executor_context->rethrowExceptionIfHas();
-}
-
-void ExecutorTasks::enterConcurrentReadSection()
-{
-    StoppingPipelineTask::enterConcurrentReadSection(stopping_pipeline_task_data);
-}
-
-void ExecutorTasks::exitConcurrentReadSection()
-{
-    StoppingPipelineTask::exitConcurrentReadSection(stopping_pipeline_task_data);
 }
 
 void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
