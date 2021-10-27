@@ -2,18 +2,16 @@
 import hashlib
 import logging
 import os
-import boto3
-from botocore.exceptions import ClientError, BotoCoreError
 from multiprocessing.dummy import Pool
+import boto3
 from compress_files import compress_file_fast
-from get_robot_token import get_parameter_from_ssm
 
 def _md5(fname):
     hash_md5 = hashlib.md5()
     with open(fname, "rb") as f:
         for chunk in iter(lambda: f.read(4096), b""):
             hash_md5.update(chunk)
-    logging.debug("MD5 for {} is {}".format(fname, hash_md5.hexdigest()))
+    logging.debug("MD5 for %s is %s", fname, hash_md5.hexdigest())
     return hash_md5.hexdigest()
 
 
@@ -27,13 +25,13 @@ def _flatten_list(lst):
     return result
 
 
-class S3Helper(object):
+class S3Helper():
     def __init__(self, host):
         self.session = boto3.session.Session(region_name='us-east-1')
         self.client = self.session.client('s3', endpoint_url=host)
 
     def _upload_file_to_s3(self, bucket_name, file_path, s3_path):
-        logging.debug("Start uploading {} to bucket={} path={}".format(file_path, bucket_name, s3_path))
+        logging.debug("Start uploading %s to bucket=%s path=%s", file_path, bucket_name, s3_path)
         metadata = {}
         if os.path.getsize(file_path) < 64 * 1024 * 1024:
             if s3_path.endswith("txt") or s3_path.endswith("log") or s3_path.endswith("err") or s3_path.endswith("out"):
@@ -55,7 +53,7 @@ class S3Helper(object):
             logging.info("File is too large, do not provide content type")
 
         self.client.upload_file(file_path, bucket_name, s3_path, ExtraArgs=metadata)
-        logging.info("Upload {} to {}. Meta: {}".format(file_path, s3_path, metadata))
+        logging.info("Upload %s to %s. Meta: %s", file_path, s3_path, metadata)
         # last two replacements are specifics of AWS urls: https://jamesd3142.wordpress.com/2018/02/28/amazon-s3-and-the-plus-symbol/
         return "https://s3.amazonaws.com/{bucket}/{path}".format(bucket=bucket_name, path=s3_path).replace('+', '%2B').replace(' ', '%20')
 
@@ -66,7 +64,7 @@ class S3Helper(object):
         return self._upload_file_to_s3('clickhouse-builds', file_path, s3_path)
 
     def _upload_folder_to_s3(self, folder_path, s3_folder_path, bucket_name, keep_dirs_in_s3_path, upload_symlinks):
-        logging.info("Upload folder '{}' to bucket={} of s3 folder '{}'".format(folder_path, bucket_name, s3_folder_path))
+        logging.info("Upload folder '%s' to bucket=%s of s3 folder '%s'", folder_path, bucket_name, s3_folder_path)
         if not os.path.exists(folder_path):
             return []
         files = os.listdir(folder_path)
