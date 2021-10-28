@@ -1,9 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBase64Conversion.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_BASE64
 #    include <DataTypes/DataTypeString.h>

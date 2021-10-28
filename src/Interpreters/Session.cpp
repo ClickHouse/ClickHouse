@@ -324,12 +324,6 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     prepared_client_info->current_user = credentials_.getUserName();
     prepared_client_info->current_address = address;
-
-#if defined(ARCADIA_BUILD)
-    /// This is harmful field that is used only in foreign "Arcadia" build.
-    if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials_))
-        prepared_client_info->current_password = basic_credentials->getPassword();
-#endif
 }
 
 ClientInfo & Session::getClientInfo()
@@ -456,9 +450,6 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     {
         res_client_info.current_user = prepared_client_info->current_user;
         res_client_info.current_address = prepared_client_info->current_address;
-#if defined(ARCADIA_BUILD)
-        res_client_info.current_password = prepared_client_info->current_password;
-#endif
     }
 
     /// Set parameters of initial query.
