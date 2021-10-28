@@ -233,7 +233,7 @@ static String extractZooKeeperPath(const String & path, bool check_starts_with_s
     if (path.empty())
         throw Exception("ZooKeeper path should not be empty", ErrorCodes::BAD_ARGUMENTS);
     if (path[0] == '/')
-        return path;
+        return normalizeZooKeeperPath(path, check_starts_with_slash, log);
     auto pos = path.find(":/");
     if (pos != String::npos && pos < path.find('/'))
     {
