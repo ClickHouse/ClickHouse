@@ -8,6 +8,7 @@ namespace DB
 /// Sink which is returned from Storage::write.
 class SinkToStorage : public ExceptionKeepingTransform
 {
+/// PartitionedSink owns nested sinks.
 friend class PartitionedSink;
 
 public:
