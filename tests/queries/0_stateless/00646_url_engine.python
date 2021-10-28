@@ -116,8 +116,15 @@ class CSVHTTPServer(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         return
 
+
+class HTTPServerV6(HTTPServer):
+    address_family = socket.AF_INET6
+
 def start_server(requests_amount):
-    httpd = HTTPServer(HTTP_SERVER_ADDRESS, CSVHTTPServer)
+    if IS_IPV6:
+        httpd = HTTPServerV6(HTTP_SERVER_ADDRESS, CSVHTTPServer)
+    else:
+        httpd = HTTPServer(HTTP_SERVER_ADDRESS, CSVHTTPServer)
 
     def real_func():
         for i in range(requests_amount):
