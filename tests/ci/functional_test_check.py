@@ -8,10 +8,11 @@ import json
 import time
 import sys
 
+from github import Github
 import requests
+
 from report import create_test_html_report
 from s3_helper import S3Helper
-from github import Github
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 
