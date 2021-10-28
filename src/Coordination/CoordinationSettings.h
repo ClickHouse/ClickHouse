@@ -54,13 +54,13 @@ using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
 
 struct KeeperSettings
 {
-    static constexpr int NO_PORT = -1;
+    static constexpr int NOT_EXIST = -1;
 
-    KeeperSettings() = default;
+    KeeperSettings();
     int server_id;
 
-    int tcp_port{NO_PORT};
-    int tcp_port_secure{NO_PORT};
+    int tcp_port;
+    int tcp_port_secure;
 
     String super_digest;
 
