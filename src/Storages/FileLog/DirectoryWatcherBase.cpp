@@ -2,7 +2,6 @@
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/StorageFileLog.h>
-#include <base/sleep.h>
 
 #include <filesystem>
 #include <unistd.h>

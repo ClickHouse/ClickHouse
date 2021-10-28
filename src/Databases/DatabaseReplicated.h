@@ -94,6 +94,7 @@ private:
 
     std::atomic_bool is_readonly = true;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
+    UInt32 max_log_ptr_at_creation = 0;
 
     mutable ClusterPtr cluster;
 };
