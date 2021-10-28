@@ -1,10 +1,8 @@
 #pragma once
 
 #include <Core/BackgroundSchedulePool.h>
-#include <Core/Names.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/FileLog/StorageFileLog.h>
-#include <base/types.h>
 
 #include <fstream>
 #include <mutex>
