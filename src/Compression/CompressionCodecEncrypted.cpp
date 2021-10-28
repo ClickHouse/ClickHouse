@@ -88,7 +88,7 @@ constexpr size_t tag_size          = 16;   /// AES-GCM-SIV always uses a tag of 
 constexpr size_t key_id_max_size   = 8;    /// Max size of varint.
 constexpr size_t nonce_max_size    = 13;   /// Nonce size and one byte to show if nonce in in text
 constexpr size_t actual_nonce_size = 12;   /// Nonce actual size
-constexpr std::string_view empty_nonce = {"\0\0\0\0\0\0\0\0\0\0\0\0", actual_nonce_size};
+const String empty_nonce = {"\0\0\0\0\0\0\0\0\0\0\0\0", actual_nonce_size};
 
 /// Get encryption/decryption algorithms.
 auto getMethod(EncryptionMethod Method)
@@ -251,7 +251,7 @@ inline const char* readNonce(String& nonce, const char* source)
     /// If first is zero byte: move source and set zero-bytes nonce
     if (!*source)
     {
-        nonce = empty_nonce.data();
+        nonce = empty_nonce;
         return ++source;
     }
     /// Move to next byte. Nonce will begin from there
@@ -404,7 +404,7 @@ void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionM
     /// This will lead to data loss.
     nonce = current_params->nonce[method];
     if (nonce.empty())
-        nonce = empty_nonce.data();
+        nonce = empty_nonce;
 }
 
 String CompressionCodecEncrypted::Configuration::getKey(EncryptionMethod method, const UInt64 & key_id) const
@@ -453,8 +453,8 @@ UInt32 CompressionCodecEncrypted::getMaxCompressedDataSize(UInt32 uncompressed_s
 
 UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 source_size, char * dest) const
 {
-    // Nonce, key and plaintext will be used to generate authentication_tag
-    // and message_encryption_key. AES-GCM-SIV authenticates the encoded additional data and plaintext.
+    // Nonce, key and plaintext will be used to generate authentication tag
+    // and message encryption key. AES-GCM-SIV authenticates the encoded additional data and plaintext.
     // For this purpose message_authentication_key is used.
     // Algorithm is completely deterministic, but does not leak any
     // information about the data block except for equivalence of
