@@ -3641,7 +3641,6 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 -   настройка [optimize_move_to_prewhere](#optimize_move_to_prewhere)
 
-<<<<<<< HEAD
 ## describe_include_subcolumns {#describe_include_subcolumns}
 
 Включает или отключает описание подстолбцов при выполнении запроса [DESCRIBE](../../sql-reference/statements/describe-table.md). Настройка действует, например, на элементы [Tuple](../../sql-reference/data-types/tuple.md) или подстолбцы типов [Map](../../sql-reference/data-types/map.md#map-subcolumns), [Nullable](../../sql-reference/data-types/nullable.md#finding-null) или [Array](../../sql-reference/data-types/array.md#array-size).
@@ -3656,7 +3655,7 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 **Пример**
 
 Смотрите пример запроса [DESCRIBE](../../sql-reference/statements/describe-table.md).
-=======
+
 ## async_insert {#async-insert}
 
 Включает или отключает асинхронные вставки. Работает только для вставок по протоколу HTTP. Обратите внимание, что при таких вставках дедупликация не производится.
@@ -3740,4 +3739,3 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 Значение по умолчанию: `0`.
 
->>>>>>> 8b59ca5905c40df52adf3b03302f8cc3177403d9
