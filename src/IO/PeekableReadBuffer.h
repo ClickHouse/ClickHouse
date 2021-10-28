@@ -20,7 +20,7 @@ class PeekableReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
     friend class PeekableReadBufferCheckpoint;
 public:
-    explicit PeekableReadBuffer(ReadBuffer & sub_buf_, bool use_existing_memory = false, size_t start_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+    explicit PeekableReadBuffer(ReadBuffer & sub_buf_, size_t start_size_ = 0);
 
     ~PeekableReadBuffer() override;
 
@@ -84,16 +84,21 @@ private:
     /// Updates all invalidated pointers and sizes.
     void resizeOwnMemoryIfNecessary(size_t bytes_to_append);
 
+    char * getMemoryData() { return use_stack_memory ? stack_memory : memory.data(); }
+    const char * getMemoryData() const { return use_stack_memory ? stack_memory : memory.data(); }
+
 
     ReadBuffer & sub_buf;
     size_t peeked_size = 0;
     std::optional<Position> checkpoint = std::nullopt;
     bool checkpoint_in_own_memory = false;
 
-    /// Small amount of memory on stack to use in BufferWithOwnMemory on
-    /// it's creation to prevent unnecessary allocation if PeekableReadBuffer
-    /// is often created.
-    char existing_memory[16];
+    /// To prevent expensive and in some cases unnecessary memory allocations on PeekableReadBuffer
+    /// creation (for example if PeekableReadBuffer is often created or if we need to remember small amount of
+    /// data after checkpoint), at the beginning we will use small amount of memory on stack and allocate
+    /// larger buffer only if reserved memory is not enough.
+    char stack_memory[16];
+    bool use_stack_memory = true;
 };
 
 
