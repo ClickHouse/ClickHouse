@@ -37,6 +37,7 @@
 #include <Poco/Condition.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/DirectoryIterator.h>
+#include <Poco/LogFile.h>
 
 #include <base/logger_useful.h>
 #include <base/ErrorHandlers.h>
@@ -1037,6 +1038,8 @@ void BaseDaemon::setupWatchdog()
             else if (errno != EINTR)
                 throw Poco::Exception("Cannot waitpid, errno: " + std::string(strerror(errno)));
         } while (true);
+
+        Poco::LogFile::INDEPENDENT_STREAM_COMPRESS = true;
 
         if (errno == ECHILD)
         {
