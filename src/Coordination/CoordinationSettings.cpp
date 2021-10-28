@@ -75,12 +75,6 @@ void KeeperSettings::dump(WriteBufferFromOwnString & buf) const
         write("tcp_port_secure=");
         write_int(tcp_port_secure);
     }
-    if (!super_digest.empty())
-    {
-        write("superdigest=");
-        write(super_digest);
-        buf.write('\n');
-    }
 
     write("log_storage_path=");
     write(log_storage_path);
@@ -166,7 +160,7 @@ KeeperSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
     }
     if (config.has("keeper_server.superdigest"))
     {
-        ret->super_digest = config.getString("keeper_server.tcp_port_secure");
+        ret->super_digest = config.getString("keeper_server.superdigest");
     }
 
     ret->log_storage_path = getLogsPathFromConfig(config, standalone_keeper_);
