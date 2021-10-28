@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2086,SC2001
+# shellcheck disable=SC2086,SC2001,SC2046
 
 set -eux
 set -o pipefail
@@ -33,7 +33,7 @@ function clone
                 git checkout "$SHA_TO_TEST"
                 echo "Checked out nominal SHA $SHA_TO_TEST for PR $PR_TO_TEST"
             fi
-            git diff --name-only "$(git merge-base origin/master HEAD)" HEAD | tee ci-changed-files.txt
+            git diff --name-only $(git merge-base origin/master HEAD) HEAD | tee ci-changed-files.txt
         else
             if [ -v COMMIT_SHA ]; then
                 git fetch --depth 1 origin "$SHA_TO_TEST"
