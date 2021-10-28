@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-#
-from report import create_test_html_report
-from s3_helper import S3Helper
-import requests
-from github import Github
-from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+
 import csv
-from pr_info import PRInfo
 import logging
 import subprocess
 import os
 import json
 import time
-from pr_info import PRInfo
 import sys
+
+import requests
+from report import create_test_html_report
+from s3_helper import S3Helper
+from github import Github
+from get_robot_token import get_best_robot_token
+from pr_info import PRInfo
 
 DOWNLOAD_RETRIES_COUNT = 5
 
@@ -37,8 +37,8 @@ def upload_results(s3_client, pr_number, commit_sha, test_results, raw_log, addi
     branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
     branch_name = "master"
     if pr_number != 0:
-        branch_name = "PR #{}".format(pr_number)
-        branch_url = "https://github.com/ClickHouse/ClickHouse/pull/" + str(pr_number)
+        branch_name = f"PR #{pr_number}"
+        branch_url = f"https://github.com/ClickHouse/ClickHouse/pull/{pr_number}"
     commit_url = f"https://github.com/ClickHouse/ClickHouse/commit/{commit_sha}"
 
     task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
@@ -47,7 +47,7 @@ def upload_results(s3_client, pr_number, commit_sha, test_results, raw_log, addi
     additional_urls.pop(0)
 
     html_report = create_test_html_report(check_name, test_results, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls, True)
-    with open('report.html', 'w') as f:
+    with open('report.html', 'w', encoding='utf-8') as f:
         f.write(html_report)
 
     url = s3_client.upload_test_report_to_s3('report.html', s3_path_prefix + ".html")
@@ -89,7 +89,9 @@ def dowload_build_with_progress(url, path):
                         if sys.stdout.isatty():
                             done = int(50 * dl / total_length)
                             percent = int(100 * float(dl) / total_length)
-                            sys.stdout.write("\r[{}{}] {}%".format('=' * done, ' ' * (50-done), percent))
+                            eq_str = '=' * done
+                            space_str = ' ' * (50 - done)
+                            sys.stdout.write(f"\r[{eq_str}{space_str}] {percent}%")
                             sys.stdout.flush()
             break
         except Exception as ex:
@@ -99,7 +101,7 @@ def dowload_build_with_progress(url, path):
             if os.path.exists(path):
                 os.remove(path)
     else:
-        raise Exception("Cannot download dataset from {}, all retries exceeded".format(url))
+        raise Exception(f"Cannot download dataset from {url}, all retries exceeded")
 
     sys.stdout.write("\n")
     logging.info("Downloading finished")
@@ -115,16 +117,16 @@ def download_builds(result_path, build_urls):
 
 def get_build_config(build_number, repo_path):
     ci_config_path = os.path.join(repo_path, "tests/ci/ci_config.json")
-    with open(ci_config_path, 'r') as ci_config:
+    with open(ci_config_path, 'r', encoding='utf-8') as ci_config:
         config_dict = json.load(ci_config)
         return config_dict['build_config'][build_number]
 
 def get_build_urls(build_config_str, reports_path):
-    for root, dirs, files in os.walk(reports_path):
+    for root, _, files in os.walk(reports_path):
         for f in files:
             if build_config_str in f :
                 logging.info("Found build report json %s", f)
-                with open(os.path.join(root, f), 'r') as file_handler:
+                with open(os.path.join(root, f), 'r', encoding='utf-8') as file_handler:
                     build_report = json.load(file_handler)
                     return build_report['build_urls']
     return []
@@ -173,13 +175,16 @@ def process_results(result_folder, server_log_path):
 
     status_path = os.path.join(result_folder, "check_status.tsv")
     logging.info("Found test_results.tsv")
-    status = list(csv.reader(open(status_path, 'r'), delimiter='\t'))
+    with open(status_path, 'r', encoding='utf-8') as status_file:
+        status = list(csv.reader(status_file, delimiter='\t'))
+
     if len(status) != 1 or len(status[0]) != 2:
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
     results_path = os.path.join(result_folder, "test_results.tsv")
-    test_results = list(csv.reader(open(results_path, 'r'), delimiter='\t'))
+    with open(results_path, 'r', encoding='utf-8') as results_file:
+        test_results = list(csv.reader(results_file, delimiter='\t'))
     if len(test_results) == 0:
         raise Exception("Empty results")
 
@@ -199,7 +204,7 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
+    with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
         event = json.load(event_file)
 
     pr_info = PRInfo(event)
@@ -212,7 +217,7 @@ if __name__ == "__main__":
     docker_image = image_name
     if os.path.exists(images_path):
         logging.info("Images file exists")
-        with open(images_path, 'r') as images_fd:
+        with open(images_path, 'r', encoding='utf-8') as images_fd:
             images = json.load(images_fd)
             logging.info("Got images %s", images)
             if image_name in images:
@@ -220,7 +225,7 @@ if __name__ == "__main__":
 
     for i in range(10):
         try:
-            logging.info(f"Pulling image {docker_image}")
+            logging.info("Pulling image %s", docker_image)
             subprocess.check_output(f"docker pull {docker_image}", stderr=subprocess.STDOUT, shell=True)
             break
         except Exception as ex:
@@ -253,18 +258,19 @@ if __name__ == "__main__":
     run_command = get_run_command(packages_path, result_path, server_log_path, kill_timeout, [], docker_image)
     logging.info("Going to run func tests: %s", run_command)
 
-    with open(run_log_path, 'w') as log:
-        retcode = subprocess.Popen(run_command, shell=True, stderr=log, stdout=log).wait()
-        if retcode == 0:
-            logging.info("Run successfully")
-        else:
-            logging.info("Run failed")
+    with open(run_log_path, 'w', encoding='utf-8') as log:
+        with subprocess.Popen(run_command, shell=True, stderr=log, stdout=log) as process:
+            retcode = process.wait()
+            if retcode == 0:
+                logging.info("Run successfully")
+            else:
+                logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
     state, description, test_results, additional_logs = process_results(result_path, server_log_path)
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, run_log_path, additional_logs, check_name)
-    print("::notice ::Report url: {}".format(report_url))
+    print(f"::notice ::Report url: {report_url}")
     commit = get_commit(gh, pr_info.sha)
     commit.create_status(context=check_name, description=description, state=state, target_url=report_url)
