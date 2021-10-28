@@ -37,7 +37,11 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     has_limit_below_one_block(has_limit_below_one_block_),
     total_rows(data_part->index_granularity.getRowsCountInRanges(all_mark_ranges))
 {
-    addTotalRowsApprox(total_rows);
+    /// Actually it means that parallel reading from replicas enabled
+    /// and we have to collaborate with initiator.
+    /// In this case we won't set approximate rows, bacause it will be accounted multiple times
+    if (!read_task_callback_.has_value())
+        addTotalRowsApprox(total_rows);
     ordered_names = header_without_virtual_columns.getNames();
 }
 

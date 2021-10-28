@@ -82,7 +82,7 @@ Testing 00093_prewhere_array_join.sql ----> Ok! ✅
 Testing 00094_order_by_array_join_limit.sql ----> Ok! ✅
 Skipping 00095_hyperscan_profiler.sql 
 Testing 00139_like.sql ----> Ok! ✅
-Skipping 00140_rename.sql 
+Testing 00140_rename.sql ----> Ok! ✅
 Testing 00141_transform.sql ----> Ok! ✅
 Testing 00142_system_columns.sql ----> Ok! ✅
 Testing 00143_transform_non_const_default.sql ----> Ok! ✅
@@ -90,62 +90,7 @@ Testing 00144_functions_of_aggregation_states.sql ----> Ok! ✅
 Testing 00145_aggregate_functions_statistics.sql ----> Ok! ✅
 Testing 00146_aggregate_function_uniq.sql ----> Ok! ✅
 Testing 00147_global_in_aggregate_function.sql ----> Ok! ✅
-Testing 00148_monotonic_functions_and_index.sql ----> Failed! ❌ 
-Plain:
-256
-256
-256
-256
-256
-256
-256
-17322
-256
-417	1	17322
-417	1	17322
-1	1	256
-1	1	256
-1	256
-1592312
-2068010
-1113002
-1115003
-1588700
-1590701
-1592312
-2068010
-1113002
-1115003
-1588700
-1590701
-1113002
-1115003
-1588700
-1590701
-1353623
-1353623
-1353623
-1353623
-1353623
-1353623
-0
-0
-0
-Distributed:
-256
-256
-256
-256
-256
-256
-256
-17322
-256
-417	1	17322
-417	1	17322
-1	1	256
-1	1	256
-1	256
+Testing 00148_monotonic_functions_and_index.sql ----> Ok! ✅
 Testing 00149_quantiles_timing_distributed.sql ----> Ok! ✅
 Testing 00150_quantiles_timing_precision.sql ----> Ok! ✅
 Testing 00151_order_by_read_in_order.sql ----> Ok! ✅
@@ -163,4 +108,3 @@ Testing 00165_jit_aggregate_functions.sql ----> Ok! ✅
 Skipping 00166_explain_estimate.sql 
 Testing 00167_read_bytes_from_fs.sql ----> Ok! ✅
 Total failed tests: 
-🔺  00148_monotonic_functions_and_index.sql

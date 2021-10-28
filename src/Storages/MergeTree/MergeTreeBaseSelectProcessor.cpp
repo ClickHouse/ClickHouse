@@ -76,32 +76,6 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
 
 bool MergeTreeBaseSelectProcessor::getNewTask()
 {
-
-    String anime = "Buffered ranges \n";
-    for (const auto & buff: buffered_ranges)
-    {
-        for (const auto & range : buff)
-        {
-            anime += fmt::format("({} {}) \n", range.begin, range.end);
-        }
-        anime += "\n";
-    }
-
-
-    // LOG_FATAL(&Poco::Logger::get("MergeTreeBaseSelectProcessor"), anime);
-
-
-    // SCOPE_EXIT({
-    //     String result;
-
-    //     result += fmt::format("After coordination\n");
-    //     for (auto range : task->mark_ranges)
-    //         result += fmt::format("({} {}), ", range.begin, range.end);
-    //     result += fmt::format("\n");
-
-    //     // LOG_FATAL(&Poco::Logger::get("MergeTreeBaseSelectProcessor"), result);
-    // });
-
     /// Try to get from buffer
     while (!buffered_ranges.empty())
     {
@@ -121,18 +95,7 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
         if (!read_task_callback.has_value())
         {
             if (res)
-            {
                 finalizeNewTask();
-
-                // String result;
-
-                // result += fmt::format("Got task with ranges \n");
-                // for (auto range : task->mark_ranges)
-                //     result += fmt::format("({} {}), ", range.begin, range.end);
-                // result += fmt::format("\n");
-
-                // LOG_FATAL(&Poco::Logger::get("MergeTreeBaseSelectProcessor"), result);
-            }
 
             return res;
         }
@@ -245,9 +208,9 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
             rows_to_read = std::min(rows_to_read, rows_to_read_for_max_size_column_with_filtration);
         }
 
-        // auto unread_rows_in_current_granule = current_reader.numPendingRowsInCurrentGranule();
-        // if (unread_rows_in_current_granule >= rows_to_read)
-        //     return rows_to_read;
+        auto unread_rows_in_current_granule = current_reader.numPendingRowsInCurrentGranule();
+        if (unread_rows_in_current_granule >= rows_to_read)
+            return rows_to_read;
 
         return index_granularity.countMarksForRows(current_reader.currentMark(), rows_to_read, current_reader.numReadRowsInCurrentGranule());
     };
@@ -619,61 +582,61 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
 
 void MergeTreeBaseSelectProcessor::fillBufferedRanged(MarkRanges ranges)
 {
-    const size_t max_batch_size = 10;
-    size_t current_batch_size = 0;
+    // const size_t max_batch_size = 10;
+    // size_t current_batch_size = 0;
 
-    buffered_ranges.emplace_back();
+    // buffered_ranges.emplace_back();
 
-    for (const auto & range : ranges)
-    {
-        auto expand_if_needed = [&]
-        {
-            if (current_batch_size > max_batch_size)
-            {
-                buffered_ranges.emplace_back();
-                current_batch_size = 0;
-            }
+    // for (const auto & range : ranges)
+    // {
+    //     auto expand_if_needed = [&]
+    //     {
+    //         if (current_batch_size > max_batch_size)
+    //         {
+    //             buffered_ranges.emplace_back();
+    //             current_batch_size = 0;
+    //         }
 
-        };
+    //     };
 
-        expand_if_needed();
+    //     expand_if_needed();
 
-        if (range.end - range.begin < max_batch_size)
-        {
-            buffered_ranges.back().push_back(range);
-            current_batch_size += range.end - range.begin;
-            continue;
-        }
+    //     if (range.end - range.begin < max_batch_size)
+    //     {
+    //         buffered_ranges.back().push_back(range);
+    //         current_batch_size += range.end - range.begin;
+    //         continue;
+    //     }
 
-        auto current_begin = range.begin;
-        auto current_end = range.begin + max_batch_size;
+    //     auto current_begin = range.begin;
+    //     auto current_end = range.begin + max_batch_size;
 
-        while (current_end < range.end)
-        {
-            buffered_ranges.back().emplace_back(current_begin, current_end);
-            current_batch_size += current_end - current_begin;
-            current_begin = current_end;
-            current_end = current_end + max_batch_size;
+    //     while (current_end < range.end)
+    //     {
+    //         buffered_ranges.back().emplace_back(current_begin, current_end);
+    //         current_batch_size += current_end - current_begin;
+    //         current_begin = current_end;
+    //         current_end = current_end + max_batch_size;
 
-            expand_if_needed();
-        }
+    //         expand_if_needed();
+    //     }
 
-        if (range.end - current_begin > 0)
-        {
-            buffered_ranges.back().emplace_back(current_begin, range.end);
-            current_batch_size += range.end - current_begin;
+    //     if (range.end - current_begin > 0)
+    //     {
+    //         buffered_ranges.back().emplace_back(current_begin, range.end);
+    //         current_batch_size += range.end - current_begin;
 
-            /// Do not need to update current_begin and current_end
+    //         /// Do not need to update current_begin and current_end
 
-            expand_if_needed();
-        }
-    }
+    //         expand_if_needed();
+    //     }
+    // }
 
-    if (buffered_ranges.back().empty())
-        buffered_ranges.pop_back();
+    // if (buffered_ranges.back().empty())
+    //     buffered_ranges.pop_back();
 
-    // std::sort(ranges.begin(), ranges.end());
-    // buffered_ranges.emplace_back(ranges);
+    std::sort(ranges.begin(), ranges.end());
+    buffered_ranges.emplace_back(ranges);
 }
 
 MergeTreeBaseSelectProcessor::~MergeTreeBaseSelectProcessor() = default;

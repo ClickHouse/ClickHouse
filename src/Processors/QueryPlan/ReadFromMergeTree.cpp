@@ -170,11 +170,12 @@ Pipe ReadFromMergeTree::readFromPool(
             data, metadata_snapshot, use_uncompressed_cache,
             prewhere_info, actions_settings, reader_settings, virt_column_names, read_task_callback);
 
-        if (i == 0)
-        {
-            /// Set the approximate number of rows for the first source only
+        /// Set the approximate number of rows for the first source only
+        /// In case of parallel processing on replicas do not set approximate rows at all.
+        /// Because the value will be identical on every replicas and will be accounted
+        /// multiple times (settings.max_parallel_replicas times more)
+        if (i == 0 && !settings.collaborate_with_initiator)
             source->addTotalRowsApprox(total_rows);
-        }
 
         pipes.emplace_back(std::move(source));
     }

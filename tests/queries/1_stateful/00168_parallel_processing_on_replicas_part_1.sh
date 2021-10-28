@@ -25,7 +25,6 @@ $CLICKHOUSE_CLIENT $SETTINGS -nm -q '''
 FAILED=()
 
 PreviouslyFailed=(
-    "00148_monotonic_functions_and_index.sql"
 )
 
 SkipList=(
