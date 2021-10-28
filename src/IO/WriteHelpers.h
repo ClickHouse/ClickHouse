@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <iterator>
 #include <concepts>
-#include <deque>
 
 #include <pcg-random/pcg_random.hpp>
 
@@ -119,7 +118,6 @@ inline void writeStringBinary(const std::string_view & s, WriteBuffer & buf)
     writeStringBinary(StringRef{s}, buf);
 }
 
-/// TODO: maybe use concept iterable contaiter for both functions?
 
 template <typename T>
 void writeVectorBinary(const std::vector<T> & v, WriteBuffer & buf)
@@ -128,19 +126,6 @@ void writeVectorBinary(const std::vector<T> & v, WriteBuffer & buf)
 
     for (typename std::vector<T>::const_iterator it = v.begin(); it != v.end(); ++it)
         writeBinary(*it, buf);
-}
-
-// TODO: Make it better
-template <typename T>
-void writeDequeBinary(const std::deque<T> & v, WriteBuffer & buf)
-{
-    writeVarUInt(v.size(), buf);
-
-    for (typename std::deque<T>::const_iterator it = v.begin(); it != v.end(); ++it)
-    {
-        writeBinary(it->begin, buf);
-        writeBinary(it->end, buf);
-    }
 }
 
 

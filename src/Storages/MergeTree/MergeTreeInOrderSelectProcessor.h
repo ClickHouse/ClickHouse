@@ -25,10 +25,7 @@ public:
 private:
     void prepareNewTask() override {}
     bool getNewTaskImpl() override;
-    void finalizeNewTask() override {
-        // LOG_FATAL(&Poco::Logger::get("MergeTreeInOrderSelectProcessor"), "finalizeNewTask");
-        // std::cout << "MergeTreeInOrderSelectProcessor" << std::endl;
-    }
+    void finalizeNewTask() override {}
 
     Poco::Logger * log = &Poco::Logger::get("MergeTreeInOrderSelectProcessor");
 };

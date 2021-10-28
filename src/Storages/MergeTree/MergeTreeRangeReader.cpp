@@ -172,12 +172,7 @@ MergeTreeRangeReader::Stream::Stream(
 void MergeTreeRangeReader::Stream::checkNotFinished() const
 {
     if (isFinished())
-    {
-        LOG_FATAL(&Poco::Logger::get("MergeTreeRangeReader"), "Current mark {}, last_mark {}", current_mark, last_mark);
-        LOG_FATAL(&Poco::Logger::get("MergeTreeRangeReader"), StackTrace().toString());
-        throw Exception("Cannot read out of marks range.", ErrorCodes::BAD_ARGUMENTS); // FIXME
-    }
-
+        throw Exception("Cannot read out of marks range.", ErrorCodes::BAD_ARGUMENTS);
 }
 
 void MergeTreeRangeReader::Stream::checkEnoughSpaceInCurrentGranule(size_t num_rows) const
@@ -282,17 +277,7 @@ void MergeTreeRangeReader::ReadResult::adjustLastGranule()
     size_t num_rows_to_subtract = total_rows_per_granule - num_read_rows;
 
     if (rows_per_granule.empty())
-    {
-        String anime;
-        if (started_ranges.empty())
-            anime += "started_ranges empty!!!! ";
-        for (const auto & range : started_ranges)
-        {
-            anime += fmt::format("num_granules...{}, begin: {}, end: {} \n", range.num_granules_read_before_start, range.range.begin, range.range.end);
-        }
-        throw Exception("Can't adjust last granule because no granules were added. \n" + anime, ErrorCodes::LOGICAL_ERROR);
-    }
-
+        throw Exception("Can't adjust last granule because no granules were added", ErrorCodes::LOGICAL_ERROR);
 
     if (num_rows_to_subtract > rows_per_granule.back())
         throw Exception("Can't adjust last granule because it has " + toString(rows_per_granule.back())
@@ -636,13 +621,6 @@ bool MergeTreeRangeReader::isCurrentRangeFinished() const
 
 MergeTreeRangeReader::ReadResult MergeTreeRangeReader::read(size_t max_rows, MarkRanges & ranges)
 {
-    String anime;
-    for (const auto & range : ranges)
-        anime += fmt::format("{} {} \n", range.begin, range.end);
-
-    // LOG_FATAL(&Poco::Logger::get("MergeTreeRangeReader"), "Requested to read {}", anime);
-
-
     if (max_rows == 0)
         throw Exception("Expected at least 1 row to read, got 0.", ErrorCodes::LOGICAL_ERROR);
 
@@ -784,7 +762,6 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
                 result.addRows(stream.finalize(result.columns));
                 stream = Stream(ranges.front().begin, ranges.front().end, merge_tree_reader);
 
-                // LOG_FATAL(&Poco::Logger::get("MergeTreeRangeReader"), "Created new stream with begin/end {} {}", ranges.front().begin, ranges.front().end);
                 result.addRange(ranges.front());
                 ranges.pop_front();
             }

@@ -164,9 +164,6 @@ void HedgedConnections::sendQuery(
     {
         Settings modified_settings = settings;
 
-        if (settings.parallel_reading_from_replicas)
-            modified_settings.collaborate_with_initiator = true;
-
         if (disable_two_level_aggregation)
         {
             /// Disable two-level aggregation due to version incompatibility.
@@ -174,11 +171,11 @@ void HedgedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
 
-        // if (offset_states.size() > 1)
-        // {
-        //     modified_settings.parallel_replicas_count = offset_states.size();
-        //     modified_settings.parallel_replica_offset = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;
-        // }
+        if (offset_states.size() > 1)
+        {
+            modified_settings.parallel_replicas_count = offset_states.size();
+            modified_settings.parallel_replica_offset = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;
+        }
 
         replica.connection->sendQuery(timeouts, query, query_id, stage, &modified_settings, &client_info, with_pending_data);
         replica.change_replica_timeout.setRelative(timeouts.receive_data_timeout);

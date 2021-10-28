@@ -5,7 +5,6 @@
 #include <limits>
 #include <algorithm>
 #include <iterator>
-#include <deque>
 
 #include <type_traits>
 
@@ -157,24 +156,6 @@ void readVectorBinary(std::vector<T> & v, ReadBuffer & buf, size_t MAX_VECTOR_SI
     v.resize(size);
     for (size_t i = 0; i < size; ++i)
         readBinary(v[i], buf);
-}
-
-// FIXME
-template <typename T>
-void readDequeBinary(std::deque<T> & v, ReadBuffer & buf, size_t MAX_VECTOR_SIZE = DEFAULT_MAX_STRING_SIZE)
-{
-    size_t size = 0;
-    readVarUInt(size, buf);
-
-    if (size > MAX_VECTOR_SIZE)
-        throw Poco::Exception("Too large vector size.");
-
-    v.resize(size);
-    for (size_t i = 0; i < size; ++i)
-    {
-        readBinary(v[i].begin, buf);
-        readBinary(v[i].end, buf);
-    }
 }
 
 

@@ -131,21 +131,6 @@ Pipe ReadFromMergeTree::readFromPool(
     const auto & settings = context->getSettingsRef();
     MergeTreeReadPool::BackoffSettings backoff_settings(settings);
 
-    // LOG_FATAL(&Poco::Logger::get("ReadFromMergeTree"), "Here!!!");
-
-    // String anime;
-    // for (const auto & part : parts_with_range)
-    // {
-    //     anime += part.data_part->name + '\n';
-    //     for (const auto & range : part.ranges)
-    //     {
-    //         anime += fmt::format("({} {}), ", range.begin, range.end);
-    //     }
-    //     anime += '\n';
-    // }
-
-    // LOG_TRACE(&Poco::Logger::get("ReadFromMergeTree"), anime);
-
     auto pool = std::make_shared<MergeTreeReadPool>(
         max_streams,
         sum_marks,
@@ -157,7 +142,7 @@ Pipe ReadFromMergeTree::readFromPool(
         required_columns,
         backoff_settings,
         settings.preferred_block_size_bytes,
-        true);
+        false);
 
     auto * logger = &Poco::Logger::get(data.getLogName() + " (SelectExecutor)");
     LOG_DEBUG(logger, "Reading approx. {} rows with {} streams", total_rows, max_streams);
@@ -234,7 +219,6 @@ Pipe ReadFromMergeTree::read(
     RangesInDataParts parts_with_range, Names required_columns, ReadType read_type,
     size_t max_streams, size_t min_marks_for_concurrent_read, bool use_uncompressed_cache)
 {
-    // (void)read_type;
     if (read_type == ReadType::Default && max_streams > 1)
         return readFromPool(parts_with_range, required_columns, max_streams,
                             min_marks_for_concurrent_read, use_uncompressed_cache);
@@ -815,7 +799,6 @@ MergeTreeDataSelectAnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool sample_factor_column_queried,
     Poco::Logger * log)
 {
-    // LOG_FATAL(&Poco::Logger::get("ReadFromMergeTree::selectRangesToRead"), "Here");
     AnalysisResult result;
     const auto & settings = context->getSettingsRef();
 

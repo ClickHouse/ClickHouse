@@ -66,10 +66,6 @@ PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
 
     checkConsistencyOrThrow();
 
-    // WriteBufferFromOwnString wb;
-    // request.serializeToJSON(wb);
-    // LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Got request {}", wb.str());
-
     auto partition_it = partitions.find(request.partition_id);
 
     SCOPE_EXIT({
@@ -124,7 +120,6 @@ PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
     /// Nothing to update in our state
     if (number_of_part_intersection >= 2)
     {
-        // LOG_FATAL(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Denied 1");
         return {.denied = true, .mark_ranges = {}};
     }
 
@@ -133,7 +128,6 @@ PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
     {
         if (!partition_reading.part_ranges.checkPartIsSuitable(part_to_read))
         {
-            // LOG_FATAL(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Denied 2");
             return {.denied = true, .mark_ranges = {}};
         }
 
@@ -161,7 +155,6 @@ PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
 
         if (result.empty())
         {
-            // LOG_FATAL(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Denied 3");
             return {.denied = true, .mark_ranges = {}};
         }
 
