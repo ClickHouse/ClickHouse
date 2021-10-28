@@ -849,12 +849,47 @@ void StorageReplicatedMergeTree::dropReplica(zkutil::ZooKeeperPtr zookeeper, con
         throw Exception("Table was not dropped because ZooKeeper session has expired.", ErrorCodes::TABLE_WAS_NOT_DROPPED);
 
     auto remote_replica_path = zookeeper_path + "/replicas/" + replica;
+
     LOG_INFO(logger, "Removing replica {}, marking it as lost", remote_replica_path);
     /// Mark itself lost before removing, because the following recursive removal may fail
     /// and partially dropped replica may be considered as alive one (until someone will mark it lost)
     zookeeper->trySet(remote_replica_path + "/is_lost", "1");
+
+    /// NOTE: we should check for remote_replica_path existence,
+    /// since otherwise DROP REPLICA will fail if the replica had been already removed.
+    if (!zookeeper->exists(remote_replica_path))
+    {
+        LOG_INFO(logger, "Removing replica {} does not exist", remote_replica_path);
+        return;
+    }
+
+    /// Analog of removeRecursive(remote_replica_path)
+    /// but it removes "metadata" firstly.
+    ///
+    /// This will allow to mark table as readonly
+    /// and skip any checks of parts between on-disk and in the zookeeper.
+    ///
+    /// Without this removeRecursive() may remove "parts" first
+    /// and on DETACH/ATTACH (or server restart) it will trigger the following error:
+    ///
+    ///       "The local set of parts of table X doesn't look like the set of parts in ZooKeeper"
+    ///
+    {
+        Strings children = zookeeper->getChildren(remote_replica_path);
+
+        if (std::find(children.begin(), children.end(), "metadata") != children.end())
+            zookeeper->remove(fs::path(remote_replica_path) / "metadata");
+
+        for (const auto & child : children)
+        {
+            if (child != "metadata")
+                zookeeper->removeRecursive(fs::path(remote_replica_path) / child);
+        }
+
+        zookeeper->remove(remote_replica_path);
+    }
+
     /// It may left some garbage if replica_path subtree are concurrently modified
-    zookeeper->tryRemoveRecursive(remote_replica_path);
     if (zookeeper->exists(remote_replica_path))
         LOG_ERROR(logger, "Replica was not completely removed from ZooKeeper, {} still exists and may contain some garbage.", remote_replica_path);
 
