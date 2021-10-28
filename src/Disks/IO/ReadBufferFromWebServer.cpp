@@ -22,6 +22,7 @@ namespace ErrorCodes
 
 
 static constexpr size_t HTTP_MAX_TRIES = 10;
+static constexpr size_t WAIT_INIT = 100;
 
 ReadBufferFromWebServer::ReadBufferFromWebServer(
     const String & url_,
@@ -87,41 +88,34 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
 void ReadBufferFromWebServer::initializeWithRetry()
 {
     /// Initialize impl with retry.
-    auto num_tries = std::max(read_settings.http_max_tries, HTTP_MAX_TRIES);
-    size_t milliseconds_to_wait = read_settings.http_retry_initial_backoff_ms;
-    bool initialized = false;
-    for (size_t i = 0; (i < num_tries) && !initialized; ++i)
+    size_t milliseconds_to_wait = WAIT_INIT;
+    for (size_t i = 0; i < HTTP_MAX_TRIES; ++i)
     {
-        while (milliseconds_to_wait < read_settings.http_retry_max_backoff_ms)
+        try
         {
-            try
+            impl = initialize();
+
+            if (use_external_buffer)
             {
-                impl = initialize();
-
-                if (use_external_buffer)
-                {
-                    /**
-                     * See comment 30 lines lower.
-                     */
-                    impl->set(internal_buffer.begin(), internal_buffer.size());
-                    assert(working_buffer.begin() != nullptr);
-                    assert(!internal_buffer.empty());
-                }
-
-                initialized = true;
-                break;
+                /**
+                 * See comment 30 lines lower.
+                 */
+                impl->set(internal_buffer.begin(), internal_buffer.size());
+                assert(working_buffer.begin() != nullptr);
+                assert(!internal_buffer.empty());
             }
-            catch (Poco::Exception & e)
-            {
-                if (i == num_tries - 1)
-                    throw;
 
-                LOG_ERROR(&Poco::Logger::get("ReadBufferFromWeb"), "Error: {}, code: {}", e.what(), e.code());
-                sleepForMilliseconds(milliseconds_to_wait);
-                milliseconds_to_wait *= 2;
-            }
+            break;
         }
-        milliseconds_to_wait = read_settings.http_retry_initial_backoff_ms;
+        catch (Poco::Exception & e)
+        {
+            if (i == HTTP_MAX_TRIES - 1)
+                throw;
+
+            LOG_ERROR(&Poco::Logger::get("ReadBufferFromWeb"), "Error: {}, code: {}", e.what(), e.code());
+            sleepForMilliseconds(milliseconds_to_wait);
+            milliseconds_to_wait *= 2;
+        }
     }
 }
 
