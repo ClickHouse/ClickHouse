@@ -19,7 +19,6 @@
 #include <Common/RemoteHostFilter.h>
 #include <base/logger_useful.h>
 #include <Poco/URIStreamFactory.h>
-#include <charconv>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -105,11 +104,6 @@ namespace detail
         std::function<void(size_t)> next_callback;
 
         size_t buffer_size;
-
-        size_t bytes_read = 0;
-        size_t start_byte = 0;
-        std::optional<size_t> total_bytes_to_read;
-
         ReadSettings settings;
 
         std::istream * call(Poco::URI uri_, Poco::Net::HTTPResponse & response)
@@ -128,9 +122,6 @@ namespace detail
             {
                 request.set(std::get<0>(http_header_entry), std::get<1>(http_header_entry));
             }
-
-            if (bytes_read && settings.http_retriable_read)
-                request.set("Range", fmt::format("bytes={}-", start_byte + bytes_read));
 
             if (!credentials.getUsername().empty())
                 credentials.authenticate(request);
@@ -192,21 +183,6 @@ namespace detail
             , settings {settings_}
             , use_external_buffer {use_external_buffer_}
         {
-            /**
-             *  Get first byte from `bytes=offset-`, `bytes=offset-end`.
-             *  Now there are two places, where it can be set: 1. in DiskWeb (offset), 2. via config as part of named-collection.
-             *  Also header can be `bytes=-k` (read last k bytes), for this case retries in the middle of reading are disabled.
-             */
-            auto range_header = std::find_if(http_header_entries_.begin(), http_header_entries_.end(),
-                [&](const HTTPHeaderEntry & header) { return std::get<0>(header) == "Range"; });
-            if (range_header != http_header_entries_.end())
-            {
-                auto range = std::get<1>(*range_header).substr(std::strlen("bytes="));
-                auto [ptr, ec] = std::from_chars(range.data(), range.data() + range.size(), start_byte);
-                if (ec != std::errc())
-                    settings.http_retriable_read = false;
-            }
-
             initialize();
         }
 
@@ -224,16 +200,6 @@ namespace detail
                 session->updateSession(uri_redirect);
 
                 istr = call(uri_redirect, response);
-            }
-
-            /// If it is the very first initialization.
-            if (!bytes_read && !total_bytes_to_read)
-            {
-                /// If we do not know total size, disable retries in the middle of reading.
-                if (response.hasContentLength())
-                    total_bytes_to_read = response.getContentLength();
-                else
-                    settings.http_retriable_read = false;
             }
 
             try
@@ -265,9 +231,6 @@ namespace detail
             if (next_callback)
                 next_callback(count());
 
-            if (total_bytes_to_read && bytes_read == total_bytes_to_read.value())
-                return false;
-
             if (impl)
             {
                 if (use_external_buffer)
@@ -298,46 +261,11 @@ namespace detail
             if (impl && !working_buffer.empty())
                 impl->position() = position();
 
-            bool result = false;
-            bool successful_read = false;
-            size_t milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
-            settings.http_max_tries = 10;
-
-            /// Default http_max_tries = 1.
-            for (size_t i = 0; (i < settings.http_max_tries) && !successful_read; ++i)
-            {
-                while (milliseconds_to_wait < settings.http_retry_max_backoff_ms)
-                {
-                    try
-                    {
-                        if (!impl)
-                            initialize();
-
-                        result = impl->next();
-                        successful_read = true;
-                        break;
-                    }
-                    catch (const Poco::Exception & e)
-                    {
-                        if (i == settings.http_max_tries - 1)
-                            throw;
-
-                        LOG_ERROR(&Poco::Logger::get("ReadBufferFromHTTP"), "Error: {}, code: {}", e.what(), e.code());
-                        impl.reset();
-
-                        sleepForMilliseconds(milliseconds_to_wait);
-                        milliseconds_to_wait *= 2;
-                    }
-                }
-                milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
-            }
-
-            if (!result)
+            if (!impl->next())
                 return false;
 
             internal_buffer = impl->buffer();
             working_buffer = internal_buffer;
-            bytes_read += working_buffer.size();
             return true;
         }
 
