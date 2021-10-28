@@ -26,7 +26,7 @@ The `DESCRIBE` statement returns a row for each table column with the following 
 
 All columns in [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) data structures are described separately. The name of each column is prefixed with a parent column name and a dot.
 
-To show internal subcolumns of a [Tuple](../../sql-reference/data-types/tuple.md) or a [Map](../../sql-reference/data-types/map.md#map-subcolumns), use the [describe_include_subcolumns](../../operations/settings/settings.md#describe_include_subcolumns) setting. 
+To show internal subcolumns of other data types, use the [describe_include_subcolumns](../../operations/settings/settings.md#describe_include_subcolumns) setting. 
 
 **Example**
 
