@@ -76,7 +76,8 @@
 	url = https://github.com/ClickHouse-Extras/libcxxabi.git
 [submodule "contrib/snappy"]
 	path = contrib/snappy
-	url = https://github.com/google/snappy
+	url = https://github.com/taiyang-li/snappy.git
+	branch = fix_snappy_build_error
 [submodule "contrib/cppkafka"]
 	path = contrib/cppkafka
 	url = https://github.com/mfontanini/cppkafka.git
