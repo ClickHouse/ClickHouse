@@ -4,6 +4,7 @@
 #include <Common/Exception.h>
 #include <Common/StackTrace.h>
 #include <Common/TraceCollector.h>
+#include <Common/Stopwatch.h>
 #include <Common/thread_local_rng.h>
 #include <base/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -20,12 +21,15 @@ namespace ProfileEvents
 namespace DB
 {
 
-namespace
-{
 #if defined(OS_LINUX)
-    thread_local size_t write_trace_iteration = 0;
+    extern thread_local size_t write_trace_iteration = 0;
+    extern thread_local size_t trace_total_overrun = 0;
+    extern thread_local size_t total_total_frames = 0;
+    extern thread_local UInt64 total_total_time_ns = 0;
 #endif
 
+namespace
+{
     void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
     {
         auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
@@ -34,6 +38,7 @@ namespace
         if (info)
         {
             int overrun_count = info->si_overrun;
+            trace_total_overrun += overrun_count;
 
             /// Quickly drop if signal handler is called too frequently.
             /// Otherwise we may end up infinitelly processing signals instead of doing any useful work.
@@ -52,6 +57,8 @@ namespace
                 }
             }
         }
+        ++total_total_frames;
+        UInt64 start_time = clock_gettime_ns(CLOCK_MONOTONIC_RAW);
 #else
         UNUSED(info);
 #endif
@@ -60,6 +67,12 @@ namespace
         const StackTrace stack_trace(signal_context);
 
         TraceCollector::collect(trace_type, stack_trace, 0);
+
+#if defined(OS_LINUX)
+        UInt64 end_time = clock_gettime_ns(CLOCK_MONOTONIC_RAW);
+        if (end_time > start_time)
+            total_total_time_ns += end_time - start_time;
+#endif
 
         errno = saved_errno;
     }

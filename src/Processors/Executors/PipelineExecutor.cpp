@@ -16,6 +16,13 @@
 namespace DB
 {
 
+#if defined(OS_LINUX)
+    extern thread_local size_t write_trace_iteration;
+    extern thread_local size_t trace_total_overrun;
+    extern thread_local size_t total_total_frames;
+    extern thread_local UInt64 total_total_time_ns;
+#endif
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -496,6 +503,12 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
     {
         auto & context = executor_contexts[thread_num];
         LOG_TRACE(log, "Thread finished. Total time: {} sec. Execution time: {} sec. Processing time: {} sec. Wait time: {} sec.", (context->total_time_ns / 1e9), (context->execution_time_ns / 1e9), (context->processing_time_ns / 1e9), (context->wait_time_ns / 1e9));
+
+#if defined(OS_LINUX)
+        LOG_TRACE(log, "write_trace_iteration {} trace_total_overrun {} total_total_frames {} total_total_time_ns {}",
+                  write_trace_iteration, trace_total_overrun, total_total_frames, total_total_time_ns);
+#endif
+
         if (context->longest_node)
         {
             LOG_TRACE(log, "Longest execution time: {} sec. for {}", context->longest_exec_time, context->longest_node->processor->getName());
