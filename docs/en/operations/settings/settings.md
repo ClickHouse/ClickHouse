@@ -3831,3 +3831,86 @@ Default value: `0`.
 **See Also**
 
 -   [optimize_move_to_prewhere](#optimize_move_to_prewhere) setting
+
+## async_insert {#async-insert}
+
+Enables or disables asynchronous inserts. This makes sense only for insertion over HTTP protocol. Note that deduplication isn't working for such inserts.
+
+If enabled, the data is combined into batches before the insertion into tables, so it is possible to do small and frequent insertions into ClickHouse (up to 15000 queries per second) without buffer tables.
+
+The data is inserted either after the [async_insert_max_data_size](#async-insert-max-data-size) is exceeded or after [async_insert_busy_timeout_ms](#async-insert-busy-timeout-ms) milliseconds since the first `INSERT` query. If the [async_insert_stale_timeout_ms](#async-insert-stale-timeout-ms) is set to a non-zero value, the data is inserted after `async_insert_stale_timeout_ms` milliseconds since the last query.
+
+If [wait_for_async_insert](#wait-for-async-insert) is enabled, every client will wait for the data to be processed and flushed to the table. Otherwise, the query would be processed almost instantly, even if the data is not inserted.
+
+Possible values:
+
+-   0 — Insertions are made synchronously, one after another. 
+-   1 — Multiple asynchronous insertions enabled. 
+
+Default value: `0`.
+
+## async_insert_threads {#async-insert-threads}
+
+The maximum number of threads for background data parsing and insertion.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Asynchronous insertions are disabled.
+
+Default value: `16`.
+
+## wait_for_async_insert {#wait-for-async-insert}
+
+Enables or disables waiting for processing of asynchronous insertion. If enabled, server will return `OK` only after the data is inserted. Otherwise, it will return `OK` even if the data wasn't inserted.
+
+Possible values:
+
+-   0 — Server returns `OK` even if the data is not yet inserted.
+-   1 — Server returns `OK` only after the data is inserted.
+
+Default value: `1`.
+
+## wait_for_async_insert_timeout {#wait-for-async-insert-timeout}
+
+The timeout in seconds for waiting for processing of asynchronous insertion.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Disabled.
+
+Default value: [lock_acquire_timeout](#lock_acquire_timeout).
+
+## async_insert_max_data_size {#async-insert-max-data-size}
+
+The maximum size of the unparsed data in bytes collected per query before being inserted.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Asynchronous insertions are disabled.
+
+Default value: `1000000`.
+
+## async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
+
+The maximum timeout in milliseconds since the first `INSERT` query before inserting collected data.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Timeout disabled.
+
+Default value: `200`.
+
+## async_insert_stale_timeout_ms {#async-insert-stale-timeout-ms}
+
+The maximum timeout in milliseconds since the last `INSERT` query before dumping collected data. If enabled, the settings prolongs the [async_insert_busy_timeout_ms](#async-insert-busy-timeout-ms) with every `INSERT` query as long as [async_insert_max_data_size](#async-insert-max-data-size) is not exceeded.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Timeout disabled.
+
+Default value: `0`.

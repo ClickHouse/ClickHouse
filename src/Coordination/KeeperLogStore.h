@@ -58,6 +58,9 @@ public:
     /// Flush batch of appended entries
     void end_of_append_batch(uint64_t start_index, uint64_t count) override;
 
+    /// Get entry with latest config in logstore
+    nuraft::ptr<nuraft::log_entry> getLatestConfigChange() const;
+
 private:
     mutable std::mutex changelog_lock;
     Poco::Logger * log;
