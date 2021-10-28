@@ -1,0 +1,11 @@
+-- DATABASES --
+INFORMATION_SCHEMA
+default
+information_schema
+system
+test
+default
+zbackslash_letter_commands
+-- TABLES --
+A
+B
