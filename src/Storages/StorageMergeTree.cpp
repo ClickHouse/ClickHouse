@@ -271,7 +271,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 void StorageMergeTree::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
-    TableLockHolder & table_lock_holder)
+    AlterLockHolder & table_lock_holder)
 {
     auto table_id = getStorageID();
     auto old_storage_settings = getSettings();
@@ -1179,6 +1179,7 @@ bool StorageMergeTree::optimize(
 
 ActionLock StorageMergeTree::stopMergesAndWait()
 {
+    /// TODO allow to stop merges in specific partition only (like it's done in ReplicatedMergeTree)
     std::unique_lock lock(currently_processing_in_background_mutex);
 
     /// Asks to complete merges and does not allow them to start.
@@ -1332,6 +1333,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 {
     auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto lock2 = source_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    auto merges_blocker = stopMergesAndWait();
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();
     auto my_metadata_snapshot = getInMemoryMetadataPtr();
 
@@ -1403,13 +1405,9 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
 void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr local_context)
 {
-    /// MOVE PARTITION cannot be run in parallel with merges/mutations,
-    /// since otherwise there can be some merge/mutation in progress,
-    /// that will be created in the source table after MOVE PARTITION.
-    std::unique_lock background_lock(currently_processing_in_background_mutex);
-
     auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto lock2 = dest_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    auto merges_blocker = stopMergesAndWait();
 
     auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
     if (!dest_table_storage)

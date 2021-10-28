@@ -26,6 +26,7 @@ enum FormatVersion : UInt8
     FORMAT_WITH_DEDUPLICATE = 4,
     FORMAT_WITH_UUID = 5,
     FORMAT_WITH_DEDUPLICATE_BY_COLUMNS = 6,
+    FORMAT_WITH_LOG_ENTRY_ID = 7,
 
     FORMAT_LAST
 };
@@ -43,10 +44,16 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
     if (new_part_uuid != UUIDHelpers::Nil)
         format_version = std::max<UInt8>(format_version, FORMAT_WITH_UUID);
 
+    if (!log_entry_id.empty())
+        format_version = std::max<UInt8>(format_version, FORMAT_WITH_LOG_ENTRY_ID);
+
     out << "format version: " << format_version << "\n"
         << "create_time: " << LocalDateTime(create_time ? create_time : time(nullptr)) << "\n"
         << "source replica: " << source_replica << '\n'
         << "block_id: " << escape << block_id << '\n';
+
+    if (format_version >= FORMAT_WITH_LOG_ENTRY_ID)
+        out << "log_entry_id: " << escape << log_entry_id << '\n';
 
     switch (type)
     {
@@ -191,6 +198,9 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
     {
         in >> "block_id: " >> escape >> block_id >> "\n";
     }
+
+    if (format_version >= FORMAT_WITH_LOG_ENTRY_ID)
+        in >> "log_entry_id: " >> escape >> log_entry_id >> "\n";
 
     in >> type_str >> "\n";
 
