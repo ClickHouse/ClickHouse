@@ -229,34 +229,30 @@ namespace detail
             if (next_callback)
                 next_callback(count());
 
-            if (impl)
+            if (use_external_buffer)
             {
-                if (use_external_buffer)
-                {
-                    /**
-                    * use_external_buffer -- means we read into the buffer which
-                    * was passed to us from somewhere else. We do not check whether
-                    * previously returned buffer was read or not, because this branch
-                    * means we are prefetching data, each nextImpl() call we can fill
-                    * a different buffer.
-                    */
-                    impl->set(internal_buffer.begin(), internal_buffer.size());
-                    assert(working_buffer.begin() != nullptr);
-                    assert(!internal_buffer.empty());
-                }
-                else
-                {
-                    /**
-                    * impl was initialized before, pass position() to it to make
-                    * sure there is no pending data which was not read, because
-                    * this branch means we read sequentially.
-                    */
-                    if (!working_buffer.empty())
-                        impl->position() = position();
-                }
+                /**
+                * use_external_buffer -- means we read into the buffer which
+                * was passed to us from somewhere else. We do not check whether
+                * previously returned buffer was read or not (no hasPendingData() check is needed),
+                * because this branch means we are prefetching data,
+                * each nextImpl() call we can fill a different buffer.
+                */
+                impl->set(internal_buffer.begin(), internal_buffer.size());
+                assert(working_buffer.begin() != nullptr);
+                assert(!internal_buffer.empty());
+            }
+            else
+            {
+                /**
+                * impl was initialized before, pass position() to it to make
+                * sure there is no pending data which was not read.
+                */
+                if (!working_buffer.empty())
+                    impl->position() = position();
             }
 
-            if (impl && !working_buffer.empty())
+            if (!working_buffer.empty())
                 impl->position() = position();
 
             if (!impl->next())
