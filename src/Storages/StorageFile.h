@@ -108,6 +108,8 @@ private:
 
     /// Total number of bytes to read (sums for multiple files in case of globs). Needed for progress bar.
     size_t total_bytes_to_read = 0;
+
+    String path_for_partitioned_write;
 };
 
 }
