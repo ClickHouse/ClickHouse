@@ -448,9 +448,8 @@ void StorageTinyLog::addFiles(const NameAndTypePair & column)
         }
     };
 
-    ISerialization::SubstreamPath substream_path;
     auto serialization = type->getDefaultSerialization();
-    serialization->enumerateStreams(stream_callback, substream_path);
+    serialization->enumerateStreams(stream_callback);
 }
 
 
@@ -544,9 +543,8 @@ IStorage::ColumnSizeByName StorageTinyLog::getColumnSizes() const
                 size.data_compressed += file_sizes[fileName(it->second.data_file_path)];
         };
 
-        ISerialization::SubstreamPath substream_path;
         auto serialization = column.type->getDefaultSerialization();
-        serialization->enumerateStreams(stream_callback, substream_path);
+        serialization->enumerateStreams(stream_callback);
     }
 
     return column_sizes;

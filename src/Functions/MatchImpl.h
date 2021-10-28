@@ -6,10 +6,8 @@
 #include <Columns/ColumnString.h>
 #include "Regexps.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#    include <Common/config.h>
-#endif
+#include "config_functions.h"
+#include <Common/config.h>
 
 #if USE_RE2_ST
 #    include <re2_st/re2.h>
@@ -200,7 +198,7 @@ struct MatchImpl
                     }
 
                     /// We check that the entry does not pass through the boundaries of strings.
-                    if (pos + strstr_pattern.size() < begin + offsets[i])
+                    if (pos + required_substring.size() < begin + offsets[i])
                     {
                         /// And if it does not, if necessary, we check the regexp.
 
@@ -344,7 +342,7 @@ struct MatchImpl
                 const UInt8 * next_pos = begin;
 
                 /// If required substring is larger than string size - it cannot be found.
-                if (strstr_pattern.size() <= n)
+                if (required_substring.size() <= n)
                 {
                     Searcher searcher(required_substring.data(), required_substring.size(), end - pos);
 
@@ -360,7 +358,7 @@ struct MatchImpl
                         }
                         next_pos += n;
 
-                        if (pos + strstr_pattern.size() <= next_pos)
+                        if (pos + required_substring.size() <= next_pos)
                         {
                             /// And if it does not, if necessary, we check the regexp.
 
