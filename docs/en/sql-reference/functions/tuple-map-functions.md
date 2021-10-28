@@ -390,5 +390,43 @@ Result:
 └─────────────────────────────┘  
 ```  
   
+## mapExtractKeyLike {#mapExtractKeyLike}  
+  
+**Syntax**
+
+```sql
+mapExtractKeyLike(map, pattern)
+```  
+  
+**Parameters**
+  
+-   `map` — Map. [Map](../../sql-reference/data-types/map.md).  
+-   `pattern`  - String pattern to match.  
+  
+**Returned value**
+
+- A map contained elements the key of which matchs the specified pattern. If there are no elements matched the pattern, it will return an empty map.
+  
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
+
+INSERT INTO test VALUES ({'abc':'abc','def':'def'}), ({'hij':'hij','klm':'klm'});
+
+SELECT mapExtractKeyLike(a, 'a%') FROM test;
+```  
+  
+Result:  
+  
+```text
+┌─mapExtractKeyLike(a, 'a%')─┐
+│ {'abc':'abc'}              │
+│ {}                         │
+└────────────────────────────┘
+```  
+  
 
 [Original article](https://clickhouse.com/docs/en/sql-reference/functions/tuple-map-functions/) <!--hide-->
