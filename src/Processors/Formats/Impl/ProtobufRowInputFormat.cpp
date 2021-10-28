@@ -67,8 +67,7 @@ void registerInputFormatProtobuf(FormatFactory & factory)
             const FormatSettings & settings)
         {
             return std::make_shared<ProtobufRowInputFormat>(buf, sample, std::move(params),
-                FormatSchemaInfo(settings.schema.format_schema, "Protobuf", true,
-                                settings.schema.is_server, settings.schema.format_schema_path),
+                FormatSchemaInfo(settings, "Protobuf", true),
                 with_length_delimiter);
         });
     }
