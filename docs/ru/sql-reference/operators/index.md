@@ -82,6 +82,53 @@ toc_title: "Операторы"
 
 `a GLOBAL NOT IN ...` - функция `globalNotIn(a, b)`
 
+`a = ANY (subquery)` – функция `in(a, subquery)`.  
+
+`a != ANY (subquery)` – равнозначно `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
+
+`a = ALL (subquery)` – равнозначно `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
+
+`a != ALL (subquery)` – функция `notIn(a, subquery)`. 
+
+
+**Примеры**
+
+Запрос с ALL:
+
+``` sql
+SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
+```
+
+Результат:
+
+``` text
+┌─a─┐
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
+Запрос с ANY:
+
+``` sql
+SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
+```
+
+Результат:
+
+``` text
+┌─a─┐
+│ 4 │
+│ 5 │
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
 ## Оператор для работы с датами и временем {#operators-datetime}
 
 ### EXTRACT {#extract}

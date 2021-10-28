@@ -81,6 +81,53 @@ For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-function
 
 `a GLOBAL NOT IN ...` – The `globalNotIn(a, b)` function.
 
+`a = ANY (subquery)` – The `in(a, subquery)` function.  
+
+`a != ANY (subquery)` – The same as `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
+
+`a = ALL (subquery)` – The same as `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
+
+`a != ALL (subquery)` – The `notIn(a, subquery)` function. 
+
+
+**Examples**
+
+Query with ALL:
+
+``` sql
+SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
+```
+
+Result:
+
+``` text
+┌─a─┐
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
+Query with ANY:
+
+``` sql
+SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
+```
+
+Result:
+
+``` text
+┌─a─┐
+│ 4 │
+│ 5 │
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
 ## Operators for Working with Dates and Times {#operators-datetime}
 
 ### EXTRACT {#operator-extract}

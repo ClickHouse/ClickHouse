@@ -45,4 +45,4 @@ set_source_files_properties("${PROTO_SRCS}" "out.cpp" PROPERTIES COMPILE_FLAGS "
 target_include_directories(codegen_select_fuzzer BEFORE PRIVATE "${Protobuf_INCLUDE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}")
 target_include_directories(codegen_select_fuzzer BEFORE PRIVATE "${LibProtobufMutator_SOURCE_DIR}")
 target_include_directories(codegen_select_fuzzer BEFORE PRIVATE "${LibProtobufMutator_SOURCE_DIR}/src")
-target_link_libraries(codegen_select_fuzzer PRIVATE protobuf-mutator dbms ${LIB_FUZZING_ENGINE})
+target_link_libraries(codegen_select_fuzzer PRIVATE protobuf-mutator ${Protobuf_LIBRARY} ${Protobuf_PROTOC_LIBRARY} dbms ${LIB_FUZZING_ENGINE})
