@@ -47,9 +47,16 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
       - name: Style Check
+        env:
+          TEMP_PATH: ${{ runner.temp }}/style_check
         run: |
           cd $GITHUB_WORKSPACE/tests/ci
           python3 style_check.py
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          sudo rm -fr $TEMP_PATH
   BuilderDebDebug:
     needs: DockerHubPush
     runs-on: [self-hosted, builder]
@@ -82,6 +89,11 @@ jobs:
         with:
           name: ${{ env.BUILD_NAME }}
           path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          sudo rm -fr $TEMP_PATH
   BuilderReport:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, style-checker]
@@ -102,6 +114,11 @@ jobs:
           mkdir -p $TEMP_PATH
           cd $GITHUB_WORKSPACE/tests/ci
           python3 build_report_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          sudo rm -fr $TEMP_PATH
   FunctionalStatelessTestDebug:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, func-tester]
@@ -126,6 +143,11 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci
           python3 functional_test_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          sudo rm -fr $TEMP_PATH
   FunctionalStatefulTestDebug:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, func-tester]
@@ -150,6 +172,11 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci
           python3 functional_test_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          sudo rm -fr $TEMP_PATH
   FastTest:
     needs: DockerHubPush
     runs-on: [self-hosted, builder]
@@ -166,6 +193,11 @@ jobs:
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci && python3 fast_test_check.py
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          sudo rm -fr $TEMP_PATH
   FinishCheck:
     needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport, FastTest, FunctionalStatelessTestDebug, FunctionalStatefulTestDebug]
     runs-on: [self-hosted, style-checker]
