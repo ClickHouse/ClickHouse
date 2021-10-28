@@ -21,9 +21,7 @@
 #include <Common/setThreadName.h>
 #include <Core/MySQL/Authentication.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 #if USE_SSL
 #    include <Poco/Crypto/RSAKey.h>
