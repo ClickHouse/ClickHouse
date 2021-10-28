@@ -2850,9 +2850,8 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
             b'\x05\x02\x69\x64\x07\x62\x6c\x6f\x63\x6b\x4e\x6f\x04\x76\x61\x6c\x31\x04\x76\x61\x6c\x32\x04\x76\x61\x6c\x33\x05\x49\x6e\x74\x36\x34\x06\x53\x74\x72\x69\x6e\x67\x06\x53\x74\x72\x69\x6e\x67\x07\x46\x6c\x6f\x61\x74\x33\x32\x05\x55\x49\x6e\x74\x38\x00\x00\x00\x00\x00\x00\x00\x00\x03\x42\x41\x44\x02\x41\x4d\x00\x00\x00\x3f\x01',
             ],
-            'expected':'{"raw_message":"0502696407626C6F636B4E6F0476616C310476616C320476616C3305496E74363406537472696E6706537472696E6707466C6F617433320555496E743800000000000000000342414402414D0000003F01","error":"Cannot read all data. Bytes read: 9. Bytes expected: 65.: (at row 1)\\n"}',
+            'expected':'{"raw_message":"0502696407626C6F636B4E6F0476616C310476616C320476616C3305496E74363406537472696E6706537472696E6707466C6F617433320555496E743800000000000000000342414402414D0000003F01","error":"Type of \'blockNo\' must be UInt16, not String"}',
             'printable':False,
-            'format_settings':'input_format_with_types_use_header=0',
         },
         'ORC': {
             'data_sample': [
@@ -2914,11 +2913,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
         topic_name = f"{topic_name_prefix}{format_name}"
         # shift offsets by 1 if format supports empty value
         offsets = [1, 2, 3] if format_opts.get('supports_empty_value', False) else [0, 1, 2]
-        format_settings = ''
-        if format_opts.get('format_settings'):
-            format_settings = 'SETTINGS ' + format_opts.get('format_settings')
-                       
-        result = instance.query('SELECT * FROM test.kafka_data_{format_name}_mv {format_settings};'.format(format_name=format_name, format_settings=format_settings))
+        result = instance.query('SELECT * FROM test.kafka_data_{format_name}_mv;'.format(format_name=format_name))
         expected = '''\
 0	0	AM	0.5	1	{topic_name}	0	{offset_0}
 1	0	AM	0.5	1	{topic_name}	0	{offset_1}
