@@ -29,12 +29,12 @@ void TableFunctionURL::parseArguments(const ASTPtr & ast_function, ContextPtr co
         auto [common_configuration, storage_specific_args] = with_named_collection.value();
         configuration.set(common_configuration);
 
-        if (!configuration.method.empty()
-            && configuration.method != Poco::Net::HTTPRequest::HTTP_POST
-            && configuration.method != Poco::Net::HTTPRequest::HTTP_PUT)
+        if (!configuration.http_method.empty()
+            && configuration.http_method != Poco::Net::HTTPRequest::HTTP_POST
+            && configuration.http_method != Poco::Net::HTTPRequest::HTTP_PUT)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Method can be POST or PUT (current: {}). For insert default is POST, for select GET",
-                            configuration.method);
+                            configuration.http_method);
 
         if (!storage_specific_args.empty())
         {
@@ -82,8 +82,7 @@ StoragePtr TableFunctionURL::getStorage(
         global_context,
         compression_method_,
         headers,
-        configuration.method);
-}
+        configuration.http_method);}
 
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {

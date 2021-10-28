@@ -65,7 +65,7 @@ protected:
     // In this case, format_settings is not set.
     std::optional<FormatSettings> format_settings;
     ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
-    String method; /// For insert can choose Put instead of default Post.
+    String http_method; /// For insert can choose Put instead of default Post.
     ASTPtr partition_by;
 
     virtual std::string getReadMethod() const;
