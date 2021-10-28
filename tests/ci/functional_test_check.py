@@ -32,7 +32,7 @@ def process_logs(s3_client, additional_logs, s3_path_prefix):
 
 def upload_results(s3_client, pr_number, commit_sha, test_results, raw_log, additional_files, check_name):
     additional_files = [raw_log] + additional_files
-    s3_path_prefix = f"{pr_number}/{commit_sha}/" + check_name.lower(' ', '_').replace('(', '_').replace(')', '_').replace(',', '_')
+    s3_path_prefix = f"{pr_number}/{commit_sha}/" + check_name.lower().replace(' ', '_').replace('(', '_').replace(')', '_').replace(',', '_')
     additional_urls = process_logs(s3_client, additional_files, s3_path_prefix)
 
     branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
