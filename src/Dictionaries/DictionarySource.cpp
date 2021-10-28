@@ -7,6 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 bool DictionarySourceCoordinator::getKeyColumnsNextRangeToRead(ColumnsWithTypeAndName & key_columns, ColumnsWithTypeAndName & data_columns)
@@ -56,7 +57,7 @@ void DictionarySourceCoordinator::initialize(const Names & column_names)
             {
                 column_with_type.type = dictionary_structure.range_max->type;
             }
-            else
+            else if (dictionary_structure.key.has_value())
             {
                 const auto & dictionary_key_attributes = *dictionary_structure.key;
                 for (const auto & attribute : dictionary_key_attributes)
@@ -67,6 +68,12 @@ void DictionarySourceCoordinator::initialize(const Names & column_names)
                         break;
                     }
                 }
+            }
+            else
+            {
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "No such column name {} in dictionary {}",
+                    column_name,
+                    dictionary->getDictionaryID().getNameForLogs());
             }
         }
         else
