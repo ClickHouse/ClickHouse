@@ -82,7 +82,8 @@ StoragePtr TableFunctionURL::getStorage(
         global_context,
         compression_method_,
         headers,
-        configuration.http_method);}
+        configuration.http_method);
+}
 
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {
