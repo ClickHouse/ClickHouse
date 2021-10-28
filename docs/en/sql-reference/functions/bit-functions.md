@@ -20,19 +20,19 @@ The result type is an integer with bits equal to the maximum bits of its argumen
 ## bitShiftLeft(a, b) {#bitshiftlefta-b}
 
 Shifts a value left by specified number of bit positions.
-A `FixedString` or a `String` value is treated as a single multibyte value. 
+A `FixedString` or a `String` are treated as a single multibyte value. 
 Bits of a `FixedString` value are lost as they are shifted out. On the contrary a `String` value is extended with additional bytes, so no bits are lost.
 
 **Syntax**
 
 ``` sql
-bitShiftLeft(a,  b)
+bitShiftLeft(a, b)
 ```
 
 **Arguments**
 
--   `a` — Value. [Integer](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md)
--   `b` — Bit count to shift. [Integer](../../sql-reference/data-types/int-uint.md), 64 bit types or less are allowed.
+-   `a` — A value to shift. [Integer](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md)
+-   `b` — A count of positions. [Unsigned integer](../../sql-reference/data-types/int-uint.md), 64 bit types or less are allowed.
 
 **Returned value**
 
@@ -45,7 +45,7 @@ The type of a returned value is the same as the type of an input value.
 In the following queries [bin](encoding-functions.md#bin) and [hex](encoding-functions.md#hex) functions are used to show bits of shifted values.
 
 ``` sql
-SELECT toUInt8(99) AS a, bin(a), bitShiftLeft(a, 2) AS a_shifted, bin(a_shifted);
+SELECT 99 AS a, bin(a), bitShiftLeft(a, 2) AS a_shifted, bin(a_shifted);
 SELECT 'abc' AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
 SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
 ```
@@ -53,9 +53,9 @@ SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, he
 Result:
 
 ``` text
-┌──a─┬─bin(toUInt8(99))─┬─a_shifted─┬─bin(bitShiftLeft(toUInt8(99), 2))─┐
-│ 99 │ 01100011         │       140 │ 10001100                          │
-└────┴──────────────────┴───────────┴───────────────────────────────────┘
+┌──a─┬─bin(99)──┬─a_shifted─┬─bin(bitShiftLeft(99, 2))─┐
+│ 99 │ 01100011 │       140 │ 10001100                 │
+└────┴──────────┴───────────┴──────────────────────────┘
 ┌─a───┬─hex('abc')─┬─a_shifted─┬─hex(bitShiftLeft('abc', 4))─┐
 │ abc │ 616263     │ &0        │ 06162630                    │
 └─────┴────────────┴───────────┴─────────────────────────────┘
@@ -64,8 +64,49 @@ Result:
 └─────┴──────────────────────────────┴───────────┴───────────────────────────────────────────────┘
 ```
 
-
 ## bitShiftRight(a, b) {#bitshiftrighta-b}
+
+Shifts a value right by specified number of bit positions.
+A `FixedString` or a `String` are treated as a single multibyte value. Note that the length of a `String` value is reduced as bits are shifted out.
+
+**Syntax**
+
+``` sql
+bitShiftRight(a, b)
+```
+
+**Arguments**
+
+-   `a` — A value to shift. [Integer](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md)
+-   `b` — A count of positions. [Unsigned integer](../../sql-reference/data-types/int-uint.md), 64 bit types or less are allowed.
+
+**Returned value**
+
+-   Shifted value.
+
+The type of a returned value is the same as the type of an input value.
+
+**Example**
+
+``` sql
+SELECT 101 AS a, bin(a), bitShiftRight(a, 2) AS a_shifted, bin(a_shifted);
+SELECT 'abc' AS a, hex(a), bitShiftRight(a, 12) AS a_shifted, hex(a_shifted);
+SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftRight(a, 12) AS a_shifted, hex(a_shifted);
+```
+
+Result:
+
+``` text
+┌───a─┬─bin(101)─┬─a_shifted─┬─bin(bitShiftRight(101, 2))─┐
+│ 101 │ 01100101 │        25 │ 00011001                   │
+└─────┴──────────┴───────────┴────────────────────────────┘
+┌─a───┬─hex('abc')─┬─a_shifted─┬─hex(bitShiftRight('abc', 12))─┐
+│ abc │ 616263     │           │ 0616                          │
+└─────┴────────────┴───────────┴───────────────────────────────┘
+┌─a───┬─hex(toFixedString('abc', 3))─┬─a_shifted─┬─hex(bitShiftRight(toFixedString('abc', 3), 12))─┐
+│ abc │ 616263                       │           │ 000616                                          │
+└─────┴──────────────────────────────┴───────────┴─────────────────────────────────────────────────┘
+```
 
 ## bitRotateLeft(a, b) {#bitrotatelefta-b}
 
