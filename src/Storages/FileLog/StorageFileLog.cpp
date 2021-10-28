@@ -1,6 +1,5 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Disks/StoragePolicy.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -24,8 +23,6 @@
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
 
 #include <sys/stat.h>
 
