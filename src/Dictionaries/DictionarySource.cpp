@@ -7,7 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNSUPPORTED_METHOD;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 bool DictionarySourceCoordinator::getKeyColumnsNextRangeToRead(ColumnsWithTypeAndName & key_columns, ColumnsWithTypeAndName & data_columns)
@@ -81,7 +81,7 @@ void DictionarySourceCoordinator::initialize(const Names & column_names)
         }
 
         if (!column_with_type.type)
-            throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "No such column name {} in dictionary {}",
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "No such column name {} in dictionary {}",
                 column_name,
                 dictionary->getDictionaryID().getNameForLogs());
 
