@@ -269,7 +269,7 @@ def test_cmd_conf(started_cluster):
         assert result["snapshot_distance"] == "75"
         assert result["auto_forwarding"] == "true"
         assert result["shutdown_timeout"] == "5000"
-        assert result["startup_timeout"] == "30000"
+        assert result["startup_timeout"] == "180000"
 
         assert result["raft_logs_level"] == "trace"
         assert result["rotate_log_storage_interval"] == "100000"
