@@ -190,13 +190,14 @@ namespace detail
         explicit ReadWriteBufferFromHTTPBase(
             UpdatableSessionPtr session_,
             Poco::URI uri_,
+            const Poco::Net::HTTPBasicCredentials & credentials_,
             const std::string & method_ = {},
             OutStreamCallback out_stream_callback_ = {},
-            const Poco::Net::HTTPBasicCredentials & credentials_ = {},
             size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
             const ReadSettings & settings_ = {},
             HTTPHeaderEntries http_header_entries_ = {},
-            const RemoteHostFilter & remote_host_filter_ = {})
+            const RemoteHostFilter & remote_host_filter_ = {},
+            bool delay_initialization = false)
             : ReadBuffer(nullptr, 0)
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
@@ -217,6 +218,9 @@ namespace detail
                                 "must be http_max_tries >= 1 (current is {}) and "
                                 "0 < http_retry_initial_backoff_ms < settings.http_retry_max_backoff_ms (but now {} > {})",
                                 settings.http_max_tries, settings.http_retry_initial_backoff_ms, settings.http_retry_max_backoff_ms);
+
+            if (!delay_initialization)
+                initialize();
         }
 
         void initialize()
@@ -268,51 +272,52 @@ namespace detail
             size_t milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
 
             /// Default http_max_tries = 1.
-            for (size_t i = 0; (i < settings.http_max_tries) && !successful_read; ++i)
+            for (size_t i = 0; i < settings.http_max_tries; ++i)
             {
-                while (milliseconds_to_wait < settings.http_retry_max_backoff_ms)
+                try
                 {
-                    try
-                    {
-                        if (!impl)
-                            initialize();
+                    if (!impl)
+                        initialize();
 
-                        result = impl->next();
-                        successful_read = true;
-                        break;
-                    }
-                    catch (const Poco::Exception & e)
-                    {
-                        /**
-                         * Retry request unconditionally if nothing has beed read yet.
-                         * Otherwise if it is GET method retry with range header starting from bytes_read.
-                         */
-                        bool can_retry_request = !bytes_read || method == Poco::Net::HTTPRequest::HTTP_GET;
-                        if (!can_retry_request)
-                            throw;
-
-                        /**
-                         * if total_size is not known, last read can fail if we retry with
-                         * bytes_read == total_size and header `bytes=bytes_read-`
-                         * (we will get an error code 416 - range not satisfiable).
-                         * In this case rethrow previous exception.
-                         */
-                        if (exception && !total_bytes_to_read.has_value() && e.code() == 416)
-                            std::rethrow_exception(exception);
-
-                        LOG_ERROR(log,
-                                  "HTTP request to `{}` failed at try {}/{} with bytes read: {}. "
-                                  "Error: {}, code: {}. (Current backoff wait is {}/{} ms)",
-                                  uri.toString(), i, settings.http_max_tries, bytes_read, e.what(), e.code(),
-                                  milliseconds_to_wait, settings.http_retry_max_backoff_ms);
-
-                        retry_with_range_header = true;
-                        exception = std::current_exception();
-                        impl.reset();
-                        sleepForMilliseconds(milliseconds_to_wait);
-                        milliseconds_to_wait *= 2;
-                    }
+                    result = impl->next();
+                    successful_read = true;
+                    break;
                 }
+                catch (const Poco::Exception & e)
+                {
+                    /**
+                     * Retry request unconditionally if nothing has beed read yet.
+                     * Otherwise if it is GET method retry with range header starting from bytes_read.
+                     */
+                    bool can_retry_request = !bytes_read || method == Poco::Net::HTTPRequest::HTTP_GET;
+                    if (!can_retry_request)
+                        throw;
+
+                    /**
+                     * if total_size is not known, last read can fail if we retry with
+                     * bytes_read == total_size and header `bytes=bytes_read-`
+                     * (we will get an error code 416 - range not satisfiable).
+                     * In this case rethrow previous exception.
+                     */
+                    if (exception && !total_bytes_to_read.has_value() && e.code() == 416)
+                        std::rethrow_exception(exception);
+
+                    LOG_ERROR(log,
+                              "HTTP request to `{}` failed at try {}/{} with bytes read: {}. "
+                              "Error: {}, code: {}. (Current backoff wait is {}/{} ms)",
+                              uri.toString(), i, settings.http_max_tries, bytes_read, e.what(), e.code(),
+                              milliseconds_to_wait, settings.http_retry_max_backoff_ms);
+
+                    retry_with_range_header = true;
+                    exception = std::current_exception();
+                    impl.reset();
+                    sleepForMilliseconds(milliseconds_to_wait);
+                    milliseconds_to_wait *= 2;
+                }
+
+                if (successful_read || milliseconds_to_wait >= settings.http_retry_max_backoff_ms)
+                    break;
+
                 milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
             }
 
@@ -384,14 +389,15 @@ public:
         const std::string & method_,
         OutStreamCallback out_stream_callback_,
         const ConnectionTimeouts & timeouts,
+        const Poco::Net::HTTPBasicCredentials & credentials_,
         const UInt64 max_redirects = 0,
-        const Poco::Net::HTTPBasicCredentials & credentials_ = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         const ReadSettings & settings_ = {},
         const HTTPHeaderEntries & http_header_entries_ = {},
-        const RemoteHostFilter & remote_host_filter_ = {})
+        const RemoteHostFilter & remote_host_filter_ = {},
+        bool delay_initialization_ = true)
         : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects),
-            uri_, method_, out_stream_callback_, credentials_, buffer_size_, settings_, http_header_entries_, remote_host_filter_)
+            uri_, credentials_, method_, out_stream_callback_, buffer_size_, settings_, http_header_entries_, remote_host_filter_, delay_initialization_)
     {
     }
 };
@@ -435,9 +441,9 @@ public:
         size_t max_connections_per_endpoint = DEFAULT_COUNT_OF_HTTP_CONNECTIONS_PER_ENDPOINT)
         : Parent(std::make_shared<UpdatablePooledSession>(uri_, timeouts_, max_redirects, max_connections_per_endpoint),
               uri_,
+              credentials_,
               method_,
               out_stream_callback_,
-              credentials_,
               buffer_size_)
     {
     }

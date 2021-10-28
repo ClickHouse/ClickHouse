@@ -98,11 +98,12 @@ Pipe HTTPDictionarySource::loadAll()
         Poco::Net::HTTPRequest::HTTP_GET,
         ReadWriteBufferFromHTTP::OutStreamCallback(),
         timeouts,
-        0,
         credentials,
+        0,
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
-        configuration.header_entries);
+        configuration.header_entries,
+        RemoteHostFilter{}, false);
 
     return createWrappedBuffer(std::move(in_ptr));
 }
@@ -117,11 +118,12 @@ Pipe HTTPDictionarySource::loadUpdatedAll()
         Poco::Net::HTTPRequest::HTTP_GET,
         ReadWriteBufferFromHTTP::OutStreamCallback(),
         timeouts,
-        0,
         credentials,
+        0,
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
-        configuration.header_entries);
+        configuration.header_entries,
+        RemoteHostFilter{}, false);
 
     return createWrappedBuffer(std::move(in_ptr));
 }
@@ -145,11 +147,12 @@ Pipe HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
         Poco::Net::HTTPRequest::HTTP_POST,
         out_stream_callback,
         timeouts,
-        0,
         credentials,
+        0,
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
-        configuration.header_entries);
+        configuration.header_entries,
+        RemoteHostFilter{}, false);
 
     return createWrappedBuffer(std::move(in_ptr));
 }
@@ -173,11 +176,12 @@ Pipe HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vect
         Poco::Net::HTTPRequest::HTTP_POST,
         out_stream_callback,
         timeouts,
-        0,
         credentials,
+        0,
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
-        configuration.header_entries);
+        configuration.header_entries,
+        RemoteHostFilter{}, false);
 
     return createWrappedBuffer(std::move(in_ptr));
 }

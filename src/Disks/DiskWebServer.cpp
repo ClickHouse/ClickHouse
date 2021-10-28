@@ -35,10 +35,12 @@ void DiskWebServer::initialize(const String & uri_path) const
     LOG_TRACE(log, "Loading metadata for directory: {}", uri_path);
     try
     {
+        Poco::Net::HTTPBasicCredentials credentials{};
         ReadWriteBufferFromHTTP metadata_buf(Poco::URI(fs::path(uri_path) / ".index"),
                                             Poco::Net::HTTPRequest::HTTP_GET,
                                             ReadWriteBufferFromHTTP::OutStreamCallback(),
-                                            ConnectionTimeouts::getHTTPTimeouts(getContext()));
+                                            ConnectionTimeouts::getHTTPTimeouts(getContext()),
+                                            credentials);
         String file_name;
         FileData file_data{};
 

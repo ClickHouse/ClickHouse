@@ -75,7 +75,7 @@ bool LibraryBridgeHelper::bridgeHandShake()
     String result;
     try
     {
-        ReadWriteBufferFromHTTP buf(createRequestURI(PING), Poco::Net::HTTPRequest::HTTP_GET, {}, http_timeouts);
+        ReadWriteBufferFromHTTP buf(createRequestURI(PING), Poco::Net::HTTPRequest::HTTP_GET, {}, http_timeouts, credentials);
         readString(result, buf);
     }
     catch (...)
@@ -240,7 +240,7 @@ bool LibraryBridgeHelper::executeRequest(const Poco::URI & uri, ReadWriteBufferF
         uri,
         Poco::Net::HTTPRequest::HTTP_POST,
         std::move(out_stream_callback),
-        http_timeouts);
+        http_timeouts, credentials);
 
     bool res;
     readBoolText(res, buf);
@@ -255,8 +255,8 @@ Pipe LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTT
         Poco::Net::HTTPRequest::HTTP_POST,
         std::move(out_stream_callback),
         http_timeouts,
-        0,
         credentials,
+        0,
         DBMS_DEFAULT_BUFFER_SIZE,
         getContext()->getReadSettings(),
         ReadWriteBufferFromHTTP::HTTPHeaderEntries{});
