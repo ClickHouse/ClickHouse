@@ -53,9 +53,7 @@
 #include "Core/Protocol.h"
 #include "TCPHandler.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 namespace CurrentMetrics
 {
@@ -1125,6 +1123,11 @@ void TCPHandler::receiveHello()
     client_info.client_version_minor = client_version_minor;
     client_info.client_version_patch = client_version_patch;
     client_info.client_tcp_protocol_version = client_tcp_protocol_version;
+
+    client_info.connection_client_version_major = client_version_major;
+    client_info.connection_client_version_minor = client_version_minor;
+    client_info.connection_client_version_patch = client_version_patch;
+    client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
 
     is_interserver_mode = (user == USER_INTERSERVER_MARKER);
     if (is_interserver_mode)

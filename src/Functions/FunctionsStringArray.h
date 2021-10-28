@@ -1,18 +1,21 @@
 #pragma once
 
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeString.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnArray.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
-#include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context_fwd.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 
 
 namespace DB
@@ -21,7 +24,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
 }
@@ -650,13 +652,15 @@ public:
 class FunctionArrayStringConcat : public IFunction
 {
 private:
-    void executeInternal(
+    static void executeInternal(
         const ColumnString::Chars & src_chars,
         const ColumnString::Offsets & src_string_offsets,
         const ColumnArray::Offsets & src_array_offsets,
-        const char * delimiter, const size_t delimiter_size,
+        const char * delimiter,
+        const size_t delimiter_size,
         ColumnString::Chars & dst_chars,
-        ColumnString::Offsets & dst_string_offsets) const
+        ColumnString::Offsets & dst_string_offsets,
+        const char8_t * null_map)
     {
         size_t size = src_array_offsets.size();
 
@@ -674,29 +678,33 @@ private:
         dst_string_offsets.resize(src_array_offsets.size());
 
         ColumnArray::Offset current_src_array_offset = 0;
-        ColumnString::Offset current_src_string_offset = 0;
 
         ColumnString::Offset current_dst_string_offset = 0;
 
         /// Loop through the array of strings.
         for (size_t i = 0; i < size; ++i)
         {
+            bool first_non_null = true;
             /// Loop through the rows within the array. /// NOTE You can do everything in one copy, if the separator has a size of 1.
             for (auto next_src_array_offset = src_array_offsets[i]; current_src_array_offset < next_src_array_offset; ++current_src_array_offset)
             {
+                if (unlikely(null_map && null_map[current_src_array_offset]))
+                    continue;
+
+                if (!first_non_null)
+                {
+                    memcpy(&dst_chars[current_dst_string_offset], delimiter, delimiter_size);
+                    current_dst_string_offset += delimiter_size;
+                }
+                first_non_null = false;
+
+                const auto current_src_string_offset = current_src_array_offset ? src_string_offsets[current_src_array_offset - 1] : 0;
                 size_t bytes_to_copy = src_string_offsets[current_src_array_offset] - current_src_string_offset - 1;
 
                 memcpySmallAllowReadWriteOverflow15(
                     &dst_chars[current_dst_string_offset], &src_chars[current_src_string_offset], bytes_to_copy);
 
-                current_src_string_offset = src_string_offsets[current_src_array_offset];
                 current_dst_string_offset += bytes_to_copy;
-
-                if (current_src_array_offset + 1 != next_src_array_offset)
-                {
-                    memcpy(&dst_chars[current_dst_string_offset], delimiter, delimiter_size);
-                    current_dst_string_offset += delimiter_size;
-                }
             }
 
             dst_chars[current_dst_string_offset] = 0;
@@ -706,6 +714,24 @@ private:
         }
 
         dst_chars.resize(dst_string_offsets.back());
+    }
+
+    static void executeInternal(
+        const ColumnString & col_string,
+        const ColumnArray & col_arr,
+        const String & delimiter,
+        ColumnString & col_res,
+        const char8_t * null_map = nullptr)
+    {
+        executeInternal(
+            col_string.getChars(),
+            col_string.getOffsets(),
+            col_arr.getOffsets(),
+            delimiter.data(),
+            delimiter.size(),
+            col_res.getChars(),
+            col_res.getOffsets(),
+            null_map);
     }
 
 public:
@@ -721,23 +747,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (arguments.size() != 1 && arguments.size() != 2)
-            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
-                + toString(arguments.size()) + ", should be 1 or 2.",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
-        if (!array_type || !isString(array_type->getNestedType()))
-            throw Exception("First argument for function " + getName() + " must be array of strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (arguments.size() == 2
-            && !isString(arguments[1]))
-            throw Exception("Second argument for function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeString>();
-    }
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
@@ -755,10 +765,14 @@ public:
         {
             Array src_arr = col_const_arr->getValue<Array>();
             String dst_str;
+            bool first_non_null = true;
             for (size_t i = 0, size = src_arr.size(); i < size; ++i)
             {
-                if (i != 0)
+                if (src_arr[i].isNull())
+                    continue;
+                if (!first_non_null)
                     dst_str += delimiter;
+                first_non_null = false;
                 dst_str += src_arr[i].get<const String &>();
             }
 
@@ -767,15 +781,20 @@ public:
         else
         {
             const ColumnArray & col_arr = assert_cast<const ColumnArray &>(*arguments[0].column);
-            const ColumnString & col_string = assert_cast<const ColumnString &>(col_arr.getData());
-
             auto col_res = ColumnString::create();
-
-            executeInternal(
-                col_string.getChars(), col_string.getOffsets(), col_arr.getOffsets(),
-                delimiter.data(), delimiter.size(),
-                col_res->getChars(), col_res->getOffsets());
-
+            if (WhichDataType(col_arr.getData().getDataType()).isString())
+            {
+                const ColumnString & col_string = assert_cast<const ColumnString &>(col_arr.getData());
+                executeInternal(col_string, col_arr, delimiter, *col_res);
+            }
+            else
+            {
+                const ColumnNullable & col_nullable = assert_cast<const ColumnNullable &>(col_arr.getData());
+                if (const ColumnString * col_string = typeid_cast<const ColumnString *>(col_nullable.getNestedColumnPtr().get()))
+                    executeInternal(*col_string, col_arr, delimiter, *col_res, col_nullable.getNullMapData().data());
+                else
+                    col_res->insertManyDefaults(col_arr.size());
+            }
             return col_res;
         }
     }

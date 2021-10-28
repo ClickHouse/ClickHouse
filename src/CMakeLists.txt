@@ -109,6 +109,10 @@ if (USE_HDFS)
     add_headers_and_sources(dbms Disks/HDFS)
 endif()
 
+if(USE_FILELOG)
+    add_headers_and_sources(dbms Storages/FileLog)
+endif()
+
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
 list (APPEND clickhouse_common_io_headers ${CONFIG_VERSION} ${CONFIG_COMMON})
 
@@ -290,6 +294,7 @@ set_source_files_properties(
         Columns/ColumnFixedString.cpp
         Columns/ColumnsCommon.cpp
         Columns/ColumnVector.cpp
+        Columns/ColumnDecimal.cpp
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
 if(RE2_LIBRARY)

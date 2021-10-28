@@ -1,7 +1,5 @@
 #include <string_view>
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 #include <Common/Exception.h>
 #include <base/types.h>
 #include <IO/VarInt.h>
@@ -14,10 +12,10 @@
 // This depends on BoringSSL-specific API, notably <openssl/aead.h>.
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
 #include <Parsers/ASTLiteral.h>
-#include <openssl/digest.h> // Y_IGNORE
+#include <openssl/digest.h>
 #include <openssl/err.h>
 #include <boost/algorithm/hex.hpp>
-#include <openssl/aead.h> // Y_IGNORE
+#include <openssl/aead.h>
 #endif
 
 // Common part for both parts (with SSL and without)

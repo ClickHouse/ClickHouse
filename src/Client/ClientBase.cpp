@@ -14,9 +14,7 @@
 #include "Core/Block.h"
 #include "Core/Protocol.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
@@ -1364,9 +1362,7 @@ void ClientBase::runInteractive()
         catch (const Exception & e)
         {
             /// We don't need to handle the test hints in the interactive mode.
-            bool print_stack_trace = config().getBool("stacktrace", false);
             std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-
             client_exception = std::make_unique<Exception>(e);
         }
 
