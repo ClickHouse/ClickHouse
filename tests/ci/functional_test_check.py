@@ -212,7 +212,7 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token())
 
-    images_path = os.path.join(temp_path, 'changed_images.json')
+    images_path = os.path.join(reports_path, 'changed_images.json')
     image_name = get_image_name(check_name)
 
     docker_image = image_name
