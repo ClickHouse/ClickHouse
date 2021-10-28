@@ -62,6 +62,8 @@ struct KeeperSettings
     int tcp_port;
     int tcp_port_secure;
 
+    String four_letter_word_white_list;
+
     String super_digest;
 
     bool standalone_keeper;

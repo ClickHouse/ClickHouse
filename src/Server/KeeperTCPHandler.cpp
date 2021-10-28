@@ -440,7 +440,8 @@ bool KeeperTCPHandler::isHandShake(Int32 & handshake_length)
 
 bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(Int32 & four_letter_cmd)
 {
-    if (FourLetterCommandFactory::instance().isKnown(four_letter_cmd))
+    if (FourLetterCommandFactory::instance().isKnown(four_letter_cmd)
+        && FourLetterCommandFactory::instance().isEnabled(four_letter_cmd))
     {
         auto command = FourLetterCommandFactory::instance().get(four_letter_cmd);
         LOG_DEBUG(log, "receive four letter command {}", command->name());

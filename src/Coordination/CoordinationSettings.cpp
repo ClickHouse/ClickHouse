@@ -76,6 +76,10 @@ void KeeperSettings::dump(WriteBufferFromOwnString & buf) const
         write_int(tcp_port_secure);
     }
 
+    write("four_letter_word_white_list=");
+    write(four_letter_word_white_list);
+    buf.write('\n');
+
     write("log_storage_path=");
     write(log_storage_path);
     buf.write('\n');
@@ -162,6 +166,8 @@ KeeperSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
     {
         ret->super_digest = config.getString("keeper_server.superdigest");
     }
+
+    ret->four_letter_word_white_list = config.getString("keeper_server.four_letter_word_white_list", "*");
 
     ret->log_storage_path = getLogsPathFromConfig(config, standalone_keeper_);
     ret->snapshot_storage_path = getSnapshotsPathFromConfig(config, standalone_keeper_);
