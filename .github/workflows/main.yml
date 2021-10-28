@@ -124,6 +124,30 @@ jobs:
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci
           python3 functional_test_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER $KILL_TIMEOUT
+  FunctionalStatefulTestDebug:
+    needs: [BuilderDebDebug]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateful_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateful tests (debug, actions)'
+          REPO_COPY: ${{runner.temp}}/stateful_debug/ClickHouse
+          REQUIRED_BUILD_NUMBER: 7
+          KILL_TIMEOUT: 3600
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER $KILL_TIMEOUT
   FastTest:
     needs: DockerHubPush
     runs-on: [self-hosted, builder]
