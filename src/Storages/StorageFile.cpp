@@ -548,37 +548,57 @@ class StorageFileSink final : public SinkToStorage
 {
 public:
     StorageFileSink(
-        StorageFile & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
+        const String & table_name_for_log_,
+        int table_fd_,
+        bool use_table_fd_,
+        std::string base_path_,
+        std::vector<std::string> paths_,
         const CompressionMethod compression_method_,
-        ContextPtr context_,
         const std::optional<FormatSettings> & format_settings_,
+        const String format_name_,
+        ContextPtr context_,
         int flags_)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
+        , table_name_for_log(table_name_for_log_)
+        , table_fd(table_fd_)
+        , use_table_fd(use_table_fd_)
+        , base_path(base_path_)
+        , paths(paths_)
         , compression_method(compression_method_)
-        , context(context_)
+        , format_name(format_name_)
         , format_settings(format_settings_)
+        , context(context_)
         , flags(flags_)
     {
         initialize();
     }
 
     StorageFileSink(
-        StorageFile & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
+        const String & table_name_for_log_,
         std::unique_lock<std::shared_timed_mutex> && lock_,
+        int table_fd_,
+        bool use_table_fd_,
+        std::string base_path_,
+        std::vector<std::string> paths_,
         const CompressionMethod compression_method_,
-        ContextPtr context_,
         const std::optional<FormatSettings> & format_settings_,
+        const String format_name_,
+        ContextPtr context_,
         int flags_)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
-        , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
+        , table_name_for_log(table_name_for_log_)
+        , table_fd(table_fd_)
+        , use_table_fd(use_table_fd_)
+        , base_path(base_path_)
+        , paths(paths_)
         , compression_method(compression_method_)
-        , context(context_)
+        , format_name(format_name_)
         , format_settings(format_settings_)
+        , context(context_)
         , flags(flags_)
         , lock(std::move(lock_))
     {
@@ -590,16 +610,16 @@ public:
     void initialize()
     {
         std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer = nullptr;
-        if (storage.use_table_fd)
+        if (use_table_fd)
         {
-            naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(storage.table_fd, DBMS_DEFAULT_BUFFER_SIZE);
+            naked_buffer = std::make_unique<WriteBufferFromFileDescriptor>(table_fd, DBMS_DEFAULT_BUFFER_SIZE);
         }
         else
         {
-            if (storage.paths.size() != 1)
-                throw Exception("Table '" + storage.getStorageID().getNameForLogs() + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
+            if (paths.size() != 1)
+                throw Exception("Table '" + table_name_for_log + "' is in readonly mode because of globs in filepath", ErrorCodes::DATABASE_ACCESS_DENIED);
             flags |= O_WRONLY | O_APPEND | O_CREAT;
-            naked_buffer = std::make_unique<WriteBufferFromFile>(storage.paths[0], DBMS_DEFAULT_BUFFER_SIZE, flags);
+            naked_buffer = std::make_unique<WriteBufferFromFile>(paths[0], DBMS_DEFAULT_BUFFER_SIZE, flags);
         }
 
         /// In case of CSVWithNames we have already written prefix.
@@ -608,7 +628,7 @@ public:
 
         write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
-        writer = FormatFactory::instance().getOutputFormatParallelIfPossible(storage.format_name,
+        writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
             *write_buf, metadata_snapshot->getSampleBlock(), context,
             {}, format_settings);
     }
@@ -638,18 +658,24 @@ public:
     // }
 
 private:
-    StorageFile & storage;
     StorageMetadataPtr metadata_snapshot;
-    const CompressionMethod compression_method;
-    ContextPtr context;
-    std::optional<FormatSettings> format_settings;
-    int flags;
-
-    std::unique_lock<std::shared_timed_mutex> lock;
+    String table_name_for_log;
 
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
     bool prefix_written{false};
+
+    int table_fd;
+    bool use_table_fd;
+    std::string base_path;
+    std::vector<std::string> paths;
+    CompressionMethod compression_method;
+    std::string format_name;
+    std::optional<FormatSettings> format_settings;
+
+    ContextPtr context;
+    int flags;
+    std::unique_lock<std::shared_timed_mutex> lock;
 };
 
 class PartitionedStorageFileSink : public PartitionedSink
@@ -657,22 +683,32 @@ class PartitionedStorageFileSink : public PartitionedSink
 public:
     PartitionedStorageFileSink(
         const ASTPtr & partition_by,
-        StorageFile & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
+        const String & table_name_for_log_,
         std::unique_lock<std::shared_timed_mutex> && lock_,
+        int table_fd_,
+        bool use_table_fd_,
+        std::string base_path_,
+        std::vector<std::string> paths_,
         const CompressionMethod compression_method_,
-        ContextPtr context_,
         const std::optional<FormatSettings> & format_settings_,
-        int & flags_)
+        const String format_name_,
+        ContextPtr context_,
+        int flags_)
         : PartitionedSink(partition_by, context_, metadata_snapshot_->getSampleBlock())
-        , path(storage_.paths[0])
-        , storage(storage_)
+        , path(paths_[0])
         , metadata_snapshot(metadata_snapshot_)
-        , lock(std::move(lock_))
+        , table_name_for_log(table_name_for_log_)
+        , table_fd(table_fd_)
+        , use_table_fd(use_table_fd_)
+        , base_path(base_path_)
+        , paths(paths_)
         , compression_method(compression_method_)
-        , context(context_)
+        , format_name(format_name_)
         , format_settings(format_settings_)
+        , context(context_)
         , flags(flags_)
+        , lock(std::move(lock_))
     {
     }
 
@@ -680,21 +716,37 @@ public:
     {
         auto partition_path = PartitionedSink::replaceWildcards(path, partition_id);
         PartitionedSink::validatePartitionKey(partition_path, true);
-        storage.paths[0] = partition_path;
+        Strings result_paths = {partition_path};
         return std::make_shared<StorageFileSink>(
-            storage, metadata_snapshot, compression_method, context, format_settings, flags);
+            metadata_snapshot,
+            table_name_for_log,
+            table_fd,
+            use_table_fd,
+            base_path,
+            result_paths,
+            compression_method,
+            format_settings,
+            format_name,
+            context,
+            flags);
     }
 
 private:
     const String path;
-    StorageFile & storage;
     StorageMetadataPtr metadata_snapshot;
-    std::unique_lock<std::shared_timed_mutex> lock;
-    const CompressionMethod compression_method;
+    String table_name_for_log;
+
+    int table_fd;
+    bool use_table_fd;
+    std::string base_path;
+    std::vector<std::string> paths;
+    CompressionMethod compression_method;
+    std::string format_name;
+    std::optional<FormatSettings> format_settings;
 
     ContextPtr context;
-    std::optional<FormatSettings> format_settings;
     int flags;
+    std::unique_lock<std::shared_timed_mutex> lock;
 };
 
 
@@ -731,23 +783,33 @@ SinkToStoragePtr StorageFile::write(
 
         return std::make_shared<PartitionedStorageFileSink>(
             insert_query->partition_by,
-            *this,
             metadata_snapshot,
+            getStorageID().getNameForLogs(),
             std::unique_lock{rwlock, getLockTimeout(context)},
+            table_fd,
+            use_table_fd,
+            base_path,
+            paths,
             chooseCompressionMethod(path, compression_method),
-            context,
             format_settings,
+            format_name,
+            context,
             flags);
     }
     else
     {
         return std::make_shared<StorageFileSink>(
-            *this,
             metadata_snapshot,
+            getStorageID().getNameForLogs(),
             std::unique_lock{rwlock, getLockTimeout(context)},
+            table_fd,
+            use_table_fd,
+            base_path,
+            paths,
             chooseCompressionMethod(path, compression_method),
-            context,
             format_settings,
+            format_name,
+            context,
             flags);
     }
 }

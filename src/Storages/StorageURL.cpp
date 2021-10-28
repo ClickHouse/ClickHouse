@@ -49,7 +49,7 @@ IStorageURLBase::IStorageURLBase(
     const String & comment,
     const String & compression_method_,
     const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_,
-    const String & method_,
+    const String & http_method_,
     ASTPtr partition_by_)
     : IStorage(table_id_)
     , uri(uri_)
@@ -57,7 +57,7 @@ IStorageURLBase::IStorageURLBase(
     , format_name(format_name_)
     , format_settings(format_settings_)
     , headers(headers_)
-    , method(method_)
+    , http_method(http_method_)
     , partition_by(partition_by_)
 {
     StorageInMemoryMetadata storage_metadata;
@@ -100,7 +100,7 @@ namespace
     public:
         StorageURLSource(
             const std::vector<String> & uri_options,
-            const std::string & method,
+            const std::string & http_method,
             std::function<void(std::ostream &)> callback,
             const String & format,
             const std::optional<FormatSettings> & format_settings,
@@ -131,7 +131,7 @@ namespace
                         read_buf = wrapReadBufferWithCompressionMethod(
                             std::make_unique<ReadWriteBufferFromHTTP>(
                                 request_uri,
-                                method,
+                                http_method,
                                 callback,
                                 timeouts,
                                 context->getSettingsRef().max_http_get_redirects,
@@ -212,11 +212,11 @@ StorageURLSink::StorageURLSink(
     ContextPtr context,
     const ConnectionTimeouts & timeouts,
     const CompressionMethod compression_method,
-    const String & method)
+    const String & http_method)
     : SinkToStorage(sample_block)
 {
     write_buf = wrapWriteBufferWithCompressionMethod(
-            std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), method, timeouts),
+            std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), http_method, timeouts),
             compression_method, 3);
     writer = FormatFactory::instance().getOutputFormat(format, *write_buf, sample_block,
         context, {} /* write callback */, format_settings);
@@ -253,7 +253,7 @@ public:
         ContextPtr context_,
         const ConnectionTimeouts & timeouts_,
         const CompressionMethod compression_method_,
-        const String & method_)
+        const String & http_method_)
             : PartitionedSink(partition_by, context_, sample_block_)
             , uri(uri_)
             , format(format_)
@@ -262,7 +262,7 @@ public:
             , context(context_)
             , timeouts(timeouts_)
             , compression_method(compression_method_)
-            , method(method_)
+            , http_method(http_method_)
     {
     }
 
@@ -271,7 +271,7 @@ public:
         auto partition_path = PartitionedSink::replaceWildcards(uri, partition_id);
         context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
         return std::make_shared<StorageURLSink>(partition_path, format,
-            format_settings, sample_block, context, timeouts, compression_method, method);
+            format_settings, sample_block, context, timeouts, compression_method, http_method);
     }
 
 private:
@@ -283,7 +283,7 @@ private:
     const ConnectionTimeouts timeouts;
 
     const CompressionMethod compression_method;
-    const String method;
+    const String http_method;
 };
 
 std::string IStorageURLBase::getReadMethod() const
@@ -324,7 +324,7 @@ Pipe IStorageURLBase::read(
     unsigned /*num_streams*/)
 {
     auto params = getReadURIParams(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size);
-    auto with_globs = (uri.find('{') != std::string::npos && uri.find('}') != std::string::npos) || uri.find('|') == std::string::npos;
+    bool with_globs = uri.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
     if (with_globs)
     {
         size_t max_addresses = local_context->getSettingsRef().glob_expansion_max_elements;
@@ -410,8 +410,8 @@ Pipe StorageURLWithFailover::read(
 
 SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    if (method.empty())
-        method = Poco::Net::HTTPRequest::HTTP_POST;
+    if (http_method.empty())
+        http_method = Poco::Net::HTTPRequest::HTTP_POST;
 
     bool has_wildcards = uri.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
@@ -425,14 +425,14 @@ SinkToStoragePtr IStorageURLBase::write(const ASTPtr & query, const StorageMetad
             uri, format_name,
             format_settings, metadata_snapshot->getSampleBlock(), context,
             ConnectionTimeouts::getHTTPTimeouts(context),
-            chooseCompressionMethod(uri, compression_method), method);
+            chooseCompressionMethod(uri, compression_method), http_method);
     }
     else
     {
         return std::make_shared<StorageURLSink>(uri, format_name,
             format_settings, metadata_snapshot->getSampleBlock(), context,
             ConnectionTimeouts::getHTTPTimeouts(context),
-            chooseCompressionMethod(uri, compression_method), method);
+            chooseCompressionMethod(uri, compression_method), http_method);
     }
 }
 
@@ -447,10 +447,10 @@ StorageURL::StorageURL(
     ContextPtr context_,
     const String & compression_method_,
     const ReadWriteBufferFromHTTP::HTTPHeaderEntries & headers_,
-    const String & method_,
+    const String & http_method_,
     ASTPtr partition_by_)
     : IStorageURLBase(uri_, context_, table_id_, format_name_, format_settings_,
-        columns_, constraints_, comment, compression_method_, headers_, method_, partition_by_)
+        columns_, constraints_, comment, compression_method_, headers_, http_method_, partition_by_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
 }
@@ -521,12 +521,12 @@ URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, Contex
         auto [common_configuration, storage_specific_args] = named_collection.value();
         configuration.set(common_configuration);
 
-        if (!configuration.method.empty()
-            && configuration.method != Poco::Net::HTTPRequest::HTTP_POST
-            && configuration.method != Poco::Net::HTTPRequest::HTTP_PUT)
+        if (!configuration.http_method.empty()
+            && configuration.http_method != Poco::Net::HTTPRequest::HTTP_POST
+            && configuration.http_method != Poco::Net::HTTPRequest::HTTP_PUT)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Method can be POST or PUT (current: {}). For insert default is POST, for select GET",
-                            configuration.method);
+                            "Http method can be POST or PUT (current: {}). For insert default is POST, for select GET",
+                            configuration.http_method);
 
         if (!storage_specific_args.empty())
         {
@@ -590,12 +590,11 @@ void registerStorageURL(StorageFactory & factory)
             args.getContext(),
             configuration.compression_method,
             headers,
-            configuration.method,
+            configuration.http_method,
             partition_by);
     },
     {
         .supports_settings = true,
-        .supports_sort_order = true, // for partition by
         .source_access_type = AccessType::URL,
     });
 }
