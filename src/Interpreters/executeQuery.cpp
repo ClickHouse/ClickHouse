@@ -393,10 +393,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         client_info.initial_query_start_time_microseconds = time_in_microseconds(current_time);
     }
 
-#if !defined(ARCADIA_BUILD)
     assert(internal || CurrentThread::get().getQueryContext());
     assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
-#endif
 
     const Settings & settings = context->getSettingsRef();
 
