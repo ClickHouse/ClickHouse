@@ -63,6 +63,7 @@ jobs:
         uses: actions/checkout@v2
         with:
           submodules: 'recursive'
+          fetch-depth: 0 # otherwise we will have no info about contributors
       - name: Build
         env:
           TEMP_PATH: ${{runner.temp}}/build_check
