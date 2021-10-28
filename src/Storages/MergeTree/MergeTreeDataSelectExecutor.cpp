@@ -40,6 +40,7 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 
 namespace ProfileEvents
 {
@@ -364,6 +365,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
     pipes.emplace_back(std::move(projection_pipe));
     pipes.emplace_back(std::move(ordinary_pipe));
     auto pipe = Pipe::unitePipes(std::move(pipes));
+
     auto plan = std::make_unique<QueryPlan>();
     if (pipe.empty())
         return plan;
@@ -373,6 +375,13 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         std::move(pipe),
         fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name));
     plan->addStep(std::move(step));
+
+    if (!query_info.projection->subqueries_for_sets->empty())
+    {
+        SizeLimits limits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
+        addCreatingSetsStep(*plan, std::move(*query_info.projection->subqueries_for_sets), limits, context);
+    }
+
     return plan;
 }
 

@@ -607,7 +607,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
     }
 
     if (storage && !options.only_analyze)
-        from_stage = storage->getQueryProcessingStage(context, options.to_stage, metadata_snapshot, query_info, query_analyzer.get());
+        from_stage = storage->getQueryProcessingStage(context, options.to_stage, metadata_snapshot, query_info);
 
     /// Do I need to perform the first part of the pipeline?
     /// Running on remote servers during distributed processing or if query is not distributed.
@@ -1388,9 +1388,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
         }
     }
 
-    if (!subqueries_for_sets.empty()
-        && (expressions.hasHaving() || query_analyzer->hasGlobalSubqueries()
-            || (query_info.projection && query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)))
+    if (!subqueries_for_sets.empty() && (expressions.hasHaving() || query_analyzer->hasGlobalSubqueries()))
         executeSubqueriesInSetsAndJoins(query_plan, subqueries_for_sets);
 }
 

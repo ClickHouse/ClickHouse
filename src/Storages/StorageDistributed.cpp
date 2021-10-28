@@ -396,8 +396,7 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
-    SelectQueryExpressionAnalyzer *) const
+    SelectQueryInfo & query_info) const
 {
     const auto & settings = local_context->getSettingsRef();
 

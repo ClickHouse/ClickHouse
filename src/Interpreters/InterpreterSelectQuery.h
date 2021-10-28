@@ -83,10 +83,7 @@ public:
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
 
-    const SelectQueryExpressionAnalyzer * getQueryAnalyzer() const { return query_analyzer.get(); }
-
-    /// Detach current query analyzer to reuse built sets. See MergeTreeData::getQueryProcessingStageWithAggregateProjection.
-    std::unique_ptr<SelectQueryExpressionAnalyzer> detachQueryAnalyzer() { return std::move(query_analyzer); }
+    SelectQueryExpressionAnalyzer * getQueryAnalyzer() const { return query_analyzer.get(); }
 
     const ExpressionAnalysisResult & getAnalysisResult() const { return analysis_result; }
 

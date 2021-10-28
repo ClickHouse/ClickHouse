@@ -184,8 +184,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
     ContextPtr local_context,
     QueryProcessingStage::Enum to_stage,
     const StorageMetadataPtr &,
-    SelectQueryInfo & query_info,
-    SelectQueryExpressionAnalyzer * query_analyzer) const
+    SelectQueryInfo & query_info) const
 {
     if (destination_id)
     {
@@ -194,8 +193,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        return destination->getQueryProcessingStage(
-            local_context, to_stage, destination->getInMemoryMetadataPtr(), query_info, query_analyzer);
+        return destination->getQueryProcessingStage(local_context, to_stage, destination->getInMemoryMetadataPtr(), query_info);
     }
 
     return QueryProcessingStage::FetchColumns;
