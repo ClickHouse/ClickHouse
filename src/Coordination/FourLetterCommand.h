@@ -32,6 +32,9 @@ public:
     virtual ~IFourLetterCommand();
     Int32 code();
 
+    static inline String toName(Int32 code);
+    static inline Int32 toCode(const String & name);
+
     static void printSet(StringBuffer & buffer, std::unordered_set<String> & set, String && prefix);
 
 protected:
@@ -42,15 +45,21 @@ struct FourLetterCommandFactory : private boost::noncopyable
 {
 public:
     using Commands = std::unordered_map<Int32, FourLetterCommandPtr>;
+    using WhiteList = std::vector<Int32>;
+
+    static constexpr Int32 WHITE_LIST_ALL = 0;
 
     bool isKnown(Int32 code);
+    bool isEnabled(Int32 code);
+
     FourLetterCommandPtr get(Int32 code);
 
     /// There is no need to make it thread safe, because registration is no initialization and get is after startup.
     void registerCommand(FourLetterCommandPtr & command);
+    void initializeWhiteList(const KeeperDispatcher & keeper_dispatcher);
 
+    void checkInitialization() const;
     bool isInitialized() const { return initialized; }
-
     void setInitialize(bool flag) { initialized = flag; }
 
     static FourLetterCommandFactory & instance();
@@ -59,6 +68,7 @@ public:
 private:
     volatile bool initialized = false;
     Commands commands;
+    WhiteList white_list;
 };
 
 /**Tests if server is running in a non-error state. The server will respond with imok if it is running.

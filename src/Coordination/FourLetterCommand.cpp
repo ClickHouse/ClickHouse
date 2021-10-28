@@ -1,5 +1,6 @@
 #include <Coordination/FourLetterCommand.h>
 #include <Coordination/KeeperDispatcher.h>
+#include <Poco/StringTokenizer.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
 
@@ -8,6 +9,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 IFourLetterCommand::IFourLetterCommand(const KeeperDispatcher & keeper_dispatcher_) : keeper_dispatcher(keeper_dispatcher_)
@@ -16,7 +18,17 @@ IFourLetterCommand::IFourLetterCommand(const KeeperDispatcher & keeper_dispatche
 
 Int32 IFourLetterCommand::code()
 {
-    Int32 res = *reinterpret_cast<Int32 *>(name().data());
+    return toCode(name());
+}
+
+String IFourLetterCommand::toName(Int32 code)
+{
+    return String(reinterpret_cast<char *>(__builtin_bswap32(code)));
+}
+
+Int32 IFourLetterCommand::toCode(const String & name)
+{
+    Int32 res = *reinterpret_cast<const Int32 *>(name.data());
     /// keep consistent with Coordination::read method by changing big endian to little endian.
     return __builtin_bswap32(res);
 }
@@ -30,6 +42,7 @@ void IFourLetterCommand::printSet(IFourLetterCommand::StringBuffer & buffer, std
         buffer.write('\n');
     }
 }
+
 IFourLetterCommand::~IFourLetterCommand() = default;
 
 FourLetterCommandFactory & FourLetterCommandFactory::instance()
@@ -38,21 +51,23 @@ FourLetterCommandFactory & FourLetterCommandFactory::instance()
     return factory;
 }
 
-bool FourLetterCommandFactory::isKnown(Int32 code)
+void FourLetterCommandFactory::checkInitialization() const
 {
     if (!initialized)
     {
-        throw Exception("Four letter command " + std::to_string(code) + " not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Four letter command  not initialized", ErrorCodes::LOGICAL_ERROR);
     }
+}
+
+bool FourLetterCommandFactory::isKnown(Int32 code)
+{
+    checkInitialization();
     return commands.contains(code);
 }
 
 FourLetterCommandPtr FourLetterCommandFactory::get(Int32 code)
 {
-    if (!initialized)
-    {
-        throw Exception("Four letter command " + std::to_string(code) + " not initialized", ErrorCodes::LOGICAL_ERROR);
-    }
+    checkInitialization();
     return commands.at(code);
 }
 
@@ -60,7 +75,7 @@ void FourLetterCommandFactory::registerCommand(FourLetterCommandPtr & command)
 {
     if (commands.contains(command->code()))
     {
-        throw Exception("Four letter command " + std::to_string(command->code()) + " already registered", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Four letter command " + command->name() + " already registered", ErrorCodes::LOGICAL_ERROR);
     }
     auto * log = &Poco::Logger::get("FourLetterCommandFactory");
     LOG_INFO(log, "Register four letter command {}, code {}", command->name(), std::to_string(command->code()));
@@ -85,7 +100,50 @@ void FourLetterCommandFactory::registerCommands(const KeeperDispatcher & keeper_
         FourLetterCommandPtr conf_command = std::make_shared<ConfCommand>(keeper_dispatcher);
         factory.registerCommand(conf_command);
 
+        factory.initializeWhiteList(keeper_dispatcher);
         factory.setInitialize(true);
+    }
+}
+
+bool FourLetterCommandFactory::isEnabled(Int32 code)
+{
+    checkInitialization();
+    if (!white_list.empty() && *white_list.cbegin() == WHITE_LIST_ALL)
+    {
+        return true;
+    }
+    return std::find(white_list.begin(), white_list.end(), code) != white_list.end();
+}
+
+void FourLetterCommandFactory::initializeWhiteList(const KeeperDispatcher & keeper_dispatcher)
+{
+    using Poco::StringTokenizer;
+    const auto & keeper_settings = keeper_dispatcher.getKeeperSettings();
+
+    String list_str = keeper_settings->four_letter_word_white_list;
+    StringTokenizer tokenizer(list_str, ",", 2);
+
+    for (const String & token : tokenizer)
+    {
+        if (token == "*")
+        {
+            white_list.clear();
+            white_list.resize(1);
+            white_list.push_back(WHITE_LIST_ALL);
+            return;
+        }
+        else
+        {
+            if (commands.contains(IFourLetterCommand::toCode(token)))
+            {
+                white_list.push_back(IFourLetterCommand::toCode(token));
+            }
+            else
+            {
+                auto * log = &Poco::Logger::get("FourLetterCommandFactory");
+                LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
+            }
+        }
     }
 }
 

@@ -219,6 +219,11 @@ public:
         return *server->getKeeperStateMachine();
     }
 
+    const KeeperSettingsPtr & getKeeperSettings() const
+    {
+        return settings;
+    }
+
     void dumpConf(WriteBufferFromOwnString & buf) const;
 };
 
