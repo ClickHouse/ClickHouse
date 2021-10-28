@@ -3,7 +3,7 @@ title: 'ClickHouse raises a $250M Series B at a $2B valuation...and we are hirin
 image: 'https://blog-images.clickhouse.com/en/2021/clickhouse-raises-250m-series-b/featured.jpg'
 date: '2021-10-28'
 author: '[Dorota Szeremeta](https://www.linkedin.com/in/dorota-szeremeta-a849b7/)'
-tags: ['company', 'community']
+tags: ['company', 'investment']
 ---
 
 Today, we are excited to announce that ClickHouse has raised $250 million in Series B funding at a $2B valuation. The round was led by Coatue and Altimeter, with participation from existing investors Index, Benchmark, Yandex, Almaz, and Lead Edge alongside new investors Lightspeed, Redpoint, and FirstMark. We are thrilled to partner with such an accomplished group. Not only is it a testament to the disruptive potential of our technology and our momentum to date, but more importantly, it’s an aggressive investment in our future. This funding will enable ClickHouse to grow our team, scale the product, and continue building a world-class, commercial-grade cloud solution that’s secure, compliant, and convenient for any customer to use. (You can read more about the funding round in our press release [here](https://www.businesswire.com/news/home/20211028005287/en)). 
