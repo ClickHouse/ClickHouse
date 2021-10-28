@@ -212,17 +212,25 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token())
 
-    images_path = os.path.join(reports_path, 'changed_images.json')
+
+    for root, _, files in os.walk(reports_path):
+        for f in files:
+            if f == 'changed_images.json':
+                images_path = os.path.join(root, 'changed_images.json')
+                break
+
     image_name = get_image_name(check_name)
 
     docker_image = image_name
-    if os.path.exists(images_path):
+    if images_path and os.path.exists(images_path):
         logging.info("Images file exists")
         with open(images_path, 'r', encoding='utf-8') as images_fd:
             images = json.load(images_fd)
             logging.info("Got images %s", images)
             if image_name in images:
                 docker_image += ':' + images[image_name]
+    else:
+        logging.info("Images file not found")
 
     for i in range(10):
         try:
