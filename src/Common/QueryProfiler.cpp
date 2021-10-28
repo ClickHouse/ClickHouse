@@ -22,10 +22,10 @@ namespace DB
 {
 
 #if defined(OS_LINUX)
-    extern thread_local size_t write_trace_iteration = 0;
-    extern thread_local size_t trace_total_overrun = 0;
-    extern thread_local size_t total_total_frames = 0;
-    extern thread_local UInt64 total_total_time_ns = 0;
+    thread_local size_t write_trace_iteration = 0;
+    thread_local size_t trace_total_overrun = 0;
+    thread_local size_t total_total_frames = 0;
+    thread_local UInt64 total_total_time_ns = 0;
 #endif
 
 namespace
