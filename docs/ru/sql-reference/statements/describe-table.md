@@ -25,7 +25,7 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 -   `is_subcolumn` — флаг, который равен `1` для внутренних подстолбцов. Он появляется в результате, только если описание подстолбцов разрешено настройкой [describe_include_subcolumns](../../operations/settings/settings.md#describe_include_subcolumns).
 
 Каждый столбец [Nested](../../sql-reference/data-types/nested-data-structures/nested.md) структур описывается отдельно. Перед его именем ставится имя родительского столбца с точкой.
-Чтобы отобразить внутренние подстолбцы [Tuple](../../sql-reference/data-types/tuple.md) или [Map](../../sql-reference/data-types/map.md#map-subcolumns), нужно включить настройку [describe_include_subcolumns](../../operations/settings/settings.md#describe_include_subcolumns). 
+Чтобы отобразить внутренние подстолбцы других типов данных, нужно включить настройку [describe_include_subcolumns](../../operations/settings/settings.md#describe_include_subcolumns). 
 
 **Пример**
 
