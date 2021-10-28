@@ -324,7 +324,9 @@ Pipe IStorageURLBase::read(
     unsigned /*num_streams*/)
 {
     auto params = getReadURIParams(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size);
-    bool with_globs = uri.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
+    bool with_globs = (uri.find('{') != std::string::npos && uri.find('}') != std::string::npos)
+                    || uri.find('|') == std::string::npos;
+
     if (with_globs)
     {
         size_t max_addresses = local_context->getSettingsRef().glob_expansion_max_elements;

@@ -62,6 +62,7 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int CANNOT_STAT;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -133,6 +134,7 @@ void checkCreationIsAllowed(ContextPtr context_global, const std::string & db_di
     if (fs::exists(table_path) && fs::is_directory(table_path))
         throw Exception("File must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
 }
+
 }
 
 Strings StorageFile::getPathsList(const String & table_path, const String & user_files_path, ContextPtr context, size_t & total_bytes_to_read)
@@ -191,11 +193,8 @@ StorageFile::StorageFile(const std::string & table_path_, const std::string & us
     : StorageFile(args)
 {
     is_db_table = false;
-    bool has_wildcards = table_path_.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
-    if (has_wildcards)
-        paths = {table_path_};
-    else
-        paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
+    paths = getPathsList(table_path_, user_files_path, args.getContext(), total_bytes_to_read);
+    path_for_partitioned_write = table_path_;
 
     if (args.format_name == "Distributed")
     {
@@ -686,23 +685,18 @@ public:
         const StorageMetadataPtr & metadata_snapshot_,
         const String & table_name_for_log_,
         std::unique_lock<std::shared_timed_mutex> && lock_,
-        int table_fd_,
-        bool use_table_fd_,
-        std::string base_path_,
-        std::vector<std::string> paths_,
+        String base_path_,
+        String path_,
         const CompressionMethod compression_method_,
         const std::optional<FormatSettings> & format_settings_,
         const String format_name_,
         ContextPtr context_,
         int flags_)
         : PartitionedSink(partition_by, context_, metadata_snapshot_->getSampleBlock())
-        , path(paths_[0])
+        , path(path_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
-        , table_fd(table_fd_)
-        , use_table_fd(use_table_fd_)
         , base_path(base_path_)
-        , paths(paths_)
         , compression_method(compression_method_)
         , format_name(format_name_)
         , format_settings(format_settings_)
@@ -717,11 +711,12 @@ public:
         auto partition_path = PartitionedSink::replaceWildcards(path, partition_id);
         PartitionedSink::validatePartitionKey(partition_path, true);
         Strings result_paths = {partition_path};
+        checkCreationIsAllowed(context, context->getUserFilesPath(), partition_path);
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             table_name_for_log,
-            table_fd,
-            use_table_fd,
+            -1,
+            /* use_table_fd */false,
             base_path,
             result_paths,
             compression_method,
@@ -736,10 +731,7 @@ private:
     StorageMetadataPtr metadata_snapshot;
     String table_name_for_log;
 
-    int table_fd;
-    bool use_table_fd;
     std::string base_path;
-    std::vector<std::string> paths;
     CompressionMethod compression_method;
     std::string format_name;
     std::optional<FormatSettings> format_settings;
@@ -764,32 +756,23 @@ SinkToStoragePtr StorageFile::write(
     if (context->getSettingsRef().engine_file_truncate_on_insert)
         flags |= O_TRUNC;
 
-    if (!paths.empty())
-    {
-        path = paths[0];
-        fs::create_directories(fs::path(path).parent_path());
-    }
-
-    bool has_wildcards = path.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
+    bool has_wildcards = path_for_partitioned_write.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
     bool is_partitioned_implementation = insert_query && insert_query->partition_by && has_wildcards;
 
     if (is_partitioned_implementation)
     {
-        if (paths.size() != 1)
-            throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
-                            "Table '{}' is in readonly mode because of globs in filepath",
-                            getStorageID().getNameForLogs());
+        if (path_for_partitioned_write.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty path for partitioned write");
+        fs::create_directories(fs::path(path_for_partitioned_write).parent_path());
 
         return std::make_shared<PartitionedStorageFileSink>(
             insert_query->partition_by,
             metadata_snapshot,
             getStorageID().getNameForLogs(),
             std::unique_lock{rwlock, getLockTimeout(context)},
-            table_fd,
-            use_table_fd,
             base_path,
-            paths,
+            path_for_partitioned_write,
             chooseCompressionMethod(path, compression_method),
             format_settings,
             format_name,
@@ -798,6 +781,12 @@ SinkToStoragePtr StorageFile::write(
     }
     else
     {
+        if (!paths.empty())
+        {
+            path = paths[0];
+            fs::create_directories(fs::path(path).parent_path());
+        }
+
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             getStorageID().getNameForLogs(),
