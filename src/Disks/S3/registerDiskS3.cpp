@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-    #include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #include <base/logger_useful.h>
 #include <IO/ReadHelpers.h>
@@ -10,7 +8,7 @@
 
 #if USE_AWS_S3
 
-#include <aws/core/client/DefaultRetryStrategy.h> // Y_IGNORE
+#include <aws/core/client/DefaultRetryStrategy.h>
 #include <IO/S3Common.h>
 #include "DiskS3.h"
 #include "Disks/DiskCacheWrapper.h"

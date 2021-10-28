@@ -31,15 +31,15 @@
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
-#include <aws/s3/model/CopyObjectRequest.h> // Y_IGNORE
-#include <aws/s3/model/DeleteObjectsRequest.h> // Y_IGNORE
-#include <aws/s3/model/GetObjectRequest.h> // Y_IGNORE
-#include <aws/s3/model/ListObjectsV2Request.h> // Y_IGNORE
-#include <aws/s3/model/HeadObjectRequest.h> // Y_IGNORE
-#include <aws/s3/model/CreateMultipartUploadRequest.h> // Y_IGNORE
-#include <aws/s3/model/CompleteMultipartUploadRequest.h> // Y_IGNORE
-#include <aws/s3/model/UploadPartCopyRequest.h> // Y_IGNORE
-#include <aws/s3/model/AbortMultipartUploadRequest.h> // Y_IGNORE
+#include <aws/s3/model/CopyObjectRequest.h>
+#include <aws/s3/model/DeleteObjectsRequest.h>
+#include <aws/s3/model/GetObjectRequest.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
+#include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/CreateMultipartUploadRequest.h>
+#include <aws/s3/model/CompleteMultipartUploadRequest.h>
+#include <aws/s3/model/UploadPartCopyRequest.h>
+#include <aws/s3/model/AbortMultipartUploadRequest.h>
 
 
 namespace DB
