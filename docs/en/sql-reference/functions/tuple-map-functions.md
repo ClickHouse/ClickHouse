@@ -352,4 +352,45 @@ Result:
 │ ['eleven','11']  │
 │ ['twelve','6.0'] │
 └──────────────────┘
-```
+```  
+  
+## mapContainsKeyLike {#mapContainsKeyLike}  
+  
+**Syntax**
+
+```sql
+mapContainsKeyLike(map, pattern)
+```  
+  
+**Parameters**
+  
+-   `map` — Map. [Map](../../sql-reference/data-types/map.md).  
+-   `pattern`  - String pattern to match.  
+  
+**Returned value**
+
+-   `1` if `map` contains `key` like specified pattern, `0` if not.  
+  
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
+
+INSERT INTO test VALUES ({'abc':'abc','def':'def'}), ({'hij':'hij','klm':'klm'});
+
+SELECT mapContainsKeyLike(a, 'a%') FROM test;
+```  
+  
+Result:  
+  
+```text
+┌─mapContainsKeyLike(a, 'a%')─┐
+│                           1 │
+│                           0 │
+└─────────────────────────────┘  
+```  
+  
+
+[Original article](https://clickhouse.com/docs/en/sql-reference/functions/tuple-map-functions/) <!--hide-->

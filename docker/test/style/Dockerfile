@@ -10,7 +10,7 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     python3-pip \
     pylint \
     yamllint \
-    && pip3 install codespell
+    && pip3 install codespell PyGithub boto3 unidiff
 
 COPY run.sh /
 COPY process_style_check_result.py /

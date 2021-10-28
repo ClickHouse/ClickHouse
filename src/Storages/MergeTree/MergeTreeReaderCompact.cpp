@@ -100,8 +100,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                 std::make_unique<CompressedReadBufferFromFile>(
                     data_part->volume->getDisk()->readFile(
                         full_data_path,
-                        settings.read_settings,
-                        0),
+                        settings.read_settings),
                     /* allow_different_codecs = */ true);
 
             if (profile_callback_)
