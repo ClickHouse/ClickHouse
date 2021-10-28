@@ -8,7 +8,7 @@ toc_title: DATABASE
 Creates a new database.
 
 ``` sql
-CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)]
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [COMMENT 'Comment']
 ```
 
 ## Clauses {#clauses}
@@ -26,7 +26,7 @@ ClickHouse creates the `db_name` database on all the servers of a specified clus
 
 ### ENGINE {#engine}
 
-[MySQL](../../../engines/database-engines/mysql.md) allows you to retrieve data from the remote MySQL server. By default, ClickHouse uses its own [database engine](../../../engines/database-engines/index.md). There’s also a [lazy](../../../engines/database-engines/lazy.md) engine.
+[MySQL](../../../engines/database-engines/mysql.md) allows you to retrieve data from the remote MySQL server. By default, ClickHouse uses its own [database engine](../../../engines/database-engines/index.md). There is also a [lazy](../../../engines/database-engines/lazy.md) engine.
 
 ### COMMENT {#comment}
 
