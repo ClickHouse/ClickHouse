@@ -152,7 +152,7 @@ def get_run_command(builds_path, result_path, server_log_path, kill_timeout, add
     additional_options.append('--print-time')
     additional_options_str = '-e ADDITIONAL_OPTIONS="' + ' '.join(additional_options) + '"'
 
-    envs = [f'-e MAX_RUN_TIME={int(0.9 * kill_timeout)}']
+    envs = [f'-e MAX_RUN_TIME={int(0.9 * kill_timeout)}', '-e S3_URL="https://clickhouse-datasets.s3.amazonaws.com"']
     envs += [f'-e {e}' for e in additional_envs]
     env_str = ' '.join(envs)
 
