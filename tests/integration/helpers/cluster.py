@@ -2068,7 +2068,7 @@ class ClickHouseInstance:
         except Exception as e:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 
-    def start_clickhouse(self, start_wait_sec=30):
+    def start_clickhouse(self, start_wait_sec=60):
         if not self.stay_alive:
             raise Exception("clickhouse can be started again only with stay_alive=True instance")
 
