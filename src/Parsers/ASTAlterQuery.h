@@ -231,6 +231,12 @@ public:
 
     bool isFreezeAlter() const;
 
+    bool isAttachAlter() const;
+
+    bool isFetchAlter() const;
+
+    bool isDropPartitionAlter() const;
+
     String getID(char) const override;
 
     ASTPtr clone() const override;
