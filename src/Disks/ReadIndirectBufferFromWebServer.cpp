@@ -53,8 +53,8 @@ std::unique_ptr<ReadBuffer> ReadIndirectBufferFromWebServer::initialize()
                            std::max(Poco::Timespan(settings.http_receive_timeout.totalSeconds(), 0), Poco::Timespan(20, 0)),
                            settings.tcp_keep_alive_timeout,
                            http_keep_alive_timeout),
-        0,
         credentials,
+        0,
         buf_size,
         read_settings);
 }
