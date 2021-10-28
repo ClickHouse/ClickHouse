@@ -34,6 +34,16 @@ void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco
     }
 }
 
+KeeperSettings::KeeperSettings()
+    : server_id(NOT_EXIST)
+    , tcp_port(NOT_EXIST)
+    , tcp_port_secure(NOT_EXIST)
+    , standalone_keeper(false)
+    , coordination_settings(std::make_shared<CoordinationSettings>())
+{
+}
+
+
 void KeeperSettings::dump(WriteBufferFromOwnString & buf) const
 {
     auto write = [&buf](const String & content) { buf.write(content.data(), content.size()); };
@@ -55,12 +65,12 @@ void KeeperSettings::dump(WriteBufferFromOwnString & buf) const
     write("server_id=");
     write_int(server_id);
 
-    if (tcp_port != NO_PORT)
+    if (tcp_port != NOT_EXIST)
     {
         write("tcp_port=");
         write_int(tcp_port);
     }
-    if (tcp_port_secure != NO_PORT)
+    if (tcp_port_secure != NOT_EXIST)
     {
         write("tcp_port_secure=");
         write_int(tcp_port_secure);
@@ -162,7 +172,6 @@ KeeperSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
     ret->log_storage_path = getLogsPathFromConfig(config, standalone_keeper_);
     ret->snapshot_storage_path = getSnapshotsPathFromConfig(config, standalone_keeper_);
 
-    ret->coordination_settings = std::make_shared<CoordinationSettings>();
     ret->coordination_settings->loadFromConfig("keeper_server.coordination_settings", config);
 
     return ret;
