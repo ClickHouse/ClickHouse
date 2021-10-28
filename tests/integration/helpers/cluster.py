@@ -2056,12 +2056,31 @@ class ClickHouseInstance:
 
     def start_clickhouse(self, start_wait_sec=30):
         if not self.stay_alive:
-            raise Exception("clickhouse can be started again only with stay_alive=True instance")
+            raise Exception("ClickHouse can be started again only with stay_alive=True instance")
 
-        self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
-        # wait start
-        from helpers.test_tools import assert_eq_with_retry
-        assert_eq_with_retry(self, "select 1", "1", retry_count=int(start_wait_sec / 0.5), sleep_time=0.5)
+        time_to_sleep = 0.5
+        start_tries = 5
+
+        total_tries = int(start_wait_sec / time_to_sleep)
+        query_tries = int(total_tries / start_tries)
+
+        for i in range(start_tries):
+            # sometimes after SIGKILL (hard reset) server may refuse to start for some time
+            # for different reasons.
+            self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
+            started = False
+            for _ in range(query_tries):
+                try:
+                    self.query("select 1")
+                    started = True
+                    break
+                except:
+                    time.sleep(time_to_sleep)
+            if started:
+                break
+        else:
+            raise Exception("Cannot start ClickHouse, see additional info in logs")
+
 
     def restart_clickhouse(self, stop_start_wait_sec=30, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
@@ -2319,6 +2338,9 @@ class ClickHouseInstance:
 
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(["bash", "-c", "echo '{}' > {}".format(replacement, path_to_config)])
+
+    def replace_in_config(self, path_to_config, replace, replacement):
+        self.exec_in_container(["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"])
 
     def create_dir(self, destroy_dir=True):
         """Create the instance directory and all the needed files there."""

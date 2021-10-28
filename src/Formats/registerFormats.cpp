@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #include <Formats/FormatFactory.h>
 
@@ -67,6 +65,7 @@ void registerOutputFormatNull(FormatFactory & factory);
 void registerOutputFormatMySQLWire(FormatFactory & factory);
 void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
+void registerOutputFormatCapnProto(FormatFactory & factory);
 
 /// Input only formats.
 
@@ -119,10 +118,8 @@ void registerFormats()
     registerOutputFormatORC(factory);
     registerInputFormatParquet(factory);
     registerOutputFormatParquet(factory);
-#if !defined(ARCADIA_BUILD)
     registerInputFormatAvro(factory);
     registerOutputFormatAvro(factory);
-#endif
     registerInputFormatArrow(factory);
     registerOutputFormatArrow(factory);
 
@@ -139,14 +136,13 @@ void registerFormats()
     registerOutputFormatMySQLWire(factory);
     registerOutputFormatMarkdown(factory);
     registerOutputFormatPostgreSQLWire(factory);
+    registerOutputFormatCapnProto(factory);
 
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);
     registerInputFormatLineAsString(factory);
 
-#if !defined(ARCADIA_BUILD)
     registerInputFormatCapnProto(factory);
-#endif
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
     registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);

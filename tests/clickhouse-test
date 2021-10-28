@@ -1309,7 +1309,7 @@ if __name__ == '__main__':
     parser.add_argument('-j', '--jobs', default=1, nargs='?', type=int, help='Run all tests in parallel')
     parser.add_argument('--test-runs', default=1, nargs='?', type=int, help='Run each test many times (useful for e.g. flaky check)')
     parser.add_argument('-U', '--unified', default=3, type=int, help='output NUM lines of unified context')
-    parser.add_argument('-r', '--server-check-retries', default=30, type=int, help='Num of tries to execute SELECT 1 before tests started')
+    parser.add_argument('-r', '--server-check-retries', default=180, type=int, help='Num of tries to execute SELECT 1 before tests started')
     parser.add_argument('--db-engine', help='Database engine name')
     parser.add_argument('--replicated-database', action='store_true', default=False, help='Run tests with Replicated database engine')
     parser.add_argument('--fast-tests-only', action='store_true', default=False, help='Run only fast tests (the tests without the "no-fasttest" tag)')

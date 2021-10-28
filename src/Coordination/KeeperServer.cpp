@@ -1,9 +1,7 @@
 #include <Coordination/KeeperServer.h>
 #include <Coordination/Defines.h>
 
-#if !defined(ARCADIA_BUILD)
-#   include "config_core.h"
-#endif
+#include "config_core.h"
 
 #include <Coordination/LoggerWrapper.h>
 #include <Coordination/KeeperStateMachine.h>
@@ -121,22 +119,41 @@ void KeeperServer::startup()
 
     state_manager->loadLogStore(state_machine->last_commit_index() + 1, coordination_settings->reserved_log_items);
 
-    bool single_server = state_manager->getTotalServers() == 1;
+    auto latest_snapshot_config = state_machine->getClusterConfig();
+    auto latest_log_store_config = state_manager->getLatestConfigFromLogStore();
 
-    nuraft::raft_params params;
-    if (single_server)
+    if (latest_snapshot_config && latest_log_store_config)
     {
-        /// Don't make sense in single server mode
-        params.heart_beat_interval_ = 0;
-        params.election_timeout_lower_bound_ = 0;
-        params.election_timeout_upper_bound_ = 0;
+        if (latest_snapshot_config->get_log_idx() > latest_log_store_config->get_log_idx())
+        {
+            LOG_INFO(log, "Will use config from snapshot with log index {}", latest_snapshot_config->get_log_idx());
+            state_manager->save_config(*latest_snapshot_config);
+        }
+        else
+        {
+            LOG_INFO(log, "Will use config from log store with log index {}", latest_snapshot_config->get_log_idx());
+            state_manager->save_config(*latest_log_store_config);
+        }
+    }
+    else if (latest_snapshot_config)
+    {
+        LOG_INFO(log, "No config in log store, will use config from snapshot with log index {}", latest_snapshot_config->get_log_idx());
+        state_manager->save_config(*latest_snapshot_config);
+    }
+    else if (latest_log_store_config)
+    {
+        LOG_INFO(log, "No config in snapshot, will use config from log store with log index {}", latest_log_store_config->get_log_idx());
+        state_manager->save_config(*latest_log_store_config);
     }
     else
     {
-        params.heart_beat_interval_ = coordination_settings->heart_beat_interval_ms.totalMilliseconds();
-        params.election_timeout_lower_bound_ = coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds();
-        params.election_timeout_upper_bound_ = coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds();
+        LOG_INFO(log, "No config in log store and snapshot, probably it's initial run. Will use config from .xml on disk");
     }
+
+    nuraft::raft_params params;
+    params.heart_beat_interval_ = coordination_settings->heart_beat_interval_ms.totalMilliseconds();
+    params.election_timeout_lower_bound_ = coordination_settings->election_timeout_lower_bound_ms.totalMilliseconds();
+    params.election_timeout_upper_bound_ = coordination_settings->election_timeout_upper_bound_ms.totalMilliseconds();
 
     params.reserved_log_items_ = coordination_settings->reserved_log_items;
     params.snapshot_distance_ = coordination_settings->snapshot_distance;
@@ -353,6 +370,7 @@ nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type typ
 void KeeperServer::waitInit()
 {
     std::unique_lock lock(initialized_mutex);
+
     int64_t timeout = coordination_settings->startup_timeout.totalMilliseconds();
     if (!initialized_cv.wait_for(lock, std::chrono::milliseconds(timeout), [&] { return initialized_flag.load(); }))
         throw Exception(ErrorCodes::RAFT_ERROR, "Failed to wait RAFT initialization");
@@ -361,6 +379,141 @@ void KeeperServer::waitInit()
 std::vector<int64_t> KeeperServer::getDeadSessions()
 {
     return state_machine->getDeadSessions();
+}
+
+ConfigUpdateActions KeeperServer::getConfigurationDiff(const Poco::Util::AbstractConfiguration & config)
+{
+    return state_manager->getConfigurationDiff(config);
+}
+
+void KeeperServer::applyConfigurationUpdate(const ConfigUpdateAction & task)
+{
+    size_t sleep_ms = 500;
+    if (task.action_type == ConfigUpdateActionType::AddServer)
+    {
+        LOG_INFO(log, "Will try to add server with id {}", task.server->get_id());
+        bool added = false;
+        for (size_t i = 0; i < coordination_settings->configuration_change_tries_count; ++i)
+        {
+            if (raft_instance->get_srv_config(task.server->get_id()) != nullptr)
+            {
+                LOG_INFO(log, "Server with id {} was successfully added", task.server->get_id());
+                added = true;
+                break;
+            }
+
+            if (!isLeader())
+            {
+                LOG_INFO(log, "We are not leader anymore, will not try to add server {}", task.server->get_id());
+                break;
+            }
+
+            auto result = raft_instance->add_srv(*task.server);
+            if (!result->get_accepted())
+                LOG_INFO(log, "Command to add server {} was not accepted for the {} time, will sleep for {} ms and retry", task.server->get_id(), i + 1, sleep_ms * (i + 1));
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms * (i + 1)));
+        }
+        if (!added)
+            throw Exception(ErrorCodes::RAFT_ERROR, "Configuration change to add server (id {}) was not accepted by RAFT after all {} retries", task.server->get_id(), coordination_settings->configuration_change_tries_count);
+    }
+    else if (task.action_type == ConfigUpdateActionType::RemoveServer)
+    {
+        LOG_INFO(log, "Will try to remove server with id {}", task.server->get_id());
+
+        bool removed = false;
+        if (task.server->get_id() == state_manager->server_id())
+        {
+            LOG_INFO(log, "Trying to remove leader node (ourself), so will yield leadership and some other node (new leader) will try remove us. "
+                        "Probably you will have to run SYSTEM RELOAD CONFIG on the new leader node");
+
+            raft_instance->yield_leadership();
+            return;
+        }
+
+        for (size_t i = 0; i < coordination_settings->configuration_change_tries_count; ++i)
+        {
+            if (raft_instance->get_srv_config(task.server->get_id()) == nullptr)
+            {
+                LOG_INFO(log, "Server with id {} was successfully removed", task.server->get_id());
+                removed = true;
+                break;
+            }
+
+            if (!isLeader())
+            {
+                LOG_INFO(log, "We are not leader anymore, will not try to remove server {}", task.server->get_id());
+                break;
+            }
+
+            auto result = raft_instance->remove_srv(task.server->get_id());
+            if (!result->get_accepted())
+                LOG_INFO(log, "Command to remove server {} was not accepted for the {} time, will sleep for {} ms and retry", task.server->get_id(), i + 1, sleep_ms * (i + 1));
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms * (i + 1)));
+        }
+        if (!removed)
+            throw Exception(ErrorCodes::RAFT_ERROR, "Configuration change to remove server (id {}) was not accepted by RAFT after all {} retries", task.server->get_id(), coordination_settings->configuration_change_tries_count);
+    }
+    else if (task.action_type == ConfigUpdateActionType::UpdatePriority)
+        raft_instance->set_priority(task.server->get_id(), task.server->get_priority());
+    else
+        LOG_WARNING(log, "Unknown configuration update type {}", static_cast<uint64_t>(task.action_type));
+}
+
+
+bool KeeperServer::waitConfigurationUpdate(const ConfigUpdateAction & task)
+{
+
+    size_t sleep_ms = 500;
+    if (task.action_type == ConfigUpdateActionType::AddServer)
+    {
+        LOG_INFO(log, "Will try to wait server with id {} to be added", task.server->get_id());
+        for (size_t i = 0; i < coordination_settings->configuration_change_tries_count; ++i)
+        {
+            if (raft_instance->get_srv_config(task.server->get_id()) != nullptr)
+            {
+                LOG_INFO(log, "Server with id {} was successfully added by leader", task.server->get_id());
+                return true;
+            }
+
+            if (isLeader())
+            {
+                LOG_INFO(log, "We are leader now, probably we will have to add server {}", task.server->get_id());
+                return false;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms * (i + 1)));
+        }
+        return false;
+    }
+    else if (task.action_type == ConfigUpdateActionType::RemoveServer)
+    {
+        LOG_INFO(log, "Will try to wait remove of server with id {}", task.server->get_id());
+
+        for (size_t i = 0; i < coordination_settings->configuration_change_tries_count; ++i)
+        {
+            if (raft_instance->get_srv_config(task.server->get_id()) == nullptr)
+            {
+                LOG_INFO(log, "Server with id {} was successfully removed by leader", task.server->get_id());
+                return true;
+            }
+
+            if (isLeader())
+            {
+                LOG_INFO(log, "We are leader now, probably we will have to remove server {}", task.server->get_id());
+                return false;
+            }
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms * (i + 1)));
+        }
+        return false;
+    }
+    else if (task.action_type == ConfigUpdateActionType::UpdatePriority)
+        return true;
+    else
+        LOG_WARNING(log, "Unknown configuration update type {}", static_cast<uint64_t>(task.action_type));
+    return true;
 }
 
 }

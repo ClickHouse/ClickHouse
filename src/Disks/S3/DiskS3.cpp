@@ -29,15 +29,15 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 
-#include <aws/s3/model/CopyObjectRequest.h> // Y_IGNORE
-#include <aws/s3/model/DeleteObjectsRequest.h> // Y_IGNORE
-#include <aws/s3/model/GetObjectRequest.h> // Y_IGNORE
-#include <aws/s3/model/ListObjectsV2Request.h> // Y_IGNORE
-#include <aws/s3/model/HeadObjectRequest.h> // Y_IGNORE
-#include <aws/s3/model/CreateMultipartUploadRequest.h> // Y_IGNORE
-#include <aws/s3/model/CompleteMultipartUploadRequest.h> // Y_IGNORE
-#include <aws/s3/model/UploadPartCopyRequest.h> // Y_IGNORE
-#include <aws/s3/model/AbortMultipartUploadRequest.h> // Y_IGNORE
+#include <aws/s3/model/CopyObjectRequest.h>
+#include <aws/s3/model/DeleteObjectsRequest.h>
+#include <aws/s3/model/GetObjectRequest.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
+#include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/CreateMultipartUploadRequest.h>
+#include <aws/s3/model/CompleteMultipartUploadRequest.h>
+#include <aws/s3/model/UploadPartCopyRequest.h>
+#include <aws/s3/model/AbortMultipartUploadRequest.h>
 
 
 namespace DB
@@ -222,7 +222,7 @@ void DiskS3::moveFile(const String & from_path, const String & to_path, bool sen
     fs::rename(fs::path(metadata_path) / from_path, fs::path(metadata_path) / to_path);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, const ReadSettings & read_settings, size_t) const
+std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>) const
 {
     auto settings = current_settings.get();
     auto metadata = readMeta(path);
