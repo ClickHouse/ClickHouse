@@ -224,7 +224,9 @@ if not args.use_existing_tables:
 
     def do_create(connection, index, queries):
         for q in queries:
-            connection.execute(q)
+            # set use_client_time_zone=False to mute
+            # `datetimecolumn.py:199: PytzUsageWarning: The zone attribute is specific to pytz's interface`
+            connection.execute(q, settings={'use_client_time_zone': False})
             print(f'create\t{index}\t{connection.last_query.elapsed}\t{tsv_escape(q)}')
 
     threads = [
@@ -271,7 +273,7 @@ for query_index in queries_to_run:
     # new one. We want to run them on the new server only, so that the PR author
     # can ensure that the test works properly. Remember the errors we had on
     # each server.
-    query_error_on_connection = [None] * len(all_connections);
+    query_error_on_connection = [None] * len(all_connections)
     for conn_index, c in enumerate(all_connections):
         try:
             prewarm_id = f'{query_prefix}.prewarm0'
@@ -282,9 +284,12 @@ for query_index in queries_to_run:
                 # * collect profiler traces, which might be helpful for analyzing
                 #   test coverage. We disable profiler for normal runs because
                 #   it makes the results unstable.
-                res = c.execute(q, query_id = prewarm_id,
-                    settings = {'max_execution_time': args.max_query_seconds,
-                        'query_profiler_real_time_period_ns': 10000000})
+                #   Note: temporary disable. Some queries are executed too long. Need to investigate.
+                res = c.execute(q, query_id=prewarm_id,
+                                settings={
+                                    'max_execution_time': args.max_query_seconds,
+                                    # 'query_profiler_real_time_period_ns': 10000000,
+                                    'use_client_time_zone': False})
             except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
                 e.args = (prewarm_id, *e.args)
@@ -297,7 +302,7 @@ for query_index in queries_to_run:
         except:
             # FIXME the driver reconnects on error and we lose settings, so this
             # might lead to further errors or unexpected behavior.
-            query_error_on_connection[conn_index] = traceback.format_exc();
+            query_error_on_connection[conn_index] = traceback.format_exc()
             continue
 
     # Report all errors that ocurred during prewarm and decide what to do next.
@@ -337,7 +342,10 @@ for query_index in queries_to_run:
 
         for conn_index, c in enumerate(this_query_connections):
             try:
-                res = c.execute(q, query_id = run_id, settings = {'max_execution_time': args.max_query_seconds})
+                res = c.execute(q, query_id=run_id,
+                                settings={
+                                    'max_execution_time': args.max_query_seconds,
+                                    'use_client_time_zone': False})
             except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
                 e.args = (run_id, *e.args)
@@ -414,7 +422,10 @@ for query_index in queries_to_run:
 
         for conn_index, c in enumerate(this_query_connections):
             try:
-                res = c.execute(q, query_id = run_id, settings = {'query_profiler_real_time_period_ns': 10000000})
+                res = c.execute(q, query_id=run_id,
+                                settings={
+                                    'query_profiler_real_time_period_ns': 10000000,
+                                    'use_client_time_zone': False})
                 print(f'profile\t{query_index}\t{run_id}\t{conn_index}\t{c.last_query.elapsed}')
             except clickhouse_driver.errors.Error as e:
                 # Add query id to the exception to make debugging easier.
