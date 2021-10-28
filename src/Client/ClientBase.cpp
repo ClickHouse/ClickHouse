@@ -77,6 +77,7 @@ namespace ErrorCodes
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int UNRECOGNIZED_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 }
