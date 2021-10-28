@@ -12,6 +12,7 @@
 #include "Common/Exception.h"
 #include "Common/getNumberOfPhysicalCPUCores.h"
 #include "Common/tests/gtest_global_context.h"
+#include "Common/typeid_cast.h"
 #include "Columns/ColumnString.h"
 #include "Columns/ColumnsNumber.h"
 #include "Core/Block.h"
@@ -833,7 +834,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     auto columns_description_for_query = columns_description.empty() ? ColumnsDescription(sample.getNamesAndTypesList()) : columns_description;
     if (columns_description_for_query.empty())
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column description is empty and it can't be built from sample from table. Cannot execute query.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column description is empty and it can't be built from sample from table. Cannot execute query.");
     }
 
     /// If INSERT data must be sent.
