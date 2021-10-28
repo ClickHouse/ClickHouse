@@ -20,17 +20,19 @@ The result type is an integer with bits equal to the maximum bits of its argumen
 ## bitShiftLeft(a, b) {#bitshiftlefta-b}
 
 Shifts a value left by specified number of bit positions.
+A `FixedString` or a `String` value is treated as a single multibyte value. 
+Bits of a `FixedString` value are lost as they are shifted out. On the contrary a `String` value is extended with additional bytes, so no bits are lost.
 
 **Syntax**
 
 ``` sql
-bitShiftLeft(a, b)
+bitShiftLeft(a,  b)
 ```
 
 **Arguments**
 
 -   `a` — Value. [Integer](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md)
--   `b` — Bit count to shift. [Integer](../../sql-reference/data-types/int-uint.md).
+-   `b` — Bit count to shift. [Integer](../../sql-reference/data-types/int-uint.md), 64 bit types or less are allowed.
 
 **Returned value**
 
@@ -40,18 +42,26 @@ The type of a returned value is the same as the type of an input value.
 
 **Example**
 
-Query:
+In the following queries [bin](encoding-functions.md#bin) and [hex](encoding-functions.md#hex) functions are used to show bits of shifted values.
 
 ``` sql
-SELECT bitShiftLeft(8, 2), bitShiftLeft('abc', 8);
+SELECT toUInt8(99) AS a, bin(a), bitShiftLeft(a, 2) AS a_shifted, bin(a_shifted);
+SELECT 'abc' AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
+SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, hex(a_shifted);
 ```
 
 Result:
 
 ``` text
-┌─bitShiftLeft(8, 2)─┬─bitShiftLeft('abc', 8)─┐
-│                 32 │ abc                    │
-└────────────────────┴────────────────────────┘
+┌──a─┬─bin(toUInt8(99))─┬─a_shifted─┬─bin(bitShiftLeft(toUInt8(99), 2))─┐
+│ 99 │ 01100011         │       140 │ 10001100                          │
+└────┴──────────────────┴───────────┴───────────────────────────────────┘
+┌─a───┬─hex('abc')─┬─a_shifted─┬─hex(bitShiftLeft('abc', 4))─┐
+│ abc │ 616263     │ &0        │ 06162630                    │
+└─────┴────────────┴───────────┴─────────────────────────────┘
+┌─a───┬─hex(toFixedString('abc', 3))─┬─a_shifted─┬─hex(bitShiftLeft(toFixedString('abc', 3), 4))─┐
+│ abc │ 616263                       │ &0        │ 162630                                        │
+└─────┴──────────────────────────────┴───────────┴───────────────────────────────────────────────┘
 ```
 
 
