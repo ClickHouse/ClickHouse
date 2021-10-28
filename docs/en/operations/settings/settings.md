@@ -1794,7 +1794,7 @@ This will allow to avoid:
 -  Sending extra rows over network;
 -  Processing rows behind the limit on the initiator.
 
-You cannot get inaccurate results anymore, since `distributed_push_down_limit` changes query execution only if at least one of the conditions met:
+Starting from 21.9 version you cannot get inaccurate results anymore, since `distributed_push_down_limit` changes query execution only if at least one of the conditions met:
 -  [distributed_group_by_no_merge](#distributed-group-by-no-merge) > 0.
 -  Query **does not have** `GROUP BY`/`DISTINCT`/`LIMIT BY`, but it has `ORDER BY`/`LIMIT`.
 -  Query **has** `GROUP BY`/`DISTINCT`/`LIMIT BY` with `ORDER BY`/`LIMIT` and:
