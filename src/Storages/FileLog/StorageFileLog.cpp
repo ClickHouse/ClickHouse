@@ -750,7 +750,11 @@ void registerStorageFileLog(StorageFactory & factory)
         auto physical_cpu_cores = getNumberOfPhysicalCPUCores();
         auto num_threads = filelog_settings->max_threads.value;
 
-        if (num_threads > physical_cpu_cores)
+        if (!num_threads) /// Default
+        {
+            num_threads = std::max(unsigned(1), physical_cpu_cores / 4);
+        }
+        else if (num_threads > physical_cpu_cores)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of threads to parse files can not be bigger than {}", physical_cpu_cores);
         }
