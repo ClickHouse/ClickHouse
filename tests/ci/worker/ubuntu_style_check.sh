@@ -27,6 +27,16 @@ apt-get install --yes --no-install-recommends docker-ce docker-ce-cli containerd
 
 usermod -aG docker ubuntu
 
+# enable ipv6 in containers (fixed-cidr-v6 is some random network mask)
+cat <<EOT > /etc/docker/daemon.json
+{
+  "ipv6": true,
+  "fixed-cidr-v6": "2001:db8:1::/64"
+}
+EOT
+
+systemctl restart docker
+
 pip install boto3 pygithub requests urllib3 unidiff
 
 mkdir -p $RUNNER_HOME && cd $RUNNER_HOME
