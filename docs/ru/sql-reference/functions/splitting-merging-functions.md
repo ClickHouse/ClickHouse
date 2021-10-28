@@ -212,8 +212,8 @@ SELECT splitByNonAlpha('  1!  a,  b.  ');
 
 ## arrayStringConcat(arr\[, separator\]) {#arraystringconcatarr-separator}
 
-Склеивает строки, перечисленные в массиве, с разделителем separator.
-separator - необязательный параметр, константная строка, по умолчанию равен пустой строке.
+Склеивает строковые представления элементов массива с разделителем `separator`.
+`separator` - необязательный параметр, константная строка, по умолчанию равен пустой строке.
 Возвращается строка.
 
 ## alphaTokens(s) {#alphatokenss}
