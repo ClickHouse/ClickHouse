@@ -58,18 +58,18 @@ public:
         Names key_names_left;
         Names key_names_right; /// Duplicating right key names are qualified.
 
-        ASTPtr on_filter_condition_left;
-        ASTPtr on_filter_condition_right;
+        ASTPtr on_join_condition_left;
+        ASTPtr on_join_condition_right;
 
         JoinOnClause() = default;
 
         std::pair<String, String> condColumnNames() const
         {
             std::pair<String, String> res;
-            if (on_filter_condition_left)
-                res.first = on_filter_condition_left->getColumnName();
-            if (on_filter_condition_right)
-                res.second = on_filter_condition_right->getColumnName();
+            if (on_join_condition_left)
+                res.first = on_join_condition_left->getColumnName();
+            if (on_join_condition_right)
+                res.second = on_join_condition_right->getColumnName();
             return res;
         }
 

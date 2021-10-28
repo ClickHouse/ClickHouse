@@ -196,8 +196,8 @@ ASTPtr TableJoin::leftKeysList() const
 
     for (const auto & clause : clauses)
     {
-        if (clause.on_filter_condition_left)
-            keys_list->children.push_back(clause.on_filter_condition_left);
+        if (clause.on_join_condition_left)
+            keys_list->children.push_back(clause.on_join_condition_left);
     }
     return keys_list;
 }
@@ -211,8 +211,8 @@ ASTPtr TableJoin::rightKeysList() const
 
     for (const auto & clause : clauses)
     {
-        if (clause.on_filter_condition_right)
-            keys_list->children.push_back(clause.on_filter_condition_right);
+        if (clause.on_join_condition_right)
+            keys_list->children.push_back(clause.on_join_condition_right);
     }
     return keys_list;
 }
@@ -604,7 +604,7 @@ static void addJoinConditionWithAnd(ASTPtr & current_cond, const ASTPtr & new_co
 
 void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
 {
-    auto & cond_ast = is_left ? clauses.back().on_filter_condition_left : clauses.back().on_filter_condition_right;
+    auto & cond_ast = is_left ? clauses.back().on_join_condition_left : clauses.back().on_join_condition_right;
     LOG_TRACE(&Poco::Logger::get("TableJoin"), "Adding join condition for {} table: {} -> {}",
               (is_left ? "left" : "right"), ast ? queryToString(ast) : "NULL", cond_ast ? queryToString(cond_ast) : "NULL");
     addJoinConditionWithAnd(cond_ast, ast);
