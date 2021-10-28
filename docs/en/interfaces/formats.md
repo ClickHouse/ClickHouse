@@ -195,7 +195,7 @@ When parsing with this format, tabs or linefeeds are not allowed in each field.
 
 This format is also available under the name `TSVRawWithNames`.
 
-## TabSeparatedWithNamesAndTypes {#tabseparatedwithnamesandtypes}
+## TabSeparatedWithNamesAndTypes {#tabseparatedrawwithnamesandtypes}
 
 Differs from `TabSeparatedWithNamesAndTypes` format in that the rows are written without escaping.
 When parsing with this format, tabs or linefeeds are not allowed in each field.
@@ -689,15 +689,19 @@ Differs from `JSONEachRow`/`JSONStringsEachRow` in that ClickHouse will also yie
 
 ## JSONCompactEachRowWithNames {#jsoncompacteachrowwithnames}
 
-Differs from `JSONCompactEachRow` format in that the also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
+Differs from `JSONCompactEachRow` format in that it also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
 ## JSONCompactEachRowWithNamesAndTypes {#jsoncompacteachrowwithnamesandtypes}
 
-Differs from `JSONCompactEachRow` format in that the also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
+Differs from `JSONCompactEachRow` format in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
+
+## JSONCompactStringsEachRowWithNames {#jsoncompactstringseachrowwithnames}
+
+Differs from `JSONCompactStringsEachRow` in that in that it also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
 ## JSONCompactStringsEachRowWithNamesAndTypes {#jsoncompactstringseachrowwithnamesandtypes}
 
-Differs from `JSONCompactEachRow`/`JSONCompactStringsEachRow` in that the column names and types are written as the first two rows.
+Differs from `JSONCompactStringsEachRow` in that it also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
 
 ```json
 ["'hello'", "multiply(42, number)", "range(5)"]
