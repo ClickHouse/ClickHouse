@@ -294,6 +294,7 @@ set_source_files_properties(
         Columns/ColumnFixedString.cpp
         Columns/ColumnsCommon.cpp
         Columns/ColumnVector.cpp
+        Columns/ColumnDecimal.cpp
         PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
 if(RE2_LIBRARY)

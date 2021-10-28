@@ -15,14 +15,12 @@
 #include <Core/ServerUUID.h>
 #include <Common/hex.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "Common/config_version.h"
-#    include <Common/config.h>
-#endif
+#include "Common/config_version.h"
+#include <Common/config.h>
 
 #if USE_SENTRY
 
-#    include <sentry.h> // Y_IGNORE
+#    include <sentry.h>
 #    include <stdio.h>
 #    include <filesystem>
 
