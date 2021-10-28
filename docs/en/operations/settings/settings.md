@@ -3845,6 +3845,7 @@ Default value: `0`.
 **Example**
 
 See an example for the [DESCRIBE](../../sql-reference/statements/describe-table.md) statement.
+
 ## async_insert {#async-insert}
 
 Enables or disables asynchronous inserts. This makes sense only for insertion over HTTP protocol. Note that deduplication isn't working for such inserts.
