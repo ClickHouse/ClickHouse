@@ -257,7 +257,6 @@ if (NOT EXTERNAL_BOOST_FOUND)
     set (SRCS_THREAD
         "${LIBRARY_DIR}/libs/thread/src/future.cpp"
         "${LIBRARY_DIR}/libs/thread/src/tss_null.cpp"
-        "${LIBRARY_DIR}/libs/thread/src/pthread/once_atomic.cpp"
         "${LIBRARY_DIR}/libs/thread/src/pthread/once.cpp"
         "${LIBRARY_DIR}/libs/thread/src/pthread/thread.cpp"
     )

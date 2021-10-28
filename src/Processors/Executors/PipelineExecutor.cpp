@@ -166,7 +166,8 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, Queue & queue, Queue & async
                     graph->nodes[edge->to]->processor->onUpdatePorts();
             }
         }
-        else
+
+        if (!updated_processors.empty())
         {
             pid = updated_processors.top();
             updated_processors.pop();
