@@ -662,9 +662,9 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
     }
 }
 
-void KeeperDispatcher::updateKeeperStat(UInt64 process_time_stopwatch)
+void KeeperDispatcher::updateKeeperStat(UInt64 process_time_ms)
 {
-    keeper_stats->updateLatency(process_time_stopwatch);
+    keeper_stats->updateLatency(process_time_ms);
 }
 
 String KeeperDispatcher::getRole() const
