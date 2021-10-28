@@ -14,9 +14,7 @@
 #include <Common/ProfileEvents.h>
 #include <base/StringRef.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_HYPERSCAN
 #    include <hs.h>

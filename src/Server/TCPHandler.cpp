@@ -53,9 +53,7 @@
 #include "Core/Protocol.h"
 #include "TCPHandler.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 namespace CurrentMetrics
 {
