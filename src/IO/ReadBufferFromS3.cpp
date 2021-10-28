@@ -67,8 +67,9 @@ bool ReadBufferFromS3::nextImpl()
             /**
             * use_external_buffer -- means we read into the buffer which
             * was passed to us from somewhere else. We do not check whether
-            * previously returned buffer was read or not, because this branch
-            * means we are prefetching data.
+            * previously returned buffer was read or not (no hasPendingData() check is needed),
+            * because this branch means we are prefetching data,
+            * each nextImpl() call we can fill a different buffer.
             */
             impl->set(internal_buffer.begin(), internal_buffer.size());
             assert(working_buffer.begin() != nullptr);
@@ -77,11 +78,8 @@ bool ReadBufferFromS3::nextImpl()
         else
         {
             /**
-            * use_external_buffer -- means we read into the buffer which
-            * was passed to us from somewhere else. We do not check whether
-            * previously returned buffer was read or not, because this branch
-            * means we are prefetching data, each nextImpl() call we can fill
-            * a different buffer.
+            * impl was initialized before, pass position() to it to make
+            * sure there is no pending data which was not read.
             */
             impl->position() = position();
             assert(!impl->hasPendingData());
@@ -171,6 +169,10 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     req.SetBucket(bucket);
     req.SetKey(key);
 
+    /**
+     * If remote_filesustem_method = 'read_threadpool', then for MergeTree family tables
+     * exact byte ranges to read are always passed here.
+     */
     if (read_until_position)
     {
         if (offset >= read_until_position)

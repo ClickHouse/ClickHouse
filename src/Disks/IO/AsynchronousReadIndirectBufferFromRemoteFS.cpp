@@ -101,6 +101,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::prefetch()
     if (prefetch_future.valid())
         return;
 
+    /// Check boundary, which was set in readUntilPosition().
     if (!hasPendingDataToRead())
         return;
 
