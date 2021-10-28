@@ -12,7 +12,7 @@
 -   `granularity` ([UInt64](../../sql-reference/data-types/int-uint.md)) — количество гранул в блоке данных.
 -   `data_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — размер сжатых данных в байтах.
 -   `data_uncompressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — размер несжатых данных в байтах.
--   `marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — размер меток в байтах.
+-   `marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) — размер засечек в байтах.
 
 **Пример**
 
