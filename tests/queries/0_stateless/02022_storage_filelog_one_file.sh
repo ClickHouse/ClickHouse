@@ -14,23 +14,23 @@ user_files_path=$(clickhouse-client --query "select _path,_file from file('nonex
 
 for i in {1..20}
 do
-	echo $i, $i >> ${user_files_path}/a.txt
+	echo $i, $i >> ${user_files_path}/02022_storage_filelog_one_file.txt
 done
 
 ${CLICKHOUSE_CLIENT} --query "drop table if exists file_log;"
-${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=FileLog('${user_files_path}/a.txt', 'CSV');"
+${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=FileLog('${user_files_path}/02022_storage_filelog_one_file.txt', 'CSV');"
 
 ${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;"
 
 for i in {100..120}
 do
-	echo $i, $i >> ${user_files_path}/a.txt
+	echo $i, $i >> ${user_files_path}/02022_storage_filelog_one_file.txt
 done
 
 ${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;"
 
 # touch does not change file content, no event
-touch ${user_files_path}/a.txt
+touch ${user_files_path}/02022_storage_filelog_one_file.txt
 ${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;"
 
 ${CLICKHOUSE_CLIENT} --query "detach table file_log;"
@@ -39,4 +39,4 @@ ${CLICKHOUSE_CLIENT} --query "attach table file_log;"
 # should no records return
 ${CLICKHOUSE_CLIENT} --query "select * from file_log order by k;"
 
-rm -rf ${user_files_path}/a.txt
+rm -rf ${user_files_path}/02022_storage_filelog_one_file.txt
