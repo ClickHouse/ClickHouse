@@ -103,6 +103,7 @@ Pipe HTTPDictionarySource::loadAll()
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
         configuration.header_entries,
+        ReadWriteBufferFromHTTP::Range{},
         RemoteHostFilter{}, false);
 
     return createWrappedBuffer(std::move(in_ptr));
@@ -123,6 +124,7 @@ Pipe HTTPDictionarySource::loadUpdatedAll()
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
         configuration.header_entries,
+        ReadWriteBufferFromHTTP::Range{},
         RemoteHostFilter{}, false);
 
     return createWrappedBuffer(std::move(in_ptr));
@@ -152,6 +154,7 @@ Pipe HTTPDictionarySource::loadIds(const std::vector<UInt64> & ids)
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
         configuration.header_entries,
+        ReadWriteBufferFromHTTP::Range{},
         RemoteHostFilter{}, false);
 
     return createWrappedBuffer(std::move(in_ptr));
@@ -181,6 +184,7 @@ Pipe HTTPDictionarySource::loadKeys(const Columns & key_columns, const std::vect
         DBMS_DEFAULT_BUFFER_SIZE,
         context->getReadSettings(),
         configuration.header_entries,
+        ReadWriteBufferFromHTTP::Range{},
         RemoteHostFilter{}, false);
 
     return createWrappedBuffer(std::move(in_ptr));

@@ -89,6 +89,13 @@ namespace detail
         using HTTPHeaderEntry = std::tuple<std::string, std::string>;
         using HTTPHeaderEntries = std::vector<HTTPHeaderEntry>;
 
+        /// HTTP range, including right bound [begin, end].
+        struct Range
+        {
+            size_t begin = 0;
+            std::optional<size_t> end;
+        };
+
     protected:
         Poco::URI uri;
         std::string method;
@@ -108,10 +115,7 @@ namespace detail
         bool use_external_buffer;
 
         size_t bytes_read = 0;
-        /// Read from offset with range header if needed (for disk web).
-        size_t start_byte = 0;
-        /// Non-empty if content-length header was received.
-        std::optional<size_t> total_bytes_to_read;
+        Range read_range;
 
         /// Delayed exception in case retries with partial content are not satisfiable.
         std::exception_ptr exception;
@@ -138,12 +142,17 @@ namespace detail
             }
 
             /**
-              * Add range header if we have start offset (for disk web)
+              * Add range header if we have some passed range (for disk web)
               * or if we want to retry GET request on purpose.
               */
-            bool with_partial_content = start_byte || retry_with_range_header;
+            bool with_partial_content = (read_range.begin || read_range.end) || retry_with_range_header;
             if (with_partial_content)
-                request.set("Range", fmt::format("bytes={}-", start_byte + bytes_read));
+            {
+                if (read_range.end)
+                    request.set("Range", fmt::format("bytes={}-{}", read_range.begin + bytes_read, *read_range.end));
+                else
+                    request.set("Range", fmt::format("bytes={}-", read_range.begin + bytes_read));
+            }
 
             if (!credentials.getUsername().empty())
                 credentials.authenticate(request);
@@ -195,6 +204,7 @@ namespace detail
             size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
             const ReadSettings & settings_ = {},
             HTTPHeaderEntries http_header_entries_ = {},
+            Range read_range_ = {},
             const RemoteHostFilter & remote_host_filter_ = {},
             bool delay_initialization = false,
             bool use_external_buffer_ = false)
@@ -206,9 +216,9 @@ namespace detail
             , credentials {credentials_}
             , http_header_entries {http_header_entries_}
             , remote_host_filter {remote_host_filter_}
-            , use_external_buffer {use_external_buffer_}
             , buffer_size {buffer_size_}
-            , start_byte {settings_.http_start_offset}
+            , use_external_buffer {use_external_buffer_}
+            , read_range(read_range_)
             , settings {settings_}
             , log(&Poco::Logger::get("ReadWriteBufferFromHTTP"))
         {
@@ -239,9 +249,8 @@ namespace detail
                 istr = call(uri_redirect, response);
             }
 
-            /// If it is the very first initialization.
-            if (!bytes_read && !total_bytes_to_read && response.hasContentLength())
-                total_bytes_to_read = response.getContentLength();
+            if (!bytes_read && !read_range.end && response.hasContentLength())
+                read_range.end = response.getContentLength();
 
             try
             {
@@ -272,7 +281,7 @@ namespace detail
             if (next_callback)
                 next_callback(count());
 
-            if (total_bytes_to_read && bytes_read == total_bytes_to_read.value())
+            if (read_range.end && bytes_read == read_range.end.value())
                 return false;
 
             if (impl)
@@ -343,7 +352,7 @@ namespace detail
                      * (we will get an error code 416 - range not satisfiable).
                      * In this case rethrow previous exception.
                      */
-                    if (exception && !total_bytes_to_read.has_value() && e.code() == 416)
+                    if (exception && !read_range.end.has_value() && e.code() == 416)
                         std::rethrow_exception(exception);
 
                     LOG_ERROR(log,
@@ -435,17 +444,14 @@ public:
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
         const ReadSettings & settings_ = {},
         const HTTPHeaderEntries & http_header_entries_ = {},
+        Range read_range_ = {},
         const RemoteHostFilter & remote_host_filter_ = {},
-<<<<<<< HEAD
-        bool delay_initialization_ = true)
-        : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects),
-            uri_, credentials_, method_, out_stream_callback_, buffer_size_, settings_, http_header_entries_, remote_host_filter_, delay_initialization_)
-=======
+        bool delay_initialization_ = true,
         bool use_external_buffer_ = false)
         : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects),
-                 uri_, method_, out_stream_callback_, credentials_, buffer_size_,
-                 settings_, http_header_entries_, remote_host_filter_, use_external_buffer_)
->>>>>>> 11b70a285c05fff189debb2705cb60d896fadb9c
+            uri_, credentials_, method_, out_stream_callback_, buffer_size_,
+            settings_, http_header_entries_, read_range_, remote_host_filter_,
+            delay_initialization_, use_external_buffer_)
     {
     }
 };
