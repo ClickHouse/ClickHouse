@@ -443,9 +443,10 @@ public:
         auto value_type = map_type->getValueType();
 
         const auto & nested_column = col_map->getNestedColumn();
+        const auto & keys_column = col_map->getNestedData().getColumn(0);
         const auto & values_column = col_map->getNestedData().getColumn(1);
-        const ColumnString * keys_string_column = checkAndGetColumn<ColumnString>(col_map->getNestedData().getColumn(0));
-        const ColumnFixedString * keys_fixed_string_column = checkAndGetColumn<ColumnFixedString>(col_map->getNestedData().getColumn(0));
+        const ColumnString * keys_string_column = checkAndGetColumn<ColumnString>(keys_column);
+        const ColumnFixedString * keys_fixed_string_column = checkAndGetColumn<ColumnFixedString>(keys_column);
 
         FunctionLike func_like;
 
