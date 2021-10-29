@@ -1399,7 +1399,7 @@ Default value: `3`.
 
 ## compile_aggregate_expressions {#compile_aggregate_expressions}
 
-Enables or disables JIT-compilation of aggregate functions to native code. Enabling the `compile_aggregate_expressions` setting can improve the performance.
+Enables or disables JIT-compilation of aggregate functions to native code. Enabling this setting can improve the performance.
 
 Possible values:
 
@@ -1414,7 +1414,7 @@ Default value: `0`.
 
 ## min_count_to_compile_aggregate_expression {#min_count_to_compile_aggregate_expression}
 
-If the [compile_aggregate_expressions](#compile_aggregate_expressions) setting is enabled and there are more then `min_count_to_compile_aggregate_expression` identical aggregate expressions in a `SELECT` query, then they are compiled JIT.
+If the [compile_aggregate_expressions](#compile_aggregate_expressions) setting is enabled and there are more than `min_count_to_compile_aggregate_expression` identical aggregate expressions in a `SELECT` query, then they are JIT-compiled.
 
 Possible values:
 
