@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata)
