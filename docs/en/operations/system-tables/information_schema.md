@@ -170,7 +170,7 @@ Contains columns read from the `system.tables` system table, when the table engi
 Columns:
 
 -   `table_catalog` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
--   `table_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the schema is located.
+-   `table_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
 -   `table_name` ([String](../../sql-reference/data-types/string.md)) — Table name.
 -   `view_definition` ([String](../../sql-reference/data-types/string.md)) — `SELECT` query for view.
 -   `check_option` ([String](../../sql-reference/data-types/string.md)) — `NONE`, no checking.
