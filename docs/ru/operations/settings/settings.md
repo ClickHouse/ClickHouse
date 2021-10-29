@@ -1378,7 +1378,7 @@ load_balancing = round_robin
 
 ## min_count_to_compile_aggregate_expression {#min_count_to_compile_aggregate_expression}
 
-Если настройка [compile_aggregate_expressions](#compile_aggregate_expressions) включена и в ходе выполнения одного запроса агрегированная функция выполняется более `min_count_to_compile_aggregate_expression` раз для одного и того же выражения, тогда эта агрегированная функция компилируется в нативный код.
+Минимальное количество вызовов агрегатной функции с одинаковым выражением, при котором функция будет компилироваться в нативный код в ходе выполнения запроса. Работает только если включена настройка [compile_aggregate_expressions](#compile_aggregate_expressions).  
 
 Возможные значения:
 
