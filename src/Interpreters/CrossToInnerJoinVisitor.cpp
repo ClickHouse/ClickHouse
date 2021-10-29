@@ -86,7 +86,7 @@ bool isAllowedToRewriteCrossJoin(const ASTPtr & node, const Aliases & aliases)
 {
     if (node->as<ASTFunction>())
     {
-        auto idents = IdentifiersCollector::collect(node);
+        auto idents = getIdentifiers(node);
         for (const auto * ident : idents)
         {
             if (ident->isShort() && aliases.count(ident->shortName()))

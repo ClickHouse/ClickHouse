@@ -81,7 +81,6 @@ private:
     static void visit(const ASTFunction & func, const ASTPtr & ast, Data & data);
     static void visit(const ASTIdentifier & ident, const ASTPtr & ast, Data & data);
 
-    static void getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out);
     static JoinIdentifierPosPair getTableNumbers(const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data);
     static const ASTIdentifier * unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases);
     static JoinIdentifierPos getTableForIdentifiers(const ASTPtr & ast, bool throw_on_table_mix, const Data & data);

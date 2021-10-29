@@ -72,23 +72,6 @@ private:
     static bool doesIdentifierBelongTo(const ASTIdentifier & identifier, const String & table);
 };
 
-
-/// Collect all identifies from AST recursively
-class IdentifiersCollector
-{
-public:
-    using ASTIdentifierPtr = const ASTIdentifier *;
-    using ASTIdentifiers = std::vector<ASTIdentifierPtr>;
-    struct Data
-    {
-        ASTIdentifiers idents;
-    };
-
-    static void visit(const ASTPtr & node, Data & data);
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &);
-    static ASTIdentifiers collect(const ASTPtr & node);
-};
-
 /// Collect identifier table membership considering aliases
 class IdentifierMembershipCollector
 {
@@ -103,5 +86,9 @@ private:
 
 /// Split expression `expr_1 AND expr_2 AND ... AND expr_n` into vector `[expr_1, expr_2, ..., expr_n]`
 std::vector<ASTPtr> collectConjunctions(const ASTPtr & node);
+
+/// Collect all identifies from AST recursively
+std::vector<const ASTIdentifier *> getIdentifiers(const ASTPtr & ast, std::function<bool(ASTPtr)> pred);
+std::vector<const ASTIdentifier *> getIdentifiers(const ASTPtr & ast);
 
 }

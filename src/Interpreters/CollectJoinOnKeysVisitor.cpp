@@ -143,24 +143,6 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
                     ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
 }
 
-void CollectJoinOnKeysMatcher::getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out)
-{
-    if (const auto * func = ast->as<ASTFunction>())
-    {
-        if (func->name == "arrayJoin")
-            throw Exception("Not allowed function in JOIN ON. Unexpected '" + queryToString(ast) + "'",
-                            ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
-    }
-    else if (const auto * ident = ast->as<ASTIdentifier>())
-    {
-        if (IdentifierSemantic::getColumnName(*ident))
-            out.push_back(ident);
-        return;
-    }
-
-    for (const auto & child : ast->children)
-        getIdentifiers(child, out);
-}
 
 JoinIdentifierPosPair CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr & left_ast, const ASTPtr & right_ast, Data & data)
 {
@@ -199,8 +181,17 @@ const ASTIdentifier * CollectJoinOnKeysMatcher::unrollAliases(const ASTIdentifie
 /// Place detected identifier into identifiers[0] if any.
 JoinIdentifierPos CollectJoinOnKeysMatcher::getTableForIdentifiers(const ASTPtr & ast, bool throw_on_table_mix, const Data & data)
 {
-    std::vector<const ASTIdentifier *> identifiers;
-    getIdentifiers(ast, identifiers);
+    auto ident_pred = [](ASTPtr node) -> bool
+    {
+        if (const auto * func = node->as<ASTFunction>(); func && func->name == "arrayJoin")
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Not allowed function in JOIN ON: '{}'", queryToString(node));
+
+        const auto * ident = node->as<ASTIdentifier>();
+        return !(ident && IdentifierSemantic::getColumnName(*ident)->empty());
+    };
+
+    std::vector<const ASTIdentifier *> identifiers = getIdentifiers(ast, ident_pred);
+
     if (identifiers.empty())
         return JoinIdentifierPos::NotApplicable;
 

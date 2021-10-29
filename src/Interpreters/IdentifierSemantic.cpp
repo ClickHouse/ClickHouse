@@ -1,6 +1,8 @@
+#include <unordered_set>
 #include <Interpreters/IdentifierSemantic.h>
 
 #include <Common/typeid_cast.h>
+#include "Parsers/IAST_fwd.h"
 
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
@@ -237,7 +239,7 @@ std::optional<size_t> IdentifierSemantic::getIdentMembership(const ASTIdentifier
 std::optional<size_t>
 IdentifierSemantic::getIdentsMembership(ASTPtr ast, const std::vector<TableWithColumnNamesAndTypes> & tables, const Aliases & aliases)
 {
-    auto idents = IdentifiersCollector::collect(ast);
+    auto idents = getIdentifiers(ast);
 
     std::optional<size_t> result;
     for (const auto * ident : idents)
@@ -254,25 +256,6 @@ IdentifierSemantic::getIdentsMembership(ASTPtr ast, const std::vector<TableWithC
         result = pos;
     }
     return result;
-}
-
-IdentifiersCollector::ASTIdentifiers IdentifiersCollector::collect(const ASTPtr & node)
-{
-    IdentifiersCollector::Data ident_data;
-    ConstInDepthNodeVisitor<IdentifiersCollector, true> ident_visitor(ident_data);
-    ident_visitor.visit(node);
-    return ident_data.idents;
-}
-
-bool IdentifiersCollector::needChildVisit(const ASTPtr &, const ASTPtr &)
-{
-    return true;
-}
-
-void IdentifiersCollector::visit(const ASTPtr & node, IdentifiersCollector::Data & data)
-{
-    if (const auto * ident = node->as<ASTIdentifier>())
-        data.idents.push_back(ident);
 }
 
 
@@ -309,6 +292,36 @@ std::vector<ASTPtr> collectConjunctions(const ASTPtr & node)
     std::vector<ASTPtr> members;
     collectConjunctions(node, members);
     return members;
+}
+
+
+static void getIdentifiers(const ASTPtr & ast, std::function<bool(ASTPtr)> pred, std::vector<const ASTIdentifier *> & out)
+{
+    if (!pred(ast))
+        return;
+
+    if (const auto * ident = ast->as<ASTIdentifier>())
+    {
+        out.push_back(ident);
+        return;
+    }
+
+    for (const auto & child : ast->children)
+        getIdentifiers(child, pred, out);
+}
+
+std::vector<const ASTIdentifier *> getIdentifiers(const ASTPtr & ast, std::function<bool(ASTPtr)> pred)
+{
+    std::vector<const ASTIdentifier *> res;
+    getIdentifiers(ast, pred, res);
+    return res;
+}
+
+std::vector<const ASTIdentifier *> getIdentifiers(const ASTPtr & ast)
+{
+    std::vector<const ASTIdentifier *> res;
+    getIdentifiers(ast, [] (auto) { return true; }, res);
+    return res;
 }
 
 }
