@@ -809,22 +809,25 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         if (has_password_for_default_user)
             maybe_password = " --password";
 
-        if (fs::exists(pid_file)) {
+        if (fs::exists(pid_file))
+        {
             fmt::print(
-            "\nClickHouse has been successfully installed.\n"
-            "\nRestart clickhouse-server with:\n"
-            " sudo clickhouse restart\n"
-            "\nStart clickhouse-client with:\n"
-            " clickhouse-client{}\n\n",
-            maybe_password);
-        } else {
+                "\nClickHouse has been successfully installed.\n"
+                "\nRestart clickhouse-server with:\n"
+                " sudo clickhouse restart\n"
+                "\nStart clickhouse-client with:\n"
+                " clickhouse-client{}\n\n",
+                maybe_password);
+        }
+        else
+        {
             fmt::print(
-            "\nClickHouse has been successfully installed.\n"
-            "\nStart clickhouse-server with:\n"
-            " sudo clickhouse start\n"
-            "\nStart clickhouse-client with:\n"
-            " clickhouse-client{}\n\n",
-            maybe_password);
+                "\nClickHouse has been successfully installed.\n"
+                "\nStart clickhouse-server with:\n"
+                " sudo clickhouse start\n"
+                "\nStart clickhouse-client with:\n"
+                " clickhouse-client{}\n\n",
+                maybe_password);
         }
     }
     catch (const fs::filesystem_error &)
