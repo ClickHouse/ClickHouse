@@ -12,6 +12,7 @@ from report import create_test_html_report
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from ssh import SSHKey
 
 NAME = "Docs Release (actions)"
 
@@ -109,7 +110,7 @@ if __name__ == "__main__":
 
     run_log_path = os.path.join(test_output, 'runlog.log')
 
-    with open(run_log_path, 'w', encoding='utf-8') as log:
+    with open(run_log_path, 'w', encoding='utf-8') as log, SSHKey("robot-clickhouse-ssh"):
         with subprocess.Popen(cmd, shell=True, stderr=log, stdout=log) as process:
             retcode = process.wait()
             if retcode == 0:
@@ -149,5 +150,4 @@ if __name__ == "__main__":
 
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, lines, additional_files)
     print("::notice ::Report url: {report_url}")
-    commit = get_commit(gh, pr_info.sha)
     commit.create_status(context=NAME, description=description, state=status, target_url=report_url)
