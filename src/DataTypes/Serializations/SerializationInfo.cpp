@@ -92,7 +92,7 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
     readBinary(kind_num, in);
     auto maybe_kind = magic_enum::enum_cast<ISerialization::Kind>(kind_num);
     if (!maybe_kind)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind " + std::to_string(kind_num));
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown serialization kind " + std::to_string(kind_num));
 
     kind = *maybe_kind;
 }
@@ -109,7 +109,7 @@ Poco::JSON::Object SerializationInfo::toJSON() const
 void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
 {
     if (!object.has(KEY_KIND) || !object.has(KEY_NUM_DEFAULTS) || !object.has(KEY_NUM_ROWS))
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Missed field '{}' or '{}' or '{}' in SerializationInfo of columns",
             KEY_KIND, KEY_NUM_DEFAULTS, KEY_NUM_ROWS);
 
@@ -129,7 +129,8 @@ SerializationInfoByName::SerializationInfoByName(
     const SerializationInfo::Settings & settings)
 {
     for (const auto & column : columns)
-        emplace(column.name, column.type->createSerializationInfo(settings));
+        if (column.type->supportsSparseSerialization())
+            emplace(column.name, column.type->createSerializationInfo(settings));
 }
 
 void SerializationInfoByName::add(const Block & block)
@@ -138,8 +139,7 @@ void SerializationInfoByName::add(const Block & block)
     {
         auto it = find(column.name);
         if (it == end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Not found column {} in serialization infos", column.name);
+            continue;
 
         it->second->add(*column.column);
     }
@@ -151,8 +151,7 @@ void SerializationInfoByName::add(const SerializationInfoByName & other)
     {
         auto it = find(name);
         if (it == end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Not found column {} in serialization infos", name);
+            continue;
 
         it->second->add(*info);
     }
