@@ -295,22 +295,25 @@ std::vector<ASTPtr> collectConjunctions(const ASTPtr & node)
 }
 
 
-static void getIdentifiers(const ASTPtr & ast, std::function<bool(ASTPtr)> pred, std::vector<const ASTIdentifier *> & out)
+static void getIdentifiers(const ASTPtr & ast, std::function<bool(const ASTPtr &)> pred, std::vector<const ASTIdentifier *> & out)
 {
+    checkStackSize();
+
     if (!pred(ast))
         return;
 
     if (const auto * ident = ast->as<ASTIdentifier>())
     {
         out.push_back(ident);
-        return;
     }
-
-    for (const auto & child : ast->children)
-        getIdentifiers(child, pred, out);
+    else
+    {
+        for (const auto & child : ast->children)
+            getIdentifiers(child, pred, out);
+    }
 }
 
-std::vector<const ASTIdentifier *> getIdentifiers(const ASTPtr & ast, std::function<bool(ASTPtr)> pred)
+std::vector<const ASTIdentifier *> getIdentifiers(const ASTPtr & ast, std::function<bool(const ASTPtr &)> pred)
 {
     std::vector<const ASTIdentifier *> res;
     getIdentifiers(ast, pred, res);

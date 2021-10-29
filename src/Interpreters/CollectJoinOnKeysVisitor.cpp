@@ -181,7 +181,7 @@ const ASTIdentifier * CollectJoinOnKeysMatcher::unrollAliases(const ASTIdentifie
 /// Place detected identifier into identifiers[0] if any.
 JoinIdentifierPos CollectJoinOnKeysMatcher::getTableForIdentifiers(const ASTPtr & ast, bool throw_on_table_mix, const Data & data)
 {
-    auto ident_pred = [](ASTPtr node) -> bool
+    auto ident_pred = [](const ASTPtr & node) -> bool
     {
         if (const auto * func = node->as<ASTFunction>(); func && func->name == "arrayJoin")
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Not allowed function in JOIN ON: '{}'", queryToString(node));
