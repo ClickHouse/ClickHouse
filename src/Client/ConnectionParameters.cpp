@@ -12,9 +12,7 @@
 #include <base/setTerminalEcho.h>
 #include <base/scope_guard.h>
 
-#if !defined(ARCADIA_BUILD)
-#include <readpassphrase/readpassphrase.h> // Y_IGNORE
-#endif
+#include <readpassphrase/readpassphrase.h>
 
 
 namespace DB
@@ -55,12 +53,10 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
     }
     if (password_prompt)
     {
-#if !defined(ARCADIA_BUILD)
         std::string prompt{"Password for user (" + user + "): "};
         char buf[1000] = {};
         if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), 0))
             password = result;
-#endif
     }
 
     /// By default compression is disabled if address looks like localhost.

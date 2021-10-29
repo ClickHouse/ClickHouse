@@ -139,7 +139,8 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "clone",
         "attaching",
         "deleting",
-        "tmp-fetch"
+        "tmp-fetch",
+        "covered-by-broken",
     });
 
     /// NOTE: It may parse part info incorrectly.
