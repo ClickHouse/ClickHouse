@@ -2,9 +2,6 @@
 
 Contains information about all successful and failed login and logout events.
 
-!!! note "Note"
-    User sessions are implicit and rely on the proper co-operation from context users.
-
 Columns:
 
 -   `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Login/logout result. Possible values:
