@@ -64,16 +64,6 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
             }
 
             column_positions[i] = std::move(position);
-
-            if (column_from_part.isSubcolumn())
-            {
-                auto name_in_storage = column_from_part.getNameInStorage();
-                /// We have to read whole column and extract subcolumn.
-                serializations.emplace(name_in_storage, data_part->getSerializationForColumn(
-                    {name_in_storage, column_from_part.getTypeInStorage()}));
-            }
-
-            serializations.emplace(column_from_part.name, data_part->getSerializationForColumn(column_from_part));
         }
 
         /// Do not use max_read_buffer_size, but try to lower buffer size with maximal size of granule to avoid reading much data.

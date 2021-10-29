@@ -1,13 +1,21 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/Types.h>
 #include <DataTypes/Serializations/ISerialization.h>
-#include <Columns/ColumnSparse.h>
+#include <Poco/JSON/Object.h>
+
 
 namespace DB
 {
 
-/** Contains information about kinds of serialization of columns.
+class ReadBuffer;
+class WriteBuffer;
+class NamesAndTypesList;
+class Block;
+
+constexpr auto SERIALIZATION_INFO_VERSION = 1;
+
+/** Contains information about kind of serialization of column and its subcolumns.
  *  Also contains information about content of columns,
  *  that helps to choose kind of serialization of column.
  *
@@ -19,72 +27,70 @@ namespace DB
 class SerializationInfo
 {
 public:
-    SerializationInfo() = default;
-
-    static constexpr auto version = 1;
-    size_t getNumberOfDefaultRows(const String & column_name) const;
-    ISerialization::Kind getKind(const String & column_name) const;
-
-    bool empty() const { return !number_of_rows && columns.empty(); }
-    size_t getNumberOfRows() const { return number_of_rows; }
-
-    void readText(ReadBuffer & in);
-    void writeText(WriteBuffer & out) const;
-
-private:
-    void fromJSON(const String & json_str);
-    String toJSON() const;
-
-    /// Information about one column.
-    /// Can be extended, when new kinds of serialization will be implemented.
-    struct Column
+    struct Data
     {
-        ISerialization::Kind kind = ISerialization::Kind::DEFAULT;
+        size_t num_rows = 0;
         size_t num_defaults = 0;
+
+        void add(const IColumn & column);
+        void add(const Data & other);
     };
 
-    using NameToColumn = std::unordered_map<String, Column>;
+    struct Settings
+    {
+        const double ratio_for_sparse = 1.0;
+        const bool choose_kind = false;
+    };
 
-    size_t number_of_rows = 0;
-    NameToColumn columns;
+    SerializationInfo(ISerialization::Kind kind_, const Settings & settings_);
 
-    friend class SerializationInfoBuilder;
+    virtual ~SerializationInfo() = default;
+
+    virtual bool hasCustomSerialization() const { return kind != ISerialization::Kind::DEFAULT; }
+
+    virtual void add(const IColumn & column);
+    virtual void add(const SerializationInfo & other);
+    virtual void replaceData(const SerializationInfo & other);
+    virtual std::shared_ptr<SerializationInfo> clone() const;
+
+    virtual void serialializeKindBinary(WriteBuffer & out) const;
+    virtual void deserializeFromKindsBinary(ReadBuffer & in);
+
+    virtual Poco::JSON::Object toJSON() const;
+    virtual void fromJSON(const Poco::JSON::Object & object);
+
+    const Settings & getSettings() const { return settings; }
+    const Data & getData() const { return data; }
+    ISerialization::Kind getKind() const { return kind; }
+
+    static ISerialization::Kind chooseKind(const Data & data, const Settings & settings);
+
+protected:
+    const Settings settings;
+
+    ISerialization::Kind kind;
+    Data data;
 };
 
-using SerializationInfoPtr = std::shared_ptr<SerializationInfo>;
+using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
+using MutableSerializationInfoPtr = std::shared_ptr<SerializationInfo>;
 
-/// Builder, that helps to create SerializationInfo.
-class SerializationInfoBuilder
+using SerializationInfos = std::vector<SerializationInfoPtr>;
+using MutableSerializationInfos = std::vector<MutableSerializationInfoPtr>;
+
+class SerializationInfoByName : public std::unordered_map<String, MutableSerializationInfoPtr>
 {
 public:
-    SerializationInfoBuilder();
-    SerializationInfoBuilder(
-        double ratio_for_sparse_serialization_,
-        double default_rows_search_sample_ratio_ = ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
+    SerializationInfoByName() = default;
+    SerializationInfoByName(
+        const NamesAndTypesList & columns,
+        const SerializationInfo::Settings & settings);
 
-    /// Add information about column from block.
     void add(const Block & block);
+    void add(const SerializationInfoByName & other);
 
-    /// Add information about column from other SerializationInfo.
-    void add(const SerializationInfo & other);
-
-    /// Choose kind of serialization for every column
-    /// according its content and return finalized SerializationInfo.
-    SerializationInfoPtr build() &&;
-
-    /// Create SerializationInfo from other.
-    /// Respects kinds of serialization for columns, that exist in other SerializationInfo,
-    /// but keeps information about content of column from current SerializationInfo.
-    SerializationInfoPtr buildFrom(const SerializationInfo & other) &&;
-
-    double getRatioForSparseSerialization() const { return ratio_for_sparse_serialization; }
-    bool canHaveSparseSerialization() const { return ratio_for_sparse_serialization < 1.0; }
-
-private:
-    double ratio_for_sparse_serialization;
-    double default_rows_search_sample_ratio;
-
-    SerializationInfoPtr info;
+    void writeText(WriteBuffer & out) const;
+    void readText(ReadBuffer & in);
 };
 
 }

@@ -32,6 +32,9 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 class ISerialization;
 using SerializationPtr = std::shared_ptr<const ISerialization>;
 
+class SerializationInfo;
+using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
+
 class Field;
 
 struct FormatSettings;
@@ -98,10 +101,10 @@ public:
 
     struct SubstreamData
     {
+        SerializationPtr serialization;
         DataTypePtr type;
         ColumnPtr column;
-        SerializationPtr serialization;
-        SubcolumnCreatorPtr creator;
+        SerializationInfoPtr serialization_info;
     };
 
     struct Substream
@@ -136,6 +139,9 @@ public:
         /// Data for current substream.
         SubstreamData data;
 
+        /// Creator of subcolumn for current substream.
+        SubcolumnCreatorPtr creator = nullptr;
+
         /// Flag, that may help to traverse substream paths.
         mutable bool visited = false;
 
@@ -158,12 +164,13 @@ public:
     virtual void enumerateStreams(
         SubstreamPath & path,
         const StreamCallback & callback,
-        DataTypePtr type,
-        ColumnPtr column) const;
+        const SubstreamData & data) const;
 
     void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const;
     void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
     void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
+
+    void enumerateStreams(SubstreamPath & path, const StreamCallback & callback, const DataTypePtr & type) const;
 
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
@@ -206,13 +213,6 @@ public:
 
         /// If not zero, may be used to avoid reallocations while reading column of String type.
         double avg_value_size_hint = 0;
-    };
-
-    struct Settings
-    {
-        size_t num_rows;
-        size_t num_default_rows;
-        double ratio_for_sparse_serialization;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -339,6 +339,7 @@ protected:
 
 using SerializationPtr = std::shared_ptr<const ISerialization>;
 using Serializations = std::vector<SerializationPtr>;
+using SerializationByName = std::unordered_map<String, SerializationPtr>;
 
 template <typename State, typename StatePtr>
 State * ISerialization::checkAndGetState(const StatePtr & state) const

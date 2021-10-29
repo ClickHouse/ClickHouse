@@ -30,8 +30,7 @@ public:
     virtual void enumerateStreams(
         SubstreamPath & path,
         const StreamCallback & callback,
-        DataTypePtr type,
-        ColumnPtr column) const override;
+        const SubstreamData & data) const override;
 
     void serializeBinaryBulkStatePrefix(
         SerializeBinaryBulkSettings & settings,

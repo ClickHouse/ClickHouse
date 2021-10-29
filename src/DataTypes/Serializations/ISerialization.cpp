@@ -72,18 +72,22 @@ String ISerialization::SubstreamPath::toString() const
 void ISerialization::enumerateStreams(
     SubstreamPath & path,
     const StreamCallback & callback,
-    DataTypePtr type,
-    ColumnPtr column) const
+    const SubstreamData & data) const
 {
     path.push_back(Substream::Regular);
-    path.back().data = {type, column, getPtr(), nullptr};
+    path.back().data = data;
     callback(path);
     path.pop_back();
 }
 
 void ISerialization::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
-    enumerateStreams(path, callback, nullptr, nullptr);
+    enumerateStreams(path, callback, {getPtr(), nullptr, nullptr, nullptr});
+}
+
+void ISerialization::enumerateStreams(SubstreamPath & path, const StreamCallback & callback, const DataTypePtr & type) const
+{
+    enumerateStreams(path, callback, {getPtr(), type, nullptr, nullptr});
 }
 
 void ISerialization::serializeBinaryBulk(const IColumn & column, WriteBuffer &, size_t, size_t) const
@@ -268,10 +272,9 @@ ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath
     assert(prefix_len < path.size());
 
     SubstreamData res = path[prefix_len].data;
-    res.creator.reset();
     for (ssize_t i = static_cast<ssize_t>(prefix_len) - 1; i >= 0; --i)
     {
-        const auto & creator = path[i].data.creator;
+        const auto & creator = path[i].creator;
         if (creator)
         {
             res.type = res.type ? creator->create(res.type) : res.type;

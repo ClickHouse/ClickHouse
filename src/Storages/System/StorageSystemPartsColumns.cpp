@@ -222,7 +222,7 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.marks);
 
-            auto serialization = part->getSerializationForColumn(column);
+            auto serialization = part->getSerialization(column.name);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(ISerialization::kindToString(serialization->getKind()));
 
@@ -235,7 +235,7 @@ void StorageSystemPartsColumns::processNextStorage(
                 subcolumn_names.push_back(name);
                 subcolumn_types.push_back(data.type->getName());
                 subcolumn_sers.push_back(ISerialization::kindToString(data.serialization->getKind()));
-            }, serialization, column.type, nullptr);
+            }, { serialization, column.type, nullptr, nullptr });
 
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(subcolumn_names);

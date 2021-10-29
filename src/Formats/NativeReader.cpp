@@ -149,16 +149,14 @@ Block NativeReader::read()
         SerializationPtr serialization;
         if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
-            serialization = column.type->getSerialization(column.name, [&](const String & /*name*/)
-            {
-                UInt8 kind_num;
-                readBinary(kind_num, istr);
-                auto kind = magic_enum::enum_cast<ISerialization::Kind>(kind_num);
-                if (!kind)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown serialization kind " + std::to_string(kind_num));
+            auto info = column.type->createSerializationInfo({});
 
-                return *kind;
-            });
+            UInt8 has_custom;
+            readBinary(has_custom, istr);
+            if (has_custom)
+                info->deserializeFromKindsBinary(istr);
+
+            serialization = column.type->getSerialization(*info);
         }
         else
         {

@@ -158,15 +158,19 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->parent_part);
 
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
-    global_ctx->new_data_part->setColumns(global_ctx->storage_columns);
     global_ctx->new_data_part->partition.assign(global_ctx->future_part->getPartition());
     global_ctx->new_data_part->is_temp = global_ctx->parent_part == nullptr;
 
     ctx->need_remove_expired_values = false;
     ctx->force_ttl = false;
 
-    SerializationInfoBuilder serialization_info_builder(
-        global_ctx->data->getSettings()->ratio_of_defaults_for_sparse_serialization);
+    SerializationInfo::Settings info_settings =
+    {
+        .ratio_for_sparse = global_ctx->data->getSettings()->ratio_of_defaults_for_sparse_serialization,
+        .choose_kind = true,
+    };
+
+    SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
 
     for (const auto & part : global_ctx->future_part->parts)
     {
@@ -178,10 +182,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
             ctx->force_ttl = true;
         }
 
-        serialization_info_builder.add(*part->serialization_info);
+        infos.add(part->getSerializationInfos());
     }
 
-    global_ctx->input_serialization_info = std::move(serialization_info_builder).build();
+    global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos);
 
     const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
     if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
@@ -256,7 +260,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
         global_ctx->merging_columns,
         MergeTreeIndexFactory::instance().getMany(global_ctx->metadata_snapshot->getSecondaryIndices()),
         ctx->compression_codec,
-        global_ctx->input_serialization_info,
+        /*reset_columns=*/ true,
         ctx->blocks_are_granules_size);
 
     global_ctx->rows_written = 0;
@@ -435,7 +439,6 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->metadata_snapshot,
         ctx->executor->getHeader(),
         ctx->compression_codec,
-        global_ctx->input_serialization_info,
         /// we don't need to recalc indices here
         /// because all of them were already recalculated and written
         /// as key part of vertical merge

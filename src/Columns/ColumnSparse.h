@@ -30,7 +30,6 @@ private:
 public:
     static constexpr auto DEFAULT_ROWS_SEARCH_SAMPLE_RATIO = 0.1;
     static constexpr auto DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION = 0.95;
-    // static constexpr auto MIN_ROWS_TO_SEARCH_DEFAULTS = DEFAULT_ROWS_SEARCH_STEP * 16;
 
     using Base = COWHelper<IColumn, ColumnSparse>;
     static Ptr create(const ColumnPtr & values_, const ColumnPtr & offsets_, size_t size_)

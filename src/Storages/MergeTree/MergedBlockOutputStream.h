@@ -19,7 +19,7 @@ public:
         const NamesAndTypesList & columns_list_,
         const MergeTreeIndices & skip_indices,
         CompressionCodecPtr default_codec_,
-        const SerializationInfoPtr & input_serialization_info_,
+        bool reset_columns_ = false,
         bool blocks_are_granules_size = false);
 
     Block getHeader() const { return metadata_snapshot->getSampleBlock(); }

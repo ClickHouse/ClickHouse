@@ -7,6 +7,7 @@
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 namespace DB
 {
@@ -27,7 +28,6 @@ using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
 
 struct NameAndTypePair;
-class SerializationInfo;
 
 struct DataTypeWithConstInfo
 {
@@ -84,18 +84,22 @@ public:
     SerializationPtr getSubcolumnSerialization(const String & subcolumn_name, const SerializationPtr & serialization) const;
     ColumnPtr getSubcolumn(const String & subcolumn_name, const ColumnPtr & column) const;
 
+    using SubstreamData = ISerialization::SubstreamData;
+    using SubstreamPath = ISerialization::SubstreamPath;
+
     using SubcolumnCallback = std::function<void(
-        const ISerialization::SubstreamPath &,
+        const SubstreamPath &,
         const String &,
-        const ISerialization::SubstreamData &)>;
+        const SubstreamData &)>;
 
     static void forEachSubcolumn(
         const SubcolumnCallback & callback,
-        const SerializationPtr & serialization,
-        const DataTypePtr & type,
-        const ColumnPtr & column);
+        const SubstreamData & data);
 
     Names getSubcolumnNames() const;
+
+    virtual MutableSerializationInfoPtr createSerializationInfo(
+        const SerializationInfo::Settings & settings) const;
 
     /// TODO: support more types.
     virtual bool supportsSparseSerialization() const { return !haveSubtypes(); }
@@ -106,18 +110,8 @@ public:
     /// Chooses serialziation according to serialization kind.
     SerializationPtr getSerialization(ISerialization::Kind kind) const;
 
-    /// Chooses serialziation according to column content.
-    SerializationPtr getSerialization(const IColumn & column) const;
-
-    /// Chooses serialization according to collected information about content of columns.
-    SerializationPtr getSerialization(const String & column_name, const SerializationInfo & info) const;
-
-    /// Chooses serialization according to settings.
-    SerializationPtr getSerialization(const ISerialization::Settings & settings) const;
-
-    using SerializationCallback = std::function<ISerialization::Kind(const String &)>;
-
-    virtual SerializationPtr getSerialization(const String & column_name, const SerializationCallback & callback) const;
+    /// Chooses serialization according to collected information about content of column.
+    virtual SerializationPtr getSerialization(const SerializationInfo & info) const;
 
     /// Chooses between subcolumn serialization and regular serialization according to @column.
     /// This method typically should be used to get serialization for reading column or subcolumn.
@@ -302,6 +296,14 @@ protected:
 public:
     const IDataTypeCustomName * getCustomName() const { return custom_name.get(); }
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
+
+private:
+  template <typename Ptr>
+  Ptr getForSubcolumn(
+      const String & subcolumn_name,
+      const SubstreamData & data,
+      Ptr SubstreamData::*member,
+      bool throw_if_null = true) const;
 };
 
 

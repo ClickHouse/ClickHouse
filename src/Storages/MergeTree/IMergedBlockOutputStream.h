@@ -14,7 +14,8 @@ public:
     IMergedBlockOutputStream(
         const MergeTreeDataPartPtr & data_part,
         const StorageMetadataPtr & metadata_snapshot_,
-        const SerializationInfoPtr & input_serialization_info_);
+        const NamesAndTypesList & columns_list,
+        bool reset_columns_);
 
     virtual ~IMergedBlockOutputStream() = default;
 
@@ -46,8 +47,9 @@ protected:
     String part_path;
 
     IMergeTreeDataPart::MergeTreeWriterPtr writer;
-    SerializationInfoPtr input_serialization_info;
-    SerializationInfoBuilder new_serialization_info;
+
+    bool reset_columns = false;
+    SerializationInfoByName new_serialization_infos;
 };
 
 using IMergedBlockOutputStreamPtr = std::shared_ptr<IMergedBlockOutputStream>;

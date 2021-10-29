@@ -98,13 +98,13 @@ IMergeTreeDataPart::Checksums checkDataPart(
         };
     };
 
-    auto serialization_info = std::make_shared<SerializationInfo>();
+    SerializationInfoByName serialization_infos(columns_txt, {});
     auto serialization_path = path + IMergeTreeDataPart::SERIALIZATION_FILE_NAME;
 
     if (disk->exists(serialization_path))
     {
         auto serialization_file = disk->readFile(serialization_path);
-        serialization_info->readText(*serialization_file);
+        serialization_infos.readText(*serialization_file);
     }
 
     /// This function calculates only checksum of file content (compressed or uncompressed).
@@ -141,7 +141,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
                 const NamesAndTypesList & projection_columns_list = projection->getColumns();
                 for (const auto & projection_column : projection_columns_list)
                 {
-                    auto serialization = IDataType::getSerialization(projection_column, *serialization_info);
+                    auto serialization = projection_column.type->getSerialization(*serialization_infos.at(projection_column.name));
                     serialization->enumerateStreams(
                         [&](const ISerialization::SubstreamPath & substream_path)
                         {
@@ -214,7 +214,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     {
         for (const auto & column : columns_list)
         {
-            auto serialization = IDataType::getSerialization(column, *serialization_info);
+            auto serialization = column.type->getSerialization(*serialization_infos.at(column                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       .name));
             serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
                 String file_name = ISerialization::getFileNameForStream(column, substream_path) + ".bin";

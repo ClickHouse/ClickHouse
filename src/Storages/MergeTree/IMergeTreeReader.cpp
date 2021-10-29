@@ -40,6 +40,7 @@ IMergeTreeReader::IMergeTreeReader(
     , storage(data_part_->storage)
     , metadata_snapshot(metadata_snapshot_)
     , all_mark_ranges(all_mark_ranges_)
+    , serializations(data_part_->getSerializations())
     , alter_conversions(storage.getAlterConversionsForPart(data_part))
 {
     if (isWidePart(data_part))
