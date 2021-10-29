@@ -2,7 +2,10 @@
 import urllib
 import requests
 from unidiff import PatchSet
+import os
 
+
+DIFF_IN_DOCUMENTATION_EXT = [".html", ".md", ".yml", ".txt", ".css", ".js", ".xml", ".ico", ".conf", ".svg", ".png", ".jpg", ".py", ".sh"]
 
 class PRInfo:
     def __init__(self, github_event, need_orgs=False, need_changed_files=False):
@@ -36,6 +39,18 @@ class PRInfo:
             'user_login': self.user_login,
             'user_orgs': self.user_orgs,
         }
+
+    def has_changes_in_documentation(self):
+        # If the list wasn't built yet the best we can do is to
+        # assume that there were changes.
+        if self.changed_files is None or not self.changed_files:
+            return True
+
+        for f in self.changed_files:
+            _, ext = os.path.splitext(f)
+            if ext in DIFF_IN_DOCUMENTATION_EXT or 'Dockerfile' in f:
+                return True
+        return False
 
 
 class FakePRInfo:
