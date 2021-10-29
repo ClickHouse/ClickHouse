@@ -67,7 +67,7 @@ jobs:
           path: ${{ runner.temp }}/docs_check
       - name: Check out repository code
         uses: actions/checkout@v2
-      - name: Style Check
+      - name: Docs Check
         env:
           TEMP_PATH: ${{runner.temp}}/docs_check
           REPO_COPY: ${{runner.temp}}/docs_check/ClickHouse
