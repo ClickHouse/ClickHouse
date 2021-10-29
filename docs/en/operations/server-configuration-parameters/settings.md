@@ -131,7 +131,7 @@ Also, users can add nonce that must be 12 bytes long (by default encryption and 
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <nonce>0123456789101</nonce>
+        <nonce>012345678910</nonce>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
