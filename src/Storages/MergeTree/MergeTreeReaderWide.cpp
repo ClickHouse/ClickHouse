@@ -61,7 +61,8 @@ MergeTreeReaderWide::MergeTreeReaderWide(
 }
 
 
-size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
+size_t MergeTreeReaderWide::readRows(
+    size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
 {
     size_t read_rows = 0;
     try
@@ -83,7 +84,7 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
                 try
                 {
                     auto & cache = caches[column_from_part.getNameInStorage()];
-                    prefetch(column_from_part, from_mark, continue_reading, cache, prefetched_streams);
+                    prefetch(column_from_part, from_mark, continue_reading, current_task_last_mark, cache, prefetched_streams);
                 }
                 catch (Exception & e)
                 {
@@ -113,7 +114,7 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
                 auto & cache = caches[column_from_part.getNameInStorage()];
 
                 readData(
-                    column_from_part, column, from_mark, continue_reading,
+                    column_from_part, column, from_mark, continue_reading, current_task_last_mark,
                     max_rows_to_read, cache, /* was_prefetched =*/ !prefetched_streams.empty());
 
                 /// For elements of Nested, column_size_before_reading may be greater than column size
@@ -195,6 +196,7 @@ static ReadBuffer * getStream(
     MergeTreeReaderWide::FileStreams & streams,
     const NameAndTypePair & name_and_type,
     size_t from_mark, bool seek_to_mark,
+    size_t current_task_last_mark,
     ISerialization::SubstreamsCache & cache)
 {
     /// If substream have already been read.
@@ -208,6 +210,7 @@ static ReadBuffer * getStream(
         return nullptr;
 
     MergeTreeReaderStream & stream = *it->second;
+    stream.adjustForRange(MarkRange(seek_to_start ? 0 : from_mark, current_task_last_mark));
 
     if (seek_to_start)
         stream.seekToStart();
@@ -222,6 +225,7 @@ void MergeTreeReaderWide::prefetch(
     const NameAndTypePair & name_and_type,
     size_t from_mark,
     bool continue_reading,
+    size_t current_task_last_mark,
     ISerialization::SubstreamsCache & cache,
     std::unordered_set<std::string> & prefetched_streams)
 {
@@ -235,7 +239,7 @@ void MergeTreeReaderWide::prefetch(
         if (!prefetched_streams.count(stream_name))
         {
             bool seek_to_mark = !continue_reading;
-            if (ReadBuffer * buf = getStream(false, substream_path, streams, name_and_type, from_mark, seek_to_mark, cache))
+            if (ReadBuffer * buf = getStream(false, substream_path, streams, name_and_type, from_mark, seek_to_mark, current_task_last_mark, cache))
                 buf->prefetch();
 
             prefetched_streams.insert(stream_name);
@@ -246,8 +250,8 @@ void MergeTreeReaderWide::prefetch(
 
 void MergeTreeReaderWide::readData(
     const NameAndTypePair & name_and_type, ColumnPtr & column,
-    size_t from_mark, bool continue_reading, size_t max_rows_to_read,
-    ISerialization::SubstreamsCache & cache, bool was_prefetched)
+    size_t from_mark, bool continue_reading, size_t current_task_last_mark,
+    size_t max_rows_to_read, ISerialization::SubstreamsCache & cache, bool was_prefetched)
 {
     double & avg_value_size_hint = avg_value_size_hints[name_and_type.name];
     ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
@@ -260,7 +264,7 @@ void MergeTreeReaderWide::readData(
     {
         deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            return getStream(/* seek_to_start = */true, substream_path, streams, name_and_type, from_mark, /* seek_to_mark = */false, cache);
+            return getStream(/* seek_to_start = */true, substream_path, streams, name_and_type, from_mark, /* seek_to_mark = */false, current_task_last_mark, cache);
         };
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_binary_bulk_state_map[name]);
     }
@@ -271,7 +275,7 @@ void MergeTreeReaderWide::readData(
 
         return getStream(
             /* seek_to_start = */false, substream_path, streams, name_and_type, from_mark,
-            seek_to_mark, cache);
+            seek_to_mark, current_task_last_mark, cache);
     };
     deserialize_settings.continuous_reading = continue_reading;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name];
