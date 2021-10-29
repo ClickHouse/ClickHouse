@@ -90,7 +90,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
 {
     const FunctionFactory & function_factory = FunctionFactory::instance();
 
-    if (!select_query->groupBy())
+    if (!select_query->groupBy() || select_query->group_by_with_rollup)
         return;
 
     const auto is_literal = [] (const ASTPtr & ast) -> bool
