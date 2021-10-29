@@ -1,9 +1,7 @@
 #include <Coordination/KeeperServer.h>
 #include <Coordination/Defines.h>
 
-#if !defined(ARCADIA_BUILD)
-#   include "config_core.h"
-#endif
+#include "config_core.h"
 
 #include <Coordination/LoggerWrapper.h>
 #include <Coordination/KeeperStateMachine.h>
