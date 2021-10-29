@@ -31,7 +31,7 @@ Contains columns read from the `system.columns` system table and columns that ar
 Columns:
 
 -   `table_catalog` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
--   `table_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the schema is located.
+-   `table_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
 -   `table_name` ([String](../../sql-reference/data-types/string.md)) — Table name.
 -   `column_name` ([String](../../sql-reference/data-types/string.md)) — Column name.
 -   `ordinal_position` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Ordinal position of a column in a table starting with 1.
