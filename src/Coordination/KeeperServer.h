@@ -1,6 +1,6 @@
 #pragma once
 
-#include <libnuraft/nuraft.hxx> // Y_IGNORE
+#include <libnuraft/nuraft.hxx>
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/KeeperStateManager.h>
 #include <Coordination/KeeperStateMachine.h>

@@ -2,6 +2,7 @@
 
 #include <IO/SeekableReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/ReadSettings.h>
 #include <Interpreters/Context.h>
 
 
@@ -11,15 +12,16 @@ namespace DB
 /* Read buffer, which reads via http, but is used as ReadBufferFromFileBase.
  * Used to read files, hosted on a web server with static files.
  *
- * Usage: ReadIndirectBufferFromRemoteFS -> SeekAvoidingReadBuffer -> ReadIndirectBufferFromWebServer -> ReadWriteBufferFromHTTP.
+ * Usage: ReadIndirectBufferFromRemoteFS -> SeekAvoidingReadBuffer -> ReadBufferFromWebServer -> ReadWriteBufferFromHTTP.
  */
-class ReadIndirectBufferFromWebServer : public BufferWithOwnMemory<SeekableReadBuffer>
+class ReadBufferFromWebServer : public SeekableReadBuffer
 {
 public:
-    explicit ReadIndirectBufferFromWebServer(const String & url_,
-                                             ContextPtr context_,
-                                             size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-                                             size_t backoff_threshold_ = 10000, size_t max_tries_ = 4);
+    explicit ReadBufferFromWebServer(
+        const String & url_, ContextPtr context_,
+        const ReadSettings & settings_ = {},
+        bool use_external_buffer_ = false,
+        size_t last_offset = 0);
 
     bool nextImpl() override;
 
@@ -29,6 +31,8 @@ public:
 
 private:
     std::unique_ptr<ReadBuffer> initialize();
+
+    void initializeWithRetry();
 
     Poco::Logger * log;
     ContextPtr context;
@@ -40,8 +44,11 @@ private:
 
     off_t offset = 0;
 
-    size_t backoff_threshold_ms;
-    size_t max_tries;
+    ReadSettings read_settings;
+
+    bool use_external_buffer;
+
+    off_t last_offset = 0;
 };
 
 }

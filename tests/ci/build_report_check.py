@@ -86,7 +86,6 @@ if __name__ == "__main__":
 
     build_reports = []
     for root, dirs, files in os.walk(reports_path):
-        print(files)
         for f in files:
             if f.startswith("build_urls_") and f.endswith('.json'):
                 logging.info("Found build report json %s", f)
