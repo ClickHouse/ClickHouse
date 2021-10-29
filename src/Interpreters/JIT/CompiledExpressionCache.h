@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_EMBEDDED_COMPILER
 #    include <Common/LRUCache.h>
@@ -52,7 +50,7 @@ private:
 public:
     static CompiledExpressionCacheFactory & instance();
 
-    void init(size_t cache_size);
+    void init(size_t cache_size_in_bytes, size_t cache_size_in_elements);
     CompiledExpressionCache * tryGetCache();
 };
 
