@@ -109,14 +109,14 @@ if __name__ == "__main__":
     with open(run_log_path, 'w', encoding='utf-8') as log:
         with subprocess.Popen(cmd, shell=True, stderr=log, stdout=log) as process:
             retcode = process.wait()
-        if retcode == 0:
-            logging.info("Run successfully")
-            status = "Success"
-            description = "Run Ok"
-        else:
-            description = "Run failed (non zero exit code)"
-            status = "failure"
-            logging.info("Run failed")
+            if retcode == 0:
+                logging.info("Run successfully")
+                status = "Success"
+                description = "Run Ok"
+            else:
+                description = "Run failed (non zero exit code)"
+                status = "failure"
+                logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
     files = os.listdir(test_output)
