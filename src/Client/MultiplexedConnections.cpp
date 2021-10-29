@@ -140,10 +140,8 @@ void MultiplexedConnections::sendQuery(
     if (num_replicas > 1)
     {
         if (settings.enable_sample_offset_parallel_processing)
-        {
             /// Use multiple replicas for parallel query processing.
             modified_settings.parallel_replicas_count = num_replicas;
-        }
 
         for (size_t i = 0; i < num_replicas; ++i)
         {

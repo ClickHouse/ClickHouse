@@ -59,7 +59,8 @@ private:
     Poco::Logger * log;
 
     UInt32 shard_count;
-    void addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard);
+    void addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
+        std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator, std::shared_ptr<ConnectionPoolWithFailover> pool);
     void addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
         std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator, std::shared_ptr<ConnectionPoolWithFailover> pool);
 

@@ -114,7 +114,8 @@ ReadFromRemote::ReadFromRemote(
 {
 }
 
-void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard)
+void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
+    std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator, std::shared_ptr<ConnectionPoolWithFailover> pool)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -127,7 +128,9 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
     }
 
     auto lazily_create_stream = [
-            pool = shard.pool, shard_num = shard.shard_num, shard_count = shard_count, query = shard.query, header = shard.header,
+            pool = pool ? pool : shard.pool,
+            coordinator = coordinator,
+            shard_num = shard.shard_num, shard_count = shard_count, query = shard.query, header = shard.header,
             context = context, throttler = throttler,
             main_table = main_table, table_func_ptr = table_func_ptr,
             scalars = scalars, external_tables = external_tables,
@@ -163,16 +166,13 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
                 max_remote_delay = std::max(try_result.staleness, max_remote_delay);
         }
 
-        if (try_results.empty() || local_delay < max_remote_delay)
+        if (!current_settings.collaborate_with_initiator && (try_results.empty() || local_delay < max_remote_delay))
         {
-            /// FIXME: Don't know what to do with it, because it could read data without asking an initiator
             auto plan = createLocalPlan(query, header, context, stage, shard_num, shard_count);
 
-            std::terminate();
-
-            // return QueryPipelineBuilder::getPipe(std::move(*plan->buildQueryPipeline(
-            //     QueryPlanOptimizationSettings::fromContext(context),
-            //     BuildQueryPipelineSettings::fromContext(context))));
+            return QueryPipelineBuilder::getPipe(std::move(*plan->buildQueryPipeline(
+                QueryPlanOptimizationSettings::fromContext(context),
+                BuildQueryPipelineSettings::fromContext(context))));
         }
         else
         {
@@ -182,8 +182,6 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
                 connections.emplace_back(std::move(try_result.entry));
 
             String query_string = formattedAST(query);
-
-            auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
 
             scalars["_shard_num"]
                 = Block{{DataTypeUInt32().createColumnConst(1, shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
@@ -259,15 +257,16 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
         {
             auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
 
-            // FIXME
-            assert(!shard.lazy);
-
             for (size_t replica_num = 0; replica_num < shard.num_replicas; ++replica_num)
             {
                 auto pool = shard.per_replica_pools[replica_num];
                 auto pool_with_failover =  std::make_shared<ConnectionPoolWithFailover>(
                     ConnectionPoolPtrs{pool}, current_settings.load_balancing);
-                addPipe(pipes, shard, coordinator, pool_with_failover);
+
+                if (shard.lazy)
+                    addLazyPipe(pipes, shard, coordinator, pool_with_failover);
+                else
+                    addPipe(pipes, shard, coordinator, pool_with_failover);
             }
         }
     }
@@ -278,9 +277,9 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
             auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
 
             if (shard.lazy)
-                addLazyPipe(pipes, shard);
+                addLazyPipe(pipes, shard, /*coordinator=*/nullptr, /*pool*/{});
             else
-                addPipe(pipes, shard, std::move(coordinator), {});
+                addPipe(pipes, shard, /*coordinator=*/nullptr, /*pool*/{});
         }
     }
 
