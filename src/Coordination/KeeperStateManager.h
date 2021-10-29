@@ -4,7 +4,7 @@
 #include <string>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/CoordinationSettings.h>
-#include <libnuraft/nuraft.hxx> // Y_IGNORE
+#include <libnuraft/nuraft.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Coordination/KeeperSnapshotManager.h>
 

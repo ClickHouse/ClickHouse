@@ -88,8 +88,11 @@ MergeTreeReadTaskPtr MergeTreeReadPool::getTask(const size_t min_marks_to_read, 
     auto & part = parts_with_idx[part_idx];
     auto & marks_in_part = thread_tasks.sum_marks_in_parts.back();
 
-    /// Get whole part to read if it is small enough.
-    auto need_marks = std::min(marks_in_part, min_marks_to_read);
+    size_t need_marks;
+    if (is_part_on_remote_disk[part_idx]) /// For better performance with remote disks
+        need_marks = marks_in_part;
+    else /// Get whole part to read if it is small enough.
+        need_marks = std::min(marks_in_part, min_marks_to_read);
 
     /// Do not leave too little rows in part for next time.
     if (marks_in_part > need_marks &&
@@ -190,10 +193,12 @@ std::vector<size_t> MergeTreeReadPool::fillPerPartInfo(const RangesInDataParts &
 {
     std::vector<size_t> per_part_sum_marks;
     Block sample_block = metadata_snapshot->getSampleBlock();
+    is_part_on_remote_disk.resize(parts.size());
 
     for (const auto i : collections::range(0, parts.size()))
     {
         const auto & part = parts[i];
+        is_part_on_remote_disk[i] = part.data_part->isStoredOnRemoteDisk();
 
         /// Read marks for every data part.
         size_t sum_marks = 0;

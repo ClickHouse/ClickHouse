@@ -234,7 +234,7 @@ bool StorageS3Source::initialize()
     file_path = fs::path(bucket) / current_key;
 
     read_buf = wrapReadBufferWithCompressionMethod(
-        std::make_unique<ReadBufferFromS3>(client, bucket, current_key, max_single_read_retries, DBMS_DEFAULT_BUFFER_SIZE),
+        std::make_unique<ReadBufferFromS3>(client, bucket, current_key, max_single_read_retries, getContext()->getReadSettings()),
         chooseCompressionMethod(current_key, compression_hint));
     auto input_format = getContext()->getInputFormat(format, *read_buf, sample_block, max_block_size, format_settings);
     QueryPipelineBuilder builder;

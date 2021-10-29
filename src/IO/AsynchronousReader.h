@@ -46,6 +46,7 @@ public:
         size_t size = 0;
         char * buf = nullptr;
         int64_t priority = 0;
+        size_t ignore = 0;
     };
 
     /// Less than requested amount of data can be returned.
