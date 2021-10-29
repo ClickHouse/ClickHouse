@@ -50,7 +50,7 @@ services:
       - label:disable
 
   kafka_kerberos:
-    image: yandex/clickhouse-kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG:-latest}
+    image: clickhouse/kerberos-kdc:${DOCKER_KERBEROS_KDC_TAG:-latest}
     hostname: kafka_kerberos
     volumes:
       - ${KERBERIZED_KAFKA_DIR}/secrets:/tmp/keytab

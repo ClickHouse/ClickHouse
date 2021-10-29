@@ -45,8 +45,8 @@
         M(UINT64, arrow::UInt64Type) \
         M(INT64, arrow::Int64Type) \
         M(FLOAT, arrow::FloatType) \
-        M(DOUBLE, arrow::DoubleType)  \
-        M(STRING, arrow::StringType)
+        M(DOUBLE, arrow::DoubleType) \
+        M(BINARY, arrow::BinaryType)
 
 namespace DB
 {
@@ -72,6 +72,7 @@ namespace DB
 
         {"Date", arrow::uint16()},      /// uint16 is used instead of date32, because Apache Arrow cannot correctly serialize Date32Array.
         {"DateTime", arrow::uint32()},  /// uint32 is used instead of date64, because we don't need milliseconds.
+        {"Date32", arrow::date32()},
 
         {"String", arrow::binary()},
         {"FixedString", arrow::binary()},
@@ -295,6 +296,7 @@ namespace DB
         FOR_ARROW_TYPES(DISPATCH)
 #undef DISPATCH
 
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot fill arrow array with {} data.", column_type->getName());
     }
 
     template <typename ColumnType>
@@ -334,7 +336,6 @@ namespace DB
         size_t end)
     {
         const PaddedPODArray<UInt16> & internal_data = assert_cast<const ColumnVector<UInt16> &>(*write_column).getData();
-        //arrow::Date32Builder date_builder;
         arrow::UInt16Builder & builder = assert_cast<arrow::UInt16Builder &>(*array_builder);
         arrow::Status status;
 
@@ -343,7 +344,6 @@ namespace DB
             if (null_bytemap && (*null_bytemap)[value_i])
                 status = builder.AppendNull();
             else
-                /// Implicitly converts UInt16 to Int32
                 status = builder.Append(internal_data[value_i]);
             checkStatus(status, write_column->getName(), format_name);
         }
@@ -368,6 +368,28 @@ namespace DB
             else
                 status = builder.Append(internal_data[value_i]);
 
+            checkStatus(status, write_column->getName(), format_name);
+        }
+    }
+
+    static void fillArrowArrayWithDate32ColumnData(
+        ColumnPtr write_column,
+        const PaddedPODArray<UInt8> * null_bytemap,
+        const String & format_name,
+        arrow::ArrayBuilder* array_builder,
+        size_t start,
+        size_t end)
+    {
+        const PaddedPODArray<Int32> & internal_data = assert_cast<const ColumnVector<Int32> &>(*write_column).getData();
+        arrow::Date32Builder & builder = assert_cast<arrow::Date32Builder &>(*array_builder);
+        arrow::Status status;
+
+        for (size_t value_i = start; value_i < end; ++value_i)
+        {
+            if (null_bytemap && (*null_bytemap)[value_i])
+                status = builder.AppendNull();
+            else
+                status = builder.Append(internal_data[value_i]);
             checkStatus(status, write_column->getName(), format_name);
         }
     }
@@ -410,6 +432,10 @@ namespace DB
         {
             fillArrowArrayWithDateTimeColumnData(column, null_bytemap, format_name, array_builder, start, end);
         }
+        else if (isDate32(column_type))
+        {
+            fillArrowArrayWithDate32ColumnData(column, null_bytemap, format_name, array_builder, start, end);
+        }
         else if (isArray(column_type))
         {
             fillArrowArrayWithArrayColumnData<arrow::ListBuilder>(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, dictionary_values);
@@ -442,13 +468,11 @@ namespace DB
                     fillArrowArrayWithDecimalColumnData<ToDataType, Int128, arrow::Decimal128, arrow::Decimal128Builder>(column, null_bytemap, array_builder, format_name, start, end);
                     return true;
                 }
-#if !defined(ARCADIA_BUILD)
                 if constexpr (std::is_same_v<ToDataType,DataTypeDecimal<Decimal256>>)
                 {
                     fillArrowArrayWithDecimalColumnData<ToDataType, Int256, arrow::Decimal256, arrow::Decimal256Builder>(column, null_bytemap, array_builder, format_name, start, end);
                     return true;
                 }
-#endif
 
                 return false;
             };

@@ -107,7 +107,7 @@ void MergeTreeDataPartCompact::loadIndexGranularity()
 
     size_t marks_file_size = volume->getDisk()->getFileSize(marks_file_path);
 
-    auto buffer = volume->getDisk()->readFile(marks_file_path, marks_file_size);
+    auto buffer = volume->getDisk()->readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size);
     while (!buffer->eof())
     {
         /// Skip offsets for columns
@@ -180,6 +180,11 @@ void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) cons
                     ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
         }
     }
+}
+
+bool MergeTreeDataPartCompact::isStoredOnRemoteDisk() const
+{
+    return volume->getDisk()->isRemote();
 }
 
 MergeTreeDataPartCompact::~MergeTreeDataPartCompact()

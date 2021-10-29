@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/bit_cast.h>
+#include <base/bit_cast.h>
 
 #include <Common/CombinedCardinalityEstimator.h>
 #include <Common/SipHash.h>

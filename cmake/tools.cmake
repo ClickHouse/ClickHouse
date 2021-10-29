@@ -8,7 +8,7 @@ endif ()
 
 if (COMPILER_GCC)
     # Require minimum version of gcc
-    set (GCC_MINIMUM_VERSION 10)
+    set (GCC_MINIMUM_VERSION 11)
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${GCC_MINIMUM_VERSION} AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
         message (FATAL_ERROR "GCC version must be at least ${GCC_MINIMUM_VERSION}. For example, if GCC ${GCC_MINIMUM_VERSION} is available under gcc-${GCC_MINIMUM_VERSION}, g++-${GCC_MINIMUM_VERSION} names, do the following: export CC=gcc-${GCC_MINIMUM_VERSION} CXX=g++-${GCC_MINIMUM_VERSION}; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
     endif ()
@@ -18,6 +18,10 @@ if (COMPILER_GCC)
 elseif (COMPILER_CLANG)
     # Require minimum version of clang/apple-clang
     if (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
+        # If you are developer you can figure out what exact versions of AppleClang are Ok,
+        # simply remove the following line.
+        message (FATAL_ERROR "AppleClang is not supported, you should install clang from brew. See the instruction: https://clickhouse.com/docs/en/development/build-osx/")
+
         # AppleClang 10.0.1 (Xcode 10.2) corresponds to LLVM/Clang upstream version 7.0.0
         # AppleClang 11.0.0 (Xcode 11.0) corresponds to LLVM/Clang upstream version 8.0.0
         set (XCODE_MINIMUM_VERSION 10.2)
@@ -31,7 +35,7 @@ elseif (COMPILER_CLANG)
             set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fchar8_t")
         endif ()
     else ()
-        set (CLANG_MINIMUM_VERSION 9)
+        set (CLANG_MINIMUM_VERSION 12)
         if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
             message (FATAL_ERROR "Clang version must be at least ${CLANG_MINIMUM_VERSION}.")
         endif ()
@@ -79,8 +83,9 @@ endif ()
 
 if (LINKER_NAME)
     if (COMPILER_CLANG AND (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 12.0.0 OR CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL 12.0.0))
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --ld-path=${LINKER_NAME}")
-        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --ld-path=${LINKER_NAME}")
+        find_program (LLD_PATH NAMES ${LINKER_NAME})
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --ld-path=${LLD_PATH}")
+        set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --ld-path=${LLD_PATH}")
     else ()
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
         set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=${LINKER_NAME}")
@@ -88,4 +93,3 @@ if (LINKER_NAME)
 
     message(STATUS "Using custom linker by name: ${LINKER_NAME}")
 endif ()
-

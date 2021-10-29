@@ -13,7 +13,7 @@
 #include <Access/AccessControlManager.h>
 #include <Access/RowPolicy.h>
 #include <Access/AccessFlags.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
 

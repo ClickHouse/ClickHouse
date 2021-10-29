@@ -287,7 +287,7 @@ static void injectVirtualColumnsImpl(
             {
                 ColumnPtr column;
                 if (rows)
-                    column = DataTypeUUID().createColumnConst(rows, task->data_part->uuid)->convertToFullColumnIfConst();
+                    column = DataTypeUUID().createColumnConst(rows, part->uuid)->convertToFullColumnIfConst();
                 else
                     column = DataTypeUUID().createColumn();
 
@@ -306,7 +306,7 @@ static void injectVirtualColumnsImpl(
             else if (virtual_column_name == "_partition_value")
             {
                 if (rows)
-                    inserter.insertPartitionValueColumn(rows, task->data_part->partition.value, partition_value_type, virtual_column_name);
+                    inserter.insertPartitionValueColumn(rows, part->partition.value, partition_value_type, virtual_column_name);
                 else
                     inserter.insertPartitionValueColumn(rows, {}, partition_value_type, virtual_column_name);
             }

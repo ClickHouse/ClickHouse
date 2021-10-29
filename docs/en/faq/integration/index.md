@@ -16,4 +16,4 @@ Questions:
 !!! info "Don’t see what you were looking for?"
     Check out [other F.A.Q. categories](../../faq/index.md) or browse around main documentation articles found in the left sidebar.
 
-{## [Original article](https://clickhouse.tech/docs/en/faq/integration/) ##}
+{## [Original article](https://clickhouse.com/docs/en/faq/integration/) ##}

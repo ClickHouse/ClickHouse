@@ -1,3 +1,5 @@
+-- Tags: distributed
+
 SELECT sum(number) FROM (SELECT * FROM remote('127.0.0.{1,2}', system.numbers) LIMIT 5 SETTINGS distributed_group_by_no_merge = 1);
 SELECT sum(number) FROM (SELECT * FROM remote('127.0.0.{1,2}', system.numbers) LIMIT 5 SETTINGS distributed_group_by_no_merge = 1) with totals;
 

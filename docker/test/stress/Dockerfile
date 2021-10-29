@@ -1,5 +1,5 @@
-# docker build -t yandex/clickhouse-stress-test .
-FROM yandex/clickhouse-stateful-test
+# docker build -t clickhouse/stress-test .
+FROM clickhouse/stateful-test
 
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \

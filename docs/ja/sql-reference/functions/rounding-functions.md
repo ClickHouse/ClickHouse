@@ -187,4 +187,4 @@ roundBankers(10.755, 2) = 11,76
 
 数値を受け取り、指定された配列内の要素に切り捨てます。 値が最低限界より小さい場合は、最低限界が返されます。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/rounding_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/rounding_functions/) <!--hide-->

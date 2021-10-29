@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <tcp_port_secure>9440</tcp_port_secure>
     <remote_servers>
         <test_cluster>
@@ -18,4 +18,4 @@
             </shard>
         </test_cluster>
     </remote_servers>
-</yandex>
+</clickhouse>
