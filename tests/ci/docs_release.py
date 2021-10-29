@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+#!/usr/bin/env python3
 import logging
 import subprocess
 import os
@@ -9,9 +11,9 @@ from github import Github
 from report import create_test_html_report
 from s3_helper import S3Helper
 from pr_info import PRInfo
-from get_robot_token import get_best_robot_token
+from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 
-NAME = "Docs Check (actions)"
+NAME = "Docs Release (actions)"
 
 def process_logs(s3_client, additional_logs, s3_path_prefix):
     additional_urls = []
@@ -25,7 +27,7 @@ def process_logs(s3_client, additional_logs, s3_path_prefix):
     return additional_urls
 
 def upload_results(s3_client, pr_number, commit_sha, test_results, additional_files):
-    s3_path_prefix = f"{pr_number}/{commit_sha}/docs_check"
+    s3_path_prefix = f"{pr_number}/{commit_sha}/docs_release"
     additional_urls = process_logs(s3_client, additional_files, s3_path_prefix)
 
     branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
@@ -78,14 +80,14 @@ if __name__ == "__main__":
 
     images_path = os.path.join(temp_path, 'changed_images.json')
 
-    docker_image = 'clickhouse/docs-check'
+    docker_image = 'clickhouse/docs-release'
     if os.path.exists(images_path):
         logging.info("Images file exists")
         with open(images_path, 'r', encoding='utf-8') as images_fd:
             images = json.load(images_fd)
             logging.info("Got images %s", images)
-            if 'clickhouse/docs-check' in images:
-                docker_image += ':' + images['clickhouse/docs-check']
+            if 'clickhouse/docs-release' in images:
+                docker_image += ':' + images['clickhouse/docs-release']
 
     logging.info("Got docker image %s", docker_image)
     for i in range(10):
@@ -98,11 +100,12 @@ if __name__ == "__main__":
     else:
         raise Exception(f"Cannot pull dockerhub for image {docker_image}")
 
-    test_output = os.path.join(temp_path, 'docs_check_log')
+    test_output = os.path.join(temp_path, 'docs_release_log')
     if not os.path.exists(test_output):
         os.makedirs(test_output)
 
-    cmd = f"docker run --cap-add=SYS_PTRACE --volume={repo_path}:/repo_path --volume={test_output}:/output_path {docker_image}"
+    token = get_parameter_from_ssm('cloudflare_token', decrypt=True)
+    cmd = f"docker run --cap-add=SYS_PTRACE -e CLOUDFLARE_TOKEN={token} --volume={repo_path}:/repo_path --volume={test_output}:/output_path {docker_image}"
 
     run_log_path = os.path.join(test_output, 'runlog.log')
 
@@ -123,8 +126,8 @@ if __name__ == "__main__":
     lines = []
     additional_files = []
     if not files:
-        logging.error("No output files after docs check")
-        description = "No output files after docs check"
+        logging.error("No output files after docs release")
+        description = "No output files after docs release"
         status = "failure"
     else:
         for f in files:
@@ -136,7 +139,7 @@ if __name__ == "__main__":
                         lines.append((line.split(':')[-1], "FAIL"))
         if lines:
             status = "failure"
-            description = "Found errors during docs check"
+            description = "Found errors during docs release"
         elif status != "failure":
             lines.append(("No errors found", "OK"))
         else:
