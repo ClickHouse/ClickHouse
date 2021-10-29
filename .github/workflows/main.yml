@@ -55,6 +55,7 @@ jobs:
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   DocsCheck:
     needs: DockerHubPush
@@ -79,6 +80,7 @@ jobs:
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   BuilderDebDebug:
     needs: DockerHubPush
@@ -117,6 +119,7 @@ jobs:
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   BuilderReport:
     needs: [BuilderDebDebug]
@@ -142,6 +145,7 @@ jobs:
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   FunctionalStatelessTestDebug:
     needs: [BuilderDebDebug]
@@ -171,6 +175,7 @@ jobs:
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   FunctionalStatefulTestDebug:
     needs: [BuilderDebDebug]
@@ -200,6 +205,7 @@ jobs:
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   FastTest:
     needs: DockerHubPush
@@ -222,6 +228,7 @@ jobs:
         if: always()
         run: |
           docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   FinishCheck:
     needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport, FastTest, FunctionalStatelessTestDebug, FunctionalStatefulTestDebug]
