@@ -137,8 +137,10 @@ if __name__ == "__main__":
         if lines:
             status = "failure"
             description = "Found errors during docs check"
-        else:
+        elif status != "failure":
             lines.append(("No errors found", "OK"))
+        else:
+            lines.append(("Non zero exit code", "FAIL"))
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
 
