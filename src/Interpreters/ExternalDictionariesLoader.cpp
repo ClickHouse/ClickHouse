@@ -87,6 +87,28 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
     return ExternalDictionariesLoader::getDictionaryStructure(*load_result.config);
 }
 
+QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr query_context) const
+{
+    auto qualified_name = QualifiedTableName::tryParseFromString(dictionary_name);
+    if (!qualified_name)
+    {
+        QualifiedTableName qualified_dictionary_name;
+        qualified_dictionary_name.table = dictionary_name;
+        return qualified_dictionary_name;
+    }
+
+    if (qualified_name->database.empty() && has(dictionary_name))
+    {
+        /// This is xml dictionary
+        return *qualified_name;
+    }
+
+    if (qualified_name->database.empty())
+        qualified_name->database = query_context->getCurrentDatabase();
+
+    return *qualified_name;
+}
+
 std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const
 {
     bool has_dictionary = has(dictionary_name);
