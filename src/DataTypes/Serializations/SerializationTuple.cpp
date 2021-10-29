@@ -1,6 +1,7 @@
 #include <base/map.h>
 #include <base/range.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Core/Field.h>
 #include <Columns/ColumnTuple.h>
@@ -284,18 +285,23 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
 void SerializationTuple::enumerateStreams(
     SubstreamPath & path,
     const StreamCallback & callback,
-    DataTypePtr type,
-    ColumnPtr column) const
+    const SubstreamData & data) const
 {
-    const auto * type_tuple = type ? &assert_cast<const DataTypeTuple &>(*type) : nullptr;
-    const auto * column_tuple = column ? &assert_cast<const ColumnTuple &>(*column) : nullptr;
+    const auto * type_tuple = data.type ? &assert_cast<const DataTypeTuple &>(*data.type) : nullptr;
+    const auto * column_tuple = data.column ? &assert_cast<const ColumnTuple &>(*data.column) : nullptr;
+    const auto * info_tuple = data.serialization_info ? &assert_cast<const SerializationInfoTuple &>(*data.serialization_info) : nullptr;
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        auto next_type = type_tuple ? type_tuple->getElement(i) : nullptr;
-        auto next_column = column_tuple ? column_tuple->getColumnPtr(i) : nullptr;
+        SubstreamData next_data =
+        {
+            elems[i],
+            type_tuple ? type_tuple->getElement(i) : nullptr,
+            column_tuple ? column_tuple->getColumnPtr(i) : nullptr,
+            info_tuple ? info_tuple->getElementInfo(i) : nullptr,
+        };
 
-        elems[i]->enumerateStreams(path, callback, next_type, next_column);
+        elems[i]->enumerateStreams(path, callback, next_data);
     }
 }
 

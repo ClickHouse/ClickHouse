@@ -7109,10 +7109,6 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     new_data_part->minmax_idx = std::move(minmax_idx);
     new_data_part->is_temp = true;
 
-    /// Create empty serialization_info.
-    auto ratio = getSettings()->ratio_of_defaults_for_sparse_serialization;
-    new_data_part->serialization_info = SerializationInfoBuilder(ratio).build();
-
     SyncGuardPtr sync_guard;
     if (new_data_part->isStoredOnDisk())
     {
@@ -7138,8 +7134,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns,
-        index_factory.getMany(metadata_snapshot->getSecondaryIndices()),
-        compression_codec, new_data_part->serialization_info);
+        index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
 
     bool sync_on_insert = settings->fsync_after_insert;
 

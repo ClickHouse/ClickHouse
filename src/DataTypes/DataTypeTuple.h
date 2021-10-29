@@ -54,8 +54,9 @@ public:
     size_t getMaximumSizeOfValueInMemory() const override;
     size_t getSizeOfValueInMemory() const override;
 
-    SerializationPtr getSerialization(const String & column_name, const SerializationCallback & callback) const override;
     SerializationPtr doGetDefaultSerialization() const override;
+    SerializationPtr getSerialization(const SerializationInfo & info) const override;
+    MutableSerializationInfoPtr createSerializationInfo(const SerializationInfo::Settings & settings) const override;
 
     const DataTypePtr & getElement(size_t i) const { return elems[i]; }
     const DataTypes & getElements() const { return elems; }

@@ -109,7 +109,7 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
             /// The column is already present in the block so we will append the values to the end.
             bool append = res_columns[pos] != nullptr;
             if (!append)
-                res_columns[pos] = type->createColumn(*serializations[name]);
+                res_columns[pos] = type->createColumn(*serializations.at(name));
 
             auto & column = res_columns[pos];
             try
@@ -188,9 +188,7 @@ void MergeTreeReaderWide::addStreams(const NameAndTypePair & name_and_type,
             profile_callback, clock_type));
     };
 
-    auto serialization = data_part->getSerializationForColumn(name_and_type);
-    serialization->enumerateStreams(callback);
-    serializations.emplace(name_and_type.name, std::move(serialization));
+    serializations.at(name_and_type.name)->enumerateStreams(callback);
 }
 
 
@@ -231,7 +229,7 @@ void MergeTreeReaderWide::prefetch(
     std::unordered_set<std::string> & prefetched_streams)
 {
     const auto & name = name_and_type.name;
-    auto & serialization = serializations[name];
+    auto & serialization = serializations.at(name);
 
     serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
     {
@@ -259,7 +257,7 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.avg_value_size_hint = avg_value_size_hint;
 
     const auto & name = name_and_type.name;
-    auto & serialization = serializations[name];
+    auto & serialization = serializations.at(name);
 
     if (deserialize_binary_bulk_state_map.count(name) == 0)
     {

@@ -93,7 +93,6 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
-        const SerializationInfoPtr & serialization_info_,
         const MergeTreeWriterSettings & writer_settings,
         const MergeTreeIndexGranularity & computed_index_granularity = {}) const = 0;
 
@@ -127,9 +126,12 @@ public:
 
     String getTypeName() const { return getType().toString(); }
 
-    void setColumns(const NamesAndTypesList & new_columns);
+    void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos = {});
 
     const NamesAndTypesList & getColumns() const { return columns; }
+    const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
+    const SerializationByName & getSerializations() const { return serializations; }
+    const SerializationPtr & getSerialization(const String & column_name) const { return serializations.at(column_name); }
 
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
@@ -189,9 +191,6 @@ public:
     /// NOTE: Cannot have trailing slash.
     mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;
-
-    /// TODO: add comment
-    SerializationInfoPtr serialization_info;
 
     size_t rows_count = 0;
 
@@ -399,8 +398,8 @@ public:
     /// part creation (using alter query with materialize_ttl setting).
     bool checkAllTTLCalculated(const StorageMetadataPtr & metadata_snapshot) const;
 
-    /// Returns serialization for column according to serialization_info.
-    SerializationPtr getSerializationForColumn(const NameAndTypePair & column) const;
+    // /// Returns serialization for column according to serialization_info.
+    // SerializationPtr getSerializationForColumn(const NameAndTypePair & column) const;
 
     /// Return some uniq string for file
     /// Required for distinguish different copies of the same part on S3
@@ -424,6 +423,11 @@ protected:
 
     /// Columns description. Cannot be changed, after part initialization.
     NamesAndTypesList columns;
+
+    SerializationInfoByName serialization_infos;
+
+    SerializationByName serializations;
+
     const Type part_type;
 
     /// Not null when it's a projection part.
@@ -469,8 +473,6 @@ private:
 
     /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
     void loadTTLInfos();
-
-    void loadSerializationInfo() const;
 
     void loadPartitionAndMinMaxIndex();
 

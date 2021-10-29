@@ -16,12 +16,11 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
-    const SerializationInfoPtr & serialization_info_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
     : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
         indices_to_recalc_, marks_file_extension_,
-        default_codec_, serialization_info_, settings_, index_granularity_)
+        default_codec_, settings_, index_granularity_)
     , plain_file(data_part->volume->getDisk()->writeFile(
             part_path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
             settings.max_compress_block_size,
@@ -34,12 +33,8 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     , marks(*marks_file)
 {
     const auto & storage_columns = metadata_snapshot->getColumns();
-    serializations.reserve(columns_list.size());
     for (const auto & column : columns_list)
-    {
-        serializations.emplace(column.name, column.type->getSerialization(column.name, *serialization_info));
         addStreams(column, storage_columns.getCodecDescOrDefault(column.name, default_codec));
-    }
 }
 
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc)
@@ -71,7 +66,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
     };
 
     ISerialization::SubstreamPath path;
-    serializations[column.name]->enumerateStreams(path, callback, column.type, nullptr);
+    serializations.at(column.name)->enumerateStreams(path, callback, column.type);
 }
 
 namespace
@@ -212,7 +207,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             writeIntBinary(UInt64(0), marks);
 
             writeColumnSingleGranule(
-                block.getByName(name_and_type->name), serializations[name_and_type->name],
+                block.getByName(name_and_type->name), serializations.at(name_and_type->name),
                 stream_getter, granule.start_row, granule.rows_to_write);
 
             /// Each type always have at least one substream

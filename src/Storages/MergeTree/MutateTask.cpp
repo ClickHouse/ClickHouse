@@ -313,8 +313,7 @@ NameSet collectFilesToSkip(
             files_to_skip.insert(stream_name + mrk_extension);
         };
 
-        auto serialization = source_part->getSerializationForColumn({entry.name, entry.type});
-        serialization->enumerateStreams(callback);
+        source_part->getSerialization(entry.name)->enumerateStreams(callback);
     }
     for (const auto & index : indices_to_recalc)
     {
@@ -339,8 +338,7 @@ static NameToNameVector collectFilesForRenames(
     std::map<String, size_t> stream_counts;
     for (const auto & column : source_part->getColumns())
     {
-        auto serialization = source_part->getSerializationForColumn(column);
-        serialization->enumerateStreams(
+        source_part->getSerialization(column.name)->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
                 ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
@@ -384,10 +382,7 @@ static NameToNameVector collectFilesForRenames(
 
             auto column = source_part->getColumns().tryGetByName(command.column_name);
             if (column)
-            {
-                auto serialization = source_part->getSerializationForColumn(*column);
-                serialization->enumerateStreams(callback);
-            }
+                source_part->getSerialization(column->name)->enumerateStreams(callback);
         }
         else if (command.type == MutationCommand::Type::RENAME_COLUMN)
         {
@@ -409,10 +404,7 @@ static NameToNameVector collectFilesForRenames(
 
             auto column = source_part->getColumns().tryGetByName(command.column_name);
             if (column)
-            {
-                auto serialization = source_part->getSerializationForColumn(*column);
-                serialization->enumerateStreams(callback);
-            }
+                source_part->getSerialization(column->name)->enumerateStreams(callback);
         }
     }
 
@@ -968,8 +960,7 @@ private:
             ctx->metadata_snapshot,
             ctx->new_data_part->getColumns(),
             skip_part_indices,
-            ctx->compression_codec,
-            ctx->new_data_part->serialization_info);
+            ctx->compression_codec);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
@@ -1118,7 +1109,6 @@ private:
                 ctx->metadata_snapshot,
                 ctx->updated_header,
                 ctx->compression_codec,
-                ctx->source_part->serialization_info,
                 std::vector<MergeTreeIndexPtr>(ctx->indices_to_recalc.begin(), ctx->indices_to_recalc.end()),
                 nullptr,
                 ctx->source_part->index_granularity,
@@ -1298,11 +1288,13 @@ bool MutateTask::prepare()
     ctx->new_data_part->uuid = ctx->future_part->uuid;
     ctx->new_data_part->is_temp = true;
     ctx->new_data_part->ttl_infos = ctx->source_part->ttl_infos;
-    ctx->new_data_part->serialization_info = ctx->source_part->serialization_info;
 
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
-    ctx->new_data_part->setColumns(MergeTreeDataMergerMutator::getColumnsForNewDataPart(ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->for_file_renames));
+    ctx->new_data_part->setColumns(
+        MergeTreeDataMergerMutator::getColumnsForNewDataPart(ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->for_file_renames),
+        ctx->source_part->getSerializationInfos());
+
     ctx->new_data_part->partition.assign(ctx->source_part->partition);
 
     ctx->disk = ctx->new_data_part->volume->getDisk();

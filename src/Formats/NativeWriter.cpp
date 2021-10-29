@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/VarInt.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <Formats/MarkInCompressedFile.h>
 #include <Formats/NativeWriter.h>
@@ -125,18 +126,13 @@ void NativeWriter::write(const Block & block)
         SerializationPtr serialization;
         if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
-            serialization = column.type->getSerialization(column.name, [&](const String & name)
-            {
-                auto split = Nested::splitName(name);
-                ISerialization::Kind kind;
-                if (!split.second.empty() && column.type->tryGetSubcolumnType(split.second))
-                    kind = ISerialization::getKind(*column.type->getSubcolumn(split.second, column.column));
-                else
-                    kind = ISerialization::getKind(*column.column);
+            auto info = column.column->getSerializationInfo();
+            serialization = column.type->getSerialization(*info);
 
-                writeBinary(static_cast<UInt8>(kind), ostr);
-                return kind;
-            });
+            bool has_custom = info->hasCustomSerialization();
+            writeBinary(static_cast<UInt8>(has_custom), ostr);
+            if (has_custom)
+                info->serialializeKindBinary(ostr);
         }
         else
         {

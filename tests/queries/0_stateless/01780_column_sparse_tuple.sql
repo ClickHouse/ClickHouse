@@ -40,4 +40,14 @@ SELECT t.a FROM sparse_tuple WHERE t.b.u != 0 ORDER BY id LIMIT 5;
 SELECT t.b.s FROM sparse_tuple ORDER BY id LIMIT 5;
 SELECT t.b.s FROM sparse_tuple WHERE t.b.u != 0 ORDER BY id LIMIT 5;
 
+DETACH TABLE sparse_tuple;
+ATTACH TABLE sparse_tuple;
+
+SELECT column, subcolumns.names, subcolumns.types, subcolumns.serializations
+FROM system.parts_columns
+WHERE table = 'sparse_tuple' AND database = currentDatabase()
+ORDER BY column;
+
+SELECT t.b.s FROM sparse_tuple WHERE t.b.u != 0 ORDER BY id LIMIT 5;
+
 DROP TABLE IF EXISTS sparse_tuple;

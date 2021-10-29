@@ -281,7 +281,6 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , volume(parent_part_ ? parent_part_->volume : volume_)
     , relative_path(relative_path_.value_or(name_))
     , index_granularity_info(storage_, part_type_)
-    , serialization_info(std::make_shared<SerializationInfo>())
     , part_type(part_type_)
     , parent_part(parent_part_)
 {
@@ -307,7 +306,6 @@ IMergeTreeDataPart::IMergeTreeDataPart(
     , volume(parent_part_ ? parent_part_->volume : volume_)
     , relative_path(relative_path_.value_or(name_))
     , index_granularity_info(storage_, part_type_)
-    , serialization_info(std::make_shared<SerializationInfo>())
     , part_type(part_type_)
     , parent_part(parent_part_)
 {
@@ -408,17 +406,47 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 }
 
 
-void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
+void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos)
 {
     columns = new_columns;
+
     column_name_to_position.clear();
     column_name_to_position.reserve(new_columns.size());
     size_t pos = 0;
+
     for (const auto & column : columns)
     {
+        auto & serialization = serializations[column.name];
         column_name_to_position.emplace(column.name, pos);
-        for (const auto & subcolumn : column.type->getSubcolumnNames())
-            column_name_to_position.emplace(Nested::concatenateName(column.name, subcolumn), pos);
+
+        auto it = new_infos.find(column.name);
+        if (it != new_infos.end())
+        {
+            auto & old_info = serialization_infos[column.name];
+            const auto & new_info = it->second;
+
+            if (old_info)
+            {
+                old_info->replaceData(*new_info);
+            }
+            else
+            {
+                old_info = new_info->clone();
+                serialization = column.type->getSerialization(*old_info);
+            }
+        }
+        else
+        {
+            serialization = column.type->getDefaultSerialization();
+        }
+
+        IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
+        {
+            auto subcolumn_name = Nested::concatenateName(column.name, subname);
+            column_name_to_position.emplace(subcolumn_name, pos);
+            serializations.emplace(subcolumn_name, subdata.serialization);
+        }, {serialization, column.type, nullptr, nullptr});
+
         ++pos;
     }
 }
@@ -589,7 +617,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     loadUUID();
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
-    loadSerializationInfo();
     loadIndexGranularity();
     calculateColumnsAndSecondaryIndicesSizesOnDisk();
     loadIndex();     /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
@@ -655,13 +682,13 @@ void IMergeTreeDataPart::loadIndex()
 
         size_t marks_count = index_granularity.getMarksCount();
 
-        Serializations serializations(key_size);
+        Serializations key_serializations(key_size);
         for (size_t j = 0; j < key_size; ++j)
-            serializations[j] = primary_key.data_types[j]->getDefaultSerialization();
+            key_serializations[j] = primary_key.data_types[j]->getDefaultSerialization();
 
         for (size_t i = 0; i < marks_count; ++i) //-V756
             for (size_t j = 0; j < key_size; ++j)
-                serializations[j]->deserializeBinary(*loaded_index[j], *index_file);
+                key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file);
 
         for (size_t i = 0; i < key_size; ++i)
         {
@@ -752,9 +779,8 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
         auto column_size = getColumnSize(part_column.name, *part_column.type);
         if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
         {
-            auto serialization = IDataType::getSerialization(part_column, *serialization_info);
             String path_to_data_file;
-            serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            serializations.at(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
                 if (path_to_data_file.empty())
                 {
@@ -888,7 +914,7 @@ void IMergeTreeDataPart::loadRowsCount()
             /// Most trivial types
             if (column.type->isValueRepresentedByNumber()
                 && !column.type->haveSubtypes()
-                && getSerializationForColumn(column)->getKind() == ISerialization::Kind::DEFAULT)
+                && getSerialization(column.name)->getKind() == ISerialization::Kind::DEFAULT)
             {
                 auto size = getColumnSize(column.name, *column.type);
 
@@ -940,7 +966,7 @@ void IMergeTreeDataPart::loadRowsCount()
 
         for (const NameAndTypePair & column : columns)
         {
-            ColumnPtr column_col = column.type->createColumn(*getSerializationForColumn(column));
+            ColumnPtr column_col = column.type->createColumn(*serializations.at(column.name));
             if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
                 continue;
 
@@ -1014,16 +1040,6 @@ void IMergeTreeDataPart::loadUUID()
     }
 }
 
-void IMergeTreeDataPart::loadSerializationInfo() const
-{
-    String path = getFullRelativePath() + SERIALIZATION_FILE_NAME;
-    if (volume->getDisk()->exists(path))
-    {
-        auto in = openForReading(volume->getDisk(), path);
-        serialization_info->readText(*in);
-    }
-}
-
 void IMergeTreeDataPart::loadColumns(bool require)
 {
     String path = fs::path(getFullRelativePath()) / "columns.txt";
@@ -1058,7 +1074,18 @@ void IMergeTreeDataPart::loadColumns(bool require)
         loaded_columns.readText(*volume->getDisk()->readFile(path));
     }
 
-    setColumns(loaded_columns);
+    SerializationInfo::Settings settings =
+    {
+        .ratio_for_sparse = storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
+        .choose_kind = false,
+    };
+
+    SerializationInfoByName infos(loaded_columns, settings);
+    path = getFullRelativePath() + SERIALIZATION_FILE_NAME;
+    if (volume->getDisk()->exists(path))
+        infos.readText(*volume->getDisk()->readFile(path));
+
+    setColumns(loaded_columns, infos);
 }
 
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
@@ -1561,11 +1588,6 @@ bool IMergeTreeDataPart::checkAllTTLCalculated(const StorageMetadataPtr & metada
     }
 
     return true;
-}
-
-SerializationPtr IMergeTreeDataPart::getSerializationForColumn(const NameAndTypePair & column) const
-{
-    return IDataType::getSerialization(column, *serialization_info);
 }
 
 String IMergeTreeDataPart::getUniqueId() const

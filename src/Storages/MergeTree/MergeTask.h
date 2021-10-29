@@ -157,7 +157,6 @@ private:
 
         SyncGuardPtr sync_guard{nullptr};
         MergeTreeData::MutableDataPartPtr new_data_part{nullptr};
-        SerializationInfoPtr input_serialization_info{nullptr};
 
         size_t rows_written{0};
         UInt64 watch_prev_elapsed{0};

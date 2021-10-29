@@ -57,3 +57,10 @@ a
 aaaaaa
 a
 aaaaaa
+id	[]	[]	[]
+t	['a','b','b.u','b.s']	['UInt64','Tuple(u UInt32, s String)','UInt32','String']	['Sparse','Default','Sparse','Default']
+aaaaaa
+a
+aaaaaa
+a
+aaaaaa
