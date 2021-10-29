@@ -376,7 +376,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name));
     plan->addStep(std::move(step));
 
-    if (!query_info.projection->subqueries_for_sets->empty())
+    if (query_info.projection->subqueries_for_sets && !query_info.projection->subqueries_for_sets->empty())
     {
         SizeLimits limits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
         addCreatingSetsStep(*plan, std::move(*query_info.projection->subqueries_for_sets), limits, context);
