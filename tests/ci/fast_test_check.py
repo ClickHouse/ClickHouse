@@ -113,7 +113,7 @@ if __name__ == "__main__":
             images = json.load(images_fd)
             logging.info("Got images %s", images)
             if 'clickhouse/fasttest' in images:
-                docker_image += ':' + images['clickhouse/pvs-test']
+                docker_image += ':' + images['clickhouse/fasttest']
 
     logging.info("Got docker image %s", docker_image)
     for i in range(10):
