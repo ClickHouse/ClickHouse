@@ -205,7 +205,7 @@ SELECT tupleToNameValuePairs(col) FROM tupletest;
 └───────────────────────────────────────┘
 ```
 
-С помощью этой функции возможно приводить столбцы к строкам:
+С помощью этой функции можно выводить столбцы в виде строк:
 
 ``` sql
 CREATE TABLE tupletest (`col` Tuple(CPU Float64, Memory Float64, Disk Float64)) ENGINE = Memory;
@@ -225,7 +225,7 @@ SELECT arrayJoin(tupleToNameValuePairs(col))FROM tupletest;
 └───────────────────────────────────────┘
 ```
 
-При передаче функции обычный кортеж ClickHouse использует индексы значений как их имена:
+Если в функцию передается обычный кортеж, ClickHouse использует индексы значений в качестве имен:
 
 ``` sql
 SELECT tupleToNameValuePairs(tuple(3, 2, 1));
