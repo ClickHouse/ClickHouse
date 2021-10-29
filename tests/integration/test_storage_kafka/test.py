@@ -120,16 +120,19 @@ def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):
 def kafka_producer_send_heartbeat_msg(max_retries=50):
     kafka_produce(kafka_cluster, 'test_heartbeat_topic', ['test'], retries=max_retries)
 
-def kafka_consume(kafka_cluster, topic):
+def kafka_consume(kafka_cluster, topic, needDecode = True, timestamp = 0):
     consumer = KafkaConsumer(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port), auto_offset_reset="earliest")
     consumer.subscribe(topics=(topic))
     for toppar, messages in list(consumer.poll(5000).items()):
         if toppar.topic == topic:
             for message in messages:
-                yield message.value.decode()
+                assert timestamp == 0 or message.timestamp / 1000 == timestamp
+                if needDecode:
+                    yield message.value.decode()
+                else:
+                    yield message.value
     consumer.unsubscribe()
     consumer.close()
-
 
 def kafka_produce_protobuf_messages(kafka_cluster, topic, start_index, num_messages):
     data = b''
@@ -680,6 +683,16 @@ def kafka_check_result(result, check=False, ref_file='test_kafka_json.reference'
             assert TSV(result) == TSV(reference)
         else:
             return TSV(result) == TSV(reference)
+
+
+def decode_avro(message):
+    b = io.BytesIO(message)
+    ret = avro.datafile.DataFileReader(b, avro.io.DatumReader())
+
+    output = io.StringIO()
+    for record in ret:
+        print(record, file=output)
+    return output.getvalue()
 
 
 # https://stackoverflow.com/a/57692111/1555175
@@ -1828,6 +1841,40 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
     assert TSV(result) == TSV(expected)
 
     kafka_delete_topic(admin_client, topic_name)
+
+
+def test_kafka_insert_avro(kafka_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.kafka;
+        CREATE TABLE test.kafka (key UInt64, value UInt64, _timestamp DateTime('UTC'))
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'avro1',
+                     kafka_group_name = 'avro1',
+                     kafka_format = 'Avro';
+    ''')
+
+
+    instance.query("INSERT INTO test.kafka select number*10 as key, number*100 as value, 1636505534 as _timestamp from numbers(4) SETTINGS output_format_avro_rows_in_file = 2, output_format_avro_codec = 'deflate'")
+
+    messages = []
+    while True:
+        messages.extend(kafka_consume(kafka_cluster, 'avro1', needDecode = False, timestamp = 1636505534))
+        if len(messages) == 2:
+            break
+
+    result = ''
+    for a_message in messages:
+        result += decode_avro(a_message) + '\n'
+
+    expected_result = """{'key': 0, 'value': 0, '_timestamp': 1636505534}
+{'key': 10, 'value': 100, '_timestamp': 1636505534}
+
+{'key': 20, 'value': 200, '_timestamp': 1636505534}
+{'key': 30, 'value': 300, '_timestamp': 1636505534}
+
+"""
+    assert (result == expected_result)
 
 
 def test_kafka_produce_consume_avro(kafka_cluster):

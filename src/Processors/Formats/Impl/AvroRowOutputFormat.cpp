@@ -443,6 +443,10 @@ void AvroRowOutputFormat::consumeImplWithCallback(DB::Chunk chunk)
 
     for (size_t row = 0; row < num_rows;)
     {
+        size_t current_row = row;
+        /// used by WriteBufferToKafkaProducer to obtain auxiliary data
+        ///   from the starting row of a file
+
         writePrefix();
         for (size_t row_in_file = 0;
              row_in_file < settings.avro.output_rows_in_file && row < num_rows;
@@ -451,11 +455,10 @@ void AvroRowOutputFormat::consumeImplWithCallback(DB::Chunk chunk)
             write(columns, row);
         }
 
-
         file_writer_ptr->flush();
         writeSuffix();
 
-        params.callback(columns, num_rows);
+        params.callback(columns, current_row);
     }
 }
 
