@@ -7,7 +7,7 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
-#include <common/sleep.h>
+#include <base/sleep.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -63,6 +63,8 @@ public:
     {
         return 1;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

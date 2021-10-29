@@ -24,6 +24,8 @@ Each query creates one or two rows in the `query_log` table, depending on the st
 2.  If an error occurred during query processing, two events with the `QueryStart` and `ExceptionWhileProcessing` types are created.
 3.  If an error occurred before launching the query, a single event with the `ExceptionBeforeStart` type is created.
 
+You can use the [log_queries_probability](../../operations/settings/settings.md#log-queries-probability) setting to reduce the number of queries, registered in the `query_log` table.
+
 Columns:
 
 -   `type` ([Enum8](../../sql-reference/data-types/enum.md)) — Type of an event that occurred when executing the query. Values:
@@ -50,6 +52,7 @@ Columns:
 -   `query_kind` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — Type of the query.
 -   `databases` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the databases present in the query.
 -   `tables` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the tables present in the query.
+-   `views` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the (materialized or live) views present in the query.
 -   `columns` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the columns present in the query.
 -   `projections` ([String](../../sql-reference/data-types/string.md)) — Names of the projections used during the query execution.
 -   `exception_code` ([Int32](../../sql-reference/data-types/int-uint.md)) — Code of an exception.
@@ -180,5 +183,6 @@ used_table_functions:                  []
 **See Also**
 
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — This table contains information about each query execution thread.
+-   [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) — This table contains information about each view executed during a query.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/query_log) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/query_log) <!--hide-->

@@ -6,10 +6,9 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/SymbolIndex.h>
+#include <Common/Stopwatch.h>
 
-#if !defined(ARCADIA_BUILD)
-#   include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 
 namespace DB

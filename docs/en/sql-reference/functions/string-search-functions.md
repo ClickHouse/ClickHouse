@@ -502,7 +502,7 @@ The same thing as ‘like’, but negative.
 
 ## ilike {#ilike}
 
-Case insensitive variant of [like](https://clickhouse.tech/docs/en/sql-reference/functions/string-search-functions/#function-like) function. You can use `ILIKE` operator instead of the `ilike` function.
+Case insensitive variant of [like](https://clickhouse.com/docs/en/sql-reference/functions/string-search-functions/#function-like) function. You can use `ILIKE` operator instead of the `ilike` function.
 
 **Syntax**
 
@@ -558,7 +558,7 @@ Result:
 
 **See Also**
 
--   [like](https://clickhouse.tech/docs/en/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
+-   [like](https://clickhouse.com/docs/en/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
 
 ## ngramDistance(haystack, needle) {#ngramdistancehaystack-needle}
 

@@ -10,8 +10,6 @@ class FieldVisitorDump : public StaticVisitor<String>
 {
 public:
     String operator() (const Null & x) const;
-    String operator() (const NegativeInfinity & x) const;
-    String operator() (const PositiveInfinity & x) const;
     String operator() (const UInt64 & x) const;
     String operator() (const UInt128 & x) const;
     String operator() (const UInt256 & x) const;

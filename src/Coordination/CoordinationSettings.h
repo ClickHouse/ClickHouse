@@ -11,9 +11,11 @@ namespace DB
 
 struct Settings;
 
+
 /** These settings represent fine tunes for internal details of Coordination storages
   * and should not be changed by the user without a reason.
   */
+
 
 #define LIST_OF_COORDINATION_SETTINGS(M) \
     M(Milliseconds, session_timeout_ms, Coordination::DEFAULT_SESSION_TIMEOUT_MS, "Default client session timeout", 0) \
@@ -26,7 +28,7 @@ struct Settings;
     M(UInt64, snapshot_distance, 100000, "How many log items we have to collect to write new snapshot", 0) \
     M(Bool, auto_forwarding, true, "Allow to forward write requests from followers to leader", 0) \
     M(Milliseconds, shutdown_timeout, 5000, "How many time we will until RAFT shutdown", 0) \
-    M(Milliseconds, startup_timeout, 30000, "How many time we will until RAFT to start", 0) \
+    M(Milliseconds, startup_timeout, 180000, "How many time we will until RAFT to start", 0) \
     M(LogsLevel, raft_logs_level, LogsLevel::information, "Log internal RAFT logs into main server log level. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'", 0) \
     M(UInt64, rotate_log_storage_interval, 100000, "How many records will be stored in one log storage file", 0) \
     M(UInt64, snapshots_to_keep, 3, "How many compressed snapshots to keep on disk", 0) \
@@ -34,7 +36,10 @@ struct Settings;
     M(UInt64, fresh_log_gap, 200, "When node became fresh", 0) \
     M(UInt64, max_requests_batch_size, 100, "Max size of batch in requests count before it will be sent to RAFT", 0) \
     M(Bool, quorum_reads, false, "Execute read requests as writes through whole RAFT consesus with similar speed", 0) \
-    M(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0)
+    M(Bool, force_sync, true, "Call fsync on each change in RAFT changelog", 0) \
+    M(Bool, compress_logs, true, "Write compressed coordination logs in ZSTD format", 0) \
+    M(Bool, compress_snapshots_with_zstd_format, true, "Write compressed snapshots in ZSTD format (instead of custom LZ4)", 0) \
+    M(UInt64, configuration_change_tries_count, 20, "How many times we will try to apply configuration change (add/remove server) to the cluster", 0)
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS)
 

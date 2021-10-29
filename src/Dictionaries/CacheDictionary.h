@@ -10,7 +10,7 @@
 
 #include <pcg_random.hpp>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
@@ -51,8 +51,7 @@ template <DictionaryKeyType dictionary_key_type>
 class CacheDictionary final : public IDictionary
 {
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, UInt64, StringRef>;
-    static_assert(dictionary_key_type != DictionaryKeyType::range, "Range key type is not supported by cache dictionary");
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     CacheDictionary(
         const StorageID & dict_id_,
@@ -118,7 +117,7 @@ public:
 
     DictionaryKeyType getKeyType() const override
     {
-        return dictionary_key_type == DictionaryKeyType::simple ? DictionaryKeyType::simple : DictionaryKeyType::complex;
+        return dictionary_key_type == DictionaryKeyType::Simple ? DictionaryKeyType::Simple : DictionaryKeyType::Complex;
     }
 
     ColumnPtr getColumn(
@@ -137,11 +136,11 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    BlockInputStreamPtr getBlockInputStream(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
     std::exception_ptr getLastException() const override;
 
-    bool hasHierarchy() const override { return dictionary_key_type == DictionaryKeyType::simple && dict_struct.hierarchical_attribute_index.has_value(); }
+    bool hasHierarchy() const override { return dictionary_key_type == DictionaryKeyType::Simple && dict_struct.hierarchical_attribute_index.has_value(); }
 
     ColumnPtr getHierarchy(ColumnPtr key_column, const DataTypePtr & key_type) const override;
 
@@ -151,7 +150,7 @@ public:
         const DataTypePtr & key_type) const override;
 
 private:
-    using FetchResult = std::conditional_t<dictionary_key_type == DictionaryKeyType::simple, SimpleKeysStorageFetchResult, ComplexKeysStorageFetchResult>;
+    using FetchResult = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, SimpleKeysStorageFetchResult, ComplexKeysStorageFetchResult>;
 
     static MutableColumns aggregateColumnsInOrderOfKeys(
         const PaddedPODArray<KeyType> & keys,
@@ -219,7 +218,7 @@ private:
 
 };
 
-extern template class CacheDictionary<DictionaryKeyType::simple>;
-extern template class CacheDictionary<DictionaryKeyType::complex>;
+extern template class CacheDictionary<DictionaryKeyType::Simple>;
+extern template class CacheDictionary<DictionaryKeyType::Complex>;
 
 }

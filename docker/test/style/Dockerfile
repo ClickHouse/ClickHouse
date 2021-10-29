@@ -1,5 +1,7 @@
-# docker build -t yandex/clickhouse-style-test .
+# docker build -t clickhouse/style-test .
 FROM ubuntu:20.04
+
+RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
 RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     shellcheck \
@@ -8,7 +10,7 @@ RUN apt-get update && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     python3-pip \
     pylint \
     yamllint \
-    && pip3 install codespell
+    && pip3 install codespell PyGithub boto3 unidiff
 
 COPY run.sh /
 COPY process_style_check_result.py /

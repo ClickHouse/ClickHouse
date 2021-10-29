@@ -11,8 +11,10 @@
 #include <parquet/file_reader.h>
 #include "ArrowBufferedStreams.h"
 #include "ArrowColumnToCHColumn.h"
+#include <DataTypes/NestedUtils.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
+
 
 namespace DB
 {
@@ -30,8 +32,8 @@ namespace ErrorCodes
             throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
     } while (false)
 
-ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_)
-    : IInputFormat(std::move(header_), in_)
+ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
+    : IInputFormat(std::move(header_), in_), format_settings(format_settings_)
 {
 }
 
@@ -91,14 +93,18 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
 
 void ParquetBlockInputFormat::prepareReader()
 {
-    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(in), arrow::default_memory_pool(), &file_reader));
+    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in), arrow::default_memory_pool(), &file_reader));
     row_group_total = file_reader->num_row_groups();
     row_group_current = 0;
 
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(file_reader->GetSchema(&schema));
 
-    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), schema, "Parquet");
+    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "Parquet", format_settings.parquet.import_nested);
+
+    std::unordered_set<String> nested_table_names;
+    if (format_settings.parquet.import_nested)
+        nested_table_names = Nested::getAllTableNames(getPort().getHeader());
 
     int index = 0;
     for (int i = 0; i < schema->num_fields(); ++i)
@@ -107,7 +113,8 @@ void ParquetBlockInputFormat::prepareReader()
         /// nested elements, so we should recursively
         /// count the number of indices we need for this type.
         int indexes_count = countIndicesForType(schema->field(i)->type());
-        if (getPort().getHeader().has(schema->field(i)->name()))
+        const auto & name = schema->field(i)->name();
+        if (getPort().getHeader().has(name) || nested_table_names.contains(name))
         {
             for (int j = 0; j != indexes_count; ++j)
                 column_indices.push_back(index + j);
@@ -116,16 +123,16 @@ void ParquetBlockInputFormat::prepareReader()
     }
 }
 
-void registerInputFormatProcessorParquet(FormatFactory &factory)
+void registerInputFormatParquet(FormatFactory &factory)
 {
-    factory.registerInputFormatProcessor(
+    factory.registerInputFormat(
             "Parquet",
             [](ReadBuffer &buf,
                 const Block &sample,
                 const RowInputFormatParams &,
-                const FormatSettings & /* settings */)
+                const FormatSettings & settings)
             {
-                return std::make_shared<ParquetBlockInputFormat>(buf, sample);
+                return std::make_shared<ParquetBlockInputFormat>(buf, sample, settings);
             });
     factory.markFormatAsColumnOriented("Parquet");
 }
@@ -137,7 +144,7 @@ void registerInputFormatProcessorParquet(FormatFactory &factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatProcessorParquet(FormatFactory &)
+void registerInputFormatParquet(FormatFactory &)
 {
 }
 }

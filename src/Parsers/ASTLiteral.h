@@ -33,6 +33,10 @@ public:
      */
     String unique_column_name;
 
+    /// For compatibility reasons in distributed queries,
+    /// we may need to use legacy column name for tuple literal.
+    bool use_legacy_column_name_of_tuple = false;
+
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Literal" + (delim + applyVisitor(FieldVisitorDump(), value)); }
 
@@ -44,7 +48,6 @@ protected:
     void formatImplWithoutAlias(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 
     void appendColumnNameImpl(WriteBuffer & ostr) const override;
-    void appendColumnNameImpl(WriteBuffer & ostr, const Settings & settings) const override;
 
 private:
     /// Legacy version of 'appendColumnNameImpl'. It differs only with tuple literals.

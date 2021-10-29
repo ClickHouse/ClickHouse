@@ -70,7 +70,7 @@ $ clickhouse-copier --daemon --config zookeeper.xml --task-path /task/path --bas
 		    <!--
                 source cluster & destination clusters accept exactly the same
                 parameters as parameters for the usual Distributed table
-                see https://clickhouse.tech/docs/ru/engines/table-engines/special/distributed/
+                see https://clickhouse.com/docs/ru/engines/table-engines/special/distributed/
             -->
             <shard>
                 <internal_replication>false</internal_replication>

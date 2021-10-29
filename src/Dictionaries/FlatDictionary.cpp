@@ -10,7 +10,10 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <Dictionaries/DictionaryBlockInputStream.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+
+#include <Dictionaries//DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
@@ -286,8 +289,8 @@ void FlatDictionary::blockToAttributes(const Block & block)
 {
     const auto keys_column = block.safeGetByPosition(0).column;
 
-    DictionaryKeysArenaHolder<DictionaryKeyType::simple> arena_holder;
-    DictionaryKeysExtractor<DictionaryKeyType::simple> keys_extractor({ keys_column }, arena_holder.getComplexKeyArena());
+    DictionaryKeysArenaHolder<DictionaryKeyType::Simple> arena_holder;
+    DictionaryKeysExtractor<DictionaryKeyType::Simple> keys_extractor({ keys_column }, arena_holder.getComplexKeyArena());
     auto keys = keys_extractor.extractAllKeys();
 
     HashSet<UInt64> already_processed_keys;
@@ -319,10 +322,11 @@ void FlatDictionary::updateData()
 {
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        auto stream = source_ptr->loadUpdatedAll();
-        stream->readPrefix();
+        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
 
-        while (const auto block = stream->read())
+        PullingPipelineExecutor executor(pipeline);
+        Block block;
+        while (executor.pull(block))
         {
             /// We are using this to keep saved data if input stream consists of multiple blocks
             if (!update_field_loaded_block)
@@ -335,15 +339,14 @@ void FlatDictionary::updateData()
                 saved_column->insertRangeFrom(update_column, 0, update_column.size());
             }
         }
-        stream->readSuffix();
     }
     else
     {
-        auto stream = source_ptr->loadUpdatedAll();
-        mergeBlockWithStream<DictionaryKeyType::simple>(
+        Pipe pipe(source_ptr->loadUpdatedAll());
+        mergeBlockWithPipe<DictionaryKeyType::Simple>(
             dict_struct.getKeysSize(),
             *update_field_loaded_block,
-            stream);
+            std::move(pipe));
     }
 
     if (update_field_loaded_block)
@@ -354,13 +357,12 @@ void FlatDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        auto stream = source_ptr->loadAll();
-        stream->readPrefix();
+        QueryPipeline pipeline(source_ptr->loadAll());
+        PullingPipelineExecutor executor(pipeline);
 
-        while (const auto block = stream->read())
+        Block block;
+        while (executor.pull(block))
             blockToAttributes(block);
-
-        stream->readSuffix();
     }
     else
         updateData();
@@ -401,6 +403,11 @@ void FlatDictionary::calculateBytesAllocated()
         };
 
         callOnDictionaryAttributeType(attribute.type, type_call);
+
+        bytes_allocated += sizeof(attribute.is_nullable_set);
+
+        if (attribute.is_nullable_set.has_value())
+            bytes_allocated = attribute.is_nullable_set->getBufferSizeInBytes();
     }
 
     if (update_field_loaded_block)
@@ -531,7 +538,7 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
     callOnDictionaryAttributeType(attribute.type, type_call);
 }
 
-BlockInputStreamPtr FlatDictionary::getBlockInputStream(const Names & column_names, size_t max_block_size) const
+Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     const auto keys_count = loaded_keys.size();
 
@@ -542,7 +549,20 @@ BlockInputStreamPtr FlatDictionary::getBlockInputStream(const Names & column_nam
         if (loaded_keys[key_index])
             keys.push_back(key_index);
 
-    return std::make_shared<DictionaryBlockInputStream>(shared_from_this(), max_block_size, std::move(keys), column_names);
+    ColumnsWithTypeAndName key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+
+    std::shared_ptr<const IDictionary> dictionary = shared_from_this();
+    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
+
+    Pipes pipes;
+
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        auto source = std::make_shared<DictionarySource>(coordinator);
+        pipes.emplace_back(Pipe(std::move(source)));
+    }
+
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 void registerDictionaryFlat(DictionaryFactory & factory)
@@ -552,7 +572,7 @@ void registerDictionaryFlat(DictionaryFactory & factory)
                             const Poco::Util::AbstractConfiguration & config,
                             const std::string & config_prefix,
                             DictionarySourcePtr source_ptr,
-                            ContextPtr /* context */,
+                            ContextPtr /* global_context */,
                             bool /* created_from_ddl */) -> DictionaryPtr
     {
         if (dict_struct.key)

@@ -173,4 +173,4 @@ $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/pat
 
 `clickhouse-copier` の変更を追跡します `/task/path/description` そしてその場でそれらを適用します。 たとえば、次の値を変更すると `max_workers`、タスクを実行しているプロセスの数も変更されます。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/utils/clickhouse-copier/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/utils/clickhouse-copier/) <!--hide-->

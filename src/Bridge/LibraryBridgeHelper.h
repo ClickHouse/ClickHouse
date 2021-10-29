@@ -11,6 +11,8 @@
 namespace DB
 {
 
+class Pipe;
+
 class LibraryBridgeHelper : public IBridgeHelper
 {
 
@@ -36,13 +38,13 @@ public:
 
     bool supportsSelectiveLoad();
 
-    BlockInputStreamPtr loadAll();
+    Pipe loadAll();
 
-    BlockInputStreamPtr loadIds(const std::vector<uint64_t> & ids);
+    Pipe loadIds(const std::vector<uint64_t> & ids);
 
-    BlockInputStreamPtr loadKeys(const Block & requested_block);
+    Pipe loadKeys(const Block & requested_block);
 
-    BlockInputStreamPtr loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
+    Pipe loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {});
 
     bool executeRequest(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = {}) const;
 

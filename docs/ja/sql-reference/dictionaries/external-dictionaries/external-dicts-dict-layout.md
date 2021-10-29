@@ -399,4 +399,4 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 
 データは `trie`. それはRAMに完全に収まる必要があります。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

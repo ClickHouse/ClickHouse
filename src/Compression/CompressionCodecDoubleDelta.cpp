@@ -1,7 +1,11 @@
+#ifdef HAS_RESERVED_IDENTIFIER
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/CompressionFactory.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTIdentifier.h>
 
@@ -353,12 +357,13 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest)
 }
 
 template <typename ValueType>
-void decompressDataForType(const char * source, UInt32 source_size, char * dest)
+void decompressDataForType(const char * source, UInt32 source_size, char * dest, UInt32 output_size)
 {
     static_assert(is_unsigned_v<ValueType>, "ValueType must be unsigned.");
     using UnsignedDeltaType = ValueType;
 
     const char * source_end = source + source_size;
+    const char * output_end = dest + output_size;
 
     if (source + sizeof(UInt32) > source_end)
         return;
@@ -374,6 +379,8 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
         return;
 
     prev_value = unalignedLoad<ValueType>(source);
+    if (dest + sizeof(prev_value) > output_end)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
     unalignedStore<ValueType>(dest, prev_value);
 
     source += sizeof(prev_value);
@@ -385,6 +392,8 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 
     prev_delta = unalignedLoad<UnsignedDeltaType>(source);
     prev_value = prev_value + static_cast<ValueType>(prev_delta);
+    if (dest + sizeof(prev_value) > output_end)
+        throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
     unalignedStore<ValueType>(dest, prev_value);
 
     source += sizeof(prev_delta);
@@ -416,6 +425,8 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 
         const UnsignedDeltaType delta = double_delta + prev_delta;
         const ValueType curr_value = prev_value + delta;
+        if (dest + sizeof(curr_value) > output_end)
+            throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress the data");
         unalignedStore<ValueType>(dest, curr_value);
         dest += sizeof(curr_value);
 
@@ -502,7 +513,12 @@ void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 s
         throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
 
     UInt8 bytes_size = source[0];
+
+    if (bytes_size == 0)
+        throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
+
     UInt8 bytes_to_skip = uncompressed_size % bytes_size;
+    UInt32 output_size = uncompressed_size - bytes_to_skip;
 
     if (UInt32(2 + bytes_to_skip) > source_size)
         throw Exception("Cannot decompress. File has wrong header", ErrorCodes::CANNOT_DECOMPRESS);
@@ -512,16 +528,16 @@ void CompressionCodecDoubleDelta::doDecompressData(const char * source, UInt32 s
     switch (bytes_size)
     {
     case 1:
-        decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
+        decompressDataForType<UInt8>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
         break;
     case 2:
-        decompressDataForType<UInt16>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
+        decompressDataForType<UInt16>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
         break;
     case 4:
-        decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
+        decompressDataForType<UInt32>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
         break;
     case 8:
-        decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip]);
+        decompressDataForType<UInt64>(&source[2 + bytes_to_skip], source_size_no_header, &dest[bytes_to_skip], output_size);
         break;
     }
 }
@@ -539,4 +555,10 @@ void registerCodecDoubleDelta(CompressionCodecFactory & factory)
         return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size);
     });
 }
+
+CompressionCodecPtr getCompressionCodecDoubleDelta(UInt8 data_bytes_size)
+{
+    return std::make_shared<CompressionCodecDoubleDelta>(data_bytes_size);
+}
+
 }

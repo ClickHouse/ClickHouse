@@ -10,7 +10,7 @@
 #include <Parsers/ASTRolesOrUsersSet.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 
 

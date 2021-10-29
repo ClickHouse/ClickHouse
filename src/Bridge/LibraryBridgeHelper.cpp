@@ -1,10 +1,9 @@
 #include "LibraryBridgeHelper.h"
 
-#include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/OwningBlockInputStream.h>
-#include <DataStreams/formatBlock.h>
+#include <Formats/formatBlock.h>
 #include <Dictionaries/DictionarySourceHelpers.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <QueryPipeline/Pipe.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -12,8 +11,8 @@
 #include <Formats/FormatFactory.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
-#include <common/logger_useful.h>
-#include <common/range.h>
+#include <base/logger_useful.h>
+#include <base/range.h>
 #include <Core/Field.h>
 #include <Common/escapeForFileName.h>
 
@@ -81,6 +80,7 @@ bool LibraryBridgeHelper::bridgeHandShake()
     }
     catch (...)
     {
+        tryLogCurrentException(log);
         return false;
     }
 
@@ -135,8 +135,8 @@ ReadWriteBufferFromHTTP::OutStreamCallback LibraryBridgeHelper::getInitLibraryCa
 {
     /// Sample block must contain null values
     WriteBufferFromOwnString out;
-    auto output_stream = getContext()->getOutputStream(LibraryBridgeHelper::DEFAULT_FORMAT, out, sample_block);
-    formatBlock(output_stream, sample_block);
+    auto output_format = getContext()->getOutputFormat(LibraryBridgeHelper::DEFAULT_FORMAT, out, sample_block);
+    formatBlock(output_format, sample_block);
     auto block_string = out.str();
 
     return [block_string, this](std::ostream & os)
@@ -200,7 +200,7 @@ bool LibraryBridgeHelper::supportsSelectiveLoad()
 }
 
 
-BlockInputStreamPtr LibraryBridgeHelper::loadAll()
+Pipe LibraryBridgeHelper::loadAll()
 {
     startBridgeSync();
     auto uri = createRequestURI(LOAD_ALL_METHOD);
@@ -208,7 +208,7 @@ BlockInputStreamPtr LibraryBridgeHelper::loadAll()
 }
 
 
-BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::vector<uint64_t> & ids)
+Pipe LibraryBridgeHelper::loadIds(const std::vector<uint64_t> & ids)
 {
     startBridgeSync();
     auto uri = createRequestURI(LOAD_IDS_METHOD);
@@ -218,7 +218,7 @@ BlockInputStreamPtr LibraryBridgeHelper::loadIds(const std::vector<uint64_t> & i
 }
 
 
-BlockInputStreamPtr LibraryBridgeHelper::loadKeys(const Block & requested_block)
+Pipe LibraryBridgeHelper::loadKeys(const Block & requested_block)
 {
     startBridgeSync();
     auto uri = createRequestURI(LOAD_KEYS_METHOD);
@@ -227,8 +227,8 @@ BlockInputStreamPtr LibraryBridgeHelper::loadKeys(const Block & requested_block)
     ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback = [requested_block, this](std::ostream & os)
     {
         WriteBufferFromOStream out_buffer(os);
-        auto output_stream = getContext()->getOutputStream(LibraryBridgeHelper::DEFAULT_FORMAT, out_buffer, sample_block);
-        formatBlock(output_stream, requested_block);
+        auto output_format = getContext()->getOutputFormat(LibraryBridgeHelper::DEFAULT_FORMAT, out_buffer, requested_block.cloneEmpty());
+        formatBlock(output_format, requested_block);
     };
     return loadBase(uri, out_stream_callback);
 }
@@ -248,7 +248,7 @@ bool LibraryBridgeHelper::executeRequest(const Poco::URI & uri, ReadWriteBufferF
 }
 
 
-BlockInputStreamPtr LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback)
+Pipe LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback)
 {
     auto read_buf_ptr = std::make_unique<ReadWriteBufferFromHTTP>(
         uri,
@@ -258,10 +258,12 @@ BlockInputStreamPtr LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWri
         0,
         Poco::Net::HTTPBasicCredentials{},
         DBMS_DEFAULT_BUFFER_SIZE,
+        getContext()->getReadSettings(),
         ReadWriteBufferFromHTTP::HTTPHeaderEntries{});
 
-    auto input_stream = getContext()->getInputFormat(LibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, DEFAULT_BLOCK_SIZE);
-    return std::make_shared<OwningBlockInputStream<ReadWriteBufferFromHTTP>>(input_stream, std::move(read_buf_ptr));
+    auto source = FormatFactory::instance().getInput(LibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, getContext(), DEFAULT_BLOCK_SIZE);
+    source->addBuffer(std::move(read_buf_ptr));
+    return Pipe(std::move(source));
 }
 
 

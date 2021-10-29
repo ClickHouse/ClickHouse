@@ -8,10 +8,10 @@
     </preconditions>
 
     <create_query>CREATE TABLE hits_100m_words (words Array(String), UserID UInt64) ENGINE Memory</create_query>
-    <create_query>CREATE TABLE hits_100m_words_ws (words Array(String), UserID UInt64) ENGINE Memory</create_query>
+    <fill_query>INSERT INTO hits_100m_words SELECT splitByNonAlpha(SearchPhrase) AS words, UserID FROM hits_100m_single WHERE length(words) > 0</fill_query>
 
-    <query>INSERT INTO hits_100m_words SELECT splitByNonAlpha(SearchPhrase) AS words, UserID FROM hits_100m_single WHERE length(words) > 0</query>
-    <query>INSERT INTO hits_100m_words_ws SELECT splitByWhitespace(SearchPhrase) AS words, UserID FROM hits_100m_single WHERE length(words) > 0</query>
+    <query>SELECT splitByNonAlpha(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
+    <query>SELECT splitByWhitespace(SearchPhrase) FROM hits_100m_single FORMAT Null</query>
 
     <query>SELECT arrayMap(x -> stem('ru', x), words) FROM hits_100m_words FORMAT Null</query>
 

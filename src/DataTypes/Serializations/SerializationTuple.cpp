@@ -1,6 +1,7 @@
-#include <common/map.h>
-#include <common/range.h>
+#include <base/map.h>
+#include <base/range.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Core/Field.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
@@ -281,10 +282,22 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
     });
 }
 
-void SerializationTuple::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void SerializationTuple::enumerateStreams(
+    SubstreamPath & path,
+    const StreamCallback & callback,
+    DataTypePtr type,
+    ColumnPtr column) const
 {
-    for (const auto & elem : elems)
-        elem->enumerateStreams(callback, path);
+    const auto * type_tuple = type ? &assert_cast<const DataTypeTuple &>(*type) : nullptr;
+    const auto * column_tuple = column ? &assert_cast<const ColumnTuple &>(*column) : nullptr;
+
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
+        auto next_type = type_tuple ? type_tuple->getElement(i) : nullptr;
+        auto next_column = column_tuple ? column_tuple->getColumnPtr(i) : nullptr;
+
+        elems[i]->enumerateStreams(path, callback, next_type, next_column);
+    }
 }
 
 struct SerializeBinaryBulkStateTuple : public ISerialization::SerializeBinaryBulkState

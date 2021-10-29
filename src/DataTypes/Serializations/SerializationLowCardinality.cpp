@@ -18,6 +18,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -39,11 +40,27 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 {
 }
 
-void SerializationLowCardinality::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void SerializationLowCardinality::enumerateStreams(
+    SubstreamPath & path,
+    const StreamCallback & callback,
+    DataTypePtr type,
+    ColumnPtr column) const
 {
+    const auto * column_lc = column ? &getColumnLowCardinality(*column) : nullptr;
+
+    SubstreamData data;
+    data.type = type ? dictionary_type : nullptr;
+    data.column = column_lc ? column_lc->getDictionary().getNestedColumn() : nullptr;
+    data.serialization = dict_inner_serialization;
+
     path.push_back(Substream::DictionaryKeys);
-    dict_inner_serialization->enumerateStreams(callback, path);
+    path.back().data = data;
+
+    dict_inner_serialization->enumerateStreams(path, callback, data.type, data.column);
+
     path.back() = Substream::DictionaryIndexes;
+    path.back().data = {type, column, getPtr(), nullptr};
+
     callback(path);
     path.pop_back();
 }
@@ -64,7 +81,7 @@ struct KeysSerializationVersion
     static void checkVersion(UInt64 version)
     {
         if (version != SharedDictionariesWithAdditionalKeys)
-            throw Exception("Invalid version for SerializationLowCardinality key column.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Invalid version for SerializationLowCardinality key column.", ErrorCodes::INCORRECT_DATA);
     }
 
     explicit KeysSerializationVersion(UInt64 version) : value(static_cast<Value>(version)) { checkVersion(version); }
@@ -105,7 +122,7 @@ struct IndexesSerializationType
         if (value <= TUInt64)
             return;
 
-        throw Exception("Invalid type for SerializationLowCardinality index column.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Invalid type for SerializationLowCardinality index column.", ErrorCodes::INCORRECT_DATA);
     }
 
     void serialize(WriteBuffer & buffer) const
@@ -120,15 +137,24 @@ struct IndexesSerializationType
         writeIntBinary(val, buffer);
     }
 
-    void deserialize(ReadBuffer & buffer)
+    void deserialize(ReadBuffer & buffer, const ISerialization::DeserializeBinaryBulkSettings & settings)
     {
         SerializationType val;
         readIntBinary(val, buffer);
+
         checkType(val);
         has_additional_keys = (val & HasAdditionalKeysBit) != 0;
         need_global_dictionary = (val & NeedGlobalDictionaryBit) != 0;
         need_update_dictionary = (val & NeedUpdateDictionary) != 0;
         type = static_cast<Type>(resetFlags(val));
+
+        if (settings.native_format)
+        {
+            if (need_global_dictionary)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                                "LowCardinality indexes serialization type for Native format "
+                                "cannot use global dictionary");
+        }
     }
 
     IndexesSerializationType(const IColumn & column,
@@ -519,8 +545,8 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
         /// Insert used_keys into global dictionary and update sub_index.
         auto indexes_with_overflow = global_dictionary->uniqueInsertRangeWithOverflow(*keys, 0, keys->size(),
                                                                                       settings.low_cardinality_max_dictionary_size);
-        size_t max_size = settings.low_cardinality_max_dictionary_size + indexes_with_overflow.overflowed_keys->size();
-        ColumnLowCardinality::Index(indexes_with_overflow.indexes->getPtr()).check(max_size);
+        // size_t max_size = settings.low_cardinality_max_dictionary_size + indexes_with_overflow.overflowed_keys->size();
+        // ColumnLowCardinality::Index(indexes_with_overflow.indexes->getPtr()).check(max_size);
 
         if (global_dictionary->size() > settings.low_cardinality_max_dictionary_size)
             throw Exception("Got dictionary with size " + toString(global_dictionary->size()) +
@@ -614,6 +640,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     {
         UInt64 num_keys;
         readIntBinary(num_keys, *indexes_stream);
+
         auto keys_type = removeNullable(dictionary_type);
         auto additional_keys = keys_type->createColumn();
         dict_inner_serialization->deserializeBinaryBulk(*additional_keys, *indexes_stream, num_keys, 0);
@@ -660,10 +687,10 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         {
             auto maps = mapIndexWithAdditionalKeys(*indexes_column, global_dictionary->size());
 
-            ColumnLowCardinality::Index(maps.additional_keys_map->getPtr()).check(additional_keys->size());
+            // ColumnLowCardinality::Index(maps.additional_keys_map->getPtr()).check(additional_keys->size());
 
-            ColumnLowCardinality::Index(indexes_column->getPtr()).check(
-                    maps.dictionary_map->size() + maps.additional_keys_map->size());
+            // ColumnLowCardinality::Index(indexes_column->getPtr()).check(
+            //         maps.dictionary_map->size() + maps.additional_keys_map->size());
 
             auto used_keys = IColumn::mutate(global_dictionary->getNestedColumn()->index(*maps.dictionary_map, 0));
 
@@ -702,7 +729,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
             auto & index_type = low_cardinality_state->index_type;
             auto & global_dictionary = low_cardinality_state->global_dictionary;
 
-            index_type.deserialize(*indexes_stream);
+            index_type.deserialize(*indexes_stream, settings);
 
             bool need_update_dictionary =
                 !global_dictionary || index_type.need_update_dictionary || low_cardinality_state->need_update_dictionary;

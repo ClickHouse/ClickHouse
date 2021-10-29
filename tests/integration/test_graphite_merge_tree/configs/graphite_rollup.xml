@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <!-- retention scheme for GraphiteMergeTree engine-->
     <graphite_rollup>
         <path_column_name>metric</path_column_name>
@@ -115,4 +115,4 @@
             </retention>
         </default>
     </graphite_rollup_wrong_age_precision>
-</yandex>
+</clickhouse>
