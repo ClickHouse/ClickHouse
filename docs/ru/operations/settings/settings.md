@@ -1361,6 +1361,32 @@ load_balancing = round_robin
 
 Значение по умолчанию: `3`.
 
+## compile_aggregate_expressions {#compile_aggregate_expressions}
+
+Включает или отключает компиляцию агрегированных функций в нативный код во время выполнения запроса. Включение настройки `compile_aggregate_expressions` может улучшить производительность выполнения запросов.
+
+Возможные значения:
+
+-   0 — агрегированные функции не компилируются в нативный код.
+-   1 — агрегированные функции компилируются в нативный код в процессе выполнения запроса.
+
+Значение по умолчанию: `0`.
+
+**См. также** 
+
+-   [min_count_to_compile_aggregate_expression](#min_count_to_compile_aggregate_expression)
+
+## min_count_to_compile_aggregate_expression {#min_count_to_compile_aggregate_expression}
+
+Если настройка [compile_aggregate_expressions](#compile_aggregate_expressions) включена и в ходе выполнения одного запроса агрегированная функция выполняется более `min_count_to_compile_aggregate_expression` раз для одного и того же выражения, тогда эта агрегированная функция компилируется в нативный код.
+
+Возможные значения:
+
+-   Целое положительное число.
+-   0 — агрегированные функциии для одинаковых выражений всегда компилируются в ходе выполнения запроса (если `compile_aggregate_expressions = 1`).
+
+Значение по умолчанию: `0`.
+
 ## input_format_skip_unknown_fields {#input-format-skip-unknown-fields}
 
 Если значение равно true, то при выполнении INSERT входные данные из столбцов с неизвестными именами будут пропущены. В противном случае эта ситуация создаст исключение.
