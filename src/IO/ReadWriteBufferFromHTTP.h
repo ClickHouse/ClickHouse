@@ -216,7 +216,7 @@ namespace detail
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "Invalid setting for http backoff, "
                                 "must be http_max_tries >= 1 (current is {}) and "
-                                "0 < http_retry_initial_backoff_ms < settings.http_retry_max_backoff_ms (but now {} > {})",
+                                "0 < http_retry_initial_backoff_ms < settings.http_retry_max_backoff_ms (now 0 < {} < {})",
                                 settings.http_max_tries, settings.http_retry_initial_backoff_ms, settings.http_retry_max_backoff_ms);
 
             if (!delay_initialization)
@@ -317,8 +317,6 @@ namespace detail
 
                 if (successful_read || milliseconds_to_wait >= settings.http_retry_max_backoff_ms)
                     break;
-
-                milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
             }
 
             if (!successful_read && exception)
