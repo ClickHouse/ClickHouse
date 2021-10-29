@@ -32,7 +32,7 @@
 #   include <IO/ReadHelpers.h>
 #   include <IO/WriteBufferFromString.h>
 #   include <IO/WriteHelpers.h>
-#   include <common/range.h>
+#   include <base/range.h>
 #   include <google/protobuf/descriptor.h>
 #   include <google/protobuf/descriptor.pb.h>
 #   include <boost/algorithm/string.hpp>
@@ -41,7 +41,7 @@
 #   include <boost/numeric/conversion/cast.hpp>
 #   include <boost/range/algorithm.hpp>
 #   include <boost/range/algorithm_ext/erase.hpp>
-#   include <common/logger_useful.h>
+#   include <base/logger_useful.h>
 
 namespace DB
 {
@@ -1239,7 +1239,7 @@ namespace
                             else
                             {
                                 WriteBufferFromOwnString buf;
-                                writeText(decimal, scale, buf);
+                                writeText(decimal, scale, buf, false);
                                 cannotConvertValue(buf.str(), TypeName<DecimalType>, field_descriptor.type_name());
                             }
                         };
@@ -1316,9 +1316,9 @@ namespace
         {
             WriteBufferFromString buf{str};
             if constexpr (std::is_same_v<DecimalType, DateTime64>)
-               writeDateTimeText(decimal, scale, buf);
+                writeDateTimeText(decimal, scale, buf);
             else
-                writeText(decimal, scale, buf);
+                writeText(decimal, scale, buf, false);
         }
 
         DecimalType stringToDecimal(const String & str) const

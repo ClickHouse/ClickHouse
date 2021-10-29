@@ -5,13 +5,11 @@ FROM test_order_by
 ORDER BY timestamp ASC
 LIMIT 10
 Expression (Projection)
-  Limit (preliminary LIMIT)
-    MergingSorted (Merge sorted streams for ORDER BY)
-      MergeSorting (Merge sorted blocks for ORDER BY)
-        PartialSorting (Sort each block for ORDER BY)
-          Expression (Before ORDER BY)
-            SettingQuotaAndLimits (Set limits and quota after reading from storage)
-              ReadFromMergeTree
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting (Sorting for ORDER BY)
+      Expression (Before ORDER BY)
+        SettingQuotaAndLimits (Set limits and quota after reading from storage)
+          ReadFromMergeTree
 SELECT
     timestamp,
     key
@@ -19,8 +17,8 @@ FROM test_order_by
 ORDER BY toDate(timestamp) ASC
 LIMIT 10
 Expression (Projection)
-  Limit (preliminary LIMIT)
-    FinishSorting
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting
       Expression (Before ORDER BY)
         SettingQuotaAndLimits (Set limits and quota after reading from storage)
           ReadFromMergeTree
@@ -33,8 +31,8 @@ ORDER BY
     timestamp ASC
 LIMIT 10
 Expression (Projection)
-  Limit (preliminary LIMIT)
-    FinishSorting
+  Limit (preliminary LIMIT (without OFFSET))
+    Sorting
       Expression (Before ORDER BY)
         SettingQuotaAndLimits (Set limits and quota after reading from storage)
           ReadFromMergeTree

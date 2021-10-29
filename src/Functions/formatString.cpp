@@ -5,7 +5,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <common/range.h>
+#include <base/range.h>
 
 #include <memory>
 #include <string>
@@ -36,6 +36,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 0; }
 

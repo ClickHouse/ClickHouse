@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Net/TCPServerConnection.h>
-#include <common/getFQDNOrHostName.h>
+#include <base/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -9,13 +9,13 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include "IServer.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
 #endif
+
+#include <memory>
 
 namespace CurrentMetrics
 {
@@ -61,7 +61,7 @@ protected:
     uint8_t sequence_id = 0;
 
     MySQLProtocol::PacketEndpointPtr packet_endpoint;
-    ContextMutablePtr connection_context;
+    std::unique_ptr<Session> session;
 
     using ReplacementFn = std::function<String(const String & query)>;
     using Replacements = std::unordered_map<std::string, ReplacementFn>;

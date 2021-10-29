@@ -16,8 +16,7 @@ public:
     bool empty() const override;
 
     void serializeBinary(WriteBuffer & ostr) const override;
-
-    void deserializeBinary(ReadBuffer & istr) override;
+    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     const std::vector<BloomFilterPtr> & getFilters() const { return bloom_filters; }
 

@@ -486,7 +486,7 @@ SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[
 
 ## ilike {#ilike}
 
-Нечувствительный к регистру вариант функции [like](https://clickhouse.tech/docs/ru/sql-reference/functions/string-search-functions/#function-like). Вы можете использовать оператор `ILIKE` вместо функции `ilike`.
+Нечувствительный к регистру вариант функции [like](https://clickhouse.com/docs/ru/sql-reference/functions/string-search-functions/#function-like). Вы можете использовать оператор `ILIKE` вместо функции `ilike`.
 
 **Синтаксис**
 
@@ -542,7 +542,7 @@ SELECT * FROM Months WHERE ilike(name, '%j%');
 
 **Смотрите также**
 
--   [like](https://clickhouse.tech/docs/ru/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
+-   [like](https://clickhouse.com/docs/ru/sql-reference/functions/string-search-functions/#function-like) <!--hide-->
 
 ## ngramDistance(haystack, needle) {#ngramdistancehaystack-needle}
 

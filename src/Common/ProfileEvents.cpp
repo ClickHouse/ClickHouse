@@ -227,7 +227,8 @@
     M(CreatedHTTPConnections, "Total amount of created HTTP connections (counter increase every time connection is created).") \
     \
     M(CannotWriteToWriteBufferDiscard, "Number of stack traces dropped by query profiler or signal handler because pipe is full or cannot write to pipe.") \
-    M(QueryProfilerSignalOverruns, "Number of times we drop processing of a signal due to overrun plus the number of signals that OS has not delivered due to overrun.") \
+    M(QueryProfilerSignalOverruns, "Number of times we drop processing of a query profiler signal due to overrun plus the number of signals that OS has not delivered due to overrun.") \
+    M(QueryProfilerRuns, "Number of times QueryProfiler had been run.") \
     \
     M(CreatedLogEntryForMerge, "Successfully created log entry to merge parts in ReplicatedMergeTree.") \
     M(NotCreatedLogEntryForMerge, "Log entry to merge parts in ReplicatedMergeTree is not created due to concurrent log update by another replica.") \
@@ -249,8 +250,28 @@
     M(S3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
     \
+    M(RemoteFSReadMicroseconds, "Time of reading from remote filesystem.") \
+    M(RemoteFSReadBytes, "Read bytes from remote filesystem.") \
+    \
+    M(RemoteFSSeeks, "Total number of seeks for async buffer") \
+    M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
+    M(RemoteFSCancelledPrefetches, "Number of cancelled prefecthes (because of seek)") \
+    M(RemoteFSUnusedPrefetches, "Number of prefetches pending at buffer destruction") \
+    M(RemoteFSPrefetchedReads, "Number of reads from prefecthed buffer") \
+    M(RemoteFSUnprefetchedReads, "Number of reads from unprefetched buffer") \
+    M(RemoteFSBuffers, "Number of buffers created for asynchronous reading from remote filesystem") \
+    \
     M(SleepFunctionCalls, "Number of times a sleep function (sleep, sleepEachRow) has been called.") \
     M(SleepFunctionMicroseconds, "Time spent sleeping due to a sleep function call.") \
+    \
+    M(ThreadPoolReaderPageCacheHit, "Number of times the read inside ThreadPoolReader was done from page cache.") \
+    M(ThreadPoolReaderPageCacheHitBytes, "Number of bytes read inside ThreadPoolReader when it was done from page cache.") \
+    M(ThreadPoolReaderPageCacheHitElapsedMicroseconds, "Time spent reading data from page cache in ThreadPoolReader.") \
+    M(ThreadPoolReaderPageCacheMiss, "Number of times the read inside ThreadPoolReader was not done from page cache and was hand off to thread pool.") \
+    M(ThreadPoolReaderPageCacheMissBytes, "Number of bytes read inside ThreadPoolReader when read was not done from page cache and was hand off to thread pool.") \
+    M(ThreadPoolReaderPageCacheMissElapsedMicroseconds, "Time spent reading data inside the asynchronous job in ThreadPoolReader - when read was not done from page cache.") \
+    \
+    M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
 
 
 namespace ProfileEvents
@@ -292,11 +313,15 @@ void Counters::reset()
     resetCounters();
 }
 
-Counters Counters::getPartiallyAtomicSnapshot() const
+Counters::Snapshot::Snapshot()
+    : counters_holder(new Count[num_counters] {})
+{}
+
+Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
-    Counters res(VariableContext::Snapshot, nullptr);
+    Snapshot res;
     for (Event i = 0; i < num_counters; ++i)
-        res.counters[i].store(counters[i].load(std::memory_order_relaxed), std::memory_order_relaxed);
+        res.counters_holder[i] = counters[i].load(std::memory_order_relaxed);
     return res;
 }
 

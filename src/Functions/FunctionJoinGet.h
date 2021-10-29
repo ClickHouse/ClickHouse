@@ -14,13 +14,15 @@ class StorageJoin;
 using StorageJoinPtr = std::shared_ptr<StorageJoin>;
 
 template <bool or_null>
-class ExecutableFunctionJoinGet final : public IExecutableFunction
+class ExecutableFunctionJoinGet final : public IExecutableFunction, WithContext
 {
 public:
-    ExecutableFunctionJoinGet(TableLockHolder table_lock_,
+    ExecutableFunctionJoinGet(ContextPtr context_,
+                              TableLockHolder table_lock_,
                               StorageJoinPtr storage_join_,
                               const DB::Block & result_columns_)
-        : table_lock(std::move(table_lock_))
+        : WithContext(context_)
+        , table_lock(std::move(table_lock_))
         , storage_join(std::move(storage_join_))
         , result_columns(result_columns_)
     {}
@@ -42,15 +44,17 @@ private:
 };
 
 template <bool or_null>
-class FunctionJoinGet final : public IFunctionBase
+class FunctionJoinGet final : public IFunctionBase, WithContext
 {
 public:
     static constexpr auto name = or_null ? "joinGetOrNull" : "joinGet";
 
-    FunctionJoinGet(TableLockHolder table_lock_,
+    FunctionJoinGet(ContextPtr context_,
+                    TableLockHolder table_lock_,
                     StorageJoinPtr storage_join_, String attr_name_,
                     DataTypes argument_types_, DataTypePtr return_type_)
-        : table_lock(std::move(table_lock_))
+        : WithContext(context_)
+        , table_lock(std::move(table_lock_))
         , storage_join(storage_join_)
         , attr_name(std::move(attr_name_))
         , argument_types(std::move(argument_types_))
@@ -59,6 +63,8 @@ public:
     }
 
     String getName() const override { return name; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     const DataTypes & getArgumentTypes() const override { return argument_types; }
     const DataTypePtr & getResultType() const override { return return_type; }

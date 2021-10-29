@@ -195,23 +195,25 @@ class _NetworkManager:
                         print("Error removing network blocade container, will try again", str(ex))
                         time.sleep(i)
 
-            image = subprocess.check_output("docker images -q yandex/clickhouse-integration-helper 2>/dev/null", shell=True)
+            image = subprocess.check_output("docker images -q clickhouse/integration-helper 2>/dev/null", shell=True)
             if not image.strip():
                 print("No network image helper, will try download")
                 # for some reason docker api may hang if image doesn't exist, so we download it
                 # before running
                 for i in range(5):
                     try:
-                        subprocess.check_call("docker pull yandex/clickhouse-integration-helper", shell=True)   # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                        subprocess.check_call("docker pull clickhouse/integration-helper", shell=True)   # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
                         break
                     except:
                         time.sleep(i)
                 else:
-                    raise Exception("Cannot pull yandex/clickhouse-integration-helper image")
+                    raise Exception("Cannot pull clickhouse/integration-helper image")
 
-            self._container = self._docker_client.containers.run('yandex/clickhouse-integration-helper',
+            self._container = self._docker_client.containers.run('clickhouse/integration-helper',
                                                                  auto_remove=True,
                                                                  command=('sleep %s' % self.container_exit_timeout),
+                                                                 # /run/xtables.lock passed inside for correct iptables --wait
+                                                                 volumes={'/run/xtables.lock': {'bind': '/run/xtables.lock', 'mode': 'ro' }},
                                                                  detach=True, network_mode='host')
             container_id = self._container.id
             self._container_expire_time = time.time() + self.container_expire_timeout
@@ -240,15 +242,27 @@ class _NetworkManager:
 
 # Approximately mesure network I/O speed for interface
 class NetThroughput(object):
-    def __init__(self, node, interface="eth0"):
-        self.interface = interface
+    def __init__(self, node):
         self.node = node
+        # trying to get default interface and check it in /proc/net/dev
+        self.interface = self.node.exec_in_container(["bash", "-c", "awk '{print $1 \" \" $2}' /proc/net/route | grep 00000000 | awk '{print $1}'"]).strip()
+        check = self.node.exec_in_container(["bash", "-c", f'grep "^ *{self.interface}:" /proc/net/dev']).strip()
+        if not check: # if check is not successful just try eth{1-10}
+            for i in range(10):
+                try:
+                    self.interface = self.node.exec_in_container(["bash", "-c", f"awk '{{print $1}}' /proc/net/route | grep 'eth{i}'"]).strip()
+                    break
+                except Exception as ex:
+                    print(f"No interface eth{i}")
+            else:
+                raise Exception("No interface eth{1-10} and default interface not specified in /proc/net/route, maybe some special network configuration")
+
         try:
-            check = subprocess.check_output(f'grep "^ *{self.interface}:" /proc/net/dev', shell=True)
+            check = self.node.exec_in_container(["bash", "-c", f'grep "^ *{self.interface}:" /proc/net/dev']).strip()
             if not check:
                 raise Exception(f"No such interface {self.interface} found in /proc/net/dev")
         except:
-            logging.error("All available interfaces %s", subprocess.check_output("cat /proc/net/dev", shell=True))
+            logging.error("All available interfaces %s", self.node.exec_in_container(["bash", "-c", "cat /proc/net/dev"]))
             raise Exception(f"No such interface {self.interface} found in /proc/net/dev")
 
         self.current_in = self._get_in_bytes()

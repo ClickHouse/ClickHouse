@@ -50,7 +50,7 @@ struct HexImpl
             UInt8 byte = x >> offset;
 
             /// Skip leading zeros
-            if (byte == 0 && !was_nonzero && offset)
+            if (byte == 0 && !was_nonzero && offset) //-V560
                 continue;
 
             was_nonzero = true;
@@ -138,7 +138,7 @@ struct BinImpl
             UInt8 byte = x >> offset;
 
             /// Skip leading zeros
-            if (byte == 0 && !was_nonzero && offset)
+            if (byte == 0 && !was_nonzero && offset) //-V560
                 continue;
 
             was_nonzero = true;
@@ -261,6 +261,8 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -493,6 +495,8 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

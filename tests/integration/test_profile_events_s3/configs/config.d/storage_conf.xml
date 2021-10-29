@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <storage_configuration>
         <disks>
             <s3>
@@ -18,4 +18,4 @@
             </s3>
         </policies>
     </storage_configuration>
-</yandex>
+</clickhouse>

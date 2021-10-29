@@ -260,4 +260,4 @@ WHERE isNotNull(y)
 1 rows in set. Elapsed: 0.002 sec.
 ```
 
-[来源文章](https://clickhouse.tech/docs/en/query_language/operators/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/query_language/operators/) <!--hide-->

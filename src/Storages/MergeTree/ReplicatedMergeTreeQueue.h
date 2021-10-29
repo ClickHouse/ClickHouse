@@ -31,6 +31,8 @@ class ReplicatedMergeTreeQueue
 private:
     friend class CurrentlyExecuting;
     friend class ReplicatedMergeTreeMergePredicate;
+    friend class MergeFromLogEntryTask;
+    friend class ReplicatedMergeMutateTaskBase;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
@@ -154,6 +156,8 @@ private:
     /// We need it because alters have to be executed sequentially (one by one).
     ReplicatedMergeTreeAltersSequence alter_sequence;
 
+    Strings broken_parts_to_enqueue_fetches_on_loading;
+
     /// List of subscribers
     /// A subscriber callback is called when an entry queue is deleted
     mutable std::mutex subscribers_mutex;
@@ -206,7 +210,7 @@ private:
       * Should be called under state_mutex.
       */
     bool isNotCoveredByFuturePartsImpl(
-        const String & log_entry_name,
+        const LogEntry & entry,
         const String & new_part_name, String & out_reason,
         std::lock_guard<std::mutex> & state_lock) const;
 
@@ -277,8 +281,8 @@ public:
     /// Clears queue state
     void clear();
 
-    /// Put a set of (already existing) parts in virtual_parts.
-    void initialize(const MergeTreeData::DataParts & parts);
+    /// Get set of parts from zookeeper
+    void initialize(zkutil::ZooKeeperPtr zookeeper);
 
     /** Inserts an action to the end of the queue.
       * To restore broken parts during operation.
@@ -294,13 +298,22 @@ public:
 
     bool removeFailedQuorumPart(const MergeTreePartInfo & part_info);
 
+    enum PullLogsReason
+    {
+        LOAD,
+        UPDATE,
+        MERGE_PREDICATE,
+        SYNC,
+        OTHER,
+    };
+
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
       * If watch_callback is not empty, will call it when new entries appear in the log.
       * If there were new entries, notifies storage.queue_task_handle.
       * Additionally loads mutations (so that the set of mutations is always more recent than the queue).
       * Return the version of "logs" node (that is updated for every merge/mutation/... added to the log)
       */
-    int32_t pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
+    int32_t pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {}, PullLogsReason reason = OTHER);
 
     /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task.
     /// If watch_callback is not empty, will call it when new mutations appear in ZK.
@@ -312,8 +325,10 @@ public:
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.
+      * covering_entry is as an entry that caused removal of entries in range (usually, DROP_RANGE)
       */
-    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info, const ReplicatedMergeTreeLogEntryData & current);
+    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info,
+                                       const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry);
 
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue
@@ -444,6 +459,13 @@ public:
     /// It's needed because queue itself can trigger it's task handler and in
     /// this case race condition is possible.
     QueueLocks lockQueue();
+
+    /// Can be called only on data parts loading.
+    /// We need loaded queue to create GET_PART entry for broken (or missing) part,
+    /// but queue is not loaded yet on data parts loading.
+    void setBrokenPartsToEnqueueFetchesOnLoading(Strings && parts_to_fetch);
+    /// Must be called right after queue loading.
+    void createLogEntriesToFetchBrokenParts();
 };
 
 class ReplicatedMergeTreeMergePredicate

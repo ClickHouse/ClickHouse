@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS 01682_database_for_cache_dictionary;
 CREATE DATABASE 01682_database_for_cache_dictionary;
 

@@ -2862,17 +2862,17 @@ version: 1.0
 * **GDPR:** https://en.wikipedia.org/wiki/General_Data_Protection_Regulation
 * **MySQL:** https://www.mysql.com/
 * **AES:** https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
-* **ClickHouse:** https://clickhouse.tech
+* **ClickHouse:** https://clickhouse.com
 * **Git:** https://git-scm.com/
 
 [AEAD]: #aead
 [OpenSSL]: https://www.openssl.org/
-[LowCardinality]: https://clickhouse.tech/docs/en/sql-reference/data-types/lowcardinality/
-[MergeTree]: https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/
-[MySQL Database Engine]: https://clickhouse.tech/docs/en/engines/database-engines/mysql/
-[MySQL Table Engine]: https://clickhouse.tech/docs/en/engines/table-engines/integrations/mysql/
-[MySQL Table Function]: https://clickhouse.tech/docs/en/sql-reference/table-functions/mysql/
-[MySQL Dictionary]: https://clickhouse.tech/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources/#dicts-external_dicts_dict_sources-mysql
+[LowCardinality]: https://clickhouse.com/docs/en/sql-reference/data-types/lowcardinality/
+[MergeTree]: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/
+[MySQL Database Engine]: https://clickhouse.com/docs/en/engines/database-engines/mysql/
+[MySQL Table Engine]: https://clickhouse.com/docs/en/engines/table-engines/integrations/mysql/
+[MySQL Table Function]: https://clickhouse.com/docs/en/sql-reference/table-functions/mysql/
+[MySQL Dictionary]: https://clickhouse.com/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources/#dicts-external_dicts_dict_sources-mysql
 [GCM]: https://en.wikipedia.org/wiki/Galois/Counter_Mode
 [CTR]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Counter_(CTR)
 [CBC]: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Cipher_block_chaining_(CBC)
@@ -2887,7 +2887,7 @@ version: 1.0
 [MySQL aes_encrypt]: https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_aes-encrypt
 [MySQL aes_decrypt]: https://dev.mysql.com/doc/refman/5.7/en/encryption-functions.html#function_aes-decrypt
 [AES]: https://en.wikipedia.org/wiki/Advanced_Encryption_Standard
-[ClickHouse]: https://clickhouse.tech
+[ClickHouse]: https://clickhouse.com
 [GitHub repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/aes_encryption/requirements/requirements.md
 [Revision history]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/aes_encryption/requirements/requirements.md
 [Git]: https://git-scm.com/

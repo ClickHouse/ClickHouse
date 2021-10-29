@@ -12,9 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Databases/DatabaseReplicated.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_MYSQL
 #   include <Databases/MySQL/DatabaseMaterializedMySQL.h>
@@ -34,6 +32,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
+    extern const int TABLE_IS_READ_ONLY;
 }
 
 
@@ -195,6 +194,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
                 throw Exception("Cannot TRUNCATE dictionary", ErrorCodes::SYNTAX_ERROR);
 
             getContext()->checkAccess(AccessType::TRUNCATE, table_id);
+            if (table->isStaticStorage())
+                throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
 
             table->checkTableCanBeDropped();
 
@@ -352,6 +353,13 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 }
             }
 
+            if (!drop && query.no_delay)
+            {
+                /// Avoid "some tables are still in use" when sync mode is enabled
+                for (const auto & table_uuid : uuids_to_wait)
+                    database->waitDetachedTableNotInUse(table_uuid);
+            }
+
             /// Protects from concurrent CREATE TABLE queries
             auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(database_name);
 
@@ -359,7 +367,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 database->assertCanBeDetached(true);
 
             /// DETACH or DROP database itself
-            DatabaseCatalog::instance().detachDatabase(database_name, drop, database->shouldBeEmptyOnDetach());
+            DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
         }
     }
 

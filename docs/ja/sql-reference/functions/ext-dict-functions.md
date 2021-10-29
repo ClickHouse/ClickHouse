@@ -202,4 +202,4 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 ClickHouseは、属性の値を解析できない場合、または値が属性データ型と一致しない場合に例外をスローします。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/ext_dict_functions/) <!--hide-->

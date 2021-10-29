@@ -17,7 +17,7 @@ def feature(self, distributed, node="clickhouse1"):
     self.context.distributed = distributed
     self.context.node = self.context.cluster.node(node)
 
-    with And("employee salary table"):
+    with Given("employee salary table"):
         empsalary_table(distributed=distributed)
 
     with And("tenk1 table"):
