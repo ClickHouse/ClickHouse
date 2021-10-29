@@ -1414,12 +1414,12 @@ Default value: `0`.
 
 ## min_count_to_compile_aggregate_expression {#min_count_to_compile_aggregate_expression}
 
-If the [compile_aggregate_expressions](#compile_aggregate_expressions) setting is enabled and there are more than `min_count_to_compile_aggregate_expression` identical aggregate expressions in a `SELECT` query, then they are JIT-compiled.
+The minimum number of identical aggregate expressions to start JIT-compilation. Works only if the [compile_aggregate_expressions](#compile_aggregate_expressions) setting is enabled.
 
 Possible values:
 
 -   Positive integer.
--   0 — Identical aggregate expressions are always JIT-compiled (if `compile_aggregate_expressions = 1`).
+-   0 — Identical aggregate expressions are always JIT-compiled.
 
 Default value: `0`.
 
