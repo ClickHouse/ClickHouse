@@ -178,7 +178,7 @@ tupleToNameValuePairs(tuple)
 
 **Arguments**
 
--   `tuple` — Named tuple. [Tuple](../../sql-reference/data-types/tuple.md) with any type of values.
+-   `tuple` — Named tuple. [Tuple](../../sql-reference/data-types/tuple.md) with any types of values.
 
 **Returned value**
 
