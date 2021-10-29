@@ -9,7 +9,6 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/getTableExpressions.h>
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Access/AccessFlags.h>
 #include <DataStreams/IBlockInputStream.h>
