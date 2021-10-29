@@ -814,7 +814,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             "\nClickHouse has been successfully installed.\n"
             "\nRestart clickhouse-server with:\n"
             " sudo clickhouse restart\n"
-            "\nRestart clickhouse-client with:\n"
+            "\nStart clickhouse-client with:\n"
             " clickhouse-client{}\n\n",
             maybe_password);
         } else {
