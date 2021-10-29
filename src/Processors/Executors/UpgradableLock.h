@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <cassert>
 #include <list>
 #include <mutex>
 #include <condition_variable>
@@ -69,7 +70,7 @@ private:
                 read_condvar.wait(lock);
         }
 
-        void lock(std::atomic_size_t & num_locked) noexcept
+        void lock(std::atomic_size_t & num_readers_) noexcept
         {
             /// Note : num_locked is an atomic
             /// which can change it's value without locked mutex.
@@ -78,7 +79,7 @@ private:
             /// write lock, we always notify it's write condvar.
             std::unique_lock lock(mutex);
             ++num_waiting;
-            while (num_locked.load() < num_waiting)
+            while (num_waiting < num_readers_.load())
                 write_condvar.wait(lock);
         }
 
@@ -134,7 +135,9 @@ private:
 
     void degrade(State & state) noexcept
     {
-        write_state = nullptr;
+        State * my = write_state.exchange(nullptr);
+        if(&state != my)
+            std::terminate();
         state.unlock();
     }
 
