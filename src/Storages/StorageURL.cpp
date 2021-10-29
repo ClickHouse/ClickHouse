@@ -126,6 +126,7 @@ namespace
                                 DBMS_DEFAULT_BUFFER_SIZE,
                                 context->getReadSettings(),
                                 headers,
+                                ReadWriteBufferFromHTTP::Range{},
                                 context->getRemoteHostFilter()),
                             chooseCompressionMethod(request_uri.getPath(), compression_method));
                     }
