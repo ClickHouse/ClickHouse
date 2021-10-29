@@ -26,24 +26,24 @@ SHOW TABLES FROM INFORMATION_SCHEMA;
 
 ## COLUMNS {#columns}
 
-Содержит столбцы, которые считываются из системной таблицы `system.columns`, и столбцы, которые не поддерживаются в ClickHouse или не имеют смысла (всегда имеют значение `NULL`), но должны быть по стандарту.
+Содержит столбцы, которые считываются из системной таблицы [system.columns](../../operations/system-tables/columns.md), и столбцы, которые не поддерживаются в ClickHouse или не имеют смысла (всегда имеют значение `NULL`), но должны быть по стандарту.
 
 Столбцы:
 
 -   `table_catalog` ([String](../../sql-reference/data-types/string.md)) — имя базы данных, в которой находится таблица.
--   `table_schema` ([String](../../sql-reference/data-types/string.md)) — имя базы данных, в которой находится схема.
+-   `table_schema` ([String](../../sql-reference/data-types/string.md)) — имя базы данных, в которой находится таблица.
 -   `table_name` ([String](../../sql-reference/data-types/string.md)) — имя таблицы.
 -   `column_name` ([String](../../sql-reference/data-types/string.md)) — имя столбца.
 -   `ordinal_position` ([UInt64](../../sql-reference/data-types/int-uint.md)) — порядковый номер столбца в таблице (нумерация начинается с 1).
 -   `column_default` ([String](../../sql-reference/data-types/string.md)) — выражение для значения по умолчанию или пустая строка.
 -   `is_nullable` ([UInt8](../../sql-reference/data-types/int-uint.md)) — флаг, показывающий является ли столбец типа `Nullable`.
 -   `data_type` ([String](../../sql-reference/data-types/string.md)) — тип столбца.
--   `character_maximum_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — максимальная длина в байтах для двоичных данных, символьных данных или текстовых данных и изображений. Иначе возвращается значение `NULL`.
--   `character_octet_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — максимальная длина в байтах для двоичных данных, символьных данных или текстовых данных и изображений. Иначе возвращается значение `NULL`.
--   `numeric_precision` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — точность приблизительных числовых данных, точных числовых данных, целочисленных данных или денежных данных. Иначе возвращается значение `NULL`.
--   `numeric_precision_radix` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — основание системы счисления точности приблизительных числовых данных, точных числовых данных, целочисленных данных или денежных данных. Иначе возвращается значение `NULL`.
--   `numeric_scale` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — масштаб приблизительных числовых данных, точных числовых данных, целочисленных данных или денежных данных. Иначе возвращается значение `NULL`.
--   `datetime_precision` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — код подтипа для типов данных интервала `DateTime` и `ISO`. Для других типов данных возвращается значение `NULL`.
+-   `character_maximum_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — максимальная длина в байтах для двоичных данных, символьных данных или текстовых данных и изображений. В ClickHouse имеет смысл только для типа данных `FixedString`. Иначе возвращается значение `NULL`.
+-   `character_octet_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — максимальная длина в байтах для двоичных данных, символьных данных или текстовых данных и изображений. В ClickHouse имеет смысл только для типа данных `FixedString`. Иначе возвращается значение `NULL`.
+-   `numeric_precision` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — точность приблизительных числовых данных, точных числовых данных, целочисленных данных или денежных данных. В ClickHouse это разрядность для целочисленных типов и десятичная точность для типов `Decimal`. Иначе возвращается значение `NULL`.
+-   `numeric_precision_radix` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — основание системы счисления точности приблизительных числовых данных, точных числовых данных, целочисленных данных или денежных данных. В ClickHouse значение столбца равно 2 для целочисленных типов и 10 — для типов `Decimal`. Иначе возвращается значение `NULL`.
+-   `numeric_scale` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — масштаб приблизительных числовых данных, точных числовых данных, целочисленных данных или денежных данных. В ClickHouse имеет смысл только для типов `Decimal`. Иначе возвращается значение `NULL`.
+-   `datetime_precision` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — десятичная точность для данных типа `DateTime64`. Для других типов данных возвращается значение `NULL`.
 -   `character_set_catalog` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, не поддерживается.
 -   `character_set_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, не поддерживается.
 -   `character_set_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, не поддерживается.
@@ -94,12 +94,12 @@ domain_name:              ᴺᵁᴸᴸ
 
 ## SCHEMATA {#schemata}
 
-Содержит столбцы, которые считываются из системной таблицы `system.databases`, и столбцы, которые не поддерживаются в ClickHouse или не имеют смысла (всегда имеют значение `NULL`), но должны быть по стандарту.
+Содержит столбцы, которые считываются из системной таблицы [system.databases](../../operations/system-tables/databases.md), и столбцы, которые не поддерживаются в ClickHouse или не имеют смысла (всегда имеют значение `NULL`), но должны быть по стандарту.
 
 Столбцы:
 
--   `catalog_name` ([String](../../sql-reference/data-types/string.md)) — имя базы данных, в которой находится таблица.
--   `schema_name` ([String](../../sql-reference/data-types/string.md)) — имя базы данных, в которой находится схема.
+-   `catalog_name` ([String](../../sql-reference/data-types/string.md)) — имя базы данных.
+-   `schema_name` ([String](../../sql-reference/data-types/string.md)) — имя базы данных.
 -   `schema_owner` ([String](../../sql-reference/data-types/string.md)) — имя владельца схемы, всегда `'default'`.
 -   `default_character_set_catalog` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, не поддерживается.
 -   `default_character_set_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, не поддерживается.
@@ -130,12 +130,12 @@ sql_path:                      ᴺᵁᴸᴸ
 
 ## TABLES {#tables}
 
-Содержит столбцы, которые считываются из системной таблицы `system.tables`.
+Содержит столбцы, которые считываются из системной таблицы [system.tables](../../operations/system-tables/tables.md).
 
 Столбцы:
 
 -   `table_catalog` ([String](../../sql-reference/data-types/string.md)) — имя базы данных, в которой находится таблица.
--   `table_schema` ([String](../../sql-reference/data-types/string.md)) — имя базы данных, в которой находится схема.
+-   `table_schema` ([String](../../sql-reference/data-types/string.md)) — имя базы данных, в которой находится таблица.
 -   `table_name` ([String](../../sql-reference/data-types/string.md)) — имя таблицы.
 -   `table_type` ([Enum8](../../sql-reference/data-types/enum.md)) — тип таблицы. Возможные значения:
     -   `BASE TABLE`
@@ -165,12 +165,12 @@ table_type:    BASE TABLE
 
 ## VIEWS {#views}
 
-Содержит столбцы, которые считываются из системной таблицы `system.tables`, если использован движок [View](../../engines/table-engines/special/view.md).
+Содержит столбцы, которые считываются из системной таблицы [system.tables](../../operations/system-tables/tables.md), если использован движок [View](../../engines/table-engines/special/view.md).
 
 Столбцы:
 
 -   `table_catalog` ([String](../../sql-reference/data-types/string.md)) — имя базы данных, в которой находится таблица.
--   `table_schema` ([String](../../sql-reference/data-types/string.md)) — имя базы данных, в которой находится схема.
+-   `table_schema` ([String](../../sql-reference/data-types/string.md)) — имя базы данных, в которой находится таблица.
 -   `table_name` ([String](../../sql-reference/data-types/string.md)) — имя таблицы.
 -   `view_definition` ([String](../../sql-reference/data-types/string.md)) — `SELECT` запрос для представления.
 -   `check_option` ([String](../../sql-reference/data-types/string.md)) — `NONE`, нет проверки.

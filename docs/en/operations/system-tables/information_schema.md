@@ -26,7 +26,7 @@ SHOW TABLES FROM INFORMATION_SCHEMA;
 
 ## COLUMNS {#columns}
 
-Contains columns read from the `system.columns` system table and columns that are not supported in ClickHouse or do not make sense (always `NULL`), but must be by the standard.
+Contains columns read from the [system.columns](../../operations/system-tables/columns.md) system table and columns that are not supported in ClickHouse or do not make sense (always `NULL`), but must be by the standard.
 
 Columns:
 
@@ -38,12 +38,12 @@ Columns:
 -   `column_default` ([String](../../sql-reference/data-types/string.md)) — Expression for the default value, or an empty string if it is not defined.
 -   `is_nullable` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the column type is `Nullable`.
 -   `data_type` ([String](../../sql-reference/data-types/string.md)) — Column type.
--   `character_maximum_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum length in bytes for binary data, character data, or text data and images.
--   `character_octet_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum length in bytes for binary data, character data, or text data and images.
--   `numeric_precision` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Accuracy of approximate numeric data, exact numeric data, integer data, or monetary data. Otherwise, the `NULL` value is returned.
--   `numeric_precision_radix` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The base of the number system is the accuracy of approximate numeric data, exact numeric data, integer data or monetary data. Otherwise, the `NULL` value is returned.
--   `numeric_scale` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The scale of approximate numeric data, exact numeric data, integer data, or monetary data. Otherwise, the `NULL` value is returned.
--   `datetime_precision` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Subtype code for `DateTime` and `ISO` interval data types. For other data types, the `NULL` value is returned.
+-   `character_maximum_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum length in bytes for binary data, character data, or text data and images. In ClickHouse makes sense only for `FixedString` data type. Otherwise, the `NULL` value is returned.
+-   `character_octet_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum length in bytes for binary data, character data, or text data and images. In ClickHouse makes sense only for `FixedString` data type. Otherwise, the `NULL` value is returned.
+-   `numeric_precision` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Accuracy of approximate numeric data, exact numeric data, integer data, or monetary data. In ClickHouse it is bitness for integer types and decimal precision for `Decimal` types. Otherwise, the `NULL` value is returned.
+-   `numeric_precision_radix` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The base of the number system is the accuracy of approximate numeric data, exact numeric data, integer data or monetary data. In ClickHouse it's 2 for integer types and 10 for `Decimal` types. Otherwise, the `NULL` value is returned.
+-   `numeric_scale` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The scale of approximate numeric data, exact numeric data, integer data, or monetary data. In ClickHouse makes sense only for `Decimal` types. Otherwise, the `NULL` value is returned.
+-   `datetime_precision` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Decimal precision of `DateTime64` data type. For other data types, the `NULL` value is returned.
 -   `character_set_catalog` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
 -   `character_set_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
 -   `character_set_name` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
@@ -94,7 +94,7 @@ domain_name:              ᴺᵁᴸᴸ
 
 ## SCHEMATA {#schemata}
 
-Contains columns read from the `system.databases` system table and columns that are not supported in ClickHouse or do not make sense (always `NULL`), but must be by the standard.
+Contains columns read from the [system.databases](../../operations/system-tables/databases.md) system table and columns that are not supported in ClickHouse or do not make sense (always `NULL`), but must be by the standard.
 
 Columns:
 
@@ -130,12 +130,12 @@ sql_path:                      ᴺᵁᴸᴸ
 
 ## TABLES {#tables}
 
-Contains columns read from the `system.tables` system table.
+Contains columns read from the [system.tables](../../operations/system-tables/tables.md) system table.
 
 Columns:
 
 -   `table_catalog` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
--   `table_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the schema is located.
+-   `table_schema` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
 -   `table_name` ([String](../../sql-reference/data-types/string.md)) — Table name.
 -   `table_type` ([Enum8](../../sql-reference/data-types/enum.md)) — Table type. Possible values:
     -   `BASE TABLE`
@@ -165,7 +165,7 @@ table_type:    BASE TABLE
 
 ## VIEWS {#views}
 
-Contains columns read from the `system.tables` system table, when the table engine [View](../../engines/table-engines/special/view.md) is used.
+Contains columns read from the [system.tables](../../operations/system-tables/tables.md) system table, when the table engine [View](../../engines/table-engines/special/view.md) is used.
 
 Columns:
 
