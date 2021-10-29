@@ -98,8 +98,8 @@ Contains columns read from the `system.databases` system table and columns that 
 
 Columns:
 
--   `catalog_name` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the table is located.
--   `schema_name` ([String](../../sql-reference/data-types/string.md)) — The name of the database in which the schema is located.
+-   `catalog_name` ([String](../../sql-reference/data-types/string.md)) — The name of the database.
+-   `schema_name` ([String](../../sql-reference/data-types/string.md)) — The name of the database.
 -   `schema_owner` ([String](../../sql-reference/data-types/string.md)) — Schema owner name, always `'default'`.
 -   `default_character_set_catalog` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
 -   `default_character_set_schema` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — `NULL`, not supported.
