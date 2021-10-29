@@ -21,9 +21,7 @@
 #include <base/logger_useful.h>
 #include <Poco/URIStreamFactory.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 
 namespace DB
@@ -107,6 +105,7 @@ namespace detail
         std::function<void(size_t)> next_callback;
 
         size_t buffer_size;
+        bool use_external_buffer;
 
         size_t bytes_read = 0;
         /// Read from offset with range header if needed (for disk web).
@@ -197,7 +196,8 @@ namespace detail
             const ReadSettings & settings_ = {},
             HTTPHeaderEntries http_header_entries_ = {},
             const RemoteHostFilter & remote_host_filter_ = {},
-            bool delay_initialization = false)
+            bool delay_initialization = false,
+            bool use_external_buffer_ = false)
             : ReadBuffer(nullptr, 0)
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
@@ -206,6 +206,7 @@ namespace detail
             , credentials {credentials_}
             , http_header_entries {http_header_entries_}
             , remote_host_filter {remote_host_filter_}
+            , use_external_buffer {use_external_buffer_}
             , buffer_size {buffer_size_}
             , start_byte {settings_.http_start_offset}
             , settings {settings_}
@@ -245,6 +246,16 @@ namespace detail
             try
             {
                 impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size);
+
+                if (use_external_buffer)
+                {
+                    /**
+                    * See comment 30 lines below.
+                    */
+                    impl->set(internal_buffer.begin(), internal_buffer.size());
+                    assert(working_buffer.begin() != nullptr);
+                    assert(!internal_buffer.empty());
+                }
             }
             catch (const Poco::Exception & e)
             {
@@ -264,8 +275,31 @@ namespace detail
             if (total_bytes_to_read && bytes_read == total_bytes_to_read.value())
                 return false;
 
-            if (impl && !working_buffer.empty())
-                impl->position() = position();
+            if (impl)
+            {
+                if (use_external_buffer)
+                {
+                    /**
+                    * use_external_buffer -- means we read into the buffer which
+                    * was passed to us from somewhere else. We do not check whether
+                    * previously returned buffer was read or not (no hasPendingData() check is needed),
+                    * because this branch means we are prefetching data,
+                    * each nextImpl() call we can fill a different buffer.
+                    */
+                    impl->set(internal_buffer.begin(), internal_buffer.size());
+                    assert(working_buffer.begin() != nullptr);
+                    assert(!internal_buffer.empty());
+                }
+                else
+                {
+                    /**
+                    * impl was initialized before, pass position() to it to make
+                    * sure there is no pending data which was not read.
+                    */
+                    if (!working_buffer.empty())
+                        impl->position() = position();
+                }
+            }
 
             bool result = false;
             bool successful_read = false;
@@ -277,7 +311,17 @@ namespace detail
                 try
                 {
                     if (!impl)
+                    {
                         initialize();
+
+                        if (use_external_buffer)
+                        {
+                            /// See comment 40 lines above.
+                            impl->set(internal_buffer.begin(), internal_buffer.size());
+                            assert(working_buffer.begin() != nullptr);
+                            assert(!internal_buffer.empty());
+                        }
+                    }
 
                     result = impl->next();
                     successful_read = true;
@@ -327,7 +371,6 @@ namespace detail
 
             internal_buffer = impl->buffer();
             working_buffer = internal_buffer;
-            bytes_read += working_buffer.size();
             return true;
         }
 
@@ -393,9 +436,16 @@ public:
         const ReadSettings & settings_ = {},
         const HTTPHeaderEntries & http_header_entries_ = {},
         const RemoteHostFilter & remote_host_filter_ = {},
+<<<<<<< HEAD
         bool delay_initialization_ = true)
         : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects),
             uri_, credentials_, method_, out_stream_callback_, buffer_size_, settings_, http_header_entries_, remote_host_filter_, delay_initialization_)
+=======
+        bool use_external_buffer_ = false)
+        : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects),
+                 uri_, method_, out_stream_callback_, credentials_, buffer_size_,
+                 settings_, http_header_entries_, remote_host_filter_, use_external_buffer_)
+>>>>>>> 11b70a285c05fff189debb2705cb60d896fadb9c
     {
     }
 };

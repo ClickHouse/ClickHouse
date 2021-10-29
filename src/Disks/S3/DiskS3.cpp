@@ -17,11 +17,7 @@
 #include <Common/quoteString.h>
 #include <Common/thread_local_rng.h>
 
-#include <Disks/ReadIndirectBufferFromRemoteFS.h>
-#include <Disks/WriteIndirectBufferFromRemoteFS.h>
-
 #include <Interpreters/Context.h>
-
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -29,15 +25,21 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/WriteHelpers.h>
 
-#include <aws/s3/model/CopyObjectRequest.h> // Y_IGNORE
-#include <aws/s3/model/DeleteObjectsRequest.h> // Y_IGNORE
-#include <aws/s3/model/GetObjectRequest.h> // Y_IGNORE
-#include <aws/s3/model/ListObjectsV2Request.h> // Y_IGNORE
-#include <aws/s3/model/HeadObjectRequest.h> // Y_IGNORE
-#include <aws/s3/model/CreateMultipartUploadRequest.h> // Y_IGNORE
-#include <aws/s3/model/CompleteMultipartUploadRequest.h> // Y_IGNORE
-#include <aws/s3/model/UploadPartCopyRequest.h> // Y_IGNORE
-#include <aws/s3/model/AbortMultipartUploadRequest.h> // Y_IGNORE
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
+
+#include <aws/s3/model/CopyObjectRequest.h>
+#include <aws/s3/model/DeleteObjectsRequest.h>
+#include <aws/s3/model/GetObjectRequest.h>
+#include <aws/s3/model/ListObjectsV2Request.h>
+#include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/CreateMultipartUploadRequest.h>
+#include <aws/s3/model/CompleteMultipartUploadRequest.h>
+#include <aws/s3/model/UploadPartCopyRequest.h>
+#include <aws/s3/model/AbortMultipartUploadRequest.h>
 
 
 namespace DB
@@ -127,47 +129,19 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
     }
 }
 
-/// Reads data from S3 using stored paths in metadata.
-class ReadIndirectBufferFromS3 final : public ReadIndirectBufferFromRemoteFS<ReadBufferFromS3>
-{
-public:
-    ReadIndirectBufferFromS3(
-        std::shared_ptr<Aws::S3::S3Client> client_ptr_,
-        const String & bucket_,
-        DiskS3::Metadata metadata_,
-        size_t max_single_read_retries_,
-        size_t buf_size_)
-        : ReadIndirectBufferFromRemoteFS<ReadBufferFromS3>(metadata_)
-        , client_ptr(std::move(client_ptr_))
-        , bucket(bucket_)
-        , max_single_read_retries(max_single_read_retries_)
-        , buf_size(buf_size_)
-    {
-    }
-
-    std::unique_ptr<ReadBufferFromS3> createReadBuffer(const String & path) override
-    {
-        return std::make_unique<ReadBufferFromS3>(client_ptr, bucket, fs::path(metadata.remote_fs_root_path) / path, max_single_read_retries, buf_size);
-    }
-
-private:
-    std::shared_ptr<Aws::S3::S3Client> client_ptr;
-    const String & bucket;
-    UInt64 max_single_read_retries;
-    size_t buf_size;
-};
-
 DiskS3::DiskS3(
     String name_,
     String bucket_,
     String s3_root_path_,
     String metadata_path_,
+    ContextPtr context_,
     SettingsPtr settings_,
     GetDiskSettings settings_getter_)
     : IDiskRemote(name_, s3_root_path_, metadata_path_, "DiskS3", settings_->thread_pool_size)
     , bucket(std::move(bucket_))
     , current_settings(std::move(settings_))
     , settings_getter(settings_getter_)
+    , context(context_)
 {
 }
 
@@ -230,9 +204,23 @@ std::unique_ptr<ReadBufferFromFileBase> DiskS3::readFile(const String & path, co
     LOG_TRACE(log, "Read from file by path: {}. Existing S3 objects: {}",
         backQuote(metadata_path + path), metadata.remote_fs_objects.size());
 
-    auto reader = std::make_unique<ReadIndirectBufferFromS3>(
-        settings->client, bucket, metadata, settings->s3_max_single_read_retries, read_settings.remote_fs_buffer_size);
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), settings->min_bytes_for_seek);
+    bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool;
+
+    auto s3_impl = std::make_unique<ReadBufferFromS3Gather>(
+        path,
+        settings->client, bucket, metadata,
+        settings->s3_max_single_read_retries, read_settings, threadpool_read);
+
+    if (threadpool_read)
+    {
+        auto reader = getThreadPoolReader();
+        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(s3_impl));
+    }
+    else
+    {
+        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(s3_impl));
+        return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), settings->min_bytes_for_seek);
+    }
 }
 
 std::unique_ptr<WriteBufferFromFileBase> DiskS3::writeFile(const String & path, size_t buf_size, WriteMode mode)
@@ -378,7 +366,7 @@ int DiskS3::readSchemaVersion(const String & source_bucket, const String & sourc
         source_bucket,
         source_path + SCHEMA_VERSION_OBJECT,
         settings->s3_max_single_read_retries,
-        DBMS_DEFAULT_BUFFER_SIZE);
+        context->getReadSettings());
 
     readIntText(version, buffer);
 
@@ -1033,9 +1021,9 @@ void DiskS3::onFreeze(const String & path)
     revision_file_buf.finalize();
 }
 
-void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &)
+void DiskS3::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context_, const String &, const DisksMap &)
 {
-    auto new_settings = settings_getter(config, "storage_configuration.disks." + name, context);
+    auto new_settings = settings_getter(config, "storage_configuration.disks." + name, context_);
 
     current_settings.set(std::move(new_settings));
 
