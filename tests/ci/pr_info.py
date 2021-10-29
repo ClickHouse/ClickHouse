@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
+import os
 import urllib
+
 import requests
 from unidiff import PatchSet
-import os
 
 
 DIFF_IN_DOCUMENTATION_EXT = [".html", ".md", ".yml", ".txt", ".css", ".js", ".xml", ".ico", ".conf", ".svg", ".png", ".jpg", ".py", ".sh"]
