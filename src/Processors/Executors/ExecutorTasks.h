@@ -4,7 +4,7 @@
 #include <Processors/Executors/PollingQueue.h>
 #include <Processors/Executors/ThreadsQueue.h>
 #include <Processors/Executors/TasksQueue.h>
-#include <boost/thread/shared_mutex.hpp>
+#include <Processors/Executors/UpgradableLock.h>
 #include <stack>
 
 namespace DB
@@ -47,7 +47,7 @@ public:
     using Queue = std::queue<ExecutingGraph::Node *>;
 
     /// Data used by stopping pipeline task.
-    boost::shared_mutex stopping_pipeline_mutex;
+    UpgradableMutex stopping_pipeline_mutex;
 
     void finish();
     bool isFinished() const { return finished; }

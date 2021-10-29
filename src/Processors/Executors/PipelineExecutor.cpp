@@ -10,7 +10,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <base/scope_guard_safe.h>
-#include <boost/thread/locks.hpp>
 
 #ifndef NDEBUG
     #include <Common/Stopwatch.h>
@@ -126,7 +125,7 @@ bool PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
     return true;
 }
 
-bool PipelineExecutor::prepareProcessor(UInt64 pid, Queue & queue, Queue & async_queue, boost::upgrade_lock<boost::shared_mutex> & pipeline_lock)
+bool PipelineExecutor::prepareProcessor(UInt64 pid, Queue & queue, Queue & async_queue, UpgradableMutex::ReadGuard & pipeline_lock)
 {
     std::stack<ExecutingGraph::Edge *> updated_edges;
     Stack updated_processors;
@@ -268,7 +267,7 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, Queue & queue, Queue & async
             if (need_expand_pipeline)
             {
                 {
-                    boost::upgrade_to_unique_lock lock(pipeline_lock);
+                    UpgradableMutex::WriteGuard lock(pipeline_lock);
                     if (!expandPipeline(updated_processors, pid))
                         return false;
                 }
@@ -426,7 +425,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
                 Queue async_queue;
 
                 {
-                    boost::upgrade_lock<boost::shared_mutex> pipeline_read_lock(tasks.stopping_pipeline_mutex);
+                    UpgradableMutex::ReadGuard pipeline_read_lock(tasks.stopping_pipeline_mutex);
 
                     /// Prepare processor after execution.
                     if (!prepareProcessor(context.getProcessorID(), queue, async_queue, pipeline_read_lock))
@@ -465,7 +464,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
 
     Queue queue;
     Queue async_queue;
-    boost::upgrade_lock<boost::shared_mutex> pipeline_read_lock(tasks.stopping_pipeline_mutex);
+    UpgradableMutex::ReadGuard pipeline_read_lock(tasks.stopping_pipeline_mutex);
 
     while (!stack.empty())
     {

@@ -74,7 +74,7 @@ private:
     /// Prepare processor with pid number.
     /// Check parents and children of current processor and push them to stacks if they also need to be prepared.
     /// If processor wants to be expanded, ExpandPipelineTask from thread_number's execution context will be used.
-    bool prepareProcessor(UInt64 pid, Queue & queue, Queue & async_queue, boost::upgrade_lock<boost::shared_mutex> & pipeline_lock);
+    bool prepareProcessor(UInt64 pid, Queue & queue, Queue & async_queue, UpgradableMutex::ReadGuard & pipeline_lock);
 
     void initializeExecution(size_t num_threads); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
