@@ -258,6 +258,7 @@ Pipe LibraryBridgeHelper::loadBase(const Poco::URI & uri, ReadWriteBufferFromHTT
         0,
         Poco::Net::HTTPBasicCredentials{},
         DBMS_DEFAULT_BUFFER_SIZE,
+        getContext()->getReadSettings(),
         ReadWriteBufferFromHTTP::HTTPHeaderEntries{});
 
     auto source = FormatFactory::instance().getInput(LibraryBridgeHelper::DEFAULT_FORMAT, *read_buf_ptr, sample_block, getContext(), DEFAULT_BLOCK_SIZE);
