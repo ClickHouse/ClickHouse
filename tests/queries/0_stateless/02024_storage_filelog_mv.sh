@@ -12,16 +12,16 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 #  "insert into function file('exist.txt', 'CSV', 'val1 char') values ('aaaa'); select _path from file('exist.txt', 'CSV', 'val1 char')"
 user_files_path=$(clickhouse-client --query "select _path,_file from file('nonexist.txt', 'CSV', 'val1 char')" 2>&1 | grep Exception | awk '{gsub("/nonexist.txt","",$9); print $9}')
 
-mkdir -p ${user_files_path}/logs/
-rm -rf ${user_files_path}/logs/*
+mkdir -p ${user_files_path}/02024_storage_filelog_mv/
+rm -rf ${user_files_path}/02024_storage_filelog_mv/*
 
 for i in {1..20}
 do
-	echo $i, $i >> ${user_files_path}/logs/a.txt
+	echo $i, $i >> ${user_files_path}/02024_storage_filelog_mv/a.txt
 done
 
 ${CLICKHOUSE_CLIENT} --query "drop table if exists file_log;"
-${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=FileLog('${user_files_path}/logs/', 'CSV');"
+${CLICKHOUSE_CLIENT} --query "create table file_log(k UInt8, v UInt8) engine=FileLog('${user_files_path}/02024_storage_filelog_mv/', 'CSV');"
 
 ${CLICKHOUSE_CLIENT} --query "drop table if exists mv;"
 ${CLICKHOUSE_CLIENT} --query "create Materialized View mv engine=MergeTree order by k as select * from file_log;"
@@ -39,17 +39,17 @@ done
 
 ${CLICKHOUSE_CLIENT} --query "select * from mv order by k;"
 
-cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/b.txt
+cp ${user_files_path}/02024_storage_filelog_mv/a.txt ${user_files_path}/02024_storage_filelog_mv/b.txt
 
 # touch does not change file content, no event
-touch ${user_files_path}/logs/a.txt
+touch ${user_files_path}/02024_storage_filelog_mv/a.txt
 
-cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/c.txt
-cp ${user_files_path}/logs/a.txt ${user_files_path}/logs/d.txt
+cp ${user_files_path}/02024_storage_filelog_mv/a.txt ${user_files_path}/02024_storage_filelog_mv/c.txt
+cp ${user_files_path}/02024_storage_filelog_mv/a.txt ${user_files_path}/02024_storage_filelog_mv/d.txt
 
 for i in {100..120}
 do
-	echo $i, $i >> ${user_files_path}/logs/d.txt
+	echo $i, $i >> ${user_files_path}/02024_storage_filelog_mv/d.txt
 done
 
 while true; do
@@ -62,4 +62,4 @@ ${CLICKHOUSE_CLIENT} --query "select * from mv order by k;"
 ${CLICKHOUSE_CLIENT} --query "drop table mv;"
 ${CLICKHOUSE_CLIENT} --query "drop table file_log;"
 
-rm -rf ${user_files_path}/logs
+rm -rf ${user_files_path}/02024_storage_filelog_mv
