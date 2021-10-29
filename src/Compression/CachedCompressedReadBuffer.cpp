@@ -28,6 +28,12 @@ void CachedCompressedReadBuffer::initInput()
 }
 
 
+void CachedCompressedReadBuffer::prefetch()
+{
+    file_in->prefetch();
+}
+
+
 bool CachedCompressedReadBuffer::nextImpl()
 {
     /// Let's check for the presence of a decompressed block in the cache, grab the ownership of this block, if it exists.

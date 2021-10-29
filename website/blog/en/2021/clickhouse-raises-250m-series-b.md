@@ -12,4 +12,4 @@ For the past five years, ClickHouse thrived as a popular open-source product— 
 
 Fueled by this large investment, we are hiring. We plan to double our team this year, and double it again next year. We are calling on all visionaries, builders, and contributors to join us as we build ClickHouse into a transformative, paradigm-shifting company. Our mission is to become the first choice of analytical database management systems. We are relentlessly focused on building an enterprise-grade, highly secure, and fault tolerant, multi-tenant service in the cloud that is accessible to organizations across sizes and sectors. 
 
-If this sounds like something you want to be a part of, now’s the time to join us. To learn more about the positions we are hiring for, and what we are looking for in new hires, visit [www.clickhouse.com/careers](/careers/)
+If this sounds like something you want to be a part of, now’s the time to join us. To learn more about the positions we are hiring for, and what we are looking for in new hires, visit [clickhouse.com/careers](/careers/).
