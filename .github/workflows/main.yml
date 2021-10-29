@@ -82,30 +82,6 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  DocsCheck:
-    needs: DockerHubPush
-    runs-on: [self-hosted, func-tester]
-    steps:
-      - name: Download changed images
-        uses: actions/download-artifact@v2
-        with:
-          name: changed_images
-          path: ${{ runner.temp }}/docs_check
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Docs Check
-        env:
-          TEMP_PATH: ${{runner.temp}}/docs_check
-          REPO_COPY: ${{runner.temp}}/docs_check/ClickHouse
-        run: |
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 docs_check.py
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill $(docker ps -q) ||:
-          sudo rm -fr $TEMP_PATH
   BuilderDebDebug:
     needs: DockerHubPush
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
