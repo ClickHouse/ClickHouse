@@ -20,6 +20,7 @@ protected:
     bool processWithFuzzing(const String & full_query) override;
 
     void connect() override;
+    void prepareForInteractive() override;
     void processError(const String & query) const override;
     String getName() const override { return "client"; }
 

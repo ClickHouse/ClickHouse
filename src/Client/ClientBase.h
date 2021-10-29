@@ -57,6 +57,7 @@ protected:
 
     virtual bool executeMultiQuery(const String & all_queries_text) = 0;
     virtual void connect() = 0;
+    virtual void prepareForInteractive() = 0;
     virtual void processError(const String & query) const = 0;
     virtual String getName() const = 0;
 
@@ -138,6 +139,7 @@ private:
 protected:
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
+    bool delayed_interactive = false;
 
     bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.

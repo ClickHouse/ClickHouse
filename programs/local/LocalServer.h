@@ -34,6 +34,7 @@ protected:
     bool executeMultiQuery(const String & all_queries_text) override;
 
     void connect() override;
+    void prepareForInteractive() override;
     void processError(const String & query) const override;
     String getName() const override { return "local"; }
 
