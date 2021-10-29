@@ -3832,6 +3832,21 @@ Default value: `0`.
 
 -   [optimize_move_to_prewhere](#optimize_move_to_prewhere) setting
 
+## describe_include_subcolumns {#describe_include_subcolumns}
+
+Enables describing subcolumns for a [DESCRIBE](../../sql-reference/statements/describe-table.md) query. For example, members of a [Tuple](../../sql-reference/data-types/tuple.md) or subcolumns of a [Map](../../sql-reference/data-types/map.md#map-subcolumns), [Nullable](../../sql-reference/data-types/nullable.md#finding-null) or an [Array](../../sql-reference/data-types/array.md#array-size) data type.
+
+Possible values:
+
+-   0 — Subcolumns are not included in `DESCRIBE` queries.
+-   1 — Subcolumns are included in `DESCRIBE` queries.
+
+Default value: `0`.
+
+**Example**
+
+See an example for the [DESCRIBE](../../sql-reference/statements/describe-table.md) statement.
+
 ## async_insert {#async-insert}
 
 Enables or disables asynchronous inserts. This makes sense only for insertion over HTTP protocol. Note that deduplication isn't working for such inserts.
