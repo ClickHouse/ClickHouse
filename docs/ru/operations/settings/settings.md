@@ -1705,6 +1705,32 @@ ClickHouse генерирует исключение
 
 Значение по умолчанию: 0.
 
+## distributed_push_down_limit {#distributed-push-down-limit}
+
+Включает или отключает [LIMIT](#limit), применяемый к каждому шарду по отдельности. 
+
+Это позволяет избежать:
+- отправки дополнительных строк по сети;
+- обработки строк за пределами ограничения для инициатора.
+
+Начиная с версии 21.9 вы больше не сможете получить неточные результаты, так как `distributed_push_down_limit` изменяет выполнение запроса только в том случае, если выполнено хотя бы одно из условий:
+- `distributed_group_by_no_merge` > 0.
+- запрос **не содержит** `GROUP BY`/`DISTINCT`/`LIMIT BY`, но содержит `ORDER BY`/`LIMIT`.
+- запрос **содержит** `GROUP BY`/`DISTINCT`/`LIMIT BY` с `ORDER BY`/`LIMIT` и:
+  - включена настройка [optimize_skip_unused_shards](#optimize-skip-unused-shards).
+  - включена настройка `optimize_distributed_group_by_sharding_key`.
+
+Возможные значения:
+
+-    0 — выключена.
+-    1 — включена.
+
+Значение по умолчанию: `1`.
+
+См. также:
+
+-   [optimize_skip_unused_shards](#optimize-skip-unused-shards)
+
 ## optimize_skip_unused_shards {#optimize-skip-unused-shards}
 
 Включает или отключает пропуск неиспользуемых шардов для запросов [SELECT](../../sql-reference/statements/select/index.md) , в которых условие ключа шардирования задано в секции `WHERE/PREWHERE`. Предполагается, что данные распределены с помощью ключа шардирования, в противном случае запрос выдаст неверный результат.
@@ -3640,6 +3666,21 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 **См. также**
 
 -   настройка [optimize_move_to_prewhere](#optimize_move_to_prewhere)
+
+## describe_include_subcolumns {#describe_include_subcolumns}
+
+Включает или отключает описание подстолбцов при выполнении запроса [DESCRIBE](../../sql-reference/statements/describe-table.md). Настройка действует, например, на элементы [Tuple](../../sql-reference/data-types/tuple.md) или подстолбцы типов [Map](../../sql-reference/data-types/map.md#map-subcolumns), [Nullable](../../sql-reference/data-types/nullable.md#finding-null) или [Array](../../sql-reference/data-types/array.md#array-size).
+
+Возможные значения:
+
+-   0 — подстолбцы не включаются в результат запросов `DESCRIBE`.
+-   1 — подстолбцы включаются в результат запросов `DESCRIBE`.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Смотрите пример запроса [DESCRIBE](../../sql-reference/statements/describe-table.md).
 
 ## async_insert {#async-insert}
 

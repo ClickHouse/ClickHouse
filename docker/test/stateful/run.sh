@@ -56,7 +56,7 @@ function start()
 
 start
 # shellcheck disable=SC2086 # No quotes because I want to split it into words.
-/s3downloader --dataset-names $DATASETS
+/s3downloader --url-prefix "$S3_URL" --dataset-names $DATASETS
 chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "SHOW DATABASES"
 
@@ -109,7 +109,7 @@ function run_tests()
     fi
 
     set +e
-    clickhouse-test --testname --shard --zookeeper --no-stateless --hung-check --print-time "${ADDITIONAL_OPTIONS[@]}" \
+    clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --no-stateless --hung-check --print-time "${ADDITIONAL_OPTIONS[@]}" \
         "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
     set -e
 }

@@ -12,9 +12,7 @@
 #include <Common/typeid_cast.h>
 #include <Databases/DatabaseReplicated.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_MYSQL
 #   include <Databases/MySQL/DatabaseMaterializedMySQL.h>
