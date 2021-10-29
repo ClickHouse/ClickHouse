@@ -1397,6 +1397,32 @@ Minimum count of executing same expression before it is get compiled.
 
 Default value: `3`.
 
+## compile_aggregate_expressions {#compile_aggregate_expressions}
+
+Enables or disables JIT-compilation of aggregate functions to native code. Enabling the `compile_aggregate_expressions` setting can improve the performance.
+
+Possible values:
+
+-   0 — Aggregation is done without JIT compilation.
+-   1 — Aggregation is done using JIT compilation.
+
+Default value: `0`.
+
+**See Also** 
+
+-   [min_count_to_compile_aggregate_expression](#min_count_to_compile_aggregate_expression)
+
+## min_count_to_compile_aggregate_expression {#min_count_to_compile_aggregate_expression}
+
+If the [compile_aggregate_expressions](#compile_aggregate_expressions) setting is enabled and there are more then `min_count_to_compile_aggregate_expression` identical aggregate expressions in a `SELECT` query, then they are compiled JIT.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Identical aggregate expressions are always JIT-compiled (if `compile_aggregate_expressions = 1`).
+
+Default value: `0`.
+
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md#json) format.
