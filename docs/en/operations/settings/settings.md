@@ -1751,9 +1751,11 @@ Do not merge aggregation states from different servers for distributed query pro
 
 Possible values:
 
--   0 — Disabled (final query processing is done on the initiator node).
--   1 - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
--   2 - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+-   `0` — Disabled (final query processing is done on the initiator node).
+-   `1` - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
+-   `2` - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+
+Default value: `0`
 
 **Example**
 
@@ -1784,29 +1786,27 @@ FORMAT PrettyCompactMonoBlock
 └───────┘
 ```
 
-Default value: 0
+## distributed_push_down_limit {#distributed-push-down-limit}
 
-## distributed_push_down_limit (#distributed-push-down-limit}
-
-LIMIT will be applied on each shard separatelly.
+Enables or disables [LIMIT](#limit) applying on each shard separatelly.
 
 This will allow to avoid:
+-  Sending extra rows over network;
+-  Processing rows behind the limit on the initiator.
 
-- sending extra rows over network,
-- processing rows behind the limit on the initiator.
-
-It is possible if at least one of the following conditions met:
-
-- `distributed_group_by_no_merge` > 0
-- query **does not have `GROUP BY`/`DISTINCT`/`LIMIT BY`**, but it has `ORDER BY`/`LIMIT`.
-- query **has `GROUP BY`/`DISTINCT`/`LIMIT BY`** with `ORDER BY`/`LIMIT` and:
-  - `optimize_skip_unused_shards_limit` is enabled
-  - `optimize_distributed_group_by_sharding_key` is enabled
+Starting from 21.9 version you cannot get inaccurate results anymore, since `distributed_push_down_limit` changes query execution only if at least one of the conditions met:
+-  [distributed_group_by_no_merge](#distributed-group-by-no-merge) > 0.
+-  Query **does not have** `GROUP BY`/`DISTINCT`/`LIMIT BY`, but it has `ORDER BY`/`LIMIT`.
+-  Query **has** `GROUP BY`/`DISTINCT`/`LIMIT BY` with `ORDER BY`/`LIMIT` and:
+    -  [optimize_skip_unused_shards](#optimize-skip-unused-shards) is enabled.
+    -  [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key) is enabled.
 
 Possible values:
 
--  0 - Disabled
--  1 - Enabled
+-  0 — Disabled.
+-  1 — Enabled.
+
+Default value: `1`.
 
 See also:
 
@@ -1920,6 +1920,7 @@ Default value: 0
 See also:
 
 -   [distributed_group_by_no_merge](#distributed-group-by-no-merge)
+-   [distributed_push_down_limit](#distributed-push-down-limit)
 -   [optimize_skip_unused_shards](#optimize-skip-unused-shards)
 
 !!! note "Note"
