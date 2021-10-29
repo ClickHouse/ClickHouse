@@ -30,6 +30,7 @@ RUN apt-get update \
             nodejs \
             npm \
             openjdk-11-jdk \
+            ssh-client \
     && pip --no-cache-dir install scipy \
     && apt-get autoremove --yes \
     && apt-get clean \
