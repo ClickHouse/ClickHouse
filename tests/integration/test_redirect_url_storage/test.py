@@ -115,17 +115,17 @@ def test_url_reconnect_at_start(started_cluster):
             global result
             print("reading")
             result = node1.query(
-                "select sum(cityHash64(id)) from url('http://hdfs1:50075/webhdfs/v1/storage_big?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'id Int32')")
+                "select sum(cityHash64(id)) from url('http://hdfs1:50075/webhdfs/v1/storage_big?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'id Int32') settings http_max_tries = 20, http_retry_max_backoff_ms=10000")
             print(result)
 
         thread = threading.Thread(target=select)
         thread.start()
-        time.sleep(3)
+        time.sleep(1)
         print("delete rule")
         pm._delete_rule({'probability': 1, 'destination': node1.ip_address, 'source_port': 50075, 'action': 'DROP'})
 
         thread.join()
-        assert node1.contains_in_log("Error: Timeout, code:")
+        #assert node1.contains_in_log("Error: Timeout, code:")
         print(result)
 
 result = ''

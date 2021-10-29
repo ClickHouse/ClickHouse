@@ -32,8 +32,6 @@ public:
 private:
     std::unique_ptr<ReadBuffer> initialize();
 
-    void initializeWithRetry();
-
     Poco::Logger * log;
     ContextPtr context;
 
