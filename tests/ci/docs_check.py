@@ -112,9 +112,9 @@ if __name__ == "__main__":
             if retcode == 0:
                 logging.info("Run successfully")
                 status = "success"
-                description = "Run Ok"
+                description = "Docs check passed"
             else:
-                description = "Run failed (non zero exit code)"
+                description = "Docs check failed (non zero exit code)"
                 status = "failure"
                 logging.info("Run failed")
 
@@ -136,7 +136,7 @@ if __name__ == "__main__":
                         lines.append((line.split(':')[-1], "FAIL"))
         if lines:
             status = "failure"
-            description = "Found errors during docs check"
+            description = "Found errors in docs"
         elif status != "failure":
             lines.append(("No errors found", "OK"))
         else:
