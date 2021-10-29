@@ -66,7 +66,7 @@ BlockIO InterpreterAlterQuery::execute()
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
-    AddDefaultDatabaseVisitor visitor(table_id.getDatabaseName());
+    AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 
