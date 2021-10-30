@@ -124,6 +124,7 @@ namespace
                                 context->getSettingsRef().max_http_get_redirects,
                                 Poco::Net::HTTPBasicCredentials{},
                                 DBMS_DEFAULT_BUFFER_SIZE,
+                                context->getReadSettings(),
                                 headers,
                                 context->getRemoteHostFilter()),
                             chooseCompressionMethod(request_uri.getPath(), compression_method));

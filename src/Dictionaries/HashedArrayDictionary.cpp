@@ -55,95 +55,93 @@ ColumnPtr HashedArrayDictionary<dictionary_key_type>::getColumn(
     DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
     DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
 
-    const size_t size = extractor.getKeysSize();
+    const size_t keys_size = extractor.getKeysSize();
 
     const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
     const size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
     auto & attribute = attributes[attribute_index];
 
-    bool is_attribute_nullable = attribute.is_index_null.has_value();
+    return getAttributeColumn(attribute, dictionary_attribute, keys_size, default_values_column, extractor);
+}
 
-    ColumnUInt8::MutablePtr col_null_map_to;
-    ColumnUInt8::Container * vec_null_map_to = nullptr;
-    if (attribute.is_index_null)
+template <DictionaryKeyType dictionary_key_type>
+Columns HashedArrayDictionary<dictionary_key_type>::getColumns(
+    const Strings & attribute_names,
+    const DataTypes & result_types,
+    const Columns & key_columns,
+    const DataTypes & key_types,
+    const Columns & default_values_columns) const
+{
+    if (dictionary_key_type == DictionaryKeyType::Complex)
+        dict_struct.validateKeyTypes(key_types);
+
+    DictionaryKeysArenaHolder<dictionary_key_type> arena_holder;
+    DictionaryKeysExtractor<dictionary_key_type> extractor(key_columns, arena_holder.getComplexKeyArena());
+
+    const size_t keys_size = extractor.getKeysSize();
+
+    PaddedPODArray<ssize_t> key_index_to_element_index;
+
+    /** Optimization for multiple attributes.
+      * For each key save element index in key_index_to_element_index array.
+      * Later in type_call for attribute use getItemsImpl specialization with key_index_to_element_index array
+      * instead of DictionaryKeyExtractor.
+      */
+    if (attribute_names.size() > 1)
     {
-        col_null_map_to = ColumnUInt8::create(size, false);
-        vec_null_map_to = &col_null_map_to->getData();
+        const auto & key_attribute_container = key_attribute.container;
+        size_t keys_found = 0;
+
+        key_index_to_element_index.resize(keys_size);
+
+        for (size_t key_index = 0; key_index < keys_size; ++key_index)
+        {
+            auto key = extractor.extractCurrentKey();
+
+            auto it = key_attribute_container.find(key);
+            if (it == key_attribute_container.end())
+            {
+                key_index_to_element_index[key_index] = -1;
+            }
+            else
+            {
+                key_index_to_element_index[key_index] = it->getMapped();
+                ++keys_found;
+            }
+
+            extractor.rollbackCurrentKey();
+        }
+
+        query_count.fetch_add(keys_size, std::memory_order_relaxed);
+        found_count.fetch_add(keys_found, std::memory_order_relaxed);
     }
 
-    auto type_call = [&](const auto & dictionary_attribute_type)
+    size_t attribute_names_size = attribute_names.size();
+
+    Columns result_columns;
+    result_columns.reserve(attribute_names_size);
+
+    for (size_t i = 0; i < attribute_names_size; ++i)
     {
-        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
-        using AttributeType = typename Type::AttributeType;
-        using ValueType = DictionaryValueType<AttributeType>;
-        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+        ColumnPtr result_column;
 
-        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(dictionary_attribute.null_value, default_values_column);
+        const auto & attribute_name = attribute_names[i];
+        const auto & result_type = result_types[i];
+        const auto & default_values_column = default_values_columns[i];
 
-        auto column = ColumnProvider::getColumn(dictionary_attribute, size);
+        const auto & dictionary_attribute = dict_struct.getAttribute(attribute_name, result_type);
+        const size_t attribute_index = dict_struct.attribute_name_to_index.find(attribute_name)->second;
+        auto & attribute = attributes[attribute_index];
 
-        if constexpr (std::is_same_v<ValueType, Array>)
-        {
-            auto * out = column.get();
-
-            getItemsImpl<ValueType, false>(
-                attribute,
-                extractor,
-                [&](const size_t, const Array & value, bool) { out->insert(value); },
-                default_value_extractor);
-        }
-        else if constexpr (std::is_same_v<ValueType, StringRef>)
-        {
-            auto * out = column.get();
-
-            if (is_attribute_nullable)
-                getItemsImpl<ValueType, true>(
-                    attribute,
-                    extractor,
-                    [&](size_t row, const StringRef value, bool is_null)
-                    {
-                        (*vec_null_map_to)[row] = is_null;
-                        out->insertData(value.data, value.size);
-                    },
-                    default_value_extractor);
-            else
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    extractor,
-                    [&](size_t, const StringRef value, bool) { out->insertData(value.data, value.size); },
-                    default_value_extractor);
-        }
+        if (attribute_names_size > 1)
+            result_column = getAttributeColumn(attribute, dictionary_attribute, keys_size, default_values_column, key_index_to_element_index);
         else
-        {
-            auto & out = column->getData();
+            result_column = getAttributeColumn(attribute, dictionary_attribute, keys_size, default_values_column, extractor);
 
-            if (is_attribute_nullable)
-                getItemsImpl<ValueType, true>(
-                    attribute,
-                    extractor,
-                    [&](size_t row, const auto value, bool is_null)
-                    {
-                        (*vec_null_map_to)[row] = is_null;
-                        out[row] = value;
-                    },
-                    default_value_extractor);
-            else
-                getItemsImpl<ValueType, false>(
-                    attribute,
-                    extractor,
-                    [&](size_t row, const auto value, bool) { out[row] = value; },
-                    default_value_extractor);
-        }
+        result_columns.emplace_back(std::move(result_column));
+    }
 
-        result = std::move(column);
-    };
-
-    callOnDictionaryAttributeType(attribute.type, type_call);
-
-    if (is_attribute_nullable)
-        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
-
-    return result;
+    return result_columns;
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -500,6 +498,102 @@ void HashedArrayDictionary<dictionary_key_type>::resize(size_t added_rows)
 }
 
 template <DictionaryKeyType dictionary_key_type>
+template <typename KeysProvider>
+ColumnPtr HashedArrayDictionary<dictionary_key_type>::getAttributeColumn(
+    const Attribute & attribute,
+    const DictionaryAttribute & dictionary_attribute,
+    size_t keys_size,
+    ColumnPtr default_values_column,
+    KeysProvider && keys_object) const
+{
+    ColumnPtr result;
+
+    bool is_attribute_nullable = attribute.is_index_null.has_value();
+
+    ColumnUInt8::MutablePtr col_null_map_to;
+    ColumnUInt8::Container * vec_null_map_to = nullptr;
+    if (attribute.is_index_null)
+    {
+        col_null_map_to = ColumnUInt8::create(keys_size, false);
+        vec_null_map_to = &col_null_map_to->getData();
+    }
+
+    auto type_call = [&](const auto & dictionary_attribute_type)
+    {
+        using Type = std::decay_t<decltype(dictionary_attribute_type)>;
+        using AttributeType = typename Type::AttributeType;
+        using ValueType = DictionaryValueType<AttributeType>;
+        using ColumnProvider = DictionaryAttributeColumnProvider<AttributeType>;
+
+        DictionaryDefaultValueExtractor<AttributeType> default_value_extractor(dictionary_attribute.null_value, default_values_column);
+
+        auto column = ColumnProvider::getColumn(dictionary_attribute, keys_size);
+
+        if constexpr (std::is_same_v<ValueType, Array>)
+        {
+            auto * out = column.get();
+
+            getItemsImpl<ValueType, false>(
+                attribute,
+                keys_object,
+                [&](const size_t, const Array & value, bool) { out->insert(value); },
+                default_value_extractor);
+        }
+        else if constexpr (std::is_same_v<ValueType, StringRef>)
+        {
+            auto * out = column.get();
+
+            if (is_attribute_nullable)
+                getItemsImpl<ValueType, true>(
+                    attribute,
+                    keys_object,
+                    [&](size_t row, const StringRef value, bool is_null)
+                    {
+                        (*vec_null_map_to)[row] = is_null;
+                        out->insertData(value.data, value.size);
+                    },
+                    default_value_extractor);
+            else
+                getItemsImpl<ValueType, false>(
+                    attribute,
+                    keys_object,
+                    [&](size_t, const StringRef value, bool) { out->insertData(value.data, value.size); },
+                    default_value_extractor);
+        }
+        else
+        {
+            auto & out = column->getData();
+
+            if (is_attribute_nullable)
+                getItemsImpl<ValueType, true>(
+                    attribute,
+                    keys_object,
+                    [&](size_t row, const auto value, bool is_null)
+                    {
+                        (*vec_null_map_to)[row] = is_null;
+                        out[row] = value;
+                    },
+                    default_value_extractor);
+            else
+                getItemsImpl<ValueType, false>(
+                    attribute,
+                    keys_object,
+                    [&](size_t row, const auto value, bool) { out[row] = value; },
+                    default_value_extractor);
+        }
+
+        result = std::move(column);
+    };
+
+    callOnDictionaryAttributeType(attribute.type, type_call);
+
+    if (is_attribute_nullable)
+        result = ColumnNullable::create(std::move(result), std::move(col_null_map_to));
+
+    return result;
+}
+
+template <DictionaryKeyType dictionary_key_type>
 template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
 void HashedArrayDictionary<dictionary_key_type>::getItemsImpl(
     const Attribute & attribute,
@@ -545,6 +639,41 @@ void HashedArrayDictionary<dictionary_key_type>::getItemsImpl(
 
     query_count.fetch_add(keys_size, std::memory_order_relaxed);
     found_count.fetch_add(keys_found, std::memory_order_relaxed);
+}
+
+template <DictionaryKeyType dictionary_key_type>
+template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
+void HashedArrayDictionary<dictionary_key_type>::getItemsImpl(
+    const Attribute & attribute,
+    const PaddedPODArray<ssize_t> & key_index_to_element_index,
+    ValueSetter && set_value,
+    DefaultValueExtractor & default_value_extractor) const
+{
+    const auto & attribute_container = std::get<AttributeContainerType<AttributeType>>(attribute.container);
+    const size_t keys_size = key_index_to_element_index.size();
+
+    for (size_t key_index = 0; key_index < keys_size; ++key_index)
+    {
+        bool key_exists = key_index_to_element_index[key_index] != -1;
+
+        if (key_exists)
+        {
+            size_t element_index = static_cast<size_t>(key_index_to_element_index[key_index]);
+            const auto & element = attribute_container[element_index];
+
+            if constexpr (is_nullable)
+                set_value(key_index, element, (*attribute.is_index_null)[element_index]);
+            else
+                set_value(key_index, element, false);
+        }
+        else
+        {
+            if constexpr (is_nullable)
+                set_value(key_index, default_value_extractor[key_index], default_value_extractor.isNullAt(key_index));
+            else
+                set_value(key_index, default_value_extractor[key_index], false);
+        }
+    }
 }
 
 template <DictionaryKeyType dictionary_key_type>

@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_AWS_S3
 
@@ -71,6 +69,7 @@ public:
         String bucket_,
         String s3_root_path_,
         String metadata_path_,
+        ContextPtr context_,
         SettingsPtr settings_,
         GetDiskSettings settings_getter_);
 
@@ -177,6 +176,8 @@ private:
     static constexpr int RESTORABLE_SCHEMA_VERSION = 1;
     /// Directories with data.
     const std::vector<String> data_roots {"data", "store"};
+
+    ContextPtr context;
 };
 
 }
