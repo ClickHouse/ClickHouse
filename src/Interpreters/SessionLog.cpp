@@ -67,8 +67,8 @@ void fillColumnArray(const Strings & data, IColumn & column)
 namespace DB
 {
 
-SessionLogElement::SessionLogElement(const UUID & session_id_, Type type_)
-    : session_id(session_id_),
+SessionLogElement::SessionLogElement(const UUID & auth_id_, Type type_)
+    : auth_id(auth_id_),
       type(type_)
 {
     std::tie(event_time, event_time_microseconds) = eventTime();
@@ -121,8 +121,8 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
     return
     {
         {"type", std::move(event_type)},
-        {"session_id", std::make_shared<DataTypeUUID>()},
-        {"session_name", std::make_shared<DataTypeString>()},
+        {"auth_id", std::make_shared<DataTypeUUID>()},
+        {"session_id", std::make_shared<DataTypeString>()},
         {"event_date", std::make_shared<DataTypeDate>()},
         {"event_time", std::make_shared<DataTypeDateTime>()},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
@@ -157,8 +157,8 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(type);
+    columns[i++]->insert(auth_id);
     columns[i++]->insert(session_id);
-    columns[i++]->insert(session_name);
     columns[i++]->insert(static_cast<DayNum>(DateLUT::instance().toDayNum(event_time).toUnderType()));
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
@@ -202,13 +202,13 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(auth_failure_reason.data(), auth_failure_reason.length());
 }
 
-void SessionLog::addLoginSuccess(const UUID & session_id, std::optional<String> session_name, const Context & login_context)
+void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> session_id, const Context & login_context)
 {
     const auto access = login_context.getAccess();
     const auto & settings = login_context.getSettingsRef();
     const auto & client_info = login_context.getClientInfo();
 
-    DB::SessionLogElement log_entry(session_id, SESSION_LOGIN_SUCCESS);
+    DB::SessionLogElement log_entry(auth_id, SESSION_LOGIN_SUCCESS);
     log_entry.client_info = client_info;
 
     {
@@ -218,8 +218,8 @@ void SessionLog::addLoginSuccess(const UUID & session_id, std::optional<String> 
         log_entry.external_auth_server = user->authentication.getLDAPServerName();
     }
 
-    if (session_name)
-        log_entry.session_name = *session_name;
+    if (session_id)
+        log_entry.session_id = *session_id;
 
     if (const auto roles_info = access->getRolesInfo())
         log_entry.roles = roles_info->getCurrentRolesNames();
@@ -234,12 +234,12 @@ void SessionLog::addLoginSuccess(const UUID & session_id, std::optional<String> 
 }
 
 void SessionLog::addLoginFailure(
-        const UUID & session_id,
+        const UUID & auth_id,
         const ClientInfo & info,
         const String & user,
         const Exception & reason)
 {
-    SessionLogElement log_entry(session_id, SESSION_LOGIN_FAILURE);
+    SessionLogElement log_entry(auth_id, SESSION_LOGIN_FAILURE);
 
     log_entry.user = user;
     log_entry.auth_failure_reason = reason.message();
@@ -249,9 +249,9 @@ void SessionLog::addLoginFailure(
     add(log_entry);
 }
 
-void SessionLog::addLogOut(const UUID & session_id, const String & user, const ClientInfo & client_info)
+void SessionLog::addLogOut(const UUID & auth_id, const String & user, const ClientInfo & client_info)
 {
-    auto log_entry = SessionLogElement(session_id, SESSION_LOGOUT);
+    auto log_entry = SessionLogElement(auth_id, SESSION_LOGOUT);
     log_entry.user = user;
     log_entry.client_info = client_info;
 
