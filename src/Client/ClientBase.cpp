@@ -342,7 +342,6 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
         select_into_file = false;
 
         /// The query can specify output format or output file.
-        /// FIXME: try to prettify this cast using `as<>()`
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
             if (query_with_output->out_file)
