@@ -812,20 +812,22 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
         if (fs::exists(pid_file)) {
             fmt::print(
-            "\nClickHouse has been successfully installed.\n"
-            "\nRestart clickhouse-server with:\n"
-            " sudo clickhouse restart\n"
-            "\nStart clickhouse-client with:\n"
-            " clickhouse-client{}\n\n",
-            maybe_password);
-        } else {
+                "\nClickHouse has been successfully installed.\n"
+                "\nRestart clickhouse-server with:\n"
+                " sudo clickhouse restart\n"
+                "\nStart clickhouse-client with:\n"
+                " clickhouse-client{}\n\n",
+                maybe_password);
+        }
+        else
+        {
             fmt::print(
-            "\nClickHouse has been successfully installed.\n"
-            "\nStart clickhouse-server with:\n"
-            " sudo clickhouse start\n"
-            "\nStart clickhouse-client with:\n"
-            " clickhouse-client{}\n\n",
-            maybe_password);
+                "\nClickHouse has been successfully installed.\n"
+                "\nStart clickhouse-server with:\n"
+                " sudo clickhouse start\n"
+                "\nStart clickhouse-client with:\n"
+                " clickhouse-client{}\n\n",
+                maybe_password);
         }
     }
     catch (const fs::filesystem_error &)
