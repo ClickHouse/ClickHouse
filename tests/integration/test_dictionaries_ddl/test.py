@@ -228,7 +228,7 @@ def test_http_dictionary_restrictions(started_cluster):
         """)
         node3.query("SELECT dictGetString('test.restricted_http_dictionary', 'value', toUInt64(1))")
     except QueryRuntimeException as ex:
-        assert 'is not allowed in config.xml' in str(ex)
+        assert 'is not allowed in configuration file' in str(ex)
     node3.query("DROP DICTIONARY test.restricted_http_dictionary")
 
 
