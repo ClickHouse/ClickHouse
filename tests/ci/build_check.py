@@ -2,16 +2,14 @@
 #
 import subprocess
 import logging
-from s3_helper import S3Helper
 import json
-import os
-from pr_info import PRInfo
-from github import Github
-import shutil
-from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 import os
 import sys
 import time
+from github import Github
+from s3_helper import S3Helper
+from pr_info import PRInfo
+from get_robot_token import get_best_robot_token
 from version_helper import get_version_from_repo, update_version_local
 
 
@@ -130,7 +128,7 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token())
 
-    images_path = os.path.join(temp_path, 'changed_images.json')
+    images_path = os.path.join(os.getenv("IMAGES_PATH", temp_path), 'changed_images.json')
     image_name = get_image_name(build_config)
     image_version = 'latest'
     if os.path.exists(images_path):
@@ -143,7 +141,7 @@ if __name__ == "__main__":
 
     for i in range(10):
         try:
-            logging.info(f"Pulling image {image_name}:{image_version}")
+            logging.info("Pulling image %s:%s", image_name, image_version)
             subprocess.check_output(f"docker pull {image_name}:{image_version}", stderr=subprocess.STDOUT, shell=True)
             break
         except Exception as ex:
@@ -157,7 +155,7 @@ if __name__ == "__main__":
     update_version_local(repo_path, pr_info.sha, version)
 
     build_name = build_config_to_string(build_config)
-    logging.info(f"Build short name {build_name}")
+    logging.info("Build short name %s", build_name)
     subprocess.check_call(f"echo 'BUILD_NAME=build_urls_{build_name}' >> $GITHUB_ENV", shell=True)
 
     build_output_path = os.path.join(temp_path, build_name)

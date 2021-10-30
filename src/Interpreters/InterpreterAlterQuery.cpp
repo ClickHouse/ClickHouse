@@ -66,7 +66,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (typeid_cast<DatabaseReplicated *>(database.get())
-        && !getContext()->getClientInfo().is_replicated_database_internal)
+        && !getContext()->getClientInfo().is_replicated_database_internal
+        && !alter.isAttachAlter()
+        && !alter.isFetchAlter()
+        && !alter.isDropPartitionAlter())
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
