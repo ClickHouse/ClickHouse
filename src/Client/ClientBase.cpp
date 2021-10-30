@@ -61,6 +61,14 @@ namespace DB
 
 static const NameSet exit_strings{"exit", "quit", "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж", "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"};
 
+static const std::initializer_list<std::pair<String, String>> backslash_aliases
+{
+    { "\\l", "SHOW DATABASES" },
+    { "\\d", "SHOW TABLES" },
+    { "\\c", "USE" },
+};
+
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -1354,6 +1362,17 @@ void ClientBase::runInteractive()
         {
             input.resize(input.size() - 2);
             has_vertical_output_suffix = true;
+        }
+
+        for (const auto& [alias, command] : backslash_aliases)
+        {
+            if (input.starts_with(alias))
+            {
+                // append the rest of input to the command
+                // for parameters support, e.g. \c db_name -> USE db_name
+                input = command + input.substr(alias.size());
+                break;
+            }
         }
 
         try
