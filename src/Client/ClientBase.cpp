@@ -57,7 +57,12 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
-static const NameSet exit_strings{"exit", "quit", "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж", "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"};
+static const NameSet exit_strings
+{
+    "exit", "quit", "logout", "учше", "йгше", "дщпщге",
+    "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж",
+    "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
+};
 
 namespace ErrorCodes
 {
@@ -103,8 +108,10 @@ void interruptSignalHandler(int signum)
         _exit(signum);
 }
 
+
 ClientBase::~ClientBase() = default;
 ClientBase::ClientBase() = default;
+
 
 void ClientBase::setupSignalHandler()
 {
@@ -168,8 +175,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
 }
 
 
-// Consumes trailing semicolons and tries to consume the same-line trailing
-// comment.
+/// Consumes trailing semicolons and tries to consume the same-line trailing comment.
 void ClientBase::adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, int max_parser_depth)
 {
     // We have to skip the trailing semicolon that might be left
@@ -246,7 +252,8 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
         return;
 
-    if (need_render_progress && (stdout_is_a_tty || is_interactive))
+    /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
+    if (need_render_progress && (stdout_is_a_tty || is_interactive) && !select_into_file)
         progress_indication.clearProgressOutput();
 
     output_format->write(materializeBlock(block));
@@ -257,7 +264,11 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 
     /// Restore progress bar after data block.
     if (need_render_progress && (stdout_is_a_tty || is_interactive))
+    {
+        if (select_into_file)
+            std::cerr << "\r";
         progress_indication.writeProgress();
+    }
 }
 
 
@@ -328,12 +339,16 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
 
         String current_format = format;
 
+        select_into_file = false;
+
         /// The query can specify output format or output file.
         /// FIXME: try to prettify this cast using `as<>()`
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
             if (query_with_output->out_file)
             {
+                select_into_file = true;
+
                 const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
                 const auto & out_file = out_file_node.value.safeGet<std::string>();
 
@@ -366,11 +381,14 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
         if (has_vertical_output_suffix)
             current_format = "Vertical";
 
-        /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
-        if (!need_render_progress)
-            output_format = global_context->getOutputFormatParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+        /// It is not clear how to write progress intermixed with data with parallel formatting.
+        /// It may increase code complexity significantly.
+        if (!need_render_progress || select_into_file)
+            output_format = global_context->getOutputFormatParallelIfPossible(
+                current_format, out_file_buf ? *out_file_buf : *out_buf, block);
         else
-            output_format = global_context->getOutputFormat(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+            output_format = global_context->getOutputFormat(
+                current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
         output_format->doWritePrefix();
     }
@@ -1446,8 +1464,7 @@ void ClientBase::clearTerminal()
     /// It is needed if garbage is left in terminal.
     /// Show cursor. It can be left hidden by invocation of previous programs.
     /// A test for this feature: perl -e 'print "x"x100000'; echo -ne '\033[0;0H\033[?25l'; clickhouse-client
-    std::cout << "\033[0J"
-                    "\033[?25h";
+    std::cout << "\033[0J" "\033[?25h";
 }
 
 
