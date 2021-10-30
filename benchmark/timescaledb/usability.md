@@ -71,23 +71,23 @@ psql: error: connection to server at "localhost" (::1), port 5432 failed: fe_sen
 How to set up password?
 
 ```
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ psql -U postgres -h localhost
+milovidov@mtlog-perftest03j:~$ psql -U postgres -h localhost
 Password for user postgres:
 psql: error: connection to server at "localhost" (::1), port 5432 failed: fe_sendauth: no password supplied
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ psql
+milovidov@mtlog-perftest03j:~$ psql
 psql: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: FATAL:  role "milovidov" does not exist
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ sudo psql
+milovidov@mtlog-perftest03j:~$ sudo psql
 psql: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: FATAL:  role "root" does not exist
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ psql -U postgres
+milovidov@mtlog-perftest03j:~$ psql -U postgres
 psql: error: connection to server on socket "/var/run/postgresql/.s.PGSQL.5432" failed: FATAL:  Peer authentication failed for user "postgres"
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ psql -U postgres -h localost
+milovidov@mtlog-perftest03j:~$ psql -U postgres -h localost
 psql: error: could not translate host name "localost" to address: Name or service not known
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ sudo psql -U postgres -h localost
+milovidov@mtlog-perftest03j:~$ sudo psql -U postgres -h localost
 psql: error: could not translate host name "localost" to address: Name or service not known
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ sudo psql -U postgres -h localhost
+milovidov@mtlog-perftest03j:~$ sudo psql -U postgres -h localhost
 Password for user postgres:
 psql: error: connection to server at "localhost" (::1), port 5432 failed: fe_sendauth: no password supplied
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ sudo -u postgres psql -h localhost
+milovidov@mtlog-perftest03j:~$ sudo -u postgres psql -h localhost
 Password for user postgres:
 psql: error: connection to server at "localhost" (::1), port 5432 failed: fe_sendauth: no password supplied
 ```
@@ -242,7 +242,8 @@ sudo mcedit /etc/postgresql/13/main/postgresql.conf
 #listen_addresses = 'localhost'
 ```
 
-Looks like I need to uncomment it.
+Looks like I need to uncomment it.ERROR:  cannot change configuration on already compressed chunks
+DETAIL:  There are compressed chunks that prevent changing the existing compression configuration.
 
 ```
 sudo service postgresql restart
@@ -310,13 +311,13 @@ sudo service postgresql restart
 But now it does not accept password:
 
 ```
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ sudo -u postgres psql -h 127.0.0.1
+milovidov@mtlog-perftest03j:~$ sudo -u postgres psql -h 127.0.0.1
 Password for user postgres:
 psql: error: connection to server at "127.0.0.1", port 5432 failed: fe_sendauth: no password supplied
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ sudo -u postgres psql -h 127.0.0.1 --password ''
+milovidov@mtlog-perftest03j:~$ sudo -u postgres psql -h 127.0.0.1 --password ''
 Password:
 psql: error: connection to server at "127.0.0.1", port 5432 failed: fe_sendauth: no password supplied
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ sudo -u postgres psql -h 127.0.0.1
+milovidov@mtlog-perftest03j:~$ sudo -u postgres psql -h 127.0.0.1
 Password for user postgres:
 psql: error: connection to server at "127.0.0.1", port 5432 failed: fe_sendauth: no password supplied
 ```
@@ -875,7 +876,7 @@ PostgreSQL does not support USE database.
 But I remember, that I can write `\c` instead. I guess `\c` means "change" (the database). Or it is called "schema" or "catalog".
 
 ```
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ sudo -u postgres psql
+milovidov@mtlog-perftest03j:~$ sudo -u postgres psql
 psql (13.4 (Ubuntu 13.4-4.pgdg18.04+1))
 Type "help" for help.
 
@@ -1083,7 +1084,7 @@ sudo apt install llvm
 It does not help:
 
 ```
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ sudo -u postgres psql
+milovidov@mtlog-perftest03j:~$ sudo -u postgres psql
 psql (13.4 (Ubuntu 13.4-4.pgdg18.04+1))
 Type "help" for help.
 
@@ -1097,16 +1098,16 @@ tutorial=#
 Dependency on system libraries is harmful.
 
 ```
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ ls -l /usr/lib/x86_64-linux-gnu/libLLVM-6.0.so
+milovidov@mtlog-perftest03j:~$ ls -l /usr/lib/x86_64-linux-gnu/libLLVM-6.0.so
 lrwxrwxrwx 1 root root 16 Apr  6  2018 /usr/lib/x86_64-linux-gnu/libLLVM-6.0.so -> libLLVM-6.0.so.1
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ ls -l /usr/lib/x86_64-linux-gnu/libLLVM-6.0.so.1
+milovidov@mtlog-perftest03j:~$ ls -l /usr/lib/x86_64-linux-gnu/libLLVM-6.0.so.1
 ls: cannot access '/usr/lib/x86_64-linux-gnu/libLLVM-6.0.so.1': No such file or directory
 ```
 
 https://askubuntu.com/questions/481/how-do-i-find-the-package-that-provides-a-file
 
 ```
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ dpkg -S libLLVM-6.0.so.1
+milovidov@mtlog-perftest03j:~$ dpkg -S libLLVM-6.0.so.1
 llvm-6.0-dev: /usr/lib/llvm-6.0/lib/libLLVM-6.0.so.1
 libllvm6.0:amd64: /usr/lib/x86_64-linux-gnu/libLLVM-6.0.so.1
 ```
@@ -1114,7 +1115,7 @@ libllvm6.0:amd64: /usr/lib/x86_64-linux-gnu/libLLVM-6.0.so.1
 Wow, it's absolutely broken:
 
 ```
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ sudo apt remove llvm-6.0-dev
+milovidov@mtlog-perftest03j:~$ sudo apt remove llvm-6.0-dev
 Reading package lists... Done
 Building dependency tree
 Reading state information... Done
@@ -1133,7 +1134,7 @@ Removing lld-6.0 (1:6.0-1ubuntu2) ...
 Removing llvm-6.0-dev (1:6.0-1ubuntu2) ...
 Processing triggers for man-db (2.8.3-2ubuntu0.1) ...
 Processing triggers for libc-bin (2.27-3ubuntu1.4) ...
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ sudo apt install llvm-6.0-dev
+milovidov@mtlog-perftest03j:~$ sudo apt install llvm-6.0-dev
 Reading package lists... Done
 Building dependency tree
 Reading state information... Done
@@ -1153,9 +1154,9 @@ Preparing to unpack .../llvm-6.0-dev_1%3a6.0-1ubuntu2_amd64.deb ...
 Unpacking llvm-6.0-dev (1:6.0-1ubuntu2) ...
 Setting up llvm-6.0-dev (1:6.0-1ubuntu2) ...
 Processing triggers for libc-bin (2.27-3ubuntu1.4) ...
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ ls -l /usr/lib/x86_64-linux-gnu/libLLVM-6.0.so
+milovidov@mtlog-perftest03j:~$ ls -l /usr/lib/x86_64-linux-gnu/libLLVM-6.0.so
 lrwxrwxrwx 1 root root 16 Apr  6  2018 /usr/lib/x86_64-linux-gnu/libLLVM-6.0.so -> libLLVM-6.0.so.1
-milovidov@mtlog-perftest03j:~/example_datasets/weather2$ ls -l /usr/lib/x86_64-linux-gnu/libLLVM-6.0.so.1
+milovidov@mtlog-perftest03j:~$ ls -l /usr/lib/x86_64-linux-gnu/libLLVM-6.0.so.1
 ls: cannot access '/usr/lib/x86_64-linux-gnu/libLLVM-6.0.so.1': No such file or directory
 ```
 
@@ -1608,7 +1609,7 @@ SELECT add_compression_policy('hits_100m_obfuscated', INTERVAL '0 seconds');
 ```
 
 ```
-milovidov@mtlog-perftest03j:~/ClickHouse/benchmark/timescaledb$ sudo -u postgres psql tutorial
+milovidov@mtlog-perftest03j:~ClickHouse/benchmark/timescaledb$ sudo -u postgres psql tutorial
 psql (13.4 (Ubuntu 13.4-4.pgdg18.04+1))
 Type "help" for help.
 
@@ -1636,3 +1637,12 @@ ALTER TABLE hits_100m_obfuscated
 ```
 
 The query hanged. Maybe it's waiting for finish of previous compression?
+
+After several minutes it answered:
+
+```
+ERROR:  cannot change configuration on already compressed chunks
+DETAIL:  There are compressed chunks that prevent changing the existing compression configuration.
+```
+
+Ok, at least some of the chunks will have the proper order.
