@@ -136,7 +136,7 @@ private:
     void degrade(State & state) noexcept
     {
         State * my = write_state.exchange(nullptr);
-        if(&state != my)
+        if (&state != my)
             std::terminate();
         state.unlock();
     }
