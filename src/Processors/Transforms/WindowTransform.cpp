@@ -1584,6 +1584,7 @@ namespace recurrent_detail
         const auto & workspace = transform->workspaces[function_index];
         auto current_row = transform->current_row;
         const auto & current_block = transform->blockAt(current_row);
+        IColumn & to = *current_block.output_columns[function_index];
 
         *static_cast<Float64 *>(static_cast<void *>(workspace.aggregate_function_state.data())) = value;
         assert_cast<ColumnFloat64 &>(to).getData().push_back(value);
@@ -1597,6 +1598,8 @@ namespace recurrent_detail
     template<> Float64 getCurrentValueFromInputColumn<Float64>(const WindowTransform * transform, size_t function_index, size_t column_index)
     {
         const auto & workspace = transform->workspaces[function_index];
+        auto current_row = transform->current_row;
+        const auto & current_block = transform->blockAt(current_row);
 
         return (*current_block.input_columns[workspace.argument_column_indices[column_index]]).getFloat64(transform->current_row.row);
     }
@@ -1643,7 +1646,7 @@ struct RecurrentWindowFunction : public WindowFunction
     }
 };
 
-struct ReturningFloat64 : public IAggregateFunction
+struct ReturningFloat64 : public virtual IAggregateFunction
 {
     DataTypePtr getReturnType() const override
     {
