@@ -1640,7 +1640,7 @@ struct RecurrentWindowFunction : public WindowFunction
     }
 
     template<typename T>
-    static void getCurrentValueFromInputColumn(const WindowTransform * transform, size_t function_index, size_t column_index)
+    static T getCurrentValueFromInputColumn(const WindowTransform * transform, size_t function_index, size_t column_index)
     {
         return recurrent_detail::getCurrentValueFromInputColumn<T>(transform, function_index, column_index);
     }
