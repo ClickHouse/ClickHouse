@@ -9,7 +9,7 @@ CHANGELOG_PATH = "debian/changelog"
 CONTRIBUTORS_SCRIPT_DIR = "src/Storages/System/"
 
 
-class ClickHouseVersion(object):
+class ClickHouseVersion():
     def __init__(self, major, minor, patch, tweak, revision):
         self.major = major
         self.minor = minor
@@ -53,7 +53,7 @@ class ClickHouseVersion(object):
         return (self.major, self.minor, self.patch, self.tweak)
 
 
-class VersionType(object):
+class VersionType():
     STABLE = "stable"
     TESTING = "testing"
 

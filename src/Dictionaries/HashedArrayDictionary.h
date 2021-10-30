@@ -93,6 +93,13 @@ public:
         const DataTypes & key_types,
         const ColumnPtr & default_values_column) const override;
 
+    Columns getColumns(
+        const Strings & attribute_names,
+        const DataTypes & result_types,
+        const Columns & key_columns,
+        const DataTypes & key_types,
+        const Columns & default_values_columns) const override;
+
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
     bool hasHierarchy() const override { return dictionary_key_type == DictionaryKeyType::Simple && dict_struct.hierarchical_attribute_index.has_value(); }
@@ -170,10 +177,25 @@ private:
 
     void calculateBytesAllocated();
 
+    template <typename KeysProvider>
+    ColumnPtr getAttributeColumn(
+        const Attribute & attribute,
+        const DictionaryAttribute & dictionary_attribute,
+        size_t keys_size,
+        ColumnPtr default_values_column,
+        KeysProvider && keys_object) const;
+
     template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
     void getItemsImpl(
         const Attribute & attribute,
         DictionaryKeysExtractor<dictionary_key_type> & keys_extractor,
+        ValueSetter && set_value,
+        DefaultValueExtractor & default_value_extractor) const;
+
+    template <typename AttributeType, bool is_nullable, typename ValueSetter, typename DefaultValueExtractor>
+    void getItemsImpl(
+        const Attribute & attribute,
+        const PaddedPODArray<ssize_t> & key_index_to_element_index,
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 

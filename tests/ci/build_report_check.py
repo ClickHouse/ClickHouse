@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 
 import json
+import logging
+import os
+import sys
 from github import Github
 from report import create_build_html_report
 from s3_helper import S3Helper
-import logging
-import os
 from get_robot_token import get_best_robot_token
-import sys
 from pr_info import PRInfo
 
-class BuildResult(object):
+class BuildResult():
     def __init__(self, compiler, build_type, sanitizer, bundled, splitted, status, elapsed_seconds, with_coverage):
         self.compiler = compiler
         self.build_type = build_type
@@ -86,7 +86,6 @@ if __name__ == "__main__":
 
     build_reports = []
     for root, dirs, files in os.walk(reports_path):
-        print(files)
         for f in files:
             if f.startswith("build_urls_") and f.endswith('.json'):
                 logging.info("Found build report json %s", f)
@@ -121,7 +120,7 @@ if __name__ == "__main__":
         branch_name = "PR #{}".format(pr_info.number)
         branch_url = "https://github.com/ClickHouse/ClickHouse/pull/" + str(pr_info.number)
     commit_url = f"https://github.com/ClickHouse/ClickHouse/commit/{pr_info.sha}"
-    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID', 0)}"
+    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID', '0')}"
     report = create_build_html_report(
         build_check_name,
         build_results,

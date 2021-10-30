@@ -128,7 +128,10 @@ def _get_html_url(url):
     return ''
 
 
-def create_test_html_report(header, test_result, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls=[], with_raw_logs=False):
+def create_test_html_report(header, test_result, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls=None, with_raw_logs=False):
+    if additional_urls is None:
+        additional_urls = []
+
     if test_result:
         rows_part = ""
         num_fails = 0
@@ -149,7 +152,7 @@ def create_test_html_report(header, test_result, raw_log_url, task_url, branch_u
                 has_test_logs = True
 
             row = "<tr>"
-            is_fail = test_status == "FAIL" or test_status == 'FLAKY'
+            is_fail = test_status in ('FAIL', 'FLAKY')
             if is_fail and with_raw_logs and test_logs is not None:
                 row = "<tr class=\"failed\">"
             row += "<td>" + test_name + "</td>"
