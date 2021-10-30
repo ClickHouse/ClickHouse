@@ -4,6 +4,7 @@
 #include <Poco/String.h>
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
+#include <Poco/SimpleFileChannel.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
@@ -181,23 +182,6 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config_processor.setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
-    }
-
-    if (config().has("logger.console") || config().has("logger.level") || config().has("logger.log"))
-    {
-        // force enable logging
-        config().setString("logger", "logger");
-        // sensitive data rules are not used here
-        buildLoggers(config(), logger(), "clickhouse-local");
-    }
-    else
-    {
-        // Turn off server logging to stderr
-        if (!config().has("verbose"))
-        {
-            Poco::Logger::root().setLevel("none");
-            Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
-        }
     }
 }
 
@@ -496,6 +480,35 @@ void LocalServer::processConfig()
         is_multiquery = true;
     }
     print_stack_trace = config().getBool("stacktrace", false);
+
+    auto logging = (config().has("logger.console")
+                    || config().has("logger.level")
+                    || config().has("log-level")
+                    || config().has("logger.log"));
+
+    auto file_logging = config().has("server_logs_file");
+    if (is_interactive && logging && !file_logging)
+        throw Exception("For interactive mode logging is allowed only with --server_logs_file option",
+                        ErrorCodes::BAD_ARGUMENTS);
+
+    if (file_logging)
+    {
+        auto level = Poco::Logger::parseLevel(config().getString("log-level", "trace"));
+        Poco::Logger::root().setLevel(level);
+        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::SimpleFileChannel>(new Poco::SimpleFileChannel(server_logs_file)));
+    }
+    else if (logging)
+    {
+        // force enable logging
+        config().setString("logger", "logger");
+        // sensitive data rules are not used here
+        buildLoggers(config(), logger(), "clickhouse-local");
+    }
+    else
+    {
+        Poco::Logger::root().setLevel("none");
+        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
+    }
 
     shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
