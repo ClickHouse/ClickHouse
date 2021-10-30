@@ -1646,15 +1646,7 @@ struct RecurrentWindowFunction : public WindowFunction
     }
 };
 
-struct ReturningFloat64 : public virtual IAggregateFunction
-{
-    DataTypePtr getReturnType() const override
-    {
-        return std::make_shared<DataTypeFloat64>();
-    }
-};
-
-struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFunction, public ReturningFloat64
+struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFunction
 {
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
@@ -1693,6 +1685,11 @@ struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFun
         }
     }
 
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeFloat64>();
+    }
+
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
@@ -1701,8 +1698,8 @@ struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFun
         Float64 last_val = getLastValueFromOutputColumn<Float64>(transform, function_index);
         Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
-        Float64 x = getCurrentValueFromInputColumn<Float64>(transform, ARGUMENT_VALUE);
-        Float64 t = getCurrentValueFromInputColumn<Float64>(transform, ARGUMENT_TIME);
+        Float64 x = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_VALUE);
+        Float64 t = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         Float64 c = exp((last_t - t) / decay_length);
         Float64 result = x + c * last_val;
@@ -1714,7 +1711,7 @@ struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFun
         Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFunction, , public ReturningFloat64
+struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFunction
 {
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
@@ -1753,6 +1750,11 @@ struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFun
         }
     }
 
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeFloat64>();
+    }
+
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
@@ -1761,8 +1763,8 @@ struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFun
         Float64 last_val = getLastValueFromOutputColumn<Float64>(transform, function_index);
         Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
-        Float64 x = getCurrentValueFromInputColumn<Float64>(transform, ARGUMENT_VALUE);
-        Float64 t = getCurrentValueFromInputColumn<Float64>(transform, ARGUMENT_TIME);
+        Float64 x = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_VALUE);
+        Float64 t = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         Float64 c = exp((last_t - t) / decay_length);
         Float64 result = std::max(x, c * last_val);
@@ -1774,7 +1776,7 @@ struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFun
         Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowFunction, public ReturningFloat64
+struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowFunction
 {
     static constexpr size_t ARGUMENT_TIME = 0;
 
@@ -1803,6 +1805,11 @@ struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowF
                 argument_types[ARGUMENT_TIME]->getName());
         }
     }
+    
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeFloat64>();
+    }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -1811,7 +1818,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowF
     {
         Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
-        Float64 t = getCurrentValueFromInputColumn<Float64>(transform, ARGUMENT_TIME);
+        Float64 t = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         Float64 result = exp((last_t - t) / decay_length);
 
@@ -1822,7 +1829,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowF
         Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFunction, public ReturningFloat64
+struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFunction
 {
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
@@ -1860,6 +1867,11 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFun
                 argument_types[ARGUMENT_TIME]->getName());
         }
     }
+    
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeFloat64>();
+    }
 
     bool allocatesMemoryInArena() const override { return false; }
 
@@ -1869,8 +1881,8 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFun
         Float64 last_val = getLastValueFromOutputColumn<Float64>(transform, function_index);
         Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
-        Float64 x = getCurrentValueFromInputColumn<Float64>(transform, ARGUMENT_VALUE);
-        Float64 t = getCurrentValueFromInputColumn<Float64>(transform, ARGUMENT_TIME);
+        Float64 x = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_VALUE);
+        Float64 t = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         Float64 c = exp((last_t - t) / decay_length);
         Float64 result = (x + c * last_val) / c;
