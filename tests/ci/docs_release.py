@@ -105,12 +105,12 @@ if __name__ == "__main__":
     if not os.path.exists(test_output):
         os.makedirs(test_output)
 
-    token = get_parameter_from_ssm('cloudflare_token', decrypt=True)
+    token = os.getenv('CLOUDFLARE_TOKEN')
     cmd = f"docker run --cap-add=SYS_PTRACE -e CLOUDFLARE_TOKEN={token} --volume={repo_path}:/repo_path --volume={test_output}:/output_path {docker_image}"
 
     run_log_path = os.path.join(test_output, 'runlog.log')
 
-    with open(run_log_path, 'w', encoding='utf-8') as log, SSHKey("robot-clickhouse-ssh"):
+    with open(run_log_path, 'w', encoding='utf-8') as log, SSHKey("ROBOT_CLICKHOUSE_SSH_KEY"):
         with subprocess.Popen(cmd, shell=True, stderr=log, stdout=log) as process:
             retcode = process.wait()
             if retcode == 0:
