@@ -1574,16 +1574,31 @@ namespace recurrent_detail
         }
     }
 
-    template<typename T> void setLastValueToOutputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/, T /*value*/)
+    template<typename T> void setValueToOutputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/, T /*value*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getLastValueFromInputColumn() is not implemented");
     }
 
-    template<> void setLastValueToOutputColumn<Float64>(const WindowTransform * transform, size_t function_index, Float64 value)
+    template<> void setValueToOutputColumn<Float64>(const WindowTransform * transform, size_t function_index, Float64 value)
+    {
+        const auto & workspace = transform->workspaces[function_index];
+        auto current_row = transform->current_row;
+        const auto & current_block = transform->blockAt(current_row);
+
+        *static_cast<Float64 *>(static_cast<void *>(workspace.aggregate_function_state.data())) = value;
+        assert_cast<ColumnFloat64 &>(to).getData().push_back(value);
+    }
+
+    template<typename T> T getCurrentValueFromInputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/, size_t /*column_index*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCurrentValueFromInputColumn() is not implemented");
+    }
+
+    template<> Float64 getCurrentValueFromInputColumn<Float64>(const WindowTransform * transform, size_t function_index, size_t column_index)
     {
         const auto & workspace = transform->workspaces[function_index];
 
-        *static_cast<Float64 *>(static_cast<void *>(workspace.aggregate_function_state.data())) = value;
+        return (*current_block.input_columns[workspace.argument_column_indices[column_index]]).getFloat64(transform->current_row.row);
     }
 }
 
@@ -1616,13 +1631,27 @@ struct RecurrentWindowFunction : public WindowFunction
     }
 
     template<typename T>
-    static void setLastValueToOutputColumn(const WindowTransform * transform, size_t function_index, T value)
+    static void setValueToOutputColumn(const WindowTransform * transform, size_t function_index, T value)
     {
-        recurrent_detail::setLastValueToOutputColumn<T>(transform, function_index, value);
+        recurrent_detail::setValueToOutputColumn<T>(transform, function_index, value);
+    }
+
+    template<typename T>
+    static void getCurrentValueFromInputColumn(const WindowTransform * transform, size_t function_index, size_t column_index)
+    {
+        return recurrent_detail::getCurrentValueFromInputColumn<T>(transform, function_index, column_index);
     }
 };
 
-struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFunction
+struct ReturningFloat64 : public IAggregateFunction
+{
+    DataTypePtr getReturnType() const override
+    {
+        return std::make_shared<DataTypeFloat64>();
+    }
+};
+
+struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFunction, public ReturningFloat64
 {
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
@@ -1661,38 +1690,28 @@ struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFun
         }
     }
 
-    DataTypePtr getReturnType() const override
-    { return std::make_shared<DataTypeFloat64>(); }
-
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
-        const auto & workspace = transform->workspaces[function_index];
-        auto current_row = transform->current_row;
-        const auto & current_block = transform->blockAt(current_row);
-
         Float64 last_val = getLastValueFromOutputColumn<Float64>(transform, function_index);
         Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
-        IColumn & to = *current_block.output_columns[function_index];
-
-        Float64 x = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_VALUE]]).getFloat64(transform->current_row.row);
-        Float64 t = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_TIME]]).getFloat64(transform->current_row.row);
+        Float64 x = getCurrentValueFromInputColumn<Float64>(transform, ARGUMENT_VALUE);
+        Float64 t = getCurrentValueFromInputColumn<Float64>(transform, ARGUMENT_TIME);
 
         Float64 c = exp((last_t - t) / decay_length);
         Float64 result = x + c * last_val;
 
-        assert_cast<ColumnFloat64 &>(to).getData().push_back(result);
-        setLastValueToOutputColumn(transform, function_index, result);
+        setValueToOutputColumn(transform, function_index, result);
     }
 
     private:
         Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFunction
+struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFunction, , public ReturningFloat64
 {
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
@@ -1731,38 +1750,28 @@ struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFun
         }
     }
 
-    DataTypePtr getReturnType() const override
-    { return std::make_shared<DataTypeFloat64>(); }
-
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
-        const auto & workspace = transform->workspaces[function_index];
-        auto current_row = transform->current_row;
-        const auto & current_block = transform->blockAt(current_row);
-
         Float64 last_val = getLastValueFromOutputColumn<Float64>(transform, function_index);
         Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
-        IColumn & to = *current_block.output_columns[function_index];
-
-        Float64 x = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_VALUE]]).getFloat64(transform->current_row.row);
-        Float64 t = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_TIME]]).getFloat64(transform->current_row.row);
+        Float64 x = getCurrentValueFromInputColumn<Float64>(transform, ARGUMENT_VALUE);
+        Float64 t = getCurrentValueFromInputColumn<Float64>(transform, ARGUMENT_TIME);
 
         Float64 c = exp((last_t - t) / decay_length);
         Float64 result = std::max(x, c * last_val);
 
-        assert_cast<ColumnFloat64 &>(to).getData().push_back(result);
-        setLastValueToOutputColumn(transform, function_index, result);
+        setValueToOutputColumn(transform, function_index, result);
     }
 
     private:
         Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowFunction
+struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowFunction, public ReturningFloat64
 {
     static constexpr size_t ARGUMENT_TIME = 0;
 
@@ -1792,35 +1801,25 @@ struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowF
         }
     }
 
-    DataTypePtr getReturnType() const override
-    { return std::make_shared<DataTypeFloat64>(); }
-
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
-        const auto & workspace = transform->workspaces[function_index];
-        auto current_row = transform->current_row;
-        const auto & current_block = transform->blockAt(current_row);
-
         Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
-        IColumn & to = *current_block.output_columns[function_index];
-
-        Float64 t = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_TIME]]).getFloat64(transform->current_row.row);
+        Float64 t = getCurrentValueFromInputColumn<Float64>(transform, ARGUMENT_TIME);
 
         Float64 result = exp((last_t - t) / decay_length);
 
-        assert_cast<ColumnFloat64 &>(to).getData().push_back(result);
-        setLastValueToOutputColumn(transform, function_index, result);
+        setValueToOutputColumn(transform, function_index, result);
     }
 
     private:
         Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFunction
+struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFunction, public ReturningFloat64
 {
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
@@ -1859,31 +1858,21 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFun
         }
     }
 
-    DataTypePtr getReturnType() const override
-    { return std::make_shared<DataTypeFloat64>(); }
-
     bool allocatesMemoryInArena() const override { return false; }
 
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
-        const auto & workspace = transform->workspaces[function_index];
-        auto current_row = transform->current_row;
-        const auto & current_block = transform->blockAt(current_row);
-
         Float64 last_val = getLastValueFromOutputColumn<Float64>(transform, function_index);
         Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
-        IColumn & to = *current_block.output_columns[function_index];
-
-        Float64 x = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_VALUE]]).getFloat64(transform->current_row.row);
-        Float64 t = (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_TIME]]).getFloat64(transform->current_row.row);
+        Float64 x = getCurrentValueFromInputColumn<Float64>(transform, ARGUMENT_VALUE);
+        Float64 t = getCurrentValueFromInputColumn<Float64>(transform, ARGUMENT_TIME);
 
         Float64 c = exp((last_t - t) / decay_length);
         Float64 result = (x + c * last_val) / c;
 
-        assert_cast<ColumnFloat64 &>(to).getData().push_back(result);
-        setLastValueToOutputColumn(transform, function_index, result);
+        setValueToOutputColumn(transform, function_index, result);
     }
 
     private:
