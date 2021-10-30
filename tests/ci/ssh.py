@@ -6,7 +6,6 @@ import subprocess
 import tempfile
 import logging
 import signal
-from get_robot_token import get_parameter_from_ssm
 
 
 class SSHAgent:
@@ -104,7 +103,7 @@ class SSHAgent:
 
 class SSHKey:
     def __init__(self, key_name):
-        self.key = get_parameter_from_ssm(key_name)
+        self.key = os.getenv(key_name)
         self._key_pub = None
         self._ssh_agent = SSHAgent()
 
