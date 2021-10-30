@@ -36,6 +36,8 @@ jobs:
         env:
           TEMP_PATH: ${{runner.temp}}/docs_release
           REPO_COPY: ${{runner.temp}}/docs_release/ClickHouse
+          CLOUDFLARE_TOKEN: ${{secrets.CLOUDFLARE}}
+          ROBOT_CLICKHOUSE_SSH_KEY: ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
         run: |
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci
