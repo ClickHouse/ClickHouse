@@ -1,6 +1,8 @@
 This is a "usability testing" of TimescaleDB. I did not use TimescaleDB before. I will try to install it, load the data and conduct benchmarks. And record every obstacle that I will face.
 Usability testing need to be conducted by the most clueless person in the room. Doing this "usability testing" requires a bit of patience and courage (to publish all the struggles as is).
 
+Note: insted of using clear VM, I have to run benchmark on exactly the same baremetal server where all other benchmarks were run.
+
 
 ## Installation
 
@@ -1646,3 +1648,17 @@ DETAIL:  There are compressed chunks that prevent changing the existing compress
 ```
 
 Ok, at least some of the chunks will have the proper order.
+
+After a few hours looks like the compression finished.
+
+```
+sudo ncdu /var/lib/postgresql/13/main/
+
+28.9 GiB [##########] /base
+```
+
+Yes, looks like it's compressed. About two times - not too much.
+
+Let's rerun the benchmark.
+
+Ok, it's slightly faster.
