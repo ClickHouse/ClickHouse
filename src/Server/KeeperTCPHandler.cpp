@@ -307,7 +307,7 @@ void KeeperTCPHandler::runImpl()
     else
     {
         String reason;
-        if (!keeper_dispatcher->checkInit() && !keeper_dispathcer->hasLeader())
+        if (!keeper_dispatcher->checkInit() && !keeper_dispatcher->hasLeader())
             reason = "server is not initialized yet and no alive leader exists";
         else if (!keeper_dispatcher->checkInit())
             reason = "server is not initialized yet";
