@@ -331,7 +331,7 @@ By default, the ClickHouse server checks at table creation the data type of a co
 
 ## min_bytes_to_rebalance_partition_over_jbod {#min-bytes-to-rebalance-partition-over-jbod}
 
-Allows assigning new parts to different disks of a [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) volume in a balanced way.
+Sets minimal amount of bytes to enable parts rebalance over [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) array. Allows assigning new parts to different disks of a `JBOD` volume in a balanced way.
 
 Possible values:
 
@@ -341,4 +341,4 @@ Default value: `0`.
 
 **Usage**
 
-Throw exception if the value of the `min_bytes_to_rebalance_partition_over_jbod` setting should be less than the value of the [max_bytes_to_merge_at_max_space_in_pool](../../operations/settings/merge-tree-settings.md#max-bytes-to-merge-at-max-space-in-pool) setting.
+The value of the `min_bytes_to_rebalance_partition_over_jbod` setting should be less than the value of the [max_bytes_to_merge_at_max_space_in_pool](../../operations/settings/merge-tree-settings.md#max-bytes-to-merge-at-max-space-in-pool) setting. Otherwise, ClickHouse throws an exception.
