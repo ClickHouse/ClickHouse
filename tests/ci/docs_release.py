@@ -11,7 +11,7 @@ from github import Github
 from report import create_test_html_report
 from s3_helper import S3Helper
 from pr_info import PRInfo
-from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from get_robot_token import get_best_robot_token
 from ssh import SSHKey
 
 NAME = "Docs Release (actions)"
