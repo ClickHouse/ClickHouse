@@ -46,7 +46,7 @@ struct SessionLogElement
     String external_auth_server;
     Strings roles;
     Strings profiles;
-    std::vector<std::pair<String, String>> changed_settings;
+    std::vector<std::pair<String, String>> settings;
 
     ClientInfo client_info;
     String auth_failure_reason;
