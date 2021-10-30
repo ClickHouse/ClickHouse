@@ -109,7 +109,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
 
     const auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
-    const auto changed_settings_type_column = std::make_shared<DataTypeArray>(
+    const auto settings_type_column = std::make_shared<DataTypeArray>(
         std::make_shared<DataTypeTuple>(
             DataTypes({
                 // setting name
@@ -132,7 +132,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
 
         {"profiles", std::make_shared<DataTypeArray>(lc_string_datatype)},
         {"roles", std::make_shared<DataTypeArray>(lc_string_datatype)},
-        {"changed_settings", std::move(changed_settings_type_column)},
+        {"settings", std::move(settings_type_column)},
 
         {"client_address", DataTypeFactory::instance().get("IPv6")},
         {"client_port", std::make_shared<DataTypeUInt16>()},
@@ -170,21 +170,21 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
     fillColumnArray(roles, *columns[i++]);
 
     {
-        auto & changed_settings_array_col = assert_cast<ColumnArray &>(*columns[i++]);
-        auto & changed_settings_tuple_col = assert_cast<ColumnTuple &>(changed_settings_array_col.getData());
-        auto & names_col = *changed_settings_tuple_col.getColumnPtr(0)->assumeMutable();
-        auto & values_col = assert_cast<ColumnString &>(*changed_settings_tuple_col.getColumnPtr(1)->assumeMutable());
+        auto & settings_array_col = assert_cast<ColumnArray &>(*columns[i++]);
+        auto & settings_tuple_col = assert_cast<ColumnTuple &>(settings_array_col.getData());
+        auto & names_col = *settings_tuple_col.getColumnPtr(0)->assumeMutable();
+        auto & values_col = assert_cast<ColumnString &>(*settings_tuple_col.getColumnPtr(1)->assumeMutable());
 
         size_t items_added = 0;
-        for (const auto & kv : changed_settings)
+        for (const auto & kv : settings)
         {
             names_col.insert(kv.first);
             values_col.insert(kv.second);
             ++items_added;
         }
 
-        auto & offsets = changed_settings_array_col.getOffsets();
-        offsets.push_back(changed_settings_tuple_col.size());
+        auto & offsets = settings_array_col.getOffsets();
+        offsets.push_back(settings_tuple_col.size());
     }
 
     columns[i++]->insertData(IPv6ToBinary(client_info.current_address.host()).data(), 16);
@@ -228,7 +228,7 @@ void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> ses
     log_entry.profiles = profile_info->getProfileNames();
 
     for (const auto & s : settings.allChanged())
-        log_entry.changed_settings.emplace_back(s.getName(), s.getValueString());
+        log_entry.settings.emplace_back(s.getName(), s.getValueString());
 
     add(log_entry);
 }
