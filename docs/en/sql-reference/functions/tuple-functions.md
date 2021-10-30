@@ -166,6 +166,80 @@ Result:
 └─────────────────┘
 ```
 
+## tupleToNameValuePairs {#tupletonamevaluepairs}
+
+Turns a named tuple into an array of (name, value) pairs. For a `Tuple(a T, b T, ..., c T)` returns `Array(Tuple(String, T), ...)`
+in which the `Strings` represents the named fields of the tuple and `T` are the values associated with those names. All values in the tuple should be of the same type.
+
+**Syntax**
+
+``` sql
+tupleToNameValuePairs(tuple)
+
+**Arguments**
+
+-   `tuple` — Named tuple. [Tuple](../../sql-reference/data-types/tuple.md) with any types of values.
+
+**Returned value**
+
+-   An array with (name, value) pairs.
+
+Type: [Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([String](../../sql-reference/data-types/string.md), ...)).
+
+**Example**
+
+Query:
+
+``` sql
+CREATE TABLE tupletest (`col` Tuple(user_ID UInt64, session_ID UInt64) ENGINE = Memory;
+
+INSERT INTO tupletest VALUES (tuple( 100, 2502)), (tuple(1,100));
+
+SELECT tupleToNameValuePairs(col) FROM tupletest;
+``` 
+
+Result:
+
+``` text
+┌─tupleToNameValuePairs(col)────────────┐
+│ [('user_ID',100),('session_ID',2502)] │
+│ [('user_ID',1),('session_ID',100)]    │
+└───────────────────────────────────────┘
+```
+
+It is possible to transform colums to rows using this function:
+
+``` sql
+CREATE TABLE tupletest (`col` Tuple(CPU Float64, Memory Float64, Disk Float64)) ENGINE = Memory;
+
+INSERT INTO tupletest VALUES(tuple(3.3, 5.5, 6.6));
+
+SELECT arrayJoin(tupleToNameValuePairs(col))FROM tupletest;
+```
+
+Result:
+
+``` text
+┌─arrayJoin(tupleToNameValuePairs(col))─┐
+│ ('CPU',3.3)                           │
+│ ('Memory',5.5)                        │
+│ ('Disk',6.6)                          │
+└───────────────────────────────────────┘
+```
+
+If you pass a simple tuple to the function, ClickHouse uses the indexes of the values as their names:
+
+``` sql
+SELECT tupleToNameValuePairs(tuple(3, 2, 1));
+```
+
+Result:
+
+``` text
+┌─tupleToNameValuePairs(tuple(3, 2, 1))─┐
+│ [('1',3),('2',2),('3',1)]             │
+└───────────────────────────────────────┘
+
 ## tuplePlus {#tupleplus}
 
 Calculates the sum of corresponding values of two tuples of the same size.
@@ -894,7 +968,6 @@ Result:
 ## LpNormalize {#lpnormalize}
 
 Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `Lp` space (using [p-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
-
 
 **Syntax**
 
