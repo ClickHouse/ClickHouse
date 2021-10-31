@@ -809,8 +809,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         if (has_password_for_default_user)
             maybe_password = " --password";
 
-        fs::path pid_file = prefix / options["pid-path"].as<std::string>() / "clickhouse-server.pid";
-        if (fs::exists(pid_file)) {
+        fs::path pid_file = pid_path / "clickhouse-server.pid";
+        if (fs::exists(pid_file))
+        {
             fmt::print(
                 "\nClickHouse has been successfully installed.\n"
                 "\nRestart clickhouse-server with:\n"
