@@ -37,6 +37,9 @@ then
     # Sometimes it does not work with error message "! [remote rejected] master -> master (cannot lock ref 'refs/heads/master': is at 42a0f6b6b6c7be56a469441b4bf29685c1cebac3 but expected 520e9b02c0d4678a2a5f41d2f561e6532fb98cc1)"
     for _ in {1..10}; do git push --force origin master && break; sleep 5; done
 
+    # Turn off logging.
+    set +x
+
     if [[ ! -z "${CLOUDFLARE_TOKEN}" ]]
     then
         sleep 1m
