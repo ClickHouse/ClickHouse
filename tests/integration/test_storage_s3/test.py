@@ -750,3 +750,20 @@ def test_predefined_connection_configuration(started_cluster):
 
     result = instance.query("SELECT * FROM s3(s3_conf1, format='CSV', structure='id UInt32')")
     assert result == instance.query("SELECT number FROM numbers(10)")
+
+
+def test_seekable_formats(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+
+    table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
+    instance.query(f"insert into table function {table_function} SELECT number, randomString(1000) FROM numbers(5000000)")
+
+    result = instance.query(f"SELECT count() FROM {table_function}")
+    assert(int(result) == 5000000)
+
+    table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
+    instance.query(f"insert into table function {table_function} SELECT number, randomString(1000) FROM numbers(5000000)")
+
+    result = instance.query(f"SELECT count() FROM {table_function}")
+    assert(int(result) == 5000000)
