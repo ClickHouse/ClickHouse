@@ -1,15 +1,13 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_AWS_S3
 
 #include <memory>
 #include <optional>
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include "Client/Connection.h"
 #include <Interpreters/Cluster.h>

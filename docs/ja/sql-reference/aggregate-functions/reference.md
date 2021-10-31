@@ -1911,4 +1911,4 @@ SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_
 └──────────────────────────────────────────────────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/agg_functions/reference/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/agg_functions/reference/) <!--hide-->

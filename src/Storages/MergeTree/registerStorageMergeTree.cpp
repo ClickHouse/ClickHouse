@@ -249,9 +249,9 @@ ORDER BY expr
 [TTL expr [DELETE|TO DISK 'xxx'|TO VOLUME 'xxx'], ...]
 [SETTINGS name=value, ...]
 
-See details in documentation: https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/. Other engines of the family support different syntax, see details in the corresponding documentation topics.
+See details in documentation: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/. Other engines of the family support different syntax, see details in the corresponding documentation topics.
 
-If you use the Replicated version of engines, see https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/.
+If you use the Replicated version of engines, see https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/.
 )";
 
     return help;
@@ -651,10 +651,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// single default partition with name "all".
         metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_key, metadata.columns, args.getContext());
 
-        auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
-        metadata.minmax_count_projection.emplace(
-            ProjectionDescription::getMinMaxCountProjection(args.columns, minmax_columns, args.getContext()));
-
         /// PRIMARY KEY without ORDER BY is allowed and considered as ORDER BY.
         if (!args.storage_def->order_by && args.storage_def->primary_key)
             args.storage_def->set(args.storage_def->order_by, args.storage_def->primary_key->clone());
@@ -685,6 +681,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             /// will return false but hasPrimaryKey() will return true.
             metadata.primary_key.definition_ast = nullptr;
         }
+
+        auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
+        auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
+        metadata.minmax_count_projection.emplace(
+            ProjectionDescription::getMinMaxCountProjection(args.columns, minmax_columns, primary_key_asts, args.getContext()));
 
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, args.getContext());
@@ -736,10 +737,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
         metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, metadata.columns, args.getContext());
 
-        auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
-        metadata.minmax_count_projection.emplace(
-            ProjectionDescription::getMinMaxCountProjection(args.columns, minmax_columns, args.getContext()));
-
         ++arg_num;
 
         /// If there is an expression for sampling
@@ -764,6 +761,11 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         metadata.primary_key.definition_ast = nullptr;
 
         ++arg_num;
+
+        auto minmax_columns = metadata.getColumnsRequiredForPartitionKey();
+        auto primary_key_asts = metadata.primary_key.expression_list_ast->children;
+        metadata.minmax_count_projection.emplace(
+            ProjectionDescription::getMinMaxCountProjection(args.columns, minmax_columns, primary_key_asts, args.getContext()));
 
         const auto * ast = engine_args[arg_num]->as<ASTLiteral>();
         if (ast && ast->value.getType() == Field::Types::UInt64)

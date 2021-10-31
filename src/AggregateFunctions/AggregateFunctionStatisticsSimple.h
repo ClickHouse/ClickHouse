@@ -2,7 +2,7 @@
 
 #include <cmath>
 
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>

@@ -40,6 +40,10 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 └────────────────────┴────────┘
 ```
 
+## MD4 {#hash_functions-md4}
+
+Calculates the MD4 from a string and returns the resulting set of bytes as FixedString(16).
+
 ## MD5 {#hash_functions-md5}
 
 Calculates the MD5 from a string and returns the resulting set of bytes as FixedString(16).
@@ -137,18 +141,49 @@ This is a relatively fast non-cryptographic hash function of average quality for
 Calculates a 64-bit hash code from any type of integer.
 It works faster than intHash32. Average quality.
 
-## SHA1 {#sha1}
+## SHA1, SHA224, SHA256, SHA512 {#sha}
 
-## SHA224 {#sha224}
+Calculates SHA-1, SHA-224, SHA-256, SHA-512 hash from a string and returns the resulting set of bytes as [FixedString](../data-types/fixedstring.md).
 
-## SHA256 {#sha256}
+**Syntax**
 
-## SHA512 {#sha512}
+``` sql
+SHA1('s')
+...
+SHA512('s')
+```
 
-Calculates SHA-1, SHA-224, SHA-256 or SHA-512 from a string and returns the resulting set of bytes as FixedString(20), FixedString(28), FixedString(32), or FixedString(64).
 The function works fairly slowly (SHA-1 processes about 5 million short strings per second per processor core, while SHA-224 and SHA-256 process about 2.2 million).
 We recommend using this function only in cases when you need a specific hash function and you can’t select it.
-Even in these cases, we recommend applying the function offline and pre-calculating values when inserting them into the table, instead of applying it in SELECTS.
+Even in these cases, we recommend applying the function offline and pre-calculating values when inserting them into the table, instead of applying it in `SELECT` queries.
+
+**Arguments**
+
+-   `s` — Input string for SHA hash calculation. [String](../data-types/string.md).
+
+**Returned value**
+
+-   SHA hash as a hex-unencoded FixedString. SHA-1 returns as FixedString(20), SHA-224 as FixedString(28), SHA-256 — FixedString(32), SHA-512 — FixedString(64).
+
+Type: [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+Use the [hex](../functions/encoding-functions.md#hex) function to represent the result as a hex-encoded string.
+
+Query:
+
+``` sql
+SELECT hex(SHA1('abc'));
+```
+
+Result:
+
+``` text
+┌─hex(SHA1('abc'))─────────────────────────┐
+│ A9993E364706816ABA3E25717850C26C9CD0D89D │
+└──────────────────────────────────────────┘
+```
 
 ## URLHash(url\[, N\]) {#urlhashurl-n}
 

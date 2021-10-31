@@ -6,7 +6,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/UnionStep.h>

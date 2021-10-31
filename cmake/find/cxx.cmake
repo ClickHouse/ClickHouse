@@ -17,7 +17,7 @@ option (USE_INTERNAL_LIBCXX_LIBRARY "Disable to use system libcxx and libcxxabi 
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libcxx/CMakeLists.txt")
     if (USE_INTERNAL_LIBCXX_LIBRARY)
-        message(WARNING "submodule contrib/libcxx is missing. to fix try run: \n git submodule update --init --recursive")
+        message(WARNING "submodule contrib/libcxx is missing. to fix try run: \n git submodule update --init")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal libcxx")
         set(USE_INTERNAL_LIBCXX_LIBRARY 0)
     endif()

@@ -13,4 +13,4 @@ toc_title: "\u30ED\u30B0"
 同時データアクセスの場合、読み取り操作は同時に実行できますが、書き込み操作は読み取りをブロックします。
 ログエンジ 同様に、テーブルへの書き込みが失敗した場合、テーブルは壊れ、そこから読み込むとエラーが返されます。 ログエンジンは、一時データ、書き込み一度テーブル、およびテストまたはデモの目的に適しています。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/log/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/log/) <!--hide-->

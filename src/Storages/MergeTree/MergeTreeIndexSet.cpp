@@ -451,9 +451,9 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomi
         const ASTs & args = func->arguments->children;
 
         if (func->name == "and" || func->name == "indexHint")
-            return checkASTUseless(args[0], atomic) && checkASTUseless(args[1], atomic);
+            return std::all_of(args.begin(), args.end(), [this, atomic](const auto & arg) { return checkASTUseless(arg, atomic); });
         else if (func->name == "or")
-            return checkASTUseless(args[0], atomic) || checkASTUseless(args[1], atomic);
+            return std::any_of(args.begin(), args.end(), [this, atomic](const auto & arg) { return checkASTUseless(arg, atomic); });
         else if (func->name == "not")
             return checkASTUseless(args[0], atomic);
         else
@@ -461,7 +461,7 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomi
                 [this](const auto & arg) { return checkASTUseless(arg, true); });
     }
     else if (const auto * literal = node->as<ASTLiteral>())
-        return !atomic && literal->value.get<bool>();
+        return !atomic && literal->value.safeGet<bool>();
     else if (const auto * identifier = node->as<ASTIdentifier>())
         return key_columns.find(identifier->getColumnName()) == std::end(key_columns);
     else

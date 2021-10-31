@@ -5,7 +5,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/HashTable/Hash.h>
-#include <common/bit_cast.h>
+#include <base/bit_cast.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <IO/WriteHelpers.h>
 

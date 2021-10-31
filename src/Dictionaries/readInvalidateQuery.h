@@ -5,9 +5,9 @@
 namespace DB
 {
 
-class Pipe;
+class QueryPipeline;
 
 /// Using in MySQLDictionarySource and XDBCDictionarySource after processing invalidate_query.
-std::string readInvalidateQuery(Pipe pipe);
+std::string readInvalidateQuery(QueryPipeline pipeline);
 
 }

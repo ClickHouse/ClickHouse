@@ -22,7 +22,6 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
 | [Values](#data-format-values)                                                           | ✔     | ✔      |
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
-| [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
 | [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
 | [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
@@ -74,7 +73,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 Формат `TabSeparated` поддерживает вывод тотальных значений (при использовании WITH TOTALS) и экстремальных значений (при настройке extremes выставленной в 1). В этих случаях, после основных данных выводятся тотальные значения, и экстремальные значения. Основной результат, тотальные значения и экстремальные значения, отделяются друг от друга пустой строкой. Пример:
 
 ``` sql
-SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
+SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated
 ```
 
 ``` text
@@ -365,7 +364,7 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 
 ## CSVWithNames {#csvwithnames}
 
-Выводит также заголовок, аналогично `TabSeparatedWithNames`.
+Выводит также заголовок, аналогично [TabSeparatedWithNames](#tabseparatedwithnames).
 
 ## CustomSeparated {#format-customseparated}
 
@@ -494,7 +493,7 @@ ClickHouse поддерживает [NULL](../sql-reference/syntax.md), кото
 
 ## JSONAsString {#jsonasstring}
 
-В этом формате один объект JSON интерпретируется как одно строковое значение. Если входные данные имеют несколько объектов JSON, разделенных запятой, то они будут интерпретироваться как отдельные строки таблицы.
+В этом формате один объект JSON интерпретируется как одно строковое значение. Если входные данные имеют несколько объектов JSON, разделенных запятой, то они интерпретируются как отдельные строки таблицы. Если входные данные заключены в квадратные скобки, они интерпретируются как массив JSON-объектов.
 
 В этом формате парситься может только таблица с единственным полем типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как `DEFAULT` или `MATERIALIZED`(смотрите раздел [Значения по умолчанию](../sql-reference/statements/create/table.md#create-default-values)), либо отсутствовать. Для дальнейшей обработки объекта JSON, представленного в строке, вы можете использовать [функции для работы с JSON](../sql-reference/functions/json-functions.md).
 
@@ -518,6 +517,28 @@ SELECT * FROM json_as_string;
 │ {"any json stucture":1}           │
 └───────────────────────────────────┘
 ```
+
+**Пример с массивом объектов JSON**
+
+Запрос:
+
+``` sql
+DROP TABLE IF EXISTS json_square_brackets;
+CREATE TABLE json_square_brackets (field String) ENGINE = Memory;
+INSERT INTO json_square_brackets FORMAT JSONAsString [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
+
+SELECT * FROM json_square_brackets;
+```
+
+Результат:
+
+```text
+┌─field──────────────────────┐
+│ {"id": 1, "name": "name1"} │
+│ {"id": 2, "name": "name2"} │
+└────────────────────────────┘
+```
+
 
 ## JSONCompact {#jsoncompact}
 ## JSONCompactStrings {#jsoncompactstrings}
@@ -915,10 +936,6 @@ test: string with 'quotes' and   with some special
 ```
 
 Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
-
-## VerticalRaw {#verticalraw}
-
-Аналогичен [Vertical](#vertical), но с отключенным выходом. Этот формат подходит только для вывода результата выполнения запроса, но не для парсинга (приёма данных для вставки в таблицу).
 
 ## XML {#xml}
 

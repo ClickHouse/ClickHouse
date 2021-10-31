@@ -1,0 +1,13 @@
+.btns {
+	align-items: center;
+	display: flex;
+	justify-content: center;
+
+	.btn + .btn {
+		margin-left: $spacer * 3;
+	}
+
+	.btn-lg + .btn-lg {
+		margin-left: $spacer * 5;
+	}
+}

@@ -23,7 +23,6 @@ The supported formats are:
 | [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
 | [Values](#data-format-values)                                                           | ✔     | ✔      |
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
-| [VerticalRaw](#verticalraw)                                                             | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
 | [JSONAsString](#jsonasstring)                                                           | ✔     | ✗      |
 | [JSONStrings](#jsonstrings)                                                               | ✗     | ✔      |
@@ -165,8 +164,7 @@ This format is also available under the name `TSVRaw`.
 ## TabSeparatedWithNames {#tabseparatedwithnames}
 
 Differs from the `TabSeparated` format in that the column names are written in the first row.
-During parsing, the first row is completely ignored. You can’t use column names to determine their position or to check their correctness.
-(Support for parsing the header row may be added in the future.)
+During parsing, the first row is expected to contain the column names. You can use column names to determine their position and to check their correctness.
 
 This format is also available under the name `TSVWithNames`.
 
@@ -387,7 +385,7 @@ The CSV format supports the output of totals and extremes the same way as `TabSe
 
 ## CSVWithNames {#csvwithnames}
 
-Also prints the header row, similar to `TabSeparatedWithNames`.
+Also prints the header row, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
 
 ## CustomSeparated {#format-customseparated}
 
@@ -516,11 +514,11 @@ Example:
 
 ## JSONAsString {#jsonasstring}
 
-In this format, a single JSON object is interpreted as a single value. If the input has several JSON objects (comma separated) they will be interpreted as separate rows.
+In this format, a single JSON object is interpreted as a single value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in square brackets, it is interpreted as an array of JSONs.
 
 This format can only be parsed for table with a single field of type [String](../sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](../sql-reference/statements/create/table.md#default) or [MATERIALIZED](../sql-reference/statements/create/table.md#materialized), or omitted. Once you collect whole JSON object to string you can use [JSON functions](../sql-reference/functions/json-functions.md) to process it.
 
-**Example**
+**Examples**
 
 Query:
 
@@ -539,6 +537,26 @@ Result:
 │ {}                                │
 │ {"any json stucture":1}           │
 └───────────────────────────────────┘
+```
+
+**An array of JSON objects**
+
+Query:
+
+``` sql
+CREATE TABLE json_square_brackets (field String) ENGINE = Memory;
+INSERT INTO json_square_brackets FORMAT JSONAsString [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
+
+SELECT * FROM json_square_brackets;
+```
+
+Result:
+
+```text
+┌─field──────────────────────┐
+│ {"id": 1, "name": "name1"} │
+│ {"id": 2, "name": "name2"} │
+└────────────────────────────┘
 ```
 
 ## JSONCompact {#jsoncompact}
@@ -685,7 +703,7 @@ CREATE TABLE IF NOT EXISTS example_table
 -   If `input_format_defaults_for_omitted_fields = 1`, then the default value for `x` equals `0`, but the default value of `a` equals `x * 2`.
 
 !!! note "Warning"
-    When inserting data with `insert_sample_with_metadata = 1`, ClickHouse consumes more computational resources, compared to insertion with `insert_sample_with_metadata = 0`.
+    When inserting data with `input_format_defaults_for_omitted_fields = 1`, ClickHouse consumes more computational resources, compared to insertion with `input_format_defaults_for_omitted_fields = 0`.
 
 ### Selecting Data {#selecting-data}
 
@@ -943,10 +961,6 @@ test: string with 'quotes' and      with some special
 ```
 
 This format is only appropriate for outputting a query result, but not for parsing (retrieving data to insert in a table).
-
-## VerticalRaw {#verticalraw}
-
-Similar to [Vertical](#vertical), but with escaping disabled. This format is only suitable for outputting query results, not for parsing (receiving data and inserting it in the table).
 
 ## XML {#xml}
 
@@ -1558,18 +1572,20 @@ ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data
 
 ### Data Types Matching {#data-types-matching-msgpack}
 
-| MsgPack data type               | ClickHouse data type                                                             |
-|---------------------------------|----------------------------------------------------------------------------------|
-| `uint N`, `positive fixint`     | [UIntN](../sql-reference/data-types/int-uint.md)                                 |
-| `int N`                         | [IntN](../sql-reference/data-types/int-uint.md)                                  |
-| `fixstr`, `str 8`, `str 16`, `str 32`   | [String](../sql-reference/data-types/string.md), [FixedString](../sql-reference/data-types/fixedstring.md)                   |
-| `float 32`                        | [Float32](../sql-reference/data-types/float.md)                                  |
-| `float 64`                        | [Float64](../sql-reference/data-types/float.md)                                  |
-| `uint 16`                         | [Date](../sql-reference/data-types/date.md)                                      |
-| `uint 32`                         | [DateTime](../sql-reference/data-types/datetime.md)                              |
-| `uint 64`                         | [DateTime64](../sql-reference/data-types/datetime.md)                            |
-| `fixarray`, `array 16`, `array 32`| [Array](../sql-reference/data-types/array.md)                                    |
-| `nil`                             | [Nothing](../sql-reference/data-types/special-data-types/nothing.md)             |
+| MessagePack data type (`INSERT`)                                   | ClickHouse data type                                      | MessagePack data type (`SELECT`)   |
+|--------------------------------------------------------------------|-----------------------------------------------------------|------------------------------------|
+| `uint N`, `positive fixint`                                        | [UIntN](../sql-reference/data-types/int-uint.md)          | `uint N`                           |
+| `int N`                                                            | [IntN](../sql-reference/data-types/int-uint.md)           | `int N`                            |
+| `bool`                                                             | [UInt8](../sql-reference/data-types/int-uint.md)          | `uint 8`                           |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [String](../sql-reference/data-types/string.md)           | `bin 8`, `bin 16`, `bin 32`        |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [FixedString](../sql-reference/data-types/fixedstring.md) | `bin 8`, `bin 16`, `bin 32`        |
+| `float 32`                                                         | [Float32](../sql-reference/data-types/float.md)           | `float 32`                         |
+| `float 64`                                                         | [Float64](../sql-reference/data-types/float.md)           | `float 64`                         |
+| `uint 16`                                                          | [Date](../sql-reference/data-types/date.md)               | `uint 16`                          |
+| `uint 32`                                                          | [DateTime](../sql-reference/data-types/datetime.md)       | `uint 32`                          |
+| `uint 64`                                                          | [DateTime64](../sql-reference/data-types/datetime.md)     | `uint 64`                          |
+| `fixarray`, `array 16`, `array 32`                                 | [Array](../sql-reference/data-types/array.md)             | `fixarray`, `array 16`, `array 32` |
+| `fixmap`, `map 16`, `map 32`                                       | [Map](../sql-reference/data-types/map.md)                 | `fixmap`, `map 16`, `map 32`       |
 
 Example:
 
