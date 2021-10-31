@@ -3088,6 +3088,10 @@ ReadSettings Context::getReadSettings() const
     res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
     res.priority = settings.read_priority;
 
+    res.http_max_tries = settings.http_max_tries;
+    res.http_retry_initial_backoff_ms = settings.http_retry_initial_backoff_ms;
+    res.http_retry_max_backoff_ms = settings.http_retry_max_backoff_ms;
+
     res.mmap_cache = getMMappedFileCache().get();
 
     return res;
