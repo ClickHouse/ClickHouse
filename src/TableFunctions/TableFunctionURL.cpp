@@ -1,7 +1,7 @@
 #include <TableFunctions/TableFunctionURL.h>
 
 #include "registerTableFunctions.h"
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Poco/URI.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/ColumnsDescription.h>

@@ -2,7 +2,7 @@
 #include <Storages/System/StorageSystemQuotaUsage.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessControlManager.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Access/QuotaUsage.h>
 
 

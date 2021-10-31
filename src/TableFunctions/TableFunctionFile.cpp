@@ -1,7 +1,7 @@
 #include <TableFunctions/TableFunctionFile.h>
 
 #include "registerTableFunctions.h"
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageFile.h>

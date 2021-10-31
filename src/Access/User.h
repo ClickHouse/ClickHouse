@@ -2,8 +2,8 @@
 
 #include <Access/IAccessEntity.h>
 #include <Access/AccessRights.h>
-#include <Access/Authentication.h>
-#include <Access/AllowedClientHosts.h>
+#include <Access/Common/Authentication.h>
+#include <Access/Common/AllowedClientHosts.h>
 #include <Access/GrantedRoles.h>
 #include <Access/RolesOrUsersSet.h>
 #include <Access/SettingsProfileElement.h>
