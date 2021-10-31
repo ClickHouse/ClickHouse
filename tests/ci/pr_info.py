@@ -10,7 +10,6 @@ DIFF_IN_DOCUMENTATION_EXT = [".html", ".md", ".yml", ".txt", ".css", ".js", ".xm
 
 class PRInfo:
     def __init__(self, github_event, need_orgs=False, need_changed_files=False):
-        print(github_event)
         if 'pull_request' in github_event: # pull request and other similar events
             self.number = github_event['number']
             if 'after' in github_event:
@@ -33,7 +32,7 @@ class PRInfo:
                 diff = urllib.request.urlopen(diff_url)
                 diff_object = PatchSet(diff, diff.headers.get_charsets()[0])
                 self.changed_files = { f.path for f in diff_object }
-        else:
+        elif 'commits' in github_event:
             self.number = 0
             self.sha = github_event['after']
             self.labels = {}
@@ -44,6 +43,9 @@ class PRInfo:
                     self.changed_files = [f['filename'] for f in diff['files']]
                 else:
                     self.changed_files = set([])
+        else:
+            raise Exception("Cannot detect type of event")
+
 
     def get_dict(self):
         return {
