@@ -495,12 +495,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 {
                     std::string data_file = config_d / "data-paths.xml";
                     WriteBufferFromFile out(data_file);
-                    out << "<yandex>\n"
+                    out << "<clickhouse>\n"
                     "    <path>" << data_path.string() << "</path>\n"
                     "    <tmp_path>" << (data_path / "tmp").string() << "</tmp_path>\n"
                     "    <user_files_path>" << (data_path / "user_files").string() << "</user_files_path>\n"
                     "    <format_schema_path>" << (data_path / "format_schemas").string() << "</format_schema_path>\n"
-                    "</yandex>\n";
+                    "</clickhouse>\n";
                     out.sync();
                     out.finalize();
                     fmt::print("Data path configuration override is saved to file {}.\n", data_file);
@@ -510,12 +510,12 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 {
                     std::string logger_file = config_d / "logger.xml";
                     WriteBufferFromFile out(logger_file);
-                    out << "<yandex>\n"
+                    out << "<clickhouse>\n"
                     "    <logger>\n"
                     "        <log>" << (log_path / "clickhouse-server.log").string() << "</log>\n"
                     "        <errorlog>" << (log_path / "clickhouse-server.err.log").string() << "</errorlog>\n"
                     "    </logger>\n"
-                    "</yandex>\n";
+                    "</clickhouse>\n";
                     out.sync();
                     out.finalize();
                     fmt::print("Log path configuration override is saved to file {}.\n", logger_file);
@@ -525,13 +525,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 {
                     std::string user_directories_file = config_d / "user-directories.xml";
                     WriteBufferFromFile out(user_directories_file);
-                    out << "<yandex>\n"
+                    out << "<clickhouse>\n"
                     "    <user_directories>\n"
                     "        <local_directory>\n"
                     "            <path>" << (data_path / "access").string() << "</path>\n"
                     "        </local_directory>\n"
                     "    </user_directories>\n"
-                    "</yandex>\n";
+                    "</clickhouse>\n";
                     out.sync();
                     out.finalize();
                     fmt::print("User directory path configuration override is saved to file {}.\n", user_directories_file);
@@ -541,7 +541,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 {
                     std::string openssl_file = config_d / "openssl.xml";
                     WriteBufferFromFile out(openssl_file);
-                    out << "<yandex>\n"
+                    out << "<clickhouse>\n"
                     "    <openSSL>\n"
                     "        <server>\n"
                     "            <certificateFile>" << (config_dir / "server.crt").string() << "</certificateFile>\n"
@@ -549,7 +549,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "            <dhParamsFile>" << (config_dir / "dhparam.pem").string() << "</dhParamsFile>\n"
                     "        </server>\n"
                     "    </openSSL>\n"
-                    "</yandex>\n";
+                    "</clickhouse>\n";
                     out.sync();
                     out.finalize();
                     fmt::print("OpenSSL path configuration override is saved to file {}.\n", openssl_file);
@@ -716,25 +716,25 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 hash_hex.resize(64);
                 for (size_t i = 0; i < 32; ++i)
                     writeHexByteLowercase(hash[i], &hash_hex[2 * i]);
-                out << "<yandex>\n"
+                out << "<clickhouse>\n"
                     "    <users>\n"
                     "        <default>\n"
                     "            <password remove='1' />\n"
                     "            <password_sha256_hex>" << hash_hex << "</password_sha256_hex>\n"
                     "        </default>\n"
                     "    </users>\n"
-                    "</yandex>\n";
+                    "</clickhouse>\n";
                 out.sync();
                 out.finalize();
                 fmt::print(HILITE "Password for default user is saved in file {}." END_HILITE "\n", password_file);
 #else
-                out << "<yandex>\n"
+                out << "<clickhouse>\n"
                     "    <users>\n"
                     "        <default>\n"
                     "            <password><![CDATA[" << password << "]]></password>\n"
                     "        </default>\n"
                     "    </users>\n"
-                    "</yandex>\n";
+                    "</clickhouse>\n";
                 out.sync();
                 out.finalize();
                 fmt::print(HILITE "Password for default user is saved in plaintext in file {}." END_HILITE "\n", password_file);
@@ -777,9 +777,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             {
                 std::string listen_file = config_d / "listen.xml";
                 WriteBufferFromFile out(listen_file);
-                out << "<yandex>\n"
+                out << "<clickhouse>\n"
                     "    <listen_host>::</listen_host>\n"
-                    "</yandex>\n";
+                    "</clickhouse>\n";
                 out.sync();
                 out.finalize();
                 fmt::print("The choice is saved in file {}.\n", listen_file);
@@ -809,13 +809,27 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
         if (has_password_for_default_user)
             maybe_password = " --password";
 
-        fmt::print(
-            "\nClickHouse has been successfully installed.\n"
-            "\nStart clickhouse-server with:\n"
-            " sudo clickhouse start\n"
-            "\nStart clickhouse-client with:\n"
-            " clickhouse-client{}\n\n",
-            maybe_password);
+        fs::path pid_file = pid_path / "clickhouse-server.pid";
+        if (fs::exists(pid_file))
+        {
+            fmt::print(
+                "\nClickHouse has been successfully installed.\n"
+                "\nRestart clickhouse-server with:\n"
+                " sudo clickhouse restart\n"
+                "\nStart clickhouse-client with:\n"
+                " clickhouse-client{}\n\n",
+                maybe_password);
+        }
+        else
+        {
+            fmt::print(
+                "\nClickHouse has been successfully installed.\n"
+                "\nStart clickhouse-server with:\n"
+                " sudo clickhouse start\n"
+                "\nStart clickhouse-client with:\n"
+                " clickhouse-client{}\n\n",
+                maybe_password);
+        }
     }
     catch (const fs::filesystem_error &)
     {
