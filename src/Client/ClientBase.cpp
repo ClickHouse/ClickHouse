@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <iomanip>
+#include <string_view>
 #include <filesystem>
 
 #include <base/argsToConfig.h>
@@ -52,6 +53,7 @@
 #include <Client/InternalTextLogs.h>
 
 namespace fs = std::filesystem;
+using namespace std::literals;
 
 
 namespace DB
@@ -1488,7 +1490,7 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
     {
         const char * arg = argv[arg_num];
 
-        if (0 == strcmp(arg, "--external"))
+        if (arg == "--external"sv)
         {
             in_external_group = true;
             external_tables_arguments.emplace_back(Arguments{""});
@@ -1503,8 +1505,8 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
         }
         /// Options with value after whitespace.
         else if (in_external_group
-            && (0 == strcmp(arg, "--file") || 0 == strcmp(arg, "--name") || 0 == strcmp(arg, "--format")
-                || 0 == strcmp(arg, "--structure") || 0 == strcmp(arg, "--types")))
+            && (arg == "--file"sv || arg == "--name"sv || arg == "--format"sv
+                || arg == "--structure"sv || arg == "--types"sv))
         {
             if (arg_num + 1 < argc)
             {
