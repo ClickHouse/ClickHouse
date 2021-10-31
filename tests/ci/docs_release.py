@@ -106,7 +106,7 @@ if __name__ == "__main__":
         os.makedirs(test_output)
 
     token = os.getenv('CLOUDFLARE_TOKEN')
-    cmd = f"docker run --cap-add=SYS_PTRACE -e CLOUDFLARE_TOKEN={token} --volume={repo_path}:/repo_path --volume={test_output}:/output_path {docker_image}"
+    cmd = f"docker run --cap-add=SYS_PTRACE --volume=$SSH_AUTH_SOCK:/ssh-agent -e SSH_AUTH_SOCK=/ssh-agent -e CLOUDFLARE_TOKEN={token} --volume={repo_path}:/repo_path --volume={test_output}:/output_path {docker_image}"
 
     run_log_path = os.path.join(test_output, 'runlog.log')
 
@@ -150,4 +150,5 @@ if __name__ == "__main__":
 
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, lines, additional_files)
     print("::notice ::Report url: {report_url}")
+    commit = get_commit(gh, pr_info.sha)
     commit.create_status(context=NAME, description=description, state=status, target_url=report_url)
