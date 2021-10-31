@@ -9,11 +9,10 @@
 #include <Core/QueryProcessingStage.h>
 #include <IO/Progress.h>
 #include <IO/TimeoutSetter.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/Context_fwd.h>
-#include <DataStreams/NativeReader.h>
-#include <DataStreams/IBlockStream_fwd.h>
+#include <Formats/NativeReader.h>
 
 #include "IServer.h"
 
@@ -31,7 +30,7 @@ namespace DB
 class Session;
 struct Settings;
 class ColumnsDescription;
-struct BlockStreamProfileInfo;
+struct ProfileInfo;
 
 /// State of query processing.
 struct QueryState
@@ -47,6 +46,9 @@ struct QueryState
     /// threads that use this queue.
     InternalTextLogsQueuePtr logs_queue;
     std::unique_ptr<NativeWriter> logs_block_out;
+
+    InternalProfileEventsQueuePtr profile_queue;
+    std::unique_ptr<NativeWriter> profile_events_block_out;
 
     /// From where to read data for INSERT.
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
@@ -225,14 +227,16 @@ private:
     void sendEndOfStream();
     void sendPartUUIDs();
     void sendReadTaskRequestAssumeLocked();
-    void sendProfileInfo(const BlockStreamProfileInfo & info);
+    void sendProfileInfo(const ProfileInfo & info);
     void sendTotals(const Block & totals);
     void sendExtremes(const Block & extremes);
+    void sendProfileEvents();
 
     /// Creates state.block_in/block_out for blocks read/write, depending on whether compression is enabled.
     void initBlockInput();
     void initBlockOutput(const Block & block);
     void initLogsBlockOutput(const Block & block);
+    void initProfileEventsBlockOutput(const Block & block);
 
     bool isQueryCancelled();
 

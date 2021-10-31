@@ -22,6 +22,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/TreeOptimizer.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
+#include <Interpreters/PredicateExpressionsOptimizer.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -1036,7 +1037,12 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (settings.legacy_column_name_of_tuple_literal)
         markTupleLiteralsAsLegacy(query);
 
-    TreeOptimizer::apply(query, result, tables_with_columns, getContext());
+    /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
+    result.rewrite_subqueries = PredicateExpressionsOptimizer(getContext(), tables_with_columns, settings).optimize(*select_query);
+
+    /// Only apply AST optimization for initial queries.
+    if (getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+        TreeOptimizer::apply(query, result, tables_with_columns, getContext());
 
     /// array_join_alias_to_name, array_join_result_to_source.
     getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
@@ -1094,7 +1100,8 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     ConstStoragePtr storage,
     const StorageMetadataPtr & metadata_snapshot,
     bool allow_aggregations,
-    bool allow_self_aliases) const
+    bool allow_self_aliases,
+    bool execute_scalar_subqueries) const
 {
     if (query->as<ASTSelectQuery>())
         throw Exception("Not select analyze for select asts.", ErrorCodes::LOGICAL_ERROR);
@@ -1106,7 +1113,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
-    executeScalarSubqueries(query, getContext(), 0, result.scalars, false);
+    executeScalarSubqueries(query, getContext(), 0, result.scalars, !execute_scalar_subqueries);
 
     if (settings.legacy_column_name_of_tuple_literal)
         markTupleLiteralsAsLegacy(query);
