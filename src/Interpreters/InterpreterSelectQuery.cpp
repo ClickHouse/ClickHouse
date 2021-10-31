@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeInterval.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -705,12 +706,25 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
 static Field getWithFillFieldValue(const ASTPtr & node, ContextPtr context)
 {
-    const auto & [field, type] = evaluateConstantExpression(node, context);
+    auto [field, type] = evaluateConstantExpression(node, context);
 
     if (!isColumnedAsNumber(type))
         throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 
     return field;
+}
+
+static std::pair<Field, std::optional<IntervalKind>> getWithFillStep(const ASTPtr & node, ContextPtr context)
+{
+    auto [field, type] = evaluateConstantExpression(node, context);
+
+    if (const auto * type_interval = typeid_cast<const DataTypeInterval *>(type.get()))
+        return std::make_pair(std::move(field), type_interval->getKind());
+
+    if (isColumnedAsNumber(type))
+        return std::make_pair(std::move(field), std::nullopt);
+
+    throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 }
 
 static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, ContextPtr context)
@@ -720,8 +734,9 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
         descr.fill_from = getWithFillFieldValue(order_by_elem.fill_from, context);
     if (order_by_elem.fill_to)
         descr.fill_to = getWithFillFieldValue(order_by_elem.fill_to, context);
+
     if (order_by_elem.fill_step)
-        descr.fill_step = getWithFillFieldValue(order_by_elem.fill_step, context);
+        std::tie(descr.fill_step, descr.step_kind) = getWithFillStep(order_by_elem.fill_step, context);
     else
         descr.fill_step = order_by_elem.direction;
 
