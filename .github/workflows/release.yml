@@ -1,6 +1,6 @@
 name: ReleaseChecks
 concurrency:
-  group: docs-release
+  group: master-release
   cancel-in-progress: true
 on: # yamllint disable-line rule:truthy
   push:
@@ -8,7 +8,6 @@ on: # yamllint disable-line rule:truthy
       - master
 jobs:
   DockerHubPush:
-    needs: CheckLabels
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
@@ -23,6 +22,7 @@ jobs:
           name: changed_images
           path: ${{ runner.temp }}/docker_images_check/changed_images.json
   DocsRelease:
+    needs: DockerHubPush
     runs: [self-hosted, func-tester]
     steps:
       - name: Check out repository code
