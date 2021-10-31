@@ -57,6 +57,8 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
         if (infile)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM INFILE " << (settings.hilite ? hilite_none : "") << infile->as<ASTLiteral &>().value.safeGet<std::string>();
+            if (compression)
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << " COMPRESSION " << (settings.hilite ? hilite_none : "") << compression->as<ASTLiteral &>().value.safeGet<std::string>();
         }
         if (!format.empty())
         {
@@ -73,6 +75,15 @@ void ASTInsertQuery::formatImpl(const FormatSettings & settings, FormatState & s
         settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "SETTINGS " << (settings.hilite ? hilite_none : "");
         settings_ast->formatImpl(settings, state, frame);
     }
+}
+
+void ASTInsertQuery::updateTreeHashImpl(SipHash & hash_state) const
+{
+    hash_state.update(table_id.database_name);
+    hash_state.update(table_id.table_name);
+    hash_state.update(table_id.uuid);
+    hash_state.update(format);
+    IAST::updateTreeHashImpl(hash_state);
 }
 
 

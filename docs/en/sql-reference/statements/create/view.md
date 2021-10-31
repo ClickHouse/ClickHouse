@@ -5,9 +5,9 @@ toc_title: VIEW
 
 # CREATE VIEW {#create-view}
 
-Creates a new view. There are two types of views: normal and materialized.
+Creates a new view. Views can be [normal](#normal), [materialized](#materialized) and [live](#live-view) (the latter is an experimental feature).
 
-## Normal {#normal}
+## Normal View {#normal}
 
 Syntax:
 
@@ -35,7 +35,7 @@ This query is fully equivalent to using the subquery:
 SELECT a, b, c FROM (SELECT ...)
 ```
 
-## Materialized {#materialized}
+## Materialized View {#materialized}
 
 ``` sql
 CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER] [TO[db.]name] [ENGINE = engine] [POPULATE] AS SELECT ...
@@ -50,16 +50,15 @@ When creating a materialized view with `TO [db].[table]`, you must not use `POPU
 A materialized view is implemented as follows: when inserting data to the table specified in `SELECT`, part of the inserted data is converted by this `SELECT` query, and the result is inserted in the view.
 
 !!! important "Important"
-    Materialized views in ClickHouse use **column names** instead of column order during insertion into destination table. If some column names are not present in `SELECT`'s result ClickHouse will use a default value, even if column is not `Nullable`. A safe practice would be to add aliases for every column when using Materialized views.
+    Materialized views in ClickHouse use **column names** instead of column order during insertion into destination table. If some column names are not present in the `SELECT` query result, ClickHouse uses a default value, even if the column is not [Nullable](../../data-types/nullable.md). A safe practice would be to add aliases for every column when using Materialized views.
 
-!!! important "Important"
     Materialized views in ClickHouse are implemented more like insert triggers. If there’s some aggregation in the view query, it’s applied only to the batch of freshly inserted data. Any changes to existing data of source table (like update, delete, drop partition, etc.) does not change the materialized view.
 
-If you specify `POPULATE`, the existing table data is inserted in the view when creating it, as if making a `CREATE TABLE ... AS SELECT ...` . Otherwise, the query contains only the data inserted in the table after creating the view. We **do not recommend** using POPULATE, since data inserted in the table during the view creation will not be inserted in it.
+If you specify `POPULATE`, the existing table data is inserted into the view when creating it, as if making a `CREATE TABLE ... AS SELECT ...` . Otherwise, the query contains only the data inserted in the table after creating the view. We **do not recommend** using `POPULATE`, since data inserted in the table during the view creation will not be inserted in it.
 
-A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`… Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won’t be further aggregated. The exception is when using an `ENGINE` that independently performs data aggregation, such as `SummingMergeTree`.
+A `SELECT` query can contain `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Note that the corresponding conversions are performed independently on each block of inserted data. For example, if `GROUP BY` is set, data is aggregated during insertion, but only within a single packet of inserted data. The data won’t be further aggregated. The exception is when using an `ENGINE` that independently performs data aggregation, such as `SummingMergeTree`.
 
-The execution of [ALTER](../../../sql-reference/statements/alter/index.md) queries on materialized views has limitations, so they might be inconvenient. If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
+The execution of [ALTER](../../../sql-reference/statements/alter/view.md) queries on materialized views has limitations, so they might be inconvenient. If the materialized view uses the construction `TO [db.]name`, you can `DETACH` the view, run `ALTER` for the target table, and then `ATTACH` the previously detached (`DETACH`) view.
 
 Note that materialized view is influenced by [optimize_on_insert](../../../operations/settings/settings.md#optimize-on-insert) setting. The data is merged before the insertion into a view.
 
@@ -67,7 +66,7 @@ Views look the same as normal tables. For example, they are listed in the result
 
 To delete a view, use [DROP VIEW](../../../sql-reference/statements/drop.md#drop-view). Although `DROP TABLE` works for VIEWs as well.
 
-## Live View (Experimental) {#live-view}
+## Live View [Experimental] {#live-view}
 
 !!! important "Important"
     This is an experimental feature that may change in backwards-incompatible ways in the future releases.
@@ -93,7 +92,7 @@ Live views work similarly to how a query in a distributed table works. But inste
 
     See [WITH REFRESH](#live-view-with-refresh) to force periodic updates of a live view that in some cases can be used as a workaround.
 
-### Monitoring Changes {#live-view-monitoring}
+### Monitoring Live View Changes {#live-view-monitoring}
 
 You can monitor changes in the `LIVE VIEW` query result using [WATCH](../../../sql-reference/statements/watch.md) query.
 
@@ -118,12 +117,11 @@ WATCH lv;
 │      1 │        1 │
 └────────┴──────────┘
 ┌─sum(x)─┬─_version─┐
-│      2 │        2 │
+│      3 │        2 │
 └────────┴──────────┘
 ┌─sum(x)─┬─_version─┐
 │      6 │        3 │
 └────────┴──────────┘
-...
 ```
 
 ```sql
@@ -154,7 +152,6 @@ WATCH lv EVENTS;
 ┌─version─┐
 │       3 │
 └─────────┘
-...
 ```
 
 You can execute [SELECT](../../../sql-reference/statements/select/index.md) query on a live view in the same way as for any regular view or a table. If the query result is cached it will return the result immediately without running the stored query on the underlying tables.
@@ -163,7 +160,7 @@ You can execute [SELECT](../../../sql-reference/statements/select/index.md) quer
 SELECT * FROM [db.]live_view WHERE ...
 ```
 
-### Force Refresh {#live-view-alter-refresh}
+### Force Live View Refresh {#live-view-alter-refresh}
 
 You can force live view refresh using the `ALTER LIVE VIEW [db.]table_name REFRESH` statement.
 
@@ -235,7 +232,7 @@ WATCH lv
 Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.lv does not exist..
 ```
 
-### Usage {#live-view-usage}
+### Live View Usage {#live-view-usage}
 
 Most common uses of live view tables include:
 
@@ -244,4 +241,5 @@ Most common uses of live view tables include:
 - Watching for table changes and triggering a follow-up select queries.
 - Watching metrics from system tables using periodic refresh.
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/create/view/) <!--hide-->
+**See Also**
+-   [ALTER LIVE VIEW](../alter/view.md#alter-live-view)

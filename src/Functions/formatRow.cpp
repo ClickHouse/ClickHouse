@@ -1,6 +1,5 @@
 #include <memory>
 #include <Columns/ColumnString.h>
-#include <DataStreams/materializeBlock.h>
 #include <DataTypes/DataTypeString.h>
 #include <Formats/FormatFactory.h>
 #include <Functions/FunctionFactory.h>
@@ -9,7 +8,7 @@
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <common/map.h>
+#include <base/map.h>
 
 
 namespace DB

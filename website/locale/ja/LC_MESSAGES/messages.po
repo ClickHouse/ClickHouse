@@ -296,11 +296,11 @@ msgid "We'd like to host a public ClickHouse Meetup"
 msgstr ""
 
 #: templates/index/community.html:185
-msgid "We'd like to invite Yandex ClickHouse team to our office"
+msgid "We'd like to invite ClickHouse team to our office"
 msgstr ""
 
 #: templates/index/community.html:191
-msgid "We'd like to invite Yandex ClickHouse team to another event we organize"
+msgid "We'd like to invite ClickHouse team to another event we organize"
 msgstr ""
 
 #: templates/index/community.html:197

@@ -28,9 +28,9 @@ void JSONEachRowWithProgressRowOutputFormat::onProgress(const Progress & value)
 }
 
 
-void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factory)
+void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("JSONEachRowWithProgress", [](
+    factory.registerOutputFormat("JSONEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams & params,
@@ -42,7 +42,7 @@ void registerOutputFormatProcessorJSONEachRowWithProgress(FormatFactory & factor
             sample, params, settings);
     });
 
-    factory.registerOutputFormatProcessor("JSONStringsEachRowWithProgress", [](
+    factory.registerOutputFormat("JSONStringsEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams & params,

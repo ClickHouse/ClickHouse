@@ -1,6 +1,6 @@
 # This is an example of a configuration file "config.xml" rewritten in YAML
 # You can read this documentation for detailed information about YAML configuration:
-# https://clickhouse.tech/docs/en/operations/configuration-files/
+# https://clickhouse.com/docs/en/operations/configuration-files/
 
 # NOTE: User and query level settings are set up in "users.yaml" file.
 # If you have accidentally specified user-level settings here, server won't start.
@@ -279,8 +279,11 @@ mark_cache_size: 5368709120
 # also it can be dropped manually by the SYSTEM DROP MMAP CACHE query.
 mmap_cache_size: 1000
 
-# Cache size for compiled expressions.
+# Cache size in bytes for compiled expressions.
 compiled_expression_cache_size: 134217728
+
+# Cache size in elements for compiled expressions.
+compiled_expression_cache_elements_size: 10000
 
 # Path to data directory, with trailing slash.
 path: /var/lib/clickhouse/
@@ -509,7 +512,7 @@ remap_executable: false
 #     port: 9019
 
 # Configuration of clusters that could be used in Distributed tables.
-# https://clickhouse.tech/docs/en/operations/table_engines/distributed/
+# https://clickhouse.com/docs/en/operations/table_engines/distributed/
 remote_servers:
     # Test only shard config for testing distributed storage
     test_shard_localhost:
@@ -602,11 +605,11 @@ remote_servers:
 
 # If element has 'incl' attribute, then for it's value will be used corresponding substitution from another file.
 # By default, path to file with substitutions is /etc/metrika.xml. It could be changed in config in 'include_from' element.
-# Values for substitutions are specified in /yandex/name_of_substitution elements in that file.
+# Values for substitutions are specified in /clickhouse/name_of_substitution elements in that file.
 
 # ZooKeeper is used to store metadata about replicas, when using Replicated tables.
 # Optional. If you don't use replicated tables, you could omit that.
-# See https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/
+# See https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/
 
 # zookeeper:
 #     - node:
@@ -621,7 +624,7 @@ remote_servers:
 
 # Substitutions for parameters of replicated tables.
 # Optional. If you don't use replicated tables, you could omit that.
-# See https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/replication/#creating-replicated-tables
+# See https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/#creating-replicated-tables
 # macros:
 #     shard: 01
 #     replica: example01-01-1
@@ -693,7 +696,7 @@ query_log:
     database: system
     table: query_log
 
-    # PARTITION BY expr: https://clickhouse.yandex/docs/en/table_engines/mergetree-family/custom_partitioning_key/
+    # PARTITION BY expr: https://clickhouse.com/docs/en/table_engines/mergetree-family/custom_partitioning_key/
     # Example:
     # event_date
     # toMonday(event_date)
@@ -701,7 +704,7 @@ query_log:
     # toStartOfHour(event_time)
     partition_by: toYYYYMM(event_date)
 
-    # Table TTL specification: https://clickhouse.tech/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
+    # Table TTL specification: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
     # Example:
     # event_date + INTERVAL 1 WEEK
     # event_date + INTERVAL 7 DAY DELETE
@@ -801,7 +804,7 @@ crash_log:
     flush_interval_milliseconds: 1000
 
 # Parameters for embedded dictionaries, used in Yandex.Metrica.
-# See https://clickhouse.yandex/docs/en/dicts/internal_dicts/
+# See https://clickhouse.com/docs/en/dicts/internal_dicts/
 
 # Path to file with region hierarchy.
 # path_to_regions_hierarchy_file: /opt/geo/regions_hierarchy.txt
@@ -821,7 +824,7 @@ top_level_domains_lists: ''
 # public_suffix_list: /path/to/public_suffix_list.dat
 
 # Configuration of external dictionaries. See:
-# https://clickhouse.tech/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
+# https://clickhouse.com/docs/en/sql-reference/dictionaries/external-dictionaries/external-dicts
 dictionaries_config: '*_dictionary.xml'
 
 # Uncomment if you want data to be compressed 30-100% better.

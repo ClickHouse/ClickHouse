@@ -18,7 +18,7 @@
 #include <Parsers/parseQuery.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
-
+#include <Common/StringUtils/StringUtils.h>
 
 namespace DB
 {
@@ -222,7 +222,7 @@ bool needRewrite(ASTSelectQuery & select, std::vector<const ASTTableExpression *
         }
 
         const auto & join = table->table_join->as<ASTTableJoin &>();
-        if (isComma(join.kind))
+        if (join.kind == ASTTableJoin::Kind::Comma)
             throw Exception("COMMA to CROSS JOIN rewriter is not enabled or cannot rewrite query", ErrorCodes::NOT_IMPLEMENTED);
 
         if (join.using_expression_list)
@@ -524,7 +524,8 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
 
                 size_t count = countTablesWithColumn(tables, short_name);
 
-                if (count > 1 || aliases.count(short_name))
+                /// isValidIdentifierBegin retuired to be consistent with TableJoin::deduplicateAndQualifyColumnNames
+                if (count > 1 || aliases.count(short_name) || !isValidIdentifierBegin(short_name.at(0)))
                 {
                     const auto & table = tables[*table_pos];
                     IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column

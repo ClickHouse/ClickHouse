@@ -1,6 +1,6 @@
 #include <Storages/MergeTree/DataPartsExchange.h>
 
-#include <DataStreams/NativeBlockOutputStream.h>
+#include <Formats/NativeWriter.h>
 #include <Disks/IDiskRemote.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/createVolume.h>
@@ -14,7 +14,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/NetException.h>
 #include <IO/createReadBufferFromFileBase.h>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <iterator>
 #include <regex>
@@ -222,7 +222,7 @@ void Service::sendPartFromMemory(
 
         writeStringBinary(name, out);
         projection->checksums.write(out);
-        NativeBlockOutputStream block_out(out, 0, projection_sample_block);
+        NativeWriter block_out(out, 0, projection_sample_block);
         block_out.write(part_in_memory->block);
     }
 
@@ -230,7 +230,7 @@ void Service::sendPartFromMemory(
     if (!part_in_memory)
         throw Exception("Part " + part->name + " is not stored in memory", ErrorCodes::LOGICAL_ERROR);
 
-    NativeBlockOutputStream block_out(out, 0, metadata_snapshot->getSampleBlock());
+    NativeWriter block_out(out, 0, metadata_snapshot->getSampleBlock());
     part->checksums.write(out);
     block_out.write(part_in_memory->block);
 
@@ -344,7 +344,7 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
         writeStringBinary(it.first, out);
         writeBinary(file_size, out);
 
-        auto file_in = createReadBufferFromFileBase(metadata_file, {}, 0);
+        auto file_in = createReadBufferFromFileBase(metadata_file, /* settings= */ {});
         HashingWriteBuffer hashing_out(out);
         copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
         if (blocker.isCancelled())
@@ -569,7 +569,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
         if (!checksums.read(in))
             throw Exception("Cannot deserialize checksums", ErrorCodes::CORRUPTED_DATA);
 
-        NativeBlockInputStream block_in(in, 0);
+        NativeReader block_in(in, 0);
         auto block = block_in.read();
         throttler->add(block.bytes());
 
@@ -580,9 +580,8 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
         new_projection_part->is_temp = false;
         new_projection_part->setColumns(block.getNamesAndTypesList());
         MergeTreePartition partition{};
-        IMergeTreeDataPart::MinMaxIndex minmax_idx{};
         new_projection_part->partition = std::move(partition);
-        new_projection_part->minmax_idx = std::move(minmax_idx);
+        new_projection_part->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
 
         MergedBlockOutputStream part_out(
             new_projection_part,
@@ -590,7 +589,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
             block.getNamesAndTypesList(),
             {},
             CompressionCodecFactory::instance().get("NONE", {}));
-        part_out.writePrefix();
         part_out.write(block);
         part_out.writeSuffixAndFinalizePart(new_projection_part);
         new_projection_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);
@@ -601,19 +599,18 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPartToMemory(
     if (!checksums.read(in))
         throw Exception("Cannot deserialize checksums", ErrorCodes::CORRUPTED_DATA);
 
-    NativeBlockInputStream block_in(in, 0);
+    NativeReader block_in(in, 0);
     auto block = block_in.read();
     throttler->add(block.bytes());
 
     new_data_part->uuid = part_uuid;
     new_data_part->is_temp = true;
     new_data_part->setColumns(block.getNamesAndTypesList());
-    new_data_part->minmax_idx.update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+    new_data_part->minmax_idx->update(block, data.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
     new_data_part->partition.create(metadata_snapshot, block, 0, context);
 
     MergedBlockOutputStream part_out(
         new_data_part, metadata_snapshot, block.getNamesAndTypesList(), {}, CompressionCodecFactory::instance().get("NONE", {}));
-    part_out.writePrefix();
     part_out.write(block);
     part_out.writeSuffixAndFinalizePart(new_data_part);
     new_data_part->checksums.checkEqual(checksums, /* have_uncompressed = */ true);

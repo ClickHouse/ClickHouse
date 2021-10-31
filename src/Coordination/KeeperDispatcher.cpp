@@ -11,10 +11,12 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int SYSTEM_ERROR;
 }
 
 KeeperDispatcher::KeeperDispatcher()
     : coordination_settings(std::make_shared<CoordinationSettings>())
+    , responses_queue(std::numeric_limits<size_t>::max())
     , log(&Poco::Logger::get("KeeperDispatcher"))
 {
 }
@@ -164,7 +166,8 @@ void KeeperDispatcher::snapshotThread()
     while (!shutdown_called)
     {
         CreateSnapshotTask task;
-        snapshots_queue.pop(task);
+        if (!snapshots_queue.pop(task))
+            break;
 
         if (shutdown_called)
             break;
@@ -235,13 +238,19 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
 
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
-        requests_queue->push(std::move(request_info));
+    {
+        if (!requests_queue->push(std::move(request_info)))
+            throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
+    }
     else if (!requests_queue->tryPush(std::move(request_info), coordination_settings->operation_timeout_ms.totalMilliseconds()))
+    {
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
+    }
+
     return true;
 }
 
-void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper)
+void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async)
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
     int myid = config.getInt("keeper_server.server_id");
@@ -262,8 +271,15 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
         server->startup();
         LOG_DEBUG(log, "Server initialized, waiting for quorum");
 
-        server->waitInit();
-        LOG_DEBUG(log, "Quorum initialized");
+        if (!start_async)
+        {
+            server->waitInit();
+            LOG_DEBUG(log, "Quorum initialized");
+        }
+        else
+        {
+            LOG_INFO(log, "Starting Keeper asynchronously, server will accept connections to Keeper when it will be ready");
+        }
     }
     catch (...)
     {
@@ -273,6 +289,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 
     /// Start it after keeper server start
     session_cleaner_thread = ThreadFromGlobalPool([this] { sessionCleanerTask(); });
+    update_configuration_thread = ThreadFromGlobalPool([this] { updateConfigurationThread(); });
+    updateConfiguration(config);
 
     LOG_DEBUG(log, "Dispatcher initialized");
 }
@@ -295,18 +313,23 @@ void KeeperDispatcher::shutdown()
 
             if (requests_queue)
             {
-                requests_queue->push({});
+                requests_queue->finish();
+
                 if (request_thread.joinable())
                     request_thread.join();
             }
 
-            responses_queue.push({});
+            responses_queue.finish();
             if (responses_thread.joinable())
                 responses_thread.join();
 
-            snapshots_queue.push({});
+            snapshots_queue.finish();
             if (snapshot_thread.joinable())
                 snapshot_thread.join();
+
+            update_configuration_queue.finish();
+            if (update_configuration_thread.joinable())
+                update_configuration_thread.join();
         }
 
         if (server)
@@ -317,16 +340,9 @@ void KeeperDispatcher::shutdown()
         /// Set session expired for all pending requests
         while (requests_queue && requests_queue->tryPop(request_for_session))
         {
-            if (request_for_session.request)
-            {
-                auto response = request_for_session.request->makeResponse();
-                response->error = Coordination::Error::ZSESSIONEXPIRED;
-                setResponse(request_for_session.session_id, response);
-            }
-            else
-            {
-                break;
-            }
+            auto response = request_for_session.request->makeResponse();
+            response->error = Coordination::Error::ZSESSIONEXPIRED;
+            setResponse(request_for_session.session_id, response);
         }
 
         /// Clear all registered sessions
@@ -363,7 +379,7 @@ void KeeperDispatcher::sessionCleanerTask()
         try
         {
             /// Only leader node must check dead sessions
-            if (isLeader())
+            if (server->checkInit() && isLeader())
             {
                 auto dead_sessions = server->getDeadSessions();
 
@@ -379,7 +395,8 @@ void KeeperDispatcher::sessionCleanerTask()
                     request_info.session_id = dead_session;
                     {
                         std::lock_guard lock(push_request_mutex);
-                        requests_queue->push(std::move(request_info));
+                        if (!requests_queue->push(std::move(request_info)))
+                            LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
                     }
 
                     /// Remove session from registered sessions
@@ -414,7 +431,12 @@ void KeeperDispatcher::addErrorResponses(const KeeperStorage::RequestsForSession
         response->xid = request->xid;
         response->zxid = 0;
         response->error = error;
-        responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response});
+        if (!responses_queue.push(DB::KeeperStorage::ResponseForSession{session_id, response}))
+            throw Exception(ErrorCodes::SYSTEM_ERROR,
+                "Could not push error response xid {} zxid {} error message {} to responses queue",
+                response->xid,
+                response->zxid,
+                errorMessage(error));
     }
 }
 
@@ -486,6 +508,73 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     /// Forcefully wait for request execution because we cannot process any other
     /// requests for this client until it get new session id.
     return future.get();
+}
+
+
+void KeeperDispatcher::updateConfigurationThread()
+{
+    while (true)
+    {
+        if (shutdown_called)
+            return;
+
+        try
+        {
+            if (!server->checkInit())
+            {
+                LOG_INFO(log, "Server still not initialized, will not apply configuration until initialization finished");
+                std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+                continue;
+            }
+
+            ConfigUpdateAction action;
+            if (!update_configuration_queue.pop(action))
+                break;
+
+
+            /// We must wait this update from leader or apply it ourself (if we are leader)
+            bool done = false;
+            while (!done)
+            {
+                if (shutdown_called)
+                    return;
+
+                if (isLeader())
+                {
+                    server->applyConfigurationUpdate(action);
+                    done = true;
+                }
+                else
+                {
+                    done = server->waitConfigurationUpdate(action);
+                    if (!done)
+                        LOG_INFO(log, "Cannot wait for configuration update, maybe we become leader, or maybe update is invalid, will try to wait one more time");
+                }
+            }
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+}
+
+void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    auto diff = server->getConfigurationDiff(config);
+    if (diff.empty())
+        LOG_TRACE(log, "Configuration update triggered, but nothing changed for RAFT");
+    else if (diff.size() > 1)
+        LOG_WARNING(log, "Configuration changed for more than one server ({}) from cluster, it's strictly not recommended", diff.size());
+    else
+        LOG_DEBUG(log, "Configuration change size ({})", diff.size());
+
+    for (auto & change : diff)
+    {
+        bool push_result = update_configuration_queue.push(change);
+        if (!push_result)
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Cannot push configuration update to queue");
+    }
 }
 
 }

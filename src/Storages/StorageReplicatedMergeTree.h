@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <atomic>
 #include <pcg_random.hpp>
 #include <Storages/IStorage.h>
@@ -21,6 +21,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeAddress.h>
 #include <Storages/MergeTree/LeaderElection.h>
 #include <Storages/MergeTree/PartMovesBetweenShardsOrchestrator.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/MergeFromLogEntryTask.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/PartLog.h>
@@ -28,7 +30,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Throttler.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
 
@@ -127,7 +129,7 @@ public:
         const Names & deduplicate_by_columns,
         ContextPtr query_context) override;
 
-    void alter(const AlterCommands & commands, ContextPtr query_context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & commands, ContextPtr query_context, AlterLockHolder & table_lock_holder) override;
 
     void mutate(const MutationCommands & commands, ContextPtr context) override;
     void waitMutation(const String & znode_name, size_t mutations_sync) const;
@@ -282,6 +284,9 @@ private:
     friend class ReplicatedMergeTreeQueue;
     friend class PartMovesBetweenShardsOrchestrator;
     friend class MergeTreeData;
+    friend class MergeFromLogEntryTask;
+    friend class MutateFromLogEntryTask;
+    friend class ReplicatedMergeMutateTaskBase;
 
     using MergeStrategyPicker = ReplicatedMergeTreeMergeStrategyPicker;
     using LogEntry = ReplicatedMergeTreeLogEntry;
@@ -470,18 +475,10 @@ private:
 
     void executeDropRange(const LogEntry & entry);
 
-    /// Do the merge or recommend to make the fetch instead of the merge
-    bool tryExecuteMerge(const LogEntry & entry);
-
     /// Execute alter of table metadata. Set replica/metadata and replica/columns
     /// nodes in zookeeper and also changes in memory metadata.
     /// New metadata and columns values stored in entry.
     bool executeMetadataAlter(const LogEntry & entry);
-
-    /// Execute MUTATE_PART entry. Part name and mutation commands
-    /// stored in entry. This function relies on MergerMutator class.
-    bool tryExecutePartMutation(const LogEntry & entry);
-
 
     /// Fetch part from other replica (inserted or merged/mutated)
     /// NOTE: Attention! First of all tries to find covering part on other replica
@@ -511,6 +508,9 @@ private:
 
 
     ReplicatedMergeTreeQueue::SelectedEntryPtr selectQueueEntry();
+
+
+    MergeFromLogEntryTaskPtr getTaskToProcessMergeQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr entry);
 
     bool processQueueEntry(ReplicatedMergeTreeQueue::SelectedEntryPtr entry);
 
@@ -605,7 +605,6 @@ private:
     std::unordered_set<String> currently_fetching_parts;
     std::mutex currently_fetching_parts_mutex;
 
-
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name, bool is_parallel);
 
@@ -683,6 +682,7 @@ private:
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context) override;
     void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context) override;
+    CancellationCode killPartMoveToShard(const UUID & task_uuid) override;
     void fetchPartition(
         const ASTPtr & partition,
         const StorageMetadataPtr & metadata_snapshot,
@@ -745,6 +745,8 @@ protected:
         bool has_force_restore_data_flag,
         bool allow_renaming_);
 };
+
+String getPartNamePossiblyFake(MergeTreeDataFormatVersion format_version, const MergeTreePartInfo & part_info);
 
 
 /** There are three places for each part, where it should be

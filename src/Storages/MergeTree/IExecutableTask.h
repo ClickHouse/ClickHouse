@@ -3,11 +3,16 @@
 #include <memory>
 #include <functional>
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Interpreters/StorageID.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /**
  * Generic interface for background operations. Simply this is self-made coroutine.
@@ -23,9 +28,11 @@ namespace DB
 class IExecutableTask
 {
 public:
+    using TaskResultCallback = std::function<void(bool)>;
     virtual bool executeStep() = 0;
     virtual void onCompleted() = 0;
     virtual StorageID getStorageID() = 0;
+    virtual UInt64 getPriority() = 0;
     virtual ~IExecutableTask() = default;
 };
 
@@ -56,13 +63,16 @@ public:
     }
 
     void onCompleted() override { job_result_callback(!res); }
-
     StorageID getStorageID() override { return id; }
+    UInt64 getPriority() override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "getPriority() method is not supported by LambdaAdapter");
+    }
 
 private:
     bool res = false;
     std::function<bool()> job_to_execute;
-    std::function<void(bool)> job_result_callback;
+    IExecutableTask::TaskResultCallback job_result_callback;
     StorageID id;
 };
 

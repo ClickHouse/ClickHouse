@@ -24,6 +24,11 @@ public:
 
     ~ZstdDeflatingWriteBuffer() override;
 
+    void sync() override
+    {
+        out->sync();
+    }
+
 private:
     void nextImpl() override;
 

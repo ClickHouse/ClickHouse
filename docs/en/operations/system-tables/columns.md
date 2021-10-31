@@ -86,4 +86,4 @@ The `system.columns` table contains the following columns (the column type is sh
 -   `is_in_primary_key` (UInt8) — Flag that indicates whether the column is in the primary key expression.
 -   `is_in_sampling_key` (UInt8) — Flag that indicates whether the column is in the sampling key expression.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/columns) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/columns) <!--hide-->

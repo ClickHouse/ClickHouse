@@ -103,6 +103,8 @@ public:
         /// str() finalizes buffer.
         String value = impl.str();
 
+        std::lock_guard lock(disk->mutex);
+
         auto iter = disk->files.find(path);
 
         if (iter == disk->files.end())
@@ -313,7 +315,7 @@ void DiskMemory::replaceFileImpl(const String & from_path, const String & to_pat
     files.insert(std::move(node));
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, const ReadSettings &, size_t) const
+std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, const ReadSettings &, std::optional<size_t>) const
 {
     std::lock_guard lock(mutex);
 
