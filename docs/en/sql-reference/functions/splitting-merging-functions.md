@@ -307,3 +307,33 @@ Result:
 │ ['Cli','lic','ick','ckH','kHo','Hou','ous','use'] │
 └───────────────────────────────────────────────────┘
 ```
+
+## tokens {#tokens}
+
+Splits a string into tokens using non-alphanumeric ASCII characters as separators.
+
+**Arguments**
+
+-   `input_string` — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
+
+**Returned value**
+
+-   The resulting array of tokens from input string.
+
+Type: [Array](../data-types/array.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
+```
+
+Result:
+
+``` text
+┌─tokens────────────────────────────┐
+│ ['test1','test2','test3','test4'] │
+└───────────────────────────────────┘
+```

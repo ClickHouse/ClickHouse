@@ -150,8 +150,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--network",
-        default='host',
-        help="Set network driver for runnner container")
+        help="Set network driver for runnner container (defaults to `host`)")
 
     parser.add_argument(
         "--docker-image-version",
