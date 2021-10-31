@@ -77,7 +77,7 @@ private:
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;
 
     mutable bool notified_session_log_about_login = false;
-    const UUID session_id;
+    const UUID auth_id;
     const ContextPtr global_context;
 
     /// ClientInfo that will be copied to a session context when it's created.
