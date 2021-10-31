@@ -10,12 +10,13 @@ namespace DB
 {
 
 /** Create an object to read data from a file.
-  * estimated_size - the number of bytes to read
+  *
+  * @param size - the number of bytes to read
   */
 std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     const std::string & filename,
     const ReadSettings & settings,
-    size_t estimated_size,
+    std::optional<size_t> size = {},
     int flags_ = -1,
     char * existing_memory = nullptr,
     size_t alignment = 0);

@@ -24,8 +24,8 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -446,7 +446,8 @@ static void appendBlock(const Block & from, Block & to)
     if (!to)
         throw Exception("Cannot append to empty block", ErrorCodes::LOGICAL_ERROR);
 
-    assertBlocksHaveEqualStructure(from, to, "Buffer");
+    if (to.rows())
+        assertBlocksHaveEqualStructure(from, to, "Buffer");
 
     from.checkNumberOfRows();
     to.checkNumberOfRows();
@@ -464,14 +465,21 @@ static void appendBlock(const Block & from, Block & to)
     {
         MemoryTracker::BlockerInThread temporarily_disable_memory_tracker;
 
-        for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
+        if (to.rows() == 0)
         {
-            const IColumn & col_from = *from.getByPosition(column_no).column.get();
-            last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
+            to = from;
+        }
+        else
+        {
+            for (size_t column_no = 0, columns = to.columns(); column_no < columns; ++column_no)
+            {
+                const IColumn & col_from = *from.getByPosition(column_no).column.get();
+                last_col = IColumn::mutate(std::move(to.getByPosition(column_no).column));
 
-            last_col->insertRangeFrom(col_from, 0, rows);
+                last_col->insertRangeFrom(col_from, 0, rows);
 
-            to.getByPosition(column_no).column = std::move(last_col);
+                to.getByPosition(column_no).column = std::move(last_col);
+            }
         }
     }
     catch (...)
@@ -1058,7 +1066,7 @@ std::optional<UInt64> StorageBuffer::totalBytes(const Settings & /*settings*/) c
     return total_writes.bytes;
 }
 
-void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context, TableLockHolder &)
+void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
 {
     auto table_id = getStorageID();
     checkAlterIsPossible(params, local_context);

@@ -14,8 +14,8 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ConnectionTimeoutsContext.h>
-#include <DataStreams/NativeWriter.h>
-#include <DataStreams/RemoteBlockOutputStream.h>
+#include <Formats/NativeWriter.h>
+#include <Processors/Sinks/RemoteSink.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>

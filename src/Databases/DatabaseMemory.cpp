@@ -1,3 +1,4 @@
+#include <base/scope_guard.h>
 #include <base/logger_useful.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
@@ -41,7 +42,14 @@ void DatabaseMemory::dropTable(
     auto table = detachTableUnlocked(table_name, lock);
     try
     {
+        /// Remove table w/o lock since:
+        /// - it does not require it
+        /// - it may cause lock-order-inversion if underlying storage need to
+        ///   resolve tables (like StorageLiveView)
+        SCOPE_EXIT(lock.lock());
+        lock.unlock();
         table->drop();
+
         if (table->storesDataOnDisk())
         {
             assert(database_name != DatabaseCatalog::TEMPORARY_DATABASE);
@@ -71,7 +79,7 @@ ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
     create_query->storage->set(create_query->storage->engine, makeASTFunction(getEngineName()));
 
     if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->storage->set(create_query->storage->comment, std::make_shared<ASTLiteral>(comment_value));
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
 
     return create_query;
 }
@@ -83,7 +91,7 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, Contex
     if (it == create_queries.end() || !it->second)
     {
         if (throw_on_error)
-            throw Exception("There is no metadata of table " + table_name + " in database " + database_name, ErrorCodes::UNKNOWN_TABLE);
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "There is no metadata of table {} in database {}", table_name, database_name);
         else
             return {};
     }
@@ -101,6 +109,16 @@ void DatabaseMemory::drop(ContextPtr local_context)
 {
     /// Remove data on explicit DROP DATABASE
     std::filesystem::remove_all(local_context->getPath() + data_path);
+}
+
+void DatabaseMemory::alterTable(ContextPtr, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+{
+    std::lock_guard lock{mutex};
+    auto it = create_queries.find(table_id.table_name);
+    if (it == create_queries.end() || !it->second)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
+
+    applyMetadataChangesToCreateQuery(it->second, metadata);
 }
 
 }

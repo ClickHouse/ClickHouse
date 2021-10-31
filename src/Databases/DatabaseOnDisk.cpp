@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
+    extern const int DATABASE_NOT_EMPTY;
 }
 
 
@@ -134,66 +135,6 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     formatAST(*create, statement_buf, false);
     writeChar('\n', statement_buf);
     return statement_buf.str();
-}
-
-void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata)
-{
-    auto & ast_create_query = query->as<ASTCreateQuery &>();
-
-    bool has_structure = ast_create_query.columns_list && ast_create_query.columns_list->columns;
-    if (ast_create_query.as_table_function && !has_structure)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot alter table {} because it was created AS table function"
-                                                     " and doesn't have structure in metadata", backQuote(ast_create_query.table));
-
-    assert(has_structure);
-    ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
-    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
-    ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
-    ASTPtr new_projections = InterpreterCreateQuery::formatProjections(metadata.projections);
-
-    ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
-    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
-    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
-    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->projections, new_projections);
-
-    if (metadata.select.select_query)
-    {
-        query->replace(ast_create_query.select, metadata.select.select_query);
-    }
-
-    /// MaterializedView is one type of CREATE query without storage.
-    if (ast_create_query.storage)
-    {
-        ASTStorage & storage_ast = *ast_create_query.storage;
-
-        bool is_extended_storage_def
-            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.sample_by || storage_ast.settings;
-
-        if (is_extended_storage_def)
-        {
-            if (metadata.sorting_key.definition_ast)
-                storage_ast.set(storage_ast.order_by, metadata.sorting_key.definition_ast);
-
-            if (metadata.primary_key.definition_ast)
-                storage_ast.set(storage_ast.primary_key, metadata.primary_key.definition_ast);
-
-            if (metadata.sampling_key.definition_ast)
-                storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
-
-            if (metadata.table_ttl.definition_ast)
-                storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
-            else if (storage_ast.ttl_table != nullptr) /// TTL was removed
-                storage_ast.ttl_table = nullptr;
-
-            if (metadata.settings_changes)
-                storage_ast.set(storage_ast.settings, metadata.settings_changes);
-        }
-
-        if (metadata.comment.empty())
-            storage_ast.reset(storage_ast.comment);
-        else
-            storage_ast.set(storage_ast.comment, std::make_shared<ASTLiteral>(metadata.comment));
-    }
 }
 
 
@@ -531,11 +472,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
     if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        // TODO(nemkov): this is a precaution and should never happen, remove if there are no failed tests on CI/CD.
-        if (!ast_create_query.storage)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "ASTCreateQuery lacks engine clause, but a comment is present.");
-
-        ast_create_query.storage->set(ast_create_query.storage->comment, std::make_shared<ASTLiteral>(database_comment));
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
     }
 
     return ast;
@@ -544,8 +481,28 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 void DatabaseOnDisk::drop(ContextPtr local_context)
 {
     assert(tables.empty());
-    fs::remove(local_context->getPath() + getDataPath());
-    fs::remove(getMetadataPath());
+    if (local_context->getSettingsRef().force_remove_data_recursively_on_drop)
+    {
+        fs::remove_all(local_context->getPath() + getDataPath());
+        fs::remove_all(getMetadataPath());
+    }
+    else
+    {
+        try
+        {
+            fs::remove(local_context->getPath() + getDataPath());
+            fs::remove(getMetadataPath());
+        }
+        catch (const fs::filesystem_error & e)
+        {
+            if (e.code() != std::errc::directory_not_empty)
+                throw Exception(Exception::CreateFromSTDTag{}, e);
+            throw Exception(ErrorCodes::DATABASE_NOT_EMPTY, "Cannot drop: {}. "
+                "Probably database contain some detached tables or metadata leftovers from Ordinary engine. "
+                "If you want to remove all data anyway, try to attach database back and drop it again "
+                "with enabled force_remove_data_recursively_on_drop setting", e.what());
+        }
+    }
 }
 
 String DatabaseOnDisk::getObjectMetadataPath(const String & object_name) const

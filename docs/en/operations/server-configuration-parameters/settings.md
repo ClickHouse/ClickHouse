@@ -69,15 +69,17 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 </compression>
 ```
 
+<!--
+
 ## encryption {#server-settings-encryption}
 
-Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in enviroment variables or be set in configuration file.
+Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
 
-Keys can be hex or string. Their length must be equal to 16.
+Keys can be hex or string with a length equal to 16 bytes.
 
 **Example**
 
-Load from config:
+Loading from config:
 
 ```xml
 <encryption_codecs>
@@ -88,9 +90,9 @@ Load from config:
 ```
 
 !!! note "NOTE"
-    Storing keys in configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
+    Storing keys in the configuration file is not recommended. It isn't secure. You can move the keys into a separate config file on a secure disk and put a symlink to that config file to `config.d/` folder.
 
-Load from config, when key is in hex:
+Loading from config, when the key is in hex:
 
 ```xml
 <encryption_codecs>
@@ -100,7 +102,7 @@ Load from config, when key is in hex:
 </encryption_codecs>
 ```
 
-Load key from environment variable:
+Loading key from the environment variable:
 
 ```xml
 <encryption_codecs>
@@ -110,9 +112,9 @@ Load key from environment variable:
 </encryption_codecs>
 ```
 
-Where `current_key_id` sets the current key for encryption, and all specified keys can be used for decryption.
+Here `current_key_id` sets the current key for encryption, and all specified keys can be used for decryption.
 
-All this methods can be applied for multiple keys:
+Each of these methods can be applied for multiple keys:
 
 ```xml
 <encryption_codecs>
@@ -124,14 +126,14 @@ All this methods can be applied for multiple keys:
 </encryption_codecs>
 ```
 
-Where `current_key_id` shows current key for encryption.
+Here `current_key_id` shows current key for encryption.
 
-Also user can add nonce that must be 12 bytes long (by default encryption and decryption will use nonce consisting of zero bytes):
+Also, users can add nonce that must be 12 bytes long (by default encryption and decryption processes use nonce that consists of zero bytes):
 
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <nonce>0123456789101</nonce>
+        <nonce>012345678910</nonce>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
@@ -146,7 +148,9 @@ Or it can be set in hex:
 </encryption_codecs>
 ```
 
-Everything above can be applied for `aes_256_gcm_siv` (but key must be 32 bytes length).
+Everything mentioned above can be applied for `aes_256_gcm_siv` (but the key must be 32 bytes long).
+
+-->
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
@@ -643,7 +647,7 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-The maximum number of simultaneously processed queries related to MergeTree table. Queries may be limited by other settings: [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+The maximum number of simultaneously processed queries related to MergeTree table. Queries may be limited by other settings: [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
 
 !!! info "Note"
 	These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
@@ -657,6 +661,21 @@ Possible values:
 
 ``` xml
 <max_concurrent_queries>100</max_concurrent_queries>
+```
+
+## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
+
+The maximum number of simultaneously processed queries related to MergeTree table per user.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Disabled.
+
+**Example**
+
+``` xml
+<max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
 ```
 
 ## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
@@ -771,14 +790,14 @@ It is enabled by default. If it`s not, you can do this manually.
 To manually turn on metrics history collection [`system.metric_log`](../../operations/system-tables/metric_log.md), create `/etc/clickhouse-server/config.d/metric_log.xml` with the following content:
 
 ``` xml
-<yandex>
+<clickhouse>
     <metric_log>
         <database>system</database>
         <table>metric_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
     </metric_log>
-</yandex>
+</clickhouse>
 ```
 
 **Disabling**
@@ -786,9 +805,9 @@ To manually turn on metrics history collection [`system.metric_log`](../../opera
 To disable `metric_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_metric_log.xml` with the following content:
 
 ``` xml
-<yandex>
+<clickhouse>
 <metric_log remove="1" />
-</yandex>
+</clickhouse>
 ```
 
 ## replicated_merge_tree {#server_configuration_parameters-replicated_merge_tree}
@@ -1024,7 +1043,7 @@ Parameters:
 
 **Example**
 ```xml
-<yandex>
+<clickhouse>
     <text_log>
         <level>notice</level>
         <database>system</database>
@@ -1033,7 +1052,7 @@ Parameters:
         <!-- <partition_by>event_date</partition_by> -->
         <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
     </text_log>
-</yandex>
+</clickhouse>
 ```
 
 

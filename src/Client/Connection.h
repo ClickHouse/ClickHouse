@@ -4,9 +4,7 @@
 
 #include <Poco/Net/StreamSocket.h>
 
-#if !defined(ARCADIA_BUILD)
-#   include <Common/config.h>
-#endif
+#include <Common/config.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
@@ -59,6 +57,8 @@ public:
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0));
 
     ~Connection() override;
+
+    IServerConnection::Type getConnectionType() const override { return IServerConnection::Type::SERVER; }
 
     static ServerConnectionPtr createConnection(const ConnectionParameters & parameters, ContextPtr context);
 
@@ -206,6 +206,7 @@ private:
     std::shared_ptr<ReadBuffer> maybe_compressed_in;
     std::unique_ptr<NativeReader> block_in;
     std::unique_ptr<NativeReader> block_logs_in;
+    std::unique_ptr<NativeReader> block_profile_events_in;
 
     /// Where to write data for INSERT.
     std::shared_ptr<WriteBuffer> maybe_compressed_out;
@@ -249,15 +250,17 @@ private:
     Block receiveData();
     Block receiveLogData();
     Block receiveDataImpl(NativeReader & reader);
+    Block receiveProfileEvents();
 
     std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
-    BlockStreamProfileInfo receiveProfileInfo() const;
+    ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();
     void initBlockInput();
     void initBlockLogsInput();
+    void initBlockProfileEventsInput();
 
     [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
 };

@@ -1,0 +1,13 @@
+<clickhouse>
+    <named_collections>
+        <remote1>
+            <host>127.0.0.2</host>
+            <port>9000</port>
+            <table>remote_test</table>
+        </remote1>
+        <remote2>
+            <host>127.0.0.{1,2}</host>
+            <table>remote_test</table>
+        </remote2>
+    </named_collections>
+</clickhouse>

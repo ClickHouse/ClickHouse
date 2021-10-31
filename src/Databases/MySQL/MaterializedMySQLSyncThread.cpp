@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_MYSQL
 
@@ -9,16 +7,14 @@
 #    include <random>
 #    include <Columns/ColumnTuple.h>
 #    include <Columns/ColumnDecimal.h>
-#    include <Processors/QueryPipelineBuilder.h>
+#    include <QueryPipeline/QueryPipelineBuilder.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
 #    include <Processors/Executors/CompletedPipelineExecutor.h>
 #    include <Processors/Sources/SourceFromSingleChunk.h>
 #    include <Processors/Transforms/CountingTransform.h>
-#    include <DataStreams/OneBlockInputStream.h>
-#    include <DataStreams/copyData.h>
 #    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
 #    include <Databases/MySQL/MaterializeMetadata.h>
-#    include <Formats/MySQLSource.h>
+#    include <Processors/Sources/MySQLSource.h>
 #    include <IO/ReadBufferFromString.h>
 #    include <Interpreters/Context.h>
 #    include <Interpreters/executeQuery.h>

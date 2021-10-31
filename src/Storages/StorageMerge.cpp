@@ -1,5 +1,5 @@
-#include <DataStreams/narrowBlockInputStreams.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <QueryPipeline/narrowBlockInputStreams.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -383,7 +383,7 @@ Pipe StorageMerge::createSources(
     {
         pipe = QueryPipelineBuilder::getPipe(InterpreterSelectQuery(
             modified_query_info.query, modified_context,
-            std::make_shared<OneBlockInputStream>(header),
+            Pipe(std::make_shared<SourceFromSingleChunk>(header)),
             SelectQueryOptions(processed_stage).analyze()).buildQueryPipeline());
 
         pipe.addInterpreterContext(modified_context);
@@ -651,7 +651,7 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, ContextP
 }
 
 void StorageMerge::alter(
-    const AlterCommands & params, ContextPtr local_context, TableLockHolder &)
+    const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
 {
     auto table_id = getStorageID();
 
