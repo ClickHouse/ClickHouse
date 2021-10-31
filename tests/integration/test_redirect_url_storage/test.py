@@ -1,6 +1,10 @@
 import pytest
 from helpers.cluster import ClickHouseCluster
 
+from helpers.network import PartitionManager
+import threading
+import time
+
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/named_collections.xml'], with_zookeeper=False, with_hdfs=True)
 
@@ -95,3 +99,61 @@ def test_predefined_connection_configuration(started_cluster):
     result = node1.query("SET max_http_get_redirects=1; select * from url(url1, url='http://hdfs1:50070/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', format='TSV', structure='id UInt32, name String, weight Float64')")
     assert(result == "1\tMark\t72.53\n")
     node1.query("drop table WebHDFSStorageWithRedirect")
+
+
+result = ''
+def test_url_reconnect_at_start(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+
+    with PartitionManager() as pm:
+        node1.query(
+            "insert into table function hdfs('hdfs://hdfs1:9000/storage_big', 'TSV', 'id Int32') select number from numbers(500000)")
+
+        pm._add_rule({'probability': 1, 'destination': node1.ip_address, 'source_port': 50075, 'action': 'DROP'})
+
+        def select():
+            global result
+            print("reading")
+            result = node1.query(
+                "select sum(cityHash64(id)) from url('http://hdfs1:50075/webhdfs/v1/storage_big?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'id Int32') settings http_max_tries = 20, http_retry_max_backoff_ms=10000")
+            print(result)
+
+        thread = threading.Thread(target=select)
+        thread.start()
+        time.sleep(1)
+        print("delete rule")
+        pm._delete_rule({'probability': 1, 'destination': node1.ip_address, 'source_port': 50075, 'action': 'DROP'})
+
+        thread.join()
+        #assert node1.contains_in_log("Error: Timeout, code:")
+        print(result)
+
+result = ''
+def test_url_reconnect_in_the_middle(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+
+    with PartitionManager() as pm:
+        node1.query(
+            "insert into table function hdfs('hdfs://hdfs1:9000/storage_big2', 'TSV', 'id Int32') select number from numbers(10000000)")
+
+        def select():
+            global result
+            print("reading")
+            result = node1.query(
+                "select sum(cityHash64(id)) from url('http://hdfs1:50075/webhdfs/v1/storage_big2?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', 'TSV', 'id Int32')")
+            print(result)
+
+        thread = threading.Thread(target=select)
+        print("add rule")
+        pm._add_rule({'probability': 0.3, 'destination': node1.ip_address, 'source_port': 50075, 'action': 'DROP'})
+        thread.start()
+        time.sleep(0.5)
+        pm._add_rule({'probability': 1, 'destination': node1.ip_address, 'source_port': 50075, 'action': 'DROP'})
+        time.sleep(3)
+        print("delete rule")
+        pm._delete_rule({'probability': 0.3, 'destination': node1.ip_address, 'source_port': 50075, 'action': 'DROP'})
+        pm._delete_rule({'probability': 1, 'destination': node1.ip_address, 'source_port': 50075, 'action': 'DROP'})
+
+        thread.join()
+        assert node1.contains_in_log("Error: Timeout, code:")
+        print(result)
