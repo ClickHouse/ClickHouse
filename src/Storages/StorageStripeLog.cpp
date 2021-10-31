@@ -14,9 +14,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/NativeReader.h>
-#include <DataStreams/NativeWriter.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -32,7 +31,7 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
 #include <cassert>
 
@@ -98,9 +97,6 @@ public:
 protected:
     Chunk generate() override
     {
-        if (storage.file_checker.empty())
-            return {};
-
         Block res;
         start();
 
@@ -337,7 +333,7 @@ Pipe StorageStripeLog::read(
     Pipes pipes;
 
     String index_file = table_path + "index.mrk";
-    if (!disk->exists(index_file))
+    if (file_checker.empty() || !disk->exists(index_file))
     {
         return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
     }

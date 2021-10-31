@@ -61,9 +61,9 @@ bool LineAsStringRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
     return true;
 }
 
-void registerInputFormatProcessorLineAsString(FormatFactory & factory)
+void registerInputFormatLineAsString(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("LineAsString", [](
+    factory.registerInputFormat("LineAsString", [](
             ReadBuffer & buf,
             const Block & sample,
             const RowInputFormatParams & params,

@@ -3,9 +3,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/IAST.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 
 namespace DB
@@ -24,6 +22,8 @@ public:
         DROP_DNS_CACHE,
         DROP_MARK_CACHE,
         DROP_UNCOMPRESSED_CACHE,
+        DROP_INDEX_MARK_CACHE,
+        DROP_INDEX_UNCOMPRESSED_CACHE,
         DROP_MMAP_CACHE,
 #if USE_EMBEDDED_COMPILER
         DROP_COMPILED_EXPRESSION_CACHE,

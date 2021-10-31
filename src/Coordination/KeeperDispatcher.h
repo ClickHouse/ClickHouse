@@ -1,9 +1,7 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#    include "config_core.h"
-#endif
+#include <Common/config.h>
+#include "config_core.h"
 
 #if USE_NURAFT
 
@@ -33,11 +31,15 @@ private:
     CoordinationSettingsPtr coordination_settings;
     using RequestsQueue = ConcurrentBoundedQueue<KeeperStorage::RequestForSession>;
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
+    using UpdateConfigurationQueue = ConcurrentBoundedQueue<ConfigUpdateAction>;
 
     /// Size depends on coordination settings
     std::unique_ptr<RequestsQueue> requests_queue;
     ResponsesQueue responses_queue;
     SnapshotsQueue snapshots_queue{1};
+
+    /// More than 1k updates is definitely misconfiguration.
+    UpdateConfigurationQueue update_configuration_queue{1000};
 
     std::atomic<bool> shutdown_called{false};
 
@@ -62,6 +64,8 @@ private:
     ThreadFromGlobalPool session_cleaner_thread;
     /// Dumping new snapshots to disk
     ThreadFromGlobalPool snapshot_thread;
+    /// Apply or wait for configuration changes
+    ThreadFromGlobalPool update_configuration_thread;
 
     /// RAFT wrapper.
     std::unique_ptr<KeeperServer> server;
@@ -80,6 +84,8 @@ private:
     void sessionCleanerTask();
     /// Thread create snapshots in the background
     void snapshotThread();
+    /// Thread apply or wait configuration changes from leader
+    void updateConfigurationThread();
 
     void setResponse(int64_t session_id, const Coordination::ZooKeeperResponsePtr & response);
 
@@ -100,7 +106,16 @@ public:
 
     /// Initialization from config.
     /// standalone_keeper -- we are standalone keeper application (not inside clickhouse server)
-    void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper);
+    void initialize(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper, bool start_async);
+
+    bool checkInit() const
+    {
+        return server && server->checkInit();
+    }
+
+    /// Registered in ConfigReloader callback. Add new configuration changes to
+    /// update_configuration_queue. Keeper Dispatcher apply them asynchronously.
+    void updateConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     void shutdown();

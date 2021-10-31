@@ -1705,9 +1705,35 @@ ClickHouse генерирует исключение
 
 Значение по умолчанию: 0.
 
+## distributed_push_down_limit {#distributed-push-down-limit}
+
+Включает или отключает [LIMIT](#limit), применяемый к каждому шарду по отдельности. 
+
+Это позволяет избежать:
+- отправки дополнительных строк по сети;
+- обработки строк за пределами ограничения для инициатора.
+
+Начиная с версии 21.9 вы больше не сможете получить неточные результаты, так как `distributed_push_down_limit` изменяет выполнение запроса только в том случае, если выполнено хотя бы одно из условий:
+- `distributed_group_by_no_merge` > 0.
+- запрос **не содержит** `GROUP BY`/`DISTINCT`/`LIMIT BY`, но содержит `ORDER BY`/`LIMIT`.
+- запрос **содержит** `GROUP BY`/`DISTINCT`/`LIMIT BY` с `ORDER BY`/`LIMIT` и:
+  - включена настройка [optimize_skip_unused_shards](#optimize-skip-unused-shards).
+  - включена настройка `optimize_distributed_group_by_sharding_key`.
+
+Возможные значения:
+
+-    0 — выключена.
+-    1 — включена.
+
+Значение по умолчанию: `1`.
+
+См. также:
+
+-   [optimize_skip_unused_shards](#optimize-skip-unused-shards)
+
 ## optimize_skip_unused_shards {#optimize-skip-unused-shards}
 
-Включает или отключает пропуск неиспользуемых шардов для запросов [SELECT](../../sql-reference/statements/select/index.md) , в которых условие ключа шардирования задано в секции `WHERE/PREWHERE`. Предполагается, что данные распределены с помощью ключа шардирования, в противном случае настройка ничего не делает.
+Включает или отключает пропуск неиспользуемых шардов для запросов [SELECT](../../sql-reference/statements/select/index.md) , в которых условие ключа шардирования задано в секции `WHERE/PREWHERE`. Предполагается, что данные распределены с помощью ключа шардирования, в противном случае запрос выдаст неверный результат.
 
 Возможные значения:
 
@@ -2684,6 +2710,43 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 Значение по умолчанию: `1`.
 
+## output_format_csv_null_representation {#output_format_csv_null_representation}
+
+Определяет представление `NULL` для формата выходных данных [CSV](../../interfaces/formats.md#csv). Пользователь может установить в качестве значения любую строку, например, `My NULL`.
+
+Значение по умолчанию: `\N`.
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT * FROM csv_custom_null FORMAT CSV;
+```
+
+Результат:
+
+```text
+788
+\N
+\N
+```
+
+Запрос:
+
+```sql
+SET output_format_csv_null_representation = 'My NULL';
+SELECT * FROM csv_custom_null FORMAT CSV;
+```
+
+Результат:
+
+```text
+788
+My NULL
+My NULL
+```
+
 ## output_format_tsv_null_representation {#output_format_tsv_null_representation}
 
 Определяет представление `NULL` для формата выходных данных [TSV](../../interfaces/formats.md#tabseparated). Пользователь может установить в качестве значения любую строку.
@@ -3573,3 +3636,132 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 │  10 │  20 │   30  │
 └─────┴─────┴───────┘
 ```
+
+## optimize_move_to_prewhere {#optimize_move_to_prewhere}
+
+Включает или отключает автоматическую оптимизацию [PREWHERE](../../sql-reference/statements/select/prewhere.md) в запросах [SELECT](../../sql-reference/statements/select/index.md).
+
+Работает только с таблицами семейства [*MergeTree](../../engines/table-engines/mergetree-family/index.md).
+
+Возможные значения:
+
+-   0 — автоматическая оптимизация `PREWHERE` отключена.
+-   1 — автоматическая оптимизация `PREWHERE` включена.
+
+Значение по умолчанию: `1`.
+
+## optimize_move_to_prewhere_if_final {#optimize_move_to_prewhere_if_final}
+
+Включает или отключает автоматическую оптимизацию [PREWHERE](../../sql-reference/statements/select/prewhere.md) в запросах [SELECT](../../sql-reference/statements/select/index.md) с модификатором [FINAL](../../sql-reference/statements/select/from.md#select-from-final).
+
+Работает только с таблицами семейства [*MergeTree](../../engines/table-engines/mergetree-family/index.md).
+
+Возможные значения:
+
+-   0 — автоматическая оптимизация `PREWHERE` в запросах `SELECT` с модификатором `FINAL` отключена.
+-   1 — автоматическая оптимизация `PREWHERE` в запросах `SELECT` с модификатором `FINAL` включена.
+
+Значение по умолчанию: `0`.
+
+**См. также**
+
+-   настройка [optimize_move_to_prewhere](#optimize_move_to_prewhere)
+
+## describe_include_subcolumns {#describe_include_subcolumns}
+
+Включает или отключает описание подстолбцов при выполнении запроса [DESCRIBE](../../sql-reference/statements/describe-table.md). Настройка действует, например, на элементы [Tuple](../../sql-reference/data-types/tuple.md) или подстолбцы типов [Map](../../sql-reference/data-types/map.md#map-subcolumns), [Nullable](../../sql-reference/data-types/nullable.md#finding-null) или [Array](../../sql-reference/data-types/array.md#array-size).
+
+Возможные значения:
+
+-   0 — подстолбцы не включаются в результат запросов `DESCRIBE`.
+-   1 — подстолбцы включаются в результат запросов `DESCRIBE`.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Смотрите пример запроса [DESCRIBE](../../sql-reference/statements/describe-table.md).
+
+## async_insert {#async-insert}
+
+Включает или отключает асинхронные вставки. Работает только для вставок по протоколу HTTP. Обратите внимание, что при таких вставках дедупликация не производится.
+
+Если включено, данные собираются в пачки перед вставкой в таблицу. Это позволяет производить мелкие и частые вставки в ClickHouse (до 15000 запросов в секунду) без промежуточных таблиц.
+
+Вставка данных происходит либо как только объем вставляемых данных превышает [async_insert_max_data_size](#async-insert-max-data-size), либо через [async_insert_busy_timeout_ms](#async-insert-busy-timeout-ms) миллисекунд после первого запроса `INSERT`. Если в [async_insert_stale_timeout_ms](#async-insert-stale-timeout-ms) задано ненулевое значение, то данные вставляются через `async_insert_stale_timeout_ms` миллисекунд после последнего запроса.
+
+Если включен параметр [wait_for_async_insert](#wait-for-async-insert), каждый клиент ждет, пока данные будут сброшены в таблицу. Иначе запрос будет обработан почти моментально, даже если данные еще не вставлены.
+
+Возможные значения:
+
+-   0 — вставки производятся синхронно, один запрос за другим.
+-   1 — включены множественные асинхронные вставки.
+
+Значение по умолчанию: `0`.
+
+## async_insert_threads {#async-insert-threads}
+
+Максимальное число потоков для фоновой обработки и вставки данных.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — асинхронные вставки отключены.
+
+Значение по умолчанию: `16`.
+
+## wait_for_async_insert {#wait-for-async-insert}
+
+Включает или отключает ожидание обработки асинхронных вставок. Если включено, клиент выведет `OK` только после того, как данные вставлены. Иначе будет выведен `OK`, даже если вставка не произошла.
+
+Возможные значения:
+
+-   0 — сервер возвращает `OK` даже если вставка данных еще не завершена.
+-   1 — сервер возвращает `OK` только после завершения вставки данных.
+
+Значение по умолчанию: `1`.
+
+## wait_for_async_insert_timeout {#wait-for-async-insert-timeout}
+
+Время ожидания в секундах, выделяемое для обработки асинхронной вставки.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — ожидание отключено.
+
+Значение по умолчанию: [lock_acquire_timeout](#lock_acquire_timeout).
+
+## async_insert_max_data_size {#async-insert-max-data-size}
+
+Максимальный размер необработанных данных (в байтах), собранных за запрос, перед их вставкой.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — асинхронные вставки отключены.
+
+Значение по умолчанию: `1000000`.
+
+## async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
+
+Максимальное время ожидания в миллисекундах после первого запроса `INSERT` и перед вставкой данных.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — ожидание отключено.
+
+Значение по умолчанию: `200`.
+
+## async_insert_stale_timeout_ms {#async-insert-stale-timeout-ms}
+
+Максимальное время ожидания в миллисекундах после последнего запроса `INSERT` и перед вставкой данных. Если установлено ненулевое значение, [async_insert_busy_timeout_ms](#async-insert-busy-timeout-ms) будет продлеваться с каждым запросом `INSERT`, пока не будет превышен [async_insert_max_data_size](#async-insert-max-data-size).
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — ожидание отключено.
+
+Значение по умолчанию: `0`.
+

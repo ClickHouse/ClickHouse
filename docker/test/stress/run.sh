@@ -46,11 +46,11 @@ function configure()
     sudo chown root: /var/lib/clickhouse
 
     # Set more frequent update period of asynchronous metrics to more frequently update information about real memory usage (less chance of OOM).
-    echo "<yandex><asynchronous_metrics_update_period_s>1</asynchronous_metrics_update_period_s></yandex>" \
+    echo "<clickhouse><asynchronous_metrics_update_period_s>1</asynchronous_metrics_update_period_s></clickhouse>" \
         > /etc/clickhouse-server/config.d/asynchronous_metrics_update_period_s.xml
 
     # Set maximum memory usage as half of total memory (less chance of OOM).
-    echo "<yandex><max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio></yandex>" \
+    echo "<clickhouse><max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio></clickhouse>" \
         > /etc/clickhouse-server/config.d/max_server_memory_usage_to_ram_ratio.xml
 }
 
@@ -183,8 +183,14 @@ done
 
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
 mv /var/log/clickhouse-server/stderr.log /test_output/
-tar -chf /test_output/query_log_dump.tar /var/lib/clickhouse/data/system/query_log ||:
-tar -chf /test_output/trace_log_dump.tar /var/lib/clickhouse/data/system/trace_log ||:
+
+# Replace the engine with Ordinary to avoid extra symlinks stuff in artifacts.
+# (so that clickhouse-local --path can read it w/o extra care).
+sed -i -e "s/ATTACH DATABASE _ UUID '[^']*'/ATTACH DATABASE system/" -e "s/Atomic/Ordinary/" /var/lib/clickhouse/metadata/system.sql
+for table in query_log trace_log; do
+    sed -i "s/ATTACH TABLE _ UUID '[^']*'/ATTACH TABLE $table/" /var/lib/clickhouse/metadata/system/${table}.sql
+    tar -chf /test_output/${table}_dump.tar /var/lib/clickhouse/metadata/system.sql /var/lib/clickhouse/metadata/system/${table}.sql /var/lib/clickhouse/data/system/${table} ||:
+done
 
 # Write check result into check_status.tsv
 clickhouse-local --structure "test String, res String" -q "SELECT 'failure', test FROM table WHERE res != 'OK' order by (lower(test) like '%hung%') LIMIT 1" < /test_output/test_results.tsv > /test_output/check_status.tsv

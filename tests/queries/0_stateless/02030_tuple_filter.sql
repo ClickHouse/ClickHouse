@@ -11,7 +11,12 @@ SELECT * FROM test_tuple_filter WHERE (1, 'A') = (id, value);
 SELECT * FROM test_tuple_filter WHERE (id, value) = (1, 'A') AND (id, log_date) = (1, '2021-01-01');
 SELECT * FROM test_tuple_filter WHERE ((id, value), id * 2) = ((1, 'A'), 2);
 SELECT * FROM test_tuple_filter WHERE ((id, value), log_date) = ((1, 'A'), '2021-01-01');
-SELECT * FROM test_tuple_filter WHERE (1, (1, (1, (1, (id, value))))) = (1, (1, (1, (1, (1, 'A')))));
+
+-- not supported functions (concat) do not lost
+SELECT * FROM test_tuple_filter WHERE (id, value, value||'foo') = ('1', 'A', 'A');
+
+-- Condition fully moved to PREWHERE and such conditions does not supported yet.
+SELECT * FROM test_tuple_filter WHERE (1, (1, (1, (1, (id, value))))) = (1, (1, (1, (1, (1, 'A'))))); -- { serverError INDEX_NOT_USED }
 
 -- not implemented yet
 SELECT * FROM test_tuple_filter WHERE (1, value) = (id, 'A'); -- { serverError INDEX_NOT_USED }

@@ -4,8 +4,7 @@
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <DataStreams/BlockIO.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Context.h>
 
 
@@ -95,6 +94,7 @@ private:
 
     std::atomic_bool is_readonly = true;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
+    UInt32 max_log_ptr_at_creation = 0;
 
     mutable ClusterPtr cluster;
 };

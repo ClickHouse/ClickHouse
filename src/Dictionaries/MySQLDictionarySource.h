@@ -2,9 +2,7 @@
 
 #include <Core/Block.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_MYSQL
 #    include <base/LocalDateTime.h>
@@ -12,7 +10,7 @@
 #    include "DictionaryStructure.h"
 #    include "ExternalQueryBuilder.h"
 #    include "IDictionarySource.h"
-#    include <Formats/MySQLSource.h>
+#    include <Processors/Sources/MySQLSource.h>
 
 namespace Poco
 {

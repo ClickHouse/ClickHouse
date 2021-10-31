@@ -1,16 +1,17 @@
 #pragma once
 
+#include <Common/ConcurrentBoundedQueue.h>
 #include <Coordination/KeeperStorage.h>
-#include <libnuraft/nuraft.hxx> // Y_IGNORE
+#include <libnuraft/nuraft.hxx>
 #include <base/logger_useful.h>
-#include <Coordination/ThreadSafeQueue.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperSnapshotManager.h>
+
 
 namespace DB
 {
 
-using ResponsesQueue = ThreadSafeQueue<KeeperStorage::ResponseForSession>;
+using ResponsesQueue = ConcurrentBoundedQueue<KeeperStorage::ResponseForSession>;
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
 /// ClickHouse Keeper state machine. Wrapper for KeeperStorage.
@@ -30,6 +31,9 @@ public:
     nuraft::ptr<nuraft::buffer> pre_commit(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override { return nullptr; }
 
     nuraft::ptr<nuraft::buffer> commit(const uint64_t log_idx, nuraft::buffer & data) override;
+
+    /// Save new cluster config to our snapshot (copy of the config stored in StateManager)
+    void commit_config(const uint64_t log_idx, nuraft::ptr<nuraft::cluster_config> & new_conf) override;
 
     /// Currently not supported
     void rollback(const uint64_t /*log_idx*/, nuraft::buffer & /*data*/) override {}
@@ -75,6 +79,8 @@ public:
 
     void shutdownStorage();
 
+    ClusterConfigPtr getClusterConfig() const;
+
 private:
 
     /// In our state machine we always have a single snapshot which is stored
@@ -108,7 +114,14 @@ private:
 
     /// Last committed Raft log number.
     std::atomic<uint64_t> last_committed_idx;
+
     Poco::Logger * log;
+
+    /// Cluster config for our quorum.
+    /// It's a copy of config stored in StateManager, but here
+    /// we also write it to disk during snapshot. Must be used with lock.
+    mutable std::mutex cluster_config_lock;
+    ClusterConfigPtr cluster_config;
 
     /// Special part of ACL system -- superdigest specified in server config.
     const std::string superdigest;

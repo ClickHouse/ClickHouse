@@ -66,7 +66,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (typeid_cast<DatabaseReplicated *>(database.get())
-        && !getContext()->getClientInfo().is_replicated_database_internal)
+        && !getContext()->getClientInfo().is_replicated_database_internal
+        && !alter.isAttachAlter()
+        && !alter.isFetchAlter()
+        && !alter.isDropPartitionAlter())
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
@@ -76,11 +79,12 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
-    auto alter_lock = table->lockForAlter(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
+    auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
+    auto alter_lock = table->lockForAlter(getContext()->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
-    AddDefaultDatabaseVisitor visitor(table_id.getDatabaseName());
+    AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 
@@ -270,6 +274,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_ORDER_BY, database, table);
             break;
         }
+        case ASTAlterCommand::REMOVE_SAMPLE_BY:
         case ASTAlterCommand::MODIFY_SAMPLE_BY:
         {
             required_access.emplace_back(AccessType::ALTER_SAMPLE_BY, database, table);
