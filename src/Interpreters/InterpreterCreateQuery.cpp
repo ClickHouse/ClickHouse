@@ -41,7 +41,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 
-#include <Access/AccessRightsElement.h>
+#include <Access/Common/AccessRightsElement.h>
 
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>

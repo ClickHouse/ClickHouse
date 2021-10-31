@@ -1,4 +1,7 @@
 #include <Storages/System/StorageSystemUsers.h>
+#include <Access/AccessControlManager.h>
+#include <Access/Common/AccessFlags.h>
+#include <Access/User.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -8,10 +11,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTRolesOrUsersSet.h>
-#include <Access/AccessControlManager.h>
-#include <Access/User.h>
-#include <Access/AccessFlags.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>

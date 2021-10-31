@@ -19,7 +19,7 @@
 #include <Storages/IStorage.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Formats/FormatFactory.h>
 
 

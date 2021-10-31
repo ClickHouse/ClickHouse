@@ -21,7 +21,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
 
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>

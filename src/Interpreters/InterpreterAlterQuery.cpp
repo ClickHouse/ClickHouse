@@ -1,6 +1,6 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 
-#include <Access/AccessRightsElement.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>

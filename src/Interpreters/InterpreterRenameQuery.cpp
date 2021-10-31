@@ -5,7 +5,7 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/QueryLog.h>
-#include <Access/AccessRightsElement.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Common/typeid_cast.h>
 #include <Databases/DatabaseReplicated.h>
 
