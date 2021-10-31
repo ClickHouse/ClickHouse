@@ -1366,12 +1366,19 @@ void ClientBase::runInteractive()
 
         for (const auto& [alias, command] : backslash_aliases)
         {
-            if (input.starts_with(alias))
+            auto it = std::search(input.begin(), input.end(), alias.begin(), alias.end());
+            if (it != input.end() && std::all_of(input.begin(), it, isWhitespaceASCII))
             {
-                // append the rest of input to the command
-                // for parameters support, e.g. \c db_name -> USE db_name
-                input = command + input.substr(alias.size());
-                break;
+                it += alias.size();
+                if (it == input.end() || isWhitespaceASCII(*it))
+                {
+                    String new_input = command;
+                    // append the rest of input to the command
+                    // for parameters support, e.g. \c db_name -> USE db_name
+                    new_input.append(it, input.end());
+                    input = std::move(new_input);
+                    break;
+                }
             }
         }
 
