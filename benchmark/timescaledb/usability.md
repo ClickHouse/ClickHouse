@@ -244,8 +244,7 @@ sudo mcedit /etc/postgresql/13/main/postgresql.conf
 #listen_addresses = 'localhost'
 ```
 
-Looks like I need to uncomment it.ERROR:  cannot change configuration on already compressed chunks
-DETAIL:  There are compressed chunks that prevent changing the existing compression configuration.
+Looks like I need to uncomment it.
 
 ```
 sudo service postgresql restart
