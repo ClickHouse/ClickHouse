@@ -72,6 +72,7 @@ Types of sources (`source_type`):
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
     -   [Cassandra](#dicts-external_dicts_dict_sources-cassandra)
     -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
+    -   [JDBC](#dicts-external_dicts_dict_sources-jdbc)
 
 ## Local File {#dicts-external_dicts_dict_sources-local_file}
 
@@ -486,6 +487,7 @@ Example of settings:
       <table>table_name</table>
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
+	  <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
       <fail_on_connection_loss>true</fail_on_connection_loss>
   </mysql>
 </source>
@@ -504,6 +506,7 @@ SOURCE(MYSQL(
     table 'table_name'
     where 'id=10'
     invalidate_query 'SQL_QUERY'
+	query 'SELECT id, value_1, value_2 FROM db_name.table_name'
     fail_on_connection_loss 'true'
 ))
 ```
@@ -529,6 +532,8 @@ Setting fields:
 
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 
+-   `query` – The custom query. Optional parameter.
+
 -   `fail_on_connection_loss` – The configuration parameter that controls behavior of the server on connection loss. If `true`, an exception is thrown immediately if the connection between client and server was lost. If `false`, the ClickHouse server retries to execute the query three times before throwing an exception. Note that retrying leads to increased response times. Default value: `false`.
 
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
@@ -546,6 +551,7 @@ Example of settings:
       <table>table_name</table>
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
+	  <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
       <fail_on_connection_loss>true</fail_on_connection_loss>
   </mysql>
 </source>
@@ -563,6 +569,7 @@ SOURCE(MYSQL(
     table 'table_name'
     where 'id=10'
     invalidate_query 'SQL_QUERY'
+    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
     fail_on_connection_loss 'true'
 ))
 ```
@@ -581,6 +588,7 @@ Example of settings:
         <db>default</db>
         <table>ids</table>
         <where>id=10</where>
+        <query>SELECT id, value_1, value_2 FROM default.ids</query>
         <secure>1</secure>
     </clickhouse>
 </source>
@@ -597,6 +605,7 @@ SOURCE(CLICKHOUSE(
     db 'default'
     table 'ids'
     where 'id=10'
+    query 'SELECT id, value_1, value_2 FROM default.ids'
     secure 1
 ));
 ```
@@ -611,6 +620,7 @@ Setting fields:
 -   `table` – Name of the table.
 -   `where` – The selection criteria. May be omitted.
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
+-   `query` – The custom query. Optional parameter.
 -   `secure` - Use ssl for connection.
 
 ### Mongodb {#dicts-external_dicts_dict_sources-mongodb}
@@ -703,25 +713,25 @@ Example of settings:
         <consistency>One</consistency>
         <where>"SomeColumn" = 42</where>
         <max_threads>8</max_threads>
+        <query>SELECT id, value_1, value_2 FROM database_name.table_name</query>
     </cassandra>
 </source>
 ```
 
 Setting fields:
-- `host` – The Cassandra host or comma-separated list of hosts.
-- `port` – The port on the Cassandra servers. If not specified, default port 9042 is used.
-- `user` – Name of the Cassandra user.
-- `password` – Password of the Cassandra user.
-- `keyspace` – Name of the keyspace (database).
-- `column_family` – Name of the column family (table).
-- `allow_filering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
-- `partition_key_prefix` – Number of partition key columns in primary key of the Cassandra table.
-Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra.
-Default value is 1 (the first key column is a partition key and other key columns are clustering key).
-- `consistency` – Consistency level. Possible values: `One`, `Two`, `Three`,
-`All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default is `One`.
-- `where` – Optional selection criteria.
-- `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
+
+-   `host` – The Cassandra host or comma-separated list of hosts.
+-   `port` – The port on the Cassandra servers. If not specified, default port 9042 is used.
+-   `user` – Name of the Cassandra user.
+-   `password` – Password of the Cassandra user.
+-   `keyspace` – Name of the keyspace (database).
+-   `column_family` – Name of the column family (table).
+-   `allow_filering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
+-   `partition_key_prefix` – Number of partition key columns in primary key of the Cassandra table. Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra. Default value is 1 (the first key column is a partition key and other key columns are clustering key).
+-   `consistency` – Consistency level. Possible values: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default is `One`.
+-   `where` – Optional selection criteria.
+-   `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
+-   `query` – The custom query. Optional parameter.
 
 ### PosgreSQL {#dicts-external_dicts_dict_sources-postgresql}
 
@@ -737,6 +747,7 @@ Example of settings:
       <table>table_name</table>
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
+      <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
   </postgresql>
 </source>
 ```
@@ -755,6 +766,7 @@ SOURCE(POSTGRESQL(
     replica(host 'example01-2' port 5432 priority 2)
     where 'id=10'
     invalidate_query 'SQL_QUERY'
+    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
 ))
 ```
 
@@ -764,11 +776,59 @@ Setting fields:
 -   `port` – The port on the PostgreSQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 -   `user` – Name of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 -   `password` – Password of the PostgreSQL user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
--   `replica` – Section of replica configurations. There can be multiple sections.
-        - `replica/host` – The PostgreSQL host.
-        - `replica/port` – The PostgreSQL port.
-        - `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
+-   `replica` – Section of replica configurations. There can be multiple sections:
+    -   `replica/host` – The PostgreSQL host.
+    -   `replica/port` – The PostgreSQL port.
+    -   `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
 -   `db` – Name of the database.
 -   `table` – Name of the table.
 -   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL, for example, `id > 10 AND id < 20`. Optional parameter.
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
+-   `query` – The custom query. Optional parameter.
+
+### JDBC {#dicts-external_dicts_dict_sources-jdbc}
+
+Example of settings:
+
+``` xml
+<source>
+  <jdbc>
+      <port>5432</port>
+      <user>clickhouse</user>
+      <password>qwerty</password>
+      <db>db_name</db>
+      <table>table_name</table>
+      <where>id=10</where>
+      <invalidate_query>SQL_QUERY</invalidate_query>
+      <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
+  </jdbc>
+</source>
+```
+
+or
+
+``` sql
+SOURCE(JDBC(
+    port 5432
+    host 'jdbc-hostname'
+    user 'jdbc_user'
+    password 'jdbc_password'
+    db 'db_name'
+    table 'table_name'
+    where 'id=10'
+    invalidate_query 'SQL_QUERY'
+    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
+))
+```
+
+Setting fields:
+
+-   `host` – The host on the JDBC server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `port` – The port on the JDBC server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `user` – Name of the JDBC user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `password` – Password of the JDBC user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
+-   `db` – Name of the database.
+-   `table` – Name of the table.
+-   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in JDBC, for example, `id > 10 AND id < 20`. Optional parameter.
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
+-   `query` – The custom query. Optional parameter.
