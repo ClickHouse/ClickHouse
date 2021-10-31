@@ -23,7 +23,7 @@ jobs:
           path: ${{ runner.temp }}/docker_images_check/changed_images.json
   DocsRelease:
     needs: DockerHubPush
-    runs: [self-hosted, func-tester]
+    runs-on: [self-hosted, func-tester]
     steps:
       - name: Check out repository code
         uses: actions/checkout@v2
