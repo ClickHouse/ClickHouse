@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Common/SettingsChanges.h>
-#include <Access/Authentication.h>
+#include <Access/Common/Authentication.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
 

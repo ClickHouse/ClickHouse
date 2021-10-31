@@ -2,7 +2,7 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
-#include <Access/Authentication.h>
+#include <Access/Common/Authentication.h>
 
 namespace DB
 {
