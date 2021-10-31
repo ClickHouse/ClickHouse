@@ -1,0 +1,15 @@
+.icon {
+	display: block;
+	height: 48px;
+	margin-bottom: $spacer * 3;
+	object-fit: contain;
+	object-position: center;
+
+	@media screen and (min-width: 576px) {
+		height: 64px;
+	}
+
+	@media screen and (min-width: 980px) {
+		height: 80px;
+	}
+}

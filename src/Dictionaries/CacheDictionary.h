@@ -10,7 +10,7 @@
 
 #include <pcg_random.hpp>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Common/randomSeed.h>
 #include <Common/ThreadPool.h>
@@ -136,7 +136,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
     std::exception_ptr getLastException() const override;
 

@@ -10,7 +10,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <Dictionaries//DictionarySource.h>
@@ -322,8 +322,7 @@ void FlatDictionary::updateData()
 {
     if (!update_field_loaded_block || update_field_loaded_block->rows() == 0)
     {
-        QueryPipeline pipeline;
-        pipeline.init(source_ptr->loadUpdatedAll());
+        QueryPipeline pipeline(source_ptr->loadUpdatedAll());
 
         PullingPipelineExecutor executor(pipeline);
         Block block;
@@ -358,8 +357,7 @@ void FlatDictionary::loadData()
 {
     if (!source_ptr->hasUpdateField())
     {
-        QueryPipeline pipeline;
-        pipeline.init(source_ptr->loadAll());
+        QueryPipeline pipeline(source_ptr->loadAll());
         PullingPipelineExecutor executor(pipeline);
 
         Block block;
@@ -405,6 +403,11 @@ void FlatDictionary::calculateBytesAllocated()
         };
 
         callOnDictionaryAttributeType(attribute.type, type_call);
+
+        bytes_allocated += sizeof(attribute.is_nullable_set);
+
+        if (attribute.is_nullable_set.has_value())
+            bytes_allocated = attribute.is_nullable_set->getBufferSizeInBytes();
     }
 
     if (update_field_loaded_block)
@@ -535,7 +538,7 @@ void FlatDictionary::setAttributeValue(Attribute & attribute, const UInt64 key, 
     callOnDictionaryAttributeType(attribute.type, type_call);
 }
 
-Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size) const
+Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
     const auto keys_count = loaded_keys.size();
 
@@ -546,8 +549,20 @@ Pipe FlatDictionary::read(const Names & column_names, size_t max_block_size) con
         if (loaded_keys[key_index])
             keys.push_back(key_index);
 
-    return Pipe(std::make_shared<DictionarySource>(
-        DictionarySourceData(shared_from_this(), std::move(keys), column_names), max_block_size));
+    ColumnsWithTypeAndName key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+
+    std::shared_ptr<const IDictionary> dictionary = shared_from_this();
+    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
+
+    Pipes pipes;
+
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        auto source = std::make_shared<DictionarySource>(coordinator);
+        pipes.emplace_back(Pipe(std::move(source)));
+    }
+
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 void registerDictionaryFlat(DictionaryFactory & factory)

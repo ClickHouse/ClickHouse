@@ -4,8 +4,8 @@
 #include <Common/Exception.h>
 #include <Common/randomSeed.h>
 #include <Common/SipHash.h>
-#include <common/getThreadId.h>
-#include <common/types.h>
+#include <base/getThreadId.h>
+#include <base/types.h>
 
 
 namespace DB

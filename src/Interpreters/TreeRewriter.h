@@ -110,7 +110,8 @@ public:
         ConstStoragePtr storage = {},
         const StorageMetadataPtr & metadata_snapshot = {},
         bool allow_aggregations = false,
-        bool allow_self_aliases = true) const;
+        bool allow_self_aliases = true,
+        bool execute_scalar_subqueries = true) const;
 
     /// Analyze and rewrite select query
     TreeRewriterResultPtr analyzeSelect(

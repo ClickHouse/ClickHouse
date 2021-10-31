@@ -1,8 +1,12 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <profiles>
         <default>
         </default>
+
+        <ro>
+            <readonly>1</readonly>
+        </ro>
     </profiles>
 
     <users>
@@ -32,10 +36,19 @@
             <profile>default</profile>
             <quota>default</quota>
         </pass>
+
+        <ro>
+            <password></password>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>ro</profile>
+            <quota>default</quota>
+        </ro>
     </users>
 
     <quotas>
         <default>
         </default>
     </quotas>
-</yandex>
+</clickhouse>

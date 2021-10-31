@@ -18,7 +18,7 @@
 #include <Common/SipHash.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ShellCommand.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 
 #include <IO/copyData.h>
 #include <IO/ReadHelpers.h>

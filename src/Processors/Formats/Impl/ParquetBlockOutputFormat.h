@@ -1,6 +1,6 @@
 #pragma once
-
 #include "config_formats.h"
+
 #if USE_PARQUET
 #    include <Processors/Formats/IOutputFormat.h>
 #    include <Formats/FormatSettings.h>

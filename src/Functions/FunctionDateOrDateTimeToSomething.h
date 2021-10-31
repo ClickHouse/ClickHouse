@@ -128,14 +128,11 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
-        IFunction::Monotonicity is_monotonic { true };
-        IFunction::Monotonicity is_not_monotonic;
+        if constexpr (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
+            return { .is_monotonic = true, .is_always_monotonic = true };
 
-        if (std::is_same_v<typename Transform::FactorTransform, ZeroTransform>)
-        {
-            is_monotonic.is_always_monotonic = true;
-            return is_monotonic;
-        }
+        const IFunction::Monotonicity is_monotonic = { .is_monotonic = true };
+        const IFunction::Monotonicity is_not_monotonic;
 
         /// This method is called only if the function has one argument. Therefore, we do not care about the non-local time zone.
         const DateLUTImpl & date_lut = DateLUT::instance();

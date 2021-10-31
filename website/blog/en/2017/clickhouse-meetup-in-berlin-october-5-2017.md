@@ -1,6 +1,6 @@
 ---
 title: 'ClickHouse Meetup in Berlin, October 5, 2017'
-image: 'https://blog-images.clickhouse.tech/en/2017/clickhouse-meetup-in-berlin-october-5-2017/main.jpg'
+image: 'https://blog-images.clickhouse.com/en/2017/clickhouse-meetup-in-berlin-october-5-2017/main.jpg'
 date: '2017-10-19'
 tags: ['meetup', 'Berlin', 'Germany', 'events']
 ---

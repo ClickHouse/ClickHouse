@@ -11,7 +11,7 @@
 #    include <aws/s3/model/CompleteMultipartUploadRequest.h>
 #    include <aws/s3/model/PutObjectRequest.h>
 #    include <aws/s3/model/UploadPartRequest.h>
-#    include <common/logger_useful.h>
+#    include <base/logger_useful.h>
 
 #    include <utility>
 

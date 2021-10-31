@@ -4,22 +4,20 @@
 #include <cxxabi.h>
 #include <cstdlib>
 #include <Poco/String.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromFile.h>
-#include <common/demangle.h>
-#include <common/errnoToString.h>
+#include <base/demangle.h>
+#include <base/errnoToString.h>
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ErrorCodes.h>
 #include <filesystem>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 namespace fs = std::filesystem;
 
@@ -532,6 +530,13 @@ ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_
 {
     String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(false, true);
     return ExecutionStatus(getCurrentExceptionCode(), msg);
+}
+
+ExecutionStatus ExecutionStatus::fromText(const std::string & data)
+{
+    ExecutionStatus status;
+    status.deserializeText(data);
+    return status;
 }
 
 ParsingException::ParsingException() = default;

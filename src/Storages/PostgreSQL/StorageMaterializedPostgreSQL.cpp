@@ -1,27 +1,26 @@
 #include "StorageMaterializedPostgreSQL.h"
 
 #if USE_LIBPQXX
+#include <base/logger_useful.h>
 #include <Common/Macros.h>
-#include <Core/Settings.h>
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Storages/StorageFactory.h>
-#include <common/logger_useful.h>
 #include <Storages/ReadFinalForExternalReplicaStorage.h>
+#include <Storages/StoragePostgreSQL.h>
 #include <Core/PostgreSQL/Connection.h>
 
 
@@ -30,7 +29,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
@@ -51,6 +49,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
     std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
+    , log(&Poco::Logger::get("StorageMaterializedPostgreSQL(" + postgres::formatNameForLogs(remote_database_name, remote_table_name_) + ")"))
     , is_materialized_postgresql_database(false)
     , has_nested(false)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
@@ -90,12 +89,18 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
 /// For the case of MaterializePosgreSQL database engine.
 /// It is used when nested ReplacingMergeeTree table has not yet be created by replication thread.
 /// In this case this storage can't be used for read queries.
-StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(const StorageID & table_id_, ContextPtr context_)
+StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
+        const StorageID & table_id_,
+        ContextPtr context_,
+        const String & postgres_database_name,
+        const String & postgres_table_name)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
+    , log(&Poco::Logger::get("StorageMaterializedPostgreSQL(" + postgres::formatNameForLogs(postgres_database_name, postgres_table_name) + ")"))
     , is_materialized_postgresql_database(true)
     , has_nested(false)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
+    , nested_table_id(table_id_)
 {
 }
 
@@ -103,9 +108,14 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(const StorageID & t
 /// Constructor for MaterializedPostgreSQL table engine - for the case of MaterializePosgreSQL database engine.
 /// It is used when nested ReplacingMergeeTree table has already been created by replication thread.
 /// This storage is ready to handle read queries.
-StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(StoragePtr nested_storage_, ContextPtr context_)
+StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
+        StoragePtr nested_storage_,
+        ContextPtr context_,
+        const String & postgres_database_name,
+        const String & postgres_table_name)
     : IStorage(nested_storage_->getStorageID())
     , WithContext(context_->getGlobalContext())
+    , log(&Poco::Logger::get("StorageMaterializedPostgreSQL(" + postgres::formatNameForLogs(postgres_database_name, postgres_table_name) + ")"))
     , is_materialized_postgresql_database(true)
     , has_nested(true)
     , nested_context(makeNestedTableContext(context_->getGlobalContext()))
@@ -131,7 +141,7 @@ StoragePtr StorageMaterializedPostgreSQL::createTemporary() const
     }
 
     auto new_context = Context::createCopy(context);
-    return StorageMaterializedPostgreSQL::create(tmp_table_id, new_context);
+    return StorageMaterializedPostgreSQL::create(tmp_table_id, new_context, "temporary", table_id.table_name);
 }
 
 
@@ -171,9 +181,13 @@ StorageID StorageMaterializedPostgreSQL::getNestedStorageID() const
 
 void StorageMaterializedPostgreSQL::createNestedIfNeeded(PostgreSQLTableStructurePtr table_structure)
 {
+    if (tryGetNested())
+        return;
+
     const auto ast_create = getCreateNestedTableQuery(std::move(table_structure));
     auto table_id = getStorageID();
     auto tmp_nested_table_id = StorageID(table_id.database_name, getNestedTableName());
+    LOG_DEBUG(log, "Creating clickhouse table for postgresql table {}", table_id.getNameForLogs());
 
     try
     {
@@ -455,21 +469,6 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
-        ASTs & engine_args = args.engine_args;
-        bool has_settings = args.storage_def->settings;
-        auto postgresql_replication_settings = std::make_unique<MaterializedPostgreSQLSettings>();
-
-        if (has_settings)
-            postgresql_replication_settings->loadFromQuery(*args.storage_def);
-
-        if (engine_args.size() != 5)
-            throw Exception("Storage MaterializedPostgreSQL requires 5 parameters: "
-                            "PostgreSQL('host:port', 'database', 'table', 'username', 'password'",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getContext());
-
         StorageInMemoryMetadata metadata;
         metadata.setColumns(args.columns);
         metadata.setConstraints(args.constraints);
@@ -485,20 +484,19 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
         else
             metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->order_by->ptr(), metadata.columns, args.getContext());
 
-        auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 5432);
-        const String & remote_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        const String & remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-
-        /// No connection is made here, see Storages/PostgreSQL/PostgreSQLConnection.cpp
+        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getContext());
         auto connection_info = postgres::formatConnectionString(
-            remote_database,
-            parsed_host_port.first,
-            parsed_host_port.second,
-            engine_args[3]->as<ASTLiteral &>().value.safeGet<String>(),
-            engine_args[4]->as<ASTLiteral &>().value.safeGet<String>());
+            configuration.database, configuration.host, configuration.port,
+            configuration.username, configuration.password);
+
+        bool has_settings = args.storage_def->settings;
+        auto postgresql_replication_settings = std::make_unique<MaterializedPostgreSQLSettings>();
+
+        if (has_settings)
+            postgresql_replication_settings->loadFromQuery(*args.storage_def);
 
         return StorageMaterializedPostgreSQL::create(
-                args.table_id, args.attach, remote_database, remote_table, connection_info,
+                args.table_id, args.attach, configuration.database, configuration.table, connection_info,
                 metadata, args.getContext(),
                 std::move(postgresql_replication_settings));
     };
