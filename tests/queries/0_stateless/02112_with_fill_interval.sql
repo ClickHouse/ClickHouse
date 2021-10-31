@@ -59,3 +59,23 @@ SELECT toStartOfDay(d64) as d64, count() FROM with_fill_date GROUP BY d64 ORDER 
 DROP TABLE with_fill_date;
 
 SELECT number FROM numbers(100) ORDER BY number WITH FILL STEP INTERVAL 1 HOUR; -- { serverError 475 }
+
+CREATE TABLE with_fill_date (d Date, id UInt32) ENGINE = Memory;
+
+INSERT INTO with_fill_date VALUES (toDate('2020-02-05'), 1);
+INSERT INTO with_fill_date VALUES (toDate('2020-02-16'), 3);
+INSERT INTO with_fill_date VALUES (toDate('2020-03-10'), 2);
+INSERT INTO with_fill_date VALUES (toDate('2020-03-03'), 3);
+
+SELECT '1 MONTH';
+
+SELECT toStartOfMonth(d) as d, id, count() FROM with_fill_date
+GROUP BY d, id
+ORDER BY
+d WITH FILL
+    FROM toDate('2020-01-01')
+    TO toDate('2020-05-01')
+    STEP INTERVAL 1 MONTH,
+id WITH FILL FROM 1 TO 5;
+
+DROP TABLE with_fill_date;

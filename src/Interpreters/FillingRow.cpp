@@ -64,7 +64,7 @@ bool FillingRow::next(const FillingRow & to_row)
             continue;
 
         auto next_value = row[i];
-        getFillDescription(pos).step_func(next_value);
+        getFillDescription(i).step_func(next_value);
         if (less(next_value, getFillDescription(i).fill_to, getDirection(i)))
         {
             row[i] = next_value;
