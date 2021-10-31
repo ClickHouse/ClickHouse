@@ -26,7 +26,7 @@ toc_title: "Хранение словарей в памяти"
 Общий вид конфигурации:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         ...
         <layout>
@@ -36,7 +36,7 @@ toc_title: "Хранение словарей в памяти"
         </layout>
         ...
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 Соответствущий [DDL-запрос](../../statements/create/dictionary.md#create-dictionary-query):
@@ -284,7 +284,7 @@ RANGE(MIN first MAX last)
 Пример конфигурации:
 
 ``` xml
-<yandex>
+<clickhouse>
         <dictionary>
 
                 ...
@@ -313,7 +313,7 @@ RANGE(MIN first MAX last)
                 </structure>
 
         </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 или

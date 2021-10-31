@@ -1,0 +1,50 @@
+name: ReleaseChecks
+concurrency:
+  group: master-release
+  cancel-in-progress: true
+on: # yamllint disable-line rule:truthy
+  push:
+    branches:
+      - master
+jobs:
+  DockerHubPush:
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Images check
+        run: |
+          cd $GITHUB_WORKSPACE/tests/ci
+          python3 docker_images_check.py
+      - name: Upload images files to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/docker_images_check/changed_images.json
+  DocsRelease:
+    needs: DockerHubPush
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{runner.temp}}/docs_release
+      - name: Docs Release
+        env:
+          TEMP_PATH: ${{runner.temp}}/docs_release
+          REPO_COPY: ${{runner.temp}}/docs_release/ClickHouse
+          CLOUDFLARE_TOKEN: ${{secrets.CLOUDFLARE}}
+          ROBOT_CLICKHOUSE_SSH_KEY: ${{secrets.ROBOT_CLICKHOUSE_SSH_KEY}}
+        run: |
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 docs_release.py
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
