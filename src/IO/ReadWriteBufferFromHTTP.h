@@ -43,7 +43,7 @@ protected:
     SessionPtr session;
     UInt64 redirects { 0 };
     Poco::URI initial_uri;
-    const ConnectionTimeouts & timeouts;
+    ConnectionTimeouts timeouts;
     UInt64 max_redirects;
 
 public:
@@ -62,6 +62,8 @@ public:
     {
         return session;
     }
+
+    ConnectionTimeouts & getTimeouts() { return timeouts; }
 
     void updateSession(const Poco::URI & uri)
     {
@@ -145,7 +147,7 @@ namespace detail
               * Add range header if we have some passed range (for disk web)
               * or if we want to retry GET request on purpose.
               */
-            bool with_partial_content = (read_range.begin || read_range.end) || retry_with_range_header;
+            bool with_partial_content = read_range.begin || read_range.end || retry_with_range_header;
             if (with_partial_content)
             {
                 if (read_range.end)
@@ -173,10 +175,21 @@ namespace detail
 
                 if (with_partial_content && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
                 {
-                    /// If we retried some request, throw error from that request.
-                    if (exception)
-                        std::rethrow_exception(exception);
-                    throw Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE, "Cannot read with range: {}", request.get("Range"));
+                    /// Having `200 OK` instead of `206 Partial Content` is acceptable in case we retried with range.begin == 0.
+                    if (read_range.begin)
+                    {
+                        /// Do not throw here, because this method is called with retries.
+                        if (!exception)
+                            exception = std::make_exception_ptr(
+                                Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE, "Cannot read with range: {}", request.get("Range")));
+                        return nullptr;
+                    }
+                    else if (read_range.end)
+                    {
+                        /// We could have range.begin == 0 and range.end != 0 in case of DiskWeb and failing to read with partial content
+                        /// will affect only performance, so a warning is enough.
+                        LOG_WARNING(log, "Unable to read with range header: [{}, {}]", read_range.begin, *read_range.end);
+                    }
                 }
 
                 content_encoding = response.get("Content-Encoding", "");
@@ -234,10 +247,12 @@ namespace detail
                 initialize();
         }
 
-        void initialize()
+        bool initialize()
         {
             Poco::Net::HTTPResponse response;
             istr = call(uri, response);
+            if (!istr) /// Can be nullptr in case we failed to read with range header.
+                return false;
 
             while (isRedirect(response.getStatus()))
             {
@@ -274,6 +289,8 @@ namespace detail
                 sess->attachSessionData(e.message());
                 throw;
             }
+
+            return true;
         }
 
         bool nextImpl() override
@@ -311,17 +328,19 @@ namespace detail
             }
 
             bool result = false;
-            bool successful_read = false;
             size_t milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
 
-            /// Default http_max_tries = 1.
             for (size_t i = 0; i < settings.http_max_tries; ++i)
             {
                 try
                 {
                     if (!impl)
                     {
-                        initialize();
+                        /// If error is not retriable -- false is returned and exception is set.
+                        /// Otherwise the error is thrown and retries continue.
+                        bool initialized = initialize();
+                        if (!initialized && exception)
+                            break;
 
                         if (use_external_buffer)
                         {
@@ -333,7 +352,7 @@ namespace detail
                     }
 
                     result = impl->next();
-                    successful_read = true;
+                    exception = nullptr;
                     break;
                 }
                 catch (const Poco::Exception & e)
@@ -346,33 +365,24 @@ namespace detail
                     if (!can_retry_request)
                         throw;
 
-                    /**
-                     * if total_size is not known, last read can fail if we retry with
-                     * bytes_read == total_size and header `bytes=bytes_read-`
-                     * (we will get an error code 416 - range not satisfiable).
-                     * In this case rethrow previous exception.
-                     */
-                    if (exception && !read_range.end.has_value() && e.code() == 416)
-                        std::rethrow_exception(exception);
-
                     LOG_ERROR(log,
                               "HTTP request to `{}` failed at try {}/{} with bytes read: {}. "
-                              "Error: {}, code: {}. (Current backoff wait is {}/{} ms)",
-                              uri.toString(), i, settings.http_max_tries, bytes_read, e.what(), e.code(),
+                              "Error: {}. (Current backoff wait is {}/{} ms)",
+                              uri.toString(), i, settings.http_max_tries, bytes_read, e.displayText(),
                               milliseconds_to_wait, settings.http_retry_max_backoff_ms);
 
                     retry_with_range_header = true;
                     exception = std::current_exception();
                     impl.reset();
+                    auto http_session = session->getSession();
+                    http_session->reset();
                     sleepForMilliseconds(milliseconds_to_wait);
-                    milliseconds_to_wait *= 2;
                 }
 
-                if (successful_read || milliseconds_to_wait >= settings.http_retry_max_backoff_ms)
-                    break;
+                milliseconds_to_wait = std::min(milliseconds_to_wait * 2, settings.http_retry_max_backoff_ms);
             }
 
-            if (!successful_read && exception)
+            if (exception)
                 std::rethrow_exception(exception);
 
             if (!result)
@@ -380,6 +390,7 @@ namespace detail
 
             internal_buffer = impl->buffer();
             working_buffer = internal_buffer;
+            bytes_read += working_buffer.size();
             return true;
         }
 
@@ -476,7 +487,7 @@ public:
 
     void buildNewSession(const Poco::URI & uri) override
     {
-       session = makePooledHTTPSession(uri, timeouts, per_endpoint_pool_size);
+        session = makePooledHTTPSession(uri, timeouts, per_endpoint_pool_size);
     }
 };
 

@@ -48,7 +48,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
         if (read_until_position < offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
 
-        range = { .begin = static_cast<size_t>(offset), .end = read_until_position - 1};
+        range = { .begin = static_cast<size_t>(offset), .end = read_until_position - 1 };
         LOG_DEBUG(log, "Reading with range: {}-{}", offset, read_until_position);
     }
     else
