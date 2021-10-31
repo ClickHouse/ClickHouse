@@ -106,7 +106,8 @@ if __name__ == "__main__":
         os.makedirs(test_output)
 
     token = os.getenv('CLOUDFLARE_TOKEN')
-    cmd = f"docker run --cap-add=SYS_PTRACE --volume=$SSH_AUTH_SOCK:/ssh-agent -e SSH_AUTH_SOCK=/ssh-agent -e CLOUDFLARE_TOKEN={token} --volume={repo_path}:/repo_path --volume={test_output}:/output_path {docker_image}"
+    cmd = "docker run --cap-add=SYS_PTRACE --volume=$SSH_AUTH_SOCK:/ssh-agent -e SSH_AUTH_SOCK=/ssh-agent " \
+          f"-e CLOUDFLARE_TOKEN={token} --volume={repo_path}:/repo_path --volume={test_output}:/output_path {docker_image}"
 
     run_log_path = os.path.join(test_output, 'runlog.log')
 
