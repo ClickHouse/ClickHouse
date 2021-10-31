@@ -46,11 +46,11 @@ function configure()
     sudo chown root: /var/lib/clickhouse
 
     # Set more frequent update period of asynchronous metrics to more frequently update information about real memory usage (less chance of OOM).
-    echo "<yandex><asynchronous_metrics_update_period_s>1</asynchronous_metrics_update_period_s></yandex>" \
+    echo "<clickhouse><asynchronous_metrics_update_period_s>1</asynchronous_metrics_update_period_s></clickhouse>" \
         > /etc/clickhouse-server/config.d/asynchronous_metrics_update_period_s.xml
 
     # Set maximum memory usage as half of total memory (less chance of OOM).
-    echo "<yandex><max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio></yandex>" \
+    echo "<clickhouse><max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio></clickhouse>" \
         > /etc/clickhouse-server/config.d/max_server_memory_usage_to_ram_ratio.xml
 }
 
