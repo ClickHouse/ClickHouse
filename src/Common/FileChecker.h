@@ -8,7 +8,7 @@
 namespace DB
 {
 
-/// stores the sizes of all columns, and can check whether the columns are corrupted
+/// Stores the sizes of all columns, and can check whether the columns are corrupted.
 class FileChecker
 {
 public:
@@ -28,20 +28,17 @@ public:
     /// The purpose of this function is to rollback a group of unfinished writes.
     void repair();
 
-    /// File name -> size.
-    using Map = std::map<String, UInt64>;
-
-    Map getFileSizes() const;
+    /// Returns stored file size.
+    size_t getFileSize(const String & full_file_path) const;
 
 private:
     void load();
 
-    DiskPtr disk;
+    const DiskPtr disk;
+    const Poco::Logger * log = &Poco::Logger::get("FileChecker");
+
     String files_info_path;
-
-    Map map;
-
-    Poco::Logger * log = &Poco::Logger::get("FileChecker");
+    std::map<String, size_t> map;
 };
 
 }
