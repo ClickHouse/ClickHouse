@@ -13,7 +13,9 @@ class FileChecker
 {
 public:
     FileChecker(DiskPtr disk_, const String & file_info_path_);
+
     void setPath(const String & file_info_path_);
+    String getPath() const;
 
     void update(const String & full_file_path);
     void setEmpty(const String & full_file_path);
