@@ -29,6 +29,7 @@ protected:
                         const std::vector<Arguments> & external_tables_arguments) override;
     void processConfig() override;
 
+    std::vector<String> hosts{};
 private:
     void printChangedSettings() const;
     std::vector<String> loadWarningMessages();
