@@ -333,8 +333,9 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         [] (RPNElement & out, const Field &)
         {
             out.function = RPNElement::FUNCTION_IS_NULL;
-            // When using NULL_LAST, isNull means [+Inf, +Inf]
-            out.range = Range(Field(POSITIVE_INFINITY));
+            // isNull means +Inf (NULLS_LAST) or -Inf (NULLS_FIRST),
+            // which is equivalent to not in Range (-Inf, +Inf)
+            out.range = Range();
             return true;
         }
     }
@@ -2002,7 +2003,10 @@ BoolMask KeyCondition::checkInHyperrectangle(
             /// No need to apply monotonic functions as nulls are kept.
             bool intersects = element.range.intersectsRange(*key_range);
             bool contains = element.range.containsRange(*key_range);
+
             rpn_stack.emplace_back(intersects, !contains);
+            if (element.function == RPNElement::FUNCTION_IS_NULL)
+                rpn_stack.back() = !rpn_stack.back();
         }
         else if (
             element.function == RPNElement::FUNCTION_IN_SET
