@@ -19,11 +19,11 @@ toc_title: "Битовые функции"
 
 ## bitShiftLeft(a, b) {#bitshiftlefta-b}
 
-## bitShiftLeft(a, b) {#bitshiftlefta-b}
+Сдвигает влево на заданное количество битов значение, представленное в бинарном виде.
 
-Сдвигает значение влево на заданное количество битов.
+Если передан аргумент типа `FixedString` или `String`, то он рассматривается, как одно многобайтовое значение. 
 
-Если передан аргумент типа `FixedString` или `String`, то он рассматривается, как одно многобайтовое значение. Биты `FixedString` теряются по мере того, как выдвигаются за пределы строки. Значение `String` дополняется байтами, поэтому его биты не теряются.
+Биты `FixedString` теряются по мере того, как выдвигаются за пределы строки. Значение `String` дополняется байтами, поэтому его биты не теряются.
 
 **Синтаксис**
 
@@ -33,8 +33,8 @@ bitShiftLeft(a, b)
 
 **Аргументы**
 
--   `a` — сдвигаемое значение. [Integer](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md)
--   `b` — величина сдвига. [Unsigned integer](../../sql-reference/data-types/int-uint.md), допустимы типы с разрядностью не более 64 битов.
+-   `a` — сдвигаемое значение. [Целое число](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md) или [FixedString](../../sql-reference/data-types/fixedstring.md).
+-   `b` — величина сдвига. [Беззнаковое целое число](../../sql-reference/data-types/int-uint.md), допустимы типы с разрядностью не более 64 битов.
 
 **Возвращаемое значение**
 
@@ -68,7 +68,7 @@ SELECT toFixedString('abc', 3) AS a, hex(a), bitShiftLeft(a, 4) AS a_shifted, he
 
 ## bitShiftRight(a, b) {#bitshiftrighta-b}
 
-Сдвигает значение вправо на заданное количество битов.
+Сдвигает вправо на заданное количество битов значение, представленное в бинарном виде.
 
 Если передан аргумент типа `FixedString` или `String`, то он рассматривается, как одно многобайтовое значение. 
 Длина значения типа `String` уменьшается по мере сдвига.
@@ -81,8 +81,8 @@ bitShiftRight(a, b)
 
 **Аргументы**
 
--   `a` — сдвигаемое значение. [Integer](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md)
--   `b` — величина сдвига. [Unsigned integer](../../sql-reference/data-types/int-uint.md), допустимы типы с разрядностью не более 64 битов.
+-   `a` — сдвигаемое значение. [Целое число](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md) или [FixedString](../../sql-reference/data-types/fixedstring.md).
+-   `b` — величина сдвига. [Беззнаковое целое число](../../sql-reference/data-types/int-uint.md), допустимы типы с разрядностью не более 64 битов.
 
 **Возвращаемое значение**
 
@@ -91,6 +91,8 @@ bitShiftRight(a, b)
 Тип совпадает с типом сдвигаемого значения.
 
 **Пример**
+
+Запрос:
 
 ``` sql
 SELECT 101 AS a, bin(a), bitShiftRight(a, 2) AS a_shifted, bin(a_shifted);
