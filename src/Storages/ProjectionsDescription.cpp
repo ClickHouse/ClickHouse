@@ -237,7 +237,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     auto builder = InterpreterSelectQuery(
                        query_ast,
                        context,
-                       Pipe(std::make_shared<SourceFromSingleChunk>(block, Chunk(block.getColumns(), block.rows()))),
+                       Pipe(std::make_shared<SourceFromSingleChunk>(block)),
                        SelectQueryOptions{
                            type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
                                                                        : QueryProcessingStage::WithMergeableState})

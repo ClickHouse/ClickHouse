@@ -91,7 +91,7 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, Contex
     if (it == create_queries.end() || !it->second)
     {
         if (throw_on_error)
-            throw Exception("There is no metadata of table " + table_name + " in database " + database_name, ErrorCodes::UNKNOWN_TABLE);
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "There is no metadata of table {} in database {}", table_name, database_name);
         else
             return {};
     }
@@ -109,6 +109,16 @@ void DatabaseMemory::drop(ContextPtr local_context)
 {
     /// Remove data on explicit DROP DATABASE
     std::filesystem::remove_all(local_context->getPath() + data_path);
+}
+
+void DatabaseMemory::alterTable(ContextPtr, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+{
+    std::lock_guard lock{mutex};
+    auto it = create_queries.find(table_id.table_name);
+    if (it == create_queries.end() || !it->second)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
+
+    applyMetadataChangesToCreateQuery(it->second, metadata);
 }
 
 }

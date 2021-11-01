@@ -19,7 +19,71 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
+    extern const int NOT_IMPLEMENTED;
 }
+
+void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata)
+{
+    auto & ast_create_query = query->as<ASTCreateQuery &>();
+
+    bool has_structure = ast_create_query.columns_list && ast_create_query.columns_list->columns;
+    if (ast_create_query.as_table_function && !has_structure)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot alter table {} because it was created AS table function"
+                                                     " and doesn't have structure in metadata", backQuote(ast_create_query.table));
+
+    assert(has_structure);
+    ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
+    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
+    ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
+    ASTPtr new_projections = InterpreterCreateQuery::formatProjections(metadata.projections);
+
+    ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
+    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
+    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
+    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->projections, new_projections);
+
+    if (metadata.select.select_query)
+    {
+        query->replace(ast_create_query.select, metadata.select.select_query);
+    }
+
+    /// MaterializedView is one type of CREATE query without storage.
+    if (ast_create_query.storage)
+    {
+        ASTStorage & storage_ast = *ast_create_query.storage;
+
+        bool is_extended_storage_def
+            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.sample_by || storage_ast.settings;
+
+        if (is_extended_storage_def)
+        {
+            if (metadata.sorting_key.definition_ast)
+                storage_ast.set(storage_ast.order_by, metadata.sorting_key.definition_ast);
+
+            if (metadata.primary_key.definition_ast)
+                storage_ast.set(storage_ast.primary_key, metadata.primary_key.definition_ast);
+
+            if (metadata.sampling_key.definition_ast)
+                storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
+            else if (storage_ast.sample_by != nullptr) /// SAMPLE BY was removed
+                storage_ast.sample_by = nullptr;
+
+            if (metadata.table_ttl.definition_ast)
+                storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
+            else if (storage_ast.ttl_table != nullptr) /// TTL was removed
+                storage_ast.ttl_table = nullptr;
+
+            if (metadata.settings_changes)
+                storage_ast.set(storage_ast.settings, metadata.settings_changes);
+        }
+    }
+
+    if (metadata.comment.empty())
+        ast_create_query.reset(ast_create_query.comment);
+    else
+        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(metadata.comment));
+}
+
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
         : IDatabase(name_), WithContext(context_->getGlobalContext()), log(&Poco::Logger::get(logger))
