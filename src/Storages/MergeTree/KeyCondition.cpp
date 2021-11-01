@@ -334,7 +334,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
         {
             out.function = RPNElement::FUNCTION_IS_NULL;
             // isNull means +Inf (NULLS_LAST) or -Inf (NULLS_FIRST),
-            // which is eqivalent to not in Range (-Inf, +Inf)
+            // which is equivalent to not in Range (-Inf, +Inf)
             out.range = Range();
             return true;
         }
