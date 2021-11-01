@@ -1,6 +1,6 @@
 # system.parts_columns {#system_tables-parts_columns}
 
-包含关于[MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)表的部分和列的信息.
+包含关于[MergeTree](../../engines/table-engines/mergetree-family/mergetree.md)表的部分和列的信息.
 
 每一行描述一个数据部分.
 
