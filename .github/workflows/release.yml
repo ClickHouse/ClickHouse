@@ -1,4 +1,4 @@
-name: ReleaseChecks
+name: DocsReleaseChecks
 concurrency:
   group: master-release
   cancel-in-progress: true
