@@ -451,6 +451,14 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     }
 }
 
+SerializationPtr IMergeTreeDataPart::getSerializationOrDefault(const NameAndTypePair & column) const
+{
+    auto it = serializations.find(column.name);
+    return it == serializations.end()
+        ? column.type->getDefaultSerialization()
+        : it->second;
+}
+
 void IMergeTreeDataPart::removeIfNeeded()
 {
     if (state == State::DeleteOnDestroy || is_temp)
