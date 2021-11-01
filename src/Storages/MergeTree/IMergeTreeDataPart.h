@@ -132,6 +132,7 @@ public:
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
     const SerializationByName & getSerializations() const { return serializations; }
     const SerializationPtr & getSerialization(const String & column_name) const { return serializations.at(column_name); }
+    SerializationPtr getSerializationOrDefault(const NameAndTypePair & column) const;
 
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
