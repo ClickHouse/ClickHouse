@@ -5,6 +5,7 @@ CREATE TABLE t (x String) ENGINE = MergeTree ORDER BY x;
 INSERT INTO t VALUES ('Hello');
 
 SET max_parallel_replicas = 3;
+set enable_sample_offset_parallel_processing=true;
 SELECT * FROM remote('127.0.0.{2|3|4}', currentDatabase(), t);
 
 DROP TABLE t;
