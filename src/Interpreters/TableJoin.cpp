@@ -213,6 +213,9 @@ ASTPtr TableJoin::rightKeysList() const
     {
         if (clause.on_join_condition_right)
             keys_list->children.push_back(clause.on_join_condition_right);
+
+        if (clause.filter_condition_right)
+            keys_list->children.push_back(clause.filter_condition_right);
     }
     return keys_list;
 }
@@ -606,6 +609,14 @@ void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
     LOG_TRACE(&Poco::Logger::get("TableJoin"), "Adding join condition for {} table: {} -> {}",
               (is_left ? "left" : "right"), ast ? queryToString(ast) : "NULL", cond_ast ? queryToString(cond_ast) : "NULL");
     addJoinConditionWithAnd(cond_ast, ast);
+}
+
+void TableJoin::addFilterCondition(const ASTPtr & ast)
+{
+    auto & cur_ast = clauses.back().filter_condition_right;
+    LOG_TRACE(&Poco::Logger::get("TableJoin"), "Adding filter condition for right table: {} -> {}",
+              ast ? queryToString(ast) : "NULL", cur_ast ? queryToString(cur_ast) : "NULL");
+    addJoinConditionWithAnd(cur_ast, ast);
 }
 
 std::unordered_map<String, String> TableJoin::leftToRightKeyRemap() const

@@ -61,6 +61,8 @@ public:
         ASTPtr on_join_condition_left;
         ASTPtr on_join_condition_right;
 
+        ASTPtr filter_condition_right;
+
         JoinOnClause() = default;
 
         std::pair<String, String> condColumnNames() const
@@ -71,6 +73,13 @@ public:
             if (on_join_condition_right)
                 res.second = on_join_condition_right->getColumnName();
             return res;
+        }
+
+        String rightFilterColumnName() const
+        {
+            if (filter_condition_right)
+                return filter_condition_right->getColumnName();
+            return {};
         }
 
         size_t keysCount() const
@@ -241,6 +250,9 @@ public:
      */
     void addJoinCondition(const ASTPtr & ast, bool is_left);
 
+    /// Filter from where for right table
+    void addFilterCondition(const ASTPtr & ast);
+
     bool hasUsing() const { return table_join.using_expression_list != nullptr; }
     bool hasOn() const { return table_join.on_expression != nullptr; }
 
@@ -267,7 +279,7 @@ public:
     ASOF::Inequality getAsofInequality() { return asof_inequality; }
 
     ASTPtr leftKeysList() const;
-    ASTPtr rightKeysList() const; /// For ON syntax only
+    ASTPtr rightKeysList() const;
 
     const NamesAndTypesList & columnsFromJoinedTable() const { return columns_from_joined_table; }
 

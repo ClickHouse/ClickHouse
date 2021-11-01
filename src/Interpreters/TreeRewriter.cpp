@@ -629,12 +629,13 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
 }
 
 /*
- * Retrieve filter conditions from WHRE that can be applied to the right table.
+ * Retrieve filter conditions from WHERE that can be applied to the right table.
  * It's used to reduce hashmap size (for hash join), we don't need to store rows that would be filtered.
  */
 void applyJoinRightTableFilter(TableJoin & analyzed_join, ASTPtr where, const Aliases & aliases)
 {
-    if (!where)
+    bool is_supported = isInnerOrRight(analyzed_join.kind()) && analyzed_join.getClauses().size() != 1;
+    if (!is_supported)
         return;
 
     JoinWhereFilterVisitor::Data data{aliases};
@@ -1074,10 +1075,8 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (table_join_ast && tables_with_columns.size() >= 2)
     {
         collectJoinedColumns(*result.analyzed_join, *table_join_ast, tables_with_columns, result.aliases);
-        if (select_query->where() && result.analyzed_join->getClauses().size() == 1)
-        {
-            applyJoinRightTableFilter(*result.analyzed_join, select_query->where(), result.aliases);
-        }
+        if (const auto & where_ast = select_query->where())
+            applyJoinRightTableFilter(*result.analyzed_join, where_ast, result.aliases);
     }
 
     result.aggregates = getAggregates(query, *select_query);

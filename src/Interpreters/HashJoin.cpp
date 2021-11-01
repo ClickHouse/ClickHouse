@@ -227,6 +227,20 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
     return std::move(column);
 }
 
+static ColumnPtr mergeMasks(ColumnPtr a_col, ColumnPtr b_col)
+{
+    if (!a_col || !b_col)
+        return a_col ? std::move(a_col) : b_col;
+
+    MutableColumnPtr a_mut = IColumn::mutate(std::move(a_col));
+    auto & a = assert_cast<ColumnUInt8 &>(*a_mut).getData();
+    const auto & b = assert_cast<const ColumnUInt8 &>(*b_col).getData();
+    for (size_t i = 0; i < a.size(); ++i)
+        a[i] |= b[i];
+
+    return a_mut;
+}
+
 HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_, bool any_take_last_row_)
     : table_join(table_join_)
     , kind(table_join->kind())
@@ -795,6 +809,9 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
                     not_joined_map->getData()[i] = 1;
                 }
             }
+
+            auto join_filter_col = JoinCommon::getColumnAsMask(block, onexprs[onexpr_idx].rightFilterColumnName());
+            join_mask_col = mergeMasks(std::move(join_mask_col), std::move(join_filter_col));
 
             if (kind != ASTTableJoin::Kind::Cross)
             {
