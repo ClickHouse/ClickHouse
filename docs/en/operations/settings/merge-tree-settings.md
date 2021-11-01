@@ -331,12 +331,12 @@ By default, the ClickHouse server checks at table creation the data type of a co
 
 ## min_bytes_to_rebalance_partition_over_jbod {#min-bytes-to-rebalance-partition-over-jbod}
 
-Sets minimal amount of bytes to enable parts rebalance over [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) array. Allows assigning new parts to different disks of a `JBOD` volume in a balanced way.
+Sets minimal amount of bytes to enable balancing when distributing new big parts over volume disks [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures).
 
 Possible values:
 
 -   Positive integer.
-- 0 - Rebalancing is disabled.
+-   0 — Balancing is disabled.
 
 Default value: `0`.
 
