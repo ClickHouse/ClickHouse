@@ -139,7 +139,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
 
         auto column_from_part = getColumnFromPart(*column_it);
         if (res_columns[i] == nullptr)
-            res_columns[i] = column_from_part.type->createColumn(*serializations.at(column_from_part.name));
+            res_columns[i] = column_from_part.type->createColumn(*getSerialization(column_from_part));
     }
 
     while (read_rows < max_rows_to_read)
@@ -217,7 +217,7 @@ void MergeTreeReaderCompact::readData(
         const auto & type_in_storage = name_and_type.getTypeInStorage();
         const auto & name_in_storage = name_and_type.getNameInStorage();
 
-        const auto & serialization = serializations.at(name_in_storage);
+        auto serialization = getSerialization(NameAndTypePair{name_in_storage, type_in_storage});
         ColumnPtr temp_column = type_in_storage->createColumn(*serialization);
 
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
@@ -233,7 +233,7 @@ void MergeTreeReaderCompact::readData(
     }
     else
     {
-        const auto & serialization = serializations.at(name);
+        auto serialization = getSerialization(name_and_type);
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, state, nullptr);
     }
