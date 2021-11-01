@@ -3,6 +3,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Processors/Sources/ShellCommandSource.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Formats/formatBlock.h>
 
 #include <Functions/FunctionFactory.h>
@@ -71,53 +72,35 @@ public:
             column_with_type = column_to_cast;
         }
 
-        std::unique_ptr<ShellCommand> process = getProcess();
-
         ColumnWithTypeAndName result(result_type, "result");
         Block result_block({result});
 
         Block arguments_block(arguments_copy);
-        auto * process_in = &process->in;
+        auto source = std::make_shared<SourceFromSingleChunk>(std::move(arguments_block));
+        auto shell_input_pipe = Pipe(std::move(source));
 
-        auto process_pool = executable_function->getProcessPool();
-        bool is_executable_pool_function = (process_pool != nullptr);
+        auto coordinator = executable_function->getCoordinator();
 
         ShellCommandSourceConfiguration shell_command_source_configuration;
 
-        if (is_executable_pool_function)
+        if (coordinator->getConfiguration().is_executable_pool)
         {
             shell_command_source_configuration.read_fixed_number_of_rows = true;
             shell_command_source_configuration.number_of_rows_to_read = input_rows_count;
         }
 
-        ShellCommandSource::SendDataTask task = {[process_in, arguments_block, &configuration, is_executable_pool_function, this]()
-        {
-            auto & out = *process_in;
+        Pipes shell_input_pipes;
+        shell_input_pipes.emplace_back(std::move(shell_input_pipe));
 
-            if (configuration.send_chunk_header)
-            {
-                writeText(arguments_block.rows(), out);
-                writeChar('\n', out);
-            }
-
-            auto output_format = context->getOutputFormat(configuration.format, out, arguments_block.cloneEmpty());
-            formatBlock(output_format, arguments_block);
-            if (!is_executable_pool_function)
-                out.close();
-        }};
-        std::vector<ShellCommandSource::SendDataTask> tasks = {std::move(task)};
-
-        Pipe pipe(std::make_unique<ShellCommandSource>(
+        Pipe pipe = coordinator->createPipe(
+            configuration.script_path,
+            configuration.script_arguments,
+            std::move(shell_input_pipes),
+            result_block,
             context,
-            configuration.format,
-            result_block.cloneEmpty(),
-            std::move(process),
-            std::move(tasks),
-            shell_command_source_configuration,
-            process_pool));
+            shell_command_source_configuration);
 
         QueryPipeline pipeline(std::move(pipe));
-
         PullingPipelineExecutor executor(pipeline);
 
         auto result_column = result_type->createColumn();
@@ -142,36 +125,6 @@ public:
     }
 
 private:
-
-    std::unique_ptr<ShellCommand> getProcess() const
-    {
-        auto process_pool = executable_function->getProcessPool();
-        auto executable_function_configuration = executable_function->getConfiguration();
-
-        std::unique_ptr<ShellCommand> process;
-        bool is_executable_pool_function = (process_pool != nullptr);
-        if (is_executable_pool_function)
-        {
-            bool result = process_pool->tryBorrowObject(process, [&]()
-            {
-                ShellCommand::Config process_config(executable_function_configuration.script_path);
-                process_config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy{ true /*terminate_in_destructor*/, executable_function_configuration.command_termination_timeout };
-                auto shell_command = ShellCommand::execute(process_config);
-                return shell_command;
-            }, executable_function_configuration.max_command_execution_time * 1000);
-
-            if (!result)
-                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
-                    "Could not get process from pool, max command execution timeout exceeded {} seconds",
-                    executable_function_configuration.max_command_execution_time);
-        }
-        else
-        {
-            process = ShellCommand::execute(executable_function_configuration.script_path);
-        }
-
-        return process;
-    }
 
     ExternalUserDefinedExecutableFunctionsLoader::UserDefinedExecutableFunctionPtr executable_function;
     ContextPtr context;

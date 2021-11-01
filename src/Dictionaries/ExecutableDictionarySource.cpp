@@ -5,6 +5,7 @@
 #include <Common/ShellCommand.h>
 
 #include <Processors/Sources/ShellCommandSource.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Formats/formatBlock.h>
 
 #include <Interpreters/Context.h>
@@ -31,11 +32,13 @@ ExecutableDictionarySource::ExecutableDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Configuration & configuration_,
     Block & sample_block_,
+    std::shared_ptr<ShellCommandCoordinator> coordinator_,
     ContextPtr context_)
     : log(&Poco::Logger::get("ExecutableDictionarySource"))
     , dict_struct(dict_struct_)
     , configuration(configuration_)
-    , sample_block{sample_block_}
+    , sample_block(sample_block_)
+    , coordinator(std::move(coordinator_))
     , context(context_)
 {
     /// Remove keys from sample_block for implicit_key dictionary because
@@ -58,6 +61,7 @@ ExecutableDictionarySource::ExecutableDictionarySource(const ExecutableDictionar
     , dict_struct(other.dict_struct)
     , configuration(other.configuration)
     , sample_block(other.sample_block)
+    , coordinator(other.coordinator)
     , context(Context::createCopy(other.context))
 {
 }
@@ -69,11 +73,7 @@ Pipe ExecutableDictionarySource::loadAll()
 
     LOG_TRACE(log, "loadAll {}", toString());
 
-    ShellCommand::Config config(configuration.command);
-    auto process = ShellCommand::execute(config);
-
-    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process)));
-    return pipe;
+    return coordinator->createPipe(configuration.command, sample_block, context);
 }
 
 Pipe ExecutableDictionarySource::loadUpdatedAll()
@@ -89,10 +89,7 @@ Pipe ExecutableDictionarySource::loadUpdatedAll()
         command_with_update_field += " " + configuration.update_field + " " + DB::toString(LocalDateTime(update_time - configuration.update_lag));
 
     LOG_TRACE(log, "loadUpdatedAll {}", command_with_update_field);
-    ShellCommand::Config config(command_with_update_field);
-    auto process = ShellCommand::execute(config);
-    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process)));
-    return pipe;
+    return coordinator->createPipe(command_with_update_field, sample_block, context);
 }
 
 Pipe ExecutableDictionarySource::loadIds(const std::vector<UInt64> & ids)
@@ -113,32 +110,13 @@ Pipe ExecutableDictionarySource::loadKeys(const Columns & key_columns, const std
 
 Pipe ExecutableDictionarySource::getStreamForBlock(const Block & block)
 {
-    ShellCommand::Config config(configuration.command);
-    auto process = ShellCommand::execute(config);
-    auto * process_in = &process->in;
+    auto source = std::make_shared<SourceFromSingleChunk>(block);
+    auto shell_input_pipe = Pipe(std::move(source));
 
-    ShellCommandSource::SendDataTask task = {[process_in, block, this]()
-    {
-        auto & out = *process_in;
+    Pipes shell_input_pipes;
+    shell_input_pipes.emplace_back(std::move(shell_input_pipe));
 
-        if (configuration.send_chunk_header)
-        {
-            writeText(block.rows(), out);
-            writeChar('\n', out);
-        }
-
-        auto output_format = context->getOutputFormat(configuration.format, out, block.cloneEmpty());
-        formatBlock(output_format, block);
-        out.close();
-    }};
-    std::vector<ShellCommandSource::SendDataTask> tasks = {std::move(task)};
-
-    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), std::move(tasks)));
-
-    if (configuration.implicit_key)
-        pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
-
-    return pipe;
+    return coordinator->createPipe(configuration.command, std::move(shell_input_pipes), sample_block, context);
 }
 
 bool ExecutableDictionarySource::isModified() const
@@ -192,14 +170,22 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
         ExecutableDictionarySource::Configuration configuration
         {
             .command = config.getString(settings_config_prefix + ".command"),
-            .format = config.getString(settings_config_prefix + ".format"),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
             .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
-            .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false)
         };
 
-        return std::make_unique<ExecutableDictionarySource>(dict_struct, configuration, sample_block, context);
+        ShellCommandCoordinator::Configuration shell_command_coordinator_configration
+        {
+            .format = config.getString(settings_config_prefix + ".format"),
+            .is_executable_pool = false,
+            .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false),
+            .execute_direct = false
+        };
+
+        std::shared_ptr<ShellCommandCoordinator> coordinator = std::make_shared<ShellCommandCoordinator>(shell_command_coordinator_configration);
+
+        return std::make_unique<ExecutableDictionarySource>(dict_struct, configuration, sample_block, std::move(coordinator), context);
     };
 
     factory.registerSource("executable", create_table_source);
