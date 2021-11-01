@@ -209,7 +209,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   StressTestDebug:
     needs: [BuilderDebDebug]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
