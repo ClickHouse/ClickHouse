@@ -582,6 +582,17 @@ DataTypes Block::getDataTypes() const
     return res;
 }
 
+Names Block::getDataTypeNames() const
+{
+    Names res;
+    res.reserve(columns());
+
+    for (const auto & elem : data)
+        res.push_back(elem.type->getName());
+
+    return res;
+}
+
 
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 {
