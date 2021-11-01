@@ -142,6 +142,11 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     index_granularity.setInitialized();
 }
 
+bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
+{
+    return volume->getDisk()->isRemote();
+}
+
 MergeTreeDataPartWide::~MergeTreeDataPartWide()
 {
     removeIfNeeded();

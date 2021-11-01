@@ -2,7 +2,6 @@
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/StorageFileLog.h>
-#include <base/sleep.h>
 
 #include <filesystem>
 #include <unistd.h>
@@ -36,7 +35,7 @@ DirectoryWatcherBase::DirectoryWatcherBase(
 
     fd = inotify_init();
     if (fd == -1)
-        throw Exception("Cannot initialize inotify", ErrorCodes::IO_SETUP_ERROR);
+        throwFromErrno("Cannot initialize inotify", ErrorCodes::IO_SETUP_ERROR);
 
     watch_task = getContext()->getSchedulePool().createTask("directory_watch", [this] { watchFunc(); });
     start();
@@ -60,6 +59,7 @@ void DirectoryWatcherBase::watchFunc()
     if (wd == -1)
     {
         owner.onError(Exception(ErrorCodes::IO_SETUP_ERROR, "Watch directory {} failed", path));
+        throwFromErrnoWithPath("Watch directory {} failed", path, ErrorCodes::IO_SETUP_ERROR);
     }
 
     std::string buffer;

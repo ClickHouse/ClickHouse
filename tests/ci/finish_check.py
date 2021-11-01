@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 import logging
-from github import Github
-from pr_info import PRInfo
 import json
 import os
+from github import Github
+from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 
 NAME = 'Run Check (actions)'

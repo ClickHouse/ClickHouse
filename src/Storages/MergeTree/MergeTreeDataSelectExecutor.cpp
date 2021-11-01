@@ -19,6 +19,7 @@
 #include <Interpreters/Context.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
@@ -374,6 +375,12 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         std::move(pipe),
         fmt::format("MergeTree(with {} projection {})", query_info.projection->desc->type, query_info.projection->desc->name));
     plan->addStep(std::move(step));
+
+    if (query_info.projection->subqueries_for_sets && !query_info.projection->subqueries_for_sets->empty())
+    {
+        SizeLimits limits(settings.max_rows_to_transfer, settings.max_bytes_to_transfer, settings.transfer_overflow_mode);
+        addCreatingSetsStep(*plan, std::move(*query_info.projection->subqueries_for_sets), limits, context);
+    }
     return plan;
 }
 

@@ -53,12 +53,21 @@ def list_runners(access_token):
         "Authorization": f"token {access_token}",
         "Accept": "application/vnd.github.v3+json",
     }
-
-    response = requests.get("https://api.github.com/orgs/ClickHouse/actions/runners", headers=headers)
+    response = requests.get("https://api.github.com/orgs/ClickHouse/actions/runners?per_page=100", headers=headers)
     response.raise_for_status()
     data = response.json()
-    print("Total runners", data['total_count'])
+    total_runners = data['total_count']
     runners = data['runners']
+
+    total_pages = int(total_runners / 100 + 1)
+    print("Total pages", total_pages)
+    for i in range(2, total_pages + 1):
+        response = requests.get(f"https://api.github.com/orgs/ClickHouse/actions/runners?page={i}&per_page=100", headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        runners += data['runners']
+
+    print("Total runners", len(runners))
     result = []
     for runner in runners:
         tags = [tag['name'] for tag in runner['labels']]
@@ -66,6 +75,24 @@ def list_runners(access_token):
                                  offline=runner['status']=='offline', busy=runner['busy'])
         result.append(desc)
     return result
+
+def group_runners_by_tag(listed_runners):
+    result = {}
+
+    RUNNER_TYPE_LABELS = ['style-checker', 'builder', 'func-tester']
+    for runner in listed_runners:
+        for tag in runner.tags:
+            if tag in RUNNER_TYPE_LABELS:
+                if tag not in result:
+                    result[tag] = []
+                result[tag].append(runner)
+                break
+        else:
+            if 'unlabeled' not in result:
+                result['unlabeled'] = []
+            result['unlabeled'].append(runner)
+    return result
+
 
 def push_metrics_to_cloudwatch(listed_runners, namespace):
     import boto3
@@ -100,7 +127,7 @@ def push_metrics_to_cloudwatch(listed_runners, namespace):
         'Unit': 'Percent',
     })
 
-    client.put_metric_data(Namespace='RunnersMetrics', MetricData=metrics_data)
+    client.put_metric_data(Namespace=namespace, MetricData=metrics_data)
 
 def main(github_secret_key, github_app_id, push_to_cloudwatch):
     payload = {
@@ -113,10 +140,14 @@ def main(github_secret_key, github_app_id, push_to_cloudwatch):
     installation_id = get_installation_id(encoded_jwt)
     access_token = get_access_token(encoded_jwt, installation_id)
     runners = list_runners(access_token)
-    if push_to_cloudwatch:
-        push_metrics_to_cloudwatch(runners, 'RunnersMetrics')
-    else:
-        print(runners)
+    grouped_runners = group_runners_by_tag(runners)
+    for group, group_runners in grouped_runners.items():
+        if push_to_cloudwatch:
+            push_metrics_to_cloudwatch(group_runners, 'RunnersMetrics/' + group)
+        else:
+            print(group)
+            for runner in group_runners:
+                print('\t', runner)
 
 
 if __name__ == "__main__":
