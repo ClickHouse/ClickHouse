@@ -3907,7 +3907,7 @@ Defines the number of lines, ended with '\n', which are sent before sending chun
 
 Possible values:
 
--   Positive integer or zero.
+-   Positive integer.
 -   0 — Asynchronous insertions are disabled.
 
 Default value: `16`.
