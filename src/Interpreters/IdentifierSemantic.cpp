@@ -2,7 +2,8 @@
 #include <Interpreters/IdentifierSemantic.h>
 
 #include <Common/typeid_cast.h>
-#include "Parsers/IAST_fwd.h"
+#include <Common/checkStackSize.h>
+#include <Parsers/IAST_fwd.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
@@ -295,21 +296,22 @@ std::vector<ASTPtr> collectConjunctions(const ASTPtr & node)
 }
 
 
-static void getIdentifiers(const ASTPtr & ast, std::function<bool(const ASTPtr &)> pred, std::vector<const ASTIdentifier *> & out)
+template <typename T, typename R>
+static void getIdentifiers(T & ast, std::function<bool(T &)> pred, std::vector<R *> & out)
 {
     checkStackSize();
 
     if (!pred(ast))
         return;
 
-    if (const auto * ident = ast->as<ASTIdentifier>())
+    if (auto * ident = ast->template as<ASTIdentifier>())
     {
         out.push_back(ident);
     }
     else
     {
-        for (const auto & child : ast->children)
-            getIdentifiers(child, pred, out);
+        for (auto & child : ast->children)
+            getIdentifiers<T, R>(child, pred, out);
     }
 }
 
@@ -322,8 +324,13 @@ std::vector<const ASTIdentifier *> getIdentifiers(const ASTPtr & ast, std::funct
 
 std::vector<const ASTIdentifier *> getIdentifiers(const ASTPtr & ast)
 {
-    std::vector<const ASTIdentifier *> res;
-    getIdentifiers(ast, [] (auto) { return true; }, res);
+    return getIdentifiers(ast, [] (auto) { return true; });
+}
+
+std::vector<ASTIdentifier *> getIdentifiers(ASTPtr & ast, std::function<bool(ASTPtr &)> pred)
+{
+    std::vector<ASTIdentifier *> res;
+    getIdentifiers(ast, pred, res);
     return res;
 }
 

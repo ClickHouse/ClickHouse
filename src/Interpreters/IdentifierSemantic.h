@@ -88,7 +88,8 @@ private:
 std::vector<ASTPtr> collectConjunctions(const ASTPtr & node);
 
 /// Collect all identifies from AST recursively
-std::vector<const ASTIdentifier *> getIdentifiers(const ASTPtr & ast, std::function<bool(ASTPtr)> pred);
+std::vector<const ASTIdentifier *> getIdentifiers(const ASTPtr & ast, std::function<bool(const ASTPtr &)> pred);
 std::vector<const ASTIdentifier *> getIdentifiers(const ASTPtr & ast);
+std::vector<ASTIdentifier *> getIdentifiers(ASTPtr & ast, std::function<bool(ASTPtr &)> pred);
 
 }

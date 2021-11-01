@@ -152,7 +152,7 @@ JoinIdentifierPosPair CollectJoinOnKeysMatcher::getTableNumbers(const ASTPtr & l
     return std::make_pair(left_idents_table, right_idents_table);
 }
 
-const ASTIdentifier * CollectJoinOnKeysMatcher::unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases)
+static const ASTIdentifier * unrollAliases(const ASTIdentifier * identifier, const Aliases & aliases)
 {
     if (identifier->supposedToBeCompound())
         return identifier;
@@ -177,8 +177,26 @@ const ASTIdentifier * CollectJoinOnKeysMatcher::unrollAliases(const ASTIdentifie
     return identifier;
 }
 
+JoinIdentifierPos getTableForIdentifier(const ASTIdentifier * ident, const Aliases & aliases)
+{
+    const ASTIdentifier * identifier = unrollAliases(ident, aliases);
+    if (!identifier)
+        return JoinIdentifierPos::NotApplicable;
+
+    /// Column name could be cropped to a short form in TranslateQualifiedNamesVisitor.
+    /// In this case it saves membership in IdentifierSemantic.
+    JoinIdentifierPos membership = JoinIdentifierPos::Unknown;
+    if (auto opt = IdentifierSemantic::getMembership(*identifier); opt.has_value())
+    {
+        if (*opt == 0)
+            membership = JoinIdentifierPos::Left;
+        else if (*opt == 1)
+            membership = JoinIdentifierPos::Right;
+    }
+    return membership;
+}
+
 /// @returns Left or right table identifiers belongs to.
-/// Place detected identifier into identifiers[0] if any.
 JoinIdentifierPos CollectJoinOnKeysMatcher::getTableForIdentifiers(const ASTPtr & ast, bool throw_on_table_mix, const Data & data)
 {
     auto ident_pred = [](const ASTPtr & node) -> bool
@@ -197,26 +215,12 @@ JoinIdentifierPos CollectJoinOnKeysMatcher::getTableForIdentifiers(const ASTPtr 
 
     JoinIdentifierPos table_number = JoinIdentifierPos::Unknown;
 
-    for (auto & ident : identifiers)
+    const ASTIdentifier * first_detected = nullptr;
+    for (const auto * identifier : identifiers)
     {
-        const ASTIdentifier * identifier = unrollAliases(ident, data.aliases);
-        if (!identifier)
+        JoinIdentifierPos membership = getTableForIdentifier(identifier, data.aliases);
+        if (membership == JoinIdentifierPos::NotApplicable)
             continue;
-
-        /// Column name could be cropped to a short form in TranslateQualifiedNamesVisitor.
-        /// In this case it saves membership in IdentifierSemantic.
-        JoinIdentifierPos membership = JoinIdentifierPos::Unknown;
-        if (auto opt = IdentifierSemantic::getMembership(*identifier); opt.has_value())
-        {
-            if (*opt == 0)
-                membership = JoinIdentifierPos::Left;
-            else if (*opt == 1)
-                membership = JoinIdentifierPos::Right;
-            else
-                throw DB::Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME,
-                                    "Position of identifier {} can't be deteminated.",
-                                    identifier->name());
-        }
 
         if (membership == JoinIdentifierPos::Unknown)
         {
@@ -244,23 +248,39 @@ JoinIdentifierPos CollectJoinOnKeysMatcher::getTableForIdentifiers(const ASTPtr 
                 membership = JoinIdentifierPos::Right;
         }
 
-        if (membership != JoinIdentifierPos::Unknown && table_number == JoinIdentifierPos::Unknown)
+        if (membership != JoinIdentifierPos::Unknown && first_detected == nullptr)
         {
             table_number = membership;
-            std::swap(ident, identifiers[0]); /// move first detected identifier to the first position
+            first_detected = identifier;
         }
 
         if (membership != JoinIdentifierPos::Unknown && membership != table_number)
         {
             if (throw_on_table_mix)
-                throw Exception("Invalid columns in JOIN ON section. Columns "
-                            + identifiers[0]->getAliasOrColumnName() + " and " + ident->getAliasOrColumnName()
-                            + " are from different tables.", ErrorCodes::INVALID_JOIN_ON_EXPRESSION);
+                throw Exception(
+                    ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                    "Invalid columns in JOIN ON section. Columns {} and {} are from different tables",
+                    first_detected ? first_detected->getAliasOrColumnName() : "???",
+                    identifier->getAliasOrColumnName());
+
             return JoinIdentifierPos::Unknown;
         }
     }
 
     return table_number;
+}
+
+void joinConditionsWithAnd(ASTPtr & current_cond, const ASTPtr & new_cond)
+{
+    if (current_cond == nullptr)
+        /// no conditions, set new one
+        current_cond = new_cond;
+    else if (const auto * func = current_cond->as<ASTFunction>(); func && func->name == "and")
+        /// already have `and` in condition, just add new argument
+        func->arguments->children.push_back(new_cond);
+    else
+        /// already have some conditions, unite it with `and`
+        current_cond = makeASTFunction("and", current_cond, new_cond);
 }
 
 }

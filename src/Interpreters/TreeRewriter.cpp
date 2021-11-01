@@ -2,7 +2,9 @@
 #include <Core/NamesAndTypes.h>
 
 #include <Common/checkStackSize.h>
+#include <Parsers/IAST_fwd.h>
 
+#include <Interpreters/Aliases.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
@@ -19,6 +21,7 @@
 #include <Interpreters/UserDefinedSQLFunctionVisitor.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
+#include <Interpreters/JoinWhereFilterVisitor.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/TreeOptimizer.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
@@ -625,6 +628,23 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
     }
 }
 
+/*
+ * Retrieve filter conditions from WHRE that can be applied to the right table.
+ * It's used to reduce hashmap size (for hash join), we don't need to store rows that would be filtered.
+ */
+void applyJoinRightTableFilter(TableJoin & analyzed_join, ASTPtr where, const Aliases & aliases)
+{
+    if (!where)
+        return;
+
+    JoinWhereFilterVisitor::Data data{aliases};
+    JoinWhereFilterVisitor(data).visit(where);
+    for (const auto & f : data.filters)
+    {
+        analyzed_join.addJoinCondition(f, false);
+    }
+}
+
 
 std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
@@ -1052,7 +1072,13 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     auto * table_join_ast = select_query->join() ? select_query->join()->table_join->as<ASTTableJoin>() : nullptr;
     if (table_join_ast && tables_with_columns.size() >= 2)
+    {
         collectJoinedColumns(*result.analyzed_join, *table_join_ast, tables_with_columns, result.aliases);
+        if (select_query->where() && result.analyzed_join->oneDisjunct())
+        {
+            applyJoinRightTableFilter(*result.analyzed_join, select_query->where(), result.aliases);
+        }
+    }
 
     result.aggregates = getAggregates(query, *select_query);
     result.window_function_asts = getWindowFunctions(query, *select_query);

@@ -89,4 +89,6 @@ private:
 /// Parse JOIN ON expression and collect ASTs for joined columns.
 using CollectJoinOnKeysVisitor = CollectJoinOnKeysMatcher::Visitor;
 
+
+JoinIdentifierPos getTableForIdentifier(const ASTIdentifier * ident, const Aliases & aliases);
 }
