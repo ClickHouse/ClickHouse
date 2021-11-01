@@ -44,7 +44,7 @@ public:
         UInt64 size() const
         {
             UInt64 child_size{0};
-            for (auto & child : children)
+            for (const auto & child : children)
             {
                 child_size += child.size();
             }
@@ -210,17 +210,7 @@ public:
 
     UInt64 getApproximateDataSize() const
     {
-        UInt64 size{0};
-        for (const auto & it : container)
-        {
-            size += (it.key.size() + it.value.size() + 1);
-        }
-        /// hash map key size
-        if (container.size())
-        {
-            size += sizeof(StringRef) * container.size();
-        }
-        return size;
+        return container.getApproximateSataSize();
     }
 };
 
