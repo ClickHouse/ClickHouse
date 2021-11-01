@@ -17,7 +17,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include "common/types.h"
+#include "base/types.h"
 #include <Common/Arena.h>
 #include "AggregateFunctions/AggregateFunctionFactory.h"
 
