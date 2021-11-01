@@ -157,6 +157,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 }
 
 InterpreterSelectQuery::InterpreterSelectQuery(
+    const ASTPtr & query_ptr_,
+    ContextPtr context_,
+    const SelectQueryOptions & options_,
+    PreparedSets prepared_sets_)
+    : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, {}, {}, std::move(prepared_sets_))
+{
+}
+
+InterpreterSelectQuery::InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
         Pipe input_pipe_,
@@ -258,13 +267,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const StoragePtr & storage_,
     const SelectQueryOptions & options_,
     const Names & required_result_column_names,
-    const StorageMetadataPtr & metadata_snapshot_)
+    const StorageMetadataPtr & metadata_snapshot_,
+    PreparedSets prepared_sets_)
     /// NOTE: the query almost always should be cloned because it will be modified during analysis.
     : IInterpreterUnionOrSelectQuery(options_.modify_inplace ? query_ptr_ : query_ptr_->clone(), context_, options_)
     , storage(storage_)
     , input_pipe(std::move(input_pipe_))
     , log(&Poco::Logger::get("InterpreterSelectQuery"))
     , metadata_snapshot(metadata_snapshot_)
+    , prepared_sets(std::move(prepared_sets_))
 {
     checkStackSize();
 
@@ -354,7 +365,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     /// Reuse already built sets for multiple passes of analysis
     SubqueriesForSets subquery_for_sets;
-    PreparedSets prepared_sets;
 
     auto analyze = [&] (bool try_move_to_prewhere)
     {
@@ -517,7 +527,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         /// Reuse already built sets for multiple passes of analysis
         subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
-        prepared_sets = std::move(query_analyzer->getPreparedSets());
+        prepared_sets = query_info.sets.empty() ? std::move(query_analyzer->getPreparedSets()) : std::move(query_info.sets);
 
         /// Do not try move conditions to PREWHERE for the second time.
         /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
