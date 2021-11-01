@@ -32,6 +32,9 @@ s String default dictGet($CLICKHOUSE_DATABASE.dict1, 's', 42::UInt64), x default
 
 $CLICKHOUSE_CLIENT -q "create materialized view mv to s as select n from t where n in (select n from join)"
 
+$CLICKHOUSE_CLIENT -q "select table, arraySort(dependencies_table),
+arraySort(loading_dependencies_table), arraySort(loading_dependent_table) from system.tables where database=currentDatabase() order by table"
+
 CLICKHOUSE_CLIENT_DEFAULT_DB=$(echo ${CLICKHOUSE_CLIENT} | sed 's/'"--database=${CLICKHOUSE_DATABASE}"'/--database=default/g')
 
 for _ in {1..10}; do
@@ -40,8 +43,31 @@ for _ in {1..10}; do
 done
 $CLICKHOUSE_CLIENT -q "show tables from $CLICKHOUSE_DATABASE;"
 
-$CLICKHOUSE_CLIENT -q "drop table dict_src;"
-$CLICKHOUSE_CLIENT -q "drop dictionary dict1;"
-$CLICKHOUSE_CLIENT -q "drop dictionary dict2;"
-$CLICKHOUSE_CLIENT -q "drop table join;"
+$CLICKHOUSE_CLIENT -q "drop table join" 2>&1| grep -Fa "some tables depend on it" >/dev/null && echo "OK"
+$CLICKHOUSE_CLIENT -q "detach dictionary dict1 permanently" 2>&1| grep -Fa "some tables depend on it" >/dev/null && echo "OK"
+
+$CLICKHOUSE_CLIENT -q "select table, arraySort(dependencies_table),
+arraySort(loading_dependencies_table), arraySort(loading_dependent_table) from system.tables where database=currentDatabase() order by table"
+
 $CLICKHOUSE_CLIENT -q "drop table t;"
+$CLICKHOUSE_CLIENT -q "drop table s;"
+$CLICKHOUSE_CLIENT -q "drop dictionary dict2;"
+
+$CLICKHOUSE_CLIENT -q "select '====='"
+$CLICKHOUSE_CLIENT -q "select table, arraySort(dependencies_table),
+arraySort(loading_dependencies_table), arraySort(loading_dependent_table) from system.tables where database=currentDatabase() order by table"
+
+$CLICKHOUSE_CLIENT -q "drop table join;"
+$CLICKHOUSE_CLIENT -q "drop dictionary dict1;"
+$CLICKHOUSE_CLIENT -q "drop table dict_src;"
+
+$CLICKHOUSE_CLIENT -q "drop database if exists ${CLICKHOUSE_DATABASE}_1"
+$CLICKHOUSE_CLIENT -q "create database ${CLICKHOUSE_DATABASE}_1"
+$CLICKHOUSE_CLIENT -q "create table ${CLICKHOUSE_DATABASE}_1.xdict_src (n int, m int, s String) engine=MergeTree order by n;"
+$CLICKHOUSE_CLIENT -q "create dictionary ${CLICKHOUSE_DATABASE}_1.ydict1 (n int default 0, m int default 1, s String default 'qqq')
+PRIMARY KEY n
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'xdict_src' PASSWORD '' DB '${CLICKHOUSE_DATABASE}_1'))
+LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());"
+
+$CLICKHOUSE_CLIENT -q "create table ${CLICKHOUSE_DATABASE}_1.zjoin(n int, m int default dictGet('${CLICKHOUSE_DATABASE}_1.ydict1', 'm', 42::UInt64)) engine=Join(any, left, n);"
+$CLICKHOUSE_CLIENT -q "drop database ${CLICKHOUSE_DATABASE}_1"
