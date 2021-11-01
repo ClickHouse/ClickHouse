@@ -31,7 +31,7 @@ ATTACH TABLE postgres_database.new_table;
 
 It will work as well if there is a setting `materialized_postgresql_tables_list`.
 
-## Dynamically removing tables from replication
+## Dynamically removing tables from replication {#dynamically-removing-tables}
 
 ``` sql
 DETACH TABLE postgres_database.table_to_remove;
