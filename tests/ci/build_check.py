@@ -128,7 +128,7 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token())
 
-    images_path = os.path.join(temp_path, 'changed_images.json')
+    images_path = os.path.join(os.getenv("IMAGES_PATH", temp_path), 'changed_images.json')
     image_name = get_image_name(build_config)
     image_version = 'latest'
     if os.path.exists(images_path):
