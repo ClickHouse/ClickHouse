@@ -12,7 +12,6 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ConcatReadBuffer.h>
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -256,8 +255,36 @@ void SerializationNullable::deserializeTextEscaped(IColumn & column, ReadBuffer 
     deserializeTextEscapedImpl<void>(column, istr, settings, nested);
 }
 
+void SerializationNullable::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeTextRawImpl<void>(column, istr, settings, nested);
+}
+
+void SerializationNullable::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    const ColumnNullable & col = assert_cast<const ColumnNullable &>(column);
+
+    if (col.isNullAt(row_num))
+        writeString(settings.tsv.null_representation, ostr);
+    else
+        nested->serializeTextRaw(col.getNestedColumn(), row_num, ostr, settings);
+}
+
+template<typename ReturnType>
+ReturnType SerializationNullable::deserializeTextRawImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested)
+{
+    return deserializeTextEscapedAndRawImpl<ReturnType, false>(column, istr, settings, nested);
+}
+
 template<typename ReturnType>
 ReturnType SerializationNullable::deserializeTextEscapedImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
+                                                             const SerializationPtr & nested)
+{
+    return deserializeTextEscapedAndRawImpl<ReturnType, true>(column, istr, settings, nested);
+}
+
+template<typename ReturnType, bool escaped>
+ReturnType SerializationNullable::deserializeTextEscapedAndRawImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
                                                     const SerializationPtr & nested)
 {
     /// Little tricky, because we cannot discriminate null from first character.
@@ -267,7 +294,13 @@ ReturnType SerializationNullable::deserializeTextEscapedImpl(IColumn & column, R
         /// This is not null, surely.
         return safeDeserialize<ReturnType>(column, *nested,
             [] { return false; },
-            [&nested, &istr, &settings] (IColumn & nested_column) { nested->deserializeTextEscaped(nested_column, istr, settings); });
+            [&nested, &istr, &settings] (IColumn & nested_column)
+            {
+                if constexpr (escaped)
+                    nested->deserializeTextEscaped(nested_column, istr, settings);
+                else
+                    nested->deserializeTextRaw(nested_column, istr, settings);
+            });
     }
     else
     {
@@ -293,7 +326,10 @@ ReturnType SerializationNullable::deserializeTextEscapedImpl(IColumn & column, R
                 {
                     /// We could step back to consume backslash again.
                     --istr.position();
-                    nested->deserializeTextEscaped(nested_column, istr, settings);
+                    if constexpr (escaped)
+                        nested->deserializeTextEscaped(nested_column, istr, settings);
+                    else
+                        nested->deserializeTextRaw(nested_column, istr, settings);
                 }
                 else
                 {
@@ -301,7 +337,10 @@ ReturnType SerializationNullable::deserializeTextEscapedImpl(IColumn & column, R
                     ReadBufferFromMemory prefix("\\", 1);
                     ConcatReadBuffer prepended_istr(prefix, istr);
 
-                    nested->deserializeTextEscaped(nested_column, prepended_istr, settings);
+                    if constexpr (escaped)
+                        nested->deserializeTextEscaped(nested_column, prepended_istr, settings);
+                    else
+                        nested->deserializeTextRaw(nested_column, prepended_istr, settings);
 
                     /// Synchronise cursor position in original buffer.
 
@@ -507,5 +546,6 @@ template bool SerializationNullable::deserializeTextEscapedImpl<bool>(IColumn & 
 template bool SerializationNullable::deserializeTextQuotedImpl<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested);
 template bool SerializationNullable::deserializeTextCSVImpl<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested);
 template bool SerializationNullable::deserializeTextJSONImpl<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested);
+template bool SerializationNullable::deserializeTextRawImpl<bool>(IColumn & column, ReadBuffer & istr, const FormatSettings &, const SerializationPtr & nested);
 
 }

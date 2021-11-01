@@ -163,7 +163,7 @@ void SerializationFixedString::deserializeTextQuoted(IColumn & column, ReadBuffe
 
 void SerializationFixedString::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    read(*this, column, [&istr](ColumnFixedString::Chars & data) { readStringInto(data, istr); });
+    read(*this, column, [&istr](ColumnFixedString::Chars & data) { readStringUntilEOFInto(data, istr); });
 }
 
 
