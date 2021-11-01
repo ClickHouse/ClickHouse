@@ -335,7 +335,8 @@ Sets minimal amount of bytes to enable parts rebalance over [JBOD](https://en.wi
 
 Possible values:
 
--   Any positive integer.
+-   Positive integer.
+- 0 - Rebalancing is disabled.
 
 Default value: `0`.
 
