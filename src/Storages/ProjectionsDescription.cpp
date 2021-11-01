@@ -184,15 +184,15 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
 
     auto select_query = std::make_shared<ASTProjectionSelectQuery>();
     ASTPtr select_expression_list = std::make_shared<ASTExpressionList>();
-    if (!primary_key_asts.empty())
-    {
-        select_expression_list->children.push_back(makeASTFunction("min", primary_key_asts.front()->clone()));
-        select_expression_list->children.push_back(makeASTFunction("max", primary_key_asts.front()->clone()));
-    }
     for (const auto & column : minmax_columns)
     {
         select_expression_list->children.push_back(makeASTFunction("min", std::make_shared<ASTIdentifier>(column)));
         select_expression_list->children.push_back(makeASTFunction("max", std::make_shared<ASTIdentifier>(column)));
+    }
+    if (!primary_key_asts.empty())
+    {
+        select_expression_list->children.push_back(makeASTFunction("min", primary_key_asts.front()->clone()));
+        select_expression_list->children.push_back(makeASTFunction("max", primary_key_asts.front()->clone()));
     }
     select_expression_list->children.push_back(makeASTFunction("count"));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(select_expression_list));
@@ -207,8 +207,14 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
         result.query_ast, query_context, storage, {}, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias());
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
-    if (!primary_key_asts.empty())
-        result.primary_key_max_column_name = result.sample_block.getNames()[ProjectionDescription::PRIMARY_KEY_MAX_COLUMN_POS];
+    /// If we have primary key and it's not in minmax_columns, it will be used as one additional minmax columns.
+    if (!primary_key_asts.empty() && result.sample_block.columns() == 2 * (minmax_columns.size() + 1) + 1)
+    {
+        /// min(p1), max(p1), min(p2), max(p2), ..., min(k1), max(k1), count()
+        ///                                                      ^
+        ///                                                   size - 2
+        result.primary_key_max_column_name = *(result.sample_block.getNames().cend() - 2);
+    }
     result.type = ProjectionDescription::Type::Aggregate;
     StorageInMemoryMetadata metadata;
     metadata.setColumns(ColumnsDescription(result.sample_block.getNamesAndTypesList()));
@@ -231,7 +237,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     auto builder = InterpreterSelectQuery(
                        query_ast,
                        context,
-                       Pipe(std::make_shared<SourceFromSingleChunk>(block, Chunk(block.getColumns(), block.rows()))),
+                       Pipe(std::make_shared<SourceFromSingleChunk>(block)),
                        SelectQueryOptions{
                            type == ProjectionDescription::Type::Normal ? QueryProcessingStage::FetchColumns
                                                                        : QueryProcessingStage::WithMergeableState})

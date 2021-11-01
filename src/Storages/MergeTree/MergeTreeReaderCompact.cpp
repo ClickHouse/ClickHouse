@@ -100,8 +100,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                 std::make_unique<CompressedReadBufferFromFile>(
                     data_part->volume->getDisk()->readFile(
                         full_data_path,
-                        settings.read_settings,
-                        0),
+                        settings.read_settings),
                     /* allow_different_codecs = */ true);
 
             if (profile_callback_)
@@ -121,7 +120,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     }
 }
 
-size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
+size_t MergeTreeReaderCompact::readRows(
+    size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
 {
     if (continue_reading)
         from_mark = next_mark;
@@ -158,12 +158,13 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
                 auto & column = res_columns[pos];
                 size_t column_size_before_reading = column->size();
 
-                readData(column_from_part, column, from_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
+                readData(column_from_part, column, from_mark, current_task_last_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
 
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
-                if (read_rows_in_column < rows_to_read)
-                    throw Exception("Cannot read all data in MergeTreeReaderCompact. Rows read: " + toString(read_rows_in_column) +
-                        ". Rows expected: " + toString(rows_to_read) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
+                if (read_rows_in_column != rows_to_read)
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "Cannot read all data in MergeTreeReaderCompact. Rows read: {}. Rows expected: {}.",
+                        read_rows_in_column, rows_to_read);
             }
             catch (Exception & e)
             {
@@ -192,7 +193,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
 
 void MergeTreeReaderCompact::readData(
     const NameAndTypePair & name_and_type, ColumnPtr & column,
-    size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets)
+    size_t from_mark, size_t current_task_last_mark, size_t column_position, size_t rows_to_read, bool only_offsets)
 {
     const auto & [name, type] = name_and_type;
 
@@ -204,6 +205,8 @@ void MergeTreeReaderCompact::readData(
         if (only_offsets && (substream_path.size() != 1 || substream_path[0].type != ISerialization::Substream::ArraySizes))
             return nullptr;
 
+        /// For asynchronous reading from remote fs.
+        data_buffer->setReadUntilPosition(marks_loader.getMark(current_task_last_mark).offset_in_compressed_file);
         return data_buffer;
     };
 

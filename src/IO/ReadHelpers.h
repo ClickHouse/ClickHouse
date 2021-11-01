@@ -279,29 +279,39 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
         {
             case '+':
             {
-                if (has_sign || has_number)
+                /// 123+ or +123+, just stop after 123 or +123.
+                if (has_number)
+                    goto end;
+
+                /// No digits read yet, but we already read sign, like ++, -+.
+                if (has_sign)
                 {
                     if constexpr (throw_exception)
                         throw ParsingException(
-                            "Cannot parse number with multiple sign (+/-) characters or intermediate sign character",
+                            "Cannot parse number with multiple sign (+/-) characters",
                             ErrorCodes::CANNOT_PARSE_NUMBER);
                     else
                         return ReturnType(false);
                 }
+
                 has_sign = true;
                 break;
             }
             case '-':
             {
-                if (has_sign || has_number)
+                if (has_number)
+                    goto end;
+
+                if (has_sign)
                 {
                     if constexpr (throw_exception)
                         throw ParsingException(
-                            "Cannot parse number with multiple sign (+/-) characters or intermediate sign character",
+                            "Cannot parse number with multiple sign (+/-) characters",
                             ErrorCodes::CANNOT_PARSE_NUMBER);
                     else
                         return ReturnType(false);
                 }
+
                 if constexpr (is_signed_v<T>)
                     negative = true;
                 else
@@ -587,35 +597,45 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
         /// YYYY-MM-D
         /// YYYY-M-DD
         /// YYYY-M-D
+        /// YYYYMMDD
 
         /// The delimiters can be arbitrary characters, like YYYY/MM!DD, but obviously not digits.
 
         UInt16 year = (pos[0] - '0') * 1000 + (pos[1] - '0') * 100 + (pos[2] - '0') * 10 + (pos[3] - '0');
+        UInt8 month;
+        UInt8 day;
         pos += 5;
 
         if (isNumericASCII(pos[-1]))
-            return ReturnType(false);
-
-        UInt8 month = pos[0] - '0';
-        if (isNumericASCII(pos[1]))
         {
-            month = month * 10 + pos[1] - '0';
+            /// YYYYMMDD
+            month = (pos[-1] - '0') * 10 + (pos[0] - '0');
+            day = (pos[1] - '0') * 10 + (pos[2] - '0');
             pos += 3;
         }
         else
-            pos += 2;
-
-        if (isNumericASCII(pos[-1]))
-            return ReturnType(false);
-
-        UInt8 day = pos[0] - '0';
-        if (isNumericASCII(pos[1]))
         {
-            day = day * 10 + pos[1] - '0';
-            pos += 2;
+            month = pos[0] - '0';
+            if (isNumericASCII(pos[1]))
+            {
+                month = month * 10 + pos[1] - '0';
+                pos += 3;
+            }
+            else
+                pos += 2;
+
+            if (isNumericASCII(pos[-1]))
+                return ReturnType(false);
+
+            day = pos[0] - '0';
+            if (isNumericASCII(pos[1]))
+            {
+                day = day * 10 + pos[1] - '0';
+                pos += 2;
+            }
+            else
+                pos += 1;
         }
-        else
-            pos += 1;
 
         buf.position() = pos;
         date = LocalDate(year, month, day);

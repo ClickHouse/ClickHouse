@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Formats/IndexForNativeFormat.h>
 #include <Formats/MarkInCompressedFile.h>
 #include <Common/PODArray.h>
 #include <Core/Block.h>
@@ -8,48 +9,6 @@ namespace DB
 {
 
 class CompressedReadBufferFromFile;
-
-
-/** The Native format can contain a separately located index,
-  *  which allows you to understand where what column is located,
-  *  and skip unnecessary columns.
-  */
-
-/** The position of one piece of a single column. */
-struct IndexOfOneColumnForNativeFormat
-{
-    String name;
-    String type;
-    MarkInCompressedFile location;
-};
-
-/** The index for the data block. */
-struct IndexOfBlockForNativeFormat
-{
-    using Columns = std::vector<IndexOfOneColumnForNativeFormat>;
-
-    size_t num_columns;
-    size_t num_rows;
-    Columns columns;
-};
-
-/** The whole index. */
-struct IndexForNativeFormat
-{
-    using Blocks = std::vector<IndexOfBlockForNativeFormat>;
-    Blocks blocks;
-
-    IndexForNativeFormat() {}
-
-    IndexForNativeFormat(ReadBuffer & istr, const NameSet & required_columns)
-    {
-        read(istr, required_columns);
-    }
-
-    /// Read the index, only for the required columns.
-    void read(ReadBuffer & istr, const NameSet & required_columns);
-};
-
 
 /** Deserializes the stream of blocks from the native binary format (with names and column types).
   * Designed for communication between servers.

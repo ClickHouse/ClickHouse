@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <iomanip>
+#include <string_view>
 #include <filesystem>
 
 #include <base/argsToConfig.h>
@@ -14,9 +15,7 @@
 #include "Core/Block.h"
 #include "Core/Protocol.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/TerminalSize.h>
 #include <Common/clearPasswordFromCommandLine.h>
@@ -54,12 +53,18 @@
 #include <Client/InternalTextLogs.h>
 
 namespace fs = std::filesystem;
+using namespace std::literals;
 
 
 namespace DB
 {
 
-static const NameSet exit_strings{"exit", "quit", "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж", "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"};
+static const NameSet exit_strings
+{
+    "exit", "quit", "logout", "учше", "йгше", "дщпщге",
+    "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж",
+    "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
+};
 
 namespace ErrorCodes
 {
@@ -71,6 +76,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
+    extern const int UNRECOGNIZED_ARGUMENTS;
 }
 
 }
@@ -104,8 +110,10 @@ void interruptSignalHandler(int signum)
         _exit(signum);
 }
 
+
 ClientBase::~ClientBase() = default;
 ClientBase::ClientBase() = default;
+
 
 void ClientBase::setupSignalHandler()
 {
@@ -169,8 +177,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
 }
 
 
-// Consumes trailing semicolons and tries to consume the same-line trailing
-// comment.
+/// Consumes trailing semicolons and tries to consume the same-line trailing comment.
 void ClientBase::adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, int max_parser_depth)
 {
     // We have to skip the trailing semicolon that might be left
@@ -247,7 +254,8 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
         return;
 
-    if (need_render_progress && (stdout_is_a_tty || is_interactive))
+    /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
+    if (need_render_progress && (stdout_is_a_tty || is_interactive) && !select_into_file)
         progress_indication.clearProgressOutput();
 
     output_format->write(materializeBlock(block));
@@ -258,7 +266,11 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 
     /// Restore progress bar after data block.
     if (need_render_progress && (stdout_is_a_tty || is_interactive))
+    {
+        if (select_into_file)
+            std::cerr << "\r";
         progress_indication.writeProgress();
+    }
 }
 
 
@@ -266,7 +278,7 @@ void ClientBase::onLogData(Block & block)
 {
     initLogsOutputStream();
     progress_indication.clearProgressOutput();
-    logs_out_stream->write(block);
+    logs_out_stream->writeLogs(block);
     logs_out_stream->flush();
 }
 
@@ -329,12 +341,15 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
 
         String current_format = format;
 
+        select_into_file = false;
+
         /// The query can specify output format or output file.
-        /// FIXME: try to prettify this cast using `as<>()`
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
             if (query_with_output->out_file)
             {
+                select_into_file = true;
+
                 const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
                 const auto & out_file = out_file_node.value.safeGet<std::string>();
 
@@ -367,11 +382,14 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
         if (has_vertical_output_suffix)
             current_format = "Vertical";
 
-        /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
-        if (!need_render_progress)
-            output_format = global_context->getOutputFormatParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+        /// It is not clear how to write progress intermixed with data with parallel formatting.
+        /// It may increase code complexity significantly.
+        if (!need_render_progress || select_into_file)
+            output_format = global_context->getOutputFormatParallelIfPossible(
+                current_format, out_file_buf ? *out_file_buf : *out_buf, block);
         else
-            output_format = global_context->getOutputFormat(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+            output_format = global_context->getOutputFormat(
+                current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
         output_format->doWritePrefix();
     }
@@ -668,39 +686,61 @@ void ClientBase::onEndOfStream()
 void ClientBase::onProfileEvents(Block & block)
 {
     const auto rows = block.rows();
-    if (rows == 0 || !progress_indication.print_hardware_utilization)
+    if (rows == 0)
         return;
-    const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
-    const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
-    const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
-    const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
 
-    const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
-    const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
-
-    HostToThreadTimesMap thread_times;
-    for (size_t i = 0; i < rows; ++i)
+    if (progress_indication.print_hardware_utilization)
     {
-        auto thread_id = array_thread_id[i];
-        auto host_name = host_names.getDataAt(i).toString();
-        if (thread_id != 0)
-            progress_indication.addThreadIdToList(host_name, thread_id);
-        auto event_name = names.getDataAt(i);
-        auto value = array_values[i];
-        if (event_name == user_time_name)
+        const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
+        const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
+        const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
+        const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
+
+        const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
+        const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+
+        HostToThreadTimesMap thread_times;
+        for (size_t i = 0; i < rows; ++i)
         {
-            thread_times[host_name][thread_id].user_ms = value;
+            auto thread_id = array_thread_id[i];
+            auto host_name = host_names.getDataAt(i).toString();
+            if (thread_id != 0)
+                progress_indication.addThreadIdToList(host_name, thread_id);
+            auto event_name = names.getDataAt(i);
+            auto value = array_values[i];
+            if (event_name == user_time_name)
+            {
+                thread_times[host_name][thread_id].user_ms = value;
+            }
+            else if (event_name == system_time_name)
+            {
+                thread_times[host_name][thread_id].system_ms = value;
+            }
+            else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
+            {
+                thread_times[host_name][thread_id].memory_usage = value;
+            }
         }
-        else if (event_name == system_time_name)
+        progress_indication.updateThreadEventData(thread_times);
+    }
+
+    if (profile_events.print)
+    {
+        if (profile_events.watch.elapsedMilliseconds() >= profile_events.delay_ms)
         {
-            thread_times[host_name][thread_id].system_ms = value;
+            initLogsOutputStream();
+            progress_indication.clearProgressOutput();
+            logs_out_stream->writeProfileEvents(block);
+            logs_out_stream->flush();
+
+            profile_events.watch.restart();
+            profile_events.last_block = {};
         }
-        else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
+        else
         {
-            thread_times[host_name][thread_id].memory_usage = value;
+            profile_events.last_block = block;
         }
     }
-    progress_indication.updateThreadEventData(thread_times);
 }
 
 
@@ -1023,6 +1063,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
     processed_rows = 0;
     written_first_block = false;
     progress_indication.resetProgress();
+    profile_events.watch.restart();
 
     {
         /// Temporarily apply query settings to context.
@@ -1089,6 +1130,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             /// If the connection initiates the reconnection, it uses its variable.
             connection->setDefaultDatabase(new_database);
         }
+    }
+
+    /// Always print last block (if it was not printed already)
+    if (profile_events.last_block)
+    {
+        initLogsOutputStream();
+        progress_indication.clearProgressOutput();
+        logs_out_stream->writeProfileEvents(profile_events.last_block);
+        logs_out_stream->flush();
     }
 
     if (is_interactive)
@@ -1331,9 +1381,7 @@ void ClientBase::runInteractive()
         catch (const Exception & e)
         {
             /// We don't need to handle the test hints in the interactive mode.
-            bool print_stack_trace = config().getBool("stacktrace", false);
             std::cerr << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-
             client_exception = std::make_unique<Exception>(e);
         }
 
@@ -1417,8 +1465,7 @@ void ClientBase::clearTerminal()
     /// It is needed if garbage is left in terminal.
     /// Show cursor. It can be left hidden by invocation of previous programs.
     /// A test for this feature: perl -e 'print "x"x100000'; echo -ne '\033[0;0H\033[?25l'; clickhouse-client
-    std::cout << "\033[0J"
-                    "\033[?25h";
+    std::cout << "\033[0J" "\033[?25h";
 }
 
 
@@ -1443,7 +1490,7 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
     {
         const char * arg = argv[arg_num];
 
-        if (0 == strcmp(arg, "--external"))
+        if (arg == "--external"sv)
         {
             in_external_group = true;
             external_tables_arguments.emplace_back(Arguments{""});
@@ -1458,8 +1505,8 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
         }
         /// Options with value after whitespace.
         else if (in_external_group
-            && (0 == strcmp(arg, "--file") || 0 == strcmp(arg, "--name") || 0 == strcmp(arg, "--format")
-                || 0 == strcmp(arg, "--structure") || 0 == strcmp(arg, "--types")))
+            && (arg == "--file"sv || arg == "--name"sv || arg == "--format"sv
+                || arg == "--structure"sv || arg == "--types"sv))
         {
             if (arg_num + 1 < argc)
             {
@@ -1503,6 +1550,26 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
                 common_arguments.emplace_back(arg);
         }
     }
+}
+
+void ClientBase::parseAndCheckOptions(OptionsDescription & options_description, po::variables_map & options, Arguments & arguments)
+{
+    cmd_settings.addProgramOptions(options_description.main_description.value());
+    /// Parse main commandline options.
+    auto parser = po::command_line_parser(arguments).options(options_description.main_description.value()).allow_unregistered();
+    po::parsed_options parsed = parser.run();
+
+    /// Check unrecognized options without positional options.
+    auto unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::exclude_positional);
+    if (!unrecognized_options.empty())
+        throw Exception(ErrorCodes::UNRECOGNIZED_ARGUMENTS, "Unrecognized option '{}'", unrecognized_options[0]);
+
+    /// Check positional options (options after ' -- ', ex: clickhouse-client -- <options>).
+    unrecognized_options = po::collect_unrecognized(parsed.options, po::collect_unrecognized_mode::include_positional);
+    if (unrecognized_options.size() > 1)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Positional options are not supported.");
+
+    po::store(parsed, options);
 }
 
 
@@ -1561,9 +1628,12 @@ void ClientBase::init(int argc, char ** argv)
         ("ignore-error", "do not stop processing in multiquery mode")
         ("stacktrace", "print stack traces of exceptions")
         ("hardware-utilization", "print hardware utilization information in progress bar")
+        ("print-profile-events", po::value(&profile_events.print)->zero_tokens(), "Printing ProfileEvents packets")
+        ("profile-events-delay-ms", po::value<UInt64>()->default_value(profile_events.delay_ms), "Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet)")
     ;
 
-    addAndCheckOptions(options_description, options, common_arguments);
+    addOptions(options_description);
+    parseAndCheckOptions(options_description, options, common_arguments);
     po::notify(options);
 
     if (options.count("version") || options.count("V"))
@@ -1611,6 +1681,10 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("vertical", true);
     if (options.count("stacktrace"))
         config().setBool("stacktrace", true);
+    if (options.count("print-profile-events"))
+        config().setBool("print-profile-events", true);
+    if (options.count("profile-events-delay-ms"))
+        config().setInt("profile-events-delay-ms", options["profile-events-delay-ms"].as<UInt64>());
     if (options.count("progress"))
         config().setBool("progress", true);
     if (options.count("echo"))
@@ -1631,6 +1705,8 @@ void ClientBase::init(int argc, char ** argv)
         progress_indication.print_hardware_utilization = true;
 
     query_processing_stage = QueryProcessingStage::fromString(options["stage"].as<std::string>());
+    profile_events.print = options.count("print-profile-events");
+    profile_events.delay_ms = options["profile-events-delay-ms"].as<UInt64>();
 
     processOptions(options_description, options, external_tables_arguments);
     argsToConfig(common_arguments, config(), 100);

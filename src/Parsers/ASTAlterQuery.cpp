@@ -157,6 +157,10 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY SAMPLE BY " << (settings.hilite ? hilite_none : "");
         sample_by->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::REMOVE_SAMPLE_BY)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "REMOVE SAMPLE BY" << (settings.hilite ? hilite_none : "");
+    }
     else if (type == ASTAlterCommand::ADD_INDEX)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD INDEX " << (if_not_exists ? "IF NOT EXISTS " : "")
@@ -461,6 +465,22 @@ bool ASTAlterQuery::isFreezeAlter() const
     return isOneCommandTypeOnly(ASTAlterCommand::FREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::FREEZE_ALL)
         || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_ALL);
 }
+
+bool ASTAlterQuery::isAttachAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::ATTACH_PARTITION);
+}
+
+bool ASTAlterQuery::isFetchAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::FETCH_PARTITION);
+}
+
+bool ASTAlterQuery::isDropPartitionAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::DROP_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::DROP_DETACHED_PARTITION);
+}
+
 
 /** Get the text that identifies this element. */
 String ASTAlterQuery::getID(char delim) const

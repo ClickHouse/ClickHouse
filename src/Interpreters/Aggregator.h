@@ -43,8 +43,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
 }
 
-class IBlockOutputStream;
-
 /** Different data structures that can be used for aggregation
   * For efficiency, the aggregation data itself is put into the pool.
   * Data and pool ownership (states of aggregate functions)
