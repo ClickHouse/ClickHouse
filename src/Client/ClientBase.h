@@ -155,6 +155,7 @@ protected:
     ConnectionParameters connection_parameters;
 
     String format; /// Query results output format.
+    bool select_into_file = false; /// If writing result INTO OUTFILE. It affects progress rendering.
     bool is_default_format = true; /// false, if format is set in the config or command line.
     size_t format_max_block_size = 0; /// Max block size for console output.
     String insert_format; /// Format of INSERT data that is read from stdin in batch mode.
@@ -202,6 +203,7 @@ protected:
     bool written_first_block = false;
     size_t processed_rows = 0; /// How many rows have been read or written.
 
+    bool print_stack_trace = false;
     /// The last exception that was received from the server. Is used for the
     /// return code in batch mode.
     std::unique_ptr<Exception> server_exception;

@@ -13,6 +13,8 @@
 namespace DB
 {
 
+void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata);
+
 class Context;
 
 /// A base class for databases that manage their own list of tables.
