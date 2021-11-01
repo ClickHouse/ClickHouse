@@ -10,6 +10,7 @@ on: # yamllint disable-line rule:truthy
       - 'docs/**'
       - 'website/**'
       - 'benchmark/**'
+      - 'docker/**'
 jobs:
   DockerHubPush:
     runs-on: [self-hosted, style-checker]
