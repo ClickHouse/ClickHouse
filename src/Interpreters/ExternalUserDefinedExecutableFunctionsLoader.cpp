@@ -54,18 +54,26 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
         throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "The aggregate function '{}' already exists", name);
 
     String type = config.getString(key_in_config + ".type");
-    UserDefinedExecutableFunctionType function_type;
+
+    bool is_executable_pool;
 
     if (type == "executable")
-        function_type = UserDefinedExecutableFunctionType::executable;
+        is_executable_pool = false;
     else if (type == "executable_pool")
-        function_type = UserDefinedExecutableFunctionType::executable_pool;
+        is_executable_pool = true;
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Wrong user defined function type expected 'executable' or 'executable_pool' actual {}",
-            function_type);
+            type);
 
-    String command = config.getString(key_in_config + ".command");
+    String scipt_name_with_arguments_value = config.getString(key_in_config + ".command");
+
+    std::vector<String> script_name_with_arguments;
+    boost::split(script_name_with_arguments, scipt_name_with_arguments_value, [](char c) { return c == ' '; });
+
+    auto script_path = script_name_with_arguments[0];
+    script_name_with_arguments.erase(script_name_with_arguments.begin());
+
     String format = config.getString(key_in_config + ".format");
     DataTypePtr result_type = DataTypeFactory::instance().get(config.getString(key_in_config + ".return_type"));
     bool send_chunk_header = config.getBool(key_in_config + ".send_chunk_header", false);
@@ -73,7 +81,7 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
     size_t pool_size = 0;
     size_t command_termination_timeout = 0;
     size_t max_command_execution_time = 0;
-    if (function_type == UserDefinedExecutableFunctionType::executable_pool)
+    if (is_executable_pool)
     {
         pool_size = config.getUInt64(key_in_config + ".pool_size", 16);
         command_termination_timeout = config.getUInt64(key_in_config + ".command_termination_timeout", 10);
@@ -106,19 +114,27 @@ ExternalLoader::LoadablePtr ExternalUserDefinedExecutableFunctionsLoader::create
 
     UserDefinedExecutableFunctionConfiguration function_configuration
     {
-        .type = function_type,
         .name = std::move(name), //-V1030
-        .script_path = std::move(command), //-V1030
-        .format = std::move(format), //-V1030
+        .script_path = std::move(script_path), //-V1030
+        .script_arguments = std::move(script_name_with_arguments), //-V1030
         .argument_types = std::move(argument_types), //-V1030
         .result_type = std::move(result_type), //-V1030
+    };
+
+    ShellCommandCoordinator::Configuration shell_command_coordinator_configration
+    {
+        .format = std::move(format), //-V1030
         .pool_size = pool_size,
         .command_termination_timeout = command_termination_timeout,
         .max_command_execution_time = max_command_execution_time,
-        .send_chunk_header = send_chunk_header
+        .is_executable_pool = is_executable_pool,
+        .send_chunk_header = send_chunk_header,
+        .execute_direct = true
     };
 
-    return std::make_shared<UserDefinedExecutableFunction>(function_configuration, lifetime);
+    std::shared_ptr<ShellCommandCoordinator> coordinator = std::make_shared<ShellCommandCoordinator>(shell_command_coordinator_configration);
+
+    return std::make_shared<UserDefinedExecutableFunction>(function_configuration, coordinator, lifetime);
 }
 
 }
