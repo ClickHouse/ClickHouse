@@ -23,7 +23,7 @@ Shifts the bit representation of a value to the left by a specified number of bi
 
 A `FixedString` or a `String` are treated as a single multibyte value.
 
-Bits of a `FixedString` value are lost as they are shifted out. On the contrary a `String` value is extended with additional bytes, so no bits are lost.
+Bits of a `FixedString` value are lost as they are shifted out. On the contrary, a `String` value is extended with additional bytes, so no bits are lost.
 
 **Syntax**
 
