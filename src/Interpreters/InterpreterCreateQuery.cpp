@@ -54,6 +54,7 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/TablesLoader.h>
+#include <Databases/DDLDependencyVisitor.h>
 
 #include <Compression/CompressionFactory.h>
 
@@ -374,18 +375,26 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         {
             column_declaration->default_specifier = toString(column.default_desc.kind);
             column_declaration->default_expression = column.default_desc.expression->clone();
+            column_declaration->children.push_back(column_declaration->default_expression);
         }
 
         if (!column.comment.empty())
         {
             column_declaration->comment = std::make_shared<ASTLiteral>(Field(column.comment));
+            column_declaration->children.push_back(column_declaration->comment);
         }
 
         if (column.codec)
+        {
             column_declaration->codec = column.codec;
+            column_declaration->children.push_back(column_declaration->codec);
+        }
 
         if (column.ttl)
+        {
             column_declaration->ttl = column.ttl;
+            column_declaration->children.push_back(column_declaration->ttl);
+        }
 
         columns_list->children.push_back(column_declaration_ptr);
     }
@@ -959,6 +968,18 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (!created)   /// Table already exists
         return {};
+
+    /// If table has dependencies - add them to the graph
+    TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext()->getGlobalContext(), query_ptr);
+    if (!loading_dependencies.empty())
+    {
+        DependenciesInfos new_info;
+        QualifiedTableName qualified_name{database_name, create.table};
+        for (const auto & dependency : loading_dependencies)
+            new_info[dependency].dependent_database_objects.insert(qualified_name);
+        new_info[qualified_name].dependencies = std::move(loading_dependencies);
+        DatabaseCatalog::instance().addLoadingDependencies(new_info);
+    }
 
     return fillTableIfNeeded(create);
 }

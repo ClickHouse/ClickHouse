@@ -50,6 +50,7 @@ namespace ErrorCodes
     extern const int DATABASE_NOT_EMPTY;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
+    extern const int HAVE_DEPENDENT_OBJECTS;
 }
 
 TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryTableHolder::Creator & creator, const ASTPtr & query)
@@ -138,6 +139,7 @@ StoragePtr TemporaryTableHolder::getTable() const
 void DatabaseCatalog::initializeAndLoadTemporaryDatabase()
 {
     drop_delay_sec = getContext()->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", default_drop_delay_sec);
+    check_table_dependencies = getContext()->getConfigRef().getBool("check_table_dependencies", true);
 
     auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, getContext());
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
@@ -936,6 +938,65 @@ void DatabaseCatalog::waitTableFinallyDropped(const UUID & uuid)
     {
         return tables_marked_dropped_ids.count(uuid) == 0;
     });
+}
+
+void DatabaseCatalog::addLoadingDependencies(const DependenciesInfos & new_infos)
+{
+    std::lock_guard lock{databases_mutex};
+    mergeDependenciesGraphs(loading_dependencies, new_infos);
+}
+
+DependenciesInfo DatabaseCatalog::getLoadingDependenciesInfo(const StorageID & table_id) const
+{
+    std::lock_guard lock{databases_mutex};
+    auto it = loading_dependencies.find(table_id.getQualifiedName());
+    if (it == loading_dependencies.end())
+        return {};
+    return it->second;
+}
+
+void DatabaseCatalog::tryRemoveLoadingDependencies(const StorageID & table_id, bool is_drop_database)
+{
+    QualifiedTableName removing_table = table_id.getQualifiedName();
+    std::lock_guard lock{databases_mutex};
+    auto it = loading_dependencies.find(removing_table);
+    if (it == loading_dependencies.end())
+        return;
+
+    TableNamesSet & dependent = it->second.dependent_database_objects;
+    if (check_table_dependencies && !dependent.empty())
+    {
+        if (!is_drop_database)
+            throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop {}, because some tables depend on it: {}",
+                            table_id.getNameForLogs(), fmt::join(dependent, ", "));
+
+        /// For DROP DATABASE we should ignore dependent tables from the same database.
+        /// TODO unload tables in reverse topological order and remove this code
+        TableNames from_other_databases;
+        for (const auto & table : dependent)
+            if (table.database != table_id.database_name)
+                from_other_databases.push_back(table);
+
+        if (!from_other_databases.empty())
+            throw Exception(ErrorCodes::HAVE_DEPENDENT_OBJECTS, "Cannot drop {}, because some tables depend on it: {}",
+                            table_id.getNameForLogs(), fmt::join(from_other_databases, ", "));
+
+        for (const auto & table : dependent)
+        {
+            [[maybe_unused]] bool removed = loading_dependencies[table].dependencies.erase(removing_table);
+            assert(removed);
+        }
+        dependent.clear();
+    }
+
+    TableNamesSet & dependencies = it->second.dependencies;
+    for (const auto & table : dependencies)
+    {
+        [[maybe_unused]] bool removed = loading_dependencies[table].dependent_database_objects.erase(removing_table);
+        assert(removed);
+    }
+
+    loading_dependencies.erase(it);
 }
 
 

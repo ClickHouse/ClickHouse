@@ -3,6 +3,7 @@
 #include <Core/UUID.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
+#include <Databases/TablesLoader.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 
@@ -207,6 +208,11 @@ public:
 
     void waitTableFinallyDropped(const UUID & uuid);
 
+    void addLoadingDependencies(const DependenciesInfos & new_infos);
+    DependenciesInfo getLoadingDependenciesInfo(const StorageID & table_id) const;
+
+    void tryRemoveLoadingDependencies(const StorageID & table_id, bool is_drop_database = false);
+
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
@@ -258,6 +264,9 @@ private:
     Databases databases;
     UUIDToDatabaseMap db_uuid_map;
     UUIDToStorageMap uuid_map;
+
+    DependenciesInfos loading_dependencies;
+    bool check_table_dependencies = true;
 
     Poco::Logger * log;
 

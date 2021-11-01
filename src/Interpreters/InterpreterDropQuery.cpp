@@ -179,6 +179,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
 
             if (query.permanently)
             {
+                /// Server may fail to restart of DETACH PERMANENTLY if table has dependent ones
+                DatabaseCatalog::instance().tryRemoveLoadingDependencies(table_id, is_drop_or_detach_database);
                 /// Drop table from memory, don't touch data, metadata file renamed and will be skipped during server restart
                 database->detachTablePermanently(getContext(), table_id.table_name);
             }
@@ -223,6 +225,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
             if (database->getUUID() == UUIDHelpers::Nil)
                 table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
 
+            DatabaseCatalog::instance().tryRemoveLoadingDependencies(table_id, is_drop_or_detach_database);
             database->dropTable(getContext(), table_id.table_name, query.no_delay);
         }
 
