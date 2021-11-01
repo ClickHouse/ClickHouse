@@ -18,14 +18,14 @@ void RemoteHostFilter::checkURL(const Poco::URI & uri) const
 {
     if (!checkForDirectEntry(uri.getHost()) &&
         !checkForDirectEntry(uri.getHost() + ":" + toString(uri.getPort())))
-        throw Exception("URL \"" + uri.toString() + "\" is not allowed in config.xml", ErrorCodes::UNACCEPTABLE_URL);
+        throw Exception("URL \"" + uri.toString() + "\" is not allowed in configuration file, see <remote_url_allow_hosts>", ErrorCodes::UNACCEPTABLE_URL);
 }
 
 void RemoteHostFilter::checkHostAndPort(const std::string & host, const std::string & port) const
 {
     if (!checkForDirectEntry(host) &&
         !checkForDirectEntry(host + ":" + port))
-        throw Exception("URL \"" + host + ":" + port + "\" is not allowed in config.xml", ErrorCodes::UNACCEPTABLE_URL);
+        throw Exception("URL \"" + host + ":" + port + "\" is not allowed in configuration file, see <remote_url_allow_hosts>", ErrorCodes::UNACCEPTABLE_URL);
 }
 
 void RemoteHostFilter::setValuesFromConfig(const Poco::Util::AbstractConfiguration & config)
