@@ -87,7 +87,7 @@ bitShiftRight(a, b)
 
 -   Shifted value.
 
-The type of a returned value is the same as the type of an input value.
+The type of the returned value is the same as the type of an input value.
 
 **Example**
 
