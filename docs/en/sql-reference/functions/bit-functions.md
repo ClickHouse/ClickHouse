@@ -19,9 +19,11 @@ The result type is an integer with bits equal to the maximum bits of its argumen
 
 ## bitShiftLeft(a, b) {#bitshiftlefta-b}
 
-Shifts a value left by specified number of bit positions.
-A `FixedString` or a `String` are treated as a single multibyte value. 
-Bits of a `FixedString` value are lost as they are shifted out. On the contrary a `String` value is extended with additional bytes, so no bits are lost.
+Shifts the bit representation of a value to the left by a specified number of bit positions.
+
+A `FixedString` or a `String` are treated as a single multibyte value.
+
+Bits of a `FixedString` value are lost as they are shifted out. On the contrary, a `String` value is extended with additional bytes, so no bits are lost.
 
 **Syntax**
 
@@ -31,14 +33,14 @@ bitShiftLeft(a, b)
 
 **Arguments**
 
--   `a` — A value to shift. [Integer](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md)
--   `b` — A count of positions. [Unsigned integer](../../sql-reference/data-types/int-uint.md), 64 bit types or less are allowed.
+-   `a` — A value to shift. [Int/UInt](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md).
+-   `b` — The number of shifted positions. [UInt](../../sql-reference/data-types/int-uint.md), 64 bit types or less are allowed.
 
 **Returned value**
 
 -   Shifted value.
 
-The type of a returned value is the same as the type of an input value.
+The type of the returned value is the same as the type of an input value.
 
 **Example**
 
@@ -66,7 +68,8 @@ Result:
 
 ## bitShiftRight(a, b) {#bitshiftrighta-b}
 
-Shifts a value right by specified number of bit positions.
+Shifts the bit representation of a value to the right by a specified number of bit positions.
+
 A `FixedString` or a `String` are treated as a single multibyte value. Note that the length of a `String` value is reduced as bits are shifted out.
 
 **Syntax**
@@ -77,14 +80,14 @@ bitShiftRight(a, b)
 
 **Arguments**
 
--   `a` — A value to shift. [Integer](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md)
--   `b` — A count of positions. [Unsigned integer](../../sql-reference/data-types/int-uint.md), 64 bit types or less are allowed.
+-   `a` — A value to shift. [Int/UInt](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md).
+-   `b` — The number of shifted positions. [UInt](../../sql-reference/data-types/int-uint.md), 64 bit types or less are allowed.
 
 **Returned value**
 
 -   Shifted value.
 
-The type of a returned value is the same as the type of an input value.
+The type of the returned value is the same as the type of an input value.
 
 **Example**
 
