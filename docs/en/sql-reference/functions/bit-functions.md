@@ -33,7 +33,7 @@ bitShiftLeft(a, b)
 
 **Arguments**
 
--   `a` — A value to shift. [Integer](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md)
+-   `a` — A value to shift. [Int/UInt](../../sql-reference/data-types/int-uint.md), [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md).
 -   `b` — A count of positions. [Unsigned integer](../../sql-reference/data-types/int-uint.md), 64 bit types or less are allowed.
 
 **Returned value**
