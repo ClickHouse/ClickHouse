@@ -1,3 +1,5 @@
+-- Tags: long
+
 CREATE TEMPORARY TABLE test ("\\" String DEFAULT '\r\n\t\\' || '
 ');
 

@@ -1,7 +1,7 @@
 #pragma once
 #include <Processors/ISource.h>
 #include <Common/Stopwatch.h>
-#include <DataStreams/StreamLocalLimits.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 #include <IO/Progress.h>
 
 
@@ -64,6 +64,8 @@ protected:
     void progress(const Progress & value);
 
     void work() override;
+
+    bool checkTimeLimit() const;
 
 private:
     StreamLocalLimits limits;

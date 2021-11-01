@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/SettingsFields.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Formats/FormatSettings.h>
 
 
@@ -94,6 +94,7 @@ enum class LogsLevel
     information,
     debug,
     trace,
+    test,
 };
 
 DECLARE_SETTING_ENUM(LogsLevel)
@@ -166,5 +167,7 @@ enum class ShortCircuitFunctionEvaluation
 };
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
+
+DECLARE_SETTING_ENUM_WITH_RENAME(EnumComparingMode, FormatSettings::EnumComparingMode)
 
 }

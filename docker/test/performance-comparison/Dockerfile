@@ -1,4 +1,4 @@
-# docker build -t yandex/clickhouse-performance-comparison .
+# docker build -t clickhouse/performance-comparison .
 FROM ubuntu:18.04
 
 ENV LANG=C.UTF-8
@@ -33,7 +33,7 @@ RUN apt-get update \
             tzdata \
             vim \
             wget \
-    && pip3 --no-cache-dir install 'git+https://github.com/mymarilyn/clickhouse-driver.git' scipy \
+    && pip3 --no-cache-dir install 'clickhouse-driver==0.2.1' scipy \
     && apt-get purge --yes python3-dev g++ \
     && apt-get autoremove --yes \
     && apt-get clean \
@@ -54,4 +54,4 @@ COPY * /
 # it gives '/bin/sh: 1: [bash,: not found' otherwise.
 CMD ["bash", "-c", "node=$((RANDOM % $(numactl --hardware | sed -n 's/^.*available:\\(.*\\)nodes.*$/\\1/p'))); echo Will bind to NUMA node $node; numactl --cpunodebind=$node --membind=$node /entrypoint.sh"]
 
-# docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> yandex/clickhouse-performance-comparison
+# docker run --network=host --volume <workspace>:/workspace --volume=<output>:/output -e PR_TO_TEST=<> -e SHA_TO_TEST=<> clickhouse/performance-comparison

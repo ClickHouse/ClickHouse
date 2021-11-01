@@ -1202,4 +1202,4 @@ SELECT number, randomPrintableASCII(30) as str, length(str) FROM system.numbers 
 └────────┴────────────────────────────────┴──────────────────────────────────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/other_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/other_functions/) <!--hide-->

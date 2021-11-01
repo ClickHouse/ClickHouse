@@ -1,11 +1,13 @@
 #pragma once
 
 #include <functional>
-#include <common/types.h>
+#include <base/types.h>
+#include <base/sleep.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
+#include <IO/ReadSettings.h>
 #include <Poco/Any.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -15,16 +17,11 @@
 #include <Poco/Version.h>
 #include <Common/DNSResolver.h>
 #include <Common/RemoteHostFilter.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/URIStreamFactory.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
-
-#define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
-#define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
 
 namespace DB
 {
@@ -104,6 +101,9 @@ namespace detail
         RemoteHostFilter remote_host_filter;
         std::function<void(size_t)> next_callback;
 
+        size_t buffer_size;
+        ReadSettings settings;
+
         std::istream * call(Poco::URI uri_, Poco::Net::HTTPResponse & response)
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.
@@ -151,6 +151,9 @@ namespace detail
             }
         }
 
+    private:
+        bool use_external_buffer;
+
     public:
         using NextCallback = std::function<void(size_t)>;
         using OutStreamCallback = std::function<void(std::ostream &)>;
@@ -162,8 +165,10 @@ namespace detail
             OutStreamCallback out_stream_callback_ = {},
             const Poco::Net::HTTPBasicCredentials & credentials_ = {},
             size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+            const ReadSettings & settings_ = {},
             HTTPHeaderEntries http_header_entries_ = {},
-            const RemoteHostFilter & remote_host_filter_ = {})
+            const RemoteHostFilter & remote_host_filter_ = {},
+            bool use_external_buffer_ = false)
             : ReadBuffer(nullptr, 0)
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
@@ -172,9 +177,17 @@ namespace detail
             , credentials {credentials_}
             , http_header_entries {http_header_entries_}
             , remote_host_filter {remote_host_filter_}
+            , buffer_size {buffer_size_}
+            , settings {settings_}
+            , use_external_buffer {use_external_buffer_}
         {
-            Poco::Net::HTTPResponse response;
+            initialize();
+        }
 
+        void initialize()
+        {
+
+            Poco::Net::HTTPResponse response;
             istr = call(uri, response);
 
             while (isRedirect(response.getStatus()))
@@ -189,7 +202,17 @@ namespace detail
 
             try
             {
-                impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size_);
+                impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size);
+
+                if (use_external_buffer)
+                {
+                    /**
+                    * See comment 30 lines below.
+                    */
+                    impl->set(internal_buffer.begin(), internal_buffer.size());
+                    assert(working_buffer.begin() != nullptr);
+                    assert(!internal_buffer.empty());
+                }
             }
             catch (const Poco::Exception & e)
             {
@@ -205,10 +228,33 @@ namespace detail
         {
             if (next_callback)
                 next_callback(count());
-            if (!working_buffer.empty())
-                impl->position() = position();
+
+            if (use_external_buffer)
+            {
+                /**
+                * use_external_buffer -- means we read into the buffer which
+                * was passed to us from somewhere else. We do not check whether
+                * previously returned buffer was read or not (no hasPendingData() check is needed),
+                * because this branch means we are prefetching data,
+                * each nextImpl() call we can fill a different buffer.
+                */
+                impl->set(internal_buffer.begin(), internal_buffer.size());
+                assert(working_buffer.begin() != nullptr);
+                assert(!internal_buffer.empty());
+            }
+            else
+            {
+                /**
+                * impl was initialized before, pass position() to it to make
+                * sure there is no pending data which was not read.
+                */
+                if (!working_buffer.empty())
+                    impl->position() = position();
+            }
+
             if (!impl->next())
                 return false;
+
             internal_buffer = impl->buffer();
             working_buffer = internal_buffer;
             return true;
@@ -273,10 +319,13 @@ public:
         const UInt64 max_redirects = 0,
         const Poco::Net::HTTPBasicCredentials & credentials_ = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+        const ReadSettings & settings_ = {},
         const HTTPHeaderEntries & http_header_entries_ = {},
-        const RemoteHostFilter & remote_host_filter_ = {})
+        const RemoteHostFilter & remote_host_filter_ = {},
+        bool use_external_buffer_ = false)
         : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects),
-            uri_, method_, out_stream_callback_, credentials_, buffer_size_, http_header_entries_, remote_host_filter_)
+                 uri_, method_, out_stream_callback_, credentials_, buffer_size_,
+                 settings_, http_header_entries_, remote_host_filter_, use_external_buffer_)
     {
     }
 };

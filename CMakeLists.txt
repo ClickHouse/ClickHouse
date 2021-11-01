@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.3)
+cmake_minimum_required(VERSION 3.14)
 
 foreach(policy
         CMP0023
@@ -80,16 +80,16 @@ include (cmake/find/ccache.cmake)
 # ccache ignore it.
 option(ENABLE_CHECK_HEAVY_BUILDS "Don't allow C++ translation units to compile too long or to take too much memory while compiling." OFF)
 if (ENABLE_CHECK_HEAVY_BUILDS)
-    # set DATA (since RSS does not work since 2.6.x+) to 2G
+    # set DATA (since RSS does not work since 2.6.x+) to 5G
     set (RLIMIT_DATA 5000000000)
     # set VIRT (RLIMIT_AS) to 10G (DATA*10)
     set (RLIMIT_AS 10000000000)
-    # set CPU time limit to 600 seconds
-    set (RLIMIT_CPU 600)
+    # set CPU time limit to 1000 seconds
+    set (RLIMIT_CPU 1000)
 
     # gcc10/gcc10/clang -fsanitize=memory is too heavy
     if (SANITIZE STREQUAL "memory" OR COMPILER_GCC)
-       set (RLIMIT_DATA 10000000000)
+       set (RLIMIT_DATA 10000000000) # 10G
     endif()
 
     set (CMAKE_CXX_COMPILER_LAUNCHER prlimit --as=${RLIMIT_AS} --data=${RLIMIT_DATA} --cpu=${RLIMIT_CPU} ${CMAKE_CXX_COMPILER_LAUNCHER})
@@ -135,6 +135,20 @@ if (ENABLE_FUZZING)
     # And we don't want to enable coverage for it.
     message (STATUS "Fuzzing instrumentation enabled")
     set (FUZZER "libfuzzer")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdlib++")
+    set (ENABLE_CLICKHOUSE_ODBC_BRIDGE OFF)
+    set (ENABLE_LIBRARIES 0)
+    set (ENABLE_SSL 1)
+    set (USE_INTERNAL_SSL_LIBRARY 1)
+    set (USE_UNWIND ON)
+    set (ENABLE_EMBEDDED_COMPILER 0)
+    set (ENABLE_EXAMPLES 0)
+    set (ENABLE_UTILS 0)
+    set (ENABLE_THINLTO 0)
+    set (ENABLE_TCMALLOC 0)
+    set (ENABLE_JEMALLOC 0)
+    set (ENABLE_CHECK_HEAVY_BUILDS 1)
+    set (GLIBC_COMPATIBILITY OFF)
 endif()
 
 # Global libraries
@@ -152,6 +166,7 @@ if (CMAKE_GENERATOR STREQUAL "Ninja" AND NOT DISABLE_COLORED_BUILD)
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color=always")
 endif ()
 
+include (cmake/check_flags.cmake)
 include (cmake/add_warning.cmake)
 
 if (NOT MSVC)
@@ -165,27 +180,46 @@ if (COMPILER_CLANG)
     if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
         set(COMPILER_FLAGS "${COMPILER_FLAGS} -gdwarf-aranges")
     endif ()
+
+    if (HAS_USE_CTOR_HOMING)
+        # For more info see https://blog.llvm.org/posts/2021-04-05-constructor-homing-for-debug-info/
+		if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
+            set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Xclang -fuse-ctor-homing")
+            set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Xclang -fuse-ctor-homing")
+        endif()
+    endif()
+endif ()
+
+# If compiler has support for -Wreserved-identifier. It is difficult to detect by clang version,
+# because there are two different branches of clang: clang and AppleClang.
+# (AppleClang is not supported by ClickHouse, but some developers have misfortune to use it).
+if (HAS_RESERVED_IDENTIFIER)
+    add_compile_definitions (HAS_RESERVED_IDENTIFIER)
 endif ()
 
 # If turned `ON`, assumes the user has either the system GTest library or the bundled one.
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 
-if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
+if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND NOT USE_MUSL)
     # Only for Linux, x86_64 or aarch64.
     option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)
 elseif(GLIBC_COMPATIBILITY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Glibc compatibility cannot be enabled in current configuration")
 endif ()
 
-if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")
-    message (WARNING "CMake version must be greater than 3.9.0 for production builds.")
-endif ()
+if (GLIBC_COMPATIBILITY)
+    # NOTE: we may also want to check glibc version and add -include only for 2.32+
+    # however this is extra complexity, especially for cross compiling.
+    # And anyway it should not break anything for <2.32.
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include ${CMAKE_CURRENT_SOURCE_DIR}/base/glibc-compatibility/glibc-compat-2.32.h")
+    set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -include ${CMAKE_CURRENT_SOURCE_DIR}/base/glibc-compatibility/glibc-compat-2.32.h")
+endif()
 
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
-find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-12" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
+find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-13" "llvm-objcopy-12" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
 
 if (NOT OBJCOPY_PATH AND OS_DARWIN)
     find_program (BREW_PATH NAMES "brew")
@@ -311,6 +345,10 @@ if (COMPILER_GCC OR COMPILER_CLANG)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=32")
 endif ()
 
+if (COMPILER_GCC)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fcoroutines")
+endif ()
+
 # Compiler-specific coverage flags e.g. -fcoverage-mapping for gcc
 option(WITH_COVERAGE "Profile the resulting binary/binaries" OFF)
 
@@ -372,7 +410,7 @@ if (COMPILER_CLANG)
     endif ()
 
     # Always prefer llvm tools when using clang. For instance, we cannot use GNU ar when llvm LTO is enabled
-    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-12" "llvm-ar-11" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
+    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-13" "llvm-ar-12" "llvm-ar-11" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
 
     if (LLVM_AR_PATH)
         message(STATUS "Using llvm-ar: ${LLVM_AR_PATH}.")
@@ -381,7 +419,7 @@ if (COMPILER_CLANG)
         message(WARNING "Cannot find llvm-ar. System ar will be used instead. It does not work with ThinLTO.")
     endif ()
 
-    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-12" "llvm-ranlib-11" "llvm-ranlib-10" "llvm-ranlib-9" "llvm-ranlib-8")
+    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-13" "llvm-ranlib-12" "llvm-ranlib-11" "llvm-ranlib-10" "llvm-ranlib-9" "llvm-ranlib-8")
 
     if (LLVM_RANLIB_PATH)
         message(STATUS "Using llvm-ranlib: ${LLVM_RANLIB_PATH}.")
@@ -541,6 +579,7 @@ include (cmake/find/yaml-cpp.cmake)
 include (cmake/find/s2geometry.cmake)
 include (cmake/find/nlp.cmake)
 include (cmake/find/bzip2.cmake)
+include (cmake/find/filelog.cmake)
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")
@@ -553,6 +592,7 @@ include (cmake/find/cassandra.cmake)
 include (cmake/find/sentry.cmake)
 include (cmake/find/stats.cmake)
 include (cmake/find/datasketches.cmake)
+include (cmake/find/libprotobuf-mutator.cmake)
 
 set (USE_INTERNAL_CITYHASH_LIBRARY ON CACHE INTERNAL "")
 find_contrib_lib(cityhash)
@@ -621,9 +661,6 @@ include_directories(${ConfigIncludePath})
 
 # Add as many warnings as possible for our own code.
 include (cmake/warnings.cmake)
-
-# Check if needed compiler flags are supported
-include (cmake/check_flags.cmake)
 
 add_subdirectory (base)
 add_subdirectory (src)

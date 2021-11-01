@@ -816,7 +816,7 @@ arrayDifference(array)
 
 **Аргументы**
 
--   `array` – [массив](https://clickhouse.tech/docs/ru/data_types/array/).
+-   `array` – [массив](https://clickhouse.com/docs/ru/data_types/array/).
 
 **Возвращаемое значение**
 
@@ -866,7 +866,7 @@ arrayDistinct(array)
 
 **Аргументы**
 
--   `array` – [массив](https://clickhouse.tech/docs/ru/data_types/array/).
+-   `array` – [массив](https://clickhouse.com/docs/ru/data_types/array/).
 
 **Возвращаемое значение**
 

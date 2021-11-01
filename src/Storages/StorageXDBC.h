@@ -3,6 +3,10 @@
 #include <Storages/StorageURL.h>
 #include <Bridge/XDBCBridgeHelper.h>
 
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {

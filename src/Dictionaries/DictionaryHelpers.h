@@ -16,7 +16,7 @@
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 
 namespace DB
@@ -240,8 +240,7 @@ public:
     using ColumnType =
         std::conditional_t<std::is_same_v<DictionaryAttributeType, Array>, ColumnArray,
             std::conditional_t<std::is_same_v<DictionaryAttributeType, String>, ColumnString,
-                std::conditional_t<IsDecimalNumber<DictionaryAttributeType>, ColumnDecimal<DictionaryAttributeType>,
-                    ColumnVector<DictionaryAttributeType>>>>;
+                ColumnVectorOrDecimal<DictionaryAttributeType>>>;
 
     using ColumnPtr = typename ColumnType::MutablePtr;
 
@@ -267,7 +266,7 @@ public:
         {
             return ColumnType::create(size);
         }
-        else if constexpr (IsDecimalNumber<DictionaryAttributeType>)
+        else if constexpr (is_decimal<DictionaryAttributeType>)
         {
             auto nested_type = removeNullable(dictionary_attribute.type);
             auto scale = getDecimalScale(*nested_type);
@@ -568,8 +567,7 @@ void mergeBlockWithPipe(
 
     auto result_fetched_columns = block_to_update.cloneEmptyColumns();
 
-    QueryPipeline pipeline;
-    pipeline.init(std::move(pipe));
+    QueryPipeline pipeline(std::move(pipe));
 
     PullingPipelineExecutor executor(pipeline);
     Block block;
@@ -666,6 +664,16 @@ static ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array)
     auto column_vector = ColumnVector<T>::create();
     column_vector->getData().reserve(array.size());
     column_vector->getData().insert(array.begin(), array.end());
+
+    return column_vector;
+}
+
+template <typename T>
+static ColumnPtr getColumnFromPODArray(const PaddedPODArray<T> & array, size_t start, size_t length)
+{
+    auto column_vector = ColumnVector<T>::create();
+    column_vector->getData().reserve(length);
+    column_vector->getData().insert(array.begin() + start, array.begin() + start + length);
 
     return column_vector;
 }

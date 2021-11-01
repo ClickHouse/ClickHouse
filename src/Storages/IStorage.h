@@ -2,12 +2,11 @@
 
 #include <Core/Names.h>
 #include <Core/QueryProcessingStage.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/CheckResults.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/IStorage_fwd.h>
@@ -54,8 +53,8 @@ using QueryPlanPtr = std::unique_ptr<QueryPlan>;
 class SinkToStorage;
 using SinkToStoragePtr = std::shared_ptr<SinkToStorage>;
 
-class QueryPipeline;
-using QueryPipelinePtr = std::unique_ptr<QueryPipeline>;
+class QueryPipelineBuilder;
+using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
 class IStoragePolicy;
 using StoragePolicyPtr = std::shared_ptr<const IStoragePolicy>;
@@ -86,6 +85,8 @@ struct ColumnSize
         data_uncompressed += other.data_uncompressed;
     }
 };
+
+using IndexSize = ColumnSize;
 
 /** Storage. Describes the table. Responsible for
   * - storage of the table data;
@@ -163,6 +164,11 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
+    /// Optional size information of each secondary index.
+    /// Valid only for MergeTree family.
+    using IndexSizeByName = std::unordered_map<std::string, IndexSize>;
+    virtual IndexSizeByName getSecondaryIndexSizes() const { return {}; }
+
     /// Get mutable version (snapshot) of storage metadata. Metadata object is
     /// multiversion, so it can be concurrently changed, but returned copy can be
     /// used without any locks.
@@ -219,6 +225,7 @@ private:
     /// without locks.
     MultiVersionStorageMetadataPtr metadata;
 
+protected:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const std::chrono::milliseconds & acquire_timeout) const;
 
@@ -231,7 +238,8 @@ public:
 
     /// Lock table for alter. This lock must be acuqired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
-    TableLockHolder lockForAlter(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
+    using AlterLockHolder = std::unique_lock<std::timed_mutex>;
+    AlterLockHolder lockForAlter(const std::chrono::milliseconds & acquire_timeout);
 
     /// Lock table exclusively. This lock must be acquired if you want to be
     /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something
@@ -359,7 +367,7 @@ public:
       *
       * Returns query pipeline if distributed writing is possible, and nullptr otherwise.
       */
-    virtual QueryPipelinePtr distributedWrite(
+    virtual QueryPipelineBuilderPtr distributedWrite(
         const ASTInsertQuery & /*query*/,
         ContextPtr /*context*/)
     {
@@ -410,7 +418,7 @@ public:
     /** ALTER tables in the form of column changes that do not affect the change
       * to Storage or its parameters. Executes under alter lock (lockForAlter).
       */
-    virtual void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & alter_lock_holder);
+    virtual void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder);
 
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
@@ -458,6 +466,12 @@ public:
     virtual CancellationCode killMutation(const String & /*mutation_id*/)
     {
         throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /// Cancel a part move to shard.
+    virtual CancellationCode killPartMoveToShard(const UUID & /*task_uuid*/)
+    {
+        throw Exception("Part moves between shards are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** If the table have to do some complicated work on startup,
@@ -540,7 +554,7 @@ public:
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
 
     /// Returns true if all disks of storage are read-only.
-    virtual bool isReadOnly() const;
+    virtual bool isStaticStorage() const;
 
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:
@@ -578,13 +592,14 @@ public:
     /// Does not takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
+    /// Should table->drop be called at once or with delay (in case of atomic database engine).
+    /// Needed for integration engines, when there must be no delay for calling drop() method.
+    virtual bool dropTableImmediately() { return false; }
+
 private:
-    /// Lock required for alter queries (lockForAlter). Always taken for write
-    /// (actually can be replaced with std::mutex, but for consistency we use
-    /// RWLock). Allows to execute only one simultaneous alter query. Also it
-    /// should be taken by DROP-like queries, to be sure, that all alters are
-    /// finished.
-    mutable RWLock alter_lock = RWLockImpl::create();
+    /// Lock required for alter queries (lockForAlter).
+    /// Allows to execute only one simultaneous alter query.
+    mutable std::timed_mutex alter_lock;
 
     /// Lock required for drop queries. Every thread that want to ensure, that
     /// table is not dropped have to table this lock for read (lockForShare).

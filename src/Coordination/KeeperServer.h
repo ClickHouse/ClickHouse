@@ -1,13 +1,13 @@
 #pragma once
 
-#include <libnuraft/nuraft.hxx> // Y_IGNORE
+#include <libnuraft/nuraft.hxx>
 #include <Coordination/InMemoryLogStore.h>
 #include <Coordination/KeeperStateManager.h>
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/CoordinationSettings.h>
 #include <unordered_map>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -71,7 +71,7 @@ public:
     RaftAppendResult putRequestBatch(const KeeperStorage::RequestsForSessions & requests);
 
     /// Return set of the non-active sessions
-    std::unordered_set<int64_t> getDeadSessions();
+    std::vector<int64_t> getDeadSessions();
 
     bool isLeader() const;
 
@@ -80,9 +80,27 @@ public:
     /// Wait server initialization (see callbackFunc)
     void waitInit();
 
+    /// Return true if KeeperServer initialized
+    bool checkInit() const
+    {
+        return initialized_flag;
+    }
+
     void shutdown();
 
     int getServerID() const { return server_id; }
+
+    /// Get configuration diff between current configuration in RAFT and in XML file
+    ConfigUpdateActions getConfigurationDiff(const Poco::Util::AbstractConfiguration & config);
+
+    /// Apply action for configuration update. Actually call raft_instance->remove_srv or raft_instance->add_srv.
+    /// Synchronously check for update results with retries.
+    void applyConfigurationUpdate(const ConfigUpdateAction & task);
+
+
+    /// Wait configuration update for action. Used by followers.
+    /// Return true if update was successfully received.
+    bool waitConfigurationUpdate(const ConfigUpdateAction & task);
 };
 
 }

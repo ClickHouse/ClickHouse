@@ -64,4 +64,4 @@ Yandex**没有**维护下面列出的库，也没有做过任何广泛的测试�
 -   Haskell
     -   [hdbc-clickhouse](https://github.com/zaneli/hdbc-clickhouse)
 
-[来源文章](https://clickhouse.tech/docs/en/interfaces/third-party/client_libraries/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/interfaces/third-party/client_libraries/) <!--hide-->

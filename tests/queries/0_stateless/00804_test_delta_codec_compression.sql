@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 SET send_logs_level = 'fatal';
 SET joined_subquery_requires_alias = 0;
 

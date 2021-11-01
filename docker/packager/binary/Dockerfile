@@ -1,7 +1,7 @@
-#  docker build -t yandex/clickhouse-binary-builder .
+#  docker build -t clickhouse/binary-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
 
 RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 
@@ -39,20 +39,18 @@ RUN apt-get update \
         bash \
         build-essential \
         ccache \
-        clang-11 \
-        clang-tidy-11 \
         cmake \
         curl \
-        g++-10 \
-        gcc-10 \
         gdb \
         git \
         gperf \
+        clang-${LLVM_VERSION} \
+        clang-tidy-${LLVM_VERSION} \
+        lld-${LLVM_VERSION} \
+        llvm-${LLVM_VERSION} \
+        llvm-${LLVM_VERSION}-dev \
         libicu-dev \
         libreadline-dev \
-        lld-11 \
-        llvm-11 \
-        llvm-11-dev \
         moreutils \
         ninja-build \
         pigz \
@@ -95,22 +93,13 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git \
 # Download toolchain and SDK for Darwin
 RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
 
-# Download toolchain for ARM
-# It contains all required headers and libraries. Note that it's named as "gcc" but actually we are using clang for cross compiling.
-RUN wget -nv "https://developer.arm.com/-/media/Files/downloads/gnu-a/8.3-2019.03/binrel/gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz?revision=2e88a73f-d233-4f96-b1f4-d8b36e9bb0b9&la=en" -O gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz
-
 # Download toolchain for FreeBSD 11.3
 RUN wget -nv https://clickhouse-datasets.s3.yandex.net/toolchains/toolchains/freebsd-11.3-toolchain.tar.xz
 
-# NOTE: For some reason we have outdated version of gcc-10 in ubuntu 20.04 stable.
-# Current workaround is to use latest version proposed repo. Remove as soon as
-# gcc-10.2 appear in stable repo.
-RUN echo 'deb http://archive.ubuntu.com/ubuntu/ focal-proposed restricted main multiverse universe' > /etc/apt/sources.list.d/proposed-repositories.list
-
-RUN apt-get update \
-    && apt-get install gcc-10 g++-10 --yes
-
-RUN rm /etc/apt/sources.list.d/proposed-repositories.list && apt-get update
+# NOTE: Seems like gcc-11 is too new for ubuntu20 repository
+RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
+    && apt-get update \
+    && apt-get install gcc-11 g++-11 --yes
 
 
 COPY build.sh /

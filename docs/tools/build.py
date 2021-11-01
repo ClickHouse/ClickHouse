@@ -84,7 +84,7 @@ def build_for_lang(lang, args):
         if args.htmlproofer:
             plugins.append('htmlproofer')
 
-        website_url = 'https://clickhouse.tech'
+        website_url = 'https://clickhouse.com'
         site_name = site_names.get(lang, site_names['en']) % ''
         site_name = site_name.replace('  ', ' ')
 
@@ -95,7 +95,7 @@ def build_for_lang(lang, args):
             site_dir=site_dir,
             strict=True,
             theme=theme_cfg,
-            copyright='©2016–2021 Yandex LLC',
+            copyright='©2016–2021 ClickHouse, Inc.',
             use_directory_urls=True,
             repo_name='ClickHouse/ClickHouse',
             repo_url='https://github.com/ClickHouse/ClickHouse/',
@@ -203,6 +203,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--verbose', action='store_true')
 
     args = arg_parser.parse_args()
+    args.minify = False  # TODO remove
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,

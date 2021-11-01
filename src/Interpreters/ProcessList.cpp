@@ -11,8 +11,7 @@
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
-#include <DataStreams/IBlockInputStream.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <chrono>
 
 
@@ -203,7 +202,6 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             if (query_context->hasTraceCollector())
             {
                 /// Set up memory profiling
-                thread_group->memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
                 thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
                 thread_group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
             }
@@ -238,9 +236,6 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
 ProcessListEntry::~ProcessListEntry()
 {
-    /// Destroy all streams to avoid long lock of ProcessList
-    it->releaseQueryStreams();
-
     std::lock_guard lock(parent.mutex);
 
     String user = it->getClientInfo().current_user;
@@ -303,88 +298,30 @@ QueryStatus::~QueryStatus()
     assert(executors.empty());
 }
 
-void QueryStatus::setQueryStreams(const BlockIO & io)
+CancellationCode QueryStatus::cancelQuery(bool)
 {
-    std::lock_guard lock(query_streams_mutex);
-
-    query_stream_in = io.in;
-    query_stream_out = io.out;
-    query_streams_status = QueryStreamsStatus::Initialized;
-}
-
-void QueryStatus::releaseQueryStreams()
-{
-    BlockInputStreamPtr in;
-    BlockOutputStreamPtr out;
-
-    {
-        std::lock_guard lock(query_streams_mutex);
-
-        query_streams_status = QueryStreamsStatus::Released;
-        in = std::move(query_stream_in);
-        out = std::move(query_stream_out);
-    }
-
-    /// Destroy streams outside the mutex lock
-}
-
-bool QueryStatus::streamsAreReleased()
-{
-    std::lock_guard lock(query_streams_mutex);
-
-    return query_streams_status == QueryStreamsStatus::Released;
-}
-
-bool QueryStatus::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const
-{
-    std::lock_guard lock(query_streams_mutex);
-
-    if (query_streams_status != QueryStreamsStatus::Initialized)
-        return false;
-
-    in = query_stream_in;
-    out = query_stream_out;
-    return true;
-}
-
-CancellationCode QueryStatus::cancelQuery(bool kill)
-{
-    /// Streams are destroyed, and ProcessListElement will be deleted from ProcessList soon. We need wait a little bit
-    if (streamsAreReleased())
+    if (is_killed.load())
         return CancellationCode::CancelSent;
 
-    BlockInputStreamPtr input_stream;
-    BlockOutputStreamPtr output_stream;
-    SCOPE_EXIT({
-        std::lock_guard lock(query_streams_mutex);
-        for (auto * e : executors)
-            e->cancel();
-    });
-
-    if (tryGetQueryStreams(input_stream, output_stream))
-    {
-        if (input_stream)
-        {
-            input_stream->cancel(kill);
-            return CancellationCode::CancelSent;
-        }
-        return CancellationCode::CancelCannotBeSent;
-    }
-    /// Query is not even started
     is_killed.store(true);
+
+    std::lock_guard lock(executors_mutex);
+    for (auto * e : executors)
+        e->cancel();
+
     return CancellationCode::CancelSent;
 }
 
 void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
 {
-    std::lock_guard lock(query_streams_mutex);
+    std::lock_guard lock(executors_mutex);
     assert(std::find(executors.begin(), executors.end(), e) == executors.end());
     executors.push_back(e);
 }
 
 void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
 {
-    std::lock_guard lock(query_streams_mutex);
+    std::lock_guard lock(executors_mutex);
     assert(std::find(executors.begin(), executors.end(), e) != executors.end());
     std::erase_if(executors, [e](PipelineExecutor * x) { return x == e; });
 }
@@ -470,7 +407,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         }
 
         if (get_profile_events)
-            res.profile_counters = std::make_shared<ProfileEvents::Counters>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
     }
 
     if (get_settings && getContext())
@@ -508,7 +445,7 @@ ProcessListForUserInfo ProcessListForUser::getInfo(bool get_profile_events) cons
     res.peak_memory_usage = user_memory_tracker.getPeak();
 
     if (get_profile_events)
-        res.profile_counters = std::make_shared<ProfileEvents::Counters>(user_performance_counters.getPartiallyAtomicSnapshot());
+        res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(user_performance_counters.getPartiallyAtomicSnapshot());
 
     return res;
 }
