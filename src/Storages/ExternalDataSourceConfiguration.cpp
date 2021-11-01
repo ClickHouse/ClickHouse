@@ -332,7 +332,7 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
 
                 if (arg_name == "url")
                     configuration.url = arg_value.safeGet<String>();
-                if (arg_name == "method")
+                else if (arg_name == "method")
                     configuration.http_method = arg_value.safeGet<String>();
                 else if (arg_name == "format")
                     configuration.format = arg_value.safeGet<String>();

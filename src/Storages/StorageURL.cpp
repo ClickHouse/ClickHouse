@@ -325,7 +325,7 @@ Pipe IStorageURLBase::read(
 {
     auto params = getReadURIParams(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size);
     bool with_globs = (uri.find('{') != std::string::npos && uri.find('}') != std::string::npos)
-                    || uri.find('|') == std::string::npos;
+                    || uri.find('|') != std::string::npos;
 
     if (with_globs)
     {
@@ -390,6 +390,7 @@ Pipe StorageURLWithFailover::read(
     unsigned /*num_streams*/)
 {
     auto params = getReadURIParams(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size);
+
     auto pipe =  Pipe(std::make_shared<StorageURLSource>(
         uri_options,
         getReadMethod(),
@@ -473,8 +474,8 @@ StorageURLWithFailover::StorageURLWithFailover(
     {
         Poco::URI poco_uri(uri_option);
         context_->getRemoteHostFilter().checkURL(poco_uri);
-        uri_options.emplace_back(std::move(uri_option));
         LOG_DEBUG(&Poco::Logger::get("StorageURLDistributed"), "Adding URL option: {}", uri_option);
+        uri_options.emplace_back(std::move(uri_option));
     }
 }
 
@@ -539,7 +540,7 @@ URLBasedDataSourceConfiguration StorageURL::getConfiguration(ASTs & args, Contex
                     illegal_args += ", ";
                 illegal_args += arg.first;
             }
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown arguments {} for table function URL", illegal_args);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown argument `{}` for storage URL", illegal_args);
         }
     }
     else
