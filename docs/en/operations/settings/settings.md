@@ -3858,7 +3858,6 @@ Default value: `0`.
 ## command_termination_timeout {#command_termination_timeout}
 
 After a script of the [Executable/ExecutablePool](../../engines/table-engines/special/executable.md) table engine is executed, the engine has `command_termination_timeout` seconds to shutdown, before ClickHouse throws an exception. Specified in seconds. 
-=======
 ## describe_include_subcolumns {#describe_include_subcolumns}
 
 Enables describing subcolumns for a [DESCRIBE](../../sql-reference/statements/describe-table.md) query. For example, members of a [Tuple](../../sql-reference/data-types/tuple.md) or subcolumns of a [Map](../../sql-reference/data-types/map.md#map-subcolumns), [Nullable](../../sql-reference/data-types/nullable.md#finding-null) or an [Array](../../sql-reference/data-types/array.md#array-size) data type.
@@ -3909,7 +3908,6 @@ Defines the number of lines, ended with '\n', which are sent before sending chun
 Possible values:
 
 -   Positive integer or zero.
-=======
 -   0 — Asynchronous insertions are disabled.
 
 Default value: `16`.
