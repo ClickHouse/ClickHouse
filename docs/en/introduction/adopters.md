@@ -24,12 +24,12 @@ toc_title: Adopters
 | <a href="https://arenadata.tech/" class="favicon">ArenaData</a> | Data Platform | Main product | — | — | [Slides in Russian, December 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup38/indexes.pdf) |
 | <a href="https://www.argedor.com/en/clickhouse/" class="favicon">Argedor</a> | ClickHouse support | — | — | — | [Official website](https://www.argedor.com/en/clickhouse/) |
 | <a href="https://avito.ru/" class="favicon">Avito</a> | Classifieds | Monitoring | — | — | [Meetup, April 2020](https://www.youtube.com/watch?v=n1tm4j4W8ZQ) |
-| <a href="https://badoo.com" class="favicon">Badoo</a> | Dating | Timeseries | — | — | [Slides in Russian, December 2019](https://presentations.clickhouse.com/meetup38/forecast.pdf) |
+| <a href="https://badoo.com" class="favicon">Badoo</a> | Dating | Timeseries | — | 1.6 mln events/sec (2018) | [Slides in Russian, December 2019](https://presentations.clickhouse.com/meetup38/forecast.pdf) |
 | <a href="https://beeline.ru/" class="favicon">Beeline</a> | Telecom | Data Platform | — | — | [Blog post, July 2021](https://habr.com/en/company/beeline/blog/567508/) |
 | <a href="https://www.benocs.com/" class="favicon">Benocs</a> | Network Telemetry and Analytics | Main Product | — | — | [Slides in English, October 2017](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup9/lpm.pdf) |
 | <a href="https://www.bigo.sg/" class="favicon">BIGO</a> | Video | Computing Platform | — | — | [Blog Article, August 2020](https://www.programmersought.com/article/44544895251/) |
 | <a href="https://www.bilibili.com/" class="favicon">BiliBili</a> | Video sharing | — | — | — | [Blog post, June 2021](https://chowdera.com/2021/06/20210622012241476b.html) |
-| <a href="https://www.bloomberg.com/">Bloomberg</a> | Finance, Media | Monitoring | — | — | [Slides, May 2018](https://www.slideshare.net/Altinity/http-analytics-for-6m-requests-per-second-using-clickhouse-by-alexander-bocharov) |
+| <a href="https://www.bloomberg.com/">Bloomberg</a> | Finance, Media | Monitoring | — | — | [Job opening, September 2021](https://careers.bloomberg.com/job/detail/94913), [slides, May 2018](https://www.slideshare.net/Altinity/http-analytics-for-6m-requests-per-second-using-clickhouse-by-alexander-bocharov) |
 | <a href="https://bloxy.info" class="favicon">Bloxy</a> | Blockchain | Analytics | — | — | [Slides in Russian, August 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup17/4_bloxy.pptx) |
 | <a href="https://www.bytedance.com" class="favicon">Bytedance</a> | Social platforms | — | — | — | [The ClickHouse Meetup East, October 2020](https://www.youtube.com/watch?v=ckChUkC3Pns) |
 | <a href="https://cardsmobile.ru/" class="favicon">CardsMobile</a> | Finance | Analytics | — | — | [VC.ru](https://vc.ru/s/cardsmobile/143449-rukovoditel-gruppy-analiza-dannyh) |
@@ -170,5 +170,7 @@ toc_title: Adopters
 | <a href="https://cft.ru/" class="favicon">ЦФТ</a> | Banking, Financial products, Payments | — | — | — | [Meetup in Russian, April 2020](https://team.cft.ru/events/162) |
 | <a href="https://promo.croc.ru/digitalworker" class="favicon">Цифровой Рабочий</a> | Industrial IoT, Analytics | — | — | — | [Blog post in Russian, March 2021](https://habr.com/en/company/croc/blog/548018/) |
 | <a href="https://shop.okraina.ru/" class="favicon">ООО «МПЗ Богородский»</a> | Agriculture | — | — | — | [Article in Russian, November 2020](https://cloud.yandex.ru/cases/okraina) |
+| <a href="https://domclick.ru/" class="favicon">ДомКлик</a> | Real Estate | — | — | — | [Article in Russian, October 2021](https://habr.com/ru/company/domclick/blog/585936/) |
+| <a href="https://www.deepl.com/" class="favicon">Deepl</a> | Machine Learning | — | — | — | [Video, October 2021](https://www.youtube.com/watch?v=WIYJiPwxXdM&t=1182s) |
 
 [Original article](https://clickhouse.com/docs/en/introduction/adopters/) <!--hide-->

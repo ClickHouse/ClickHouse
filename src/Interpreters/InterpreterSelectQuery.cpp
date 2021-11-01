@@ -69,6 +69,7 @@
 
 #include <Functions/IFunction.h>
 #include <Core/Field.h>
+#include <Core/ProtocolDefines.h>
 #include <base/types.h>
 #include <Columns/Collator.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
@@ -152,6 +153,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const SelectQueryOptions & options_,
     const Names & required_result_column_names_)
     : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, required_result_column_names_)
+{
+}
+
+InterpreterSelectQuery::InterpreterSelectQuery(
+    const ASTPtr & query_ptr_,
+    ContextPtr context_,
+    const SelectQueryOptions & options_,
+    PreparedSets prepared_sets_)
+    : InterpreterSelectQuery(query_ptr_, context_, std::nullopt, nullptr, options_, {}, {}, std::move(prepared_sets_))
 {
 }
 
@@ -257,13 +267,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     const StoragePtr & storage_,
     const SelectQueryOptions & options_,
     const Names & required_result_column_names,
-    const StorageMetadataPtr & metadata_snapshot_)
+    const StorageMetadataPtr & metadata_snapshot_,
+    PreparedSets prepared_sets_)
     /// NOTE: the query almost always should be cloned because it will be modified during analysis.
     : IInterpreterUnionOrSelectQuery(options_.modify_inplace ? query_ptr_ : query_ptr_->clone(), context_, options_)
     , storage(storage_)
     , input_pipe(std::move(input_pipe_))
     , log(&Poco::Logger::get("InterpreterSelectQuery"))
     , metadata_snapshot(metadata_snapshot_)
+    , prepared_sets(std::move(prepared_sets_))
 {
     checkStackSize();
 
@@ -353,7 +365,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     /// Reuse already built sets for multiple passes of analysis
     SubqueriesForSets subquery_for_sets;
-    PreparedSets prepared_sets;
 
     auto analyze = [&] (bool try_move_to_prewhere)
     {
@@ -516,7 +527,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         /// Reuse already built sets for multiple passes of analysis
         subquery_for_sets = std::move(query_analyzer->getSubqueriesForSets());
-        prepared_sets = std::move(query_analyzer->getPreparedSets());
+        prepared_sets = query_info.sets.empty() ? std::move(query_analyzer->getPreparedSets()) : std::move(query_info.sets);
 
         /// Do not try move conditions to PREWHERE for the second time.
         /// Otherwise, we won't be able to fallback from inefficient PREWHERE to WHERE later.
@@ -2556,6 +2567,19 @@ void InterpreterSelectQuery::initSettings()
     auto & query = getSelectQuery();
     if (query.settings())
         InterpreterSetQuery(query.settings(), context).executeForCurrentContext();
+
+    auto & client_info = context->getClientInfo();
+    auto min_major = DBMS_MIN_MAJOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
+    auto min_minor = DBMS_MIN_MINOR_VERSION_WITH_CURRENT_AGGREGATION_VARIANT_SELECTION_METHOD;
+
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY &&
+        std::forward_as_tuple(client_info.connection_client_version_major, client_info.connection_client_version_minor) < std::forward_as_tuple(min_major, min_minor))
+    {
+        /// Disable two-level aggregation due to version incompatibility.
+        context->setSetting("group_by_two_level_threshold", Field(0));
+        context->setSetting("group_by_two_level_threshold_bytes", Field(0));
+
+    }
 }
 
 }

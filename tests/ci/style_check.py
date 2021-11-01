@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-from github import Github
-from report import create_test_html_report
-import shutil
 import logging
 import subprocess
 import os
 import csv
-from s3_helper import S3Helper
 import time
 import json
+from github import Github
+from report import create_test_html_report
+from s3_helper import S3Helper
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 
