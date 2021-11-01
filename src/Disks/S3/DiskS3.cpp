@@ -125,6 +125,31 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
         throw Exception(err.GetMessage(), static_cast<int>(err.GetErrorType()));
     }
 }
+template <typename Result, typename Error>
+void logIfError(Aws::Utils::Outcome<Result, Error> & response, Fn<String()> auto && msg)
+{
+    try
+    {
+        throwIfError(response);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, msg());
+    }
+}
+
+template <typename Result, typename Error>
+void logIfError(const Aws::Utils::Outcome<Result, Error> & response, Fn<String()> auto && msg)
+{
+    try
+    {
+        throwIfError(response);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, msg());
+    }
+}
 
 /// Reads data from S3 using stored paths in metadata.
 class ReadIndirectBufferFromS3 final : public ReadIndirectBufferFromRemoteFS<ReadBufferFromS3>
@@ -184,15 +209,16 @@ void DiskS3::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
     if (s3_paths_keeper)
         s3_paths_keeper->removePaths([&](S3PathKeeper::Chunk && chunk)
         {
-            LOG_TRACE(log, "Remove AWS keys {}", S3PathKeeper::getChunkKeys(chunk));
+            String keys = S3PathKeeper::getChunkKeys(chunk);
+            LOG_TRACE(log, "Remove AWS keys {}", keys);
             Aws::S3::Model::Delete delkeys;
             delkeys.SetObjects(chunk);
-            /// TODO: Make operation idempotent. Do not throw exception if key is already deleted.
             Aws::S3::Model::DeleteObjectsRequest request;
             request.SetBucket(bucket);
             request.SetDelete(delkeys);
             auto outcome = settings->client->DeleteObjects(request);
-            throwIfError(outcome);
+            // Do not throw here, continue deleting other chunks
+            logIfError(outcome, [&](){return "Can't remove AWS keys: " + keys;});
         });
 }
 
@@ -511,9 +537,11 @@ bool DiskS3::checkUniqueId(const String & id) const
     Aws::S3::Model::ListObjectsV2Request request;
     request.SetBucket(bucket);
     request.SetPrefix(id);
-    auto resp = settings->client->ListObjectsV2(request);
-    throwIfError(resp);
-    Aws::Vector<Aws::S3::Model::Object> object_list = resp.GetResult().GetContents();
+
+    auto outcome = settings->client->ListObjectsV2(request);
+    throwIfError(outcome);
+
+    Aws::Vector<Aws::S3::Model::Object> object_list = outcome.GetResult().GetContents();
 
     for (const auto & object : object_list)
         if (object.GetKey() == id)
