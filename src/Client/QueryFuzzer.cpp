@@ -21,6 +21,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ParserQuery.h>
@@ -446,6 +447,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     if (auto * with_union = typeid_cast<ASTSelectWithUnionQuery *>(ast.get()))
     {
         fuzz(with_union->list_of_selects);
+    }
+    if (auto * with_intersect_except = typeid_cast<ASTSelectIntersectExceptQuery *>(ast.get()))
+    {
+        fuzz(with_intersect_except->list_of_selects);
     }
     else if (auto * tables = typeid_cast<ASTTablesInSelectQuery *>(ast.get()))
     {

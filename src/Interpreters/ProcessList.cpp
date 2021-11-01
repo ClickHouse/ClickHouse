@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/queryNormalization.h>
@@ -47,6 +48,20 @@ static bool isUnlimitedQuery(const IAST * ast)
             return false;
 
         const auto * ast_select = ast_selects->list_of_selects->children[0]->as<ASTSelectQuery>();
+        if (!ast_select)
+            return false;
+
+        if (auto database_and_table = getDatabaseAndTable(*ast_select, 0))
+            return database_and_table->database == "system" && database_and_table->table == "processes";
+
+        return false;
+    }
+    else if (const auto * ast_intersect_except = ast->as<ASTSelectIntersectExceptQuery>())
+    {
+        if (!ast_intersect_except->list_of_selects || ast_intersect_except->list_of_selects->children.empty())
+            return false;
+
+        const auto * ast_select = ast_intersect_except->list_of_selects->children[0]->as<ASTSelectQuery>();
         if (!ast_select)
             return false;
 

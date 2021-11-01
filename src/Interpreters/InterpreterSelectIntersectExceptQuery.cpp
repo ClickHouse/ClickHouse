@@ -56,7 +56,10 @@ InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
     ASTSelectIntersectExceptQuery * ast = query_ptr->as<ASTSelectIntersectExceptQuery>();
     final_operator = ast->final_operator;
 
-    const auto & children = ast->children;
+    if (!ast->list_of_selects)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No selects in ASTSelectIntersectExceptQuery");
+
+    const auto & children = ast->list_of_selects->children;
     size_t num_children = children.size();
 
     /// AST must have been changed by the visitor.

@@ -15,12 +15,11 @@ ASTPtr ASTSelectIntersectExceptQuery::clone() const
         res->children.push_back(child->clone());
 
     res->final_operator = final_operator;
-
-    cloneOutputOptions(*res);
+    res->list_of_selects = list_of_selects->clone();
     return res;
 }
 
-void ASTSelectIntersectExceptQuery::formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTSelectIntersectExceptQuery::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 

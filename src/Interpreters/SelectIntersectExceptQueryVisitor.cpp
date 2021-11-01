@@ -10,7 +10,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/*
+/**
  * Note: there is a difference between intersect and except behaviour.
  * `intersect` is supposed to be a part of the last SelectQuery, i.e. the sequence with no parenthesis:
  * select 1 union all select 2 except select 1 intersect 2 except select 2 union distinct select 5;
@@ -18,7 +18,7 @@ namespace ErrorCodes
  * select 1 union all select 2 except (select 1 intersect 2) except select 2 union distinct select 5;
  * Whereas `except` is applied to all left union part like:
  * (((select 1 union all select 2) except (select 1 intersect 2)) except select 2) union distinct select 5;
-**/
+ */
 
 void SelectIntersectExceptQueryMatcher::visit(ASTPtr & ast, Data & data)
 {
@@ -26,6 +26,10 @@ void SelectIntersectExceptQueryMatcher::visit(ASTPtr & ast, Data & data)
         visit(*select_union, data);
 }
 
+/**
+ * Normalizes list of selects and list of modes into SelectWithUnionQuery of selects,
+ * where some of the selects are ASTSelectIntersectExceptQuery which always have two children.
+ */
 void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Data &)
 {
     const auto & union_modes = ast.list_of_modes;
@@ -68,6 +72,11 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
                 except_node->final_operator = ASTSelectIntersectExceptQuery::Operator::EXCEPT;
                 except_node->children = {left, right};
 
+                /// Also keep a separate from except_node->children list of selects, because
+                /// later children might not only contain select nodes (but limit node, etc).
+                except_node->list_of_selects = std::make_shared<ASTExpressionList>();
+                except_node->list_of_selects->children = {left, right};
+
                 children = {except_node};
                 break;
             }
@@ -96,8 +105,16 @@ void SelectIntersectExceptQueryMatcher::visit(ASTSelectWithUnionQuery & ast, Dat
                 intersect_node->final_operator = ASTSelectIntersectExceptQuery::Operator::INTERSECT;
                 intersect_node->children = {left, right};
 
+                intersect_node->list_of_selects = std::make_shared<ASTExpressionList>();
+                intersect_node->list_of_selects->children = {left, right};
+
                 if (from_except)
-                    children.back()->children[1] = std::move(intersect_node);
+                {
+                    auto & last_child = children.back();
+                    auto * except_node = assert_cast<ASTSelectIntersectExceptQuery *>(last_child.get());
+                    except_node->children[1] = intersect_node;
+                    except_node->list_of_selects->children[1] = intersect_node;
+                }
                 else
                     children.push_back(std::move(intersect_node));
 

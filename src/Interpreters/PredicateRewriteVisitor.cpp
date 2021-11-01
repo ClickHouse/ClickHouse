@@ -6,6 +6,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -37,13 +38,21 @@ void PredicateRewriteVisitorData::visit(ASTSelectWithUnionQuery & union_select_q
     for (size_t index = 0; index < internal_select_list.size(); ++index)
     {
         if (auto * child_union = internal_select_list[index]->as<ASTSelectWithUnionQuery>())
+        {
             visit(*child_union, internal_select_list[index]);
-        else
+        }
+        else if (auto * child_intersect_except = internal_select_list[index]->as<ASTSelectIntersectExceptQuery>())
+        {
+            /// ASTSelectIntersectExceptQuery can have any depth and can contain
+            /// select, union and insertsect_except nodes.
+            /// TODO: add visitor?
+        }
+        else if (auto * child_select = internal_select_list[index]->as<ASTSelectQuery>())
         {
             if (index == 0)
-                visitFirstInternalSelect(*internal_select_list[0]->as<ASTSelectQuery>(), internal_select_list[0]);
+                visitFirstInternalSelect(*child_select, internal_select_list[0]);
             else
-                visitOtherInternalSelect(*internal_select_list[index]->as<ASTSelectQuery>(), internal_select_list[index]);
+                visitOtherInternalSelect(*child_select, internal_select_list[index]);
         }
     }
 }
