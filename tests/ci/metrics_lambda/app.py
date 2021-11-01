@@ -53,12 +53,21 @@ def list_runners(access_token):
         "Authorization": f"token {access_token}",
         "Accept": "application/vnd.github.v3+json",
     }
-
-    response = requests.get("https://api.github.com/orgs/ClickHouse/actions/runners", headers=headers)
+    response = requests.get("https://api.github.com/orgs/ClickHouse/actions/runners?per_page=100", headers=headers)
     response.raise_for_status()
     data = response.json()
-    print("Total runners", data['total_count'])
+    total_runners = data['total_count']
     runners = data['runners']
+
+    total_pages = int(total_runners / 100 + 1)
+    print("Total pages", total_pages)
+    for i in range(2, total_pages + 1):
+        response = requests.get(f"https://api.github.com/orgs/ClickHouse/actions/runners?page={i}&per_page=100", headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        runners += data['runners']
+
+    print("Total runners", len(runners))
     result = []
     for runner in runners:
         tags = [tag['name'] for tag in runner['labels']]

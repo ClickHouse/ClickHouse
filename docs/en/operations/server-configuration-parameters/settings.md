@@ -486,16 +486,12 @@ Backlog (queue size of pending connections) of the listen socket.
 Default value: `4096` (as in linux [5.4+](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=19f92a030ca6d772ab44b22ee6a01378a8cb32d4)).
 
 Usually this value does not need to be changed, since:
-- default value is large enough,
-- and for accepting client's connections server has separate thread.
+-  default value is large enough,
+-  and for accepting client's connections server has separate thread.
 
-So even if you have `TcpExtListenOverflows` (from `nstat`) non zero and this
-counter grows for ClickHouse server it does not mean that this value need to be
-increased, since:
-- usually if 4096 is not enough it shows some internal ClickHouse scaling
-  issue, so it is better to report an issue.
-- and it does not mean that the server can handle more connections later (and
-  even if it can, clients can already goes away / disconnect).
+So even if you have `TcpExtListenOverflows` (from `nstat`) non zero and this counter grows for ClickHouse server it does not mean that this value need to be increased, since:
+-  usually if 4096 is not enough it shows some internal ClickHouse scaling issue, so it is better to report an issue.
+-  and it does not mean that the server can handle more connections later (and even if it could, by that moment clients may be gone or disconnected).
 
 Examples:
 
@@ -790,14 +786,14 @@ It is enabled by default. If it`s not, you can do this manually.
 To manually turn on metrics history collection [`system.metric_log`](../../operations/system-tables/metric_log.md), create `/etc/clickhouse-server/config.d/metric_log.xml` with the following content:
 
 ``` xml
-<yandex>
+<clickhouse>
     <metric_log>
         <database>system</database>
         <table>metric_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
     </metric_log>
-</yandex>
+</clickhouse>
 ```
 
 **Disabling**
@@ -805,9 +801,9 @@ To manually turn on metrics history collection [`system.metric_log`](../../opera
 To disable `metric_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_metric_log.xml` with the following content:
 
 ``` xml
-<yandex>
+<clickhouse>
 <metric_log remove="1" />
-</yandex>
+</clickhouse>
 ```
 
 ## replicated_merge_tree {#server_configuration_parameters-replicated_merge_tree}
@@ -1043,7 +1039,7 @@ Parameters:
 
 **Example**
 ```xml
-<yandex>
+<clickhouse>
     <text_log>
         <level>notice</level>
         <database>system</database>
@@ -1052,7 +1048,7 @@ Parameters:
         <!-- <partition_by>event_date</partition_by> -->
         <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
     </text_log>
-</yandex>
+</clickhouse>
 ```
 
 
@@ -1294,6 +1290,7 @@ This section contains the following parameters:
 
 -   [Replication](../../engines/table-engines/mergetree-family/replication.md)
 -   [ZooKeeper Programmer’s Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
+-   [Optional secured communication between ClickHouse and Zookeeper](../ssl-zookeeper.md#secured-communication-with-zookeeper)
 
 ## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 
