@@ -1406,7 +1406,7 @@ Possible values:
 -   0 — Aggregation is done without JIT compilation.
 -   1 — Aggregation is done using JIT compilation.
 
-Default value: `0`.
+Default value: `1`.
 
 **See Also** 
 
@@ -1421,7 +1421,7 @@ Possible values:
 -   Positive integer.
 -   0 — Identical aggregate expressions are always JIT-compiled.
 
-Default value: `0`.
+Default value: `3`.
 
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
