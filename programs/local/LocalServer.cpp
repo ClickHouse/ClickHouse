@@ -359,7 +359,7 @@ static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 void LocalServer::setupUsers()
 {
     static const char * minimal_default_user_xml =
-        "<yandex>"
+        "<clickhouse>"
         "    <profiles>"
         "        <default></default>"
         "    </profiles>"
@@ -376,7 +376,7 @@ void LocalServer::setupUsers()
         "    <quotas>"
         "        <default></default>"
         "    </quotas>"
-        "</yandex>";
+        "</clickhouse>";
 
     ConfigurationPtr users_config;
 

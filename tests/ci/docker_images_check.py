@@ -193,8 +193,9 @@ if __name__ == "__main__":
     changed_images, dockerhub_repo_name = get_changed_docker_images(pr_info, repo_path, "docker/images.json")
     logging.info("Has changed images %s", ', '.join([str(image[0]) for image in changed_images]))
     pr_commit_version = str(pr_info.number) + '-' + pr_info.sha
-
     versions = [str(pr_info.number), pr_commit_version]
+    if pr_info.number == 0:
+        versions.append("latest")
 
     subprocess.check_output("docker login --username 'robotclickhouse' --password '{}'".format(dockerhub_password), shell=True)
 
