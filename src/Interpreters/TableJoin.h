@@ -209,7 +209,7 @@ public:
     bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
     bool needStreamWithNonJoinedRows() const;
 
-    bool oneDisjunct() const;
+    size_t disjunctsNum() const;
 
     JoinOnClause & getOnlyClause() { assertHasOneOnExpr(); return clauses[0]; }
     const JoinOnClause & getOnlyClause() const { assertHasOneOnExpr(); return clauses[0]; }

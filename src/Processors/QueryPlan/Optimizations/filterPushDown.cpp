@@ -194,7 +194,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Push down is for left table only. We need to update JoinStep for push down into right.
         /// Only inner and left join are supported. Other types may generate default values for left table keys.
         /// So, if we push down a condition like `key != 0`, not all rows may be filtered.
-        if (table_join.oneDisjunct() && (table_join.kind() == ASTTableJoin::Kind::Inner || table_join.kind() == ASTTableJoin::Kind::Left))
+        if (table_join.disjunctsNum() == 1 && (table_join.kind() == ASTTableJoin::Kind::Inner || table_join.kind() == ASTTableJoin::Kind::Left))
         {
             const auto & left_header = join->getInputStreams().front().header;
             const auto & res_header = join->getOutputStream().header;

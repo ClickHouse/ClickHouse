@@ -350,11 +350,9 @@ bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTT
     return false;
 }
 
-bool TableJoin::oneDisjunct() const
+size_t TableJoin::disjunctsNum() const
 {
-    if (!isCrossOrComma(kind()))
-        assert(!clauses.empty());
-    return clauses.size() <= 1;
+    return clauses.size();
 }
 
 bool TableJoin::allowMergeJoin() const
@@ -366,7 +364,7 @@ bool TableJoin::allowMergeJoin() const
     bool all_join = is_all && (isInner(kind()) || isLeft(kind()) || isRight(kind()) || isFull(kind()));
     bool special_left = isLeft(kind()) && (is_any || is_semi);
 
-    return (all_join || special_left) && oneDisjunct();
+    return (all_join || special_left) && disjunctsNum() == 1;
 }
 
 bool TableJoin::needStreamWithNonJoinedRows() const
@@ -639,7 +637,7 @@ Names TableJoin::getAllNames(JoinTableSide side) const
 
 void TableJoin::assertHasOneOnExpr() const
 {
-    if (!oneDisjunct())
+    if (disjunctsNum() != 1)
     {
         std::vector<String> text;
         for (const auto & onexpr : clauses)

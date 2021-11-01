@@ -599,7 +599,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
         {
             analyzed_join.addDisjunct();
             CollectJoinOnKeysVisitor(data).visit(table_join.on_expression);
-            assert(analyzed_join.oneDisjunct());
+            assert(analyzed_join.disjunctsNum() <= 1);
         }
 
         if (analyzed_join.getClauses().empty())
@@ -617,12 +617,12 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
 
         if (is_asof)
         {
-            if (!analyzed_join.oneDisjunct())
+            if (analyzed_join.disjunctsNum() > 1)
                 throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join doesn't support multiple ORs for keys in JOIN ON section");
             data.asofToJoinKeys();
         }
 
-        if (!analyzed_join.oneDisjunct() && !analyzed_join.forceHashJoin())
+        if (analyzed_join.disjunctsNum() > 1 && !analyzed_join.forceHashJoin())
             throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
 
     }
@@ -1074,7 +1074,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (table_join_ast && tables_with_columns.size() >= 2)
     {
         collectJoinedColumns(*result.analyzed_join, *table_join_ast, tables_with_columns, result.aliases);
-        if (select_query->where() && result.analyzed_join->oneDisjunct())
+        if (select_query->where() && result.analyzed_join->getClauses().size() == 1)
         {
             applyJoinRightTableFilter(*result.analyzed_join, select_query->where(), result.aliases);
         }

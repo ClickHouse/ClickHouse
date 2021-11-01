@@ -246,7 +246,7 @@ HashJoin::HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_s
         data->type = Type::CROSS;
         sample_block_with_columns_to_add = right_sample_block;
     }
-    else if (table_join->oneDisjunct())
+    else if (table_join->disjunctsNum() == 1)
     {
         const auto & key_names_right = table_join->getOnlyClause().key_names_right;
         JoinCommon::splitAdditionalColumns(key_names_right, right_sample_block, right_table_keys, sample_block_with_columns_to_add);
@@ -678,7 +678,7 @@ namespace
 
 void HashJoin::initRightBlockStructure(Block & saved_block_sample)
 {
-    bool multiple_disjuncts = !table_join->oneDisjunct();
+    bool multiple_disjuncts = table_join->disjunctsNum() > 1;
     /// We could remove key columns for LEFT | INNER HashJoin but we should keep them for JoinSwitcher (if any).
     bool save_key_columns = !table_join->forceHashJoin() || isRightOrFull(kind) || multiple_disjuncts;
     if (save_key_columns)
@@ -753,7 +753,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
         if (rows)
             data->empty = false;
 
-        bool multiple_disjuncts = !table_join->oneDisjunct();
+        bool multiple_disjuncts = table_join->disjunctsNum() > 1;
         const auto & onexprs = table_join->getClauses();
         for (size_t onexpr_idx = 0; onexpr_idx < onexprs.size(); ++onexpr_idx)
         {
@@ -1975,7 +1975,7 @@ std::shared_ptr<NotJoinedBlocks> HashJoin::getNonJoinedBlocks(const Block & left
     {
         return {};
     }
-    bool multiple_disjuncts = !table_join->oneDisjunct();
+    bool multiple_disjuncts = table_join->disjunctsNum() > 1;
 
     if (multiple_disjuncts)
     {
@@ -2000,7 +2000,7 @@ void HashJoin::reuseJoinedData(const HashJoin & join)
     data = join.data;
     from_storage_join = true;
 
-    bool multiple_disjuncts = !table_join->oneDisjunct();
+    bool multiple_disjuncts = table_join->disjunctsNum() > 1;
     if (multiple_disjuncts)
         throw Exception("StorageJoin with ORs is not supported", ErrorCodes::NOT_IMPLEMENTED);
 

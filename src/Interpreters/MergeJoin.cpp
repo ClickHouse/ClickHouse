@@ -506,7 +506,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
                             ErrorCodes::PARAMETER_OUT_OF_BOUND);
     }
 
-    if (!table_join->oneDisjunct())
+    if (table_join->disjunctsNum() > 1)
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "MergeJoin does not support OR in JOIN ON section");
 
     const auto & onexpr = table_join->getOnlyClause();
