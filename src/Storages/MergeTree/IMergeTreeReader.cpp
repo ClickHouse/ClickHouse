@@ -43,14 +43,6 @@ IMergeTreeReader::IMergeTreeReader(
     , serializations(data_part_->getSerializations())
     , alter_conversions(storage.getAlterConversionsForPart(data_part))
 {
-    if (isWidePart(data_part))
-    {
-        /// For wide parts convert plain arrays of Nested to subcolumns
-        /// to allow to use shared offset column from cache.
-        columns = Nested::convertToSubcolumns(columns);
-        part_columns = Nested::collect(part_columns);
-    }
-
     for (const auto & column_from_part : part_columns)
         columns_from_part[column_from_part.name] = &column_from_part.type;
 }
