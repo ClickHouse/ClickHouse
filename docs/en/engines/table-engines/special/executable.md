@@ -5,9 +5,11 @@ toc_title: Executable/ExecutablePool
 
 # Executable and ExecutablePool Table Engines {#table_engines-executable}
 
-`Executable` and `ExecutablePool` engines allow executing a custom script and passing data into this script. This data comes as a result of queries, executed in ClickHouse. 
+`Executable` and `ExecutablePool` engines allow to create a new table that is built by streaming data through a custom script.  
 
-`Executable` and `ExecutablePool` engines run a [pool_size](../../../operations/settings/settings.md#pool_size) number of processes. Each process has [max_command_execution_time](../../../operations/settings/settings.md#max_command_execution_time) seconds for processing the incoming data. After processing all the data, the engine has [command_termination_timeout](../../../operations/settings/settings.md#command_termination_timeout) seconds to shutdown.
+When you define an `Executable` or `ExecutablePool` table, you specify a script to execute and also a query to specify the records to be processed by the script. ClickHouse looks for your custom scripts in the `user_scripts` folder (on Linux it is typically the `/var/lib/clickhouse/user_scripts` folder). 
+
+`Executable` engine creates one process, and `ExecutablePool` - a [pool_size](../../../operations/settings/settings.md#pool_size) number of processes, and reuses them during queries. Each process has [max_command_execution_time](../../../operations/settings/settings.md#max_command_execution_time) seconds for processing the incoming data. After processing all the data, the engine has [command_termination_timeout](../../../operations/settings/settings.md#command_termination_timeout) seconds to shutdown.
 
 ## Creating a Table {#creating-a-table}
 
@@ -27,19 +29,18 @@ ENGINE = ExecutablePool(script_line, format, query1[, query2, ...])
 
 **1. Executable engine, data passed in a query**
 
-Consider the script `input_loop.sh`, that should be executed:
+Consider the script `input_loop.sh`, that adds the word `Key` to the input strings:
 
 ```bash
 #!/bin/bash
-
 while read read_data; do printf "Key $read_data\n"; done
 ```
 
-The data is passed to the script via the query:
+The `key_str` table is built by streaming the data from the `SELECT 1` query to the `input_loop.sh` script:
 
 ```sql
-CREATE TABLE table1 (value String) ENGINE = Executable('input_loop.sh', 'TabSeparated', (SELECT 1));
-SELECT * FROM table1;
+CREATE TABLE key_str (value String) ENGINE = Executable('input_loop.sh', 'TabSeparated', (SELECT 1));
+SELECT * FROM key_str;
 ```
 
 Result:
@@ -50,19 +51,18 @@ Key 1
 
 **2. Executable engine, data passed in a script argument**
 
-Consider the script `input_arg.sh`, that should be executed:
+Consider the script `input_arg.sh`, that adds the word `Key` to the input argument:
 
 ```bash
 #!/bin/bash
-
 echo "Key $1"
 ```
 
-The data is passed to the script via an argument, no query needed:
+The `key_arg` table is built by passing the data to the `input_arg.sh` script via an argument, no query needed:
 
 ```sql
-CREATE TABLE table2 (value String) ENGINE = Executable('input_arg.sh 1', 'TabSeparated');
-SELECT * FROM table2;
+CREATE TABLE key_arg (value String) ENGINE = Executable('input_arg.sh 1', 'TabSeparated');
+SELECT * FROM key_arg;
 ```
 
 Result:
@@ -87,11 +87,11 @@ printf "Key $read_data_from_3_fd\n";
 printf "Key $read_data_from_0_df\n";
 ```
 
-The data is passed to the script via the query:
+The `keys_list` table is built by streaming the data from the list of queries to the `input_process.sh` script:
 
 ``` sql
-CREATE TABLE table3 (value String) ENGINE = ExecutablePool('input_process.sh', 'TabSeparated', (SELECT 1), (SELECT 2), (SELECT 3));
-SELECT * FROM table3;
+CREATE TABLE keys_list (value String) ENGINE = ExecutablePool('input_process.sh', 'TabSeparated', (SELECT 1), (SELECT 2), (SELECT 3));
+SELECT * FROM keys_list;
 ```
 
 Result:

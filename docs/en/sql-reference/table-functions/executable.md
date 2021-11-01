@@ -5,7 +5,7 @@ toc_title: executable
 
 # executable {#executable}
 
-Creates a table of the defined structure and fills it with data from a script or a query.
+Creates a table of the defined structure and fills it with data from a script or a query. ClickHouse looks for your custom scripts in the `user_scripts` folder (on Linux it is typically the `/var/lib/clickhouse/user_scripts` folder). 
 
 **Syntax**
 
@@ -28,15 +28,14 @@ executable(script_line, format, structure[, query])
 
 **1. Data passed in a script argument**
 
-Consider the script `input_arg.sh`:
+Consider the script `input_arg.sh`, that adds the word `Key` to the input argument:
 
 ```bash
 #!/bin/bash
-
 echo "Key $1"
 ```
 
-Query:
+The data is selected from a table, built by passing an argument to the `input_arg.sh` script:
 
 ```sql
 SELECT * FROM executable('input_arg.sh 1', 'TabSeparated', 'value String');
@@ -50,15 +49,14 @@ Key 1
 
 **2. Data passed in a query**
 
-Consider the script `input_script.sh`:
+Consider the script `input_script.sh`, that adds the word `Key` to the input strings:
 
 ```bash
 #!/bin/bash
-
 while read read_data; do printf "Key $read_data\n"; done
 ```
 
-Query:
+The data is selected from a table, built by streaming the data from the `SELECT 1` query to the `input_script.sh` script:
 
 ```sql
 SELECT * FROM executable('input_script.sh', 'TabSeparated', 'value String', (SELECT 1));
