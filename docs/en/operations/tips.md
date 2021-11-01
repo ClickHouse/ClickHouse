@@ -1,4 +1,3 @@
----
 toc_priority: 58
 toc_title: Usage Recommendations
 ---
@@ -33,6 +32,9 @@ $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 Use `perf top` to watch the time spent in the kernel for memory management.
 Permanent huge pages also do not need to be allocated.
 
+!!! warning "Attention"
+    If your system has less than 16 GB of RAM you may experience various memory exceptions because default settings does not match this amount of RAM. Recommended amount of RAM is 32 GB or more. You can use ClickHouse in system with small amount of RAM, even with 2 GB of RAM, but it requires an additional tuning and able to process small ingestion rate.
+
 ## Storage Subsystem {#storage-subsystem}
 
 If your budget allows you to use SSD, use SSD.
@@ -57,7 +59,7 @@ $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 
 Calculate the exact number from the number of devices and the block size, using the formula: `2 * num_devices * chunk_size_in_bytes / 4096`.
 
-A block size of 1024 KB is sufficient for all RAID configurations.
+A block size of 64 KB is sufficient for most RAID configurations. The average clickhouse-server write size is approximately 1 MB (1024 KB), and thus the recommended stripe size is also 1 MB. The block size can be optimized if needed when set to 1 MB divided by the number of non-parity disks in the RAID array, such that each write is parallelized across all available non-parity disks.
 Never set the block size too small or too large.
 
 You can use RAID-0 on SSD.
@@ -68,7 +70,7 @@ For HDD, enable the write cache.
 
 ## File System {#file-system}
 
-Ext4 is the most reliable option. Set the mount options `noatime, nobarrier`.
+Ext4 is the most reliable option. Set the mount options `noatime`.
 XFS is also suitable, but it hasn’t been as thoroughly tested with ClickHouse.
 Most other file systems should also work fine. File systems with delayed allocation work better.
 
@@ -259,4 +261,4 @@ script
 end script
 ```
 
-{## [Original article](https://clickhouse.tech/docs/en/operations/tips/) ##}
+{## [Original article](https://clickhouse.com/docs/en/operations/tips/) ##}

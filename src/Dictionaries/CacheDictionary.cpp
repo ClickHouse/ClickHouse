@@ -1,7 +1,7 @@
 #include "CacheDictionary.h"
 
 #include <memory>
-#include <common/chrono_io.h>
+#include <base/chrono_io.h>
 
 #include <Core/Defines.h>
 #include <Common/CurrentMetrics.h>
@@ -14,7 +14,7 @@
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace ProfileEvents
 {
@@ -484,24 +484,37 @@ MutableColumns CacheDictionary<dictionary_key_type>::aggregateColumns(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size) const
+Pipe CacheDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
-    Pipe pipe;
-    std::optional<DictionarySourceData> data;
+    ColumnsWithTypeAndName key_columns;
+
     {
         /// Write lock on storage
         const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
-
         if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-            data.emplace(shared_from_this(), cache_storage_ptr->getCachedSimpleKeys(), column_names);
+        {
+            auto keys = cache_storage_ptr->getCachedSimpleKeys();
+            key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+        }
         else
         {
             auto keys = cache_storage_ptr->getCachedComplexKeys();
-            data.emplace(shared_from_this(), keys, column_names);
+            key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
         }
     }
 
-    return Pipe(std::make_shared<DictionarySource>(std::move(*data), max_block_size));
+    std::shared_ptr<const IDictionary> dictionary = shared_from_this();
+    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), max_block_size);
+
+    Pipes pipes;
+
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        auto source = std::make_shared<DictionarySource>(coordinator);
+        pipes.emplace_back(Pipe(std::move(source)));
+    }
+
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -573,9 +586,9 @@ void CacheDictionary<dictionary_key_type>::update(CacheDictionaryUpdateUnitPtr<d
             QueryPipeline pipeline;
 
             if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
-                pipeline.init(current_source_ptr->loadIds(requested_keys_vector));
+                pipeline = QueryPipeline(current_source_ptr->loadIds(requested_keys_vector));
             else
-                pipeline.init(current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows));
+                pipeline = QueryPipeline(current_source_ptr->loadKeys(update_unit_ptr->key_columns, requested_complex_key_rows));
 
             size_t skip_keys_size_offset = dict_struct.getKeysSize();
             PaddedPODArray<KeyType> found_keys_in_source;

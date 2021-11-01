@@ -2,9 +2,9 @@
 
 #include <city.h>
 #include <Core/Types.h>
-#include <common/types.h>
-#include <common/unaligned.h>
-#include <common/StringRef.h>
+#include <base/types.h>
+#include <base/unaligned.h>
+#include <base/StringRef.h>
 
 #include <type_traits>
 

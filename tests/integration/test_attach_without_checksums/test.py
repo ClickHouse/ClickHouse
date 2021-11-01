@@ -5,7 +5,6 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1')
 
-
 @pytest.fixture(scope="module")
 def start_cluster():
     try:
@@ -42,3 +41,4 @@ def test_attach_without_checksums(start_cluster):
 
     assert node1.query("SELECT COUNT() FROM test WHERE key % 10 == 0") == "10\n"
     assert node1.query("SELECT COUNT() FROM test") == "100\n"
+    node1.query("DROP TABLE test")

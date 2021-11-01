@@ -823,4 +823,4 @@ function(
       size_t limit)
 ```
 
-[来源文章](https://clickhouse.tech/docs/en/development/style/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/development/style/) <!--hide-->

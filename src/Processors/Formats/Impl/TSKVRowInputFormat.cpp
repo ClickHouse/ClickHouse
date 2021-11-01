@@ -210,9 +210,9 @@ void TSKVRowInputFormat::resetParser()
     name_buf.clear();
 }
 
-void registerInputFormatProcessorTSKV(FormatFactory & factory)
+void registerInputFormatTSKV(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("TSKV", [](
+    factory.registerInputFormat("TSKV", [](
         ReadBuffer & buf,
         const Block & sample,
         IRowInputFormat::Params params,

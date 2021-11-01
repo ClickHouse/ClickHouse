@@ -87,6 +87,15 @@ FunctionOverloadResolverPtr FunctionFactory::get(
     return getImpl(name, context);
 }
 
+bool FunctionFactory::has(const std::string & name) const
+{
+    String canonical_name = getAliasToOrName(name);
+    if (functions.contains(canonical_name))
+        return true;
+    canonical_name = Poco::toLower(canonical_name);
+    return case_insensitive_functions.contains(canonical_name);
+}
+
 FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
     const std::string & name_param,
     ContextPtr context) const

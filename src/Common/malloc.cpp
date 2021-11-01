@@ -17,7 +17,9 @@ extern "C"
     void *aligned_alloc(size_t alignment, size_t size);
     void *valloc(size_t size);
     void *memalign(size_t alignment, size_t size);
+#if !defined(USE_MUSL)
     void *pvalloc(size_t size);
+#endif
 }
 #pragma GCC diagnostic pop
 
@@ -39,6 +41,8 @@ static void dummyFunctionForInterposing()
     ignore(aligned_alloc(0, 0)); // -V575 NOLINT
     ignore(valloc(0)); // -V575 NOLINT
     ignore(memalign(0, 0)); // -V575 NOLINT
+#if !defined(USE_MUSL)
     ignore(pvalloc(0)); // -V575 NOLINT
+#endif
 }
 #endif

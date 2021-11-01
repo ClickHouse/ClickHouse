@@ -12,9 +12,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
-#include <DataStreams/ITTLAlgorithm.h>
-#include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/SquashingBlockInputStream.h>
+#include <Processors/TTL/ITTLAlgorithm.h>
 
 #include <Parsers/queryToString.h>
 
@@ -412,7 +410,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(
     MergedBlockOutputStream out(new_data_part, metadata_snapshot, columns, index_factory.getMany(metadata_snapshot->getSecondaryIndices()), compression_codec);
     bool sync_on_insert = data.getSettings()->fsync_after_insert;
 
-    out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);
 
     for (const auto & projection : metadata_snapshot->getProjections())
@@ -508,7 +505,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         {},
         compression_codec);
 
-    out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);
     out.writeSuffixAndFinalizePart(new_data_part);
 
@@ -577,7 +573,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     return writeProjectionPartImpl(
         part_name,
         part_type,
-        "tmp_insert_" + part_name + ".proj" /* relative_path */,
+        part_name + ".tmp_proj" /* relative_path */,
         true /* is_temp */,
         parent_part,
         data,

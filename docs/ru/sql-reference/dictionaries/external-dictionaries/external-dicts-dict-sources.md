@@ -10,7 +10,7 @@ toc_title: "Источники внешних словарей"
 Общий вид XML-конфигурации:
 
 ``` xml
-<yandex>
+<clickhouse>
   <dictionary>
     ...
     <source>
@@ -21,7 +21,7 @@ toc_title: "Источники внешних словарей"
     ...
   </dictionary>
   ...
-</yandex>
+</clickhouse>
 ```
 
 Аналогичный [DDL-запрос](../../statements/create/dictionary.md#create-dictionary-query):
@@ -251,7 +251,7 @@ ClickHouse получает от ODBC-драйвера информацию о �
 
 ### Выявленная уязвимость в функционировании ODBC словарей {#vyiavlennaia-uiazvimost-v-funktsionirovanii-odbc-slovarei}
 
-!!! attention "Attention"
+!!! attention "Внимание"
     При соединении с базой данных через ODBC можно заменить параметр соединения `Servername`. В этом случае, значения `USERNAME` и `PASSWORD` из `odbc.ini` отправляются на удаленный сервер и могут быть скомпрометированы.
 
 **Пример небезопасного использования**
@@ -311,7 +311,7 @@ $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 Конфигурация словаря в ClickHouse:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>table_name</name>
         <source>
@@ -340,7 +340,7 @@ $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
             </attribute>
         </structure>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 или
@@ -416,7 +416,7 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
 Настройка словаря в ClickHouse:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>test</name>
         <source>
@@ -446,7 +446,7 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
             </attribute>
         </structure>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 или
@@ -764,7 +764,7 @@ Setting fields:
 -   `port` – Порт для соединения с PostgreSQL. Вы можете указать его для всех реплик или задать индивидуально для каждой релпики (внутри `<replica>`).
 -   `user` – Имя пользователя для соединения с PostgreSQL. Вы можете указать его для всех реплик или задать индивидуально для каждой релпики (внутри `<replica>`).
 -   `password` – Пароль для пользователя PostgreSQL.
--   `replica` – Section of replica configurations. There can be multiple sections.
+-   `replica` – Раздел конфигурации реплик. Может быть несколько.
     - `replica/host` – хост PostgreSQL.
     - `replica/port` – порт PostgreSQL .
     - `replica/priority` – Приоритет реплики. Во время попытки соединения, ClickHouse будет перебирать реплики в порядке приоритет. Меньшее значение означает более высокий приоритет.

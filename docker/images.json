@@ -41,6 +41,13 @@
         "name": "clickhouse/pvs-test",
         "dependent": []
     },
+    "docker/test/util": {
+        "name": "clickhouse/test-util",
+        "dependent": [
+            "docker/test/base",
+            "docker/test/fasttest"
+        ]
+    },
     "docker/test/stateless": {
         "name": "clickhouse/stateless-test",
         "dependent": [
@@ -158,6 +165,21 @@
     },
     "docker/test/keeper-jepsen": {
         "name": "clickhouse/keeper-jepsen-test",
+        "dependent": []
+    },
+    "docker/docs/builder": {
+        "name": "clickhouse/docs-builder",
+        "dependent": [
+            "docker/docs/check",
+            "docker/docs/release"
+        ]
+    },
+    "docker/docs/check": {
+        "name": "clickhouse/docs-check",
+        "dependent": []
+    },
+    "docker/docs/release": {
+        "name": "clickhouse/docs-release",
         "dependent": []
     }
 }

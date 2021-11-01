@@ -41,6 +41,7 @@ public:
         RESET_SETTING,
         MODIFY_QUERY,
         REMOVE_TTL,
+        REMOVE_SAMPLE_BY,
 
         ADD_INDEX,
         DROP_INDEX,
@@ -70,6 +71,10 @@ public:
         NO_TYPE,
 
         LIVE_VIEW_REFRESH,
+
+        MODIFY_DATABASE_SETTING,
+
+        MODIFY_COMMENT,
     };
 
     Type type = NO_TYPE;
@@ -210,13 +215,27 @@ protected:
 class ASTAlterQuery : public ASTQueryWithTableAndOutput, public ASTQueryWithOnCluster
 {
 public:
-    bool is_live_view{false}; /// true for ALTER LIVE VIEW
+    enum class AlterObjectType
+    {
+        TABLE,
+        DATABASE,
+        LIVE_VIEW,
+        UNKNOWN,
+    };
+
+    AlterObjectType alter_object = AlterObjectType::UNKNOWN;
 
     ASTExpressionList * command_list = nullptr;
 
     bool isSettingsAlter() const;
 
     bool isFreezeAlter() const;
+
+    bool isAttachAlter() const;
+
+    bool isFetchAlter() const;
+
+    bool isDropPartitionAlter() const;
 
     String getID(char) const override;
 
