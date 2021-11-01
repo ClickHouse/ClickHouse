@@ -82,7 +82,8 @@ public:
         ReadSettings read_settings_,
         std::shared_ptr<const IndexForNativeFormat> indices_,
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
-        IndexForNativeFormat::Blocks::const_iterator index_end_)
+        IndexForNativeFormat::Blocks::const_iterator index_end_,
+        size_t file_size_)
         : SourceWithProgress(getHeader(storage_, metadata_snapshot_, column_names, index_begin_, index_end_))
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
@@ -90,6 +91,7 @@ public:
         , indices(indices_)
         , index_begin(index_begin_)
         , index_end(index_end_)
+        , file_size(file_size_)
     {
     }
 
@@ -125,6 +127,7 @@ private:
     std::shared_ptr<const IndexForNativeFormat> indices;
     IndexForNativeFormat::Blocks::const_iterator index_begin;
     IndexForNativeFormat::Blocks::const_iterator index_end;
+    size_t file_size;
 
     Block header;
 
@@ -143,12 +146,7 @@ private:
             started = true;
 
             String data_file_path = storage.table_path + "data.bin";
-
-            /// We cannot just use `storage.file_checker` to get the size of the file here,
-            /// because `storage.rwlock` is not locked at this point.
-            size_t data_file_size = storage.disk->getFileSize(data_file_path);
-
-            data_in.emplace(storage.disk->readFile(data_file_path, read_settings.adjustBufferSize(data_file_size)));
+            data_in.emplace(storage.disk->readFile(data_file_path, read_settings.adjustBufferSize(file_size)));
             block_in.emplace(*data_in, 0, index_begin, index_end);
         }
     }
@@ -351,7 +349,8 @@ Pipe StorageStripeLog::read(
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
-    if (!file_checker.getFileSize(data_file_path))
+    size_t data_file_size = file_checker.getFileSize(data_file_path);
+    if (!data_file_size)
         return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
 
     auto indices_for_selected_columns
@@ -373,7 +372,7 @@ Pipe StorageStripeLog::read(
         std::advance(end, (stream + 1) * size / num_streams);
 
         pipes.emplace_back(std::make_shared<StripeLogSource>(
-            *this, metadata_snapshot, column_names, read_settings, indices_for_selected_columns, begin, end));
+            *this, metadata_snapshot, column_names, read_settings, indices_for_selected_columns, begin, end, data_file_size));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
