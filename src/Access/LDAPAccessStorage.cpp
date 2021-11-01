@@ -527,8 +527,8 @@ UUID LDAPAccessStorage::loginImpl(const Credentials & credentials, const Poco::N
         // User does not exist, so we create one, and will add it if authentication is successful.
         auto user = std::make_shared<User>();
         user->setName(credentials.getUserName());
-        user->authentication = Authentication(Authentication::Type::LDAP);
-        user->authentication.setLDAPServerName(ldap_server_name);
+        user->auth_data = AuthenticationData(AuthenticationType::LDAP);
+        user->auth_data.setLDAPServerName(ldap_server_name);
 
         if (!isAddressAllowedImpl(*user, address))
             throwAddressNotAllowed(address);
@@ -555,8 +555,8 @@ UUID LDAPAccessStorage::getIDOfLoggedUserImpl(const String & user_name) const
         // User does not exist, so we create one, and add it pretending that the authentication is successful.
         auto user = std::make_shared<User>();
         user->setName(user_name);
-        user->authentication = Authentication(Authentication::Type::LDAP);
-        user->authentication.setLDAPServerName(ldap_server_name);
+        user->auth_data = AuthenticationData(AuthenticationType::LDAP);
+        user->auth_data.setLDAPServerName(ldap_server_name);
 
         LDAPClient::SearchResultsList external_roles;
 

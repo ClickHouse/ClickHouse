@@ -25,8 +25,8 @@ namespace
     DataTypeEnum8::Values getAuthenticationTypeEnumValues()
     {
         DataTypeEnum8::Values enum_values;
-        for (auto type : collections::range(Authentication::MAX_TYPE))
-            enum_values.emplace_back(Authentication::TypeInfo::get(type).name, static_cast<Int8>(type));
+        for (auto type : collections::range(AuthenticationType::MAX_TYPE))
+            enum_values.emplace_back(AuthenticationTypeInfo::get(type).name, static_cast<Int8>(type));
         return enum_values;
     }
 }
@@ -91,7 +91,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
     auto add_row = [&](const String & name,
                        const UUID & id,
                        const String & storage_name,
-                       const Authentication & authentication,
+                       const AuthenticationData & auth_data,
                        const AllowedClientHosts & allowed_hosts,
                        const RolesOrUsersSet & default_roles,
                        const RolesOrUsersSet & grantees,
@@ -100,19 +100,19 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
         column_name.insertData(name.data(), name.length());
         column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
-        column_auth_type.push_back(static_cast<Int8>(authentication.getType()));
+        column_auth_type.push_back(static_cast<Int8>(auth_data.getType()));
 
         if (
-            authentication.getType() == Authentication::Type::LDAP ||
-            authentication.getType() == Authentication::Type::KERBEROS
+            auth_data.getType() == AuthenticationType::LDAP ||
+            auth_data.getType() == AuthenticationType::KERBEROS
         )
         {
             Poco::JSON::Object auth_params_json;
 
-            if (authentication.getType() == Authentication::Type::LDAP)
-                auth_params_json.set("server", authentication.getLDAPServerName());
-            else if (authentication.getType() == Authentication::Type::KERBEROS)
-                auth_params_json.set("realm", authentication.getKerberosRealm());
+            if (auth_data.getType() == AuthenticationType::LDAP)
+                auth_params_json.set("server", auth_data.getLDAPServerName());
+            else if (auth_data.getType() == AuthenticationType::KERBEROS)
+                auth_params_json.set("realm", auth_data.getKerberosRealm());
 
             std::ostringstream oss;         // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             oss.exceptions(std::ios::failbit);
@@ -197,7 +197,7 @@ void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr conte
         if (!storage)
             continue;
 
-        add_row(user->getName(), id, storage->getStorageName(), user->authentication, user->allowed_client_hosts,
+        add_row(user->getName(), id, storage->getStorageName(), user->auth_data, user->allowed_client_hosts,
                 user->default_roles, user->grantees, user->default_database);
     }
 }

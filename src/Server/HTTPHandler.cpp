@@ -1,6 +1,6 @@
 #include <Server/HTTPHandler.h>
 
-#include <Access/Common/Authentication.h>
+#include <Access/Authentication.h>
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Compression/CompressedReadBuffer.h>
