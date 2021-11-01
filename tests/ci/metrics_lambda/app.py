@@ -53,12 +53,21 @@ def list_runners(access_token):
         "Authorization": f"token {access_token}",
         "Accept": "application/vnd.github.v3+json",
     }
-
-    response = requests.get("https://api.github.com/orgs/ClickHouse/actions/runners", headers=headers)
+    response = requests.get("https://api.github.com/orgs/ClickHouse/actions/runners?per_page=100", headers=headers)
     response.raise_for_status()
     data = response.json()
-    print("Total runners", data['total_count'])
+    total_runners = data['total_count']
     runners = data['runners']
+
+    total_pages = int(total_runners / 100 + 1)
+    print("Total pages", total_pages)
+    for i in range(2, total_pages + 1):
+        response = requests.get(f"https://api.github.com/orgs/ClickHouse/actions/runners?page={i}&per_page=100", headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        runners += data['runners']
+
+    print("Total runners", len(runners))
     result = []
     for runner in runners:
         tags = [tag['name'] for tag in runner['labels']]
@@ -70,7 +79,7 @@ def list_runners(access_token):
 def group_runners_by_tag(listed_runners):
     result = {}
 
-    RUNNER_TYPE_LABELS = ['style-checker', 'builder']
+    RUNNER_TYPE_LABELS = ['style-checker', 'builder', 'func-tester']
     for runner in listed_runners:
         for tag in runner.tags:
             if tag in RUNNER_TYPE_LABELS:
@@ -136,7 +145,9 @@ def main(github_secret_key, github_app_id, push_to_cloudwatch):
         if push_to_cloudwatch:
             push_metrics_to_cloudwatch(group_runners, 'RunnersMetrics/' + group)
         else:
-            print(group, group_runners)
+            print(group)
+            for runner in group_runners:
+                print('\t', runner)
 
 
 if __name__ == "__main__":
