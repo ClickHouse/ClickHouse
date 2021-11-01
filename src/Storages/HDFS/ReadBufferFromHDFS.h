@@ -1,15 +1,13 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-    #include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_HDFS
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <string>
 #include <memory>
-#include <hdfs/hdfs.h> // Y_IGNORE
+#include <hdfs/hdfs.h>
 #include <base/types.h>
 #include <Interpreters/Context.h>
 #include <IO/SeekableReadBuffer.h>
@@ -27,7 +25,9 @@ struct ReadBufferFromHDFSImpl;
 
 public:
     ReadBufferFromHDFS(const String & hdfs_uri_, const String & hdfs_file_path_,
-        const Poco::Util::AbstractConfiguration & config_, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
+                       const Poco::Util::AbstractConfiguration & config_,
+                       size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
+                       size_t read_until_position_ = 0);
 
     ~ReadBufferFromHDFS() override;
 

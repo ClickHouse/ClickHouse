@@ -110,7 +110,7 @@ enum class AccessType
                                       (anyone can kill his own queries) */\
     \
     M(MOVE_PARTITION_BETWEEN_SHARDS, "", GLOBAL, ALL) /* required to be able to move a part/partition to a table
-                                                         identified by it's ZooKeeper path */\
+                                                         identified by its ZooKeeper path */\
     \
     M(CREATE_USER, "", GLOBAL, ACCESS_MANAGEMENT) \
     M(ALTER_USER, "", GLOBAL, ACCESS_MANAGEMENT) \

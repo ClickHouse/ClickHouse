@@ -6,6 +6,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/ReadInOrderOptimizer.h>
@@ -66,6 +67,13 @@ public:
         const StorageMetadataPtr & metadata_snapshot_ = nullptr,
         const SelectQueryOptions & = {});
 
+    /// Read data not from the table specified in the query, but from the specified `storage_`.
+    InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        ContextPtr context_,
+        const SelectQueryOptions &,
+        PreparedSets prepared_sets_);
+
     ~InterpreterSelectQuery() override;
 
     /// Execute a query. Get the stream of blocks to read.
@@ -83,7 +91,7 @@ public:
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
 
-    const SelectQueryExpressionAnalyzer * getQueryAnalyzer() const { return query_analyzer.get(); }
+    SelectQueryExpressionAnalyzer * getQueryAnalyzer() const { return query_analyzer.get(); }
 
     const ExpressionAnalysisResult & getAnalysisResult() const { return analysis_result; }
 
@@ -104,7 +112,8 @@ private:
         const StoragePtr & storage_,
         const SelectQueryOptions &,
         const Names & required_result_column_names = {},
-        const StorageMetadataPtr & metadata_snapshot_ = nullptr);
+        const StorageMetadataPtr & metadata_snapshot_ = nullptr,
+        PreparedSets prepared_sets_ = {});
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
@@ -193,6 +202,9 @@ private:
 
     Poco::Logger * log;
     StorageMetadataPtr metadata_snapshot;
+
+    /// Reuse already built sets for multiple passes of analysis, possibly across interpreters.
+    PreparedSets prepared_sets;
 };
 
 }

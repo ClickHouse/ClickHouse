@@ -22,7 +22,6 @@ public:
 
 private:
     static void validateFunction(ASTPtr function, const String & name);
-    static std::unordered_set<String> getIdentifiers(ASTPtr node);
     static void validateFunctionRecursiveness(ASTPtr node, const String & function_to_create);
 
     ASTPtr query_ptr;

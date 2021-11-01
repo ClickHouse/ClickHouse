@@ -9,9 +9,7 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include "IServer.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
