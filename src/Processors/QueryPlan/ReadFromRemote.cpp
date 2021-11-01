@@ -248,7 +248,8 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
     Pipes pipes;
 
     /// We have to create a pipe for each replica
-    if (context->getSettingsRef().max_parallel_replicas > 0)
+    /// FIXME: The second condition is only for tests to work, because hedged connections enabled by default.
+    if (context->getSettingsRef().max_parallel_replicas > 0 && !context->getSettingsRef().use_hedged_requests)
     {
         const Settings & current_settings = context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
