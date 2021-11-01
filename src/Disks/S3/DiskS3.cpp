@@ -128,7 +128,6 @@ void throwIfError(const Aws::Utils::Outcome<Result, Error> & response)
         throw Exception(err.GetMessage(), static_cast<int>(err.GetErrorType()));
     }
 }
-  
 template <typename Result, typename Error>
 void logIfError(Aws::Utils::Outcome<Result, Error> & response, Fn<String()> auto && msg)
 {
