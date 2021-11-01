@@ -923,6 +923,70 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     map_snp.disableSnapshotMode();
 }
 
+TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
+{
+    /// int
+    DB::SnapshotableHashTable<int> hello;
+    hello.disableSnapshotMode();
+    EXPECT_EQ(hello.getApproximateSataSize(), 0);
+
+    hello.insert("hello", 1);
+    EXPECT_EQ(hello.getApproximateSataSize(), 9);
+    hello.updateValue("hello", [](int & value) { value = 2; });
+    EXPECT_EQ(hello.getApproximateSataSize(), 9);
+
+    hello.erase("hello");
+    EXPECT_EQ(hello.getApproximateSataSize(), 0);
+
+    hello.clear();
+    EXPECT_EQ(hello.getApproximateSataSize(), 0);
+
+    hello.enableSnapshotMode();
+    hello.insert("hello", 1);
+    EXPECT_EQ(hello.getApproximateSataSize(), 9);
+    hello.updateValue("hello", [](int & value) { value = 2; });
+    EXPECT_EQ(hello.getApproximateSataSize(), 18);
+
+    hello.clearOutdatedNodes();
+    EXPECT_EQ(hello.getApproximateSataSize(), 9);
+
+    hello.erase("hello");
+    EXPECT_EQ(hello.getApproximateSataSize(), 9);
+
+    hello.clearOutdatedNodes();
+    EXPECT_EQ(hello.getApproximateSataSize(), 0);
+
+    /// Node
+    using Node = DB::KeeperStorage::Node;
+    DB::SnapshotableHashTable<Node> world;
+    Node n1;
+    n1.data = "1234";
+    Node n2;
+    n2.data = "123456";
+
+    world.disableSnapshotMode();
+    world.insert("world", n1);
+    /// 169 = 160 + 5 + 4
+    /// 160 = sizeof Node
+    /// 5 = sizeof key
+    /// 4 = sizeof value
+    EXPECT_EQ(world.getApproximateSataSize(), 169);
+    world.updateValue("world", [&](Node & value) { value = n2; });
+    EXPECT_EQ(world.getApproximateSataSize(), 171);
+
+    world.clear();
+    EXPECT_EQ(world.getApproximateSataSize(), 0);
+
+    world.enableSnapshotMode();
+    world.insert("world", n1);
+    EXPECT_EQ(world.getApproximateSataSize(), 169);
+    world.updateValue("world", [&](Node & value) { value = n2; });
+    EXPECT_EQ(world.getApproximateSataSize(), 340);
+
+    world.clearOutdatedNodes();
+    EXPECT_EQ(world.getApproximateSataSize(), 171);
+}
+
 void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner=0)
 {
     using Node = DB::KeeperStorage::Node;

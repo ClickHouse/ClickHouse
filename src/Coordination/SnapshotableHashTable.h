@@ -16,6 +16,19 @@ struct ListNode
 };
 
 template <class V>
+struct HasSizeMethod
+{
+private:
+    template <class T>
+    static auto check(int) -> decltype(std::declval<T>().size(), std::true_type());
+    template <class T>
+    static std::false_type check(...);
+
+public:
+    static constexpr bool value = std::is_same<decltype(check<V>(0)), std::true_type>::value;
+};
+
+template <class V>
 class SnapshotableHashTable
 {
 private:
@@ -27,6 +40,96 @@ private:
     List list;
     IndexMap map;
     bool snapshot_mode{false};
+
+    UInt64 approximate_data_size{0};
+
+    enum OperationType
+    {
+        INSERT = 0,
+        INSERT_OR_REPLACE = 1,
+        ERASE = 2,
+        UPDATE_VALUE = 3,
+        GET_VALUE = 4,
+        FIND = 5,
+        CONTAINS = 6,
+        CLEAR = 7,
+        CLEAR_OUTDATED_NODES = 8
+    };
+
+    /// Update hash table approximate data size
+    ///    op_type: operation type
+    ///    key_size: key size
+    ///    value_size: size of value to add
+    ///    old_value_size: size of value to minus
+    /// old_value_size=0 means there is no old value with the same key.
+    void inline updateDataSize(OperationType op_type, UInt64 key_size, UInt64 value_size, UInt64 old_value_size)
+    {
+        switch (op_type)
+        {
+            case INSERT:
+                approximate_data_size += key_size;
+                approximate_data_size += value_size;
+                break;
+            case INSERT_OR_REPLACE:
+                /// replace
+                if (old_value_size)
+                {
+                    approximate_data_size += key_size;
+                    approximate_data_size += value_size;
+                    if(!snapshot_mode)
+                    {
+                        approximate_data_size += key_size;
+                        approximate_data_size -= old_value_size;
+                    }
+                }
+                /// inseert
+                else
+                {
+                    approximate_data_size += key_size;
+                    approximate_data_size += value_size;
+                }
+                break;
+            case UPDATE_VALUE:
+                approximate_data_size += key_size;
+                approximate_data_size += value_size;
+                if(!snapshot_mode)
+                {
+                    approximate_data_size -= key_size;
+                    approximate_data_size -= old_value_size;
+                }
+                break;
+            case ERASE:
+                if(!snapshot_mode)
+                {
+                    approximate_data_size -= key_size;
+                    approximate_data_size -= old_value_size;
+                }
+                break;
+            case CLEAR:
+                approximate_data_size = 0;
+                break;
+            case CLEAR_OUTDATED_NODES:
+                approximate_data_size -= key_size;
+                approximate_data_size -= value_size;
+                break;
+            default:
+                break;
+        }
+    }
+
+    /// Calculate object memory size.
+    /// @return size(), if T has method size(), otherwise return sizeof(T)
+    template <typename T>
+    inline UInt64 sizeOf(const typename std::enable_if<HasSizeMethod<T>::value, T>::type * obj)
+    {
+        return obj->size();
+    }
+
+    template <typename T>
+    inline UInt64 sizeOf(const typename std::enable_if<!HasSizeMethod<T>::value, T>::type *)
+    {
+        return sizeof(T);
+    }
 
 public:
 
@@ -44,6 +147,7 @@ public:
             ListElem elem{key, value, true};
             auto itr = list.insert(list.end(), elem);
             map.emplace(itr->key, itr);
+            updateDataSize(INSERT, sizeOf<std::string>(&key), sizeOf<V>(&value), 0);
             return true;
         }
 
@@ -54,6 +158,8 @@ public:
     void insertOrReplace(const std::string & key, const V & value)
     {
         auto it = map.find(key);
+        UInt64 old_value_size = it == map.end() ? 0 : sizeOf<V>(&it->second->value);
+
         if (it == map.end())
         {
             ListElem elem{key, value, true};
@@ -76,6 +182,7 @@ public:
                 list_itr->value = value;
             }
         }
+        updateDataSize(INSERT_OR_REPLACE, sizeOf<std::string>(&key), sizeOf<V>(&value), old_value_size);
     }
 
     bool erase(const std::string & key)
@@ -96,6 +203,7 @@ public:
             list.erase(list_itr);
         }
 
+        updateDataSize(ERASE, sizeOf<std::string>(&key), 0, sizeOf<V>(&list_itr->value));
         return true;
     }
 
@@ -108,23 +216,29 @@ public:
     {
         auto it = map.find(key);
         assert(it != map.end());
+
+        auto list_itr = it->second;
+        UInt64 old_value_size = sizeOf<V>(&list_itr->value);
+
+        const_iterator ret;
+
         if (snapshot_mode)
         {
-            auto list_itr = it->second;
             auto elem_copy = *(list_itr);
             list_itr->active_in_map = false;
             map.erase(it);
             updater(elem_copy.value);
             auto itr = list.insert(list.end(), elem_copy);
             map.emplace(itr->key, itr);
-            return itr;
+            ret = itr;
         }
         else
         {
-            auto list_itr = it->second;
             updater(list_itr->value);
-            return list_itr;
+            ret = list_itr;
         }
+        updateDataSize(UPDATE_VALUE, sizeOf<std::string>(&key), sizeOf<V>(&ret->value), old_value_size);
+        return ret;
     }
 
     const_iterator find(const std::string & key) const
@@ -149,7 +263,10 @@ public:
         for (auto itr = start; itr != end;)
         {
             if (!itr->active_in_map)
+            {
+                updateDataSize(CLEAR_OUTDATED_NODES, sizeOf<String>(&itr->key), sizeOf<V>(&itr->value), 0);
                 itr = list.erase(itr);
+            }
             else
                 itr++;
         }
@@ -159,6 +276,7 @@ public:
     {
         list.clear();
         map.clear();
+        updateDataSize(CLEAR, 0, 0, 0);
     }
 
     void enableSnapshotMode()
@@ -181,6 +299,10 @@ public:
         return list.size();
     }
 
+    UInt64 getApproximateSataSize() const
+    {
+        return approximate_data_size;
+    }
 
     iterator begin() { return list.begin(); }
     const_iterator begin() const { return list.cbegin(); }
