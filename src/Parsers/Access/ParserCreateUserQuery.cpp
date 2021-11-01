@@ -34,20 +34,20 @@ namespace
     }
 
 
-    bool parseAuthentication(IParserBase::Pos & pos, Expected & expected, Authentication & authentication)
+    bool parseAuthenticationData(IParserBase::Pos & pos, Expected & expected, AuthenticationData & auth_data)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (ParserKeyword{"NOT IDENTIFIED"}.ignore(pos, expected))
             {
-                authentication = Authentication{Authentication::NO_PASSWORD};
+                auth_data = AuthenticationData{AuthenticationType::NO_PASSWORD};
                 return true;
             }
 
             if (!ParserKeyword{"IDENTIFIED"}.ignore(pos, expected))
                 return false;
 
-            std::optional<Authentication::Type> type;
+            std::optional<AuthenticationType> type;
             bool expect_password = false;
             bool expect_hash = false;
             bool expect_ldap_server_name = false;
@@ -55,17 +55,17 @@ namespace
 
             if (ParserKeyword{"WITH"}.ignore(pos, expected))
             {
-                for (auto check_type : collections::range(Authentication::MAX_TYPE))
+                for (auto check_type : collections::range(AuthenticationType::MAX_TYPE))
                 {
-                    if (ParserKeyword{Authentication::TypeInfo::get(check_type).raw_name}.ignore(pos, expected))
+                    if (ParserKeyword{AuthenticationTypeInfo::get(check_type).raw_name}.ignore(pos, expected))
                     {
                         type = check_type;
 
-                        if (check_type == Authentication::LDAP)
+                        if (check_type == AuthenticationType::LDAP)
                             expect_ldap_server_name = true;
-                        else if (check_type == Authentication::KERBEROS)
+                        else if (check_type == AuthenticationType::KERBEROS)
                             expect_kerberos_realm = true;
-                        else if (check_type != Authentication::NO_PASSWORD)
+                        else if (check_type != AuthenticationType::NO_PASSWORD)
                             expect_password = true;
 
                         break;
@@ -76,12 +76,12 @@ namespace
                 {
                     if (ParserKeyword{"SHA256_HASH"}.ignore(pos, expected))
                     {
-                        type = Authentication::SHA256_PASSWORD;
+                        type = AuthenticationType::SHA256_PASSWORD;
                         expect_hash = true;
                     }
                     else if (ParserKeyword{"DOUBLE_SHA1_HASH"}.ignore(pos, expected))
                     {
-                        type = Authentication::DOUBLE_SHA1_PASSWORD;
+                        type = AuthenticationType::DOUBLE_SHA1_PASSWORD;
                         expect_hash = true;
                     }
                     else
@@ -91,7 +91,7 @@ namespace
 
             if (!type)
             {
-                type = Authentication::SHA256_PASSWORD;
+                type = AuthenticationType::SHA256_PASSWORD;
                 expect_password = true;
             }
 
@@ -124,15 +124,15 @@ namespace
                 }
             }
 
-            authentication = Authentication{*type};
+            auth_data = AuthenticationData{*type};
             if (expect_password)
-                authentication.setPassword(value);
+                auth_data.setPassword(value);
             else if (expect_hash)
-                authentication.setPasswordHashHex(value);
+                auth_data.setPasswordHashHex(value);
             else if (expect_ldap_server_name)
-                authentication.setLDAPServerName(value);
+                auth_data.setLDAPServerName(value);
             else if (expect_kerberos_realm)
-                authentication.setKerberosRealm(value);
+                auth_data.setKerberosRealm(value);
 
             return true;
         });
@@ -360,7 +360,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     auto names_ref = names->names;
 
     String new_name;
-    std::optional<Authentication> authentication;
+    std::optional<AuthenticationData> auth_data;
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
@@ -372,12 +372,12 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     while (true)
     {
-        if (!authentication)
+        if (!auth_data)
         {
-            Authentication new_authentication;
-            if (parseAuthentication(pos, expected, new_authentication))
+            AuthenticationData new_auth_data;
+            if (parseAuthenticationData(pos, expected, new_auth_data))
             {
-                authentication = std::move(new_authentication);
+                auth_data = std::move(new_auth_data);
                 continue;
             }
         }
@@ -460,7 +460,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->cluster = std::move(cluster);
     query->names = std::move(names);
     query->new_name = std::move(new_name);
-    query->authentication = std::move(authentication);
+    query->auth_data = std::move(auth_data);
     query->hosts = std::move(hosts);
     query->add_hosts = std::move(add_hosts);
     query->remove_hosts = std::move(remove_hosts);

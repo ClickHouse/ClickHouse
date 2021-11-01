@@ -75,18 +75,18 @@ namespace
 
         if (has_password_plaintext)
         {
-            user->authentication = Authentication{Authentication::PLAINTEXT_PASSWORD};
-            user->authentication.setPassword(config.getString(user_config + ".password"));
+            user->auth_data = AuthenticationData{AuthenticationType::PLAINTEXT_PASSWORD};
+            user->auth_data.setPassword(config.getString(user_config + ".password"));
         }
         else if (has_password_sha256_hex)
         {
-            user->authentication = Authentication{Authentication::SHA256_PASSWORD};
-            user->authentication.setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
+            user->auth_data = AuthenticationData{AuthenticationType::SHA256_PASSWORD};
+            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
         }
         else if (has_password_double_sha1_hex)
         {
-            user->authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
-            user->authentication.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
+            user->auth_data = AuthenticationData{AuthenticationType::DOUBLE_SHA1_PASSWORD};
+            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
         }
         else if (has_ldap)
         {
@@ -98,15 +98,15 @@ namespace
             if (ldap_server_name.empty())
                 throw Exception("LDAP server name cannot be empty for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
-            user->authentication = Authentication{Authentication::LDAP};
-            user->authentication.setLDAPServerName(ldap_server_name);
+            user->auth_data = AuthenticationData{AuthenticationType::LDAP};
+            user->auth_data.setLDAPServerName(ldap_server_name);
         }
         else if (has_kerberos)
         {
             const auto realm = config.getString(user_config + ".kerberos.realm", "");
 
-            user->authentication = Authentication{Authentication::KERBEROS};
-            user->authentication.setKerberosRealm(realm);
+            user->auth_data = AuthenticationData{AuthenticationType::KERBEROS};
+            user->auth_data.setKerberosRealm(realm);
         }
 
         const auto profile_name_config = user_config + ".profile";

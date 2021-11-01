@@ -23,67 +23,67 @@ namespace
     }
 
 
-    void formatAuthentication(const Authentication & authentication, bool show_password, const IAST::FormatSettings & settings)
+    void formatAuthenticationData(const AuthenticationData & auth_data, bool show_password, const IAST::FormatSettings & settings)
     {
-        auto authentication_type = authentication.getType();
-        if (authentication_type == Authentication::NO_PASSWORD)
+        auto auth_type = auth_data.getType();
+        if (auth_type == AuthenticationType::NO_PASSWORD)
         {
             settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NOT IDENTIFIED"
                           << (settings.hilite ? IAST::hilite_none : "");
             return;
         }
 
-        String authentication_type_name = Authentication::TypeInfo::get(authentication_type).name;
+        String auth_type_name = AuthenticationTypeInfo::get(auth_type).name;
         String by_keyword = "BY";
         std::optional<String> by_value;
 
         if (
             show_password ||
-            authentication_type == Authentication::LDAP ||
-            authentication_type == Authentication::KERBEROS
+            auth_type == AuthenticationType::LDAP ||
+            auth_type == AuthenticationType::KERBEROS
         )
         {
-            switch (authentication_type)
+            switch (auth_type)
             {
-                case Authentication::PLAINTEXT_PASSWORD:
+                case AuthenticationType::PLAINTEXT_PASSWORD:
                 {
-                    by_value = authentication.getPassword();
+                    by_value = auth_data.getPassword();
                     break;
                 }
-                case Authentication::SHA256_PASSWORD:
+                case AuthenticationType::SHA256_PASSWORD:
                 {
-                    authentication_type_name = "sha256_hash";
-                    by_value = authentication.getPasswordHashHex();
+                    auth_type_name = "sha256_hash";
+                    by_value = auth_data.getPasswordHashHex();
                     break;
                 }
-                case Authentication::DOUBLE_SHA1_PASSWORD:
+                case AuthenticationType::DOUBLE_SHA1_PASSWORD:
                 {
-                    authentication_type_name = "double_sha1_hash";
-                    by_value = authentication.getPasswordHashHex();
+                    auth_type_name = "double_sha1_hash";
+                    by_value = auth_data.getPasswordHashHex();
                     break;
                 }
-                case Authentication::LDAP:
+                case AuthenticationType::LDAP:
                 {
                     by_keyword = "SERVER";
-                    by_value = authentication.getLDAPServerName();
+                    by_value = auth_data.getLDAPServerName();
                     break;
                 }
-                case Authentication::KERBEROS:
+                case AuthenticationType::KERBEROS:
                 {
                     by_keyword = "REALM";
-                    const auto & realm = authentication.getKerberosRealm();
+                    const auto & realm = auth_data.getKerberosRealm();
                     if (!realm.empty())
                         by_value = realm;
                     break;
                 }
 
-                case Authentication::NO_PASSWORD: [[fallthrough]];
-                case Authentication::MAX_TYPE:
-                    throw Exception("AST: Unexpected authentication type " + toString(authentication_type), ErrorCodes::LOGICAL_ERROR);
+                case AuthenticationType::NO_PASSWORD: [[fallthrough]];
+                case AuthenticationType::MAX_TYPE:
+                    throw Exception("AST: Unexpected authentication type " + toString(auth_type), ErrorCodes::LOGICAL_ERROR);
             }
         }
 
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH " << authentication_type_name
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " IDENTIFIED WITH " << auth_type_name
                       << (settings.hilite ? IAST::hilite_none : "");
 
         if (by_value)
@@ -258,8 +258,8 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     if (!new_name.empty())
         formatRenameTo(new_name, format);
 
-    if (authentication)
-        formatAuthentication(*authentication, show_password, format);
+    if (auth_data)
+        formatAuthenticationData(*auth_data, show_password, format);
 
     if (hosts)
         formatHosts(nullptr, *hosts, format);
