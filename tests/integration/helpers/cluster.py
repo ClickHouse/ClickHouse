@@ -767,7 +767,7 @@ class ClickHouseCluster:
                      hostname=None, env_variables=None, image="clickhouse/integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
                      zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True,
-                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="yandex"):
+                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="clickhouse"):
 
         """Add an instance to the cluster.
 
@@ -1834,7 +1834,7 @@ class ClickHouseInstance:
             main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True,
             hostname=None, env_variables=None,
             image="clickhouse/integration-test", tag="latest",
-            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None, config_root_name="yandex"):
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None, config_root_name="clickhouse"):
 
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -2403,11 +2403,6 @@ class ClickHouseInstance:
         shutil.copyfile(p.join(self.base_config_dir, self.main_config_name), p.join(instance_config_dir, self.main_config_name))
         shutil.copyfile(p.join(self.base_config_dir, self.users_config_name), p.join(instance_config_dir, self.users_config_name))
 
-        # For old images, keep 'yandex' as root element name.
-        if self.image.startswith('yandex/'):
-            os.system("sed -i 's!<clickhouse>!<yandex>!; s!</clickhouse>!</yandex>!;' '{}'".format(p.join(instance_config_dir, self.main_config_name)))
-            os.system("sed -i 's!<clickhouse>!<yandex>!; s!</clickhouse>!</yandex>!;' '{}'".format(p.join(instance_config_dir, self.users_config_name)))
-
         logging.debug("Create directory for configuration generated in this helper")
         # used by all utils with any config
         conf_d_dir = p.abspath(p.join(instance_config_dir, 'conf.d'))
@@ -2425,7 +2420,7 @@ class ClickHouseInstance:
         def write_embedded_config(name, dest_dir, fix_log_level=False):
             with open(p.join(HELPERS_DIR, name), 'r') as f:
                 data = f.read()
-                data = data.replace('yandex', self.config_root_name)
+                data = data.replace('clickhouse', self.config_root_name)
                 if fix_log_level:
                     data = data.replace('<level>test</level>', '<level>trace</level>')
                 with open(p.join(dest_dir, name), 'w') as r:

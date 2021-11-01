@@ -382,6 +382,142 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 };
 
+class FunctionExtractKeyLike : public IFunction
+{
+public:
+    static constexpr auto name = "mapExtractKeyLike";
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionExtractKeyLike>(); }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*info*/) const override { return true; }
+
+    size_t getNumberOfArguments() const override { return 2; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.size() != 2)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 2",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+
+        const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
+
+        if (!map_type)
+            throw Exception{"First argument for function " + getName() + " must be a map",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+
+        auto key_type = map_type->getKeyType();
+
+        WhichDataType which(key_type);
+
+        if (!which.isStringOrFixedString())
+            throw Exception{"Function " + getName() + "only support the map with String or FixedString key",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        if (!isStringOrFixedString(arguments[1].type))
+            throw Exception{"Second argument passed to function " + getName() + " must be String or FixedString",
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
+
+        return std::make_shared<DataTypeMap>(map_type->getKeyType(), map_type->getValueType());
+    }
+
+    bool useDefaultImplementationForConstants() const override { return true; }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        bool is_const = isColumnConst(*arguments[0].column);
+        const ColumnMap * col_map = typeid_cast<const ColumnMap *>(arguments[0].column.get());
+
+        //It may not be necessary to check this condition, cause it will be checked in getReturnTypeImpl function
+        if (!col_map)
+            return nullptr;
+
+        const DataTypeMap * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].type.get());
+        auto key_type = map_type->getKeyType();
+        auto value_type = map_type->getValueType();
+
+        const auto & nested_column = col_map->getNestedColumn();
+        const auto & keys_column = col_map->getNestedData().getColumn(0);
+        const auto & values_column = col_map->getNestedData().getColumn(1);
+        const ColumnString * keys_string_column = checkAndGetColumn<ColumnString>(keys_column);
+        const ColumnFixedString * keys_fixed_string_column = checkAndGetColumn<ColumnFixedString>(keys_column);
+
+        FunctionLike func_like;
+
+        //create result data
+        MutableColumnPtr keys_data = key_type->createColumn();
+        MutableColumnPtr values_data = value_type->createColumn();
+        MutableColumnPtr offsets = DataTypeNumber<IColumn::Offset>().createColumn();
+
+        IColumn::Offset current_offset = 0;
+
+        for (size_t row = 0; row < input_rows_count; row++)
+        {
+            size_t element_start_row = row != 0 ? nested_column.getOffsets()[row-1] : 0;
+            size_t element_size = nested_column.getOffsets()[row]- element_start_row;
+
+            ColumnsWithTypeAndName new_arguments;
+            ColumnPtr sub_map_column;
+            DataTypePtr data_type;
+
+            if (keys_string_column)
+            {
+                sub_map_column = keys_string_column->cut(element_start_row, element_size);
+                data_type = std::make_shared<DataTypeString>();
+            }
+            else
+            {
+                sub_map_column = keys_fixed_string_column->cut(element_start_row, element_size);
+                data_type =std::make_shared<DataTypeFixedString>(checkAndGetColumn<ColumnFixedString>(sub_map_column.get())->getN());
+            }
+
+            size_t col_key_size = sub_map_column->size();
+            auto column = is_const? ColumnConst::create(std::move(sub_map_column), std::move(col_key_size)) : std::move(sub_map_column);
+
+            new_arguments = {
+                    {
+                        column,
+                        data_type,
+                        ""
+                        },
+                    arguments[1]
+                    };
+
+            auto res = func_like.executeImpl(new_arguments, result_type, input_rows_count);
+            const auto & container = checkAndGetColumn<ColumnUInt8>(res.get())->getData();
+
+            for (size_t row_num = 0; row_num < element_size; row_num++)
+            {
+                if (container[row_num] == 1)
+                {
+                    auto key_ref = keys_string_column ?
+                                   keys_string_column->getDataAt(element_start_row + row_num) :
+                                   keys_fixed_string_column->getDataAt(element_start_row + row_num);
+                    auto value_ref = values_column.getDataAt(element_start_row + row_num);
+
+                    keys_data->insertData(key_ref.data, key_ref.size);
+                    values_data->insertData(value_ref.data, value_ref.size);
+                    current_offset += 1;
+                }
+            }
+
+            offsets->insert(current_offset);
+        }
+
+        auto result_nested_column = ColumnArray::create(
+            ColumnTuple::create(Columns{std::move(keys_data), std::move(values_data)}),
+            std::move(offsets));
+
+        return ColumnMap::create(result_nested_column);
+    }
+};
+
 }
 
 void registerFunctionsMap(FunctionFactory & factory)
@@ -391,6 +527,7 @@ void registerFunctionsMap(FunctionFactory & factory)
     factory.registerFunction<FunctionMapKeys>();
     factory.registerFunction<FunctionMapValues>();
     factory.registerFunction<FunctionMapContainsKeyLike>();
+    factory.registerFunction<FunctionExtractKeyLike>();
 }
 
 }

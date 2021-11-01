@@ -170,12 +170,15 @@ def get_zookeeper_session_uptime(args):
 
 
 def need_retry(args, stdout, stderr, total_time):
-    # Sometimes we may get unexpected exception like "Replica is readonly" or "Shutdown is called for table"
-    # instead of "Session expired" or "Connection loss"
-    # Retry if session was expired during test execution
-    session_uptime = get_zookeeper_session_uptime(args)
-    if session_uptime is not None and session_uptime < math.ceil(total_time):
-        return True
+    if args.check_zookeeper_session:
+        # Sometimes we may get unexpected exception like "Replica is readonly" or "Shutdown is called for table"
+        # instead of "Session expired" or "Connection loss"
+        # Retry if session was expired during test execution.
+        # If ZooKeeper is configured, then it's more reliable than checking stderr,
+        # but the following condition is always true if ZooKeeper is not configured.
+        session_uptime = get_zookeeper_session_uptime(args)
+        if session_uptime is not None and session_uptime < math.ceil(total_time):
+            return True
     return any(msg in stdout for msg in MESSAGES_TO_RETRY) or any(msg in stderr for msg in MESSAGES_TO_RETRY)
 
 
@@ -1320,6 +1323,7 @@ if __name__ == '__main__':
     parser.add_argument('--no-long', action='store_true', dest='no_long', help='Do not run long tests')
     parser.add_argument('--client-option', nargs='+', help='Specify additional client argument')
     parser.add_argument('--print-time', action='store_true', dest='print_time', help='Print test time')
+    parser.add_argument('--check-zookeeper-session', action='store_true', help='Check ZooKeeper session uptime to determine if failed test should be retried')
 
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--zookeeper', action='store_true', default=None, dest='zookeeper', help='Run zookeeper related tests')
