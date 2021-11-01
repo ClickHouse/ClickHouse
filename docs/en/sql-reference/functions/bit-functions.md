@@ -91,6 +91,8 @@ The type of the returned value is the same as the type of the input value.
 
 **Example**
 
+Query:
+
 ``` sql
 SELECT 101 AS a, bin(a), bitShiftRight(a, 2) AS a_shifted, bin(a_shifted);
 SELECT 'abc' AS a, hex(a), bitShiftRight(a, 12) AS a_shifted, hex(a_shifted);
