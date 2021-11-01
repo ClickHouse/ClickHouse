@@ -171,7 +171,7 @@ void HedgedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
 
-        if (offset_states.size() > 1)
+        if (offset_states.size() > 1 && settings.enable_sample_offset_parallel_processing)
         {
             modified_settings.parallel_replicas_count = offset_states.size();
             modified_settings.parallel_replica_offset = fd_to_replica_location[replica.packet_receiver->getFileDescriptor()].offset;

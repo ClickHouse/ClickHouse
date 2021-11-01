@@ -1,6 +1,7 @@
 -- Tags: replica, distributed
 
 SET max_parallel_replicas = 2;
+set enable_sample_offset_parallel_processing=true;
 
 DROP TABLE IF EXISTS report;
 

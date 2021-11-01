@@ -14,6 +14,7 @@ select 'count sample final';
 select count() from sample_final final sample 1/2;
 select 'count final max_parallel_replicas';
 set max_parallel_replicas=2;
+set enable_sample_offset_parallel_processing=true;
 select count() from remote('127.0.0.{2|3}', currentDatabase(), sample_final) final;
 
 drop table if exists sample_final;
