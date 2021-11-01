@@ -76,7 +76,7 @@ private:
                 {
                     approximate_data_size += key_size;
                     approximate_data_size += value_size;
-                    if(!snapshot_mode)
+                    if (!snapshot_mode)
                     {
                         approximate_data_size += key_size;
                         approximate_data_size -= old_value_size;
@@ -92,14 +92,14 @@ private:
             case UPDATE_VALUE:
                 approximate_data_size += key_size;
                 approximate_data_size += value_size;
-                if(!snapshot_mode)
+                if (!snapshot_mode)
                 {
                     approximate_data_size -= key_size;
                     approximate_data_size -= old_value_size;
                 }
                 break;
             case ERASE:
-                if(!snapshot_mode)
+                if (!snapshot_mode)
                 {
                     approximate_data_size -= key_size;
                     approximate_data_size -= old_value_size;
