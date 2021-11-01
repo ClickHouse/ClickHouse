@@ -100,7 +100,7 @@ def build_config_to_string(build_config):
 
 
 def get_run_command(build_path, result_folder, server_log_folder, image):
-    cmd = "docker run " + \
+    cmd = "docker run -e S3_URL='https://clickhouse-datasets.s3.amazonaws.com' " + \
           f"--volume={build_path}:/package_folder "  \
           f"--volume={result_folder}:/test_output " \
           f"--volume={server_log_folder}:/var/log/clickhouse-server {image}"
