@@ -245,7 +245,7 @@ static inline void read(IColumn & column, Reader && reader)
 
 void SerializationString::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
-    read(column, [&](ColumnString::Chars & data) { readStringInto(data, istr); });
+    read(column, [&](ColumnString::Chars & data) { readStringUntilEOFInto(data, istr); });
 }
 
 
