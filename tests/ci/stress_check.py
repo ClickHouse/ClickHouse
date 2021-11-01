@@ -148,7 +148,7 @@ def get_commit(gh, commit_sha):
     commit = repo.get_commit(commit_sha)
     return commit
 
-def process_results(result_folder, server_log_path):
+def process_results(result_folder, server_log_path, run_log_path):
     test_results = []
     additional_files = []
     # Just upload all files from result_folder.
@@ -160,6 +160,8 @@ def process_results(result_folder, server_log_path):
     if os.path.exists(server_log_path):
         server_log_files = [f for f in os.listdir(server_log_path) if os.path.isfile(os.path.join(server_log_path, f))]
         additional_files = additional_files + [os.path.join(server_log_path, f) for f in server_log_files]
+
+    additional_files.append(run_log_path)
 
     status_path = os.path.join(result_folder, "check_status.tsv")
     if not os.path.exists(status_path):
@@ -249,7 +251,7 @@ if __name__ == "__main__":
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    run_log_path = os.path.join(result_path, "runlog.log")
+    run_log_path = os.path.join(temp_path, "runlog.log")
 
     download_builds(packages_path, urls)
     run_command = get_run_command(packages_path, result_path, server_log_path, docker_image)
@@ -266,7 +268,7 @@ if __name__ == "__main__":
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
-    state, description, test_results, additional_logs = process_results(result_path, server_log_path)
+    state, description, test_results, additional_logs = process_results(result_path, server_log_path, run_log_path)
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, run_log_path, additional_logs, check_name)
     print(f"::notice ::Report url: {report_url}")
     commit = get_commit(gh, pr_info.sha)
