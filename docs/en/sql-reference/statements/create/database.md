@@ -26,7 +26,7 @@ ClickHouse creates the `db_name` database on all the servers of a specified clus
 
 ### ENGINE {#engine}
 
-[MySQL](../../../engines/database-engines/mysql.md) allows you to retrieve data from the remote MySQL server. By default, ClickHouse uses its own [database engine](../../../engines/database-engines/index.md). There is also a [lazy](../../../engines/database-engines/lazy.md) engine.
+By default, ClickHouse uses its own [Atomic](../../../engines/database-engines/atomic.md) database engine. There are also [Lazy](../../../engines/database-engines/lazy.md), MySQL, PostgresSQL, MaterializedMySQL, MaterializedPostgreSQL, Dictionary, Replicated <other engines and links to the corresponding doc pages>.
 
 ### COMMENT {#comment}
 
