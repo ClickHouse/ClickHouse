@@ -1951,7 +1951,7 @@ void Context::shutdownKeeperDispatcher() const
 }
 
 
-void Context::updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::AbstractConfiguration & config)
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->keeper_dispatcher_mutex);
