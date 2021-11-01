@@ -26,7 +26,7 @@ You can view the list of external dictionaries and their statuses in the `system
 The configuration looks like this:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         ...
         <layout>
@@ -36,7 +36,7 @@ The configuration looks like this:
         </layout>
         ...
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 Corresponding [DDL-query](../../../sql-reference/statements/create/dictionary.md):
@@ -53,15 +53,17 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 -   [flat](#flat)
 -   [hashed](#dicts-external_dicts_dict_layout-hashed)
 -   [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
--   [cache](#cache)
--   [ssd_cache](#ssd-cache)
--   [direct](#direct)
--   [range_hashed](#range-hashed)
 -   [complex_key_hashed](#complex-key-hashed)
+-   [complex_key_sparse_hashed](#complex-key-sparse-hashed)
+-   [hashed_array](#dicts-external_dicts_dict_layout-hashed-array)
+-   [complex_key_hashed_array](#complex-key-hashed-array)
+-   [range_hashed](#range-hashed)
 -   [complex_key_range_hashed](#complex-key-range-hashed)
+-   [cache](#cache)
 -   [complex_key_cache](#complex-key-cache)
 -   [ssd_cache](#ssd-cache)
--   [ssd_complex_key_cache](#complex-key-ssd-cache)
+-   [complex_key_ssd_cache](#complex-key-ssd-cache)
+-   [direct](#direct)
 -   [complex_key_direct](#complex-key-direct)
 -   [ip_trie](#ip-trie)
 
@@ -151,8 +153,67 @@ Configuration example:
 </layout>
 ```
 
+or
+
 ``` sql
 LAYOUT(COMPLEX_KEY_HASHED())
+```
+
+### complex_key_sparse_hashed {#complex-key-sparse-hashed}
+
+This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed).
+
+Configuration example:
+
+``` xml
+<layout>
+  <complex_key_sparse_hashed />
+</layout>
+```
+
+or
+
+``` sql
+LAYOUT(COMPLEX_KEY_SPARSE_HASHED())
+```
+
+### hashed_array {#dicts-external_dicts_dict_layout-hashed-array}
+
+The dictionary is completely stored in memory. Each attribute is stored in an array. The key attribute is stored in the form of a hashed table where value is an index in the attributes array. The dictionary can contain any number of elements with any identifiers. In practice, the number of keys can reach tens of millions of items.
+
+All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
+
+Configuration example:
+
+``` xml
+<layout>
+  <hashed_array>
+  </hashed_array>
+</layout>
+```
+
+or
+
+``` sql
+LAYOUT(HASHED_ARRAY())
+```
+
+### complex_key_hashed_array {#complex-key-hashed-array}
+
+This type of storage is for use with composite [keys](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Similar to [hashed_array](#dicts-external_dicts_dict_layout-hashed-array).
+
+Configuration example:
+
+``` xml
+<layout>
+  <complex_key_hashed_array />
+</layout>
+```
+
+or
+
+``` sql
+LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
 ```
 
 ### range_hashed {#range-hashed}
@@ -228,7 +289,7 @@ Details of the algorithm:
 Configuration example:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         ...
 
@@ -256,7 +317,7 @@ Configuration example:
         </structure>
 
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 or
@@ -302,8 +363,9 @@ When searching for a dictionary, the cache is searched first. For each block of 
 
 If keys are not found in dictionary, then update cache task is created and added into update queue. Update queue properties can be controlled with settings `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
 
-For cache dictionaries, the expiration [lifetime](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used and key becomes expired, and it is re-requested the next time it needs to be used this behaviour can be configured with setting `allow_read_expired_keys`.
-This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the `system.dictionaries` table.
+For cache dictionaries, the expiration [lifetime](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used and key becomes expired. The key is re-requested the next time it needs to be used. This behaviour can be configured with setting `allow_read_expired_keys`.
+
+This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the [system.dictionaries](../../../operations/system-tables/dictionaries.md) table.
 
 If setting `allow_read_expired_keys` is set to 1, by default 0. Then dictionary can support asynchronous updates. If a client requests keys and all of them are in cache, but some of them are expired, then dictionary will return expired keys for a client and request them asynchronously from the source.
 
@@ -368,7 +430,7 @@ Similar to `cache`, but stores data on SSD and index in RAM. All cache dictionar
         <!-- Size of RAM buffer in bytes for aggregating elements before flushing to SSD. -->
         <write_buffer_size>1048576</write_buffer_size>
         <!-- Path where cache file will be stored. -->
-        <path>/var/lib/clickhouse/clickhouse_dictionaries/test_dict</path>
+        <path>/var/lib/clickhouse/user_files/test_dict</path>
     </ssd_cache>
 </layout>
 ```
@@ -377,7 +439,7 @@ or
 
 ``` sql
 LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
-    PATH ./user_files/test_dict))
+    PATH '/var/lib/clickhouse/user_files/test_dict'))
 ```
 
 ### complex_key_ssd_cache {#complex-key-ssd-cache}
@@ -491,4 +553,3 @@ dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
 
 Data must completely fit into RAM.
-

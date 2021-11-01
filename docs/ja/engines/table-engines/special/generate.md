@@ -58,4 +58,4 @@ SELECT * FROM generate_engine_table LIMIT 3
     -   指数
     -   複製
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/generate/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/generate/) <!--hide-->

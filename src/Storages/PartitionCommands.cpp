@@ -6,7 +6,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <Processors/Chunk.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
 

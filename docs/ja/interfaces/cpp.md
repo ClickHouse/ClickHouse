@@ -9,4 +9,4 @@ toc_title: "C++\u30AF\u30E9\u30A4\u30A2\u30F3\u30C8\u30E9\u30A4"
 
 のREADMEを参照してください [クリックハウス-cpp](https://github.com/ClickHouse/clickhouse-cpp) リポジトリ。
 
-[元の記事](https://clickhouse.tech/docs/en/interfaces/cpp/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/interfaces/cpp/) <!--hide-->

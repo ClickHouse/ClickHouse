@@ -1,16 +1,19 @@
 #include "DiskWebServer.h"
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/escapeForFileName.h>
-
-#include <Disks/IDiskRemote.h>
-#include <Disks/ReadIndirectBufferFromRemoteFS.h>
-#include <Disks/ReadIndirectBufferFromWebServer.h>
 
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+
+#include <Disks/IDiskRemote.h>
+#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -40,7 +43,7 @@ void DiskWebServer::initialize(const String & uri_path) const
                                             ReadWriteBufferFromHTTP::OutStreamCallback(),
                                             ConnectionTimeouts::getHTTPTimeouts(getContext()));
         String file_name;
-        FileData file_data;
+        FileData file_data{};
 
         String dir_name = fs::path(uri_path.substr(url.size())) / "";
         LOG_TRACE(&Poco::Logger::get("DiskWeb"), "Adding directory: {}", dir_name);
@@ -105,33 +108,6 @@ private:
 };
 
 
-class ReadBufferFromWebServer final : public ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWebServer>
-{
-public:
-    ReadBufferFromWebServer(
-            const String & uri_,
-            RemoteMetadata metadata_,
-            ContextPtr context_,
-            size_t buf_size_)
-        : ReadIndirectBufferFromRemoteFS<ReadIndirectBufferFromWebServer>(metadata_)
-        , uri(uri_)
-        , context(context_)
-        , buf_size(buf_size_)
-    {
-    }
-
-    std::unique_ptr<ReadIndirectBufferFromWebServer> createReadBuffer(const String & path) override
-    {
-        return std::make_unique<ReadIndirectBufferFromWebServer>(fs::path(uri) / path, context, buf_size);
-    }
-
-private:
-    String uri;
-    ContextPtr context;
-    size_t buf_size;
-};
-
-
 DiskWebServer::DiskWebServer(
             const String & disk_name_,
             const String & url_,
@@ -176,7 +152,7 @@ bool DiskWebServer::exists(const String & path) const
 }
 
 
-std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & path, const ReadSettings & read_settings, size_t) const
+std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & path, const ReadSettings & read_settings, std::optional<size_t>) const
 {
     LOG_TRACE(log, "Read from path: {}", path);
     auto iter = files.find(path);
@@ -190,8 +166,20 @@ std::unique_ptr<ReadBufferFromFileBase> DiskWebServer::readFile(const String & p
     RemoteMetadata meta(path, remote_path);
     meta.remote_fs_objects.emplace_back(std::make_pair(remote_path, iter->second.size));
 
-    auto reader = std::make_unique<ReadBufferFromWebServer>(url, meta, getContext(), read_settings.remote_fs_buffer_size);
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), min_bytes_for_seek);
+    bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool;
+
+    auto web_impl = std::make_unique<ReadBufferFromWebServerGather>(path, url, meta, getContext(), threadpool_read, read_settings);
+
+    if (threadpool_read)
+    {
+        auto reader = IDiskRemote::getThreadPoolReader();
+        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(web_impl), min_bytes_for_seek);
+    }
+    else
+    {
+        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(web_impl));
+        return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), min_bytes_for_seek);
+    }
 }
 
 

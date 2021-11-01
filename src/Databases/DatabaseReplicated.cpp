@@ -15,7 +15,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/Cluster.h>
-#include <common/getFQDNOrHostName.h>
+#include <base/getFQDNOrHostName.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -298,20 +298,48 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     /// Write host name to replica_path, it will protect from multiple replicas with the same name
     auto host_id = getHostID(getContext(), db_uuid);
 
-    Coordination::Requests ops;
-    ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
-    ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent));
-    current_zookeeper->multi(ops);
+    for (int attempts = 10; attempts > 0; --attempts)
+    {
+        Coordination::Stat stat;
+        String max_log_ptr_str = current_zookeeper->get(zookeeper_path + "/max_log_ptr", &stat);
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path, host_id, zkutil::CreateMode::Persistent));
+        ops.emplace_back(zkutil::makeCreateRequest(replica_path + "/log_ptr", "0", zkutil::CreateMode::Persistent));
+        /// In addition to creating the replica nodes, we record the max_log_ptr at the instant where
+        /// we declared ourself as an existing replica. We'll need this during recoverLostReplica to
+        /// notify other nodes that issued new queries while this node was recovering.
+        ops.emplace_back(zkutil::makeCheckRequest(zookeeper_path + "/max_log_ptr", stat.version));
+        Coordination::Responses responses;
+        const auto code = current_zookeeper->tryMulti(ops, responses);
+        if (code == Coordination::Error::ZOK)
+        {
+            max_log_ptr_at_creation = parse<UInt32>(max_log_ptr_str);
+            break;
+        }
+        else if (code == Coordination::Error::ZNODEEXISTS || attempts == 1)
+        {
+            /// If its our last attempt, or if the replica already exists, fail immediately.
+            zkutil::KeeperMultiException::check(code, ops, responses);
+        }
+    }
     createEmptyLogEntry(current_zookeeper);
 }
 
-void DatabaseReplicated::loadStoredObjects(
-    ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables)
+void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr /*context*/, bool /*force_restore*/, bool force_attach)
 {
     tryConnectToZooKeeperAndInitDatabase(force_attach);
+}
 
-    DatabaseAtomic::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach, skip_startup_tables);
+void DatabaseReplicated::loadStoredObjects(
+    ContextMutablePtr local_context, bool force_restore, bool force_attach, bool skip_startup_tables)
+{
+    beforeLoadingMetadata(local_context, force_restore, force_attach);
+    DatabaseAtomic::loadStoredObjects(local_context, force_restore, force_attach, skip_startup_tables);
+}
 
+void DatabaseReplicated::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
+{
+    DatabaseAtomic::startupTables(thread_pool, force_restore, force_attach);
     ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
     ddl_worker->startup();
 }
@@ -613,6 +641,21 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         InterpreterCreateQuery(query_ast, create_query_context).execute();
     }
 
+    if (max_log_ptr_at_creation != 0)
+    {
+        /// If the replica is new and some of the queries applied during recovery
+        /// where issued after the replica was created, then other nodes might be
+        /// waiting for this node to notify them that the query was applied.
+        for (UInt32 ptr = max_log_ptr_at_creation; ptr <= max_log_ptr; ++ptr)
+        {
+            auto entry_name = DDLTaskBase::getLogEntryName(ptr);
+            auto path = fs::path(zookeeper_path) / "log" / entry_name / "finished" / getFullReplicaName();
+            auto status = ExecutionStatus(0).serializeText();
+            auto res = current_zookeeper->tryCreate(path, status, zkutil::CreateMode::Persistent);
+            if (res == Coordination::Error::ZOK)
+                LOG_INFO(log, "Marked recovered {} as finished", entry_name);
+        }
+    }
     current_zookeeper->set(replica_path + "/log_ptr", toString(max_log_ptr));
 }
 

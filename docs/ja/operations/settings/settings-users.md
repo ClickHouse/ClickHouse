@@ -161,4 +161,4 @@ toc_title: "\u30E6\u30FC\u30B6\u30FC\u8A2D\u5B9A"
 
 その `filter` 任意の式にすることができます。 [UInt8](../../sql-reference/data-types/int-uint.md)-タイプ値。 通常、比較演算子と論理演算子が含まれています。 からの行 `database_name.table1` る結果をフィルターを0においても返却いたしませんこのユーザーです。 このフィルタリングは `PREWHERE` 操作と無効 `WHERE→PREWHERE` 最適化。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/settings/settings_users/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/settings/settings_users/) <!--hide-->

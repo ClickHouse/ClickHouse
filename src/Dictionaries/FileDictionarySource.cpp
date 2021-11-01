@@ -1,11 +1,9 @@
 #include "FileDictionarySource.h"
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/filesystemHelpers.h>
-#include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context.h>
-#include <Formats/FormatFactory.h>
 #include <Processors/Formats/IInputFormat.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
@@ -33,7 +31,7 @@ FileDictionarySource::FileDictionarySource(
     , context(context_)
 {
     auto user_files_path = context->getUserFilesPath();
-    if (created_from_ddl && !pathStartsWith(filepath, user_files_path))
+    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath, user_files_path))
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, user_files_path);
 }
 
@@ -52,7 +50,7 @@ Pipe FileDictionarySource::loadAll()
 {
     LOG_TRACE(&Poco::Logger::get("FileDictionary"), "loadAll {}", toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
-    auto source = FormatFactory::instance().getInput(format, *in_ptr, sample_block, context, max_block_size);
+    auto source = context->getInputFormat(format, *in_ptr, sample_block, max_block_size);
     source->addBuffer(std::move(in_ptr));
     last_modification = getLastModification();
 

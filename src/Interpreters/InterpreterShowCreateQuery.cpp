@@ -1,9 +1,8 @@
 #include <Storages/IStorage.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/formatAST.h>
-#include <DataStreams/OneBlockInputStream.h>
-#include <DataStreams/BlockIO.h>
-#include <DataStreams/copyData.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <QueryPipeline/BlockIO.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
@@ -26,7 +25,7 @@ namespace ErrorCodes
 BlockIO InterpreterShowCreateQuery::execute()
 {
     BlockIO res;
-    res.in = executeImpl();
+    res.pipeline = executeImpl();
     return res;
 }
 
@@ -40,7 +39,7 @@ Block InterpreterShowCreateQuery::getSampleBlock()
 }
 
 
-BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
+QueryPipeline InterpreterShowCreateQuery::executeImpl()
 {
     ASTPtr create_query;
     ASTQueryWithTableAndOutput * show_query;
@@ -100,10 +99,10 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
     MutableColumnPtr column = ColumnString::create();
     column->insert(res);
 
-    return std::make_shared<OneBlockInputStream>(Block{{
+    return QueryPipeline(std::make_shared<SourceFromSingleChunk>(Block{{
         std::move(column),
         std::make_shared<DataTypeString>(),
-        "statement"}});
+        "statement"}}));
 }
 
 }

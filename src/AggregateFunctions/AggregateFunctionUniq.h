@@ -3,7 +3,7 @@
 #include <city.h>
 #include <type_traits>
 
-#include <common/bit_cast.h>
+#include <base/bit_cast.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>

@@ -23,6 +23,20 @@ ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'p
 -   `user` — PostgreSQL user.
 -   `password` — User password.
 
+## Dynamically adding new tables to replication
+
+``` sql
+ATTACH TABLE postgres_database.new_table;
+```
+
+It will work as well if there is a setting `materialized_postgresql_tables_list`.
+
+## Dynamically removing tables from replication
+
+``` sql
+DETACH TABLE postgres_database.table_to_remove;
+```
+
 ## Settings {#settings}
 
 -   [materialized_postgresql_max_block_size](../../operations/settings/settings.md#materialized-postgresql-max-block-size)
@@ -42,6 +56,12 @@ SETTINGS materialized_postgresql_max_block_size = 65536,
          materialized_postgresql_tables_list = 'table1,table2,table3';
 
 SELECT * FROM database1.table1;
+```
+
+It is also possible to change settings at run time.
+
+``` sql
+ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
 ```
 
 ## Requirements {#requirements}
@@ -89,8 +109,56 @@ SELECT * FROM postgresql_db.postgres_table;
 
 ## Notes {#notes}
 
-- Failover of the logical replication slot.
+### Failover of the logical replication slot {#logical-replication-slot-failover}
 
 Logical Replication Slots which exist on the primary are not available on standby replicas.
 So if there is a failover, new primary (the old physical standby) won’t be aware of any slots which were existing with old primary. This will lead to a broken replication from PostgreSQL.
-A solution to this is to manage replication slots yourself and define a permanent replication slot (some information can be found [here](https://patroni.readthedocs.io/en/latest/SETTINGS.html)). You'll need to pass slot name via `materialized_postgresql_replication_slot` setting, and it has to be exported with `EXPORT SNAPSHOT` option. The snapshot identifier needs to be passed via `materialized_postgresql_snapshot` setting.
+A solution to this is to manage replication slots yourself and define a permanent replication slot (some information can be found [here](https://patroni.readthedocs.io/en/latest/SETTINGS.html)). You'll need to pass slot name via [materialized_postgresql_replication_slot](../../operations/settings/settings.md#materialized-postgresql-replication-slot) setting, and it has to be exported with `EXPORT SNAPSHOT` option. The snapshot identifier needs to be passed via [materialized_postgresql_snapshot](../../operations/settings/settings.md#materialized-postgresql-snapshot) setting.
+
+Please note that this should be used only if it is actually needed. If there is no real need for that or full understanding why, then it is better to allow the table engine to create and manage its own replication slot.
+
+**Example (from [@bchrobot](https://github.com/bchrobot))** 
+
+1. Configure replication slot in PostgreSQL.
+
+```yaml
+apiVersion: "acid.zalan.do/v1"
+kind: postgresql
+metadata:
+  name: acid-demo-cluster
+spec:
+  numberOfInstances: 2
+  postgresql:
+    parameters:
+      wal_level: logical
+  patroni:
+    slots:
+      clickhouse_sync:
+        type: logical
+        database: demodb
+        plugin: pgoutput
+```
+
+2. Wait for replication slot to be ready, then begin a transaction and export the transaction snapshot identifier:
+
+```sql
+BEGIN;
+SELECT pg_export_snapshot();
+```
+
+3. In ClickHouse create database:
+
+```sql
+CREATE DATABASE demodb
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS
+  materialized_postgresql_replication_slot = 'clickhouse_sync',
+  materialized_postgresql_snapshot = '0000000A-0000023F-3',
+  materialized_postgresql_tables_list = 'table1,table2,table3';
+```
+
+4. End the PostgreSQL transaction once replication to ClickHouse DB is confirmed. Verify that replication continues after failover:
+
+```bash
+kubectl exec acid-demo-cluster-0 -c postgres -- su postgres -c 'patronictl failover --candidate acid-demo-cluster-1 --force'
+```

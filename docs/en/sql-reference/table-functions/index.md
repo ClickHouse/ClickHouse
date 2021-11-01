@@ -36,4 +36,4 @@ You can use table functions in:
 | [s3](../../sql-reference/table-functions/s3.md)                  | Creates a [S3](../../engines/table-engines/integrations/s3.md)-engine table.                                                           |
 | [sqlite](../../sql-reference/table-functions/sqlite.md)          | Creates a [sqlite](../../engines/table-engines/integrations/sqlite.md)-engine table.                                                       |
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/table-functions/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/table-functions/) <!--hide-->

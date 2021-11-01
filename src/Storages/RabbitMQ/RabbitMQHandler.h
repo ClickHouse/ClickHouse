@@ -5,7 +5,7 @@
 #include <mutex>
 #include <amqpcpp.h>
 #include <amqpcpp/linux_tcp.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <amqpcpp/libuv.h>
 
 namespace DB
