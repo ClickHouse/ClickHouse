@@ -16,7 +16,7 @@
 #include <cmath>
 #include <type_traits>
 #include <array>
-#include <common/bit_cast.h>
+#include <base/bit_cast.h>
 #include <algorithm>
 
 #ifdef __SSE4_1__
@@ -614,7 +614,7 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
     {
-        return { true, true, true };
+        return { .is_monotonic = true, .is_always_monotonic = true };
     }
 };
 

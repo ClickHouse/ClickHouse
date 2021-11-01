@@ -37,6 +37,11 @@ flat: inner on
 1	1	1	1	1
 2	2	2	2	2
 3	3	3	3	3
+flat: inner or
+0	0	0	0	0
+1000	1	1	1	1
+2	2	2	2	2
+3000	3	3	3	3
 hashed: left on
 0	0	0	0	0
 1	1	1	1	1

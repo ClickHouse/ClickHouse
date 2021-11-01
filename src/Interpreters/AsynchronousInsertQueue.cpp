@@ -1,13 +1,15 @@
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <Core/Settings.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -18,6 +20,7 @@
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
 #include <Access/AccessFlags.h>
+#include <Formats/FormatFactory.h>
 
 
 namespace DB
@@ -27,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int UNKNOWN_FORMAT;
 }
 
 AsynchronousInsertQueue::InsertQuery::InsertQuery(const ASTPtr & query_, const Settings & settings_)
@@ -146,7 +150,7 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
     }
 }
 
-void AsynchronousInsertQueue::scheduleProcessDataJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context)
+void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context)
 {
     /// Wrap 'unique_ptr' with 'shared_ptr' to make this
     /// lambda copyable and allow to save it to the thread pool.
@@ -165,6 +169,9 @@ void AsynchronousInsertQueue::push(ASTPtr query, ContextPtr query_context)
     InterpreterInsertQuery interpreter(query, query_context, settings.insert_allow_materialized_columns);
     auto table = interpreter.getTable(insert_query);
     auto sample_block = interpreter.getSampleBlock(insert_query, table, table->getInMemoryMetadataPtr());
+
+    if (!FormatFactory::instance().isInputFormat(insert_query.format))
+        throw Exception(ErrorCodes::UNKNOWN_FORMAT, "Unknown input format {}", insert_query.format);
 
     query_context->checkAccess(AccessType::INSERT, insert_query.table_id, sample_block.getNames());
 
@@ -214,7 +221,7 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
         data->entries.size(), data->size, queryToString(it->first.query));
 
     if (data->size > max_data_size)
-        scheduleProcessDataJob(it->first, std::move(data), getContext());
+        scheduleDataProcessingJob(it->first, std::move(data), getContext());
 }
 
 void AsynchronousInsertQueue::waitForProcessingQuery(const String & query_id, const Milliseconds & timeout)
@@ -259,7 +266,7 @@ void AsynchronousInsertQueue::busyCheck()
 
             auto lag = std::chrono::steady_clock::now() - elem->data->first_update;
             if (lag >= busy_timeout)
-                scheduleProcessDataJob(key, std::move(elem->data), getContext());
+                scheduleDataProcessingJob(key, std::move(elem->data), getContext());
             else
                 timeout = std::min(timeout, std::chrono::ceil<std::chrono::milliseconds>(busy_timeout - lag));
         }
@@ -281,7 +288,7 @@ void AsynchronousInsertQueue::staleCheck()
 
             auto lag = std::chrono::steady_clock::now() - elem->data->last_update;
             if (lag >= stale_timeout)
-                scheduleProcessDataJob(key, std::move(elem->data), getContext());
+                scheduleDataProcessingJob(key, std::move(elem->data), getContext());
         }
     }
 }
@@ -324,7 +331,7 @@ void AsynchronousInsertQueue::cleanup()
             }
 
             if (total_removed)
-                LOG_TRACE(log, "Removed stale entries for {} queries from asynchronous insertion queue", keys_to_remove.size());
+                LOG_TRACE(log, "Removed stale entries for {} queries from asynchronous insertion queue", total_removed);
         }
 
         {
@@ -362,11 +369,15 @@ try
     insert_context->makeQueryContext();
     insert_context->setSettings(key.settings);
 
-    InterpreterInsertQuery interpreter(key.query, insert_context, key.settings.insert_allow_materialized_columns);
-    auto sinks = interpreter.getSinks();
-    assert(sinks.size() == 1);
+    /// Set initial_query_id, because it's used in InterpreterInsertQuery for table lock.
+    insert_context->getClientInfo().query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    insert_context->setCurrentQueryId("");
 
-    auto header = sinks.at(0)->getInputs().front().getHeader();
+    InterpreterInsertQuery interpreter(key.query, insert_context, key.settings.insert_allow_materialized_columns, false, false, true);
+    auto pipeline = interpreter.execute().pipeline;
+    assert(pipeline.pushing());
+
+    auto header = pipeline.getHeader();
     auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
 
     size_t total_rows = 0;
@@ -396,27 +407,28 @@ try
     }
 
     StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
-    std::unique_ptr<ReadBuffer> buffer;
+    std::unique_ptr<ReadBuffer> last_buffer;
     for (const auto & entry : data->entries)
     {
-        buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
+        auto buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
         current_entry = entry;
         total_rows += executor.execute(*buffer);
+
+        /// Keep buffer, because it still can be used
+        /// in destructor, while resetting buffer at next iteration.
+        last_buffer = std::move(buffer);
     }
+
+    format->addBuffer(std::move(last_buffer));
 
     auto chunk = Chunk(executor.getResultColumns(), total_rows);
     size_t total_bytes = chunk.bytes();
 
     auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
-    Pipe pipe(source);
+    pipeline.complete(Pipe(std::move(source)));
 
-    QueryPipeline out_pipeline;
-    out_pipeline.init(std::move(pipe));
-    out_pipeline.resize(1);
-    out_pipeline.setSinks([&](const Block &, Pipe::StreamType) { return sinks.at(0); });
-
-    auto out_executor = out_pipeline.execute();
-    out_executor->execute(out_pipeline.getNumThreads());
+    CompletedPipelineExecutor completed_executor(pipeline);
+    completed_executor.execute();
 
     LOG_INFO(log, "Flushed {} rows, {} bytes for query '{}'",
         total_rows, total_bytes, queryToString(key.query));
@@ -426,6 +438,10 @@ try
             entry->finish();
 }
 catch (const Exception & e)
+{
+    finishWithException(key.query, data->entries, e);
+}
+catch (const Poco::Exception & e)
 {
     finishWithException(key.query, data->entries, e);
 }

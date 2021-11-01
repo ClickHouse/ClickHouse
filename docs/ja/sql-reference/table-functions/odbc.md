@@ -105,4 +105,4 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 -   [ODBC外部辞書](../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-odbc)
 -   [ODBCテーブルエンジン](../../engines/table-engines/integrations/odbc.md).
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/table_functions/jdbc/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/table_functions/jdbc/) <!--hide-->

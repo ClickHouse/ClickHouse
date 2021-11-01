@@ -43,4 +43,4 @@ SELECT x + y FROM t_null
 └────────────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/nullable/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/nullable/) <!--hide-->

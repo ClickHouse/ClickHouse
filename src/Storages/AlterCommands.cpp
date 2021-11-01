@@ -180,6 +180,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.if_exists = command_ast->if_exists;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_COMMENT)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = COMMENT_TABLE;
+        const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
+        command.comment = ast_comment.value.get<String>();
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
     {
         AlterCommand command;
@@ -194,6 +203,13 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_SAMPLE_BY;
         command.sample_by = command_ast->sample_by;
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::REMOVE_SAMPLE_BY)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::REMOVE_SAMPLE_BY;
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::ADD_INDEX)
@@ -309,6 +325,14 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_SETTING;
+        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_DATABASE_SETTING;
         command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
         return command;
     }
@@ -446,10 +470,18 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     {
         metadata.sampling_key.recalculateWithNewAST(sample_by, metadata.columns, context);
     }
+    else if (type == REMOVE_SAMPLE_BY)
+    {
+        metadata.sampling_key = {};
+    }
     else if (type == COMMENT_COLUMN)
     {
         metadata.columns.modify(column_name,
             [&](ColumnDescription & column) { column.comment = *comment; });
+    }
+    else if (type == COMMENT_TABLE)
+    {
+        metadata.comment = *comment;
     }
     else if (type == ADD_INDEX)
     {
@@ -724,7 +756,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
         return false;
 
     /// We remove properties on metadata level
-    if (isRemovingProperty() || type == REMOVE_TTL)
+    if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
         return false;
 
     if (type == DROP_COLUMN || type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN)
@@ -743,7 +775,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
 
 bool AlterCommand::isCommentAlter() const
 {
-    if (type == COMMENT_COLUMN)
+    if (type == COMMENT_COLUMN || type == COMMENT_TABLE)
     {
         return true;
     }
@@ -841,6 +873,7 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     apply(metadata, context);
     return result;
 }
+
 
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
@@ -959,6 +992,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
     }
     prepared = true;
 }
+
 
 void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
@@ -1184,6 +1218,10 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
         else if (command.type == AlterCommand::REMOVE_TTL && !metadata.hasAnyTableTTL())
         {
             throw Exception{"Table doesn't have any table TTL expression, cannot remove", ErrorCodes::BAD_ARGUMENTS};
+        }
+        else if (command.type == AlterCommand::REMOVE_SAMPLE_BY && !metadata.hasSamplingKey())
+        {
+            throw Exception{"Table doesn't have SAMPLE BY, cannot remove", ErrorCodes::BAD_ARGUMENTS};
         }
 
         /// Collect default expressions for MODIFY and ADD comands

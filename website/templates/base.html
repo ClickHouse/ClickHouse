@@ -4,19 +4,13 @@
     {% include "templates/common_meta.html" %}
     {% block extra_meta %}{% endblock %}
     {% include "templates/common_css.html" %}
-    {% if config and not config.extra.single_page %}
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-KF1LLRTQ5Q"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
-      gtag('config', 'G-KF1LLRTQ5Q');
-    </script>
-    {% endif %}
 </head>
 <body dir="{{ direction or 'ltr' }}" {{ extra_body_attrs }}>
-{% block content %}{% endblock %}
-{% include "templates/footer.html" %}
-{% include "templates/common_js.html" %}
+    {% block nav %}{% endblock %}
+    <div class="page">
+        {% block content %}{% endblock %}
+        {% include "templates/footer.html" %}
+        {% include "templates/common_js.html" %}
+    </div>
 </body>
 </html>
