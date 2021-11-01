@@ -68,7 +68,8 @@ Result:
 
 ## bitShiftRight(a, b) {#bitshiftrighta-b}
 
-Shifts a value right by specified number of bit positions.
+Shifts the bit representation of a value to the right by a specified number of bit positions.
+
 A `FixedString` or a `String` are treated as a single multibyte value. Note that the length of a `String` value is reduced as bits are shifted out.
 
 **Syntax**
