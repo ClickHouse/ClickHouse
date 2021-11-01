@@ -250,7 +250,7 @@ MergeTreeData::MergeTreeData(
     {
         /// This is for backward compatibility.
         checkSampleExpression(metadata_, attach || settings->compatibility_allow_sampling_expression_not_in_primary_key,
-                              settings->check_sample_column_is_correct);
+                              settings->check_sample_column_is_correct && !attach);
     }
 
     checkTTLExpressions(metadata_, metadata_);
@@ -2211,7 +2211,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
 
 void MergeTreeData::changeSettings(
         const ASTPtr & new_settings,
-        TableLockHolder & /* table_lock_holder */)
+        AlterLockHolder & /* table_lock_holder */)
 {
     if (new_settings)
     {
@@ -2692,7 +2692,10 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(c
 void MergeTreeData::forgetPartAndMoveToDetached(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix, bool
 restore_covered)
 {
-    LOG_INFO(log, "Renaming {} to {}{} and forgetting it.", part_to_detach->relative_path, prefix, part_to_detach->name);
+    if (prefix.empty())
+        LOG_INFO(log, "Renaming {} to {} and forgetting it.", part_to_detach->relative_path, part_to_detach->name);
+    else
+        LOG_INFO(log, "Renaming {} to {}_{} and forgetting it.", part_to_detach->relative_path, prefix, part_to_detach->name);
 
     auto lock = lockParts();
 
@@ -4531,7 +4534,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query)
         return false;
 
-    const auto & query_ptr = query_info.query;
+    const auto & query_ptr = query_info.original_query;
 
     if (auto * select = query_ptr->as<ASTSelectQuery>(); select)
     {
@@ -4549,8 +4552,12 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         return false;
 
     InterpreterSelectQuery select(
-        query_ptr, query_context, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreProjections().ignoreAlias());
+        query_ptr,
+        query_context,
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreProjections().ignoreAlias(),
+        query_info.sets /* prepared_sets */);
     const auto & analysis_result = select.getAnalysisResult();
+    query_info.sets = std::move(select.getQueryAnalyzer()->getPreparedSets());
 
     bool can_use_aggregate_projection = true;
     /// If the first stage of the query pipeline is more complex than Aggregating - Expression - Filter - ReadFromStorage,
@@ -4894,6 +4901,8 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     {
         selected_candidate->aggregation_keys = select.getQueryAnalyzer()->aggregationKeys();
         selected_candidate->aggregate_descriptions = select.getQueryAnalyzer()->aggregates();
+        selected_candidate->subqueries_for_sets
+            = std::make_shared<SubqueriesForSets>(std::move(select.getQueryAnalyzer()->getSubqueriesForSets()));
     }
 
     query_info.projection = std::move(*selected_candidate);

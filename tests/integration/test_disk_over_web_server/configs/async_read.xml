@@ -1,0 +1,7 @@
+<yandex>
+    <profiles>
+        <default>
+            <remote_filesystem_read_method>read_threadpool</remote_filesystem_read_method>
+        </default>
+    </profiles>
+</yandex>

@@ -50,7 +50,7 @@ ClickHouseは、属性の値を解析できない場合、または値が属性�
 外部辞書の構成:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>ext-dict-test</name>
         <source>
@@ -74,7 +74,7 @@ ClickHouseは、属性の値を解析できない場合、または値が属性�
         </structure>
         <lifetime>0</lifetime>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 クエリの実行:

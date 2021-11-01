@@ -101,3 +101,13 @@ def test_drop_replicated_merge_tree_with_auxiliary_zookeeper(started_cluster):
     assert zk.exists('/clickhouse/tables/test/test_auxiliary_zookeeper')
     drop_table([node1, node2], "test_auxiliary_zookeeper")
     assert zk.exists('/clickhouse/tables/test/test_auxiliary_zookeeper') is None
+
+def test_path_ambiguity(started_cluster):
+    drop_table([node1, node2], "test_path_ambiguity1")
+    drop_table([node1, node2], "test_path_ambiguity2")
+    node1.query("create table test_path_ambiguity1 (n int) engine=ReplicatedMergeTree('/test:bad:/path', '1') order by n")
+    assert "Invalid auxiliary ZooKeeper name" in node1.query_and_get_error("create table test_path_ambiguity2 (n int) engine=ReplicatedMergeTree('test:bad:/path', '1') order by n")
+    assert "ZooKeeper path must starts with '/'" in node1.query_and_get_error("create table test_path_ambiguity2 (n int) engine=ReplicatedMergeTree('test/bad:/path', '1') order by n")
+    node1.query("create table test_path_ambiguity2 (n int) engine=ReplicatedMergeTree('zookeeper2:/bad:/path', '1') order by n")
+    drop_table([node1, node2], "test_path_ambiguity1")
+    drop_table([node1, node2], "test_path_ambiguity2")

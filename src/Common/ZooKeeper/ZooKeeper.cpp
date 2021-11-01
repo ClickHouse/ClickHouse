@@ -771,7 +771,10 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
         }
     };
 
-    while (!condition || !condition())
+    /// do-while control structure to allow using this function in non-blocking
+    /// fashion with a wait condition which returns false by the time this
+    /// method is called.
+    do
     {
         /// Use getData insteand of exists to avoid watch leak.
         impl->get(path, callback, watch);
@@ -787,7 +790,8 @@ bool ZooKeeper::waitForDisappear(const std::string & path, const WaitCondition &
 
         if (state->event_type == Coordination::DELETED)
             return true;
-    }
+    } while (!condition || !condition());
+
     return false;
 }
 
