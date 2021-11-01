@@ -128,6 +128,9 @@ SerializationInfoByName::SerializationInfoByName(
     const NamesAndTypesList & columns,
     const SerializationInfo::Settings & settings)
 {
+    if (settings.ratio_for_sparse >= 1.0)
+        return;
+
     for (const auto & column : columns)
         if (column.type->supportsSparseSerialization())
             emplace(column.name, column.type->createSerializationInfo(settings));

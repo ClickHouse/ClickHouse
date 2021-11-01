@@ -307,6 +307,14 @@ IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const St
     return {};
 }
 
+SerializationPtr IMergeTreeReader::getSerialization(const NameAndTypePair & column) const
+{
+    auto it = serializations.find(column.name);
+    if (it != serializations.end())
+        return it->second;
+    return column.type->getDefaultSerialization();
+}
+
 void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
 {
     if (num_columns_to_read != columns.size())
