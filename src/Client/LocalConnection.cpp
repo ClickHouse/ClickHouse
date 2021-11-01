@@ -70,7 +70,10 @@ void LocalConnection::sendQuery(
     query_context = session.makeQueryContext();
     query_context->setCurrentQueryId(query_id);
     if (send_progress)
+    {
         query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+        query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
+    }
 
     CurrentThread::QueryScope query_scope_holder(query_context);
 
@@ -282,13 +285,6 @@ bool LocalConnection::poll(size_t)
     if (state->is_finished)
     {
         finishQuery();
-        return true;
-    }
-
-    if (send_progress && !state->sent_progress)
-    {
-        state->sent_progress = true;
-        next_packet_type = Protocol::Server::Progress;
         return true;
     }
 

@@ -77,6 +77,7 @@ add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
+add_headers_and_sources(dbms Disks/IO)
 if (USE_SQLITE)
     add_headers_and_sources(dbms Databases/SQLite)
 endif()
@@ -107,6 +108,10 @@ endif()
 if (USE_HDFS)
     add_headers_and_sources(dbms Storages/HDFS)
     add_headers_and_sources(dbms Disks/HDFS)
+endif()
+
+if(USE_FILELOG)
+    add_headers_and_sources(dbms Storages/FileLog)
 endif()
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
@@ -286,6 +291,14 @@ target_link_libraries (clickhouse_common_io
             ${DOUBLE_CONVERSION_LIBRARIES}
             dragonbox_to_chars
 )
+
+# Use X86 AVX2/AVX512 instructions to accelerate filter operations
+set_source_files_properties(
+        Columns/ColumnFixedString.cpp
+        Columns/ColumnsCommon.cpp
+        Columns/ColumnVector.cpp
+        Columns/ColumnDecimal.cpp
+        PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
 
 if(RE2_LIBRARY)
     target_link_libraries(clickhouse_common_io PUBLIC ${RE2_LIBRARY})
