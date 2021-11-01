@@ -207,6 +207,35 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
+  StressTestDebug:
+    needs: [BuilderDebDebug]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stress_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stress tests (debug, actions)'
+          REPO_COPY: ${{runner.temp}}/stress_debug/ClickHouse
+          REQUIRED_BUILD_NUMBER: 7
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 stress_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
   FastTest:
     needs: DockerHubPush
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
@@ -231,7 +260,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   FinishCheck:
-    needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport, FastTest, FunctionalStatelessTestDebug, FunctionalStatefulTestDebug, DocsCheck]
+    needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport, FastTest, FunctionalStatelessTestDebug, FunctionalStatefulTestDebug, DocsCheck, StressTestDebug]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
