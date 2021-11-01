@@ -262,6 +262,16 @@ static MergeTreePartInfo makeDummyDropRangeForMovePartitionOrAttachPartitionFrom
     return drop_range;
 }
 
+static bool checkReplicaIsLost(zkutil::ZooKeeper::Ptr zookeeper, const String & zookeeper_path, const String & replica_name)
+{
+    String is_lost_value;
+    if (zookeeper->tryGet(fs::path{zookeeper_path} / "replicas" / replica_name / "is_lost", is_lost_value))
+        return is_lost_value == "1";
+
+    /// We don't know, better to consider this replica as alive
+    return false;
+}
+
 StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     const String & zookeeper_path_,
     const String & replica_name_,
@@ -3449,6 +3459,7 @@ bool StorageReplicatedMergeTree::checkReplicaHavePart(const String & replica, co
 String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_name, bool active)
 {
     auto zookeeper = getZooKeeper();
+    auto settings = getSettings();
     Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
 
     /// Select replicas in uniformly random order.
@@ -3461,6 +3472,12 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(const String & part_nam
         /// We aren't interested in ourself.
         if (replica == replica_name)
             continue;
+
+        if (!settings->fetch_parts_from_lost_replicas && checkReplicaIsLost(zookeeper, zookeeper_path, replica))
+        {
+            LOG_DEBUG(log, "Will not try to fetch part from replica {} because it's marked as lost", replica);
+            continue;
+        }
 
         LOG_TRACE(log, "Candidate replica: {}", replica);
 
@@ -3478,6 +3495,7 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entr
 {
     auto zookeeper = getZooKeeper();
     Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
+    auto settings = getSettings();
 
     /// Select replicas in uniformly random order.
     std::shuffle(replicas.begin(), replicas.end(), thread_local_rng);
@@ -3489,6 +3507,12 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(LogEntry & entr
 
         if (active && !zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "is_active"))
             continue;
+
+        if (!settings->fetch_parts_from_lost_replicas && checkReplicaIsLost(zookeeper, zookeeper_path, replica))
+        {
+            LOG_DEBUG(log, "Will not try to fetch part from replica {} because it's marked as lost", replica);
+            continue;
+        }
 
         String largest_part_found;
         Strings parts = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas" / replica / "parts");
@@ -3532,6 +3556,7 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(
     const String & part_name, bool active, String & found_part_name)
 {
     auto zookeeper = getZooKeeper();
+    auto settings = getSettings();
     Strings replicas = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas");
 
     /// Select replicas in uniformly random order.
@@ -3547,6 +3572,12 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(
 
         if (active && !zookeeper->exists(fs::path(zookeeper_path) / "replicas" / replica / "is_active"))
             continue;
+
+        if (!settings->fetch_parts_from_lost_replicas && checkReplicaIsLost(zookeeper, zookeeper_path, replica))
+        {
+            LOG_DEBUG(log, "Will not try to fetch part from replica {} because it's marked as lost", replica);
+            continue;
+        }
 
         Strings parts = zookeeper->getChildren(fs::path(zookeeper_path) / "replicas" / replica / "parts");
         for (const String & part_on_replica : parts)
@@ -5583,7 +5614,8 @@ void StorageReplicatedMergeTree::fetchPartition(
     if (fetch_part)
     {
         String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
-        auto part_path = findReplicaHavingPart(part_name, from, zookeeper);
+        auto settings = getSettings();
+        auto part_path = findReplicaHavingPart(part_name, from, zookeeper, settings->fetch_parts_from_lost_replicas);
 
         if (part_path.empty())
             throw Exception(ErrorCodes::NO_REPLICA_HAS_PART, "Part {} does not exist on any replica", part_name);
@@ -7249,8 +7281,9 @@ String StorageReplicatedMergeTree::getSharedDataReplica(
     return best_replica;
 }
 
+
 String StorageReplicatedMergeTree::findReplicaHavingPart(
-    const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_)
+    const String & part_name, const String & zookeeper_path_, zkutil::ZooKeeper::Ptr zookeeper_, bool fetch_from_lost)
 {
     Strings replicas = zookeeper_->getChildren(fs::path(zookeeper_path_) / "replicas");
 
@@ -7259,6 +7292,9 @@ String StorageReplicatedMergeTree::findReplicaHavingPart(
 
     for (const String & replica : replicas)
     {
+        if (!fetch_from_lost && checkReplicaIsLost(zookeeper_, zookeeper_path_, replica))
+            continue;
+
         if (zookeeper_->exists(fs::path(zookeeper_path_) / "replicas" / replica / "parts" / part_name)
             && zookeeper_->exists(fs::path(zookeeper_path_) / "replicas" / replica / "is_active"))
             return fs::path(zookeeper_path_) / "replicas" / replica;
