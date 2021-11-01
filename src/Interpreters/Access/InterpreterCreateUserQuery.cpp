@@ -31,8 +31,8 @@ namespace
         else if (query.names->size() == 1)
             user.setName(query.names->front()->toString());
 
-        if (query.authentication)
-            user.authentication = *query.authentication;
+        if (query.auth_data)
+            user.auth_data = *query.auth_data;
 
         if (override_name && !override_name->host_pattern.empty())
         {

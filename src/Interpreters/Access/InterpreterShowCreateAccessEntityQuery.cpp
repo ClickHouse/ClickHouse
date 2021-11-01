@@ -59,9 +59,9 @@ namespace
                 query->default_roles = user.default_roles.toASTWithNames(*manager);
         }
 
-        if (user.authentication.getType() != Authentication::NO_PASSWORD)
+        if (user.auth_data.getType() != AuthenticationType::NO_PASSWORD)
         {
-            query->authentication = user.authentication;
+            query->auth_data = user.auth_data;
             query->show_password = attach_mode; /// We don't show password unless it's an ATTACH statement.
         }
 

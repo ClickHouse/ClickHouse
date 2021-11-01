@@ -45,7 +45,7 @@ auto eventTime()
     return std::make_pair(time_in_seconds(finish_time), time_in_microseconds(finish_time));
 }
 
-using AuthType = Authentication::Type;
+using AuthType = AuthenticationType;
 using Interface = ClientInfo::Interface;
 
 void fillColumnArray(const Strings & data, IColumn & column)
@@ -84,7 +84,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
             {"Logout",                 static_cast<Int8>(SESSION_LOGOUT)}
         });
 
-#define AUTH_TYPE_NAME_AND_VALUE(v) std::make_pair(Authentication::TypeInfo::get(v).raw_name, static_cast<Int8>(v))
+#define AUTH_TYPE_NAME_AND_VALUE(v) std::make_pair(AuthenticationTypeInfo::get(v).raw_name, static_cast<Int8>(v))
     const auto identified_with_column = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
@@ -152,7 +152,7 @@ NamesAndTypesList SessionLogElement::getNamesAndTypes()
 void SessionLogElement::appendToBlock(MutableColumns & columns) const
 {
     assert(type >= SESSION_LOGIN_FAILURE && type <= SESSION_LOGOUT);
-    assert(user_identified_with >= Authentication::Type::NO_PASSWORD && user_identified_with <= Authentication::Type::MAX_TYPE);
+    assert(user_identified_with >= AuthenticationType::NO_PASSWORD && user_identified_with <= AuthenticationType::MAX_TYPE);
 
     size_t i = 0;
 
@@ -214,8 +214,8 @@ void SessionLog::addLoginSuccess(const UUID & auth_id, std::optional<String> ses
     {
         const auto user = access->getUser();
         log_entry.user = user->getName();
-        log_entry.user_identified_with = user->authentication.getType();
-        log_entry.external_auth_server = user->authentication.getLDAPServerName();
+        log_entry.user_identified_with = user->auth_data.getType();
+        log_entry.external_auth_server = user->auth_data.getLDAPServerName();
     }
 
     if (session_id)
@@ -244,7 +244,7 @@ void SessionLog::addLoginFailure(
     log_entry.user = user;
     log_entry.auth_failure_reason = reason.message();
     log_entry.client_info = info;
-    log_entry.user_identified_with = Authentication::Type::NO_PASSWORD;
+    log_entry.user_identified_with = AuthenticationType::NO_PASSWORD;
 
     add(log_entry);
 }

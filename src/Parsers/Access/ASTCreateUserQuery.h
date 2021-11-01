@@ -3,7 +3,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDatabaseOrNone.h>
-#include <Access/Common/Authentication.h>
+#include <Access/Common/AuthenticationData.h>
 #include <Access/Common/AllowedClientHosts.h>
 
 
@@ -44,7 +44,7 @@ public:
     std::shared_ptr<ASTUserNamesWithHost> names;
     String new_name;
 
-    std::optional<Authentication> authentication;
+    std::optional<AuthenticationData> auth_data;
     bool show_password = true; /// formatImpl() will show the password or hash.
 
     std::optional<AllowedClientHosts> hosts;

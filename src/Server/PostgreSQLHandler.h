@@ -6,6 +6,10 @@
 #include <base/logger_useful.h>
 #include "IServer.h"
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
 #endif
