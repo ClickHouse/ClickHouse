@@ -135,7 +135,6 @@ Pipe ReadFromMergeTree::readFromPool(
         data,
         metadata_snapshot,
         prewhere_info,
-        true,
         required_columns,
         backoff_settings,
         settings.preferred_block_size_bytes,
@@ -174,7 +173,7 @@ ProcessorPtr ReadFromMergeTree::createSource(
     return std::make_shared<TSource>(
             data, metadata_snapshot, part.data_part, max_block_size, preferred_block_size_bytes,
             preferred_max_column_in_block_size_bytes, required_columns, part.ranges, use_uncompressed_cache, prewhere_info,
-            actions_settings, true, reader_settings, virt_column_names, part.part_index_in_query, has_limit_below_one_block);
+            actions_settings, reader_settings, virt_column_names, part.part_index_in_query, has_limit_below_one_block);
 }
 
 Pipe ReadFromMergeTree::readInOrder(

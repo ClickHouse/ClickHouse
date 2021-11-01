@@ -130,7 +130,6 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
     extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_READ_METHOD;
 }
@@ -161,8 +160,8 @@ struct ContextSharedPart
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
 
 #if USE_NURAFT
-    mutable std::mutex keeper_storage_dispatcher_mutex;
-    mutable std::shared_ptr<KeeperDispatcher> keeper_storage_dispatcher;
+    mutable std::mutex keeper_dispatcher_mutex;
+    mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
 #endif
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
@@ -1901,10 +1900,9 @@ void Context::setSystemZooKeeperLogAfterInitializationIfNeeded()
 void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
 
-
-    if (shared->keeper_storage_dispatcher)
+    if (shared->keeper_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to initialize Keeper multiple times");
 
     const auto & config = getConfigRef();
@@ -1914,17 +1912,17 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
         if (start_async)
         {
             assert(!is_standalone_app);
-            LOG_INFO(shared->log, "Connected to ZooKeeper (or Keeper) before internal Keeper start or we don't depend on our Keeper cluster"
-                     ", will wait for Keeper asynchronously");
+            LOG_INFO(shared->log, "Connected to ZooKeeper (or Keeper) before internal Keeper start or we don't depend on our Keeper cluster, "
+                     "will wait for Keeper asynchronously");
         }
         else
         {
-            LOG_INFO(shared->log, "Cannot connect to ZooKeeper (or Keeper) before internal Keeper start,"
+            LOG_INFO(shared->log, "Cannot connect to ZooKeeper (or Keeper) before internal Keeper start, "
                      "will wait for Keeper synchronously");
         }
 
-        shared->keeper_storage_dispatcher = std::make_shared<KeeperDispatcher>();
-        shared->keeper_storage_dispatcher->initialize(config, is_standalone_app, start_async);
+        shared->keeper_dispatcher = std::make_shared<KeeperDispatcher>();
+        shared->keeper_dispatcher->initialize(config, is_standalone_app, start_async);
     }
 #endif
 }
@@ -1932,23 +1930,35 @@ void Context::initializeKeeperDispatcher([[maybe_unused]] bool start_async) cons
 #if USE_NURAFT
 std::shared_ptr<KeeperDispatcher> & Context::getKeeperDispatcher() const
 {
-    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
-    if (!shared->keeper_storage_dispatcher)
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
+    if (!shared->keeper_dispatcher)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper must be initialized before requests");
 
-    return shared->keeper_storage_dispatcher;
+    return shared->keeper_dispatcher;
 }
 #endif
 
 void Context::shutdownKeeperDispatcher() const
 {
 #if USE_NURAFT
-    std::lock_guard lock(shared->keeper_storage_dispatcher_mutex);
-    if (shared->keeper_storage_dispatcher)
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
+    if (shared->keeper_dispatcher)
     {
-        shared->keeper_storage_dispatcher->shutdown();
-        shared->keeper_storage_dispatcher.reset();
+        shared->keeper_dispatcher->shutdown();
+        shared->keeper_dispatcher.reset();
     }
+#endif
+}
+
+
+void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::AbstractConfiguration & config)
+{
+#if USE_NURAFT
+    std::lock_guard lock(shared->keeper_dispatcher_mutex);
+    if (!shared->keeper_dispatcher)
+        return;
+
+    shared->keeper_dispatcher->updateConfiguration(config);
 #endif
 }
 
@@ -1960,6 +1970,9 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
     if (zookeeper == shared->auxiliary_zookeepers.end())
     {
+        if (name.find(':') != std::string::npos || name.find('/') != std::string::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
+
         const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
         if (!config.has("auxiliary_zookeepers." + name))
             throw Exception(
@@ -2437,12 +2450,10 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         }
     }
 
-#if !defined(ARCADIA_BUILD)
     if (shared->storage_s3_settings)
     {
         shared->storage_s3_settings->loadFromConfig("s3", config);
     }
-#endif
 }
 
 
@@ -2479,7 +2490,6 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
 
 const StorageS3Settings & Context::getStorageS3Settings() const
 {
-#if !defined(ARCADIA_BUILD)
     auto lock = getLock();
 
     if (!shared->storage_s3_settings)
@@ -2489,9 +2499,6 @@ const StorageS3Settings & Context::getStorageS3Settings() const
     }
 
     return *shared->storage_s3_settings;
-#else
-    throw Exception("S3 is unavailable in Arcadia", ErrorCodes::NOT_IMPLEMENTED);
-#endif
 }
 
 void Context::checkCanBeDropped(const String & database, const String & table, const size_t & size, const size_t & max_size_to_drop) const
@@ -3058,16 +3065,23 @@ ReadSettings Context::getReadSettings() const
 
     std::string_view read_method_str = settings.local_filesystem_read_method.value;
 
-    if (auto opt_method = magic_enum::enum_cast<ReadMethod>(read_method_str))
+    if (auto opt_method = magic_enum::enum_cast<LocalFSReadMethod>(read_method_str))
         res.local_fs_method = *opt_method;
     else
-        throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}'", read_method_str);
+        throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for local filesystem", read_method_str);
+
+    read_method_str = settings.remote_filesystem_read_method.value;
+
+    if (auto opt_method = magic_enum::enum_cast<RemoteFSReadMethod>(read_method_str))
+        res.remote_fs_method = *opt_method;
+    else
+        throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for remote filesystem", read_method_str);
 
     res.local_fs_prefetch = settings.local_filesystem_read_prefetch;
     res.remote_fs_prefetch = settings.remote_filesystem_read_prefetch;
 
-    res.remote_fs_backoff_threshold = settings.remote_fs_read_backoff_threshold;
-    res.remote_fs_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;
+    res.remote_fs_read_max_backoff_ms = settings.remote_fs_read_max_backoff_ms;
+    res.remote_fs_read_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;
 
     res.local_fs_buffer_size = settings.max_read_buffer_size;
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
