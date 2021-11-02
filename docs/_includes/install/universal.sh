@@ -50,7 +50,7 @@ URL="https://builds.clickhouse.com/master/${DIR}/clickhouse"
 echo
 echo "Will download ${URL}"
 echo
-curl -O "${URL}" && chmod a+x clickhouse &&
+curl -O "${URL}" && chmod a+x clickhouse || exit 1
 echo
 echo "Successfully downloaded the ClickHouse binary, you can run it as:
     ./clickhouse"

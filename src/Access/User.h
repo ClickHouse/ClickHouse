@@ -2,8 +2,8 @@
 
 #include <Access/IAccessEntity.h>
 #include <Access/AccessRights.h>
-#include <Access/Authentication.h>
-#include <Access/AllowedClientHosts.h>
+#include <Access/Common/AuthenticationData.h>
+#include <Access/Common/AllowedClientHosts.h>
 #include <Access/GrantedRoles.h>
 #include <Access/RolesOrUsersSet.h>
 #include <Access/SettingsProfileElement.h>
@@ -15,7 +15,7 @@ namespace DB
   */
 struct User : public IAccessEntity
 {
-    Authentication authentication;
+    AuthenticationData auth_data;
     AllowedClientHosts allowed_client_hosts = AllowedClientHosts::AnyHostTag{};
     AccessRights access;
     GrantedRoles granted_roles;

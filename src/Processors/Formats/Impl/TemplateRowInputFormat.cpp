@@ -45,8 +45,8 @@ TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, ReadBuffer
         }
         else
         {
-            if (format.formats[i] == ColumnFormat::Xml || format.formats[i] == ColumnFormat::Raw)
-                format.throwInvalidFormat("XML and Raw deserialization is not supported", i);
+            if (format.formats[i] == ColumnFormat::Xml)
+                format.throwInvalidFormat("XML deserialization is not supported", i);
         }
     }
 
@@ -54,8 +54,8 @@ TemplateRowInputFormat::TemplateRowInputFormat(const Block & header_, ReadBuffer
     std::vector<UInt8> column_in_format(header_.columns(), false);
     for (size_t i = 0; i < row_format.columnsCount(); ++i)
     {
-        if (row_format.formats[i] == ColumnFormat::Xml || row_format.formats[i] == ColumnFormat::Raw)
-            row_format.throwInvalidFormat("XML and Raw deserialization is not supported", i);
+        if (row_format.formats[i] == ColumnFormat::Xml)
+            row_format.throwInvalidFormat("XML deserialization is not supported", i);
 
         if (row_format.format_idx_to_column_idx[i])
         {
@@ -194,7 +194,7 @@ bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type,
 {
     ColumnFormat col_format = row_format.formats[file_column];
     bool read = true;
-    bool parse_as_nullable = settings.null_as_default && !type->isNullable();
+    bool parse_as_nullable = settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable();
     try
     {
         switch (col_format)
@@ -225,6 +225,12 @@ bool TemplateRowInputFormat::deserializeField(const DataTypePtr & type,
                     read = SerializationNullable::deserializeTextJSONImpl(column, buf, settings, serialization);
                 else
                     serialization->deserializeTextJSON(column, buf, settings);
+                break;
+            case ColumnFormat::Raw:
+                if (parse_as_nullable)
+                    read = SerializationNullable::deserializeTextRawImpl(column, buf, settings, serialization);
+                else
+                    serialization->deserializeTextRaw(column, buf, settings);
                 break;
             default:
                 __builtin_unreachable();
