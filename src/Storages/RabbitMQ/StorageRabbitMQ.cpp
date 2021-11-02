@@ -645,7 +645,10 @@ Pipe StorageRabbitMQ::read(
     }
 
     if (!connection->getHandler().loopRunning() && connection->isConnected())
+    {
+        connection->getHandler().updateLoopState(Loop::RUN);
         looping_task->activateAndSchedule();
+    }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
     auto united_pipe = Pipe::unitePipes(std::move(pipes));
