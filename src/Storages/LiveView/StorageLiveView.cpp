@@ -68,7 +68,7 @@ static StorageID extractDependentTable(ASTPtr & query, ContextPtr context, const
         if (db_and_table->database.empty())
         {
             db_and_table->database = select_database_name;
-            AddDefaultDatabaseVisitor visitor(select_database_name);
+            AddDefaultDatabaseVisitor visitor(context, select_database_name);
             visitor.visit(select_query);
         }
         else
