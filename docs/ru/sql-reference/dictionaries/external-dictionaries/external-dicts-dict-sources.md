@@ -10,7 +10,7 @@ toc_title: "Источники внешних словарей"
 Общий вид XML-конфигурации:
 
 ``` xml
-<yandex>
+<clickhouse>
   <dictionary>
     ...
     <source>
@@ -21,7 +21,7 @@ toc_title: "Источники внешних словарей"
     ...
   </dictionary>
   ...
-</yandex>
+</clickhouse>
 ```
 
 Аналогичный [DDL-запрос](../../statements/create/dictionary.md#create-dictionary-query):
@@ -311,7 +311,7 @@ $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 Конфигурация словаря в ClickHouse:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>table_name</name>
         <source>
@@ -340,7 +340,7 @@ $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
             </attribute>
         </structure>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 или
@@ -416,7 +416,7 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
 Настройка словаря в ClickHouse:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         <name>test</name>
         <source>
@@ -446,7 +446,7 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
             </attribute>
         </structure>
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 или

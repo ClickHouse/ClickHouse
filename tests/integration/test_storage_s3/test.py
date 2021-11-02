@@ -436,12 +436,12 @@ def test_remote_host_filter(started_cluster):
 
     query = "select *, column1*column2*column3 from s3('http://{}:{}/{}/test.csv', 'CSV', '{}')".format(
         "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket, format)
-    assert "not allowed in config.xml" in instance.query_and_get_error(query)
+    assert "not allowed in configuration file" in instance.query_and_get_error(query)
 
     other_values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
     query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format(
         "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket, format, other_values)
-    assert "not allowed in config.xml" in instance.query_and_get_error(query)
+    assert "not allowed in configuration file" in instance.query_and_get_error(query)
 
 
 @pytest.mark.parametrize("s3_storage_args", [
