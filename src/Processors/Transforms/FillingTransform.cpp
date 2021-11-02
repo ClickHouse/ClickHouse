@@ -45,6 +45,7 @@ static FillColumnDescription::StepFunction getStepFunction(
         FOR_EACH_INTERVAL_KIND(DECLARE_CASE)
         #undef DECLARE_CASE
     }
+    __builtin_unreachable();
 }
 
 static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & type)
@@ -102,7 +103,6 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
             descr.step_func = getStepFunction<UInt32>(*descr.step_kind, get<Int64>(descr.fill_step), date_time->getTimeZone());
         else if (const auto * date_time64 = checkAndGetDataType<DataTypeDateTime64>(type.get()))
         {
-            const auto & time_zone = date_time64->getTimeZone();
             const auto & step_dec = get<const DecimalField<Decimal64> &>(descr.fill_step);
             Int64 step = DecimalUtils::convertTo<Int64>(step_dec.getValue(), step_dec.getScale());
 
@@ -110,7 +110,7 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
             {
                 #define DECLARE_CASE(NAME) \
                 case IntervalKind::NAME: \
-                    descr.step_func = [step, &time_zone](Field & field) \
+                    descr.step_func = [step, &time_zone = date_time64->getTimeZone()](Field & field) \
                     { \
                         auto field_decimal = get<DecimalField<DateTime64>>(field); \
                         auto components = DecimalUtils::splitWithScaleMultiplier(field_decimal.getValue(), field_decimal.getScaleMultiplier()); \
