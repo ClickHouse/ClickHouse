@@ -92,6 +92,14 @@ SYSTEM START MERGES t_sparse_full;
 
 OPTIMIZE TABLE t_sparse_full FINAL;
 
+SELECT '======';
+
 SELECT column, serialization_kind
 FROM system.parts_columns WHERE table = 't_sparse_full' AND database = currentDatabase() AND active
 ORDER BY name, column;
+
+SELECT '======';
+
+SELECT id, u, s FROM t_sparse_full ORDER BY u DESC LIMIT 3;
+
+DROP TABLE t_sparse_full;
