@@ -1805,7 +1805,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowF
                 argument_types[ARGUMENT_TIME]->getName());
         }
     }
-    
+
     DataTypePtr getReturnType() const override
     {
         return std::make_shared<DataTypeFloat64>();
@@ -1867,7 +1867,7 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFun
                 argument_types[ARGUMENT_TIME]->getName());
         }
     }
-    
+
     DataTypePtr getReturnType() const override
     {
         return std::make_shared<DataTypeFloat64>();
