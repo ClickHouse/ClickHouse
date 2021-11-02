@@ -60,7 +60,7 @@ RegexpRowInputFormat::ColumnFormat RegexpRowInputFormat::stringToFormat(const St
 bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
 {
     const auto & type = getPort().getHeader().getByPosition(index).type;
-    bool parse_as_nullable = format_settings.null_as_default && !type->isNullable();
+    bool parse_as_nullable = format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable();
     bool read = true;
     ReadBuffer field_buf(const_cast<char *>(matched_fields[index].data()), matched_fields[index].size(), 0);
     try
@@ -94,9 +94,9 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
                 break;
             case ColumnFormat::Raw:
                 if (parse_as_nullable)
-                    read = SerializationNullable::deserializeWholeTextImpl(*columns[index], field_buf, format_settings, serialization);
+                    read = SerializationNullable::deserializeTextRawImpl(*columns[index], field_buf, format_settings, serialization);
                 else
-                    serialization->deserializeWholeText(*columns[index], field_buf, format_settings);
+                    serialization->deserializeTextRaw(*columns[index], field_buf, format_settings);
                 break;
             default:
                 break;
