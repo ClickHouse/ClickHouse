@@ -1,4 +1,4 @@
-name: ReleaseChecks
+name: DocsReleaseChecks
 concurrency:
   group: master-release
   cancel-in-progress: true
@@ -6,6 +6,11 @@ on: # yamllint disable-line rule:truthy
   push:
     branches:
       - master
+    paths:
+      - 'docs/**'
+      - 'website/**'
+      - 'benchmark/**'
+      - 'docker/**'
 jobs:
   DockerHubPush:
     runs-on: [self-hosted, style-checker]

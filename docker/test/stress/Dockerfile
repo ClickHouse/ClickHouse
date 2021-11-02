@@ -26,4 +26,6 @@ COPY ./stress /stress
 COPY run.sh /
 
 ENV DATASETS="hits visits"
+ENV S3_URL="https://clickhouse-datasets.s3.yandex.net"
+
 CMD ["/bin/bash", "/run.sh"]
