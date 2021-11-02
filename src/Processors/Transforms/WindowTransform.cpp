@@ -230,21 +230,10 @@ WindowTransform::WindowTransform(const Block & input_header_,
         /// Currently we have slightly wrong mixup of the interfaces of Window and Aggregate functions.
         workspace.window_function_impl = dynamic_cast<IWindowFunction *>(const_cast<IAggregateFunction *>(aggregate_function.get()));
 
-        if (workspace.window_function_impl)
-        {
-            auto * window_function_impl = dynamic_cast<IAggregateFunction *>(workspace.window_function_impl);
-            workspace.aggregate_function_state.reset(
-                window_function_impl->sizeOfData(),
-                window_function_impl->alignOfData());
-            window_function_impl->create(workspace.aggregate_function_state.data());
-        }
-        else
-        {
-            workspace.aggregate_function_state.reset(
-                aggregate_function->sizeOfData(),
-                aggregate_function->alignOfData());
-            aggregate_function->create(workspace.aggregate_function_state.data());
-        }
+        workspace.aggregate_function_state.reset(
+            aggregate_function->sizeOfData(),
+            aggregate_function->alignOfData());
+        aggregate_function->create(workspace.aggregate_function_state.data());
 
         workspaces.push_back(std::move(workspace));
     }
@@ -317,16 +306,8 @@ WindowTransform::~WindowTransform()
     // Some states may be not created yet if the creation failed.
     for (auto & ws : workspaces)
     {
-        if (ws.window_function_impl)
-        {
-            dynamic_cast<IAggregateFunction *>(ws.window_function_impl)->destroy(
-                ws.aggregate_function_state.data());
-        }
-        else
-        {
-            ws.aggregate_function->destroy(
-                ws.aggregate_function_state.data());
-        }
+        ws.aggregate_function->destroy(
+            ws.aggregate_function_state.data());
     }
 }
 
