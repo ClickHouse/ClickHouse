@@ -70,7 +70,10 @@ void LocalConnection::sendQuery(
     query_context = session.makeQueryContext();
     query_context->setCurrentQueryId(query_id);
     if (send_progress)
+    {
         query_context->setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
+        query_context->setFileProgressCallback([this](const FileProgress & value) { this->updateProgress(Progress(value)); });
+    }
 
     CurrentThread::QueryScope query_scope_holder(query_context);
 
