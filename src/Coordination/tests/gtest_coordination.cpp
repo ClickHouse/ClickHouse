@@ -963,6 +963,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     n1.data = "1234";
     Node n2;
     n2.data = "123456";
+    n2.children.insert("");
 
     world.disableSnapshotMode();
     world.insert("world", n1);
@@ -974,7 +975,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     world.updateValue("world", [&](Node & value) { value = n2; });
     EXPECT_EQ(world.getApproximateSataSize(), 171);
 
-    world.clear();
+    world.erase("world");
     EXPECT_EQ(world.getApproximateSataSize(), 0);
 
     world.enableSnapshotMode();
@@ -985,6 +986,12 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
 
     world.clearOutdatedNodes();
     EXPECT_EQ(world.getApproximateSataSize(), 171);
+
+    world.erase("world");
+    EXPECT_EQ(world.getApproximateSataSize(), 171);
+
+    world.clear();
+    EXPECT_EQ(world.getApproximateSataSize(), 0);
 }
 
 void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner=0)
