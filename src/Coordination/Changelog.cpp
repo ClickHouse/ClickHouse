@@ -631,6 +631,14 @@ LogEntryPtr Changelog::entryAt(uint64_t index)
     return src;
 }
 
+LogEntryPtr Changelog::getLatestConfigChange() const
+{
+    for (const auto & [_, entry] : logs)
+        if (entry->get_val_type() == nuraft::conf)
+            return entry;
+    return nullptr;
+}
+
 nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, int32_t count)
 {
     std::vector<nuraft::ptr<nuraft::buffer>> returned_logs;

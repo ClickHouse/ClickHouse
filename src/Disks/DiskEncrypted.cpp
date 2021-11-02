@@ -4,6 +4,8 @@
 #include <Disks/DiskFactory.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/ReadBufferFromEncryptedFile.h>
+#include <IO/ReadBufferFromFileDecorator.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromEncryptedFile.h>
 #include <boost/algorithm/hex.hpp>
 
@@ -250,10 +252,16 @@ void DiskEncrypted::copy(const String & from_path, const std::shared_ptr<IDisk> 
 std::unique_ptr<ReadBufferFromFileBase> DiskEncrypted::readFile(
     const String & path,
     const ReadSettings & settings,
-    size_t estimated_size) const
+    std::optional<size_t> size) const
 {
     auto wrapped_path = wrappedPath(path);
-    auto buffer = delegate->readFile(wrapped_path, settings, estimated_size);
+    auto buffer = delegate->readFile(wrapped_path, settings, size);
+    if (buffer->eof())
+    {
+        /// File is empty, that's a normal case, see DiskEncrypted::truncateFile().
+        /// There is no header so we just return `ReadBufferFromString("")`.
+        return std::make_unique<ReadBufferFromFileDecorator>(std::make_unique<ReadBufferFromString>(std::string_view{}), wrapped_path);
+    }
     auto encryption_settings = current_settings.get();
     FileEncryption::Header header = readHeader(*buffer);
     String key = getKey(path, header, *encryption_settings);

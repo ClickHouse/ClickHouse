@@ -47,10 +47,11 @@ void ExternalDataSourceConfiguration::set(const ExternalDataSourceConfiguration 
     database = conf.database;
     table = conf.table;
     schema = conf.schema;
+    addresses_expr = conf.addresses_expr;
 }
 
 
-std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine)
+std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine, bool throw_on_no_collection)
 {
     if (args.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
@@ -64,7 +65,14 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
         const auto & config_prefix = fmt::format("named_collections.{}", collection->name());
 
         if (!config.has(config_prefix))
+        {
+            /// For table function remote we do not throw on no collection, because then we consider first arg
+            /// as cluster definition from config.
+            if (!throw_on_no_collection)
+                return std::nullopt;
+
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection->name());
+        }
 
         configuration.host = config.getString(config_prefix + ".host", "");
         configuration.port = config.getInt(config_prefix + ".port", 0);
@@ -73,15 +81,19 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
         configuration.database = config.getString(config_prefix + ".database", "");
         configuration.table = config.getString(config_prefix + ".table", "");
         configuration.schema = config.getString(config_prefix + ".schema", "");
+        configuration.addresses_expr = config.getString(config_prefix + ".addresses_expr", "");
 
-        if ((args.size() == 1) && (configuration.host.empty() || configuration.port == 0
-            || configuration.username.empty() || configuration.password.empty()
+        if (!configuration.addresses_expr.empty() && !configuration.host.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot have `addresses_expr` and `host`, `port` in configuration at the same time");
+
+        if ((args.size() == 1) && ((configuration.addresses_expr.empty() && (configuration.host.empty() || configuration.port == 0))
             || configuration.database.empty() || (configuration.table.empty() && !is_database_engine)))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Named collection of connection parameters is missing some of the parameters and no key-value arguments are added");
         }
 
+        /// Check key-value arguments.
         for (size_t i = 1; i < args.size(); ++i)
         {
             if (const auto * ast_function = typeid_cast<const ASTFunction *>(args[i].get()))
@@ -92,24 +104,40 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
 
                 auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
-                auto arg_value = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context)->as<ASTLiteral>()->value;
+                if (function_args[1]->as<ASTFunction>())
+                {
+                    non_common_args.emplace_back(std::make_pair(arg_name, function_args[1]));
+                    continue;
+                }
 
-                if (arg_name == "host")
-                    configuration.host = arg_value.safeGet<String>();
-                else if (arg_name == "port")
-                    configuration.port = arg_value.safeGet<UInt64>();
-                else if (arg_name == "user")
-                    configuration.username = arg_value.safeGet<String>();
-                else if (arg_name == "password")
-                    configuration.password = arg_value.safeGet<String>();
-                else if (arg_name == "database")
-                    configuration.database = arg_value.safeGet<String>();
-                else if (arg_name == "table")
-                    configuration.table = arg_value.safeGet<String>();
-                else if (arg_name == "schema")
-                    configuration.schema = arg_value.safeGet<String>();
+                auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
+                auto * arg_value_literal = arg_value_ast->as<ASTLiteral>();
+                if (arg_value_literal)
+                {
+                    auto arg_value = arg_value_literal->value;
+                    if (arg_name == "host")
+                        configuration.host = arg_value.safeGet<String>();
+                    else if (arg_name == "port")
+                        configuration.port = arg_value.safeGet<UInt64>();
+                    else if (arg_name == "user")
+                        configuration.username = arg_value.safeGet<String>();
+                    else if (arg_name == "password")
+                        configuration.password = arg_value.safeGet<String>();
+                    else if (arg_name == "database")
+                        configuration.database = arg_value.safeGet<String>();
+                    else if (arg_name == "table")
+                        configuration.table = arg_value.safeGet<String>();
+                    else if (arg_name == "schema")
+                        configuration.schema = arg_value.safeGet<String>();
+                    else if (arg_name == "addresses_expr")
+                        configuration.addresses_expr = arg_value.safeGet<String>();
+                    else
+                        non_common_args.emplace_back(std::make_pair(arg_name, arg_value_ast));
+                }
                 else
-                    non_common_args.emplace_back(std::make_pair(arg_name, arg_value));
+                {
+                    non_common_args.emplace_back(std::make_pair(arg_name, arg_value_ast));
+                }
             }
             else
             {
@@ -269,9 +297,13 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
                 }
             }
             else
-                non_common_args.emplace_back(std::make_pair(key, config.getString(config_prefix + '.' + key)));
+            {
+                auto value = config.getString(config_prefix + '.' + key);
+                non_common_args.emplace_back(std::make_pair(key, std::make_shared<ASTLiteral>(value)));
+            }
         }
 
+        /// Check key-value arguments.
         for (size_t i = 1; i < args.size(); ++i)
         {
             if (const auto * ast_function = typeid_cast<const ASTFunction *>(args[i].get()))
@@ -282,7 +314,8 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
 
                 auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
-                auto arg_value = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context)->as<ASTLiteral>()->value;
+                auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
+                auto arg_value = arg_value_ast->as<ASTLiteral>()->value;
 
                 if (arg_name == "url")
                     configuration.url = arg_value.safeGet<String>();
@@ -293,7 +326,7 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
                 else if (arg_name == "structure")
                     configuration.structure = arg_value.safeGet<String>();
                 else
-                    non_common_args.emplace_back(std::make_pair(arg_name, arg_value));
+                    non_common_args.emplace_back(std::make_pair(arg_name, arg_value_ast));
             }
             else
             {
