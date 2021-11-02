@@ -3500,7 +3500,7 @@ Pipe MergeTreeData::alterPartition(
 }
 
 
-BackupEntries MergeTreeData::backup(const ASTs & partitions, ContextPtr local_context) const
+BackupEntries MergeTreeData::backup(const ASTs & partitions, ContextPtr local_context)
 {
     DataPartsVector data_parts;
     if (partitions.empty())
@@ -3522,7 +3522,7 @@ BackupEntries MergeTreeData::backupDataParts(const DataPartsVector & data_parts)
 
         auto temp_dir_it = temp_dirs.find(disk);
         if (temp_dir_it == temp_dirs.end())
-            temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp_backup_")).first;
+            temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup_")).first;
         auto temp_dir_owner = temp_dir_it->second;
         fs::path temp_dir = temp_dir_owner->getPath();
 
@@ -4552,8 +4552,12 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         return false;
 
     InterpreterSelectQuery select(
-        query_ptr, query_context, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreProjections().ignoreAlias());
+        query_ptr,
+        query_context,
+        SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreProjections().ignoreAlias(),
+        query_info.sets /* prepared_sets */);
     const auto & analysis_result = select.getAnalysisResult();
+    query_info.sets = std::move(select.getQueryAnalyzer()->getPreparedSets());
 
     bool can_use_aggregate_projection = true;
     /// If the first stage of the query pipeline is more complex than Aggregating - Expression - Filter - ReadFromStorage,
@@ -4897,6 +4901,8 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     {
         selected_candidate->aggregation_keys = select.getQueryAnalyzer()->aggregationKeys();
         selected_candidate->aggregate_descriptions = select.getQueryAnalyzer()->aggregates();
+        selected_candidate->subqueries_for_sets
+            = std::make_shared<SubqueriesForSets>(std::move(select.getQueryAnalyzer()->getSubqueriesForSets()));
     }
 
     query_info.projection = std::move(*selected_candidate);

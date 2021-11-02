@@ -1,3 +1,5 @@
+#include <string_view>
+
 #include <Parsers/ASTFunction.h>
 
 #include <Common/quoteString.h>
@@ -15,6 +17,8 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTWithAlias.h>
 #include <Parsers/queryToString.h>
+
+using namespace std::literals;
 
 
 namespace DB
@@ -339,7 +343,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             for (const char ** func = operators; *func; func += 2)
             {
-                if (0 == strcmp(name.c_str(), func[0]))
+                if (name == std::string_view(func[0]))
                 {
                     if (frame.need_parens)
                         settings.ostr << '(';
@@ -376,7 +380,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 }
             }
 
-            if (!written && 0 == strcmp(name.c_str(), "arrayElement"))
+            if (!written && name == "arrayElement"sv)
             {
                 if (frame.need_parens)
                     settings.ostr << '(';
@@ -391,7 +395,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                     settings.ostr << ')';
             }
 
-            if (!written && 0 == strcmp(name.c_str(), "tupleElement"))
+            if (!written && name == "tupleElement"sv)
             {
                 // fuzzer sometimes may insert tupleElement() created from ASTLiteral:
                 //
@@ -442,7 +446,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
                 }
             }
 
-            if (!written && 0 == strcmp(name.c_str(), "lambda"))
+            if (!written && name == "lambda"sv)
             {
                 /// Special case: zero elements tuple in lhs of lambda is printed as ().
                 /// Special case: one-element tuple in lhs of lambda is printed as its element.
@@ -483,7 +487,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
 
             for (const char ** func = operators; *func; func += 2)
             {
-                if (0 == strcmp(name.c_str(), func[0]))
+                if (name == std::string_view(func[0]))
                 {
                     if (frame.need_parens)
                         settings.ostr << '(';
@@ -500,7 +504,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             }
         }
 
-        if (!written && 0 == strcmp(name.c_str(), "array"))
+        if (!written && name == "array"sv)
         {
             settings.ostr << (settings.hilite ? hilite_operator : "") << '[' << (settings.hilite ? hilite_none : "");
             for (size_t i = 0; i < arguments->children.size(); ++i)
@@ -513,7 +517,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             written = true;
         }
 
-        if (!written && arguments->children.size() >= 2 && 0 == strcmp(name.c_str(), "tuple"))
+        if (!written && arguments->children.size() >= 2 && name == "tuple"sv)
         {
             settings.ostr << (settings.hilite ? hilite_operator : "") << '(' << (settings.hilite ? hilite_none : "");
             for (size_t i = 0; i < arguments->children.size(); ++i)
@@ -526,7 +530,7 @@ void ASTFunction::formatImplWithoutAlias(const FormatSettings & settings, Format
             written = true;
         }
 
-        if (!written && 0 == strcmp(name.c_str(), "map"))
+        if (!written && name == "map"sv)
         {
             settings.ostr << (settings.hilite ? hilite_operator : "") << "map(" << (settings.hilite ? hilite_none : "");
             for (size_t i = 0; i < arguments->children.size(); ++i)

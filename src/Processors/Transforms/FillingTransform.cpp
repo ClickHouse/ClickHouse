@@ -117,12 +117,12 @@ IProcessor::Status FillingTransform::prepare()
 {
     if (!on_totals && input.isFinished() && !output.isFinished() && !has_input && !generate_suffix)
     {
-        should_insert_first = next_row < filling_row;
+        should_insert_first = next_row < filling_row || first;
 
         for (size_t i = 0, size = filling_row.size(); i < size; ++i)
             next_row[i] = filling_row.getFillDescription(i).fill_to;
 
-        if (filling_row < next_row)
+        if (first || filling_row < next_row)
         {
             generate_suffix = true;
             return Status::Ready;
@@ -159,6 +159,9 @@ void FillingTransform::transform(Chunk & chunk)
         const auto & empty_columns = input.getHeader().getColumns();
         init_columns_by_positions(empty_columns, old_fill_columns, res_fill_columns, fill_column_positions);
         init_columns_by_positions(empty_columns, old_other_columns, res_other_columns, other_column_positions);
+
+        if (first)
+            filling_row.initFromDefaults();
 
         if (should_insert_first && filling_row < next_row)
             insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
