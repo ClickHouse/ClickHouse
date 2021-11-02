@@ -23,7 +23,7 @@ ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'p
 -   `user` — PostgreSQL user.
 -   `password` — User password.
 
-## Dynamically adding new tables to replication
+## Dynamically adding new tables to replication {#dynamically-adding-new-tables}
 
 ``` sql
 ATTACH TABLE postgres_database.new_table;
