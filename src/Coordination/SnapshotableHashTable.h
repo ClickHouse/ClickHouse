@@ -192,6 +192,7 @@ public:
             return false;
 
         auto list_itr = it->second;
+        UInt64 old_data_size = sizeOf<V>(&list_itr->value);
         if (snapshot_mode)
         {
             list_itr->active_in_map = false;
@@ -203,7 +204,7 @@ public:
             list.erase(list_itr);
         }
 
-        updateDataSize(ERASE, sizeOf<std::string>(&key), 0, sizeOf<V>(&list_itr->value));
+        updateDataSize(ERASE, sizeOf<std::string>(&key), 0, old_data_size);
         return true;
     }
 
