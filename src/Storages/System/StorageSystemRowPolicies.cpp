@@ -1,5 +1,5 @@
 #include <Storages/System/StorageSystemRowPolicies.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/RowPolicy.h>
 #include <Columns/ColumnString.h>
@@ -55,7 +55,7 @@ NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
 void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     context->checkAccess(AccessType::SHOW_ROW_POLICIES);
-    const auto & access_control = context->getAccessControlManager();
+    const auto & access_control = context->getAccessControl();
     std::vector<UUID> ids = access_control.findAll<RowPolicy>();
 
     size_t column_index = 0;

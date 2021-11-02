@@ -2,7 +2,7 @@
 #include <Parsers/Access/ASTSetRoleQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Access/RolesOrUsersSet.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/User.h>
 #include <Interpreters/Context.h>
 
@@ -28,7 +28,7 @@ BlockIO InterpreterSetRoleQuery::execute()
 
 void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
 {
-    auto & access_control = getContext()->getAccessControlManager();
+    auto & access_control = getContext()->getAccessControl();
     auto session_context = getContext()->getSessionContext();
     auto user = session_context->getUser();
 
@@ -62,7 +62,7 @@ void InterpreterSetRoleQuery::setDefaultRole(const ASTSetRoleQuery & query)
 {
     getContext()->checkAccess(AccessType::ALTER_USER);
 
-    auto & access_control = getContext()->getAccessControlManager();
+    auto & access_control = getContext()->getAccessControl();
     std::vector<UUID> to_users = RolesOrUsersSet{*query.to_users, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
     RolesOrUsersSet roles_from_query{*query.roles, access_control};
 
