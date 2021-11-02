@@ -25,7 +25,7 @@ namespace
     DataTypeEnum8::Values getAuthenticationTypeEnumValues()
     {
         DataTypeEnum8::Values enum_values;
-        for (auto type : collections::range(AuthenticationType::MAX_TYPE))
+        for (auto type : collections::range(AuthenticationType::MAX))
             enum_values.emplace_back(AuthenticationTypeInfo::get(type).name, static_cast<Int8>(type));
         return enum_values;
     }
