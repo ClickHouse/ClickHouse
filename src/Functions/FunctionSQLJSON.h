@@ -260,12 +260,21 @@ public:
         }
 
         if (status == VisitorStatus::Exhausted)
-        {
             return false;
-        }
 
         std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        out << current_element.getElement();
+        if (current_element.isString())
+        {
+            std::string_view element = current_element.getString();
+            if (element.starts_with('\"') && element.size() > 1)
+                out << element.substr(1, element.size() - 1);
+            else
+                out << element;
+        }
+        else
+        {
+            out << current_element.getElement();
+        }
         auto output_str = out.str();
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
         col_str.insertData(output_str.data(), output_str.size());
