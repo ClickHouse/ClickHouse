@@ -239,8 +239,12 @@ void StorageRabbitMQ::loopingFunc()
 {
     if (!rabbit_is_ready)
         return;
+
     if (connection->isConnected())
+    {
+        connection->getHandler().updateLoopState(Loop::RUN);
         connection->getHandler().startLoop();
+    }
 }
 
 
@@ -290,7 +294,7 @@ size_t StorageRabbitMQ::getMaxBlockSize() const
 
 void StorageRabbitMQ::initRabbitMQ()
 {
-    if (stream_cancelled || rabbit_is_ready)
+    if (shutdown_called || rabbit_is_ready)
         return;
 
     if (use_user_setup)
@@ -569,29 +573,35 @@ void StorageRabbitMQ::unbindExchange()
      * bindings to remove redunadant message copies, but after that mv cannot work unless those bindings are recreated. Recreating them is
      * not difficult but very ugly and as probably nobody will do such thing - bindings will not be recreated.
      */
-    std::call_once(flag, [&]()
+    if (!exchange_removed.exchange(true))
     {
-        streaming_task->deactivate();
-        connection->getHandler().updateLoopState(Loop::STOP);
-        looping_task->deactivate();
+        try
+        {
+            streaming_task->deactivate();
 
-        auto rabbit_channel = connection->createChannel();
-        rabbit_channel->removeExchange(bridge_exchange)
-        .onSuccess([&]()
-        {
-            exchange_removed.store(true);
-        })
-        .onError([&](const char * message)
-        {
-            throw Exception("Unable to remove exchange. Reason: " + std::string(message), ErrorCodes::CANNOT_REMOVE_RABBITMQ_EXCHANGE);
-        });
+            connection->getHandler().updateLoopState(Loop::STOP);
+            looping_task->deactivate();
 
-        while (!exchange_removed.load())
-        {
-            connection->getHandler().iterateLoop();
+            auto rabbit_channel = connection->createChannel();
+            rabbit_channel->removeExchange(bridge_exchange)
+            .onSuccess([&]()
+            {
+                connection->getHandler().stopLoop();
+            })
+            .onError([&](const char * message)
+            {
+                throw Exception("Unable to remove exchange. Reason: " + std::string(message), ErrorCodes::CANNOT_REMOVE_RABBITMQ_EXCHANGE);
+            });
+
+            connection->getHandler().startBlockingLoop();
+            rabbit_channel->close();
         }
-        rabbit_channel->close();
-    });
+        catch (...)
+        {
+            exchange_removed = false;
+            throw;
+        }
+    }
 }
 
 
@@ -646,7 +656,6 @@ Pipe StorageRabbitMQ::read(
 
     if (!connection->getHandler().loopRunning() && connection->isConnected())
     {
-        connection->getHandler().updateLoopState(Loop::RUN);
         looping_task->activateAndSchedule();
     }
 
@@ -703,15 +712,13 @@ void StorageRabbitMQ::startup()
         }
     }
 
-    connection->getHandler().updateLoopState(Loop::RUN);
     streaming_task->activateAndSchedule();
 }
 
 
 void StorageRabbitMQ::shutdown()
 {
-    stream_cancelled = true;
-    wait_confirm = false;
+    shutdown_called = true;
 
     /// In case it has not yet been able to setup connection;
     deactivateTask(connection_task, true, false);
@@ -836,7 +843,7 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
     ChannelPtr consumer_channel = connection->createChannel();
     return std::make_shared<ReadBufferFromRabbitMQConsumer>(
         std::move(consumer_channel), connection->getHandler(), queues, ++consumer_id,
-        unique_strbase, log, row_delimiter, queue_size, stream_cancelled);
+        unique_strbase, log, row_delimiter, queue_size, shutdown_called);
 }
 
 
@@ -844,7 +851,7 @@ ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
     return std::make_shared<WriteBufferToRabbitMQProducer>(
         configuration, getContext(), routing_keys, exchange_name, exchange_type,
-        producer_id.fetch_add(1), persistent, wait_confirm, log,
+        producer_id.fetch_add(1), persistent, shutdown_called, log,
         row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
@@ -907,7 +914,7 @@ void StorageRabbitMQ::streamingToViewsFunc()
                 auto start_time = std::chrono::steady_clock::now();
 
                 // Keep streaming as long as there are attached views and streaming is not cancelled
-                while (!stream_cancelled && num_created_consumers > 0)
+                while (!shutdown_called && num_created_consumers > 0)
                 {
                     if (!checkDependencies(table_id))
                         break;
@@ -944,7 +951,7 @@ void StorageRabbitMQ::streamingToViewsFunc()
         }
     }
 
-    if (!stream_cancelled)
+    if (!shutdown_called)
         streaming_task->scheduleAfter(milliseconds_to_wait);
 }
 
@@ -999,7 +1006,6 @@ bool StorageRabbitMQ::streamToViews()
 
     if (!connection->getHandler().loopRunning())
     {
-        connection->getHandler().updateLoopState(Loop::RUN);
         looping_task->activateAndSchedule();
     }
 
@@ -1016,7 +1022,7 @@ bool StorageRabbitMQ::streamToViews()
 
     if (!connection->isConnected())
     {
-        if (stream_cancelled)
+        if (shutdown_called)
             return true;
 
         if (connection->reconnect())
@@ -1090,7 +1096,6 @@ bool StorageRabbitMQ::streamToViews()
     }
     else
     {
-        connection->getHandler().updateLoopState(Loop::RUN);
         looping_task->activateAndSchedule();
     }
 

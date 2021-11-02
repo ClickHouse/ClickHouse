@@ -63,7 +63,6 @@ public:
 
     String getExchange() const { return exchange_name; }
     void unbindExchange();
-    bool exchangeRemoved() { return exchange_removed.load(); }
 
     bool updateChannel(ChannelPtr & channel);
     void updateQueues(std::vector<String> & queues_) { queues_ = queues; }
@@ -118,9 +117,7 @@ private:
 
     String sharding_exchange, bridge_exchange, consumer_exchange;
     size_t consumer_id = 0; /// counter for consumer buffer, needed for channel id
-    std::atomic<size_t> producer_id = 1; /// counter for producer buffer, needed for channel id
-    std::atomic<bool> wait_confirm = true; /// needed to break waiting for confirmations for producer
-    std::atomic<bool> exchange_removed = false, rabbit_is_ready = false;
+
     std::vector<String> queues;
 
     std::once_flag flag; /// remove exchange only once
@@ -131,7 +128,18 @@ private:
 
     uint64_t milliseconds_to_wait;
 
-    std::atomic<bool> stream_cancelled{false};
+    /// Needed for tell MV or producer baskground tasks
+    /// that they must finish as soon as possible.
+    std::atomic<bool> shutdown_called{false};
+    /// Counter for producer buffers, needed for channel id.
+    /// Needed to generate unique producer buffer identifiers.
+    std::atomic<size_t> producer_id = 1;
+    /// Has connection background task completed successfully?
+    /// It is started only once -- in constructor.
+    std::atomic<bool> rabbit_is_ready = false;
+    /// Allow to remove exchange only once.
+    std::atomic<bool> exchange_removed = false;
+
     size_t read_attempts = 0;
     mutable bool drop_table = false;
     bool is_attach;
