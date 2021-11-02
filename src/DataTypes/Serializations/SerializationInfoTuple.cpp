@@ -8,7 +8,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int CORRUPTED_DATA;
     extern const int THERE_IS_NO_COLUMN;
 }
@@ -106,7 +105,7 @@ void SerializationInfoTuple::fromJSON(const Poco::JSON::Object & object)
     auto subcolumns = object.getArray("subcolumns");
     if (elems.size() != subcolumns->size())
         throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
-            "Mismatched number of subcolumns beetween JSON and SerializationInfoTuple."
+            "Mismatched number of subcolumns between JSON and SerializationInfoTuple."
             "Expected: {}, got: {}", elems.size(), subcolumns->size());
 
     for (size_t i = 0; i < elems.size(); ++i)

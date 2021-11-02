@@ -303,12 +303,12 @@ public:
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
 
 private:
-  template <typename Ptr>
-  Ptr getForSubcolumn(
-      const String & subcolumn_name,
-      const SubstreamData & data,
-      Ptr SubstreamData::*member,
-      bool throw_if_null = true) const;
+    template <typename Ptr>
+    Ptr getForSubcolumn(
+        const String & subcolumn_name,
+        const SubstreamData & data,
+        Ptr SubstreamData::*member,
+        bool throw_if_null = true) const;
 };
 
 

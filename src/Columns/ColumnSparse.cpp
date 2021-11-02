@@ -34,7 +34,7 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
     const ColumnUInt64 * offsets_concrete = typeid_cast<const ColumnUInt64 *>(offsets.get());
 
     if (!offsets_concrete)
-        throw Exception( ErrorCodes::LOGICAL_ERROR, "'offsets' column must be a ColumnUInt64, got: {}", offsets->getName());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "'offsets' column must be a ColumnUInt64, got: {}", offsets->getName());
 
     /// 'values' should contain one extra element: default value at 0 position.
     if (offsets->size() + 1 != values->size())

@@ -903,7 +903,7 @@ void IMergeTreeDataPart::loadRowsCount()
             /// Most trivial types
             if (column.type->isValueRepresentedByNumber()
                 && !column.type->haveSubtypes()
-                && getSerialization(column.name)->getKind() == ISerialization::Kind::DEFAULT)
+                && getSerialization(column)->getKind() == ISerialization::Kind::DEFAULT)
             {
                 auto size = getColumnSize(column.name, *column.type);
 

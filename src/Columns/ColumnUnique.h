@@ -125,12 +125,12 @@ public:
 
     double getRatioOfDefaultRows(double) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getRatioOfDefaultRows' not implemeted for ColumnUnique");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getRatioOfDefaultRows' not implemented for ColumnUnique");
     }
 
     void getIndicesOfNonDefaultRows(IColumn::Offsets &, size_t, size_t) const override
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getIndicesOfNonDefaultRows' not implemeted for ColumnUnique");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getIndicesOfNonDefaultRows' not implemented for ColumnUnique");
     }
 
     const UInt64 * tryGetSavedHash() const override { return reverse_index.tryGetSavedHash(); }
