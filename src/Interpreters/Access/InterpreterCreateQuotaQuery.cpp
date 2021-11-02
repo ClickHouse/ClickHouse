@@ -1,7 +1,7 @@
 #include <Interpreters/Access/InterpreterCreateQuotaQuery.h>
 #include <Parsers/Access/ASTCreateQuotaQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -73,7 +73,7 @@ namespace
 BlockIO InterpreterCreateQuotaQuery::execute()
 {
     auto & query = query_ptr->as<ASTCreateQuotaQuery &>();
-    auto & access_control = getContext()->getAccessControlManager();
+    auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(query.alter ? AccessType::ALTER_QUOTA : AccessType::CREATE_QUOTA);
 
     if (!query.cluster.empty())
