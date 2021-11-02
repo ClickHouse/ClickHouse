@@ -262,6 +262,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     written_first_block = true;
 
     /// Received data block is immediately displayed to the user.
+    std::this_thread::sleep_for(std::chrono::seconds(1));
     output_format->flush();
 
     /// Restore progress bar after data block.
