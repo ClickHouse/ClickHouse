@@ -1100,7 +1100,8 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     ConstStoragePtr storage,
     const StorageMetadataPtr & metadata_snapshot,
     bool allow_aggregations,
-    bool allow_self_aliases) const
+    bool allow_self_aliases,
+    bool execute_scalar_subqueries) const
 {
     if (query->as<ASTSelectQuery>())
         throw Exception("Not select analyze for select asts.", ErrorCodes::LOGICAL_ERROR);
@@ -1112,7 +1113,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases);
 
     /// Executing scalar subqueries. Column defaults could be a scalar subquery.
-    executeScalarSubqueries(query, getContext(), 0, result.scalars, false);
+    executeScalarSubqueries(query, getContext(), 0, result.scalars, !execute_scalar_subqueries);
 
     if (settings.legacy_column_name_of_tuple_literal)
         markTupleLiteralsAsLegacy(query);

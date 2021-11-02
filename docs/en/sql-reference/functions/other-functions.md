@@ -2427,3 +2427,39 @@ Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 **See Also**
 
 - [shardNum()](#shard-num) function example also contains `shardCount()` function call.
+
+## getOSKernelVersion {#getoskernelversion}
+
+Returns a string with the current OS kernel version.
+
+**Syntax**
+
+``` sql
+getOSKernelVersion()
+```
+
+**Arguments**
+
+-   None.
+
+**Returned value**
+
+-   The current OS kernel version.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT getOSKernelVersion();
+```
+
+Result:
+
+``` text
+┌─getOSKernelVersion()────┐
+│ Linux 4.15.0-55-generic │
+└─────────────────────────┘
+```

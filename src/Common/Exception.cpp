@@ -17,9 +17,7 @@
 #include <Common/ErrorCodes.h>
 #include <filesystem>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 namespace fs = std::filesystem;
 

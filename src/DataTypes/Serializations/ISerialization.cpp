@@ -3,6 +3,7 @@
 #include <Columns/IColumn.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <IO/ReadBufferFromString.h>
 #include <Common/escapeForFileName.h>
 #include <DataTypes/NestedUtils.h>
 #include <base/EnumReflection.h>
@@ -200,6 +201,20 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
             return false;
     }
     return true;
+}
+
+void ISerialization::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    String field;
+    /// Read until \t or \n.
+    readString(field, istr);
+    ReadBufferFromString buf(field);
+    deserializeWholeText(column, buf, settings);
+}
+
+void ISerialization::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeText(column, row_num, ostr, settings);
 }
 
 size_t ISerialization::getArrayLevel(const SubstreamPath & path)

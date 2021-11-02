@@ -1,6 +1,6 @@
 #pragma once
 
-#include <libnuraft/nuraft.hxx> // Y_IGNORE
+#include <libnuraft/nuraft.hxx>
 #include <city.h>
 #include <optional>
 #include <IO/WriteBufferFromFile.h>
@@ -101,6 +101,9 @@ public:
 
     /// Last entry in log, or fake entry with term 0 if log is empty
     LogEntryPtr getLastEntry() const;
+
+    /// Get entry with latest config in logstore
+    LogEntryPtr getLatestConfigChange() const;
 
     /// Return log entries between [start, end)
     LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index);

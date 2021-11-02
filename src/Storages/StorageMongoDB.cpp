@@ -113,9 +113,9 @@ StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, C
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "collection")
-                configuration.collection = arg_value.safeGet<String>();
+                configuration.collection = arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else if (arg_name == "options")
-                configuration.options = arg_value.safeGet<String>();
+                configuration.options = arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Unexpected key-value argument."
