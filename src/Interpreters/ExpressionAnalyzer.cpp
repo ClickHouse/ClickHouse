@@ -615,6 +615,15 @@ void ExpressionAnalyzer::getRootActions(const ASTPtr & ast, bool no_makeset_for_
     actions = visitor_data.getActions();
 }
 
+const NamesAndTypesList & ExpressionAnalyzer::getColumnsAfterWindow() const
+{
+    return columns_after_window;
+}
+
+const NamesAndTypesList & ExpressionAnalyzer::getColumnsAfterJoin() const
+{
+    return columns_after_join;
+}
 
 void ExpressionAnalyzer::getRootActionsNoMakeSet(const ASTPtr & ast, ActionsDAGPtr & actions, bool only_consts)
 {

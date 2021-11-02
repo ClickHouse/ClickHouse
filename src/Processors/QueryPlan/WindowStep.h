@@ -25,6 +25,8 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    const SortDescription & getSortDescription() const;
+
 private:
     WindowDescription window_description;
     std::vector<WindowFunctionDescription> window_functions;
