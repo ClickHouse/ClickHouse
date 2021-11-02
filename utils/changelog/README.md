@@ -8,6 +8,10 @@ Dependencies:
  apt-get install git curl jq python3 python3-fuzzywuzzy 
 ```
 
+Update information about tags:
+```
+git fetch --tags
+```
 
 Usage example:
 
