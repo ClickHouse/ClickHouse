@@ -1,5 +1,5 @@
 #include <Storages/System/StorageSystemPrivileges.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/SettingsProfile.h>
 #include <Columns/ColumnArray.h>

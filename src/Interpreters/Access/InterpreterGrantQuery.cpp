@@ -1,7 +1,7 @@
 #include <Interpreters/Access/InterpreterGrantQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/Role.h>
 #include <Access/RolesOrUsersSet.h>
@@ -51,7 +51,7 @@ namespace
 
     /// Extracts roles which are going to be granted or revoked from a query.
     void collectRolesToGrantOrRevoke(
-        const AccessControlManager & access_control,
+        const AccessControl & access_control,
         const ASTGrantQuery & query,
         std::vector<UUID> & roles_to_grant,
         RolesOrUsersSet & roles_to_revoke)
@@ -121,7 +121,7 @@ namespace
     }
 
     /// Checks if grantees are allowed for the current user, throws an exception if not.
-    void checkGranteesAreAllowed(const AccessControlManager & access_control, const ContextAccess & current_user_access, const std::vector<UUID> & grantee_ids)
+    void checkGranteesAreAllowed(const AccessControl & access_control, const ContextAccess & current_user_access, const std::vector<UUID> & grantee_ids)
     {
         auto current_user = current_user_access.getUser();
         if (!current_user || (current_user->grantees == RolesOrUsersSet::AllTag{}))
@@ -139,7 +139,7 @@ namespace
 
     /// Checks if the current user has enough access rights granted with grant option to grant or revoke specified access rights.
     void checkGrantOption(
-        const AccessControlManager & access_control,
+        const AccessControl & access_control,
         const ContextAccess & current_user_access,
         const std::vector<UUID> & grantees_from_query,
         bool & need_check_grantees_are_allowed,
@@ -205,7 +205,7 @@ namespace
 
     /// Checks if the current user has enough roles granted with admin option to grant or revoke specified roles.
     void checkAdminOption(
-        const AccessControlManager & access_control,
+        const AccessControl & access_control,
         const ContextAccess & current_user_access,
         const std::vector<UUID> & grantees_from_query,
         bool & need_check_grantees_are_allowed,
@@ -382,7 +382,7 @@ BlockIO InterpreterGrantQuery::execute()
     if (!query.access_rights_elements.empty() && query.access_rights_elements[0].is_partial_revoke && !query.is_revoke)
         throw Exception("A partial revoke should be revoked, not granted", ErrorCodes::LOGICAL_ERROR);
 
-    auto & access_control = getContext()->getAccessControlManager();
+    auto & access_control = getContext()->getAccessControl();
     auto current_user_access = getContext()->getAccess();
 
     std::vector<UUID> grantees = RolesOrUsersSet{*query.grantees, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
