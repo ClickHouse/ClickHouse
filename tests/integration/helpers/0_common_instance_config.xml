@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <timezone>Europe/Moscow</timezone>
     <listen_host>0.0.0.0</listen_host>
     <custom_settings_prefixes>custom_</custom_settings_prefixes>
@@ -17,4 +17,4 @@
         <stderr>/var/log/clickhouse-server/stderr.log</stderr>
         <stdout>/var/log/clickhouse-server/stdout.log</stdout>
     </logger>
-</yandex>
+</clickhouse>

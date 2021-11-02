@@ -252,9 +252,6 @@ namespace detail
                     impl->position() = position();
             }
 
-            if (!working_buffer.empty())
-                impl->position() = position();
-
             if (!impl->next())
                 return false;
 

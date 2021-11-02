@@ -1951,7 +1951,7 @@ void Context::shutdownKeeperDispatcher() const
 }
 
 
-void Context::updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::AbstractConfiguration & config)
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->keeper_dispatcher_mutex);
@@ -1970,6 +1970,9 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
     if (zookeeper == shared->auxiliary_zookeepers.end())
     {
+        if (name.find(':') != std::string::npos || name.find('/') != std::string::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
+
         const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
         if (!config.has("auxiliary_zookeepers." + name))
             throw Exception(
