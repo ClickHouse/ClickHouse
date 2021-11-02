@@ -13,7 +13,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function test()
 {
-    timeout 5 ${CLICKHOUSE_LOCAL} --max_execution_time 10 --query "
+    timeout 5 ${CLICKHOUSE_LOCAL} --max_execution_time 10 --sleep_in_client=1 --query "
         SELECT DISTINCT number % 5 FROM system.numbers" ||:
     echo '---'
     timeout 5 ${CLICKHOUSE_CURL} -sS --no-buffer "${CLICKHOUSE_URL}&max_execution_time=10" --data-binary "
