@@ -464,7 +464,7 @@ ReturnType SerializationNullable::deserializeTextCSVImpl(IColumn & column, ReadB
         /// This is not null, surely.
         return safeDeserialize<ReturnType>(column, *nested_serialization,
             [] { return false; },
-            [&nested_serialization, &istr, &settings] (IColumn & nested_column) { nested->deserializeTextCSV(nested_column, istr, settings); });
+            [&nested_serialization, &istr, &settings] (IColumn & nested_column) { nested_serialization->deserializeTextCSV(nested_column, istr, settings); });
     }
 
     /// Check if we have enough data in buffer to check if it's a null.
