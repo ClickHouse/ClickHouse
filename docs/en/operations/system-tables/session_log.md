@@ -8,8 +8,8 @@ Columns:
     -   `LoginFailure` — Login error.
     -   `LoginSuccess` — Successful login.
     -   `Logout` — Logout from the system.
--   `session_id` ([UUID](../../sql-reference/data-types/uuid.md)) — Session id.
--   `session_name` ([String](../../sql-reference/data-types/string.md)) — Session name.
+-   `auth_id` ([UUID](../../sql-reference/data-types/uuid.md)) — Session id.
+-   `session_id` ([String](../../sql-reference/data-types/string.md)) — Session name.
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — Login/logout date.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Login/logout time.
 -   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Login/logout starting time with microseconds precision.
@@ -23,7 +23,7 @@ Columns:
     -   `KERBEROS`
 -   `profiles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — The list of profiles set for all roles and/or users.
 -   `roles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — The list of roles to which the profile is applied.
--   `changed_settings` ([Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md), [String](../../sql-reference/data-types/string.md)))) — Settings that were changed when the client logged in/out.
+-   `settings` ([Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md), [String](../../sql-reference/data-types/string.md)))) — Settings that were changed when the client logged in/out.
 -   `client_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — The IP address that was used to log in/out.
 -   `client_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — The client port that was used to log in/out.
 -   `interface` ([Enum8](../../sql-reference/data-types/enum.md)) — The interface from which the login was initiated. Possible values:
@@ -54,8 +54,8 @@ Result:
 Row 1:
 ──────
 type:                    LoginSuccess
-session_id:              45e6bd83-b4aa-4a23-85e6-bd83b4aa1a23
-session_name:
+auth_id:                 45e6bd83-b4aa-4a23-85e6-bd83b4aa1a23
+session_id:
 event_date:              2021-10-14
 event_time:              2021-10-14 20:33:52
 event_time_microseconds: 2021-10-14 20:33:52.104247
@@ -63,7 +63,7 @@ user:                    default
 auth_type:               PLAINTEXT_PASSWORD
 profiles:                ['default']
 roles:                   []
-changed_settings:        [('load_balancing','random'),('max_memory_usage','10000000000')]
+settings:                [('load_balancing','random'),('max_memory_usage','10000000000')]
 client_address:          ::ffff:127.0.0.1
 client_port:             38490
 interface:               TCP
