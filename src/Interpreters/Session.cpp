@@ -271,12 +271,12 @@ Session::~Session()
     }
 }
 
-Authentication::Type Session::getAuthenticationType(const String & user_name) const
+AuthenticationType Session::getAuthenticationType(const String & user_name) const
 {
-    return global_context->getAccessControlManager().read<User>(user_name)->authentication.getType();
+    return global_context->getAccessControlManager().read<User>(user_name)->auth_data.getType();
 }
 
-Authentication::Type Session::getAuthenticationTypeOrLogInFailure(const String & user_name) const
+AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & user_name) const
 {
     try
     {
