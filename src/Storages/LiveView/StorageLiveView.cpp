@@ -18,7 +18,7 @@ limitations under the License. */
 #include <Processors/Sources/BlocksSource.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <base/logger_useful.h>
@@ -120,7 +120,7 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(ContextPtr local_cont
     new_mergeable_blocks->sample_block = builder.getHeader();
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-    PullingPipelineExecutor executor(pipeline);
+    PullingAsyncPipelineExecutor executor(pipeline);
     Block this_block;
 
     while (executor.pull(this_block))
@@ -244,7 +244,7 @@ void StorageLiveView::writeIntoLiveView(
         });
 
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-        PullingPipelineExecutor executor(pipeline);
+        PullingAsyncPipelineExecutor executor(pipeline);
         Block this_block;
 
         while (executor.pull(this_block))
@@ -385,7 +385,7 @@ bool StorageLiveView::getNewBlocks()
     auto builder = completeQuery(std::move(from));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
 
-    PullingPipelineExecutor executor(pipeline);
+    PullingAsyncPipelineExecutor executor(pipeline);
     Block block;
     while (executor.pull(block))
     {
