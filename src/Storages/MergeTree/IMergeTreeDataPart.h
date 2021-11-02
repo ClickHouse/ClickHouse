@@ -132,9 +132,7 @@ public:
 
     const NamesAndTypesList & getColumns() const { return columns; }
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
-    const SerializationByName & getSerializations() const { return serializations; }
-    const SerializationPtr & getSerialization(const String & column_name) const { return serializations.at(column_name); }
-    SerializationPtr getSerializationOrDefault(const NameAndTypePair & column) const;
+    SerializationPtr getSerialization(const NameAndTypePair & column) const;
 
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
@@ -427,10 +425,6 @@ protected:
     /// Columns description. Cannot be changed, after part initialization.
     NamesAndTypesList columns;
 
-    SerializationInfoByName serialization_infos;
-
-    SerializationByName serializations;
-
     const Type part_type;
 
     /// Not null when it's a projection part.
@@ -454,6 +448,10 @@ protected:
 private:
     /// In compact parts order of columns is necessary
     NameToNumber column_name_to_position;
+
+    SerializationInfoByName serialization_infos;
+
+    SerializationByName serializations;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

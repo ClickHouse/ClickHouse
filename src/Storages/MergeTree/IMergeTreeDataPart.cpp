@@ -416,8 +416,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
 
     for (const auto & column : columns)
     {
-        auto & serialization = serializations[column.name];
-        column_name_to_position.emplace(column.name, pos);
+        column_name_to_position.emplace(column.name, pos++);
 
         auto it = new_infos.find(column.name);
         if (it != new_infos.end())
@@ -426,37 +425,19 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
             const auto & new_info = it->second;
 
             if (old_info)
-            {
                 old_info->replaceData(*new_info);
-            }
             else
-            {
                 old_info = new_info->clone();
-                serialization = column.type->getSerialization(*old_info);
-            }
         }
-        else
-        {
-            serialization = column.type->getDefaultSerialization();
-        }
-
-        IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
-        {
-            auto subcolumn_name = Nested::concatenateName(column.name, subname);
-            column_name_to_position.emplace(subcolumn_name, pos);
-            serializations.emplace(subcolumn_name, subdata.serialization);
-        }, {serialization, column.type, nullptr, nullptr});
-
-        ++pos;
     }
 }
 
-SerializationPtr IMergeTreeDataPart::getSerializationOrDefault(const NameAndTypePair & column) const
+SerializationPtr IMergeTreeDataPart::getSerialization(const NameAndTypePair & column) const
 {
-    auto it = serializations.find(column.name);
-    return it == serializations.end()
-        ? column.type->getDefaultSerialization()
-        : it->second;
+    auto it = serialization_infos.find(column.getNameInStorage());
+    return it == serialization_infos.end()
+        ? IDataType::getSerialization(column)
+        : IDataType::getSerialization(column, *it->second);
 }
 
 void IMergeTreeDataPart::removeIfNeeded()
@@ -788,7 +769,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
         if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
         {
             String path_to_data_file;
-            serializations.at(part_column.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            getSerialization(part_column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
                 if (path_to_data_file.empty())
                 {
@@ -974,7 +955,7 @@ void IMergeTreeDataPart::loadRowsCount()
 
         for (const NameAndTypePair & column : columns)
         {
-            ColumnPtr column_col = column.type->createColumn(*serializations.at(column.name));
+            ColumnPtr column_col = column.type->createColumn(*getSerialization(column));
             if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
                 continue;
 

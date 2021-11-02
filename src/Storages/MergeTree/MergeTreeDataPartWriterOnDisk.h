@@ -123,7 +123,6 @@ protected:
 
     const String part_path;
     const String marks_file_extension;
-    const SerializationByName & serializations;
     const CompressionCodecPtr default_codec;
 
     const bool compute_granularity;
