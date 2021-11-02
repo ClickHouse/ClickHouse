@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <filesystem>
-#include <boost/algorithm/string/join.hpp>
 
 namespace DB
 {

@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 import subprocess
 import logging
-from report import create_test_html_report
-from s3_helper import S3Helper
 import json
 import os
-from pr_info import PRInfo
-from github import Github
+import time
 import shutil
+from github import Github
+from report import create_test_html_report
+from s3_helper import S3Helper
+from pr_info import PRInfo
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 
 NAME = "Push to Dockerhub (actions)"
@@ -56,7 +57,7 @@ def get_changed_docker_images(pr_info, repo_path, image_file_path):
         index += 1
         if index > 100:
             # Sanity check to prevent infinite loop.
-            raise "Too many changed docker images, this is a bug." + str(changed_images)
+            raise RuntimeError("Too many changed docker images, this is a bug." + str(changed_images))
 
     # If a dependent image was already in the list because its own files
     # changed, but then it was added as a dependent of a changed base, we
@@ -192,8 +193,9 @@ if __name__ == "__main__":
     changed_images, dockerhub_repo_name = get_changed_docker_images(pr_info, repo_path, "docker/images.json")
     logging.info("Has changed images %s", ', '.join([str(image[0]) for image in changed_images]))
     pr_commit_version = str(pr_info.number) + '-' + pr_info.sha
-
     versions = [str(pr_info.number), pr_commit_version]
+    if pr_info.number == 0:
+        versions.append("latest")
 
     subprocess.check_output("docker login --username 'robotclickhouse' --password '{}'".format(dockerhub_password), shell=True)
 
@@ -204,7 +206,7 @@ if __name__ == "__main__":
         images_processing_result += process_single_image(versions, full_path, image_name)
         result_images[image_name] = pr_commit_version
 
-    if len(changed_images):
+    if changed_images:
         description = "Updated " + ','.join([im[1] for im in changed_images])
     else:
         description = "Nothing to update"

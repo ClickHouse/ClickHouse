@@ -1,5 +1,5 @@
 #pragma once
-#include <libnuraft/log_store.hxx> // Y_IGNORE
+#include <libnuraft/log_store.hxx>
 #include <map>
 #include <mutex>
 #include <Core/Types.h>
