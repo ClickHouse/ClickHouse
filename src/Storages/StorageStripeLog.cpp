@@ -9,10 +9,12 @@
 #include <Common/Exception.h>
 
 #include <IO/WriteBufferFromFileBase.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
 
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -33,6 +35,13 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
 
+#include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryFromSmallFile.h>
+#include <Backups/IBackup.h>
+#include <Disks/TemporaryFileOnDisk.h>
+
+#include <base/insertAtEnd.h>
+
 #include <cassert>
 
 
@@ -44,6 +53,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -478,6 +488,134 @@ void StorageStripeLog::saveFileSizes(const WriteLock & /* already locked for wri
     file_checker.update(data_file_path);
     file_checker.update(index_file_path);
     file_checker.save();
+}
+
+
+BackupEntries StorageStripeLog::backup(const ASTs & partitions, ContextPtr context)
+{
+    if (!partitions.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+
+    auto lock_timeout = getLockTimeout(context);
+    loadIndices(lock_timeout);
+
+    ReadLock lock{rwlock, lock_timeout};
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+    if (!file_checker.getFileSize(data_file_path))
+        return {};
+
+    auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup_");
+    auto temp_dir = temp_dir_owner->getPath();
+    disk->createDirectories(temp_dir);
+
+    BackupEntries backup_entries;
+
+    /// data.bin
+    {
+        /// We make a copy of the data file because it can be changed later in write() or in truncate().
+        String data_file_name = fileName(data_file_path);
+        String temp_file_path = temp_dir + "/" + data_file_name;
+        disk->copy(data_file_path, disk, temp_file_path);
+        backup_entries.emplace_back(
+            data_file_name,
+            std::make_unique<BackupEntryFromImmutableFile>(
+                disk, temp_file_path, file_checker.getFileSize(data_file_path), std::nullopt, temp_dir_owner));
+    }
+
+    /// index.mrk
+    {
+        /// We make a copy of the data file because it can be changed later in write() or in truncate().
+        String index_file_name = fileName(index_file_path);
+        String temp_file_path = temp_dir + "/" + index_file_name;
+        disk->copy(index_file_path, disk, temp_file_path);
+        backup_entries.emplace_back(
+            index_file_name,
+            std::make_unique<BackupEntryFromImmutableFile>(
+                disk, temp_file_path, file_checker.getFileSize(index_file_path), std::nullopt, temp_dir_owner));
+    }
+
+    /// sizes.json
+    String files_info_path = file_checker.getPath();
+    backup_entries.emplace_back(fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path));
+
+    /// columns.txt
+    backup_entries.emplace_back(
+        "columns.txt", std::make_unique<BackupEntryFromMemory>(getInMemoryMetadata().getColumns().getAllPhysical().toString()));
+
+    /// count.txt
+    size_t num_rows = 0;
+    for (const auto & block : indices.blocks)
+        num_rows += block.num_rows;
+    backup_entries.emplace_back("count.txt", std::make_unique<BackupEntryFromMemory>(toString(num_rows)));
+
+    return backup_entries;
+}
+
+RestoreDataTasks StorageStripeLog::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context)
+{
+    if (!partitions.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+
+    auto restore_task = [this, backup, data_path_in_backup, context]()
+    {
+        WriteLock lock{rwlock, getLockTimeout(context)};
+        if (!lock)
+            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+        /// Load the indices if not loaded yet. We have to do that now because we're going to update these indices.
+        loadIndices(lock);
+
+        /// If there were no files, save zero file sizes to be able to rollback in case of error.
+        saveFileSizes(lock);
+
+        try
+        {
+            /// Append the data file.
+            auto old_data_size = file_checker.getFileSize(data_file_path);
+            {
+                String file_path_in_backup = data_path_in_backup + fileName(data_file_path);
+                auto backup_entry = backup->read(file_path_in_backup);
+                auto in = backup_entry->getReadBuffer();
+                auto out = disk->writeFile(data_file_path, max_compress_block_size, WriteMode::Append);
+                copyData(*in, *out);
+            }
+
+            /// Append the index.
+            String index_path_in_backup = data_path_in_backup + fileName(index_file_path);
+            if (backup->exists(index_path_in_backup))
+            {
+                IndexForNativeFormat extra_indices;
+                auto backup_entry = backup->read(index_path_in_backup);
+                auto index_in = backup_entry->getReadBuffer();
+                CompressedReadBuffer index_compressed_in{*index_in};
+                extra_indices.read(index_compressed_in);
+
+                /// Adjust the offsets.
+                for (auto & block : extra_indices.blocks)
+                {
+                    for (auto & column : block.columns)
+                        column.location.offset_in_compressed_file += old_data_size;
+                }
+
+                insertAtEnd(indices.blocks, std::move(extra_indices.blocks));
+            }
+
+            /// Finish writing.
+            saveIndices(lock);
+            saveFileSizes(lock);
+        }
+        catch (...)
+        {
+            /// Rollback partial writes.
+            file_checker.repair();
+            removeUnsavedIndices(lock);
+            throw;
+        }
+
+    };
+    return {restore_task};
 }
 
 
