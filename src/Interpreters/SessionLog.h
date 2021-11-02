@@ -2,7 +2,7 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
-#include <Access/Authentication.h>
+#include <Access/Common/AuthenticationData.h>
 
 namespace DB
 {
@@ -27,26 +27,26 @@ struct SessionLogElement
     using Type = SessionLogElementType;
 
     SessionLogElement() = default;
-    SessionLogElement(const UUID & session_id_, Type type_);
+    SessionLogElement(const UUID & auth_id_, Type type_);
     SessionLogElement(const SessionLogElement &) = default;
     SessionLogElement & operator=(const SessionLogElement &) = default;
     SessionLogElement(SessionLogElement &&) = default;
     SessionLogElement & operator=(SessionLogElement &&) = default;
 
-    UUID session_id;
+    UUID auth_id;
 
     Type type = SESSION_LOGIN_FAILURE;
 
-    String session_name;
+    String session_id;
     time_t event_time{};
     Decimal64 event_time_microseconds{};
 
     String user;
-    Authentication::Type user_identified_with = Authentication::Type::NO_PASSWORD;
+    AuthenticationType user_identified_with = AuthenticationType::NO_PASSWORD;
     String external_auth_server;
     Strings roles;
     Strings profiles;
-    std::vector<std::pair<String, String>> changed_settings;
+    std::vector<std::pair<String, String>> settings;
 
     ClientInfo client_info;
     String auth_failure_reason;
@@ -66,9 +66,9 @@ class SessionLog : public SystemLog<SessionLogElement>
     using SystemLog<SessionLogElement>::SystemLog;
 
 public:
-    void addLoginSuccess(const UUID & session_id, std::optional<String> session_name, const Context & login_context);
-    void addLoginFailure(const UUID & session_id, const ClientInfo & info, const String & user, const Exception & reason);
-    void addLogOut(const UUID & session_id, const String & user, const ClientInfo & client_info);
+    void addLoginSuccess(const UUID & auth_id, std::optional<String> session_id, const Context & login_context);
+    void addLoginFailure(const UUID & auth_id, const ClientInfo & info, const String & user, const Exception & reason);
+    void addLogOut(const UUID & auth_id, const String & user, const ClientInfo & client_info);
 };
 
 }

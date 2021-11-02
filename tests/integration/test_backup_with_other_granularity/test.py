@@ -111,7 +111,7 @@ def test_backup_from_old_version_config(started_cluster):
 
     def callback(n):
         n.replace_config("/etc/clickhouse-server/merge_tree_settings.xml",
-                         "<yandex><merge_tree><enable_mixed_granularity_parts>1</enable_mixed_granularity_parts></merge_tree></yandex>")
+                         "<clickhouse><merge_tree><enable_mixed_granularity_parts>1</enable_mixed_granularity_parts></merge_tree></clickhouse>")
 
     node3.restart_with_latest_version(callback_onstop=callback)
 
