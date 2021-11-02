@@ -8,6 +8,7 @@
 #include <base/shared_ptr_helper.h>
 #include <boost/container/flat_set.hpp>
 #include <mutex>
+#include <unordered_map>
 
 
 namespace Poco { class Logger; }
