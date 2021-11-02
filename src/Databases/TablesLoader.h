@@ -62,12 +62,12 @@ struct ParsedTablesMetadata
     /// List of tables/dictionaries that do not have any dependencies and can be loaded
     TableNames independent_database_objects;
 
-    /// Actually it contains two different maps (with, probably, intersecting keys):
-    /// 1. table/dictionary name -> number of dependencies
+    /// Adjacent list of dependency graph, contains two maps
     /// 2. table/dictionary name -> dependent tables/dictionaries list (adjacency list of dependencies graph).
-    //FIXME
-    /// If table A depends on table B, then there is an edge B --> A, i.e. dependencies_info[B].dependent_database_objects contains A.
-    /// And dependencies_info[C].dependencies_count is a number of incoming edges for vertex C (how many tables we have to load before C).
+    /// 1. table/dictionary name -> dependencies of table/dictionary (adjacency list of inverted dependencies graph)
+    /// If table A depends on table B, then there is an edge B --> A, i.e. dependencies_info[B].dependent_database_objects contains A
+    /// and dependencies_info[A].dependencies contain B.
+    /// We need inverted graph to effectively maintain it on DDL queries that can modify the graph.
     DependenciesInfos dependencies_info;
 };
 

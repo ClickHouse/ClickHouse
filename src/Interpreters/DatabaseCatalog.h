@@ -216,6 +216,8 @@ public:
     TableNamesSet tryRemoveLoadingDependenciesUnlocked(const QualifiedTableName & table_name, bool check_dependencies, bool is_drop_database = false);
     void checkTableCanBeRemovedOrRenamed(const StorageID & table_id) const;
 
+    void updateLoadingDependencies(const StorageID & table_id, TableNamesSet && new_dependencies);
+
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
