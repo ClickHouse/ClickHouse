@@ -32,7 +32,7 @@ toc_title: "Отличительные возможности ClickHouse"
 
 ## Поддержка SQL {#sql-support}
 
-ClickHouse поддерживает [декларативный язык запросов на основе SQL](../sql-reference/statements/select/group-by.md) и во [многих случаях](../sql-reference/ansi.md) совпадающий с SQL стандартом.
+ClickHouse поддерживает [декларативный язык запросов на основе SQL](../sql-reference/index.md) и во [многих случаях](../sql-reference/ansi.md) совпадающий с SQL стандартом.
 
 Поддерживаются [GROUP BY](../sql-reference/statements/select/group-by.md), [ORDER BY](../sql-reference/statements/select/order-by.md), подзапросы в секциях [FROM](../sql-reference/statements/select/from.md), [IN](../sql-reference/operators/in.md), [JOIN](../sql-reference/statements/select/join.md), [функции window](../sql-reference/window-functions/index.md), а также скалярные подзапросы.
 
