@@ -138,4 +138,9 @@ void WindowStep::describeActions(JSONBuilder::JSONMap & map) const
     map.add("Functions", std::move(functions_array));
 }
 
+const SortDescription & WindowStep::getSortDescription() const
+{
+    return window_description.full_sort_description;
+}
+
 }
