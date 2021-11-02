@@ -244,6 +244,16 @@ struct PartRangesReadInfo
 
     bool use_uncompressed_cache = false;
 
+    static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
+    {
+        for (const auto & part : parts)
+        {
+            if (!part.data_part->isStoredOnRemoteDisk())
+                return false;
+        }
+        return true;
+    }
+
     PartRangesReadInfo(
         const RangesInDataParts & parts,
         const Settings & settings,
@@ -270,9 +280,12 @@ struct PartRangesReadInfo
             data_settings.index_granularity,
             index_granularity_bytes);
 
+        auto all_parts_on_remote_disk = checkAllPartsOnRemoteFS(parts);
         min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
-            settings.merge_tree_min_rows_for_concurrent_read,
-            settings.merge_tree_min_bytes_for_concurrent_read,
+            all_parts_on_remote_disk ? settings.merge_tree_min_rows_for_concurrent_read_for_remote_filesystem
+                                     : settings.merge_tree_min_rows_for_concurrent_read,
+            all_parts_on_remote_disk ? settings.merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem
+                                     : settings.merge_tree_min_bytes_for_concurrent_read,
             data_settings.index_granularity,
             index_granularity_bytes,
             sum_marks);
