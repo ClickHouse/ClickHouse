@@ -177,17 +177,18 @@ if __name__ == "__main__":
     s3_prefix = f'{pr_info.number}/{pr_info.sha}/fuzzer_{check_name_lower}/'
     paths = {
         'runlog.log': run_log_path,
-        'main.log': os.path.join(workspace_path, 'workspace/main.log'),
-        'server.log': os.path.join(workspace_path, 'workspace/server.log'),
-        'fuzzer.log': os.path.join(workspace_path, 'workspace/fuzzer.log'),
-        'report.html': os.path.join(workspace_path, 'workspace/report.html'),
+        'main.log': os.path.join(workspace_path, 'main.log'),
+        'server.log': os.path.join(workspace_path, 'server.log'),
+        'fuzzer.log': os.path.join(workspace_path, 'fuzzer.log'),
+        'report.html': os.path.join(workspace_path, 'report.html'),
     }
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
     for f in paths:
         try:
-            paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + '/' + os.path.basename(f))
-        except:
+            paths[f] = s3_helper.upload_test_report_to_s3(paths[f], s3_prefix + '/' + f)
+        except Exception as ex:
+            logging.info("Exception uploading file %s text %s", f, ex)
             paths[f] = ''
 
     report_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
@@ -204,10 +205,10 @@ if __name__ == "__main__":
 
     # Try to get status message saved by the fuzzer
     try:
-        with open(os.path.join(workspace_path, 'workspace/status.txt'), 'r', encoding='utf-8') as status_f:
+        with open(os.path.join(workspace_path, 'status.txt'), 'r', encoding='utf-8') as status_f:
             status = status_f.readline().rstrip('\n')
 
-        with open(os.path.join(workspace_path, 'workspace/description.txt'), 'r', encoding='utf-8') as desc_f:
+        with open(os.path.join(workspace_path, 'description.txt'), 'r', encoding='utf-8') as desc_f:
             description = desc_f.readline().rstrip('\n')[:140]
     except:
         status = 'failure'
