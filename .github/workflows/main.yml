@@ -289,7 +289,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   FinishCheck:
-    needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport, FastTest, FunctionalStatelessTestDebug, FunctionalStatefulTestDebug, DocsCheck, StressTestDebug]
+    needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport, FastTest, FunctionalStatelessTestDebug, FunctionalStatefulTestDebug, DocsCheck, StressTestDebug, ASTFuzzerTestDebug]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code

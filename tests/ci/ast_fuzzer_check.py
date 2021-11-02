@@ -91,7 +91,7 @@ def build_config_to_string(build_config):
 def get_run_command(pr_number, sha, download_url, workspace_path, image):
     return f'docker run --network=host --volume={workspace_path}:/workspace ' \
           '--cap-add syslog --cap-add sys_admin ' \
-          f'-e PR_TO_TEST={pr_number} -e SHA_TO_TEST={sha} -e BINARY_URL_TO_DOWNLOAD={download_url} '\
+          f'-e PR_TO_TEST={pr_number} -e SHA_TO_TEST={sha} -e BINARY_URL_TO_DOWNLOAD="{download_url}" '\
           f'{image}'
 
 def get_commit(gh, commit_sha):
@@ -176,6 +176,7 @@ if __name__ == "__main__":
     check_name_lower = check_name.lower().replace('(', '').replace(')', '').replace(' ', '')
     s3_prefix = f'{pr_info.number}/{pr_info.sha}/fuzzer_{check_name_lower}/'
     paths = {
+        'runlog.log': run_log_path,
         'main.log': os.path.join(workspace_path, 'workspace/main.log'),
         'server.log': os.path.join(workspace_path, 'workspace/server.log'),
         'fuzzer.log': os.path.join(workspace_path, 'workspace/fuzzer.log'),
@@ -189,15 +190,17 @@ if __name__ == "__main__":
         except:
             paths[f] = ''
 
-        report_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
-        if paths['main.log']:
-            report_url = paths['main.log']
-        if paths['server.log']:
-            report_url = paths['server.log']
-        if paths['fuzzer.log']:
-            report_url = paths['fuzzer.log']
-        if paths['report.html']:
-            report_url = paths['report.html']
+    report_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
+    if paths['runlog.log']:
+        report_url = paths['runlog.log']
+    if paths['main.log']:
+        report_url = paths['main.log']
+    if paths['server.log']:
+        report_url = paths['server.log']
+    if paths['fuzzer.log']:
+        report_url = paths['fuzzer.log']
+    if paths['report.html']:
+        report_url = paths['report.html']
 
     # Try to get status message saved by the fuzzer
     try:
