@@ -12,62 +12,60 @@
 
 ### 在本地运行测试 {#functional-test-locally}
 
-Start the ClickHouse server locally, listening on the default port (9000). To
-run, for example, the test `01428_hash_set_nan_key`, change to the repository
-folder and run the following command:
+在本地启动ClickHouse服务器, 监听默认端口(9000). 例如, 要运行测试 `01428_hash_set_nan_key`, 请切换到存储库文件夹并运行以下命令:
 
 ```
 PATH=$PATH:<path to clickhouse-client> tests/clickhouse-test 01428_hash_set_nan_key
 ```
 
-For more options, see `tests/clickhouse-test --help`. You can simply run all tests or run subset of tests filtered by substring in test name: `./clickhouse-test substring`. There are also options to run tests in parallel or in randomized order.
+有关更多选项, 请参阅`tests/clickhouse-test --help`. 您可以简单地运行所有测试或运行由测试名称中的子字符串过滤的测试子集：`./clickhouse-test substring`. 还有并行或随机顺序运行测试的选项.
 
 ### 添加新测试 {#adding-new-test}
 
-To add new test, create a `.sql` or `.sh` file in `queries/0_stateless` directory, check it manually and then generate `.reference` file in the following way: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`.
+添加新的测试, 在 `queries/0_stateless` 目录下创建 `.sql` 或 `.sh` 文件, 手动检查, 然后通过以下方式生成`.reference`文件：`clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` 或 `./00000_test.sh > ./00000_test.reference`.
 
-Tests should use (create, drop, etc) only tables in `test` database that is assumed to be created beforehand; also tests can use temporary tables.
+测试应仅使用(创建、删除等)`test` 数据库中假定已预先创建的表; 测试也可以使用临时表.
 
 ### 选择测试名称 {#choosing-test-name}
 
-The name of the test starts with a five-digit prefix followed by a descriptive name, such as `00422_hash_function_constexpr.sql`. To choose the prefix, find the largest prefix already present in the directory, and increment it by one. In the meantime, some other tests might be added with the same numeric prefix, but this is OK and does not lead to any problems, you don't have to change it later.
+测试名称以五位数前缀开头, 后跟描述性名称, 例如 `00422_hash_function_constexpr.sql`. 要选择前缀, 请找到目录中已存在的最大前缀, 并将其加一. 在此期间, 可能会添加一些具有相同数字前缀的其他测试, 但这没关系并且不会导致任何问题, 您以后不必更改它.
 
-Some tests are marked with `zookeeper`, `shard` or `long` in their names. `zookeeper` is for tests that are using ZooKeeper. `shard` is for tests that requires server to listen `127.0.0.*`; `distributed` or `global` have the same meaning. `long` is for tests that run slightly longer that one second. You can disable these groups of tests using `--no-zookeeper`, `--no-shard` and `--no-long` options, respectively. Make sure to add a proper prefix to your test name if it needs ZooKeeper or distributed queries.
+一些测试的名称中标有 `zookeeper`、`shard` 或 `long` . `zookeeper` 用于使用 ZooKeeper 的测试. `shard` 用于需要服务器监听 `127.0.0.*` 的测试; `distributed` 或 `global` 具有相同的含义. `long` 用于运行时间稍长于一秒的测试. Yo你可以分别使用 `--no-zookeeper`、`--no-shard` 和 `--no-long` 选项禁用这些测试组. 如果需要 ZooKeeper 或分布式查询，请确保为您的测试名称添加适当的前缀.
 
 ### 检查必须发生的错误 {#checking-error-must-occur}
 
-Sometimes you want to test that a server error occurs for an incorrect query. We support special annotations for this in SQL tests, in the following form:
+有时您想测试是否因不正确的查询而发生服务器错误. 我们支持在 SQL 测试中对此进行特殊注释, 形式如下:
 ```
 select x; -- { serverError 49 }
 ```
-This test ensures that the server returns an error with code 49 about unknown column `x`. If there is no error, or the error is different, the test will fail. If you want to ensure that an error occurs on the client side, use `clientError` annotation instead.
+此测试确保服务器返回关于未知列“x”的错误代码为 49. 如果没有错误, 或者错误不同, 则测试失败. 如果您想确保错误发生在客户端, 请改用 `clientError` 注释.
 
-Do not check for a particular wording of error message, it may change in the future, and the test will needlessly break. Check only the error code. If the existing error code is not precise enough for your needs, consider adding a new one.
+不要检查错误消息的特定措辞, 它将来可能会发生变化, 并且测试将不必要地中断. 只检查错误代码. 如果现有的错误代码不足以满足您的需求, 请考虑添加一个新的.
 
 ### 测试分布式查询 {#testing-distributed-query}
 
-If you want to use distributed queries in functional tests, you can leverage `remote` table function with `127.0.0.{1..2}` addresses for the server to query itself; or you can use predefined test clusters in server configuration file like `test_shard_localhost`. Remember to add the words `shard` or `distributed` to the test name, so that it is run in CI in correct configurations, where the server is configured to support distributed queries.
+如果你想在功能测试中使用分布式查询, 你可以使用 `127.0.0.{1..2}` 的地址, 以便服务器查询自己; 或者您可以在服务器配置文件中使用预定义的测试集群, 例如`test_shard_localhost`. 请记住在测试名称中添加 `shard` 或 `distributed` 字样, 以便它以正确的配置在 CI 中运行, 其中服务器配置为支持分布式查询.
 
 
 ## 已知错误 {#known-bugs}
 
-If we know some bugs that can be easily reproduced by functional tests, we place prepared functional tests in `tests/queries/bugs` directory. These tests will be moved to `tests/queries/0_stateless` when bugs are fixed.
+如果我们知道一些可以通过功能测试轻松重现的错误, 我们将准备好的功能测试放在 `tests/queries/bugs` 目录中. 修复错误后, 这些测试将移至 `tests/queries/0_stateless` .
 
 ## 集成测试 {#integration-tests}
 
-Integration tests allow testing ClickHouse in clustered configuration and ClickHouse interaction with other servers like MySQL, Postgres, MongoDB. They are useful to emulate network splits, packet drops, etc. These tests are run under Docker and create multiple containers with various software.
+集成测试允许在集群配置中测试 ClickHouse 以及 ClickHouse 与其他服务器(如 MySQL、Postgres、MongoDB)的交互. 它们可以用来模拟网络分裂、丢包等情况. 这些测试在Docker下运行, 并使用各种软件创建多个容器.
 
-See `tests/integration/README.md` on how to run these tests.
+有关如何运行这些测试, 请参阅 `tests/integration/README.md` .
 
-Note that integration of ClickHouse with third-party drivers is not tested. Also, we currently do not have integration tests with our JDBC and ODBC drivers.
+注意, ClickHouse与第三方驱动程序的集成没有经过测试. 另外, 我们目前还没有JDBC和ODBC驱动程序的集成测试.
 
 ## 单元测试 {#unit-tests}
 
-Unit tests are useful when you want to test not the ClickHouse as a whole, but a single isolated library or class. You can enable or disable build of tests with `ENABLE_TESTS` CMake option. Unit tests (and other test programs) are located in `tests` subdirectories across the code. To run unit tests, type `ninja test`. Some tests use `gtest`, but some are just programs that return non-zero exit code on test failure.
+当您想测试的不是 ClickHouse 整体, 而是单个独立库或类时，单元测试很有用. 您可以使用 `ENABLE_TESTS` CMake 选项启用或禁用测试构建. 单元测试(和其他测试程序)位于代码中的 `tests` 子目录中. 要运行单元测试, 请键入 `ninja test` 。有些测试使用 `gtest` , 但有些程序在测试失败时会返回非零退出码.
 
-It’s not necessary to have unit tests if the code is already covered by functional tests (and functional tests are usually much more simple to use).
+如果代码已经被功能测试覆盖了, 就没有必要进行单元测试(而且功能测试通常更易于使用).
 
-You can run individual gtest checks by calling the executable directly, for example:
+例如, 您可以通过直接调用可执行文件来运行单独的 gtest 检查:
 
 ```bash
 $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
