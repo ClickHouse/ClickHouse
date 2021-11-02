@@ -73,15 +73,15 @@ $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 
 ## 性能测试 {#performance-tests}
 
-Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries. Tests are located at `tests/performance`. Each test is represented by `.xml` file with description of test case. Tests are run with `docker/tests/performance-comparison` tool . See the readme file for invocation.
+性能测试允许测量和比较 ClickHouse 的某些孤立部分在合成查询上的性能. 测试位于 `tests/performance`. 每个测试都由带有测试用例描述的 `.xml` 文件表示. 测试使用 `docker/tests/performance-comparison` 工具运行. 请参阅自述文件以进行调用.
 
-Each test run one or multiple queries (possibly with combinations of parameters) in a loop. Some tests can contain preconditions on preloaded test dataset.
+每个测试在循环中运行一个或多个查询(可能带有参数组合). 一些测试可以包含预加载测试数据集的先决条件.
 
-If you want to improve performance of ClickHouse in some scenario, and if improvements can be observed on simple queries, it is highly recommended to write a performance test. It always makes sense to use `perf top` or other perf tools during your tests.
+如果您希望在某些场景中提高ClickHouse的性能，并且如果可以在简单的查询中观察到改进，那么强烈建议编写性能测试。在测试期间使用 `perf top` 或其他perf工具总是有意义的.
 
 ## 测试工具和脚本 {#test-tools-and-scripts}
 
-Some programs in `tests` directory are not prepared tests, but are test tools. For example, for `Lexer` there is a tool `src/Parsers/tests/lexer` that just do tokenization of stdin and writes colorized result to stdout. You can use these kind of tools as a code examples and for exploration and manual testing.
+  `tests` 目录中的一些程序不是准备好的测试，而是测试工具. 例如, 对于 `Lexer`, 有一个工具 `src/Parsers/tests/lexer` , 它只是对标准输入进行标记化并将着色结果写入标准输出. 您可以将这些类型的工具用作代码示例以及用于探索和手动测试.
 
 ## 其他测试 {#miscellaneous-tests}
 
