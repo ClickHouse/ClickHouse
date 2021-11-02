@@ -14,6 +14,7 @@
 #include <base/logger_useful.h>
 #include <base/types.h>
 #include <base/scope_guard.h>
+#include <Common/Stopwatch.h>
 #include "IO/WriteBufferFromString.h"
 #include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/IntersectionsIndexes.h>
@@ -62,24 +63,13 @@ void ParallelReplicasReadingCoordinator::Impl::checkConsistencyOrThrow()
 
 PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(PartitionReadRequest request)
 {
+    AtomicStopwatch watch;
     std::lock_guard lock(mutex);
-
-    checkConsistencyOrThrow();
 
     auto partition_it = partitions.find(request.partition_id);
 
     SCOPE_EXIT({
-        String result;
-        for (const auto & partition : partitions)
-        {
-            result += '\n';
-            result += partition.first;
-            result += partition.second.part_ranges.describe();
-            for (const auto & ranges : partition.second.mark_ranges_in_part)
-                result += fmt::format("({} {}), ", ranges.first, ranges.second.describe());
-        }
-
-        LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Current state {}", result);
+        LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Time for handling request: {}ms", watch.elapsed());
     });
 
     /// We are the first who wants to process parts in partition
