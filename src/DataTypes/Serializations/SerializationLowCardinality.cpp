@@ -47,8 +47,7 @@ void SerializationLowCardinality::enumerateStreams(
 {
     const auto * column_lc = data.column ? &getColumnLowCardinality(*data.column) : nullptr;
 
-    path.push_back(Substream::DictionaryKeys);
-    path.back().data =
+    SubstreamData dict_data =
     {
         dict_inner_serialization,
         data.type ? dictionary_type : nullptr,
@@ -56,7 +55,10 @@ void SerializationLowCardinality::enumerateStreams(
         data.serialization_info,
     };
 
-    dict_inner_serialization->enumerateStreams(path, callback, path.back().data);
+    path.push_back(Substream::DictionaryKeys);
+    path.back().data = dict_data;
+
+    dict_inner_serialization->enumerateStreams(path, callback, dict_data);
 
     path.back() = Substream::DictionaryIndexes;
     path.back().data = data;

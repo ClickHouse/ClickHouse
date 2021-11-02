@@ -107,6 +107,14 @@ IMergeTreeDataPart::Checksums checkDataPart(
         serialization_infos.readText(*serialization_file);
     }
 
+    auto get_serialization = [&serialization_infos](const auto & column)
+    {
+        auto it = serialization_infos.find(column.name);
+        return it == serialization_infos.end()
+            ? column.type->getDefaultSerialization()
+            : column.type->getSerialization(*it->second);
+    };
+
     /// This function calculates only checksum of file content (compressed or uncompressed).
     /// It also calculates checksum of projections.
     auto checksum_file = [&](const String & file_path, const String & file_name)
@@ -141,8 +149,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
                 const NamesAndTypesList & projection_columns_list = projection->getColumns();
                 for (const auto & projection_column : projection_columns_list)
                 {
-                    auto serialization = projection_column.type->getSerialization(*serialization_infos.at(projection_column.name));
-                    serialization->enumerateStreams(
+                    get_serialization(projection_column)->enumerateStreams(
                         [&](const ISerialization::SubstreamPath & substream_path)
                         {
                             String projection_file_name = ISerialization::getFileNameForStream(projection_column, substream_path) + ".bin";
@@ -214,8 +221,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     {
         for (const auto & column : columns_list)
         {
-            auto serialization = column.type->getSerialization(*serialization_infos.at(column                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       .name));
-            serialization->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
+            get_serialization(column)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
             {
                 String file_name = ISerialization::getFileNameForStream(column, substream_path) + ".bin";
                 checksums_data.files[file_name] = checksum_compressed_file(disk, path + file_name);

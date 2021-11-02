@@ -89,13 +89,9 @@ protected:
     using ColumnPosition = std::optional<size_t>;
     ColumnPosition findColumnForOffsets(const String & column_name) const;
 
-    SerializationPtr getSerialization(const NameAndTypePair & column) const;
-
     friend class MergeTreeRangeReader::DelayedStream;
 
 private:
-    const SerializationByName & serializations;
-
     /// Alter conversions, which must be applied on fly if required
     MergeTreeData::AlterConversions alter_conversions;
 

@@ -222,7 +222,7 @@ void StorageSystemPartsColumns::processNextStorage(
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(column_size.marks);
 
-            auto serialization = part->getSerialization(column.name);
+            auto serialization = part->getSerialization(column);
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(ISerialization::kindToString(serialization->getKind()));
 

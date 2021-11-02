@@ -17,7 +17,15 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
     , reset_columns(reset_columns_)
 {
     if (reset_columns)
-        new_serialization_infos = SerializationInfoByName(columns_list, {});
+    {
+        SerializationInfo::Settings info_settings =
+        {
+            .ratio_for_sparse = storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
+            .choose_kind = false,
+        };
+
+        new_serialization_infos = SerializationInfoByName(columns_list, info_settings);
+    }
 }
 
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
@@ -34,10 +42,9 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
-    const auto & serializations = data_part->getSerializations();
     for (const auto & column : columns)
     {
-        serializations.at(column.name)->enumerateStreams(
+        data_part->getSerialization(column)->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
                 ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
@@ -63,7 +70,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
             }
         };
 
-        serializations.at(column_name)->enumerateStreams(callback);
+        data_part->getSerialization(*column_with_type)->enumerateStreams(callback);
     }
 
     /// Remove files on disk and checksums

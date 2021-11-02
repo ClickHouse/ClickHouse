@@ -40,6 +40,8 @@ public:
     {
         const double ratio_for_sparse = 1.0;
         const bool choose_kind = false;
+
+        bool isAlwaysDefault() const { return ratio_for_sparse >= 1.0; }
     };
 
     SerializationInfo(ISerialization::Kind kind_, const Settings & settings_);
@@ -82,9 +84,7 @@ class SerializationInfoByName : public std::unordered_map<String, MutableSeriali
 {
 public:
     SerializationInfoByName() = default;
-    SerializationInfoByName(
-        const NamesAndTypesList & columns,
-        const SerializationInfo::Settings & settings);
+    SerializationInfoByName(const NamesAndTypesList & columns, const SerializationInfo::Settings & settings);
 
     void add(const Block & block);
     void add(const SerializationInfoByName & other);

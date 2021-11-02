@@ -128,7 +128,7 @@ SerializationInfoByName::SerializationInfoByName(
     const NamesAndTypesList & columns,
     const SerializationInfo::Settings & settings)
 {
-    if (settings.ratio_for_sparse >= 1.0)
+    if (settings.isAlwaysDefault())
         return;
 
     for (const auto & column : columns)
@@ -206,7 +206,7 @@ void SerializationInfoByName::readText(ReadBuffer & in)
 
             if (it == end())
                 throw Exception(ErrorCodes::CORRUPTED_DATA,
-                    "There is not column {} in serialization infos", name);
+                    "There is no column {} in serialization infos", name);
 
             it->second->fromJSON(*elem_object);
         }

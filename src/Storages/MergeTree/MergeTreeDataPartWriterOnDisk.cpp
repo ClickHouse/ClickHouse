@@ -75,7 +75,6 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     , skip_indices(indices_to_recalc_)
     , part_path(data_part_->getFullRelativePath())
     , marks_file_extension(marks_file_extension_)
-    , serializations(data_part_->getSerializations())
     , default_codec(default_codec_)
     , compute_granularity(index_granularity.empty())
 {

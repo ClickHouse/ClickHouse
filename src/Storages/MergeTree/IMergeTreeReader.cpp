@@ -40,9 +40,16 @@ IMergeTreeReader::IMergeTreeReader(
     , storage(data_part_->storage)
     , metadata_snapshot(metadata_snapshot_)
     , all_mark_ranges(all_mark_ranges_)
-    , serializations(data_part_->getSerializations())
     , alter_conversions(storage.getAlterConversionsForPart(data_part))
 {
+    if (isWidePart(data_part))
+    {
+        /// For wide parts convert plain arrays of Nested to subcolumns
+        /// to allow to use shared offset column from cache.
+        columns = Nested::convertToSubcolumns(columns);
+        part_columns = Nested::collect(part_columns);
+    }
+
     for (const auto & column_from_part : part_columns)
         columns_from_part[column_from_part.name] = &column_from_part.type;
 }
@@ -290,21 +297,13 @@ IMergeTreeReader::ColumnPosition IMergeTreeReader::findColumnForOffsets(const St
     {
         if (typeid_cast<const DataTypeArray *>(part_column.type.get()))
         {
-            auto position = data_part->getColumnPosition(part_column.name);
+            auto position = data_part->getColumnPosition(part_column.getNameInStorage());
             if (position && Nested::extractTableName(part_column.name) == table_name)
                 return position;
         }
     }
 
     return {};
-}
-
-SerializationPtr IMergeTreeReader::getSerialization(const NameAndTypePair & column) const
-{
-    auto it = serializations.find(column.name);
-    if (it != serializations.end())
-        return it->second;
-    return column.type->getDefaultSerialization();
 }
 
 void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
