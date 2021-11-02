@@ -1,5 +1,5 @@
 #pragma once
-#include <libnuraft/nuraft.hxx> // Y_IGNORE
+#include <libnuraft/nuraft.hxx>
 #include <Coordination/KeeperStorage.h>
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>

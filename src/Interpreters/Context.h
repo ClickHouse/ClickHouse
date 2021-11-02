@@ -16,9 +16,7 @@
 #include <Common/isLocalAddress.h>
 #include <base/types.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #include <functional>
 #include <memory>

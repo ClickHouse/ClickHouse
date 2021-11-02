@@ -760,7 +760,7 @@ class ClickHouseCluster:
                      hostname=None, env_variables=None, image="clickhouse/integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
                      zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True,
-                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="yandex"):
+                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="clickhouse"):
 
         """Add an instance to the cluster.
 
@@ -1827,7 +1827,7 @@ class ClickHouseInstance:
             main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True,
             hostname=None, env_variables=None,
             image="clickhouse/integration-test", tag="latest",
-            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None, config_root_name="yandex"):
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None, config_root_name="clickhouse"):
 
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -2056,12 +2056,31 @@ class ClickHouseInstance:
 
     def start_clickhouse(self, start_wait_sec=30):
         if not self.stay_alive:
-            raise Exception("clickhouse can be started again only with stay_alive=True instance")
+            raise Exception("ClickHouse can be started again only with stay_alive=True instance")
 
-        self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
-        # wait start
-        from helpers.test_tools import assert_eq_with_retry
-        assert_eq_with_retry(self, "select 1", "1", retry_count=int(start_wait_sec / 0.5), sleep_time=0.5)
+        time_to_sleep = 0.5
+        start_tries = 5
+
+        total_tries = int(start_wait_sec / time_to_sleep)
+        query_tries = int(total_tries / start_tries)
+
+        for i in range(start_tries):
+            # sometimes after SIGKILL (hard reset) server may refuse to start for some time
+            # for different reasons.
+            self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
+            started = False
+            for _ in range(query_tries):
+                try:
+                    self.query("select 1")
+                    started = True
+                    break
+                except:
+                    time.sleep(time_to_sleep)
+            if started:
+                break
+        else:
+            raise Exception("Cannot start ClickHouse, see additional info in logs")
+
 
     def restart_clickhouse(self, stop_start_wait_sec=30, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
@@ -2341,11 +2360,6 @@ class ClickHouseInstance:
         shutil.copyfile(p.join(self.base_config_dir, self.main_config_name), p.join(instance_config_dir, self.main_config_name))
         shutil.copyfile(p.join(self.base_config_dir, self.users_config_name), p.join(instance_config_dir, self.users_config_name))
 
-        # For old images, keep 'yandex' as root element name.
-        if self.image.startswith('yandex/'):
-            os.system("sed -i 's!<clickhouse>!<yandex>!; s!</clickhouse>!</yandex>!;' '{}'".format(p.join(instance_config_dir, self.main_config_name)))
-            os.system("sed -i 's!<clickhouse>!<yandex>!; s!</clickhouse>!</yandex>!;' '{}'".format(p.join(instance_config_dir, self.users_config_name)))
-
         logging.debug("Create directory for configuration generated in this helper")
         # used by all utils with any config
         conf_d_dir = p.abspath(p.join(instance_config_dir, 'conf.d'))
@@ -2363,7 +2377,7 @@ class ClickHouseInstance:
         def write_embedded_config(name, dest_dir, fix_log_level=False):
             with open(p.join(HELPERS_DIR, name), 'r') as f:
                 data = f.read()
-                data = data.replace('yandex', self.config_root_name)
+                data = data.replace('clickhouse', self.config_root_name)
                 if fix_log_level:
                     data = data.replace('<level>test</level>', '<level>trace</level>')
                 with open(p.join(dest_dir, name), 'w') as r:
