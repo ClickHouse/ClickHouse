@@ -11,7 +11,7 @@ toc_title: Merge
 ## Создание таблицы {#creating-a-table}
 
 ``` sql
-    CREATE TABLE ... Engine=Merge(db_name, tables_regexp);
+    CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 ```
 
 **Параметры движка**

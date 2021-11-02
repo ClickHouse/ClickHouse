@@ -12,7 +12,7 @@ Reading is automatically parallelized. Writing to a table is not supported. When
 ## Creating a Table {#creating-a-table}
 
 ``` sql
-    CREATE TABLE ... Engine=Merge(db_name, tables_regexp);
+    CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 ```
 
 **Engine Parameters**
@@ -35,7 +35,7 @@ The typical way to use the `Merge` engine is for working with a large number of 
 
 **Example 1**
 
-Consider two databases `ABC_corporate_site` and `ABC_store`. The `all_visitors` table will contain IDs from the tables `visitors` in both databases. 
+Consider two databases `ABC_corporate_site` and `ABC_store`. The `all_visitors` table will contain IDs from the tables `visitors` in both databases.
 
 ``` sql
 CREATE TABLE all_visitors (id UInt32) ENGINE=Merge(REGEXP('ABC_*'), 'visitors');
@@ -43,7 +43,7 @@ CREATE TABLE all_visitors (id UInt32) ENGINE=Merge(REGEXP('ABC_*'), 'visitors');
 
 **Example 2**
 
-Let's say you have a old table `WatchLog_old` and decided to change partitioning without moving data to a new table `WatchLog_new`, and you need to see data from both tables.
+Let's say you have an old table `WatchLog_old` and decided to change partitioning without moving data to a new table `WatchLog_new`, and you need to see data from both tables.
 
 ``` sql
 CREATE TABLE WatchLog_old(date Date, UserId Int64, EventType String, Cnt UInt64) 
