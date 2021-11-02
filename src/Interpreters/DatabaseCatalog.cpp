@@ -1041,6 +1041,28 @@ void DatabaseCatalog::checkTableCanBeRemovedOrRenamed(const StorageID & table_id
                             table_id.getNameForLogs(), fmt::join(dependent, ", "));
 }
 
+void DatabaseCatalog::updateLoadingDependencies(const StorageID & table_id, TableNamesSet && new_dependencies)
+{
+    if (new_dependencies.empty())
+        return;
+    QualifiedTableName table_name = table_id.getQualifiedName();
+    std::lock_guard lock{databases_mutex};
+    auto it = loading_dependencies.find(table_name);
+    if (it == loading_dependencies.end())
+        it = loading_dependencies.emplace(table_name, DependenciesInfo{}).first;
+
+    auto & old_dependencies = it->second.dependencies;
+    for (const auto & dependency : old_dependencies)
+        if (!new_dependencies.contains(dependency))
+            loading_dependencies[dependency].dependent_database_objects.erase(table_name);
+
+    for (const auto & dependency : new_dependencies)
+        if (!old_dependencies.contains(dependency))
+            loading_dependencies[dependency].dependent_database_objects.insert(table_name);
+
+    old_dependencies = std::move(new_dependencies);
+}
+
 
 DDLGuard::DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name)
         : map(map_), db_mutex(db_mutex_), guards_lock(std::move(guards_lock_))

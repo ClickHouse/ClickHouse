@@ -20,7 +20,7 @@ LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());"
 
 $CLICKHOUSE_CLIENT -q "create table join(n int, m int default dictGet('$CLICKHOUSE_DATABASE.dict1', 'm', 42::UInt64)) engine=Join(any, left, n);"
 
-$CLICKHOUSE_CLIENT -q "create dictionary dict2 (n int default 0, m int DEFAULT 2, s String default 'asd')
+$CLICKHOUSE_CLIENT -q "create dictionary dict2 (n int default 0, m int DEFAULT 2)
 PRIMARY KEY n
 SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'join' PASSWORD '' DB '$CLICKHOUSE_DATABASE'))
 LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());"
@@ -28,7 +28,12 @@ LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());"
 $CLICKHOUSE_CLIENT -q "create table s (x default joinGet($CLICKHOUSE_DATABASE.join, 'm', 42::int)) engine=Set"
 
 $CLICKHOUSE_CLIENT -q "create table t (n int, m int default joinGet($CLICKHOUSE_DATABASE.join, 'm', 42::int),
-s String default dictGet($CLICKHOUSE_DATABASE.dict1, 's', 42::UInt64), x default in(1, $CLICKHOUSE_DATABASE.s)) engine=MergeTree order by n;"
+s String default dictGet($CLICKHOUSE_DATABASE.dict1, 's', 42::UInt64), y default dictGet($CLICKHOUSE_DATABASE.dict2, 'm', 42::UInt64)) engine=MergeTree order by n;"
+
+$CLICKHOUSE_CLIENT -q "select table, arraySort(dependencies_table),
+arraySort(loading_dependencies_table), arraySort(loading_dependent_table) from system.tables where database=currentDatabase() order by table"
+$CLICKHOUSE_CLIENT -q "select '====='"
+$CLICKHOUSE_CLIENT -q "alter table t add column x int default in(1, $CLICKHOUSE_DATABASE.s), drop column y"
 
 $CLICKHOUSE_CLIENT -q "create materialized view mv to s as select n from t where n in (select n from join)"
 

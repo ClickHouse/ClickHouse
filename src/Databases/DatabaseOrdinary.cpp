@@ -297,6 +297,9 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
         out.close();
     }
 
+    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), ast);
+    DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
+
     commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);
 }
 
