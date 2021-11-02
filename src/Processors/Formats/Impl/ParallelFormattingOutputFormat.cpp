@@ -171,7 +171,7 @@ namespace DB
             {
                 case ProcessingUnitType::START :
                 {
-                    formatter->doWritePrefix();
+                    formatter->writePrefix();
                     break;
                 }
                 case ProcessingUnitType::PLAIN :
@@ -191,7 +191,7 @@ namespace DB
                 }
                 case ProcessingUnitType::FINALIZE :
                 {
-                    formatter->doWriteSuffix();
+                    formatter->finalize();
                     break;
                 }
             }

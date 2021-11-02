@@ -65,11 +65,7 @@ static Chunk prepareTotals(Chunk chunk)
 
 void IOutputFormat::work()
 {
-    if (!prefix_written)
-    {
-        doWritePrefix();
-        prefix_written = true;
-    }
+    writePrefixIfNot();
 
     if (finished && !finalized)
     {
@@ -110,10 +106,17 @@ void IOutputFormat::flush()
 
 void IOutputFormat::write(const Block & block)
 {
+    writePrefixIfNot();
     consume(Chunk(block.getColumns(), block.rows()));
 
     if (auto_flush)
         flush();
+}
+
+void IOutputFormat::finish()
+{
+    writePrefixIfNot();
+    finalize();
 }
 
 }

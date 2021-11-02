@@ -147,8 +147,6 @@ template <typename U, typename V> void TemplateBlockOutputFormat::writeValue(U v
 
 void TemplateBlockOutputFormat::consume(Chunk chunk)
 {
-    doWritePrefix();
-
     size_t rows = chunk.getNumRows();
 
     for (size_t i = 0; i < rows; ++i)
@@ -161,21 +159,15 @@ void TemplateBlockOutputFormat::consume(Chunk chunk)
     }
 }
 
-void TemplateBlockOutputFormat::doWritePrefix()
+void TemplateBlockOutputFormat::writePrefix()
 {
-    if (need_write_prefix)
-    {
-        writeString(format.delimiters.front(), out);
-        need_write_prefix = false;
-    }
+    writeString(format.delimiters.front(), out);
 }
 
 void TemplateBlockOutputFormat::finalize()
 {
     if (finalized)
         return;
-
-    doWritePrefix();
 
     size_t parts = format.format_idx_to_column_idx.size();
 

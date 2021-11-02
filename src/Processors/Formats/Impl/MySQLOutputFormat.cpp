@@ -31,13 +31,8 @@ void MySQLOutputFormat::setContext(ContextPtr context_)
     context = context_;
 }
 
-void MySQLOutputFormat::initialize()
+void MySQLOutputFormat::writePrefix()
 {
-    if (initialized)
-        return;
-
-    initialized = true;
-
     const auto & header = getPort(PortKind::Main).getHeader();
     data_types = header.getDataTypes();
 
@@ -66,8 +61,6 @@ void MySQLOutputFormat::initialize()
 
 void MySQLOutputFormat::consume(Chunk chunk)
 {
-    initialize();
-
     for (size_t i = 0; i < chunk.getNumRows(); i++)
     {
         ProtocolText::ResultSetRow row_packet(serializations, chunk.getColumns(), i);
