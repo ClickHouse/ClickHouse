@@ -149,7 +149,7 @@ public:
 
     void attachDatabase(const String & database_name, const DatabasePtr & database);
     DatabasePtr detachDatabase(ContextPtr local_context, const String & database_name, bool drop = false, bool check_empty = true);
-    void updateDatabaseName(const String & old_name, const String & new_name);
+    void updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database);
 
     /// database_name must be not empty
     DatabasePtr getDatabase(const String & database_name) const;
@@ -208,10 +208,13 @@ public:
 
     void waitTableFinallyDropped(const UUID & uuid);
 
+    void addLoadingDependencies(const QualifiedTableName & table, TableNamesSet && dependencies);
     void addLoadingDependencies(const DependenciesInfos & new_infos);
     DependenciesInfo getLoadingDependenciesInfo(const StorageID & table_id) const;
 
-    void tryRemoveLoadingDependencies(const StorageID & table_id, bool is_drop_database = false);
+    TableNamesSet tryRemoveLoadingDependencies(const StorageID & table_id, bool check_dependencies, bool is_drop_database = false);
+    TableNamesSet tryRemoveLoadingDependenciesUnlocked(const QualifiedTableName & table_name, bool check_dependencies, bool is_drop_database = false);
+    void checkTableCanBeRemovedOrRenamed(const StorageID & table_id) const;
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
@@ -266,7 +269,6 @@ private:
     UUIDToStorageMap uuid_map;
 
     DependenciesInfos loading_dependencies;
-    bool check_table_dependencies = true;
 
     Poco::Logger * log;
 

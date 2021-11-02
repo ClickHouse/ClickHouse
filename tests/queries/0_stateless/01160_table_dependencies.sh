@@ -43,23 +43,49 @@ for _ in {1..10}; do
 done
 $CLICKHOUSE_CLIENT -q "show tables from $CLICKHOUSE_DATABASE;"
 
+$CLICKHOUSE_CLIENT -q "rename table join to join1" 2>&1| grep -Fa "some tables depend on it" >/dev/null && echo "OK"
+
 $CLICKHOUSE_CLIENT -q "drop table join" 2>&1| grep -Fa "some tables depend on it" >/dev/null && echo "OK"
 $CLICKHOUSE_CLIENT -q "detach dictionary dict1 permanently" 2>&1| grep -Fa "some tables depend on it" >/dev/null && echo "OK"
 
 $CLICKHOUSE_CLIENT -q "select table, arraySort(dependencies_table),
 arraySort(loading_dependencies_table), arraySort(loading_dependent_table) from system.tables where database=currentDatabase() order by table"
 
-$CLICKHOUSE_CLIENT -q "drop table t;"
+engine=`$CLICKHOUSE_CLIENT -q "select engine from system.databases where name='${CLICKHOUSE_DATABASE}'"`
+$CLICKHOUSE_CLIENT -q "drop database if exists ${CLICKHOUSE_DATABASE}_1"
+if [[ $engine == "Atomic" ]]; then
+    $CLICKHOUSE_CLIENT -q "rename database ${CLICKHOUSE_DATABASE} to ${CLICKHOUSE_DATABASE}_1" 2>&1| grep -Fa "some tables depend on it" >/dev/null && echo "OK"
+else
+    echo "OK"
+fi
+$CLICKHOUSE_CLIENT -q "create database ${CLICKHOUSE_DATABASE}_1"
+
+t_database=${CLICKHOUSE_DATABASE}_1
+$CLICKHOUSE_CLIENT -q "rename table t to $t_database.t"
+
+if [[ $engine == "Atomic" ]]; then
+    $CLICKHOUSE_CLIENT -q "rename database ${t_database} to ${t_database}_renamed"
+    t_database="${t_database}_renamed"
+fi
+
+$CLICKHOUSE_CLIENT -q "select table, arraySort(dependencies_table),
+arraySort(loading_dependencies_table), arraySort(loading_dependent_table) from system.tables where database=currentDatabase() order by table"
+
+$CLICKHOUSE_CLIENT -q "drop table ${t_database}.t;"
 $CLICKHOUSE_CLIENT -q "drop table s;"
 $CLICKHOUSE_CLIENT -q "drop dictionary dict2;"
 
 $CLICKHOUSE_CLIENT -q "select '====='"
 $CLICKHOUSE_CLIENT -q "select table, arraySort(dependencies_table),
 arraySort(loading_dependencies_table), arraySort(loading_dependent_table) from system.tables where database=currentDatabase() order by table"
+if [[ $engine != "Ordinary" ]]; then
+    $CLICKHOUSE_CLIENT -q "create or replace table dict_src (n int, m int, s String) engine=MergeTree order by (n, m);"
+fi
 
 $CLICKHOUSE_CLIENT -q "drop table join;"
 $CLICKHOUSE_CLIENT -q "drop dictionary dict1;"
 $CLICKHOUSE_CLIENT -q "drop table dict_src;"
+$CLICKHOUSE_CLIENT -q "drop database if exists ${t_database}"
 
 $CLICKHOUSE_CLIENT -q "drop database if exists ${CLICKHOUSE_DATABASE}_1"
 $CLICKHOUSE_CLIENT -q "create database ${CLICKHOUSE_DATABASE}_1"

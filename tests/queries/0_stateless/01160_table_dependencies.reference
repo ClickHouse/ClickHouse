@@ -14,6 +14,7 @@ s
 t
 OK
 OK
+OK
 dict1	[]	['dict_src']	['join','t']
 dict2	[]	['join']	[]
 dict_src	[]	[]	['dict1']
@@ -21,6 +22,13 @@ join	[]	['dict1']	['dict2','s','t']
 mv	[]	[]	[]
 s	[]	['join']	['t']
 t	['mv']	['dict1','join','s']	[]
+OK
+dict1	[]	['dict_src']	['join','t']
+dict2	[]	['join']	[]
+dict_src	[]	[]	['dict1']
+join	[]	['dict1']	['dict2','s','t']
+mv	[]	[]	[]
+s	[]	['join']	['t']
 =====
 dict1	[]	['dict_src']	['join']
 dict_src	[]	[]	['dict1']
