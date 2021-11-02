@@ -17,7 +17,10 @@ Reading is automatically parallelized. Writing to a table is not supported. When
 
 **Engine Parameters**
 
-- `db_name` — Database name or a regular expression to match the DB names. You can use a constant expression that returns a string, for example, `currentDatabase()`. 
+- `db_name` — Possible values:
+    - database name, 
+    - constant expression that returns a string with a database name, for example, `currentDatabase()`,
+    - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names.
 
 - `tables_regexp` — A regular expression to match the table names in the specified DB or DBs.
 
