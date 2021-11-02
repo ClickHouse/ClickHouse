@@ -799,6 +799,148 @@ bool SplitTokenExtractor::nextLike(const String & str, size_t * pos, String & to
     return !bad_token && !token.empty();
 }
 
+bool NgramTkTokenExtractor::nextInField(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const
+{
+    *token_start = *pos;
+    *token_len = 0;
+    size_t code_points = 0;
+
+    while (*pos < len)
+    {
+        //skip char
+        while (*pos < len)
+        {
+            if (isASCII(data[*pos]) && !isAlphaNumericASCII(data[*pos]))
+                *token_start = ++*pos;
+            else
+                break;
+        }
+
+        if (*pos >= len)
+        {
+            return false;
+        }
+
+        if (isASCII(data[*pos])) {
+            while (*pos < len)
+            {
+                if (isAlphaNumericASCII(data[*pos]))
+                {
+                    /// Note that UTF-8 sequence is completely consisted of non-ASCII bytes.
+                    ++*pos;
+                    ++*token_len;
+                }
+                else
+                {
+                    return true;
+                }
+            }
+
+            if (*pos >= len)
+            {
+                return *token_len > 0;
+            }
+        } else {
+            for (code_points = 0; code_points < n && *token_start + *token_len < len; ++code_points)
+            {
+                if (isASCII(data[*token_start + *token_len]))
+                {
+                    *pos = *token_start + *token_len;
+                    *token_start = *pos;
+                    *token_len = 0;
+                    break;
+                }
+                size_t sz = UTF8::seqLength(static_cast<UInt8>(data[*token_start + *token_len]));
+                *token_len += sz;
+            }
+
+            if (code_points == n)
+            {
+                *pos += UTF8::seqLength(static_cast<UInt8>(data[*pos]));
+                return true;
+            }
+
+            if (*token_start + *token_len >= len)
+            {
+                *pos = len;
+                return false;
+            }
+        }
+    }
+
+    return false;
+}
+
+bool NgramTkTokenExtractor::nextLike(const String & str, size_t * pos, String & token) const
+{
+    token.clear();
+    bool escaped = false;
+    bool is_ascii_token = false;
+    size_t code_points = 0;
+    for (size_t i = *pos; i < str.size();)
+    {
+        if (!escaped && (str[i] == '%' || str[i] == '_'))
+        {
+            if (is_ascii_token && !token.empty())
+                return true;
+            token.clear();
+            code_points = 0;
+            *pos = ++i;
+        }
+        else if (!escaped && str[i] == '\\')
+        {
+            escaped = true;
+            *pos = ++i;
+        }
+        else if (isASCII(str[i]) && !isAlphaNumericASCII(str[i]))
+        {
+            if (is_ascii_token && !token.empty())
+                return true;
+
+            token.clear();
+            escaped = false;
+            code_points = 0;
+            *pos = ++i;
+        }
+        else
+        {
+            if (isAlphaNumericASCII(str[i]))
+            {
+                if (token.empty())
+                {
+                    is_ascii_token = true;
+                } else if (!is_ascii_token) {
+                    token.clear();
+                    code_points = 0;
+                    is_ascii_token = true;
+                }
+                token += str[i];
+                *pos = ++i;
+            }
+            else
+            {
+                if (is_ascii_token) {
+                    return !token.empty();
+                }
+
+                const size_t sz = UTF8::seqLength(static_cast<UInt8>(str[i]));
+                for (size_t j = 0; j < sz; ++j)
+                    token += str[i + j];
+                i += sz;
+                ++code_points;
+                if (code_points == n)
+                {
+                    *pos += UTF8::seqLength(static_cast<UInt8>(str[*pos]));
+                    return !token.empty();
+                }
+            }
+            escaped = false;
+        }
+    }
+
+    return is_ascii_token && !token.empty();
+}
+
 
 MergeTreeIndexPtr bloomFilterIndexCreator(
     const IndexDescription & index)
@@ -826,6 +968,18 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
 
         return std::make_shared<MergeTreeIndexFullText>(index, params, std::move(tokenizer));
     }
+    else if (index.type == NgramTkTokenExtractor::getName())
+    {
+        size_t n = index.arguments[0].get<size_t>();
+        BloomFilterParameters params(
+            index.arguments[1].get<size_t>(),
+            index.arguments[2].get<size_t>(),
+            index.arguments[3].get<size_t>());
+
+        auto tokenizer = std::make_unique<NgramTkTokenExtractor>(n);
+
+        return std::make_shared<MergeTreeIndexFullText>(index, params, std::move(tokenizer));
+    }
     else
     {
         throw Exception("Unknown index type: " + backQuote(index.name), ErrorCodes::LOGICAL_ERROR);
@@ -849,6 +1003,11 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool /*attach*/)
     {
         if (index.arguments.size() != 3)
             throw Exception("`tokenbf` index must have exactly 3 arguments.", ErrorCodes::INCORRECT_QUERY);
+    }
+    else if (index.type == NgramTkTokenExtractor::getName())
+    {
+        if (index.arguments.size() != 4)
+            throw Exception("`ngramtkbf` index must have exactly 4 arguments.", ErrorCodes::INCORRECT_QUERY);
     }
     else
     {

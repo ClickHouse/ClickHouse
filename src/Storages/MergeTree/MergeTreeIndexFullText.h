@@ -190,6 +190,20 @@ struct SplitTokenExtractor final : public ITokenExtractor
     bool supportLike() const override { return true; }
 };
 
+/// Parser extracting all ngrams token from string.
+struct NgramTkTokenExtractor final : public ITokenExtractor
+{
+    NgramTkTokenExtractor(size_t n_) : n(n_) {}
+
+    static String getName() { return "ngramtkbf_v1"; }
+
+    bool nextInField(const char * data, size_t len, size_t * pos, size_t * token_start, size_t * token_len) const override;
+    bool nextLike(const String & str, size_t * pos, String & token) const override;
+
+    bool supportLike() const override { return true; }
+
+    size_t n;
+};
 
 class MergeTreeIndexFullText final : public IMergeTreeIndex
 {
