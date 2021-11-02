@@ -16,7 +16,9 @@ class StorageFileBlockOutputStream;
 
 class StorageFile final : public shared_ptr_helper<StorageFile>, public IStorage
 {
-    friend struct shared_ptr_helper<StorageFile>;
+friend struct shared_ptr_helper<StorageFile>;
+friend class PartitionedStorageFileSink;
+
 public:
     std::string getName() const override { return "File"; }
 
@@ -66,6 +68,8 @@ public:
     /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
     bool isColumnOriented() const;
 
+    bool supportsPartitionBy() const override { return true; }
+
 protected:
     friend class StorageFileSource;
     friend class StorageFileSink;
@@ -104,6 +108,8 @@ private:
 
     /// Total number of bytes to read (sums for multiple files in case of globs). Needed for progress bar.
     size_t total_bytes_to_read = 0;
+
+    String path_for_partitioned_write;
 };
 
 }

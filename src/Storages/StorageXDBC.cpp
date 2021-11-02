@@ -33,7 +33,7 @@ StorageXDBC::StorageXDBC(
     const BridgeHelperPtr bridge_helper_)
     /// Please add support for constraints as soon as StorageODBC or JDBC will support insertion.
     : IStorageURLBase(
-        Poco::URI(),
+        "",
         context_,
         table_id_,
         IXDBCBridgeHelper::DEFAULT_FORMAT,
@@ -47,7 +47,7 @@ StorageXDBC::StorageXDBC(
     , remote_table_name(remote_table_name_)
     , log(&Poco::Logger::get("Storage" + bridge_helper->getName()))
 {
-    uri = bridge_helper->getMainURI();
+    uri = bridge_helper->getMainURI().toString();
 }
 
 std::string StorageXDBC::getReadMethod() const
@@ -118,7 +118,7 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageMetad
 {
     bridge_helper->startBridgeSync();
 
-    Poco::URI request_uri = uri;
+    auto request_uri = Poco::URI(uri);
     request_uri.setPath("/write");
 
     auto url_params = bridge_helper->getURLParams(65536);
@@ -131,13 +131,13 @@ SinkToStoragePtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageMetad
     request_uri.addQueryParameter("sample_block", metadata_snapshot->getSampleBlock().getNamesAndTypesList().toString());
 
     return std::make_shared<StorageURLSink>(
-        request_uri,
+        request_uri.toString(),
         format_name,
         getFormatSettings(local_context),
         metadata_snapshot->getSampleBlock(),
         local_context,
         ConnectionTimeouts::getHTTPTimeouts(local_context),
-        chooseCompressionMethod(uri.toString(), compression_method));
+        chooseCompressionMethod(uri, compression_method));
 }
 
 Block StorageXDBC::getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const
