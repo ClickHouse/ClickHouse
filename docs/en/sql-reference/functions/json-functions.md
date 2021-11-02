@@ -216,6 +216,44 @@ Example:
 SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
 ```
 
+## JSONExtractKeys(json[, indices_or_keys]…) {#jsonextractkeysjson-indices-or-keys}
+
+Parses a JSON and extracts a key.
+
+**Syntax**
+
+``` sql
+JSONExtractKeys(json[, p, a, t, h])
+```
+
+**Arguments**
+
+-   `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
+-   `p, a, t, h` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [string](../../sql-reference/data-types/string.md) to get the field by the key or an [integer](../../sql-reference/data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
+
+**Returned value**
+
+Array with keys of JSON.
+
+Type: [Array](../../sql-reference/data-types/array.md)
+
+**Example**
+
+Query:
+
+```sql
+SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}');
+```
+
+Result:
+
+```
+text
+┌─JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}')─┐
+│ ['a','b']                                                  │
+└────────────────────────────────────────────────────────────┘
+```
+
 ## JSONExtractRaw(json\[, indices_or_keys\]…) {#jsonextractrawjson-indices-or-keys}
 
 Returns a part of JSON as unparsed string.
