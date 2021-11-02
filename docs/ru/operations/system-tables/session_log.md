@@ -8,8 +8,8 @@
     -   `LoginFailure` — ошибка входа в систему.
     -   `LoginSuccess` — успешный вход в систему.
     -   `Logout` — выход из системы.
--   `session_id` ([UUID](../../sql-reference/data-types/uuid.md)) — идентификатор сессии.
--   `session_name` ([String](../../sql-reference/data-types/string.md)) — имя сессии.
+-   `auth_id` ([UUID](../../sql-reference/data-types/uuid.md)) — идентификатор сессии.
+-   `session_id` ([String](../../sql-reference/data-types/string.md)) — имя сессии.
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — дата входа или выхода из системы.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время входа или выхода из системы.
 -   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — время начала входа или выхода из системы с точностью до микросекунд.
@@ -23,7 +23,7 @@
     -   `KERBEROS`
 -   `profiles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — список профилей, установленных для всех ролей и (или) пользователей.
 -   `roles` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — список ролей, к которым применяется данный профиль.
--   `changed_settings` ([Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md), [String](../../sql-reference/data-types/string.md)))) — настройки, которые были изменены при входе или выходе клиента из системы.
+-   `settings` ([Array](../../sql-reference/data-types/array.md)([Tuple](../../sql-reference/data-types/tuple.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md), [String](../../sql-reference/data-types/string.md)))) — настройки, которые были изменены при входе или выходе клиента из системы.
 -   `client_address` ([IPv6](../../sql-reference/data-types/domains/ipv6.md)) — IP-адрес, который использовался для входа или выхода из системы.
 -   `client_port` ([UInt16](../../sql-reference/data-types/int-uint.md)) — порт клиента, который использовался для входа или выхода из системы.
 -   `interface` ([Enum8](../../sql-reference/data-types/enum.md)) — интерфейс, с которого был инициирован вход в систему. Возможные значения:
@@ -54,8 +54,8 @@ SELECT * FROM system.session_log LIMIT 1 FORMAT Vertical;
 Row 1:
 ──────
 type:                    LoginSuccess
-session_id:              45e6bd83-b4aa-4a23-85e6-bd83b4aa1a23
-session_name:
+auth_id:                 45e6bd83-b4aa-4a23-85e6-bd83b4aa1a23
+session_id:
 event_date:              2021-10-14
 event_time:              2021-10-14 20:33:52
 event_time_microseconds: 2021-10-14 20:33:52.104247
@@ -63,7 +63,7 @@ user:                    default
 auth_type:               PLAINTEXT_PASSWORD
 profiles:                ['default']
 roles:                   []
-changed_settings:        [('load_balancing','random'),('max_memory_usage','10000000000')]
+settings:                [('load_balancing','random'),('max_memory_usage','10000000000')]
 client_address:          ::ffff:127.0.0.1
 client_port:             38490
 interface:               TCP
