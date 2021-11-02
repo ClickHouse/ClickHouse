@@ -145,10 +145,85 @@ namespace
 }
 
 
+AccessRightsElement::AccessRightsElement(AccessFlags access_flags_, const std::string_view & database_)
+    : access_flags(access_flags_), database(database_), any_database(false)
+{
+}
+
+AccessRightsElement::AccessRightsElement(AccessFlags access_flags_, const std::string_view & database_, const std::string_view & table_)
+    : access_flags(access_flags_), database(database_), table(table_), any_database(false), any_table(false)
+{
+}
+
+AccessRightsElement::AccessRightsElement(
+    AccessFlags access_flags_, const std::string_view & database_, const std::string_view & table_, const std::string_view & column_)
+    : access_flags(access_flags_)
+    , database(database_)
+    , table(table_)
+    , columns({String{column_}})
+    , any_database(false)
+    , any_table(false)
+    , any_column(false)
+{
+}
+
+AccessRightsElement::AccessRightsElement(
+    AccessFlags access_flags_,
+    const std::string_view & database_,
+    const std::string_view & table_,
+    const std::vector<std::string_view> & columns_)
+    : access_flags(access_flags_), database(database_), table(table_), any_database(false), any_table(false), any_column(false)
+{
+    columns.resize(columns_.size());
+    for (size_t i = 0; i != columns_.size(); ++i)
+        columns[i] = String{columns_[i]};
+}
+
+AccessRightsElement::AccessRightsElement(
+    AccessFlags access_flags_, const std::string_view & database_, const std::string_view & table_, const Strings & columns_)
+    : access_flags(access_flags_)
+    , database(database_)
+    , table(table_)
+    , columns(columns_)
+    , any_database(false)
+    , any_table(false)
+    , any_column(false)
+{
+}
+
+void AccessRightsElement::eraseNonGrantable()
+{
+    if (!any_column)
+        access_flags &= AccessFlags::allFlagsGrantableOnColumnLevel();
+    else if (!any_table)
+        access_flags &= AccessFlags::allFlagsGrantableOnTableLevel();
+    else if (!any_database)
+        access_flags &= AccessFlags::allFlagsGrantableOnDatabaseLevel();
+    else
+        access_flags &= AccessFlags::allFlagsGrantableOnGlobalLevel();
+}
+
+void AccessRightsElement::replaceEmptyDatabase(const String & current_database)
+{
+    if (isEmptyDatabase())
+        database = current_database;
+}
+
 String AccessRightsElement::toString() const { return toStringImpl(*this, true); }
 String AccessRightsElement::toStringWithoutOptions() const { return toStringImpl(*this, false); }
-String AccessRightsElements::toString() const { return toStringImpl(*this, true); }
-String AccessRightsElements::toStringWithoutOptions() const { return toStringImpl(*this, false); }
+
+
+bool AccessRightsElements::empty() const { return std::all_of(begin(), end(), [](const AccessRightsElement & e) { return e.empty(); }); }
+
+bool AccessRightsElements::sameDatabaseAndTable() const
+{
+    return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameDatabaseAndTable(front()); });
+}
+
+bool AccessRightsElements::sameOptions() const
+{
+    return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameOptions(front()); });
+}
 
 void AccessRightsElements::eraseNonGrantable()
 {
@@ -158,5 +233,14 @@ void AccessRightsElements::eraseNonGrantable()
         return element.empty();
     });
 }
+
+void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
+{
+    for (auto & element : *this)
+        element.replaceEmptyDatabase(current_database);
+}
+
+String AccessRightsElements::toString() const { return toStringImpl(*this, true); }
+String AccessRightsElements::toStringWithoutOptions() const { return toStringImpl(*this, false); }
 
 }
