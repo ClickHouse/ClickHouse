@@ -1,4 +1,4 @@
-## Generate changelog
+## How To Generate Changelog
 
 Generate github token:
 * https://github.com/settings/tokens - keep all checkboxes unchecked, no scopes need to be enabled.
