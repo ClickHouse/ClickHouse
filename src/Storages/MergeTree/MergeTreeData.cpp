@@ -3445,7 +3445,7 @@ Pipe MergeTreeData::alterPartition(
 
             case PartitionCommand::REPLACE_PARTITION:
             {
-                if (command->replace)
+                if (command.replace)
                     checkPartitionCanBeDropped(command.partition);
                 String from_database = query_context->resolveDatabase(command.from_database);
                 auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
