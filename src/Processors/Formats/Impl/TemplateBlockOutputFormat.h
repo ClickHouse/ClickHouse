@@ -20,8 +20,6 @@ public:
 
     String getName() const override { return "TemplateBlockOutputFormat"; }
 
-    void doWritePrefix() override;
-
     void setRowsBeforeLimit(size_t rows_before_limit_) override { rows_before_limit = rows_before_limit_; rows_before_limit_set = true; }
     void onProgress(const Progress & progress_) override { progress.incrementPiecewiseAtomically(progress_); }
 
@@ -40,7 +38,8 @@ public:
 
     static ResultsetPart stringToResultsetPart(const String & part);
 
-protected:
+private:
+    void writePrefix() override;
     void consume(Chunk chunk) override;
     void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
     void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
@@ -50,7 +49,6 @@ protected:
     void serializeField(const IColumn & column, const ISerialization & serialization, size_t row_num, ColumnFormat format);
     template <typename U, typename V> void writeValue(U value, ColumnFormat col_format);
 
-protected:
     const FormatSettings settings;
     Serializations serializations;
 
@@ -65,7 +63,6 @@ protected:
     Stopwatch watch;
 
     size_t row_count = 0;
-    bool need_write_prefix = true;
 
     std::string row_between_delimiter;
 };

@@ -49,7 +49,7 @@ void RabbitMQSink::consume(Chunk chunk)
 
 void RabbitMQSink::onFinish()
 {
-    format->doWriteSuffix();
+    format->finish();
 
     if (buffer)
         buffer->updateMaxWait();
