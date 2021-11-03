@@ -8,8 +8,8 @@
     -   `LoginFailure` — ошибка входа в систему.
     -   `LoginSuccess` — успешный вход в систему.
     -   `Logout` — выход из системы.
--   `auth_id` ([UUID](../../sql-reference/data-types/uuid.md)) — идентификатор сессии.
--   `session_id` ([String](../../sql-reference/data-types/string.md)) — имя сессии.
+-   `auth_id` ([UUID](../../sql-reference/data-types/uuid.md)) — идентификатор аутентификации, представляющий собой UUID, который автоматически генерируется при каждом входе пользователя в систему.
+-   `session_id` ([String](../../sql-reference/data-types/string.md)) — идентификатор сессии, который передается клиентом через [HTTP](../../interfaces/http.md)-интерфейс.
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — дата входа или выхода из системы.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время входа или выхода из системы.
 -   `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — время начала входа или выхода из системы с точностью до микросекунд.
