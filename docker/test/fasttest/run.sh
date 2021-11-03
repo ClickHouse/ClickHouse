@@ -264,7 +264,7 @@ function run_tests
 
     set +e
     time clickhouse-test --hung-check -j 8 --order=random \
-            --fast-tests-only --no-long --testname --shard --zookeeper \
+            --fast-tests-only --no-long --testname --shard --zookeeper --check-zookeeper-session \
             -- "$FASTTEST_FOCUS" 2>&1 \
         | ts '%Y-%m-%d %H:%M:%S' \
         | tee "$FASTTEST_OUTPUT/test_result.txt"

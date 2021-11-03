@@ -467,6 +467,26 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <listen_host>127.0.0.1</listen_host>
 ```
 
+## listen_backlog {#server_configuration_parameters-listen_backlog}
+
+Бэклог (размер очереди соединений, ожидающих принятия) прослушивающего сокета.
+
+Значение по умолчанию: `4096` (как в linux [5.4+](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=19f92a030ca6d772ab44b22ee6a01378a8cb32d4)).
+
+Обычно это значение незачем менять по следующим причинам:
+-  значение по умолчанию достаточно велико,
+-  для принятия соединения клиента у сервера есть отдельный поток.
+
+Так что даже если у вас `TcpExtListenOverflows` (из `nstat`) ненулевой и растет для сервера ClickHouse, это не повод увеличивать значение по умолчанию, поскольку:
+-  обычно если 4096 недостаточно, это говорит о внутренних проблемах ClickHouse с масштабированием, так что лучше сообщить о проблеме,
+-  и это не значит, что сервер сможет принять еще больше подключений в дальнейшем (а если и сможет, клиенты, вероятно, уже отсоединятся).
+
+Примеры:
+
+``` xml
+<listen_backlog>4096</listen_backlog>
+```
+
 ## logger {#server_configuration_parameters-logger}
 
 Настройки логирования.
@@ -754,14 +774,14 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 Чтобы вручную включить сбор истории метрик в таблице [`system.metric_log`](../../operations/system-tables/metric_log.md), создайте `/etc/clickhouse-server/config.d/metric_log.xml` следующего содержания:
 
 ``` xml
-<yandex>
+<clickhouse>
     <metric_log>
         <database>system</database>
         <table>metric_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
     </metric_log>
-</yandex>
+</clickhouse>
 ```
 
 **Выключение**
@@ -769,9 +789,9 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 Чтобы отключить настройку `metric_log` , создайте файл `/etc/clickhouse-server/config.d/disable_metric_log.xml` следующего содержания:
 
 ``` xml
-<yandex>
+<clickhouse>
 <metric_log remove="1" />
-</yandex>
+</clickhouse>
 ```
 
 ## replicated\_merge\_tree {#server_configuration_parameters-replicated_merge_tree}
@@ -1007,7 +1027,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 **Пример**
 ```xml
-<yandex>
+<clickhouse>
     <text_log>
         <level>notice</level>
         <database>system</database>
@@ -1016,7 +1036,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
         <!-- <partition_by>event_date</partition_by> -->
         <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
     </text_log>
-</yandex>
+</clickhouse>
 ```
 
 

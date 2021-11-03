@@ -1951,7 +1951,7 @@ void Context::shutdownKeeperDispatcher() const
 }
 
 
-void Context::updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config)
+void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::AbstractConfiguration & config)
 {
 #if USE_NURAFT
     std::lock_guard lock(shared->keeper_dispatcher_mutex);
@@ -1970,6 +1970,9 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     auto zookeeper = shared->auxiliary_zookeepers.find(name);
     if (zookeeper == shared->auxiliary_zookeepers.end())
     {
+        if (name.find(':') != std::string::npos || name.find('/') != std::string::npos)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
+
         const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
         if (!config.has("auxiliary_zookeepers." + name))
             throw Exception(
@@ -3062,16 +3065,23 @@ ReadSettings Context::getReadSettings() const
 
     std::string_view read_method_str = settings.local_filesystem_read_method.value;
 
-    if (auto opt_method = magic_enum::enum_cast<ReadMethod>(read_method_str))
+    if (auto opt_method = magic_enum::enum_cast<LocalFSReadMethod>(read_method_str))
         res.local_fs_method = *opt_method;
     else
-        throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}'", read_method_str);
+        throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for local filesystem", read_method_str);
+
+    read_method_str = settings.remote_filesystem_read_method.value;
+
+    if (auto opt_method = magic_enum::enum_cast<RemoteFSReadMethod>(read_method_str))
+        res.remote_fs_method = *opt_method;
+    else
+        throw Exception(ErrorCodes::UNKNOWN_READ_METHOD, "Unknown read method '{}' for remote filesystem", read_method_str);
 
     res.local_fs_prefetch = settings.local_filesystem_read_prefetch;
     res.remote_fs_prefetch = settings.remote_filesystem_read_prefetch;
 
-    res.remote_fs_backoff_threshold = settings.remote_fs_read_backoff_threshold;
-    res.remote_fs_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;
+    res.remote_fs_read_max_backoff_ms = settings.remote_fs_read_max_backoff_ms;
+    res.remote_fs_read_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;
 
     res.local_fs_buffer_size = settings.max_read_buffer_size;
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;

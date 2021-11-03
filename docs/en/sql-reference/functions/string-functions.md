@@ -313,32 +313,6 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b');
 └───────────────────────┘
 ```
 
-## tokens {#tokens}
-
-Split string into tokens using non-alpha numeric ASCII characters as separators.
-
-**Arguments**
-
--   `input_string` — Any set of bytes represented as the [String](../../sql-reference/data-types/string.md) data type object.
-
-**Returned value**
-
--   The resulting array of tokens from input string.
-
-Type: [Array](../data-types/array.md).
-
-**Example**
-
-``` sql
-SELECT tokens('test1,;\\ test2,;\\ test3,;\\   test4') AS tokens;
-```
-
-``` text
-┌─tokens────────────────────────────┐
-│ ['test1','test2','test3','test4'] │
-└───────────────────────────────────┘
-```
-
 ## repeat {#repeat}
 
 Repeats a string as many times as specified and concatenates the replicated values as a single string.

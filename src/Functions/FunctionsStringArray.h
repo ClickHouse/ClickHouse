@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/FunctionsConversion.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
 #include <IO/WriteHelpers.h>
@@ -16,7 +17,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-
 
 namespace DB
 {
@@ -648,7 +648,7 @@ public:
 };
 
 
-/// Joins an array of strings into one string via a separator.
+/// Joins an array of type serializable to string into one string via a separator.
 class FunctionArrayStringConcat : public IFunction
 {
 private:
@@ -734,6 +734,25 @@ private:
             null_map);
     }
 
+    static ColumnPtr serializeNestedColumn(const ColumnArray & col_arr, const DataTypePtr & nested_type)
+    {
+        if (isString(nested_type))
+        {
+            return col_arr.getDataPtr();
+        }
+        else if (const ColumnNullable * col_nullable = checkAndGetColumn<ColumnNullable>(col_arr.getData());
+                 col_nullable && isString(col_nullable->getNestedColumn().getDataType()))
+        {
+            return col_nullable->getNestedColumnPtr();
+        }
+        else
+        {
+            ColumnsWithTypeAndName cols;
+            cols.emplace_back(col_arr.getDataPtr(), nested_type, "tmp");
+            return ConvertImplGenericToString::execute(cols, std::make_shared<DataTypeString>());
+        }
+    }
+
 public:
     static constexpr auto name = "arrayStringConcat";
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayStringConcat>(); }
@@ -761,7 +780,9 @@ public:
             delimiter = col_delim->getValue<String>();
         }
 
-        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get()))
+        const auto & nested_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
+        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get());
+            col_const_arr && isString(nested_type))
         {
             Array src_arr = col_const_arr->getValue<Array>();
             String dst_str;
@@ -778,25 +799,19 @@ public:
 
             return result_type->createColumnConst(col_const_arr->size(), dst_str);
         }
+
+        ColumnPtr src_column = arguments[0].column->convertToFullColumnIfConst();
+        const ColumnArray & col_arr = assert_cast<const ColumnArray &>(*src_column.get());
+
+        ColumnPtr str_subcolumn = serializeNestedColumn(col_arr, nested_type);
+        const ColumnString & col_string = assert_cast<const ColumnString &>(*str_subcolumn.get());
+
+        auto col_res = ColumnString::create();
+        if (const ColumnNullable * col_nullable = checkAndGetColumn<ColumnNullable>(col_arr.getData()))
+            executeInternal(col_string, col_arr, delimiter, *col_res, col_nullable->getNullMapData().data());
         else
-        {
-            const ColumnArray & col_arr = assert_cast<const ColumnArray &>(*arguments[0].column);
-            auto col_res = ColumnString::create();
-            if (WhichDataType(col_arr.getData().getDataType()).isString())
-            {
-                const ColumnString & col_string = assert_cast<const ColumnString &>(col_arr.getData());
-                executeInternal(col_string, col_arr, delimiter, *col_res);
-            }
-            else
-            {
-                const ColumnNullable & col_nullable = assert_cast<const ColumnNullable &>(col_arr.getData());
-                if (const ColumnString * col_string = typeid_cast<const ColumnString *>(col_nullable.getNestedColumnPtr().get()))
-                    executeInternal(*col_string, col_arr, delimiter, *col_res, col_nullable.getNullMapData().data());
-                else
-                    col_res->insertManyDefaults(col_arr.size());
-            }
-            return col_res;
-        }
+            executeInternal(col_string, col_arr, delimiter, *col_res);
+        return col_res;
     }
 };
 
