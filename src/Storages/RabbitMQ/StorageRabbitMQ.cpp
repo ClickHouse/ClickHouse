@@ -242,7 +242,6 @@ void StorageRabbitMQ::loopingFunc()
 
     if (connection->isConnected())
     {
-        connection->getHandler().updateLoopState(Loop::RUN);
         connection->getHandler().startLoop();
     }
 }
@@ -656,6 +655,7 @@ Pipe StorageRabbitMQ::read(
 
     if (!connection->getHandler().loopRunning() && connection->isConnected())
     {
+        connection->getHandler().updateLoopState(Loop::RUN);
         looping_task->activateAndSchedule();
     }
 
@@ -1006,6 +1006,7 @@ bool StorageRabbitMQ::streamToViews()
 
     if (!connection->getHandler().loopRunning())
     {
+        connection->getHandler().updateLoopState(Loop::RUN);
         looping_task->activateAndSchedule();
     }
 
