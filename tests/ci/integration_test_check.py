@@ -255,11 +255,11 @@ if __name__ == "__main__":
 
     result_path = os.path.join(temp_path, "output_dir")
     if not os.path.exists(result_path):
-        os.mkdirs(result_path)
+        os.makedirs(result_path)
 
     work_path = os.path.join(temp_path, "workdir")
     if not os.path.exists(work_path):
-        os.mkdirs(work_path)
+        os.makedirs(work_path)
 
     build_config = get_build_config(build_number, repo_path)
     build_config_str = build_config_to_string(build_config)
