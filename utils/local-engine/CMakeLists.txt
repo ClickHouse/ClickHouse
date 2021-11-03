@@ -3,8 +3,20 @@ function(add_cxx_compile_options option)
     add_compile_options("$<$<STREQUAL:$<TARGET_PROPERTY:LINKER_LANGUAGE>,CXX>:${option}>")
 endfunction()
 add_cxx_compile_options(-Wzero-as-null-pointer-constant)
-add_executable (local_engine local_engine.cpp)
-target_include_directories(local_engine PRIVATE ${RAPIDJSON_INCLUDE_DIR})
+add_subdirectory(Substrait)
+add_subdirectory(Builder)
+add_headers_and_sources(builder Builder)
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+add_executable (local_engine
+        local_engine.cpp
+        ${builder_headers}
+        ${builder_sources}
+        )
+target_include_directories(local_engine PRIVATE
+        ${RAPIDJSON_INCLUDE_DIR}
+        ${SUBSTRAIT_HEADERS}
+        )
+
 
 set (CLICKHOUSE_SERVER_LINK
         PRIVATE
@@ -13,7 +25,8 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_common_io
         clickhouse_functions
         clickhouse_storages_system
+        substrait
         )
 
-target_link_libraries(local_engine ${CLICKHOUSE_SERVER_LINK})
+target_link_libraries(local_engine ${CLICKHOUSE_SERVER_LINK} )
 

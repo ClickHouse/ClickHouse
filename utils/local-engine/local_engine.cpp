@@ -27,12 +27,12 @@
 #include <IO/ReadBuffer.h>
 
 #include <fstream>
-#include <iostream>
 #include <string>
 #include <Processors/Pipe.h>
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
-
+#include <substrait/plan.pb.h>
+#include <substrait/relations.pb.h>
 
 using namespace DB;
 using namespace rapidjson;
@@ -190,41 +190,50 @@ void buildAgg(Block & header, QueryPlan& query_plan, ContextPtr context)
     query_plan.addStep(std::move(aggregating_step));
 }
 
-int main(int argc, char ** argv)
+int main(int, char **)
 {
-    auto shared_context = Context::createShared();
-    auto global_context = Context::createGlobal(shared_context.get());
-    registerAllFunctions();
-    auto & factory = FunctionFactory::instance();
-    std::ifstream ifs("/Users/neng.liu/Documents/GitHub/ClickHouse/utils/local-engine/table.json");
-    IStreamWrapper isw(ifs);
+    auto plan = io::substrait::Plan();
+    plan.add_relations()->read();
+    auto table = plan.mutable_relations(0);
+    auto local_files = table->mutable_read()->mutable_local_files();
+    auto file = io::substrait::ReadRel_LocalFiles_FileOrFiles();
+    file.set_uri_path("test.txt");
+    local_files->mutable_items()->Add(std::move(file));
+    std::cout << plan.SerializeAsString();
 
-    Document d;
-    d.ParseStream(isw);
-    auto cols = getColumns(d);
-    auto header = getTableHeader(*cols);
-
-    QueryPlan query_plan;
-    auto file = "/Users/neng.liu/Documents/GitHub/ClickHouse/utils/local-engine/table.csv";
-    auto buf = std::make_unique<ReadBufferFromFilePRead>(file);
-
-    auto source = getSource(*buf, header);
-
-    std::unique_ptr<QueryPipelines> query_pipelines = std::make_unique<QueryPipelines>();
-    auto source_step = std::make_unique<ReadFromStorageStep>(Pipe(source), "CSV");
-    query_plan.addStep(std::move(source_step));
-
-    auto filter = buildFilter(header, global_context);
-    query_plan.addStep(std::move(filter));
-    buildAgg(header, query_plan, global_context);
-    QueryPlanOptimizationSettings optimization_settings{.optimize_plan=false};
-    auto query_pipline = query_plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings());
-
-    auto buffer = WriteBufferFromFile("/Users/neng.liu/Documents/GitHub/ClickHouse/output.txt");
-    auto output = std::make_shared<CSVRowOutputFormat>(buffer, query_pipline->getHeader(), true, RowOutputFormatParams(), FormatSettings());
-    query_pipline->setOutputFormat(output);
-    auto executor = query_pipline->execute();
-    executor->execute(1);
+//    auto shared_context = Context::createShared();
+//    auto global_context = Context::createGlobal(shared_context.get());
+//    registerAllFunctions();
+//    auto & factory = FunctionFactory::instance();
+//    std::ifstream ifs("/Users/neng.liu/Documents/GitHub/ClickHouse/utils/local-engine/table.json");
+//    IStreamWrapper isw(ifs);
+//
+//    Document d;
+//    d.ParseStream(isw);
+//    auto cols = getColumns(d);
+//    auto header = getTableHeader(*cols);
+//
+//    QueryPlan query_plan;
+//    auto file = "/Users/neng.liu/Documents/GitHub/ClickHouse/utils/local-engine/table.csv";
+//    auto buf = std::make_unique<ReadBufferFromFilePRead>(file);
+//
+//    auto source = getSource(*buf, header);
+//
+//    std::unique_ptr<QueryPipelines> query_pipelines = std::make_unique<QueryPipelines>();
+//    auto source_step = std::make_unique<ReadFromStorageStep>(Pipe(source), "CSV");
+//    query_plan.addStep(std::move(source_step));
+//
+//    auto filter = buildFilter(header, global_context);
+//    query_plan.addStep(std::move(filter));
+//    buildAgg(header, query_plan, global_context);
+//    QueryPlanOptimizationSettings optimization_settings{.optimize_plan=false};
+//    auto query_pipline = query_plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings());
+//
+//    auto buffer = WriteBufferFromFile("/Users/neng.liu/Documents/GitHub/ClickHouse/output.txt");
+//    auto output = std::make_shared<CSVRowOutputFormat>(buffer, query_pipline->getHeader(), true, RowOutputFormatParams(), FormatSettings());
+//    query_pipline->setOutputFormat(output);
+//    auto executor = query_pipline->execute();
+//    executor->execute(1);
 }
 
 //    auto col = ColumnUInt8::create(1, 1);
