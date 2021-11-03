@@ -14,7 +14,6 @@
 
 namespace DB
 {
-struct Settings;
 
 /** Calculates Shannon Entropy, using HashMap and computing empirical distribution function.
   * Entropy is measured in bits (base-2 logarithm is used).
@@ -103,8 +102,6 @@ public:
     {
         return std::make_shared<DataTypeNumber<Float64>>();
     }
-
-    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

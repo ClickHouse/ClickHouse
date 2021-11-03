@@ -13,7 +13,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int DECIMAL_OVERFLOW;
 }
 
 /** arrayDifference() - returns an array with the difference between all pairs of neighboring elements.
@@ -57,32 +56,13 @@ struct ArrayDifferenceImpl
         {
             if (pos == begin)
             {
-                dst[pos] = {};
+                dst[pos] = 0;
                 prev = src[pos];
             }
             else
             {
                 Element curr = src[pos];
-
-                if constexpr (is_decimal<Element>)
-                {
-                    using ResultNativeType = typename Result::NativeType;
-
-                    ResultNativeType result_value;
-                    bool overflow = common::subOverflow(
-                        static_cast<ResultNativeType>(curr.value),
-                        static_cast<ResultNativeType>(prev.value),
-                        result_value);
-                    if (overflow)
-                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW, "Decimal math overflow");
-
-                    dst[pos] = Result(result_value);
-                }
-                else
-                {
-                    dst[pos] = curr - prev;
-                }
-
+                dst[pos] = curr - prev;
                 prev = curr;
             }
         }
@@ -92,8 +72,8 @@ struct ArrayDifferenceImpl
     template <typename Element, typename Result>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
     {
-        using ColVecType = ColumnVectorOrDecimal<Element>;
-        using ColVecResult = ColumnVectorOrDecimal<Result>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
+        using ColVecResult = std::conditional_t<IsDecimalNumber<Result>, ColumnDecimal<Result>, ColumnVector<Result>>;
 
         const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
 
@@ -104,7 +84,7 @@ struct ArrayDifferenceImpl
         const typename ColVecType::Container & data = column->getData();
 
         typename ColVecResult::MutablePtr res_nested;
-        if constexpr (is_decimal<Element>)
+        if constexpr (IsDecimalNumber<Element>)
             res_nested = ColVecResult::create(0, data.getScale());
         else
             res_nested = ColVecResult::create();

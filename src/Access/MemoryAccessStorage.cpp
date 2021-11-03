@@ -1,5 +1,5 @@
 #include <Access/MemoryAccessStorage.h>
-#include <base/scope_guard.h>
+#include <ext/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -266,7 +266,7 @@ void MemoryAccessStorage::prepareNotifications(const Entry & entry, bool remove,
 }
 
 
-scope_guard MemoryAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
+ext::scope_guard MemoryAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
 {
     std::lock_guard lock{mutex};
     auto & handlers = handlers_by_type[static_cast<size_t>(type)];
@@ -282,7 +282,7 @@ scope_guard MemoryAccessStorage::subscribeForChangesImpl(EntityType type, const 
 }
 
 
-scope_guard MemoryAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
+ext::scope_guard MemoryAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
     std::lock_guard lock{mutex};
     auto it = entries_by_id.find(id);

@@ -4,7 +4,7 @@
 #include <memory>
 
 #include <Core/Defines.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/IAST.h>
 #include <Parsers/TokenIterator.h>
@@ -88,13 +88,13 @@ public:
       */
     virtual bool parse(Pos & pos, ASTPtr & node, Expected & expected) = 0;
 
-    bool ignore(Pos & pos, Expected & expected)  // -V1071
+    bool ignore(Pos & pos, Expected & expected)
     {
         ASTPtr ignore_node;
         return parse(pos, ignore_node, expected);
     }
 
-    bool ignore(Pos & pos)  // -V1071
+    bool ignore(Pos & pos)
     {
         Expected expected;
         return ignore(pos, expected);

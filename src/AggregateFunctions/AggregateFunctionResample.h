@@ -4,12 +4,11 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Common/assert_cast.h>
-#include <base/arithmeticOverflow.h>
+#include <common/arithmeticOverflow.h>
 
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {

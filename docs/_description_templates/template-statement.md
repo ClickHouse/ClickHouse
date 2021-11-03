@@ -1,23 +1,23 @@
-# Statement name (for example, SHOW USER) {#statement-name-in-lower-case}
+# Statement name (for example, SHOW USER)
 
 Brief description of what the statement does.
 
-**Syntax**
+Syntax:
 
 ```sql
 Syntax of the statement.
 ```
 
-## Other necessary sections of the description (Optional) {#anchor}
+## Other necessary sections of the description (Optional)
 
 Examples of descriptions with a complicated structure:
 
-- https://clickhouse.com/docs/en/sql-reference/statements/grant/
-- https://clickhouse.com/docs/en/sql-reference/statements/revoke/
-- https://clickhouse.com/docs/en/sql-reference/statements/select/join/
+- https://clickhouse.tech/docs/en/sql-reference/statements/grant/
+- https://clickhouse.tech/docs/en/sql-reference/statements/revoke/
+- https://clickhouse.tech/docs/en/sql-reference/statements/select/join/
 
 
-**See Also** (Optional)
+## See Also (Optional)
 
 Links to related topics as a list.
 

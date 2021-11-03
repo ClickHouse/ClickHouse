@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
@@ -19,7 +19,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -87,8 +86,6 @@ public:
         else
             return std::make_shared<DataTypeNumber<PointType>>();
     }
-
-    bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {

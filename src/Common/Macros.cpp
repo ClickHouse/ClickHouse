@@ -2,7 +2,7 @@
 #include <Common/Macros.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -78,10 +78,7 @@ String Macros::expand(const String & s,
 
         /// Prefer explicit macros over implicit.
         if (it != macros.end() && !info.expand_special_macros_only)
-        {
             res += it->second;
-            info.expanded_other = true;
-        }
         else if (macro_name == "database" && !info.table_id.database_name.empty())
         {
             res += info.table_id.database_name;

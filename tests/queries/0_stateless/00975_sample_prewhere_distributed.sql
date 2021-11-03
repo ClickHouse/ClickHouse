@@ -1,5 +1,3 @@
--- Tags: distributed
-
 create table if not exists sample_prewhere (date Date, id Int32, time Int64) engine = MergeTree partition by date order by (id, time, intHash64(time)) sample by intHash64(time);
 
 insert into sample_prewhere values ('2019-01-01', 2, toDateTime('2019-07-20 00:00:01'));

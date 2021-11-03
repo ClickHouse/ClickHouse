@@ -13,8 +13,8 @@
   * (~ 700 MB/sec, 15 million strings per second)
   */
 
-#include <base/types.h>
-#include <base/unaligned.h>
+#include <common/types.h>
+#include <common/unaligned.h>
 #include <string>
 #include <type_traits>
 #include <Core/Defines.h>
@@ -155,6 +155,7 @@ public:
         unalignedStore<UInt64>(out + 8, v2 ^ v3);
     }
 
+    /// template for avoiding 'unsigned long long' vs 'unsigned long' problem on old poco in macos
     template <typename T>
     ALWAYS_INLINE void get128(T & lo, T & hi)
     {
@@ -162,13 +163,6 @@ public:
         finalize();
         lo = v0 ^ v1;
         hi = v2 ^ v3;
-    }
-
-    template <typename T>
-    ALWAYS_INLINE void get128(T & dst)
-    {
-        static_assert(sizeof(T) == 16);
-        get128(reinterpret_cast<char *>(&dst));
     }
 
     UInt64 get64()

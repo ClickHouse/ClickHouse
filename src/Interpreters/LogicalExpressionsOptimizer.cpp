@@ -225,19 +225,22 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
 
     /// 1. Create a new IN expression based on information from the OR-chain.
 
-    /// Construct a tuple of literals `x1, ..., xN` from the string `expr = x1 OR ... OR expr = xN`
-
-    Tuple tuple;
-    tuple.reserve(equality_functions.size());
-
+    /// Construct a list of literals `x1, ..., xN` from the string `expr = x1 OR ... OR expr = xN`
+    ASTPtr value_list = std::make_shared<ASTExpressionList>();
     for (const auto * function : equality_functions)
     {
         const auto & operands = getFunctionOperands(function);
-        tuple.push_back(operands[1]->as<ASTLiteral>()->value);
+        value_list->children.push_back(operands[1]);
     }
 
     /// Sort the literals so that they are specified in the same order in the IN expression.
-    std::sort(tuple.begin(), tuple.end());
+    /// Otherwise, they would be specified in the order of the ASTLiteral addresses, which is nondeterministic.
+    std::sort(value_list->children.begin(), value_list->children.end(), [](const DB::ASTPtr & lhs, const DB::ASTPtr & rhs)
+    {
+        const auto * val_lhs = lhs->as<ASTLiteral>();
+        const auto * val_rhs = rhs->as<ASTLiteral>();
+        return val_lhs->value < val_rhs->value;
+    });
 
     /// Get the expression `expr` from the chain `expr = x1 OR ... OR expr = xN`
     ASTPtr equals_expr_lhs;
@@ -247,11 +250,14 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
         equals_expr_lhs = operands[0];
     }
 
-    auto tuple_literal = std::make_shared<ASTLiteral>(std::move(tuple));
+    auto tuple_function = std::make_shared<ASTFunction>();
+    tuple_function->name = "tuple";
+    tuple_function->arguments = value_list;
+    tuple_function->children.push_back(tuple_function->arguments);
 
     ASTPtr expression_list = std::make_shared<ASTExpressionList>();
     expression_list->children.push_back(equals_expr_lhs);
-    expression_list->children.push_back(tuple_literal);
+    expression_list->children.push_back(tuple_function);
 
     /// Construct the expression `expr IN (x1, ..., xN)`
     auto in_function = std::make_shared<ASTFunction>();

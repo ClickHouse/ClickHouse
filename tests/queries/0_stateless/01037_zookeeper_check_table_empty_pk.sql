@@ -1,5 +1,3 @@
--- Tags: zookeeper
-
 SET check_query_single_value_result = 0;
 SET send_logs_level = 'fatal';
 
@@ -15,7 +13,7 @@ DROP TABLE IF EXISTS mt_without_pk;
 
 DROP TABLE IF EXISTS replicated_mt_without_pk;
 
-CREATE TABLE replicated_mt_without_pk (SomeField1 Int64, SomeField2 Double) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_01037/replicated_mt_without_pk', '1') ORDER BY tuple();
+CREATE TABLE replicated_mt_without_pk (SomeField1 Int64, SomeField2 Double) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_01037/replicated_mt_without_pk', '1') ORDER BY tuple();
 
 INSERT INTO replicated_mt_without_pk VALUES (1, 2);
 

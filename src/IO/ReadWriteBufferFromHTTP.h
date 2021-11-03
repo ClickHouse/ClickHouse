@@ -1,13 +1,11 @@
 #pragma once
 
 #include <functional>
-#include <base/types.h>
-#include <base/sleep.h>
+#include <common/types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromIStream.h>
-#include <IO/ReadSettings.h>
 #include <Poco/Any.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Net/HTTPClientSession.h>
@@ -17,11 +15,16 @@
 #include <Poco/Version.h>
 #include <Common/DNSResolver.h>
 #include <Common/RemoteHostFilter.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Poco/URIStreamFactory.h>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
+
+#define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
+#define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
 
 namespace DB
 {
@@ -89,7 +92,6 @@ namespace detail
     protected:
         Poco::URI uri;
         std::string method;
-        std::string content_encoding;
 
         UpdatableSessionPtr session;
         std::istream * istr; /// owned by session
@@ -100,9 +102,6 @@ namespace detail
         HTTPHeaderEntries http_header_entries;
         RemoteHostFilter remote_host_filter;
         std::function<void(size_t)> next_callback;
-
-        size_t buffer_size;
-        ReadSettings settings;
 
         std::istream * call(Poco::URI uri_, Poco::Net::HTTPResponse & response)
         {
@@ -138,7 +137,6 @@ namespace detail
                 istr = receiveResponse(*sess, request, response, true);
                 response.getCookies(cookies);
 
-                content_encoding = response.get("Content-Encoding", "");
                 return istr;
 
             }
@@ -151,9 +149,6 @@ namespace detail
             }
         }
 
-    private:
-        bool use_external_buffer;
-
     public:
         using NextCallback = std::function<void(size_t)>;
         using OutStreamCallback = std::function<void(std::ostream &)>;
@@ -165,10 +160,8 @@ namespace detail
             OutStreamCallback out_stream_callback_ = {},
             const Poco::Net::HTTPBasicCredentials & credentials_ = {},
             size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-            const ReadSettings & settings_ = {},
             HTTPHeaderEntries http_header_entries_ = {},
-            const RemoteHostFilter & remote_host_filter_ = {},
-            bool use_external_buffer_ = false)
+            const RemoteHostFilter & remote_host_filter_ = {})
             : ReadBuffer(nullptr, 0)
             , uri {uri_}
             , method {!method_.empty() ? method_ : out_stream_callback_ ? Poco::Net::HTTPRequest::HTTP_POST : Poco::Net::HTTPRequest::HTTP_GET}
@@ -177,17 +170,9 @@ namespace detail
             , credentials {credentials_}
             , http_header_entries {http_header_entries_}
             , remote_host_filter {remote_host_filter_}
-            , buffer_size {buffer_size_}
-            , settings {settings_}
-            , use_external_buffer {use_external_buffer_}
         {
-            initialize();
-        }
-
-        void initialize()
-        {
-
             Poco::Net::HTTPResponse response;
+
             istr = call(uri, response);
 
             while (isRedirect(response.getStatus()))
@@ -202,17 +187,7 @@ namespace detail
 
             try
             {
-                impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size);
-
-                if (use_external_buffer)
-                {
-                    /**
-                    * See comment 30 lines below.
-                    */
-                    impl->set(internal_buffer.begin(), internal_buffer.size());
-                    assert(working_buffer.begin() != nullptr);
-                    assert(!internal_buffer.empty());
-                }
+                impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size_);
             }
             catch (const Poco::Exception & e)
             {
@@ -228,33 +203,10 @@ namespace detail
         {
             if (next_callback)
                 next_callback(count());
-
-            if (use_external_buffer)
-            {
-                /**
-                * use_external_buffer -- means we read into the buffer which
-                * was passed to us from somewhere else. We do not check whether
-                * previously returned buffer was read or not (no hasPendingData() check is needed),
-                * because this branch means we are prefetching data,
-                * each nextImpl() call we can fill a different buffer.
-                */
-                impl->set(internal_buffer.begin(), internal_buffer.size());
-                assert(working_buffer.begin() != nullptr);
-                assert(!internal_buffer.empty());
-            }
-            else
-            {
-                /**
-                * impl was initialized before, pass position() to it to make
-                * sure there is no pending data which was not read.
-                */
-                if (!working_buffer.empty())
-                    impl->position() = position();
-            }
-
+            if (!working_buffer.empty())
+                impl->position() = position();
             if (!impl->next())
                 return false;
-
             internal_buffer = impl->buffer();
             working_buffer = internal_buffer;
             return true;
@@ -277,11 +229,6 @@ namespace detail
             next_callback = next_callback_;
             /// Some data maybe already read
             next_callback(count());
-        }
-
-        const std::string & getCompressionMethod() const
-        {
-            return content_encoding;
         }
     };
 }
@@ -319,13 +266,10 @@ public:
         const UInt64 max_redirects = 0,
         const Poco::Net::HTTPBasicCredentials & credentials_ = {},
         size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-        const ReadSettings & settings_ = {},
         const HTTPHeaderEntries & http_header_entries_ = {},
-        const RemoteHostFilter & remote_host_filter_ = {},
-        bool use_external_buffer_ = false)
+        const RemoteHostFilter & remote_host_filter_ = {})
         : Parent(std::make_shared<UpdatableSession>(uri_, timeouts, max_redirects),
-                 uri_, method_, out_stream_callback_, credentials_, buffer_size_,
-                 settings_, http_header_entries_, remote_host_filter_, use_external_buffer_)
+            uri_, method_, out_stream_callback_, credentials_, buffer_size_, http_header_entries_, remote_host_filter_)
     {
     }
 };

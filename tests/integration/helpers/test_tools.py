@@ -1,6 +1,5 @@
 import difflib
 import time
-import logging
 from io import IOBase
 
 
@@ -39,9 +38,6 @@ class TSV:
     def __str__(self):
         return '\n'.join(self.lines)
 
-    def __repr__(self):
-        return self.__str__()
-
     def __len__(self):
         return len(self.lines)
 
@@ -60,7 +56,7 @@ def assert_eq_with_retry(instance, query, expectation, retry_count=20, sleep_tim
                 break
             time.sleep(sleep_time)
         except Exception as ex:
-            logging.exception(f"assert_eq_with_retry retry {i+1} exception {ex}")
+            print(("assert_eq_with_retry retry {} exception {}".format(i + 1, ex)))
             time.sleep(sleep_time)
     else:
         val = TSV(get_result(instance.query(query, user=user, stdin=stdin, timeout=timeout, settings=settings,
@@ -80,7 +76,7 @@ def assert_logs_contain_with_retry(instance, substring, retry_count=20, sleep_ti
                 break
             time.sleep(sleep_time)
         except Exception as ex:
-            logging.exception(f"contains_in_log_with_retry retry {i+1} exception {ex}")
+            print("contains_in_log_with_retry retry {} exception {}".format(i + 1, ex))
             time.sleep(sleep_time)
     else:
         raise AssertionError("'{}' not found in logs".format(substring))
@@ -93,7 +89,7 @@ def exec_query_with_retry(instance, query, retry_count=40, sleep_time=0.5, setti
             break
         except Exception as ex:
             exception = ex
-            logging.exception(f"Failed to execute query '{query}' on instance '{instance.name}' will retry")
+            print("Failed to execute query '", query, "' on instance", instance.name, "will retry")
             time.sleep(sleep_time)
     else:
         raise exception

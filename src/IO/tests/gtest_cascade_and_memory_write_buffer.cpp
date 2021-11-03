@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <stdexcept>
+#include <Poco/File.h>
 #include <IO/CascadeWriteBuffer.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
@@ -8,9 +9,7 @@
 #include <IO/ConcatReadBuffer.h>
 #include <IO/copyData.h>
 #include <Common/typeid_cast.h>
-#include <filesystem>
 
-namespace fs = std::filesystem;
 using namespace DB;
 
 
@@ -33,7 +32,8 @@ static void testCascadeBufferRedability(
     EXPECT_EQ(cascade.count(), data.size());
 
     std::vector<WriteBufferPtr> write_buffers;
-    ConcatReadBuffer concat;
+    std::vector<ReadBufferPtr> read_buffers;
+    std::vector<ReadBuffer *> read_buffers_raw;
     cascade.getResultBuffers(write_buffers);
 
     for (WriteBufferPtr & wbuf : write_buffers)
@@ -41,14 +41,17 @@ static void testCascadeBufferRedability(
         if (!wbuf)
             continue;
 
-        auto & wbuf_readable = dynamic_cast<IReadableWriteBuffer &>(*wbuf);
+        auto * wbuf_readable = dynamic_cast<IReadableWriteBuffer *>(wbuf.get());
+        ASSERT_FALSE(!wbuf_readable);
 
-        auto rbuf = wbuf_readable.tryGetReadBuffer();
+        auto rbuf = wbuf_readable->tryGetReadBuffer();
         ASSERT_FALSE(!rbuf);
 
-        concat.appendBuffer(wrapReadBufferPointer(rbuf));
+        read_buffers.emplace_back(rbuf);
+        read_buffers_raw.emplace_back(rbuf.get());
     }
 
+    ConcatReadBuffer concat(read_buffers_raw);
     std::string decoded_data;
     {
         WriteBufferFromString decoded_data_writer(decoded_data);
@@ -233,7 +236,7 @@ try
 
         buf.reset();
         reread_buf.reset();
-        ASSERT_TRUE(!fs::exists(tmp_filename));
+        ASSERT_TRUE(!Poco::File(tmp_filename).exists());
     }
 }
 catch (...)

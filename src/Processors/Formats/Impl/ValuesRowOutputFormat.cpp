@@ -15,9 +15,9 @@ ValuesRowOutputFormat::ValuesRowOutputFormat(WriteBuffer & out_, const Block & h
 {
 }
 
-void ValuesRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
+void ValuesRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
-    serialization.serializeTextQuoted(column, row_num, out, format_settings);
+    type.serializeAsTextQuoted(column, row_num, out, format_settings);
 }
 
 void ValuesRowOutputFormat::writeFieldDelimiter()
@@ -41,9 +41,9 @@ void ValuesRowOutputFormat::writeRowBetweenDelimiter()
 }
 
 
-void registerOutputFormatValues(FormatFactory & factory)
+void registerOutputFormatProcessorValues(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Values", [](
+    factory.registerOutputFormatProcessor("Values", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,

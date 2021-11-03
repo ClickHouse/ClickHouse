@@ -116,7 +116,7 @@ ConnectionEstablisherAsync::ConnectionEstablisherAsync(
     epoll.add(receive_timeout.getDescriptor());
 }
 
-void ConnectionEstablisherAsync::Routine::ReadCallback::operator()(int fd, Poco::Timespan timeout, const std::string &)
+void ConnectionEstablisherAsync::Routine::ReadCallback::operator()(int fd, const Poco::Timespan & timeout, const std::string &)
 {
     /// Check if it's the first time and we need to add socket fd to epoll.
     if (connection_establisher_async.socket_fd == -1)

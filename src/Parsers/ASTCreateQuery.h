@@ -25,7 +25,6 @@ public:
     IAST * ttl_table = nullptr;
     ASTSetQuery * settings = nullptr;
 
-
     String getID(char) const override { return "Storage definition"; }
 
     ASTPtr clone() const override;
@@ -42,7 +41,6 @@ public:
     ASTExpressionList * columns = nullptr;
     ASTExpressionList * indices = nullptr;
     ASTExpressionList * constraints = nullptr;
-    ASTExpressionList * projections = nullptr;
     IAST              * primary_key = nullptr;
 
     String getID(char) const override { return "Columns definition"; }
@@ -68,13 +66,11 @@ public:
     ASTExpressionList * tables = nullptr;
 
     StorageID to_table_id = StorageID::createEmpty();   /// For CREATE MATERIALIZED VIEW mv TO table.
-    UUID to_inner_uuid = UUIDHelpers::Nil;      /// For materialized view with inner table
     ASTStorage * storage = nullptr;
     String as_database;
     String as_table;
     ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
-    IAST * comment = nullptr;
 
     bool is_dictionary{false}; /// CREATE DICTIONARY
     ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of
@@ -101,8 +97,6 @@ public:
     }
 
     bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view; }
-
-    const char * getQueryKindString() const override { return "Create"; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

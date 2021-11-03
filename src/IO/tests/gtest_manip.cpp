@@ -2,7 +2,7 @@
 
 #include <string>
 #include <type_traits>
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>

@@ -45,7 +45,7 @@ private:
     }
 
 public:
-    explicit WriteBufferFromVector(VectorType & vector_)
+    WriteBufferFromVector(VectorType & vector_)
         : WriteBuffer(reinterpret_cast<Position>(vector_.data()), vector_.size()), vector(vector_)
     {
         if (vector.empty())

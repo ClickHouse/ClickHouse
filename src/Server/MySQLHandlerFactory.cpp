@@ -2,8 +2,8 @@
 #include <Common/OpenSSLHelpers.h>
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <Poco/Util/Application.h>
-#include <base/logger_useful.h>
-#include <base/scope_guard.h>
+#include <common/logger_useful.h>
+#include <ext/scope_guard.h>
 #include <Server/MySQLHandler.h>
 
 #if USE_SSL

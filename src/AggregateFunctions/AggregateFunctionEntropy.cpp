@@ -2,11 +2,11 @@
 #include <AggregateFunctions/AggregateFunctionEntropy.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -16,8 +16,7 @@ namespace ErrorCodes
 namespace
 {
 
-AggregateFunctionPtr createAggregateFunctionEntropy(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+AggregateFunctionPtr createAggregateFunctionEntropy(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertNoParameters(name, parameters);
     if (argument_types.empty())

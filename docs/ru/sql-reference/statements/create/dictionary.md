@@ -1,6 +1,6 @@
 ---
 toc_priority: 38
-toc_title: "Словарь"
+toc_title: "\u0421\u043b\u043e\u0432\u0430\u0440\u044c"
 ---
 
 # CREATE DICTIONARY {#create-dictionary-query}
@@ -8,10 +8,10 @@ toc_title: "Словарь"
 ``` sql
 CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 (
-    key1 type1  [DEFAULT|EXPRESSION expr1] [IS_OBJECT_ID],
-    key2 type2  [DEFAULT|EXPRESSION expr2],
-    attr1 type2 [DEFAULT|EXPRESSION expr3] [HIERARCHICAL|INJECTIVE],
-    attr2 type2 [DEFAULT|EXPRESSION expr4] [HIERARCHICAL|INJECTIVE]
+    key1 type1  [DEFAULT|EXPRESSION expr1] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
+    key2 type2  [DEFAULT|EXPRESSION expr2] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
+    attr1 type2 [DEFAULT|EXPRESSION expr3],
+    attr2 type2 [DEFAULT|EXPRESSION expr4]
 )
 PRIMARY KEY key1, key2
 SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
@@ -27,4 +27,5 @@ LIFETIME({MIN min_val MAX max_val | max_val})
 
 Смотрите [Внешние словари](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/statements/create/dictionary)
 <!--hide-->
