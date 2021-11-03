@@ -240,7 +240,7 @@ if __name__ == "__main__":
 
     images_path = os.path.join(temp_path, 'changed_images.json')
     images_with_version = get_images_with_versions(images_path)
-    for image, version in images_with_version:
+    for image, version in images_with_version.items():
         docker_image = image + ':' + version
         for i in range(10):
             try:
