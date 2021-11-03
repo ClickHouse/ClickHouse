@@ -18,44 +18,6 @@ from pr_info import PRInfo
 DOWNLOAD_RETRIES_COUNT = 5
 IMAGE_NAME = 'clickhouse/fuzzer'
 
-def dowload_build_with_progress(url, path):
-    logging.info("Downloading from %s to temp path %s", url, path)
-    for i in range(DOWNLOAD_RETRIES_COUNT):
-        try:
-            with open(path, 'wb') as f:
-                response = requests.get(url, stream=True)
-                response.raise_for_status()
-                total_length = response.headers.get('content-length')
-                if total_length is None or int(total_length) == 0:
-                    logging.info("No content-length, will download file without progress")
-                    f.write(response.content)
-                else:
-                    dl = 0
-                    total_length = int(total_length)
-                    logging.info("Content length is %ld bytes", total_length)
-                    for data in response.iter_content(chunk_size=4096):
-                        dl += len(data)
-                        f.write(data)
-                        if sys.stdout.isatty():
-                            done = int(50 * dl / total_length)
-                            percent = int(100 * float(dl) / total_length)
-                            eq_str = '=' * done
-                            space_str = ' ' * (50 - done)
-                            sys.stdout.write(f"\r[{eq_str}{space_str}] {percent}%")
-                            sys.stdout.flush()
-            break
-        except Exception as ex:
-            sys.stdout.write("\n")
-            time.sleep(3)
-            logging.info("Exception while downloading %s, retry %s", ex, i + 1)
-            if os.path.exists(path):
-                os.remove(path)
-    else:
-        raise Exception(f"Cannot download dataset from {url}, all retries exceeded")
-
-    sys.stdout.write("\n")
-    logging.info("Downloading finished")
-
 def get_build_urls(build_config_str, reports_path):
     for root, _, files in os.walk(reports_path):
         for f in files:
