@@ -18,6 +18,7 @@ limitations under the License. */
 #include <Processors/Sources/BlocksSource.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -385,7 +386,7 @@ bool StorageLiveView::getNewBlocks()
     auto builder = completeQuery(std::move(from));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
 
-    PullingAsyncPipelineExecutor executor(pipeline);
+    PullingPipelineExecutor executor(pipeline);
     Block block;
     while (executor.pull(block))
     {
