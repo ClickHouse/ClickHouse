@@ -78,11 +78,15 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     else
         part_columns = *total_columns_list;
 
-    if (reset_columns)
-        new_part->setColumns(part_columns, new_serialization_infos);
+    auto & serialization_infos = reset_columns
+        ? new_serialization_infos
+        : new_part->getSerializationInfos();
 
     if (new_part->isStoredOnDisk())
-        finalizePartOnDisk(new_part, part_columns, checksums, sync);
+        finalizePartOnDisk(new_part, part_columns, serialization_infos, checksums, sync);
+
+    if (reset_columns)
+        new_part->setColumns(part_columns, serialization_infos);
 
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
@@ -100,6 +104,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
 void MergedBlockOutputStream::finalizePartOnDisk(
     const MergeTreeData::MutableDataPartPtr & new_part,
     NamesAndTypesList & part_columns,
+    SerializationInfoByName & serialization_infos,
     MergeTreeData::DataPart::Checksums & checksums,
     bool sync)
 {
@@ -166,9 +171,8 @@ void MergedBlockOutputStream::finalizePartOnDisk(
             out->sync();
     }
 
-    removeEmptyColumnsFromPart(new_part, part_columns, checksums);
+    removeEmptyColumnsFromPart(new_part, part_columns, serialization_infos, checksums);
 
-    const auto & serialization_infos = new_part->getSerializationInfos();
     if (!serialization_infos.empty())
     {
         auto out = volume->getDisk()->writeFile(part_path + IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096);

@@ -72,7 +72,7 @@ MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(
 
     auto columns = new_part->getColumns();
 
-    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, checksums);
+    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, new_serialization_infos, checksums);
     for (const String & removed_file : removed_files)
         if (all_checksums.files.count(removed_file))
             all_checksums.files.erase(removed_file);
