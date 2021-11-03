@@ -14,6 +14,10 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+def create_force_drop_flag(node):
+    force_drop_flag_path = "/var/lib/clickhouse/flags/force_drop_table"
+    node.exec_in_container(["bash", "-c", "touch {} && chmod a=rw {}".format(force_drop_flag_path, force_drop_flag_path)], user="root")
+
 @pytest.mark.parametrize("engine", ['Ordinary', 'Atomic'])
 def test_attach_partition_with_large_destination(started_cluster, engine):
     # Initialize
@@ -36,4 +40,11 @@ def test_attach_partition_with_large_destination(started_cluster, engine):
     node.query("ALTER TABLE db.destination ATTACH PARTITION 0 FROM db.source_2")
     assert node.query("SELECT n FROM db.destination ORDER BY n") == "2\n4\n6\n8\n"
 
+    # Cleanup
+    create_force_drop_flag()
+    node.query("DROP TABLE db.source_1 SYNC")
+    create_force_drop_flag()
+    node.query("DROP TABLE db.source_2 SYNC")
+    create_force_drop_flag()
+    node.query("DROP TABLE db.destination SYNC")
     node.query("DROP DATABASE db")
