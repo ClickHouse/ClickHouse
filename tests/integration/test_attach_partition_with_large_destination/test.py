@@ -35,3 +35,5 @@ def test_attach_partition_with_large_destination(started_cluster, engine):
     # Attach partition when destination partition is larger than max_partition_size_to_drop
     node.query("ALTER TABLE db.destination ATTACH PARTITION 0 FROM db.source_2")
     assert node.query("SELECT n FROM db.destination ORDER BY n") == "2\n4\n6\n8\n"
+
+    node.query("DROP DATABASE db")
