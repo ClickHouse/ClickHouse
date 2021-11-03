@@ -14,10 +14,10 @@
 #include <Interpreters/RewriteCountVariantsVisitor.h>
 #include <Interpreters/MonotonicityCheckVisitor.h>
 #include <Interpreters/ConvertStringsToEnumVisitor.h>
-#include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/RewriteFunctionToSubcolumnVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/GatherFunctionQuantileVisitor.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -67,26 +67,17 @@ const std::unordered_set<String> possibly_injective_function_names
   * Instead, leave `GROUP BY const`.
   * Next, see deleting the constants in the analyzeAggregation method.
   */
-void appendUnusedGroupByColumn(ASTSelectQuery * select_query, const NameSet & source_columns)
+void appendUnusedGroupByColumn(ASTSelectQuery * select_query)
 {
     /// You must insert a constant that is not the name of the column in the table. Such a case is rare, but it happens.
-    /// Also start unused_column integer from source_columns.size() + 1, because lower numbers ([1, source_columns.size()])
+    /// Also start unused_column integer must not intersect with ([1, source_columns.size()])
     /// might be in positional GROUP BY.
-    UInt64 unused_column = source_columns.size() + 1;
-    String unused_column_name = toString(unused_column);
-
-    while (source_columns.count(unused_column_name))
-    {
-        ++unused_column;
-        unused_column_name = toString(unused_column);
-    }
-
     select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::make_shared<ASTExpressionList>());
-    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(UInt64(unused_column)));
+    select_query->groupBy()->children.emplace_back(std::make_shared<ASTLiteral>(Int64(-1)));
 }
 
 /// Eliminates injective function calls and constant expressions from group by statement.
-void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, ContextPtr context)
+void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
 {
     const FunctionFactory & function_factory = FunctionFactory::instance();
 
@@ -191,7 +182,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
     }
 
     if (group_exprs.empty())
-        appendUnusedGroupByColumn(select_query, source_columns);
+        appendUnusedGroupByColumn(select_query);
 }
 
 struct GroupByKeysInfo
@@ -626,6 +617,59 @@ void optimizeFunctionsToSubcolumns(ASTPtr & query, const StorageMetadataPtr & me
     RewriteFunctionToSubcolumnVisitor(data).visit(query);
 }
 
+std::shared_ptr<ASTFunction> getQuantileFuseCandidate(const String & func_name, std::vector<ASTPtr *> & functions)
+{
+    if (functions.size() < 2)
+        return nullptr;
+
+    const auto & common_arguments = (*functions[0])->as<ASTFunction>()->arguments->children;
+    auto func_base = makeASTFunction(GatherFunctionQuantileData::getFusedName(func_name));
+    func_base->arguments->children = common_arguments;
+    func_base->parameters = std::make_shared<ASTExpressionList>();
+
+    for (const auto * ast : functions)
+    {
+        assert(ast && *ast);
+        const auto * func = (*ast)->as<ASTFunction>();
+        assert(func && func->parameters->as<ASTExpressionList>());
+        const ASTs & parameters = func->parameters->as<ASTExpressionList &>().children;
+        if (parameters.size() != 1)
+            return nullptr; /// query is illegal, give up
+        func_base->parameters->children.push_back(parameters[0]);
+    }
+    return func_base;
+}
+
+/// Rewrites multi quantile()() functions with the same arguments to quantiles()()[]
+/// eg:SELECT quantile(0.5)(x), quantile(0.9)(x), quantile(0.95)(x) FROM...
+///    rewrite to : SELECT quantiles(0.5, 0.9, 0.95)(x)[1], quantiles(0.5, 0.9, 0.95)(x)[2], quantiles(0.5, 0.9, 0.95)(x)[3] FROM ...
+void optimizeFuseQuantileFunctions(ASTPtr & query)
+{
+    GatherFunctionQuantileVisitor::Data data{};
+    GatherFunctionQuantileVisitor(data).visit(query);
+    for (auto & candidate : data.fuse_quantile)
+    {
+        String func_name = candidate.first;
+        auto & args_to_functions = candidate.second;
+
+        /// Try to fuse multiply `quantile*` Function to plural
+        for (auto it : args_to_functions.arg_map_function)
+        {
+            std::vector<ASTPtr *> & functions = it.second;
+            auto func_base = getQuantileFuseCandidate(func_name, functions);
+            if (!func_base)
+                continue;
+            for (size_t i = 0; i < functions.size(); ++i)
+            {
+                std::shared_ptr<ASTFunction> ast_new = makeASTFunction("arrayElement", func_base, std::make_shared<ASTLiteral>(i + 1));
+                if (const auto & alias = (*functions[i])->tryGetAlias(); !alias.empty())
+                    ast_new->setAlias(alias);
+                *functions[i] = ast_new;
+            }
+        }
+    }
+}
+
 }
 
 void TreeOptimizer::optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif)
@@ -656,11 +700,8 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
         optimizeAggregationFunctions(query);
 
-    /// Push the predicate expression down to the subqueries.
-    result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_columns, settings).optimize(*select_query);
-
     /// GROUP BY injective function elimination.
-    optimizeGroupBy(select_query, result.source_columns_set, context);
+    optimizeGroupBy(select_query, context);
 
     /// GROUP BY functions of other keys elimination.
     if (settings.optimize_group_by_function_keys)
@@ -723,6 +764,9 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
 
     /// Remove duplicated columns from USING(...).
     optimizeUsing(select_query);
+
+    if (settings.optimize_syntax_fuse_functions)
+        optimizeFuseQuantileFunctions(query);
 }
 
 }

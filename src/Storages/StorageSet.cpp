@@ -4,8 +4,9 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <DataStreams/NativeBlockOutputStream.h>
-#include <DataStreams/NativeBlockInputStream.h>
+#include <Formats/NativeWriter.h>
+#include <Formats/NativeReader.h>
+#include <QueryPipeline/ProfileInfo.h>
 #include <Disks/IDisk.h>
 #include <Common/formatReadable.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -54,7 +55,7 @@ private:
     String backup_file_name;
     std::unique_ptr<WriteBufferFromFileBase> backup_buf;
     CompressedWriteBuffer compressed_backup_buf;
-    NativeBlockOutputStream backup_stream;
+    NativeWriter backup_stream;
     bool persistent;
 };
 
@@ -84,7 +85,7 @@ SetOrJoinSink::SetOrJoinSink(
 void SetOrJoinSink::consume(Chunk chunk)
 {
     /// Sort columns in the block. This is necessary, since Set and Join count on the same column order in different blocks.
-    Block sorted_block = getPort().getHeader().cloneWithColumns(chunk.detachColumns()).sortColumns();
+    Block sorted_block = getHeader().cloneWithColumns(chunk.detachColumns()).sortColumns();
 
     table.insertBlock(sorted_block, getContext());
     if (persistent)
@@ -216,19 +217,20 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
     ContextPtr ctx = nullptr;
     auto backup_buf = disk->readFile(file_path);
     CompressedReadBuffer compressed_backup_buf(*backup_buf);
-    NativeBlockInputStream backup_stream(compressed_backup_buf, 0);
+    NativeReader backup_stream(compressed_backup_buf, 0);
 
-    backup_stream.readPrefix();
-
+    ProfileInfo info;
     while (Block block = backup_stream.read())
+    {
+        info.update(block);
         insertBlock(block, ctx);
+    }
 
     finishInsert();
-    backup_stream.readSuffix();
 
     /// TODO Add speed, compressed bytes, data volume in memory, compression ratio ... Generalize all statistics logging in project.
     LOG_INFO(&Poco::Logger::get("StorageSetOrJoinBase"), "Loaded from backup file {}. {} rows, {}. State has {} unique rows.",
-        file_path, backup_stream.getProfileInfo().rows, ReadableSize(backup_stream.getProfileInfo().bytes), getSize(ctx));
+        file_path, info.rows, ReadableSize(info.bytes), getSize(ctx));
 }
 
 

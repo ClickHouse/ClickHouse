@@ -2,7 +2,7 @@
 
 #include <Access/IAccessEntity.h>
 #include <Access/RolesOrUsersSet.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/lexical_cast.hpp>
 #include <chrono>

@@ -21,7 +21,7 @@ inline char hexDigitLowercase(unsigned char c)
 #include <cstring>
 #include <cstddef>
 
-#include <common/types.h>
+#include <base/types.h>
 
 
 /// Maps 0..255 to 00..FF or 00..ff correspondingly

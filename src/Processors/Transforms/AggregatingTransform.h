@@ -24,8 +24,8 @@ public:
     Int32 bucket_num = -1;
 };
 
-class IBlockInputStream;
-using BlockInputStreamPtr = std::shared_ptr<IBlockInputStream>;
+using AggregatorList = std::list<Aggregator>;
+using AggregatorListPtr = std::shared_ptr<AggregatorList>;
 
 using AggregatorList = std::list<Aggregator>;
 using AggregatorListPtr = std::shared_ptr<AggregatorList>;

@@ -1,7 +1,7 @@
-#  docker build -t yandex/clickhouse-fasttest .
-FROM ubuntu:20.04
+#  docker build -t clickhouse/fasttest .
+FROM clickhouse/test-util
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
 
 RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
 

@@ -1,5 +1,5 @@
 #include <Access/MemoryAccessStorage.h>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 #include <boost/container/flat_set.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>

@@ -41,6 +41,25 @@ message ExternalTable {
    map<string, string> settings = 5;
 }
 
+enum CompressionAlgorithm {
+   NO_COMPRESSION = 0;
+   DEFLATE = 1;
+   GZIP = 2;
+   STREAM_GZIP = 3;
+}
+
+enum CompressionLevel {
+   COMPRESSION_NONE = 0;
+   COMPRESSION_LOW = 1;
+   COMPRESSION_MEDIUM = 2;
+   COMPRESSION_HIGH = 3;
+}
+
+message Compression {
+   CompressionAlgorithm algorithm = 1;
+   CompressionLevel level = 2;
+}
+
 // Information about a query which a client sends to a ClickHouse server.
 // The first QueryInfo can set any of the following fields. Extra QueryInfos only add extra data.
 // In extra QueryInfos only `input_data`, `external_tables`, `next_query_info` and `cancel` fields can be set.
@@ -78,6 +97,10 @@ message QueryInfo {
    // If true there will be at least one more QueryInfo in the input stream.
    // `next_query_info` is allowed to be set only if a method with streaming input (i.e. ExecuteQueryWithStreamInput() or ExecuteQueryWithStreamIO()) is used.
    bool next_query_info = 16;
+
+   /// Controls how a ClickHouse server will compress query execution results before sending back to the client.
+   /// If not set the compression settings from the configuration file will be used.
+   Compression result_compression = 17;
 }
 
 enum LogsLevel {

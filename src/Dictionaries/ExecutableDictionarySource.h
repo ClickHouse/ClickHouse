@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Core/Block.h>
 #include <Interpreters/Context.h>
@@ -19,13 +19,15 @@ public:
 
     struct Configuration
     {
-        const std::string command;
-        const std::string format;
-        const std::string update_field;
-        const UInt64 update_lag;
+        std::string command;
+        std::string format;
+        std::string update_field;
+        UInt64 update_lag;
         /// Implicit key means that the source script will return only values,
         /// and the correspondence to the requested keys is determined implicitly - by the order of rows in the result.
-        const bool implicit_key;
+        bool implicit_key;
+        /// Send number_of_rows\n before sending chunk to process
+        bool send_chunk_header;
     };
 
     ExecutableDictionarySource(

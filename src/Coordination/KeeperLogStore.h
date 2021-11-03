@@ -1,10 +1,10 @@
 #pragma once
-#include <libnuraft/log_store.hxx> // Y_IGNORE
+#include <libnuraft/log_store.hxx>
 #include <map>
 #include <mutex>
 #include <Core/Types.h>
 #include <Coordination/Changelog.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -13,7 +13,7 @@ namespace DB
 class KeeperLogStore : public nuraft::log_store
 {
 public:
-    KeeperLogStore(const std::string & changelogs_path, uint64_t rotate_interval_, bool force_sync_);
+    KeeperLogStore(const std::string & changelogs_path, uint64_t rotate_interval_, bool force_sync_, bool compress_logs_);
 
     /// Read log storage from filesystem starting from last_commited_log_index
     void init(uint64_t last_commited_log_index, uint64_t logs_to_keep);
@@ -57,6 +57,9 @@ public:
 
     /// Flush batch of appended entries
     void end_of_append_batch(uint64_t start_index, uint64_t count) override;
+
+    /// Get entry with latest config in logstore
+    nuraft::ptr<nuraft::log_entry> getLatestConfigChange() const;
 
 private:
     mutable std::mutex changelog_lock;

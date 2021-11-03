@@ -9,9 +9,9 @@ import sys
 SCRIPT_PATH = os.path.realpath(__file__)
 
 IMAGE_MAP = {
-    "deb": "yandex/clickhouse-deb-builder",
-    "binary": "yandex/clickhouse-binary-builder",
-    "unbundled": "yandex/clickhouse-unbundled-builder"
+    "deb": "clickhouse/deb-builder",
+    "binary": "clickhouse/binary-builder",
+    "unbundled": "clickhouse/unbundled-builder"
 }
 
 def check_image_exists_locally(image_name):
@@ -61,6 +61,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     DARWIN_ARM_SUFFIX = "-darwin-aarch64"
     ARM_SUFFIX = "-aarch64"
     FREEBSD_SUFFIX = "-freebsd"
+    PPC_SUFFIX = '-ppc64le'
 
     result = []
     cmake_flags = ['$CMAKE_FLAGS', '-DADD_GDB_INDEX_FOR_GOLD=1']
@@ -69,13 +70,14 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
     is_cross_darwin_arm = compiler.endswith(DARWIN_ARM_SUFFIX)
     is_cross_arm = compiler.endswith(ARM_SUFFIX)
+    is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
-    is_cross_compile = is_cross_darwin or is_cross_darwin_arm or is_cross_arm or is_cross_freebsd
+    is_cross_compile = is_cross_darwin or is_cross_darwin_arm or is_cross_arm or is_cross_freebsd or is_cross_ppc
 
     # Explicitly use LLD with Clang by default.
     # Don't force linker for cross-compilation.
     if is_clang and not is_cross_compile:
-        cmake_flags.append("-DLINKER_NAME=lld")
+        cmake_flags.append("-DLINKER_NAME=ld.lld")
 
     if is_cross_darwin:
         cc = compiler[:-len(DARWIN_SUFFIX)]
@@ -97,6 +99,9 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     elif is_cross_freebsd:
         cc = compiler[:-len(FREEBSD_SUFFIX)]
         cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/freebsd/toolchain-x86_64.cmake")
+    elif is_cross_ppc:
+        cc = compiler[:-len(PPC_SUFFIX)]
+        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-ppc64le.cmake")
     else:
         cc = compiler
 
@@ -204,7 +209,9 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
     parser.add_argument("--compiler", choices=("clang-11", "clang-11-darwin", "clang-11-darwin-aarch64", "clang-11-aarch64",
-                                               "clang-11-freebsd", "gcc-10"), default="clang-11")
+                                               "clang-12", "clang-12-darwin", "clang-12-darwin-aarch64", "clang-12-aarch64",
+                                               "clang-13", "clang-13-darwin", "clang-13-darwin-aarch64", "clang-13-aarch64", "clang-13-ppc64le",
+                                               "clang-11-freebsd", "clang-12-freebsd", "clang-13-freebsd", "gcc-11"), default="clang-13")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
     parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--split-binary", action="store_true")

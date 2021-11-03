@@ -5,7 +5,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
-#include <common/errnoToString.h>
+#include <Common/MemorySanitizer.h>
+#include <base/errnoToString.h>
 #include <Poco/Event.h>
 #include <future>
 #include <unistd.h>
@@ -151,6 +152,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             else
             {
                 bytes_read += res;
+                __msan_unpoison(request.buf, res);
             }
         }
 

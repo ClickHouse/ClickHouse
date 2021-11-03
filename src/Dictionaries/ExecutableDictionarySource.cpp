@@ -1,11 +1,11 @@
 #include "ExecutableDictionarySource.h"
 
-#include <common/logger_useful.h>
-#include <common/LocalDateTime.h>
+#include <base/logger_useful.h>
+#include <base/LocalDateTime.h>
 #include <Common/ShellCommand.h>
 
-#include <DataStreams/ShellCommandSource.h>
-#include <DataStreams/formatBlock.h>
+#include <Processors/Sources/ShellCommandSource.h>
+#include <Formats/formatBlock.h>
 
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
@@ -72,7 +72,7 @@ Pipe ExecutableDictionarySource::loadAll()
     ShellCommand::Config config(configuration.command);
     auto process = ShellCommand::execute(config);
 
-    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), log));
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process)));
     return pipe;
 }
 
@@ -91,7 +91,7 @@ Pipe ExecutableDictionarySource::loadUpdatedAll()
     LOG_TRACE(log, "loadUpdatedAll {}", command_with_update_field);
     ShellCommand::Config config(command_with_update_field);
     auto process = ShellCommand::execute(config);
-    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), log));
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process)));
     return pipe;
 }
 
@@ -120,13 +120,20 @@ Pipe ExecutableDictionarySource::getStreamForBlock(const Block & block)
     ShellCommandSource::SendDataTask task = {[process_in, block, this]()
     {
         auto & out = *process_in;
-        auto output_stream = context->getOutputStream(configuration.format, out, block.cloneEmpty());
-        formatBlock(output_stream, block);
+
+        if (configuration.send_chunk_header)
+        {
+            writeText(block.rows(), out);
+            writeChar('\n', out);
+        }
+
+        auto output_format = context->getOutputFormat(configuration.format, out, block.cloneEmpty());
+        formatBlock(output_format, block);
         out.close();
     }};
     std::vector<ShellCommandSource::SendDataTask> tasks = {std::move(task)};
 
-    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), log, std::move(tasks)));
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, configuration.format, sample_block, std::move(process), std::move(tasks)));
 
     if (configuration.implicit_key)
         pipe.addTransform(std::make_shared<TransformWithAdditionalColumns>(block, pipe.getHeader()));
@@ -188,7 +195,8 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             .format = config.getString(settings_config_prefix + ".format"),
             .update_field = config.getString(settings_config_prefix + ".update_field", ""),
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false)
+            .implicit_key = config.getBool(settings_config_prefix + ".implicit_key", false),
+            .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false)
         };
 
         return std::make_unique<ExecutableDictionarySource>(dict_struct, configuration, sample_block, context);

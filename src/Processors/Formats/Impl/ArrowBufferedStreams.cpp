@@ -1,3 +1,7 @@
+#ifdef HAS_RESERVED_IDENTIFIER
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 #include "ArrowBufferedStreams.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
@@ -9,7 +13,7 @@
 #include <arrow/buffer.h>
 #include <arrow/io/memory.h>
 #include <arrow/result.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/Stopwatch.h>
 #include <Poco/Logger.h>
 

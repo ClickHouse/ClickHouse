@@ -132,4 +132,4 @@ SELECT * FROM mysql_db.mysql_table
 └────────┴───────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/database_engines/mysql/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/database_engines/mysql/) <!--hide-->

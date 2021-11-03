@@ -1,6 +1,7 @@
+#include <mutex>
 #include <Common/ThreadStatus.h>
 
-#include <DataStreams/PushingToViewsBlockOutputStream.h>
+#include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
@@ -14,7 +15,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/TraceCollector.h>
-#include <common/errnoToString.h>
+#include <base/errnoToString.h>
 
 #if defined(OS_LINUX)
 #   include <Common/hasLinuxCapability.h>
@@ -123,10 +124,12 @@ void ThreadStatus::setupState(const ThreadGroupStatusPtr & thread_group_)
 
         /// NOTE: thread may be attached multiple times if it is reused from a thread pool.
         thread_group->thread_ids.emplace_back(thread_id);
+        thread_group->threads.insert(this);
 
         logs_queue_ptr = thread_group->logs_queue_ptr;
         fatal_error_callback = thread_group->fatal_error_callback;
         query_context = thread_group->query_context;
+        profile_queue_ptr = thread_group->profile_queue_ptr;
 
         if (global_context.expired())
             global_context = thread_group->global_context;
@@ -397,6 +400,10 @@ void ThreadStatus::detachQuery(bool exit_if_already_detached, bool thread_exits)
     finalizePerformanceCounters();
 
     /// Detach from thread group
+    {
+        std::lock_guard guard(thread_group->mutex);
+        thread_group->threads.erase(this);
+    }
     performance_counters.setParent(&ProfileEvents::global_counters);
     memory_tracker.reset();
 
@@ -471,7 +478,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
         if (query_context_ptr->getSettingsRef().log_profile_events != 0)
         {
             /// NOTE: Here we are in the same thread, so we can make memcpy()
-            elem.profile_counters = std::make_shared<ProfileEvents::Counters>(performance_counters.getPartiallyAtomicSnapshot());
+            elem.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(performance_counters.getPartiallyAtomicSnapshot());
         }
     }
 
@@ -500,19 +507,19 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
 
     QueryViewsLogElement element;
 
-    element.event_time = time_in_seconds(vinfo.runtime_stats.event_time);
-    element.event_time_microseconds = time_in_microseconds(vinfo.runtime_stats.event_time);
-    element.view_duration_ms = vinfo.runtime_stats.elapsed_ms;
+    element.event_time = time_in_seconds(vinfo.runtime_stats->event_time);
+    element.event_time_microseconds = time_in_microseconds(vinfo.runtime_stats->event_time);
+    element.view_duration_ms = vinfo.runtime_stats->elapsed_ms;
 
     element.initial_query_id = query_id;
     element.view_name = vinfo.table_id.getFullTableName();
     element.view_uuid = vinfo.table_id.uuid;
-    element.view_type = vinfo.runtime_stats.type;
+    element.view_type = vinfo.runtime_stats->type;
     if (vinfo.query)
         element.view_query = getCleanQueryAst(vinfo.query, query_context_ptr);
-    element.view_target = vinfo.runtime_stats.target_name;
+    element.view_target = vinfo.runtime_stats->target_name;
 
-    auto events = std::make_shared<ProfileEvents::Counters>(performance_counters.getPartiallyAtomicSnapshot());
+    auto events = std::make_shared<ProfileEvents::Counters::Snapshot>(performance_counters.getPartiallyAtomicSnapshot());
     element.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
     element.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
     element.written_rows = (*events)[ProfileEvents::InsertedRows];
@@ -523,7 +530,7 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
         element.profile_counters = events;
     }
 
-    element.status = vinfo.runtime_stats.event_status;
+    element.status = vinfo.runtime_stats->event_status;
     element.exception_code = 0;
     if (vinfo.exception)
     {

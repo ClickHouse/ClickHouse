@@ -90,6 +90,8 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         size_t & total_granules,
         size_t & granules_dropped,
+        MarkCache * mark_cache,
+        UncompressedCache * uncompressed_cache,
         Poco::Logger * log);
 
     struct PartFilterCounters

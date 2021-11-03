@@ -7,7 +7,7 @@
 #include <Poco/Dynamic/Var.h>
 #include <Poco/DigestStream.h>
 #include <Poco/MD5Engine.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include "Common/Exception.h"
 #include <fstream>
 #include <unistd.h>

@@ -1,13 +1,11 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_EMBEDDED_COMPILER
 
 #include <optional>
 #include <stack>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
@@ -239,7 +237,9 @@ public:
         const IDataType * type_ptr = &type;
         Field left_mut = left;
         Field right_mut = right;
-        Monotonicity result(true, true, true);
+
+        Monotonicity result = { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
+
         /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
         for (size_t i = 0; i < nested_functions.size(); ++i)
         {

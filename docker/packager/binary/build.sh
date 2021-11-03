@@ -4,11 +4,7 @@ set -x -e
 
 mkdir -p build/cmake/toolchain/darwin-x86_64
 tar xJf MacOSX11.0.sdk.tar.xz -C build/cmake/toolchain/darwin-x86_64 --strip-components=1
-
 ln -sf darwin-x86_64 build/cmake/toolchain/darwin-aarch64
-
-mkdir -p build/cmake/toolchain/linux-aarch64
-tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C build/cmake/toolchain/linux-aarch64 --strip-components=1
 
 mkdir -p build/cmake/toolchain/freebsd-x86_64
 tar xJf freebsd-11.3-toolchain.tar.xz -C build/cmake/toolchain/freebsd-x86_64 --strip-components=1
@@ -23,6 +19,7 @@ cd build/build_docker
 rm -f CMakeCache.txt
 # Read cmake arguments into array (possibly empty)
 read -ra CMAKE_FLAGS <<< "${CMAKE_FLAGS:-}"
+env
 cmake --debug-trycompile --verbose=1 -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUILD_TYPE" "-DSANITIZE=$SANITIZER" -DENABLE_CHECK_HEAVY_BUILDS=1 "${CMAKE_FLAGS[@]}" ..
 
 ccache --show-config ||:

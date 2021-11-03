@@ -1,12 +1,12 @@
 #include <Access/RowPolicyCache.h>
 #include <Access/EnabledRowPolicies.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
 #include <Core/Defines.h>
 
@@ -92,8 +92,8 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
 }
 
 
-RowPolicyCache::RowPolicyCache(const AccessControlManager & access_control_manager_)
-    : access_control_manager(access_control_manager_)
+RowPolicyCache::RowPolicyCache(const AccessControl & access_control_)
+    : access_control(access_control_)
 {
 }
 
@@ -131,7 +131,7 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
         return;
     all_policies_read = true;
 
-    subscription = access_control_manager.subscribeForChanges<RowPolicy>(
+    subscription = access_control.subscribeForChanges<RowPolicy>(
         [&](const UUID & id, const AccessEntityPtr & entity)
         {
             if (entity)
@@ -140,9 +140,9 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
                 rowPolicyRemoved(id);
         });
 
-    for (const UUID & id : access_control_manager.findAll<RowPolicy>())
+    for (const UUID & id : access_control.findAll<RowPolicy>())
     {
-        auto quota = access_control_manager.tryRead<RowPolicy>(id);
+        auto quota = access_control.tryRead<RowPolicy>(id);
         if (quota)
             all_policies.emplace(id, PolicyInfo(quota));
     }

@@ -1,3 +1,5 @@
+-- Tags: distributed
+
 drop table if exists t;
 drop table if exists td1;
 drop table if exists td2;

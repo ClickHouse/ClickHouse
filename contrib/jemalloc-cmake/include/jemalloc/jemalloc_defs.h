@@ -18,8 +18,10 @@
  * Define overrides for non-standard allocator-related functions if they are
  * present on the system.
  */
-#define JEMALLOC_OVERRIDE_MEMALIGN
-#define JEMALLOC_OVERRIDE_VALLOC
+#if !defined(USE_MUSL)
+    #define JEMALLOC_OVERRIDE_MEMALIGN
+    #define JEMALLOC_OVERRIDE_VALLOC
+#endif
 
 /*
  * At least Linux omits the "const" in:

@@ -51,4 +51,4 @@ OLAPServer worked well for non-aggregated data, but it had many restrictions tha
 
 The initial goal for ClickHouse was to remove the limitations of OLAPServer and solve the problem of working with non-aggregated data for all reports, but over the years, it has grown into a general-purpose database management system suitable for a wide range of analytical tasks.
 
-[Original article](https://clickhouse.tech/docs/en/introduction/history/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/introduction/history/) <!--hide-->
