@@ -132,6 +132,7 @@ public:
 
     const NamesAndTypesList & getColumns() const { return columns; }
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
+    SerializationInfoByName & getSerializationInfos() { return serialization_infos; }
     SerializationPtr getSerialization(const NameAndTypePair & column) const;
 
     /// Throws an exception if part is not stored in on-disk format.

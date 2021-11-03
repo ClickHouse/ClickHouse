@@ -49,6 +49,7 @@ private:
     void finalizePartOnDisk(
             const MergeTreeData::MutableDataPartPtr & new_part,
             NamesAndTypesList & part_columns,
+            SerializationInfoByName & serialization_infos,
             MergeTreeData::DataPart::Checksums & checksums,
             bool sync);
 

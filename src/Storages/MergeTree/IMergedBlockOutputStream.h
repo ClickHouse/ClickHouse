@@ -38,6 +38,7 @@ protected:
     static NameSet removeEmptyColumnsFromPart(
         const MergeTreeDataPartPtr & data_part,
         NamesAndTypesList & columns,
+        SerializationInfoByName & serialization_infos,
         MergeTreeData::DataPart::Checksums & checksums);
 
     const MergeTreeData & storage;

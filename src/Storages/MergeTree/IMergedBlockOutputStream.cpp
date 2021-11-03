@@ -31,6 +31,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const MergeTreeDataPartPtr & data_part,
     NamesAndTypesList & columns,
+    SerializationInfoByName & serialization_infos,
     MergeTreeData::DataPart::Checksums & checksums)
 {
     const NameSet & empty_columns = data_part->expired_columns;
@@ -71,6 +72,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         };
 
         data_part->getSerialization(*column_with_type)->enumerateStreams(callback);
+        serialization_infos.erase(column_name);
     }
 
     /// Remove files on disk and checksums
