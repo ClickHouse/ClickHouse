@@ -634,7 +634,7 @@ create view query_display_names as select * from
 
 create view partial_query_times as select * from
     file('analyze/partial-query-times.tsv', TSVWithNamesAndTypes,
-        'test text, query_index int, time_stddev float, time_median float')
+        'test text, query_index int, time_stddev float, time_median double')
     ;
 
 -- Report for partial queries that we could only run on the new server (e.g.

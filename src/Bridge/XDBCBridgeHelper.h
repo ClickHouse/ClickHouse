@@ -3,7 +3,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Interpreters/Context.h>
-#include <Access/AccessType.h>
+#include <Access/Common/AccessType.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequest.h>

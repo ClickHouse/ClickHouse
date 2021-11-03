@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <iomanip>
+#include <string_view>
 #include <filesystem>
 
 #include <base/argsToConfig.h>
@@ -52,6 +53,7 @@
 #include <Client/InternalTextLogs.h>
 
 namespace fs = std::filesystem;
+using namespace std::literals;
 
 
 namespace DB
@@ -1488,7 +1490,7 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
     {
         const char * arg = argv[arg_num];
 
-        if (0 == strcmp(arg, "--external"))
+        if (arg == "--external"sv)
         {
             in_external_group = true;
             external_tables_arguments.emplace_back(Arguments{""});
@@ -1503,8 +1505,8 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
         }
         /// Options with value after whitespace.
         else if (in_external_group
-            && (0 == strcmp(arg, "--file") || 0 == strcmp(arg, "--name") || 0 == strcmp(arg, "--format")
-                || 0 == strcmp(arg, "--structure") || 0 == strcmp(arg, "--types")))
+            && (arg == "--file"sv || arg == "--name"sv || arg == "--format"sv
+                || arg == "--structure"sv || arg == "--types"sv))
         {
             if (arg_num + 1 < argc)
             {
@@ -1610,8 +1612,12 @@ void ClientBase::init(int argc, char ** argv)
 
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
         ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
+
         ("echo", "in batch mode, print query before execution")
         ("verbose", "print query and other debugging info")
+
+        ("log-level", po::value<std::string>(), "log level")
+        ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
 
         ("multiline,m", "multiline")
         ("multiquery,n", "multiquery")
@@ -1699,6 +1705,8 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("verbose", true);
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
+    if (options.count("server_logs_file"))
+        server_logs_file = options["server_logs_file"].as<std::string>();
     if (options.count("hardware-utilization"))
         progress_indication.print_hardware_utilization = true;
 
