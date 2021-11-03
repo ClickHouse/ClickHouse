@@ -31,10 +31,10 @@ def xml_parse_file(filename):
 def create_default_config(filename):
     contents = ""
     if "kerberos_users.xml" in filename:
-        contents = "<clickhouse><users><kerberos_user><kerberos><realm>EXAMPLE.COM" \
-               "</realm></kerberos></kerberos_user></users></clickhouse>"
+        contents = "<yandex><users><kerberos_user><kerberos><realm>EXAMPLE.COM" \
+               "</realm></kerberos></kerberos_user></users></yandex>"
     elif "kerberos.xml" in filename:
-        contents = "<clickhouse><kerberos><realm>EXAMPLE.COM</realm></kerberos></clickhouse>"
+        contents = "<yandex><kerberos><realm>EXAMPLE.COM</realm></kerberos></yandex>"
 
     with open(filename, "w") as f:
         f.write(contents)
@@ -104,7 +104,7 @@ def temp_erase(self, node, filename=None):
     try:
         with Then("I overwrite file to be dummy"):
             with open(filename, 'w') as f:
-                f.write("<clickhouse></clickhouse>\n")
+                f.write("<yandex></yandex>\n")
             node.restart()
             yield
     finally:

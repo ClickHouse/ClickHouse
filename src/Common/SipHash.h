@@ -13,8 +13,8 @@
   * (~ 700 MB/sec, 15 million strings per second)
   */
 
-#include <base/types.h>
-#include <base/unaligned.h>
+#include <common/types.h>
+#include <common/unaligned.h>
 #include <string>
 #include <type_traits>
 #include <Core/Defines.h>

@@ -30,15 +30,34 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+const char * ActionsDAG::typeToString(ActionsDAG::ActionType type)
+{
+    switch (type)
+    {
+        case ActionType::INPUT:
+            return "Input";
+        case ActionType::COLUMN:
+            return "Column";
+        case ActionType::ALIAS:
+            return "Alias";
+        case ActionType::ARRAY_JOIN:
+            return "ArrayJoin";
+        case ActionType::FUNCTION:
+            return "Function";
+    }
+
+    __builtin_unreachable();
+}
+
 void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
 {
-    map.add("Node Type", magic_enum::enum_name(type));
+    map.add("Node Type", ActionsDAG::typeToString(type));
 
     if (result_type)
         map.add("Result Type", result_type->getName());
 
     if (!result_name.empty())
-        map.add("Result Type", magic_enum::enum_name(type));
+        map.add("Result Type", ActionsDAG::typeToString(type));
 
     if (column)
         map.add("Column", column->getName());
@@ -325,7 +344,7 @@ std::string ActionsDAG::dumpNames() const
     return out.str();
 }
 
-void ActionsDAG::removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs, bool allow_constant_folding)
+void ActionsDAG::removeUnusedActions(const NameSet & required_names)
 {
     NodeRawConstPtrs required_nodes;
     required_nodes.reserve(required_names.size());
@@ -349,10 +368,10 @@ void ActionsDAG::removeUnusedActions(const NameSet & required_names, bool allow_
     }
 
     index.swap(required_nodes);
-    removeUnusedActions(allow_remove_inputs, allow_constant_folding);
+    removeUnusedActions();
 }
 
-void ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_remove_inputs, bool allow_constant_folding)
+void ActionsDAG::removeUnusedActions(const Names & required_names)
 {
     NodeRawConstPtrs required_nodes;
     required_nodes.reserve(required_names.size());
@@ -372,10 +391,10 @@ void ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_re
     }
 
     index.swap(required_nodes);
-    removeUnusedActions(allow_remove_inputs, allow_constant_folding);
+    removeUnusedActions();
 }
 
-void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding)
+void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
 {
     std::unordered_set<const Node *> visited_nodes;
     std::stack<Node *> stack;
@@ -406,9 +425,9 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_consta
         auto * node = stack.top();
         stack.pop();
 
-        /// Constant folding.
-        if (allow_constant_folding && !node->children.empty() && node->column && isColumnConst(*node->column))
+        if (!node->children.empty() && node->column && isColumnConst(*node->column))
         {
+            /// Constant folding.
             node->type = ActionsDAG::ActionType::COLUMN;
 
             for (const auto & child : node->children)

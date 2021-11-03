@@ -1,5 +1,3 @@
--- Tags: distributed
-
 drop table if exists merge_distributed;
 drop table if exists merge_distributed1;
 

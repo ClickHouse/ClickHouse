@@ -26,4 +26,4 @@ machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
 -   `is_in_primary_key` (UInt8) — Flag that indicates whether the column is in the primary key expression.
 -   `is_in_sampling_key` (UInt8) — Flag that indicates whether the column is in the sampling key expression.
 
-[原文](https://clickhouse.com/docs/zh/operations/system-tables/columns) <!--hide-->
+[原文](https://clickhouse.tech/docs/zh/operations/system-tables/columns) <!--hide-->
