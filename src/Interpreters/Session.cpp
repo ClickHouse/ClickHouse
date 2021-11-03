@@ -1,6 +1,6 @@
 #include <Interpreters/Session.h>
 
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
@@ -273,7 +273,7 @@ Session::~Session()
 
 AuthenticationType Session::getAuthenticationType(const String & user_name) const
 {
-    return global_context->getAccessControlManager().read<User>(user_name)->auth_data.getType();
+    return global_context->getAccessControl().read<User>(user_name)->auth_data.getType();
 }
 
 AuthenticationType Session::getAuthenticationTypeOrLogInFailure(const String & user_name) const
@@ -310,7 +310,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        user_id = global_context->getAccessControlManager().login(credentials_, address.host());
+        user_id = global_context->getAccessControl().login(credentials_, address.host());
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), user_id ? toString(*user_id) : "<EMPTY>");
     }

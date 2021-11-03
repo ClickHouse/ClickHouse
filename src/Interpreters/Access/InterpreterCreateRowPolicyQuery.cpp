@@ -3,7 +3,7 @@
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/formatAST.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -44,7 +44,7 @@ namespace
 BlockIO InterpreterCreateRowPolicyQuery::execute()
 {
     auto & query = query_ptr->as<ASTCreateRowPolicyQuery &>();
-    auto & access_control = getContext()->getAccessControlManager();
+    auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(query.alter ? AccessType::ALTER_ROW_POLICY : AccessType::CREATE_ROW_POLICY);
 
     if (!query.cluster.empty())

@@ -9,6 +9,7 @@ null
 
 
 
+"bar"
 --JSON_QUERY--
 [{"hello":1}]
 [1]
