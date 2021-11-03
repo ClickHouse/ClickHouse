@@ -66,13 +66,11 @@ Types of sources (`source_type`):
 -   DBMS
     -   [ODBC](#dicts-external_dicts_dict_sources-odbc)
     -   [MySQL](#dicts-external_dicts_dict_sources-mysql)
-    -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
     -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
     -   [Cassandra](#dicts-external_dicts_dict_sources-cassandra)
     -   [PostgreSQL](#dicts-external_dicts_dict_sources-postgresql)
-    -   [JDBC](#dicts-external_dicts_dict_sources-jdbc)
 
 ## Local File {#dicts-external_dicts_dict_sources-local_file}
 
@@ -210,45 +208,6 @@ Setting fields:
 -   `value` – Value set for a specific identifiant name.
 
 When creating a dictionary using the DDL command (`CREATE DICTIONARY ...`) remote hosts for HTTP dictionaries are checked against the contents of `remote_url_allow_hosts` section from config to prevent database users to access arbitrary HTTP server.
-
-## ODBC {#dicts-external_dicts_dict_sources-odbc}
-
-You can use this method to connect any database that has an ODBC driver.
-
-Example of settings:
-
-``` xml
-<source>
-    <odbc>
-        <db>DatabaseName</db>
-        <table>ShemaName.TableName</table>
-        <connection_string>DSN=some_parameters</connection_string>
-        <invalidate_query>SQL_QUERY</invalidate_query>
-    </odbc>
-</source>
-```
-
-or
-
-``` sql
-SOURCE(ODBC(
-    db 'DatabaseName'
-    table 'SchemaName.TableName'
-    connection_string 'DSN=some_parameters'
-    invalidate_query 'SQL_QUERY'
-))
-```
-
-Setting fields:
-
--   `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
--   `table` – Name of the table and schema if exists.
--   `connection_string` – Connection string.
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
-
-ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
-
-If you have a problems with encodings when using Oracle, see the corresponding [F.A.Q.](../../../faq/integration/oracle-odbc.md) item.
 
 ### Known Vulnerability of the ODBC Dictionary Functionality {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
@@ -465,6 +424,48 @@ LIFETIME(MIN 300 MAX 360)
 
 ## DBMS {#dbms}
 
+### ODBC {#dicts-external_dicts_dict_sources-odbc}
+
+You can use this method to connect any database that has an ODBC driver.
+
+Example of settings:
+
+``` xml
+<source>
+    <odbc>
+        <db>DatabaseName</db>
+        <table>ShemaName.TableName</table>
+        <connection_string>DSN=some_parameters</connection_string>
+        <invalidate_query>SQL_QUERY</invalidate_query>
+        <query>SELECT id, value_1, value_2 FROM ShemaName.TableName</query>
+    </odbc>
+</source>
+```
+
+or
+
+``` sql
+SOURCE(ODBC(
+    db 'DatabaseName'
+    table 'SchemaName.TableName'
+    connection_string 'DSN=some_parameters'
+    invalidate_query 'SQL_QUERY'
+    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
+))
+```
+
+Setting fields:
+
+-   `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
+-   `table` – Name of the table and schema if exists.
+-   `connection_string` – Connection string.
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
+-   `query` – The custom query. Optional parameter.
+
+ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
+
+If you have a problems with encodings when using Oracle, see the corresponding [F.A.Q.](../../../faq/integration/oracle-odbc.md) item.
+
 ### Mysql {#dicts-external_dicts_dict_sources-mysql}
 
 Example of settings:
@@ -487,8 +488,8 @@ Example of settings:
       <table>table_name</table>
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
-	  <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
       <fail_on_connection_loss>true</fail_on_connection_loss>
+      <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
   </mysql>
 </source>
 ```
@@ -506,8 +507,8 @@ SOURCE(MYSQL(
     table 'table_name'
     where 'id=10'
     invalidate_query 'SQL_QUERY'
-	query 'SELECT id, value_1, value_2 FROM db_name.table_name'
     fail_on_connection_loss 'true'
+    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
 ))
 ```
 
@@ -532,9 +533,9 @@ Setting fields:
 
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 
--   `query` – The custom query. Optional parameter.
-
 -   `fail_on_connection_loss` – The configuration parameter that controls behavior of the server on connection loss. If `true`, an exception is thrown immediately if the connection between client and server was lost. If `false`, the ClickHouse server retries to execute the query three times before throwing an exception. Note that retrying leads to increased response times. Default value: `false`.
+
+-   `query` – The custom query. Optional parameter.
 
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
 
@@ -783,52 +784,5 @@ Setting fields:
 -   `db` – Name of the database.
 -   `table` – Name of the table.
 -   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL, for example, `id > 10 AND id < 20`. Optional parameter.
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
--   `query` – The custom query. Optional parameter.
-
-### JDBC {#dicts-external_dicts_dict_sources-jdbc}
-
-Example of settings:
-
-``` xml
-<source>
-  <jdbc>
-      <port>5432</port>
-      <user>clickhouse</user>
-      <password>qwerty</password>
-      <db>db_name</db>
-      <table>table_name</table>
-      <where>id=10</where>
-      <invalidate_query>SQL_QUERY</invalidate_query>
-      <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
-  </jdbc>
-</source>
-```
-
-or
-
-``` sql
-SOURCE(JDBC(
-    port 5432
-    host 'jdbc-hostname'
-    user 'jdbc_user'
-    password 'jdbc_password'
-    db 'db_name'
-    table 'table_name'
-    where 'id=10'
-    invalidate_query 'SQL_QUERY'
-    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
-))
-```
-
-Setting fields:
-
--   `host` – The host on the JDBC server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
--   `port` – The port on the JDBC server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
--   `user` – Name of the JDBC user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
--   `password` – Password of the JDBC user. You can specify it for all replicas, or for each one individually (inside `<replica>`).
--   `db` – Name of the database.
--   `table` – Name of the table.
--   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in JDBC, for example, `id > 10 AND id < 20`. Optional parameter.
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 -   `query` – The custom query. Optional parameter.
