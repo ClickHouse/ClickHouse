@@ -27,7 +27,7 @@ enum class AuthenticationType
     /// Kerberos authentication performed through GSS-API negotiation loop.
     KERBEROS,
 
-    MAX_TYPE,
+    MAX,
 };
 
 struct AuthenticationTypeInfo
@@ -36,6 +36,11 @@ struct AuthenticationTypeInfo
     const String name; /// Lowercased with underscores, e.g. "sha256_password".
     static const AuthenticationTypeInfo & get(AuthenticationType type_);
 };
+
+inline String toString(AuthenticationType type_)
+{
+    return AuthenticationTypeInfo::get(type_).raw_name;
+}
 
 
 /// Stores data for checking password when a user logins.
@@ -79,7 +84,7 @@ public:
 
     struct Util
     {
-        static Digest encodePlainText(const std::string_view & text) { return Digest(text.data(), text.data() + text.size()); }
+        static Digest stringToDigest(const std::string_view & text) { return Digest(text.data(), text.data() + text.size()); }
         static Digest encodeSHA256(const std::string_view & text);
         static Digest encodeSHA1(const std::string_view & text);
         static Digest encodeSHA1(const Digest & text) { return encodeSHA1(std::string_view{reinterpret_cast<const char *>(text.data()), text.size()}); }
@@ -93,11 +98,5 @@ private:
     String ldap_server_name;
     String kerberos_realm;
 };
-
-
-inline String toString(AuthenticationType type_)
-{
-    return AuthenticationTypeInfo::get(type_).raw_name;
-}
 
 }
