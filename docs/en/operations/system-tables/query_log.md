@@ -50,7 +50,7 @@ Columns:
 -   `memory_usage` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Memory consumption by the query.
 -   `current_database` ([String](../../sql-reference/data-types/string.md)) — Name of the current database.
 -   `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
--   `formatted_query` ([String](../../sql-reference/data-types/string.md)) — Formatted_query string.
+-   `formatted_query` ([String](../../sql-reference/data-types/string.md)) — Formatted query string.
 -   `normalized_query_hash` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Identical hash value without the values of literals for similar queries.
 -   `query_kind` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — Type of the query.
 -   `databases` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the databases present in the query.
