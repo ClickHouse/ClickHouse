@@ -1361,6 +1361,32 @@ load_balancing = round_robin
 
 Значение по умолчанию: `3`.
 
+## compile_aggregate_expressions {#compile_aggregate_expressions}
+
+Включает или отключает компиляцию агрегатных функций в нативный код во время выполнения запроса. Включение этой настройки может улучшить производительность выполнения запросов.
+
+Возможные значения:
+
+-   0 — агрегатные функции не компилируются в нативный код.
+-   1 — агрегатные функции компилируются в нативный код в процессе выполнения запроса.
+
+Значение по умолчанию: `1`.
+
+**См. также** 
+
+-   [min_count_to_compile_aggregate_expression](#min_count_to_compile_aggregate_expression)
+
+## min_count_to_compile_aggregate_expression {#min_count_to_compile_aggregate_expression}
+
+Минимальное количество вызовов агрегатной функции с одинаковым выражением, при котором функция будет компилироваться в нативный код в ходе выполнения запроса. Работает только если включена настройка [compile_aggregate_expressions](#compile_aggregate_expressions).  
+
+Возможные значения:
+
+-   Целое положительное число.
+-   0 — агрегатные функциии всегда компилируются в ходе выполнения запроса.
+
+Значение по умолчанию: `3`.
+
 ## input_format_skip_unknown_fields {#input-format-skip-unknown-fields}
 
 Если значение равно true, то при выполнении INSERT входные данные из столбцов с неизвестными именами будут пропущены. В противном случае эта ситуация создаст исключение.
@@ -1704,6 +1730,32 @@ ClickHouse генерирует исключение
         Если шард недоступен, то ClickHouse генерирует исключение.
 
 Значение по умолчанию: 0.
+
+## distributed_push_down_limit {#distributed-push-down-limit}
+
+Включает или отключает [LIMIT](#limit), применяемый к каждому шарду по отдельности. 
+
+Это позволяет избежать:
+- отправки дополнительных строк по сети;
+- обработки строк за пределами ограничения для инициатора.
+
+Начиная с версии 21.9 вы больше не сможете получить неточные результаты, так как `distributed_push_down_limit` изменяет выполнение запроса только в том случае, если выполнено хотя бы одно из условий:
+- `distributed_group_by_no_merge` > 0.
+- запрос **не содержит** `GROUP BY`/`DISTINCT`/`LIMIT BY`, но содержит `ORDER BY`/`LIMIT`.
+- запрос **содержит** `GROUP BY`/`DISTINCT`/`LIMIT BY` с `ORDER BY`/`LIMIT` и:
+  - включена настройка [optimize_skip_unused_shards](#optimize-skip-unused-shards).
+  - включена настройка `optimize_distributed_group_by_sharding_key`.
+
+Возможные значения:
+
+-    0 — выключена.
+-    1 — включена.
+
+Значение по умолчанию: `1`.
+
+См. также:
+
+-   [optimize_skip_unused_shards](#optimize-skip-unused-shards)
 
 ## optimize_skip_unused_shards {#optimize-skip-unused-shards}
 
@@ -3640,6 +3692,21 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 **См. также**
 
 -   настройка [optimize_move_to_prewhere](#optimize_move_to_prewhere)
+
+## describe_include_subcolumns {#describe_include_subcolumns}
+
+Включает или отключает описание подстолбцов при выполнении запроса [DESCRIBE](../../sql-reference/statements/describe-table.md). Настройка действует, например, на элементы [Tuple](../../sql-reference/data-types/tuple.md) или подстолбцы типов [Map](../../sql-reference/data-types/map.md#map-subcolumns), [Nullable](../../sql-reference/data-types/nullable.md#finding-null) или [Array](../../sql-reference/data-types/array.md#array-size).
+
+Возможные значения:
+
+-   0 — подстолбцы не включаются в результат запросов `DESCRIBE`.
+-   1 — подстолбцы включаются в результат запросов `DESCRIBE`.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+Смотрите пример запроса [DESCRIBE](../../sql-reference/statements/describe-table.md).
 
 ## async_insert {#async-insert}
 

@@ -42,10 +42,11 @@ private:
     /* size_t nextimpl_working_buffer_offset; */
 
     bool nextImpl() override;
+
     void prefetch() override;
 
 public:
-    CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_ = false);
+    explicit CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_ = false);
 
     /// Seek is lazy in some sense. We move position in compressed file_in to offset_in_compressed_file, but don't
     /// read data into working_buffer and don't shit our position to offset_in_decompressed_block. Instead
@@ -58,6 +59,10 @@ public:
     {
         file_in.setProfileCallback(profile_callback_, clock_type_);
     }
+
+    void setReadUntilPosition(size_t position) override { file_in.setReadUntilPosition(position); }
+
+    void setReadUntilEnd() override { file_in.setReadUntilEnd(); }
 };
 
 }

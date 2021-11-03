@@ -1,5 +1,5 @@
 #!/bin/bash
-# shellcheck disable=SC2086,SC2001
+# shellcheck disable=SC2086,SC2001,SC2046
 
 set -eux
 set -o pipefail
@@ -13,24 +13,48 @@ script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "$script_dir"
 repo_dir=ch
 BINARY_TO_DOWNLOAD=${BINARY_TO_DOWNLOAD:="clang-13_debug_none_bundled_unsplitted_disable_False_binary"}
+BINARY_URL_TO_DOWNLOAD=${BINARY_URL_TO_DOWNLOAD:="https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse"}
 
 function clone
 {
-    # The download() function is dependent on CI binaries anyway, so we can take
-    # the repo from the CI as well. For local runs, start directly from the "fuzz"
-    # stage.
-    rm -rf ch ||:
-    mkdir ch ||:
-    wget -nv -nd -c "https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/repo/clickhouse_no_subs.tar.gz"
-    tar -C ch --strip-components=1 -xf clickhouse_no_subs.tar.gz
+    # For local runs, start directly from the "fuzz" stage.
+    rm -rf "$repo_dir" ||:
+    mkdir "$repo_dir" ||:
+
+    git clone --depth 1 https://github.com/ClickHouse/ClickHouse.git -- "$repo_dir" 2>&1 | ts '%Y-%m-%d %H:%M:%S'
+    (
+        cd "$repo_dir"
+        if [ "$PR_TO_TEST" != "0" ]; then
+            if git fetch --depth 1 origin "+refs/pull/$PR_TO_TEST/merge"; then
+                git checkout FETCH_HEAD
+                echo "Checked out pull/$PR_TO_TEST/merge ($(git rev-parse FETCH_HEAD))"
+            else
+                git fetch --depth 1 origin "+refs/pull/$PR_TO_TEST/head"
+                git checkout "$SHA_TO_TEST"
+                echo "Checked out nominal SHA $SHA_TO_TEST for PR $PR_TO_TEST"
+            fi
+            git diff --name-only master HEAD | tee ci-changed-files.txt
+        else
+            if [ -v COMMIT_SHA ]; then
+                git fetch --depth 2 origin "$SHA_TO_TEST"
+                git checkout "$SHA_TO_TEST"
+                echo "Checked out nominal SHA $SHA_TO_TEST for master"
+            else
+                git fetch --depth 2 origin
+                echo "Using default repository head $(git rev-parse HEAD)"
+            fi
+            git diff --name-only HEAD~1 HEAD | tee ci-changed-files.txt
+        fi
+        cd -
+    )
+
     ls -lath ||:
+
 }
 
 function download
 {
-    wget -nv -nd -c "https://clickhouse-builds.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/clickhouse_build_check/$BINARY_TO_DOWNLOAD/clickhouse" &
-    wget -nv -nd -c "https://clickhouse-test-reports.s3.yandex.net/$PR_TO_TEST/$SHA_TO_TEST/repo/ci-changed-files.txt" &
-    wait
+    wget -nv -nd -c "$BINARY_URL_TO_DOWNLOAD"
 
     chmod +x clickhouse
     ln -s ./clickhouse ./clickhouse-server
@@ -113,7 +137,7 @@ function fuzz
 
     # Obtain the list of newly added tests. They will be fuzzed in more extreme way than other tests.
     # Don't overwrite the NEW_TESTS_OPT so that it can be set from the environment.
-    NEW_TESTS="$(sed -n 's!\(^tests/queries/0_stateless/.*\.sql\(\.j2\)\?\)$!ch/\1!p' ci-changed-files.txt | sort -R)"
+    NEW_TESTS="$(sed -n 's!\(^tests/queries/0_stateless/.*\.sql\(\.j2\)\?\)$!ch/\1!p' $repo_dir/ci-changed-files.txt | sort -R)"
     # ci-changed-files.txt contains also files that has been deleted/renamed, filter them out.
     NEW_TESTS="$(filter_exists_and_template $NEW_TESTS)"
     if [[ -n "$NEW_TESTS" ]]

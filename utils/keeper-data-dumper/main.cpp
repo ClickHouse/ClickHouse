@@ -4,7 +4,7 @@
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
-#include <libnuraft/nuraft.hxx> // Y_IGNORE
+#include <libnuraft/nuraft.hxx>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/Changelog.h>
 #include <base/logger_useful.h>
