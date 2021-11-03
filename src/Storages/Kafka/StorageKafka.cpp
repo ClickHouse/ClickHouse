@@ -1,43 +1,41 @@
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
 
-#include <DataStreams/UnionBlockInputStream.h>
-#include <DataStreams/copyData.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Storages/Kafka/KafkaSettings.h>
-#include <Storages/Kafka/KafkaBlockInputStream.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Storages/Kafka/KafkaBlockOutputStream.h>
+#include <Storages/Kafka/KafkaSettings.h>
+#include <Storages/Kafka/KafkaSource.h>
 #include <Storages/Kafka/WriteBufferToKafkaProducer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <librdkafka/rdkafka.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
-#include <Common/formatReadable.h>
 #include <Common/config_version.h>
+#include <Common/formatReadable.h>
+#include <Common/getNumberOfPhysicalCPUCores.h>
+#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <common/logger_useful.h>
-#include <Common/quoteString.h>
-#include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Interpreters/Context.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <librdkafka/rdkafka.h>
-#include <common/getFQDNOrHostName.h>
+#include <base/getFQDNOrHostName.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -280,8 +278,7 @@ Pipe StorageKafka::read(
         /// Use block size of 1, otherwise LIMIT won't work properly as it will buffer excess messages in the last block
         /// TODO: probably that leads to awful performance.
         /// FIXME: seems that doesn't help with extra reading and committing unprocessed messages.
-        /// TODO: rewrite KafkaBlockInputStream to KafkaSource. Now it is used in other place.
-        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, modified_context, column_names, log, 1)));
+        pipes.emplace_back(std::make_shared<KafkaSource>(*this, metadata_snapshot, modified_context, column_names, log, 1));
     }
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
@@ -610,14 +607,17 @@ bool StorageKafka::streamToViews()
     auto block_io = interpreter.execute();
 
     // Create a stream for each consumer and join them in a union stream
-    BlockInputStreams streams;
+    std::vector<std::shared_ptr<KafkaSource>> sources;
+    Pipes pipes;
 
     auto stream_count = thread_per_consumer ? 1 : num_created_consumers;
-    streams.reserve(stream_count);
+    sources.reserve(stream_count);
+    pipes.reserve(stream_count);
     for (size_t i = 0; i < stream_count; ++i)
     {
-        auto stream = std::make_shared<KafkaBlockInputStream>(*this, metadata_snapshot, kafka_context, block_io.out->getHeader().getNames(), log, block_size, false);
-        streams.emplace_back(stream);
+        auto source = std::make_shared<KafkaSource>(*this, metadata_snapshot, kafka_context, block_io.pipeline.getHeader().getNames(), log, block_size, false);
+        sources.emplace_back(source);
+        pipes.emplace_back(source);
 
         // Limit read batch to maximum block size to allow DDL
         StreamLocalLimits limits;
@@ -627,30 +627,27 @@ bool StorageKafka::streamToViews()
                                                  : getContext()->getSettingsRef().stream_flush_interval_ms;
 
         limits.timeout_overflow_mode = OverflowMode::BREAK;
-        stream->setLimits(limits);
+        source->setLimits(limits);
     }
 
-    // Join multiple streams if necessary
-    BlockInputStreamPtr in;
-    if (streams.size() > 1)
-        in = std::make_shared<UnionBlockInputStream>(streams, nullptr, streams.size());
-    else
-        in = streams[0];
+    auto pipe = Pipe::unitePipes(std::move(pipes));
 
     // We can't cancel during copyData, as it's not aware of commits and other kafka-related stuff.
     // It will be cancelled on underlying layer (kafka buffer)
-    std::atomic<bool> stub = {false};
+
     size_t rows = 0;
-    copyData(*in, *block_io.out, [&rows](const Block & block)
     {
-        rows += block.rows();
-    }, &stub);
+        block_io.pipeline.complete(std::move(pipe));
+        block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
+        CompletedPipelineExecutor executor(block_io.pipeline);
+        executor.execute();
+    }
 
     bool some_stream_is_stalled = false;
-    for (auto & stream : streams)
+    for (auto & source : sources)
     {
-        some_stream_is_stalled = some_stream_is_stalled || stream->as<KafkaBlockInputStream>()->isStalled();
-        stream->as<KafkaBlockInputStream>()->commit();
+        some_stream_is_stalled = some_stream_is_stalled || source->isStalled();
+        source->commit();
     }
 
     UInt64 milliseconds = watch.elapsedMilliseconds();

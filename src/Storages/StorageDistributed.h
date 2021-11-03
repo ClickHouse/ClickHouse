@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
@@ -9,7 +9,7 @@
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
 #include <Parsers/ASTFunction.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/ActionBlocker.h>
 #include <Interpreters/Cluster.h>
 
@@ -83,7 +83,7 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
-    QueryPipelinePtr distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
+    QueryPipelineBuilderPtr distributedWrite(const ASTInsertQuery & query, ContextPtr context) override;
 
     /// Removes temporary data in local filesystem.
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;

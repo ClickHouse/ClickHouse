@@ -69,6 +69,85 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 </compression>
 ```
 
+## encryption {#server-settings-encryption}
+
+Настраивает команду для получения ключа, используемого [кодеками шифрования](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Ключ (или несколько ключей) должен быть записан в переменные окружения или установлен в конфигурационном файле.
+
+Ключи могут быть представлены в шестнадцатеричной или строковой форме. Их длина должна быть равна 16 байтам.
+
+**Пример**
+
+Загрузка из файла конфигурации:
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <key>12345567812345678</key>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+!!! note "Примечание"
+    Хранение ключей в конфигурационном файле не рекомендовано. Это не безопасно. Вы можете переместить ключи в отдельный файл на секретном диске и сделать symlink к этому конфигурационному файлу в папке `config.d/`.
+
+Загрузка из файла конфигурации, когда ключ представлен в шестнадцатеричной форме:
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <key_hex>00112233445566778899aabbccddeeff</key_hex>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+Загрузка ключа из переменной окружения:
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <key_hex from_env="KEY"></key_hex>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+Параметр `current_key_id` устанавливает текущий ключ для шифрования, и все указанные ключи можно использовать для расшифровки.
+
+Все эти методы могут быть применены для нескольких ключей:
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
+        <key_hex id="1" from_env=".."></key_hex>
+        <current_key_id>1</current_key_id>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+Параметр `current_key_id` указывает текущий ключ для шифрования.
+
+Также пользователь может добавить одноразовое случайное число длинной 12 байт (по умолчанию шифрование и дешифровка будут использовать одноразовое число длинной 12 байт, заполненное нулями):
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <nonce>0123456789101</nonce>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+Одноразовое число также может быть представлено в шестнадцатеричной форме:
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <nonce_hex>abcdefabcdef</nonce_hex>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+Всё вышеперечисленное также применимо для алгоритма `aes_256_gcm_siv` (но ключ должен быть длиной 32 байта).
+
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
 Список префиксов для [пользовательских настроек](../../operations/settings/index.md#custom_settings). Префиксы должны перечисляться через запятую.
@@ -345,8 +424,6 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 <interserver_https_host>example.yandex.ru</interserver_https_host>
 ```
 
-
-
 ## interserver_http_credentials {#server-settings-interserver-http-credentials}
 
 Имя пользователя и пароль, использующиеся для аутентификации при [репликации](../../operations/server-configuration-parameters/settings.md) движками Replicated\*. Это имя пользователя и пароль используются только для взаимодействия между репликами кластера и никак не связаны с аутентификацией клиентов ClickHouse. Сервер проверяет совпадение имени и пароля для соединяющихся с ним реплик, а также использует это же имя и пароль для соединения с другими репликами. Соответственно, эти имя и пароль должны быть прописаны одинаковыми для всех реплик кластера.
@@ -371,7 +448,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## keep_alive_timeout {#keep-alive-timeout}
 
-Время в секундах, в течение которого ClickHouse ожидает входящих запросов прежде, чем 10акрыть соединение.
+Время в секундах, в течение которого ClickHouse ожидает входящих запросов прежде чем закрыть соединение. Значение по умолчанию: 10 секунд.
 
 **Пример**
 
@@ -414,7 +491,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 </logger>
 ```
 
-Также, существует поддержка записи в syslog. Пример конфига:
+Также, существует поддержка записи в syslog. Пример настроек:
 
 ``` xml
 <logger>
@@ -534,7 +611,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`. Запросы также могут быть ограничены настройками: [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`. Запросы также могут быть ограничены настройками: [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
 
 !!! info "Примечание"
 	Параметры этих настроек могут быть изменены во время выполнения запросов и вступят в силу немедленно. Запросы, которые уже запущены, выполнятся без изменений.
@@ -548,6 +625,21 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ``` xml
 <max_concurrent_queries>100</max_concurrent_queries>
+```
+
+## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
+
+Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`, для пользователя.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — выключена.
+
+**Пример**
+
+``` xml
+<max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
 ```
 
 ## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
@@ -873,6 +965,33 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 </query_thread_log>
 ```
 
+## query_views_log {#server_configuration_parameters-query_views_log}
+
+Настройки логирования информации о зависимых представлениях (materialized, live и т.п.) в запросах принятых с настройкой [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views).
+
+Запросы сохраняются в таблицу system.query_views_log. Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+
+При настройке логирования используются следующие параметры:
+
+-   `database` – имя базы данных.
+-   `table` – имя таблицы куда будут записываться использованные представления.
+-   `partition_by` — устанавливает [произвольный ключ партиционирования](../../engines/table-engines/mergetree-family/custom-partitioning-key.md). Нельзя использовать если используется `engine`
+-   `engine` - устанавливает [настройки MergeTree Engine](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) для системной таблицы. Нельзя использовать если используется `partition_by`.
+-   `flush_interval_milliseconds` — период сброса данных из буфера в памяти в таблицу.
+
+Если таблица не существует, то ClickHouse создаст её. Если структура журнала запросов изменилась при обновлении сервера ClickHouse, то таблица со старой структурой переименовывается, а новая таблица создается автоматически.
+
+**Example**
+
+``` xml
+<query_views_log>
+    <database>system</database>
+    <table>query_views_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</query_views_log>
+```
+
 ## text_log {#server_configuration_parameters-text_log}
 
 Настройка логирования текстовых сообщений в системную таблицу [text_log](../../operations/system-tables/text_log.md#system_tables-text_log).
@@ -882,7 +1001,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 -   `level` — Максимальный уровень сообщения (по умолчанию `Trace`) которое будет сохранено в таблице.
 -   `database` — имя базы данных для хранения таблицы.
 -   `table` — имя таблицы, куда будут записываться текстовые сообщения.
--   `partition_by` — устанавливает [произвольный ключ партиционирования](../../operations/server-configuration-parameters/settings.md). Нельзя использовать если используется `engine`
+-   `partition_by` — устанавливает [произвольный ключ партиционирования](../../engines/table-engines/mergetree-family/custom-partitioning-key.md). Нельзя использовать если используется `engine`
 -   `engine` - устанавливает [настройки MergeTree Engine](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) для системной таблицы. Нельзя использовать если используется `partition_by`.
 -   `flush_interval_milliseconds` — период сброса данных из буфера в памяти в таблицу.
 
@@ -913,7 +1032,7 @@ Parameters:
 -   `engine` - устанавливает [настройки MergeTree Engine](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) для системной таблицы. Нельзя использовать если используется `partition_by`.
 -   `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
 
-The default server configuration file `config.xml` contains the following settings section:
+По умолчанию файл настроек сервера `config.xml` содержит следующие настройки:
 
 ``` xml
 <trace_log>
@@ -1096,7 +1215,7 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 -   `node` — адрес ноды (сервера) ZooKeeper. Можно сконфигурировать несколько нод.
 
-        Например:
+    Например:
 
 <!-- -->
 
@@ -1109,9 +1228,10 @@ ClickHouse использует ZooKeeper для хранения метадан
 
       Атрибут `index` задает порядок опроса нод при попытках подключиться к кластеру ZooKeeper.
 
--   `session_timeout` — максимальный таймаут клиентской сессии в миллисекундах.
--   `root` — [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes), который используется как корневой для всех znode, которые использует сервер ClickHouse. Необязательный.
--   `identity` — пользователь и пароль, которые может потребовать ZooKeeper для доступа к запрошенным znode. Необязательный.
+- `session_timeout_ms` — максимальный таймаут клиентской сессии в миллисекундах.
+- `operation_timeout_ms` — максимальный таймаут для одной операции в миллисекундах.
+- `root` — [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes), который используется как корневой для всех znode, которые использует сервер ClickHouse. Необязательный.
+- `identity` — пользователь и пароль, которые может потребовать ZooKeeper для доступа к запрошенным znode. Необязательный.
 
 **Пример конфигурации**
 
@@ -1185,6 +1305,39 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 -   [background_schedule_pool_size](../settings/settings.md#background_schedule_pool_size)
 
+## distributed_ddl {#server-settings-distributed_ddl}
+
+Управление запуском [распределенных ddl запросов](../../sql-reference/distributed-ddl.md) (CREATE, DROP, ALTER, RENAME) в кластере.
+Работает только если разрешена [работа с ZooKeeper](#server-settings_zookeeper).
+
+**Пример**
+
+```xml
+<distributed_ddl>
+    <!-- Путь в ZooKeeper для очереди содержащей DDL запросы -->
+    <path>/clickhouse/task_queue/ddl</path>
+
+    <!-- Настройки из этого профиля будут использованы для запуска DDL запросов -->
+    <profile>default</profile>
+
+    <!-- Контроль того как много ON CLUSTER запросов могут исполняться одновременно. -->
+    <pool_size>1</pool_size>
+
+    <!--
+         Настройки очистки (активные задачи в очереди не будут удаляться)
+    -->
+
+    <!-- Время TTL для задач в секундах (по умолчанию 1 week) -->
+    <task_max_lifetime>604800</task_max_lifetime>
+
+    <!-- Как часто будет запускаться очистка данных  (в секундах) -->
+    <cleanup_delay_period>60</cleanup_delay_period>
+
+    <!-- Как много задач может быть в очереди -->
+    <max_tasks_in_queue>1000</max_tasks_in_queue>
+</distributed_ddl>
+```
+
 ## access_control_path {#access_control_path}
 
 Путь к каталогу, где сервер ClickHouse хранит конфигурации пользователей и ролей, созданные командами SQL.
@@ -1193,7 +1346,7 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 **Смотрите также**
 
-- [Управление доступом](../access-rights.md#access-control)
+- [Управление доступом](../../operations/access-rights.md#access-control)
 
 ## user_directories {#user_directories}
 

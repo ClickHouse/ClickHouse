@@ -1747,8 +1747,8 @@ def test_kafka_virtual_columns2(kafka_cluster):
 
     members = describe_consumer_group(kafka_cluster, 'virt2')
     # pprint.pprint(members)
-    members[0]['client_id'] = 'ClickHouse-instance-test-kafka-0'
-    members[1]['client_id'] = 'ClickHouse-instance-test-kafka-1'
+    # members[0]['client_id'] = 'ClickHouse-instance-test-kafka-0'
+    # members[1]['client_id'] = 'ClickHouse-instance-test-kafka-1'
 
     result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
 
@@ -2161,7 +2161,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
     # we have 0.25 (sleepEachRow) * 20 ( Rows ) = 5 sec window after "Polled batch of 20 messages"
     # while materialized view is working to inject zookeeper failure
     pm.drop_instance_zk_connections(instance)
-    instance.wait_for_log_line("Error.*(session has been expired|Connection loss).*while writing suffix to view")
+    instance.wait_for_log_line("Error.*(session has been expired|Connection loss).*while pushing to view")
     pm.heal_all()
     instance.wait_for_log_line("Committed offset 22")
 

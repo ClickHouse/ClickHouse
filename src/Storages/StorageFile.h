@@ -1,11 +1,11 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <atomic>
 #include <shared_mutex>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 
 namespace DB

@@ -13,4 +13,4 @@ toc_title: hidden
 -   [詳細なチュートリアル](../getting-started/tutorial.md)
 -   [データセット例を用いて試す](../getting-started/example-datasets/ontime.md)
 
-[元の記事](https://clickhouse.tech/docs/en/getting_started/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/getting_started/) <!--hide-->

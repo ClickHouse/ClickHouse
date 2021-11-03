@@ -7,7 +7,7 @@
 #include <Common/SettingsChanges.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <common/removeDuplicates.h>
+#include <base/removeDuplicates.h>
 
 
 namespace DB

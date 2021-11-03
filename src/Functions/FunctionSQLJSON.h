@@ -18,7 +18,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/IParser.h>
 #include <Parsers/Lexer.h>
-#include <common/range.h>
+#include <base/range.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_functions.h"
@@ -50,36 +50,33 @@ public:
                 throw Exception{"JSONPath functions require at least 2 arguments", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
             }
 
-            const auto & first_column = arguments[0];
+            const auto & json_column = arguments[0];
 
-            /// Check 1 argument: must be of type String (JSONPath)
-            if (!isString(first_column.type))
+            if (!isString(json_column.type))
             {
                 throw Exception(
-                    "JSONPath functions require 1 argument to be JSONPath of type string, illegal type: " + first_column.type->getName(),
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
-            /// Check 1 argument: must be const (JSONPath)
-            if (!isColumnConst(*first_column.column))
-            {
-                throw Exception("1 argument (JSONPath) must be const", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-            }
-
-            const auto & second_column = arguments[1];
-
-            /// Check 2 argument: must be of type String (JSON)
-            if (!isString(second_column.type))
-            {
-                throw Exception(
-                    "JSONPath functions require 2 argument to be JSON of string, illegal type: " + second_column.type->getName(),
+                    "JSONPath functions require first argument to be JSON of string, illegal type: " + json_column.type->getName(),
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
             }
 
-            const ColumnPtr & arg_jsonpath = first_column.column;
+            const auto & json_path_column = arguments[1];
+
+            if (!isString(json_path_column.type))
+            {
+                throw Exception(
+                    "JSONPath functions require second argument to be JSONPath of type string, illegal type: " + json_path_column.type->getName(),
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
+            if (!isColumnConst(*json_path_column.column))
+            {
+                throw Exception("Second argument (JSONPath) must be constant string", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            }
+
+            const ColumnPtr & arg_jsonpath = json_path_column.column;
             const auto * arg_jsonpath_const = typeid_cast<const ColumnConst *>(arg_jsonpath.get());
             const auto * arg_jsonpath_string = typeid_cast<const ColumnString *>(arg_jsonpath_const->getDataColumnPtr().get());
 
-            const ColumnPtr & arg_json = second_column.column;
+            const ColumnPtr & arg_json = json_column.column;
             const auto * col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
             const auto * col_json_string
                 = typeid_cast<const ColumnString *>(col_json_const ? col_json_const->getDataColumnPtr().get() : arg_json.get());
@@ -152,7 +149,7 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

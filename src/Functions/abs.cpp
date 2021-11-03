@@ -11,6 +11,7 @@ struct AbsImpl
 {
     using ResultType = std::conditional_t<is_decimal<A>, A, typename NumberTraits::ResultOfAbs<A>::Type>;
     static const constexpr bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     static inline NO_SANITIZE_UNDEFINED ResultType apply(A a)
     {
@@ -45,7 +46,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
         if ((left_float < 0 && right_float > 0) || (left_float > 0 && right_float < 0))
             return {};
 
-        return { true, (left_float > 0) };
+        return { .is_monotonic = true, .is_positive = left_float > 0 };
     }
 };
 

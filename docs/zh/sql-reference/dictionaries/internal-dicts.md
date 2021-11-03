@@ -52,4 +52,4 @@ Geobase从文本文件加载。
 
 还有与操作系统标识符和Yandex的工作功能。Metrica搜索引擎，但他们不应该被使用。
 
-[原始文章](https://clickhouse.tech/docs/en/query_language/dicts/internal_dicts/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/query_language/dicts/internal_dicts/) <!--hide-->

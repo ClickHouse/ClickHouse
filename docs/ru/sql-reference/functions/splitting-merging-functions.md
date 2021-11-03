@@ -232,3 +232,41 @@ SELECT alphaTokens('abca1abc');
 │ ['abca','abc']          │
 └─────────────────────────┘
 ```
+
+## ngrams {#ngrams}
+
+Выделяет из UTF-8 строки отрезки (n-граммы) размером `ngramsize` символов.
+
+**Синтаксис** 
+
+``` sql
+ngrams(string, ngramsize)
+```
+
+**Аргументы**
+
+-   `string` — строка. [String](../../sql-reference/data-types/string.md) or [FixedString](../../sql-reference/data-types/fixedstring.md).
+-   `ngramsize` — размер n-грамм. [UInt](../../sql-reference/data-types/int-uint.md).
+
+**Возвращаемые значения**
+
+-   Массив с n-граммами.
+
+Тип: [Array](../../sql-reference/data-types/array.md)([FixedString](../../sql-reference/data-types/fixedstring.md)).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT ngrams('ClickHouse', 3);
+```
+
+Результат:
+
+``` text
+┌─ngrams('ClickHouse', 3)───────────────────────────┐
+│ ['Cli','lic','ick','ckH','kHo','Hou','ous','use'] │
+└───────────────────────────────────────────────────┘
+```
+

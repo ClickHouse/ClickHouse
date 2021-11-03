@@ -2,7 +2,7 @@
     #include <Common/config.h>
 #endif
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>

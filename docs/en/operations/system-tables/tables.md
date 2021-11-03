@@ -117,4 +117,4 @@ lifetime_bytes:             ᴺᵁᴸᴸ
 comment:
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/system-tables/tables) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/system-tables/tables) <!--hide-->

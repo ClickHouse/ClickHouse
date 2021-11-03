@@ -2,7 +2,7 @@
 #include <Common/Exception.h>
 #include <Common/hex.h>
 #include <Common/SipHash.h>
-#include <common/getThreadId.h>
+#include <base/getThreadId.h>
 
 namespace DB
 {

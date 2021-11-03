@@ -73,7 +73,7 @@ Parameters:
             <!--
                 source cluster & destination clusters accept exactly the same
                 parameters as parameters for the usual Distributed table
-                see https://clickhouse.tech/docs/en/engines/table-engines/special/distributed/
+                see https://clickhouse.com/docs/en/engines/table-engines/special/distributed/
             -->
             <shard>
                 <internal_replication>false</internal_replication>
@@ -184,4 +184,4 @@ Parameters:
 
 `clickhouse-copier` tracks the changes in `/task/path/description` and applies them on the fly. For instance, if you change the value of `max_workers`, the number of processes running tasks will also change.
 
-[Original article](https://clickhouse.tech/docs/en/operations/utils/clickhouse-copier/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/utils/clickhouse-copier/) <!--hide-->

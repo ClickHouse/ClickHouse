@@ -10,7 +10,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
-
+#include <Storages/ExternalDataSourceConfiguration.h>
 
 namespace DB
 {
@@ -32,8 +32,7 @@ public:
         const String & metadata_path_,
         const ASTStorage * database_engine_define,
         const String & dbname_,
-        const String & postgres_dbname_,
-        const String & postgres_schema_,
+        const StoragePostgreSQLConfiguration & configuration,
         postgres::PoolWithFailoverPtr pool_,
         bool cache_tables_);
 
@@ -70,8 +69,7 @@ protected:
 private:
     String metadata_path;
     ASTPtr database_engine_define;
-    String postgres_dbname;
-    String postgres_schema;
+    StoragePostgreSQLConfiguration configuration;
     postgres::PoolWithFailoverPtr pool;
     const bool cache_tables;
 

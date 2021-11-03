@@ -212,6 +212,8 @@ class _NetworkManager:
             self._container = self._docker_client.containers.run('clickhouse/integration-helper',
                                                                  auto_remove=True,
                                                                  command=('sleep %s' % self.container_exit_timeout),
+                                                                 # /run/xtables.lock passed inside for correct iptables --wait
+                                                                 volumes={'/run/xtables.lock': {'bind': '/run/xtables.lock', 'mode': 'ro' }},
                                                                  detach=True, network_mode='host')
             container_id = self._container.id
             self._container_expire_time = time.time() + self.container_expire_timeout

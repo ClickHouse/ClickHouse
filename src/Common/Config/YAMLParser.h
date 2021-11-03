@@ -8,7 +8,7 @@
 
 #include <Poco/DOM/Document.h>
 #include "Poco/DOM/AutoPtr.h"
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #if USE_YAML_CPP
 

@@ -15,7 +15,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/Cluster.h>
-#include <common/getFQDNOrHostName.h>
+#include <base/getFQDNOrHostName.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -305,13 +305,21 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     createEmptyLogEntry(current_zookeeper);
 }
 
-void DatabaseReplicated::loadStoredObjects(
-    ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables)
+void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr /*context*/, bool /*force_restore*/, bool force_attach)
 {
     tryConnectToZooKeeperAndInitDatabase(force_attach);
+}
 
-    DatabaseAtomic::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach, skip_startup_tables);
+void DatabaseReplicated::loadStoredObjects(
+    ContextMutablePtr local_context, bool force_restore, bool force_attach, bool skip_startup_tables)
+{
+    beforeLoadingMetadata(local_context, force_restore, force_attach);
+    DatabaseAtomic::loadStoredObjects(local_context, force_restore, force_attach, skip_startup_tables);
+}
 
+void DatabaseReplicated::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
+{
+    DatabaseAtomic::startupTables(thread_pool, force_restore, force_attach);
     ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
     ddl_worker->startup();
 }

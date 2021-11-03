@@ -1,10 +1,12 @@
+#include <Parsers/ParserCreateFunctionQuery.h>
+
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/ParserCreateFunctionQuery.h>
+
 
 namespace DB
 {
@@ -13,6 +15,8 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
 {
     ParserKeyword s_create("CREATE");
     ParserKeyword s_function("FUNCTION");
+    ParserKeyword s_or_replace("OR REPLACE");
+    ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserIdentifier function_name_p;
     ParserKeyword s_as("AS");
     ParserLambdaExpression lambda_p;
@@ -20,11 +24,20 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     ASTPtr function_name;
     ASTPtr function_core;
 
+    bool or_replace = false;
+    bool if_not_exists = false;
+
     if (!s_create.ignore(pos, expected))
         return false;
 
+    if (s_or_replace.ignore(pos, expected))
+        or_replace = true;
+
     if (!s_function.ignore(pos, expected))
         return false;
+
+    if (!or_replace && s_if_not_exists.ignore(pos, expected))
+        if_not_exists = true;
 
     if (!function_name_p.parse(pos, function_name, expected))
         return false;
@@ -40,6 +53,8 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
 
     create_function_query->function_name = function_name->as<ASTIdentifier &>().name();
     create_function_query->function_core = function_core;
+    create_function_query->or_replace = or_replace;
+    create_function_query->if_not_exists = if_not_exists;
 
     return true;
 }

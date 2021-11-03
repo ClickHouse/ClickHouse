@@ -2,34 +2,38 @@
 
 #include <Common/COW.h>
 #include <Core/Types.h>
+#include <Columns/IColumn.h>
 
+#include <boost/noncopyable.hpp>
 #include <unordered_map>
 #include <memory>
 
 namespace DB
 {
 
-class IDataType;
-
 class ReadBuffer;
 class WriteBuffer;
 class ProtobufReader;
 class ProtobufWriter;
 
-class IColumn;
-using ColumnPtr = COW<IColumn>::Ptr;
-using MutableColumnPtr = COW<IColumn>::MutablePtr;
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
+
+class ISerialization;
+using SerializationPtr = std::shared_ptr<const ISerialization>;
 
 class Field;
 
 struct FormatSettings;
 struct NameAndTypePair;
 
-class ISerialization
+class ISerialization : private boost::noncopyable, public std::enable_shared_from_this<ISerialization>
 {
 public:
     ISerialization() = default;
     virtual ~ISerialization() = default;
+
+    SerializationPtr getPtr() const { return shared_from_this(); }
 
     /** Binary serialization for range of values in column - for writing to disk/network, etc.
       *
@@ -54,6 +58,24 @@ public:
       * Default implementations of ...WithMultipleStreams methods will call serializeBinaryBulk, deserializeBinaryBulk for single stream.
       */
 
+    struct ISubcolumnCreator
+    {
+        virtual DataTypePtr create(const DataTypePtr & prev) const = 0;
+        virtual SerializationPtr create(const SerializationPtr & prev) const = 0;
+        virtual ColumnPtr create(const ColumnPtr & prev) const = 0;
+        virtual ~ISubcolumnCreator() = default;
+    };
+
+    using SubcolumnCreatorPtr = std::shared_ptr<const ISubcolumnCreator>;
+
+    struct SubstreamData
+    {
+        DataTypePtr type;
+        ColumnPtr column;
+        SerializationPtr serialization;
+        SubcolumnCreatorPtr creator;
+    };
+
     struct Substream
     {
         enum Type
@@ -71,7 +93,10 @@ public:
 
             SparseElements,
             SparseOffsets,
+
+            Regular,
         };
+
         Type type;
 
         /// Index of tuple element, starting at 1 or name.
@@ -79,6 +104,12 @@ public:
 
         /// Do we need to escape a dot in filenames for tuple elements.
         bool escape_tuple_delimiter = true;
+
+        /// Data for current substream.
+        SubstreamData data;
+
+        /// Flag, that may help to traverse substream paths.
+        mutable bool visited = false;
 
         Substream(Type type_) : type(type_) {}
 
@@ -96,7 +127,13 @@ public:
 
     using StreamCallback = std::function<void(const SubstreamPath &)>;
 
-    virtual void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const;
+    virtual void enumerateStreams(
+        SubstreamPath & path,
+        const StreamCallback & callback,
+        DataTypePtr type,
+        ColumnPtr column) const;
+
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const;
     void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
     void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
 
@@ -249,11 +286,16 @@ public:
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
     static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path);
     static String getSubcolumnNameForStream(const SubstreamPath & path);
+    static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len);
 
     static void addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column);
     static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
 
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
+    static size_t getArrayLevel(const SubstreamPath & path);
+
+    static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
+    static SubstreamData createFromPath(const SubstreamPath & path, size_t prefix_len);
 };
 
 using SerializationPtr = std::shared_ptr<const ISerialization>;

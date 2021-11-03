@@ -6,9 +6,10 @@
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <stdlib.h>
 
 #ifdef __SSE2__
@@ -1120,7 +1121,7 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
     }
 }
 
-void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
+void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
 {
     assert(current >= in.position());
     assert(current <= in.buffer().end());
@@ -1140,7 +1141,7 @@ void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
     in.position() = current;
 }
 
-bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current)
+bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current)
 {
     assert(current <= in.buffer().end());
 

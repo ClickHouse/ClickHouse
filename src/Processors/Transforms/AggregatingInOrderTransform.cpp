@@ -1,7 +1,7 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Core/SortCursor.h>
-#include <common/range.h>
+#include <base/range.h>
 
 namespace DB
 {

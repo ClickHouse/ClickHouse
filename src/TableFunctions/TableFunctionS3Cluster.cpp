@@ -7,7 +7,7 @@
 #include <Storages/StorageS3Cluster.h>
 
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/RemoteBlockInputStream.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <IO/S3Common.h>
 #include <Storages/StorageS3.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -21,7 +21,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST_fwd.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 
 #include "registerTableFunctions.h"
 

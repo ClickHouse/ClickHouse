@@ -179,4 +179,4 @@ CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
         - `attribute` — имя атрибута, значение которого будет возвращаться LDAP поиском. По умолчанию: `cn`.
         - `prefix` — префикс, который, как предполагается, будет находиться перед началом каждой строки в исходном списке строк, возвращаемых LDAP поиском. Префикс будет удален из исходных строк, а сами они будут рассматриваться как имена локальных ролей. По умолчанию: пустая строка.
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/operations/external-authenticators/ldap) <!--hide-->
+[Оригинальная статья](https://clickhouse.com/docs/en/operations/external-authenticators/ldap) <!--hide-->

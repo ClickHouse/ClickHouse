@@ -4,8 +4,8 @@
 #include <Access/RowPolicy.h>
 #include <Interpreters/ClientInfo.h>
 #include <Core/UUID.h>
-#include <common/scope_guard.h>
-#include <common/shared_ptr_helper.h>
+#include <base/scope_guard.h>
+#include <base/shared_ptr_helper.h>
 #include <boost/container/flat_set.hpp>
 #include <mutex>
 

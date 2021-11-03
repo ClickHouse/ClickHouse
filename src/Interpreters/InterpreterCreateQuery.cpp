@@ -53,6 +53,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/TablesLoader.h>
 
 #include <Compression/CompressionFactory.h>
 
@@ -63,7 +64,7 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -153,7 +154,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Unknown database engine: {}", serializeAST(*create.storage));
     }
 
-    if (create.storage->engine->name == "Atomic" || create.storage->engine->name == "Replicated" || create.storage->engine->name == "MaterializedPostgreSQL")
+    if (create.storage->engine->name == "Atomic"
+        || create.storage->engine->name == "Replicated"
+        || create.storage->engine->name == "MaterializedPostgreSQL")
     {
         if (create.attach && create.uuid == UUIDHelpers::Nil)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "UUID must be specified for ATTACH. "
@@ -166,7 +169,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (!create.attach && fs::exists(metadata_path))
             throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Metadata directory {} already exists", metadata_path.string());
     }
-    else if (create.storage->engine->name == "MaterializeMySQL" || create.storage->engine->name == "MaterializedMySQL")
+    else if (create.storage->engine->name == "MaterializeMySQL"
+        || create.storage->engine->name == "MaterializedMySQL")
     {
         /// It creates nested database with Ordinary or Atomic engine depending on UUID in query and default engine setting.
         /// Do nothing if it's an internal ATTACH on server startup or short-syntax ATTACH query from user,
@@ -214,13 +218,17 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
                         "Enable allow_experimental_database_materialized_mysql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
-    if (create.storage->engine->name == "Replicated" && !getContext()->getSettingsRef().allow_experimental_database_replicated && !internal)
+    if (create.storage->engine->name == "Replicated"
+        && !getContext()->getSettingsRef().allow_experimental_database_replicated
+        && !internal)
     {
         throw Exception("Replicated is an experimental database engine. "
                         "Enable allow_experimental_database_replicated to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
-    if (create.storage->engine->name == "MaterializedPostgreSQL" && !getContext()->getSettingsRef().allow_experimental_database_materialized_postgresql && !internal)
+    if (create.storage->engine->name == "MaterializedPostgreSQL"
+        && !getContext()->getSettingsRef().allow_experimental_database_materialized_postgresql
+        && !internal)
     {
         throw Exception("MaterializedPostgreSQL is an experimental database engine. "
                         "Enable allow_experimental_database_materialized_postgresql to use it.", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
@@ -271,9 +279,13 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             renamed = true;
         }
 
-        /// We use global context here, because storages lifetime is bigger than query context lifetime
-        database->loadStoredObjects(
-            getContext()->getGlobalContext(), has_force_restore_data_flag, create.attach && force_attach, skip_startup_tables); //-V560
+        if (!load_database_without_tables)
+        {
+            /// We use global context here, because storages lifetime is bigger than query context lifetime
+            TablesLoader loader{getContext()->getGlobalContext(), {{database_name, database}}, has_force_restore_data_flag, create.attach && force_attach}; //-V560
+            loader.loadTables();
+            loader.startupTables();
+        }
     }
     catch (...)
     {
@@ -283,7 +295,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             assert(removed);
         }
         if (added)
-            DatabaseCatalog::instance().detachDatabase(database_name, false, false);
+            DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
 
         throw;
     }
@@ -619,7 +631,6 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     else
         throw Exception("Incorrect CREATE query: required list of column descriptions or AS section or SELECT.", ErrorCodes::INCORRECT_QUERY);
 
-
     /// Even if query has list of columns, canonicalize it (unfold Nested columns).
     if (!create.columns_list)
         create.set(create.columns_list, std::make_shared<ASTColumns>());
@@ -909,8 +920,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         // Expand CTE before filling default database
         ApplyWithSubqueryVisitor().visit(*create.select);
-        AddDefaultDatabaseVisitor visitor(current_database);
+        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
+    }
+
+    if (create.columns_list)
+    {
+        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+        visitor.visit(*create.columns_list);
     }
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
@@ -988,7 +1005,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             }
             else
                 throw Exception(storage_already_exists_error_code,
-                    "{} {}.{} already exists.", storage_name, backQuoteIfNeed(create.database), backQuoteIfNeed(create.table));
+                    "{} {}.{} already exists", storage_name, backQuoteIfNeed(create.database), backQuoteIfNeed(create.table));
         }
 
         data_path = database->getTableDataPath(create);

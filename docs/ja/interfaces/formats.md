@@ -26,7 +26,6 @@ aの結果 `SELECT`、および実行する `INSERT`ファイルバックアッ�
 | [カスタム区切り](#format-customseparated)                       | ✔    | ✔    |
 | [値](#data-format-values)                                       | ✔    | ✔    |
 | [垂直](#vertical)                                               | ✗    | ✔    |
-| [VerticalRaw](#verticalraw)                                     | ✗    | ✔    |
 | [JSON](#json)                                                   | ✗    | ✔    |
 | [JSONCompact](#jsoncompact)                                     | ✗    | ✔    |
 | [JSONEachRow](#jsoneachrow)                                     | ✔    | ✔    |
@@ -819,10 +818,6 @@ test: string with 'quotes' and      with some special
 
 この形式は、クエリ結果の出力にのみ適していますが、解析(テーブルに挿入するデータの取得)には適していません。
 
-## VerticalRaw {#verticalraw}
-
-に類似した [垂直](#vertical) しかし、エスケープ無効で。 この形式は、クエリ結果の出力にのみ適しており、解析（データの受信とテーブルへの挿入）には適していません。
-
 ## XML {#xml}
 
 XML形式は出力にのみ適しており、解析には適していません。 例:
@@ -1210,4 +1205,4 @@ e.g. `schemafile.proto:MessageType`.
 -解析エラーの場合 `JSONEachRow` 新しい行(またはEOF)まですべてのデータをスキップします。 `\n` エラーを正しく数える。
 - `Template` と `CustomSeparated` 最後の列の後にdelimiterを使用し、行の間にdelimiterを使用すると、次の行の先頭を見つけることができます。
 
-[元の記事](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/interfaces/formats/) <!--hide-->

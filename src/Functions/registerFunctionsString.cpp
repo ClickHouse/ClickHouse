@@ -52,6 +52,10 @@ void registerFunctionSynonyms(FunctionFactory &);
 void registerFunctionLemmatize(FunctionFactory &);
 #endif
 
+#if USE_ICU
+void registerFunctionNormalizeUTF8(FunctionFactory &);
+#endif
+
 void registerFunctionsString(FunctionFactory & factory)
 {
     registerFunctionRepeat(factory);
@@ -96,6 +100,10 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionStem(factory);
     registerFunctionSynonyms(factory);
     registerFunctionLemmatize(factory);
+#endif
+
+#if USE_ICU
+    registerFunctionNormalizeUTF8(factory);
 #endif
 }
 

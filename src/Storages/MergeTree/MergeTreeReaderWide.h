@@ -46,14 +46,15 @@ private:
     void readData(
         const NameAndTypePair & name_and_type, ColumnPtr & column,
         size_t from_mark, bool continue_reading, size_t max_rows_to_read,
-        ISerialization::SubstreamsCache & cache);
+        ISerialization::SubstreamsCache & cache, bool was_prefetched);
 
-    /// Make next readData more simple by calling 'prefetch' of all related ReadBuffers.
+    /// Make next readData more simple by calling 'prefetch' of all related ReadBuffers (column streams).
     void prefetch(
         const NameAndTypePair & name_and_type,
         size_t from_mark,
         bool continue_reading,
-        ISerialization::SubstreamsCache & cache);
+        ISerialization::SubstreamsCache & cache,
+        std::unordered_set<std::string> & prefetched_streams); /// if stream was already prefetched do nothing
 };
 
 }

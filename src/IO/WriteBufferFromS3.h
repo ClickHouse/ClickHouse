@@ -8,8 +8,8 @@
 
 #    include <memory>
 #    include <vector>
-#    include <common/logger_useful.h>
-#    include <common/types.h>
+#    include <base/logger_useful.h>
+#    include <base/types.h>
 
 #    include <IO/BufferWithOwnMemory.h>
 #    include <IO/WriteBuffer.h>

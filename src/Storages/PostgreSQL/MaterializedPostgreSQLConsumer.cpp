@@ -3,11 +3,12 @@
 #include "StorageMaterializedPostgreSQL.h"
 #include <Columns/ColumnNullable.h>
 #include <Common/hex.h>
-#include <DataStreams/copyData.h>
-#include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Common/SettingsChanges.h>
 
 
 namespace DB
@@ -26,8 +27,9 @@ MaterializedPostgreSQLConsumer::MaterializedPostgreSQLConsumer(
     const std::string & start_lsn,
     const size_t max_block_size_,
     bool allow_automatic_update_,
-    Storages storages_)
-    : log(&Poco::Logger::get("PostgreSQLReaplicaConsumer"))
+    Storages storages_,
+    const String & name_for_logger)
+    : log(&Poco::Logger::get("PostgreSQLReplicaConsumer(" + name_for_logger + ")"))
     , context(context_)
     , replication_slot_name(replication_slot_name_)
     , publication_name(publication_name_)
@@ -270,12 +272,13 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
         case 'I': // Insert
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
+            const auto & table_name = relation_id_to_name[relation_id];
+            assert(!table_name.empty());
 
-            if (!isSyncAllowed(relation_id))
+            if (!isSyncAllowed(relation_id, table_name))
                 return;
 
             Int8 new_tuple = readInt8(replication_message, pos, size);
-            const auto & table_name = relation_id_to_name[relation_id];
             auto buffer = buffers.find(table_name);
             assert(buffer != buffers.end());
 
@@ -287,11 +290,12 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
         case 'U': // Update
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
+            const auto & table_name = relation_id_to_name[relation_id];
+            assert(!table_name.empty());
 
-            if (!isSyncAllowed(relation_id))
+            if (!isSyncAllowed(relation_id, table_name))
                 return;
 
-            const auto & table_name = relation_id_to_name[relation_id];
             auto buffer = buffers.find(table_name);
             assert(buffer != buffers.end());
 
@@ -335,14 +339,15 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
         case 'D': // Delete
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
+            const auto & table_name = relation_id_to_name[relation_id];
+            assert(!table_name.empty());
 
-            if (!isSyncAllowed(relation_id))
+            if (!isSyncAllowed(relation_id, table_name))
                 return;
 
              /// 0 or 1 if replica identity is set to full. For now only default replica identity is supported (with primary keys).
             readInt8(replication_message, pos, size);
 
-            const auto & table_name = relation_id_to_name[relation_id];
             auto buffer = buffers.find(table_name);
             assert(buffer != buffers.end());
             readTupleData(buffer->second, replication_message, pos, size, PostgreSQLQuery::DELETE);
@@ -357,8 +362,6 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             constexpr size_t transaction_commit_timestamp_len = 8;
             pos += unused_flags_len + commit_lsn_len + transaction_end_lsn_len + transaction_commit_timestamp_len;
 
-            LOG_DEBUG(log, "Current lsn: {} = {}", current_lsn, getLSNValue(current_lsn)); /// Will be removed
-
             final_lsn = current_lsn;
             break;
         }
@@ -371,7 +374,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             readString(replication_message, pos, size, relation_namespace);
             readString(replication_message, pos, size, relation_name);
 
-            if (!isSyncAllowed(relation_id))
+            if (!isSyncAllowed(relation_id, relation_name))
                 return;
 
             if (storages.find(relation_name) == storages.end())
@@ -433,7 +436,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
 
                 if (new_relation_definition)
                 {
-                    current_schema_data.column_identifiers.emplace_back(std::make_tuple(data_type_id, type_modifier));
+                    current_schema_data.column_identifiers.emplace_back(std::make_pair(data_type_id, type_modifier));
                 }
                 else
                 {
@@ -484,11 +487,15 @@ void MaterializedPostgreSQLConsumer::syncTables()
                 insert->columns = buffer.columnsAST;
 
                 InterpreterInsertQuery interpreter(insert, insert_context, true);
-                auto block_io = interpreter.execute();
-                OneBlockInputStream input(result_rows);
+                auto io = interpreter.execute();
+                auto input = std::make_shared<SourceFromSingleChunk>(
+                    result_rows.cloneEmpty(), Chunk(result_rows.getColumns(), result_rows.rows()));
 
-                assertBlocksHaveEqualStructure(input.getHeader(), block_io.out->getHeader(), "postgresql replica table sync");
-                copyData(input, *block_io.out);
+                assertBlocksHaveEqualStructure(input->getPort().getHeader(), io.pipeline.getHeader(), "postgresql replica table sync");
+                io.pipeline.complete(Pipe(std::move(input)));
+
+                CompletedPipelineExecutor executor(io.pipeline);
+                executor.execute();
 
                 buffer.columns = buffer.description.sample_block.cloneEmptyColumns();
             }
@@ -522,15 +529,35 @@ String MaterializedPostgreSQLConsumer::advanceLSN(std::shared_ptr<pqxx::nontrans
 /// Sync for some table might not be allowed if:
 /// 1. Table schema changed and might break synchronization.
 /// 2. There is no storage for this table. (As a result of some exception or incorrect pg_publication)
-bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id)
+/// 3. A new table was added to replication, it was loaded via snapshot, but consumer has not yet
+///    read wal up to the lsn position of snapshot, from which table was loaded.
+bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id, const String & relation_name)
 {
-    auto table_with_lsn = skip_list.find(relation_id);
+    if (deleted_tables.contains(relation_name))
+        return false;
+
+    auto new_table_with_lsn = waiting_list.find(relation_name);
+
+    if (new_table_with_lsn != waiting_list.end())
+    {
+        auto table_start_lsn = new_table_with_lsn->second;
+        assert(!table_start_lsn.empty());
+
+        if (getLSNValue(current_lsn) >= getLSNValue(table_start_lsn))
+        {
+            LOG_TRACE(log, "Synchronization is started for table: {} (start_lsn: {})", relation_name, table_start_lsn);
+            waiting_list.erase(new_table_with_lsn);
+            return true;
+        }
+    }
+
+    auto skipped_table_with_lsn = skip_list.find(relation_id);
 
     /// Table is not present in a skip list - allow synchronization.
-    if (table_with_lsn == skip_list.end())
+    if (skipped_table_with_lsn == skip_list.end())
         return true;
 
-    const auto & table_start_lsn = table_with_lsn->second;
+    const auto & table_start_lsn = skipped_table_with_lsn->second;
 
     /// Table is in a skip list and has not yet received a valid lsn == it has not been reloaded.
     if (table_start_lsn.empty())
@@ -544,7 +571,7 @@ bool MaterializedPostgreSQLConsumer::isSyncAllowed(Int32 relation_id)
         LOG_TRACE(log, "Synchronization is resumed for table: {} (start_lsn: {})",
                 relation_id_to_name[relation_id], table_start_lsn);
 
-        skip_list.erase(table_with_lsn);
+        skip_list.erase(skipped_table_with_lsn);
 
         return true;
     }
@@ -573,6 +600,51 @@ void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const
         else
             LOG_WARNING(log, "Table {} (relation_id: {}) is skipped, because table schema has changed", relation_name, relation_id);
     }
+}
+
+
+void MaterializedPostgreSQLConsumer::addNested(const String & postgres_table_name, StoragePtr nested_storage, const String & table_start_lsn)
+{
+    /// Cache new pointer to replacingMergeTree table.
+    storages.emplace(postgres_table_name, nested_storage);
+
+    /// Add new in-memory buffer.
+    buffers.emplace(postgres_table_name, Buffer(nested_storage));
+
+    /// Replication consumer will read wall and check for currently processed table whether it is allowed to start applying
+    /// changes to this table.
+    waiting_list[postgres_table_name] = table_start_lsn;
+}
+
+
+void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, StoragePtr nested_storage, Int32 table_id, const String & table_start_lsn)
+{
+    /// Cache new pointer to replacingMergeTree table.
+    storages[table_name] = nested_storage;
+
+    /// Create a new empty buffer (with updated metadata), where data is first loaded before syncing into actual table.
+    auto & buffer = buffers.find(table_name)->second;
+    buffer.createEmptyBuffer(nested_storage);
+
+    /// Set start position to valid lsn. Before it was an empty string. Further read for table allowed, if it has a valid lsn.
+    skip_list[table_id] = table_start_lsn;
+}
+
+
+void MaterializedPostgreSQLConsumer::removeNested(const String & postgres_table_name)
+{
+    storages.erase(postgres_table_name);
+    buffers.erase(postgres_table_name);
+    deleted_tables.insert(postgres_table_name);
+}
+
+
+void MaterializedPostgreSQLConsumer::setSetting(const SettingChange & setting)
+{
+    if (setting.name == "materialized_postgresql_max_block_size")
+        max_block_size = setting.value.safeGet<UInt64>();
+    else if (setting.name == "materialized_postgresql_allow_automatic_update")
+        allow_automatic_update = setting.value.safeGet<bool>();
 }
 
 
@@ -700,21 +772,10 @@ bool MaterializedPostgreSQLConsumer::consume(std::vector<std::pair<Int32, String
     /// Read up to max_block_size changed (approximately - in same cases might be more).
     /// false: no data was read, reschedule.
     /// true: some data was read, schedule as soon as possible.
-    return readFromReplicationSlot();
+    auto read_next = readFromReplicationSlot();
+    LOG_TRACE(log, "LSN: {}", final_lsn);
+    return read_next;
 }
 
-
-void MaterializedPostgreSQLConsumer::updateNested(const String & table_name, StoragePtr nested_storage, Int32 table_id, const String & table_start_lsn)
-{
-    /// Cache new pointer to replacingMergeTree table.
-    storages[table_name] = nested_storage;
-
-    /// Create a new empty buffer (with updated metadata), where data is first loaded before syncing into actual table.
-    auto & buffer = buffers.find(table_name)->second;
-    buffer.createEmptyBuffer(nested_storage);
-
-    /// Set start position to valid lsn. Before it was an empty string. Further read for table allowed, if it has a valid lsn.
-    skip_list[table_id] = table_start_lsn;
-}
 
 }

@@ -5,7 +5,7 @@ toc_title: ALTER
 
 ## ALTER {#query_language_queries_alter}
 
-Most `ALTER` queries modify table settings or data:
+Most `ALTER TABLE` queries modify table settings or data:
 
 -   [COLUMN](../../../sql-reference/statements/alter/column.md)
 -   [PARTITION](../../../sql-reference/statements/alter/partition.md)
@@ -17,9 +17,14 @@ Most `ALTER` queries modify table settings or data:
 -   [TTL](../../../sql-reference/statements/alter/ttl.md)
 
 !!! note "Note"
-    Most `ALTER` queries are supported only for [\*MergeTree](../../../engines/table-engines/mergetree-family/index.md) tables, as well as [Merge](../../../engines/table-engines/special/merge.md) and [Distributed](../../../engines/table-engines/special/distributed.md).
+    Most `ALTER TABLE` queries are supported only for [\*MergeTree](../../../engines/table-engines/mergetree-family/index.md) tables, as well as [Merge](../../../engines/table-engines/special/merge.md) and [Distributed](../../../engines/table-engines/special/distributed.md).
 
-While these `ALTER` settings modify entities related to role-based access control:
+These `ALTER` statements manipulate views:
+
+-   [ALTER TABLE ... MODIFY QUERY](../../../sql-reference/statements/alter/view.md) — Modifies a [Materialized view](../create/view.md#materialized) structure.
+-   [ALTER LIVE VIEW](../../../sql-reference/statements/alter/view.md#alter-live-view) — Refreshes a [Live view](../create/view.md#live-view).
+
+These `ALTER` statements modify entities related to role-based access control:
 
 -   [USER](../../../sql-reference/statements/alter/user.md)
 -   [ROLE](../../../sql-reference/statements/alter/role.md)

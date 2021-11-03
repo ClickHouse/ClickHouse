@@ -98,9 +98,9 @@ void JSONCompactEachRowRowOutputFormat::consumeTotals(DB::Chunk chunk)
         IRowOutputFormat::consumeTotals(std::move(chunk));
 }
 
-void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
+void registerOutputFormatJSONCompactEachRow(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("JSONCompactEachRow", [](
+    factory.registerOutputFormat("JSONCompactEachRow", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams & params,
@@ -110,7 +110,7 @@ void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
     });
     factory.markOutputFormatSupportsParallelFormatting("JSONCompactEachRow");
 
-    factory.registerOutputFormatProcessor("JSONCompactEachRowWithNamesAndTypes", [](
+    factory.registerOutputFormat("JSONCompactEachRowWithNamesAndTypes", [](
             WriteBuffer &buf,
             const Block &sample,
             const RowOutputFormatParams & params,
@@ -120,7 +120,7 @@ void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
     });
     factory.markOutputFormatSupportsParallelFormatting("JSONCompactEachRowWithNamesAndTypes");
 
-    factory.registerOutputFormatProcessor("JSONCompactStringsEachRow", [](
+    factory.registerOutputFormat("JSONCompactStringsEachRow", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams & params,
@@ -130,7 +130,7 @@ void registerOutputFormatProcessorJSONCompactEachRow(FormatFactory & factory)
     });
     factory.markOutputFormatSupportsParallelFormatting("JSONCompactStringsEachRow");
 
-    factory.registerOutputFormatProcessor("JSONCompactStringsEachRowWithNamesAndTypes", [](
+    factory.registerOutputFormat("JSONCompactStringsEachRowWithNamesAndTypes", [](
             WriteBuffer &buf,
             const Block &sample,
             const RowOutputFormatParams & params,

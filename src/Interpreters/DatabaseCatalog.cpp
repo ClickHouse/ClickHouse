@@ -14,7 +14,7 @@
 #include <Poco/DirectoryIterator.h>
 #include <Common/renameat2.h>
 #include <Common/CurrentMetrics.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
@@ -30,6 +30,7 @@
 
 #if USE_LIBPQXX
 #    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
+#    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -156,15 +157,6 @@ void DatabaseCatalog::loadDatabases()
     /// Another background thread which drops temporary LiveViews.
     /// We should start it after loadMarkedAsDroppedTables() to avoid race condition.
     TemporaryLiveViewCleaner::instance().startup();
-
-    /// Start up tables after all databases are loaded.
-    for (const auto & [database_name, database] : databases)
-    {
-        if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)
-            continue;
-
-        database->startupTables();
-    }
 }
 
 void DatabaseCatalog::shutdownImpl()
@@ -249,7 +241,9 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 #if USE_LIBPQXX
         if (!context_->isInternalQuery() && (db_and_table.first->getEngineName() == "MaterializedPostgreSQL"))
         {
-            db_and_table.second = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext());
+            db_and_table.second = std::make_shared<StorageMaterializedPostgreSQL>(std::move(db_and_table.second), getContext(),
+                                        assert_cast<const DatabaseMaterializedPostgreSQL *>(db_and_table.first.get())->getPostgreSQLDatabaseName(),
+                                        db_and_table.second->getStorageID().table_name);
         }
 #endif
 
@@ -335,7 +329,7 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
 }
 
 
-DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool drop, bool check_empty)
+DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const String & database_name, bool drop, bool check_empty)
 {
     if (database_name == TEMPORARY_DATABASE)
         throw Exception("Cannot detach database with temporary tables.", ErrorCodes::DATABASE_ACCESS_DENIED);
@@ -371,12 +365,14 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
     if (drop)
     {
         /// Delete the database.
-        db->drop(getContext());
+        db->drop(local_context);
 
         /// Old ClickHouse versions did not store database.sql files
+        /// Remove metadata dir (if exists) to avoid recreation of .sql file on server startup
+        fs::path database_metadata_dir = fs::path(getContext()->getPath()) / "metadata" / escapeForFileName(database_name);
+        fs::remove(database_metadata_dir);
         fs::path database_metadata_file = fs::path(getContext()->getPath()) / "metadata" / (escapeForFileName(database_name) + ".sql");
-        if (fs::exists(database_metadata_file))
-            fs::remove(database_metadata_file);
+        fs::remove(database_metadata_file);
     }
 
     return db;

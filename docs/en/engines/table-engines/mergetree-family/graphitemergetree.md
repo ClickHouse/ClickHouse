@@ -170,4 +170,4 @@ Fields for `pattern` and `default` sections:
 !!! warning "Warning"
     Data rollup is performed during merges. Usually, for old partitions, merges are not started, so for rollup it is necessary to trigger an unscheduled merge using [optimize](../../../sql-reference/statements/optimize.md). Or use additional tools, for example [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer).
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->

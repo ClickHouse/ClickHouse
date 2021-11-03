@@ -10,7 +10,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 #include "Columns/ColumnMap.h"
 #include "DataTypes/DataTypeMap.h"
 

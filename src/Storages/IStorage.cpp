@@ -9,8 +9,9 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Storages/AlterCommands.h>
 
 
@@ -200,7 +201,7 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
     return name_deps;
 }
 
-bool IStorage::isReadOnly() const
+bool IStorage::isStaticStorage() const
 {
     auto storage_policy = getStoragePolicy();
     if (storage_policy)

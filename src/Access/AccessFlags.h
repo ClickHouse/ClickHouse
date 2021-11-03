@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Access/AccessType.h>
-#include <common/types.h>
-#include <common/range.h>
+#include <base/types.h>
+#include <base/range.h>
 #include <Common/Exception.h>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>

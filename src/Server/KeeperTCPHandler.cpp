@@ -11,7 +11,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <chrono>
 #include <Common/PipeFDs.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -198,7 +198,7 @@ KeeperTCPHandler::KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSoc
     , operation_timeout(0, global_context->getConfigRef().getUInt("keeper_server.operation_timeout_ms", Coordination::DEFAULT_OPERATION_TIMEOUT_MS) * 1000)
     , session_timeout(0, global_context->getConfigRef().getUInt("keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
-    , responses(std::make_unique<ThreadSafeResponseQueue>())
+    , responses(std::make_unique<ThreadSafeResponseQueue>(std::numeric_limits<size_t>::max()))
 {
 }
 
@@ -286,7 +286,7 @@ void KeeperTCPHandler::runImpl()
         return;
     }
 
-    if (keeper_dispatcher->hasLeader())
+    if (keeper_dispatcher->checkInit() && keeper_dispatcher->hasLeader())
     {
         try
         {
@@ -306,7 +306,8 @@ void KeeperTCPHandler::runImpl()
     }
     else
     {
-        LOG_WARNING(log, "Ignoring user request, because no alive leader exist");
+        String reason = keeper_dispatcher->checkInit() ? "server is not initialized yet" : "no alive leader exists";
+        LOG_WARNING(log, "Ignoring user request, because {}", reason);
         sendHandshake(false);
         return;
     }
@@ -314,7 +315,12 @@ void KeeperTCPHandler::runImpl()
     auto response_fd = poll_wrapper->getResponseFD();
     auto response_callback = [this, response_fd] (const Coordination::ZooKeeperResponsePtr & response)
     {
-        responses->push(response);
+        if (!responses->push(response))
+            throw Exception(ErrorCodes::SYSTEM_ERROR,
+                "Could not push response with xid {} and zxid {}",
+                response->xid,
+                response->zxid);
+
         UInt8 single_byte = 1;
         [[maybe_unused]] int result = write(response_fd, &single_byte, sizeof(single_byte));
     };

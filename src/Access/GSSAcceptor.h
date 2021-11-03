@@ -5,7 +5,7 @@
 #endif
 
 #include <Access/Credentials.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <memory>
 
 #if USE_KRB5

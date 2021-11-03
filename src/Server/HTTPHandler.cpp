@@ -13,7 +13,6 @@
 #include <IO/ReadBufferFromIStream.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
-#include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromTemporaryFile.h>
 #include <IO/WriteHelpers.h>
@@ -25,13 +24,16 @@
 #include <Server/HTTPHandlerFactory.h>
 #include <Server/HTTPHandlerRequestFilter.h>
 #include <Server/IServer.h>
+#include <base/logger_useful.h>
 #include <Common/SettingsChanges.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <common/getFQDNOrHostName.h>
-#include <common/scope_guard.h>
+
+#include <base/getFQDNOrHostName.h>
+#include <base/scope_guard.h>
+#include <Server/HTTP/HTTPResponse.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -106,6 +108,45 @@ namespace ErrorCodes
     extern const int BAD_REQUEST_PARAMETER;
     extern const int INVALID_SESSION_TIMEOUT;
     extern const int HTTP_LENGTH_REQUIRED;
+}
+
+namespace
+{
+bool tryAddHeadersFromConfig(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+{
+    if (config.has("http_options_response"))
+    {
+        Strings config_keys;
+        config.keys("http_options_response", config_keys);
+        for (const std::string & config_key : config_keys)
+        {
+            if (config_key == "header" || config_key.starts_with("header["))
+            {
+                /// If there is empty header name, it will not be processed and message about it will be in logs
+                if (config.getString("http_options_response." + config_key + ".name", "").empty())
+                    LOG_WARNING(&Poco::Logger::get("processOptionsRequest"), "Empty header was found in config. It will not be processed.");
+                else
+                    response.add(config.getString("http_options_response." + config_key + ".name", ""),
+                                    config.getString("http_options_response." + config_key + ".value", ""));
+
+            }
+        }
+        return true;
+    }
+    return false;
+}
+
+/// Process options request. Useful for CORS.
+void processOptionsRequest(HTTPServerResponse & response, const Poco::Util::LayeredConfiguration & config)
+{
+    /// If can add some headers from config
+    if (tryAddHeadersFromConfig(response, config))
+    {
+        response.setKeepAlive(false);
+        response.setStatusAndReason(HTTPResponse::HTTP_NO_CONTENT);
+        response.send();
+    }
+}
 }
 
 static String base64Decode(const String & encoded)
@@ -225,8 +266,7 @@ static std::chrono::steady_clock::duration parseSessionTimeout(
 void HTTPHandler::pushDelayedResults(Output & used_output)
 {
     std::vector<WriteBufferPtr> write_buffers;
-    std::vector<ReadBufferPtr> read_buffers;
-    std::vector<ReadBuffer *> read_buffers_raw_ptr;
+    ConcatReadBuffer::Buffers read_buffers;
 
     auto * cascade_buffer = typeid_cast<CascadeWriteBuffer *>(used_output.out_maybe_delayed_and_compressed.get());
     if (!cascade_buffer)
@@ -246,14 +286,13 @@ void HTTPHandler::pushDelayedResults(Output & used_output)
             && (write_buf_concrete = dynamic_cast<IReadableWriteBuffer *>(write_buf.get()))
             && (reread_buf = write_buf_concrete->tryGetReadBuffer()))
         {
-            read_buffers.emplace_back(reread_buf);
-            read_buffers_raw_ptr.emplace_back(reread_buf.get());
+            read_buffers.emplace_back(wrapReadBufferPointer(reread_buf));
         }
     }
 
-    if (!read_buffers_raw_ptr.empty())
+    if (!read_buffers.empty())
     {
-        ConcatReadBuffer concat_read_buffer(read_buffers_raw_ptr);
+        ConcatReadBuffer concat_read_buffer(std::move(read_buffers));
         copyData(concat_read_buffer, *used_output.out_maybe_compressed);
     }
 }
@@ -706,11 +745,18 @@ void HTTPHandler::processQuery(
     if (in_post_compressed && settings.http_native_compression_disable_checksumming_on_decompress)
         static_cast<CompressedReadBuffer &>(*in_post_maybe_compressed).disableChecksumming();
 
-    /// Add CORS header if 'add_http_cors_header' setting is turned on and the client passed
-    /// Origin header.
-    used_output.out->addHeaderCORS(settings.add_http_cors_header && !request.get("Origin", "").empty());
+    /// Add CORS header if 'add_http_cors_header' setting is turned on send * in Access-Control-Allow-Origin,
+    /// or if config has http_options_response, which means that there
+    /// are some headers to be sent, and the client passed Origin header.
+    if (!request.get("Origin", "").empty())
+    {
+        if (config.has("http_options_response"))
+            tryAddHeadersFromConfig(response, config);
+        else if (settings.add_http_cors_header)
+            used_output.out->addHeaderCORS(true);
+    }
 
-    auto append_callback = [context] (ProgressCallback callback)
+    auto append_callback = [context = context] (ProgressCallback callback)
     {
         auto prev = context->getProgressCallback();
 
@@ -729,7 +775,7 @@ void HTTPHandler::processQuery(
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
-        append_callback([context, &request](const Progress &)
+        append_callback([context = context, &request](const Progress &)
         {
             /// Assume that at the point this method is called no one is reading data from the socket any more:
             /// should be true for read-only queries.
@@ -758,78 +804,85 @@ void HTTPHandler::processQuery(
         pushDelayedResults(used_output);
     }
 
-    /// Send HTTP headers with code 200 if no exception happened and the data is still not sent to
-    /// the client.
-    used_output.out->finalize();
+    /// Send HTTP headers with code 200 if no exception happened and the data is still not sent to the client.
+    used_output.finalize();
 }
 
 void HTTPHandler::trySendExceptionToClient(
     const std::string & s, int exception_code, HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
+try
 {
+    response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
+
+    /// FIXME: make sure that no one else is reading from the same stream at the moment.
+
+    /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
+    /// to avoid reading part of the current request body in the next request.
+    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
+        && response.getKeepAlive()
+        && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED
+        && !request.getStream().eof())
+    {
+        request.getStream().ignoreAll();
+    }
+
+    if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
+    {
+        response.requireAuthentication("ClickHouse server HTTP API");
+    }
+    else
+    {
+        response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
+    }
+
+    if (!response.sent() && !used_output.out_maybe_compressed)
+    {
+        /// If nothing was sent yet and we don't even know if we must compress the response.
+        *response.send() << s << std::endl;
+    }
+    else if (used_output.out_maybe_compressed)
+    {
+        /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
+        if (used_output.hasDelayed())
+            used_output.out_maybe_delayed_and_compressed.reset();
+
+        /// Send the error message into already used (and possibly compressed) stream.
+        /// Note that the error message will possibly be sent after some data.
+        /// Also HTTP code 200 could have already been sent.
+
+        /// If buffer has data, and that data wasn't sent yet, then no need to send that data
+        bool data_sent = used_output.out->count() != used_output.out->offset();
+
+        if (!data_sent)
+        {
+            used_output.out_maybe_compressed->position() = used_output.out_maybe_compressed->buffer().begin();
+            used_output.out->position() = used_output.out->buffer().begin();
+        }
+
+        writeString(s, *used_output.out_maybe_compressed);
+        writeChar('\n', *used_output.out_maybe_compressed);
+
+        used_output.out_maybe_compressed->next();
+    }
+    else
+    {
+        assert(false);
+        __builtin_unreachable();
+    }
+
+    used_output.finalize();
+}
+catch (...)
+{
+    tryLogCurrentException(log, "Cannot send exception to client");
+
     try
     {
-        response.set("X-ClickHouse-Exception-Code", toString<int>(exception_code));
-
-        /// FIXME: make sure that no one else is reading from the same stream at the moment.
-
-        /// If HTTP method is POST and Keep-Alive is turned on, we should read the whole request body
-        /// to avoid reading part of the current request body in the next request.
-        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
-            && response.getKeepAlive()
-            && exception_code != ErrorCodes::HTTP_LENGTH_REQUIRED
-            && !request.getStream().eof())
-        {
-            request.getStream().ignoreAll();
-        }
-
-        if (exception_code == ErrorCodes::REQUIRED_PASSWORD)
-        {
-            response.requireAuthentication("ClickHouse server HTTP API");
-        }
-        else
-        {
-            response.setStatusAndReason(exceptionCodeToHTTPStatus(exception_code));
-        }
-
-        if (!response.sent() && !used_output.out_maybe_compressed)
-        {
-            /// If nothing was sent yet and we don't even know if we must compress the response.
-            *response.send() << s << std::endl;
-        }
-        else if (used_output.out_maybe_compressed)
-        {
-            /// Destroy CascadeBuffer to actualize buffers' positions and reset extra references
-            if (used_output.hasDelayed())
-                used_output.out_maybe_delayed_and_compressed.reset();
-
-            /// Send the error message into already used (and possibly compressed) stream.
-            /// Note that the error message will possibly be sent after some data.
-            /// Also HTTP code 200 could have already been sent.
-
-            /// If buffer has data, and that data wasn't sent yet, then no need to send that data
-            bool data_sent = used_output.out->count() != used_output.out->offset();
-
-            if (!data_sent)
-            {
-                used_output.out_maybe_compressed->position() = used_output.out_maybe_compressed->buffer().begin();
-                used_output.out->position() = used_output.out->buffer().begin();
-            }
-
-            writeString(s, *used_output.out_maybe_compressed);
-            writeChar('\n', *used_output.out_maybe_compressed);
-
-            used_output.out_maybe_compressed->next();
-            used_output.out->finalize();
-        }
-        else
-        {
-            assert(false);
-            __builtin_unreachable();
-        }
+        used_output.finalize();
     }
     catch (...)
     {
-        tryLogCurrentException(log, "Cannot send exception to client");
+        tryLogCurrentException(log, "Cannot flush data to client (after sending exception)");
     }
 }
 
@@ -850,6 +903,11 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     try
     {
+        if (request.getMethod() == HTTPServerRequest::HTTP_OPTIONS)
+        {
+            processOptionsRequest(response, server.config());
+            return;
+        }
         response.setContentType("text/plain; charset=UTF-8");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
         /// For keep-alive to work.
@@ -888,8 +946,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
     }
 
-    if (used_output.out)
-        used_output.out->finalize();
+    used_output.finalize();
 }
 
 DynamicQueryHandler::DynamicQueryHandler(IServer & server_, const std::string & param_name_)

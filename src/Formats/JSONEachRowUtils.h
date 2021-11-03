@@ -1,5 +1,9 @@
 #pragma once
 
+#include <IO/BufferWithOwnMemory.h>
+#include <IO/ReadBuffer.h>
+#include <utility>
+
 namespace DB
 {
 

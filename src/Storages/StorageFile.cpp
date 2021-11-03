@@ -16,13 +16,13 @@
 
 #include <Formats/FormatFactory.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
+#include <Common/filesystemHelpers.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -34,9 +34,10 @@
 #include <filesystem>
 #include <Storages/Distributed/DirectoryMonitor.h>
 #include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/IInputFormat.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
@@ -124,8 +125,8 @@ void checkCreationIsAllowed(ContextPtr context_global, const std::string & db_di
         return;
 
     /// "/dev/null" is allowed for perf testing
-    if (!startsWith(table_path, db_dir_path) && table_path != "/dev/null")
-        throw Exception("File is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
+    if (!fileOrSymlinkPathStartsWith(table_path, db_dir_path) && table_path != "/dev/null")
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File `{}` is not inside `{}`", table_path, db_dir_path);
 
     if (fs::exists(table_path) && fs::is_directory(table_path))
         throw Exception("File must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
@@ -140,7 +141,10 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
         fs_table_path = user_files_absolute_path / fs_table_path;
 
     Strings paths;
-    const String path = fs::weakly_canonical(fs_table_path);
+    /// Do not use fs::canonical or fs::weakly_canonical.
+    /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
+    String path = fs::absolute(fs_table_path);
+    path = fs::path(path).lexically_normal(); /// Normalize path.
     if (path.find_first_of("*?{") == std::string::npos)
     {
         std::error_code error;
@@ -336,8 +340,7 @@ public:
                     /// Special case for distributed format. Defaults are not needed here.
                     if (storage->format_name == "Distributed")
                     {
-                        pipeline = std::make_unique<QueryPipeline>();
-                        pipeline->init(Pipe(StorageDistributedDirectoryMonitor::createSourceFromFile(current_path)));
+                        pipeline = std::make_unique<QueryPipeline>(StorageDistributedDirectoryMonitor::createSourceFromFile(current_path));
                         reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
                         continue;
                     }
@@ -391,19 +394,21 @@ public:
                     return metadata_snapshot->getSampleBlock();
                 };
 
-                auto format = FormatFactory::instance().getInput(
-                    storage->format_name, *read_buf, get_block_for_format(), context, max_block_size, storage->format_settings);
+                auto format = context->getInputFormat(
+                    storage->format_name, *read_buf, get_block_for_format(), max_block_size, storage->format_settings);
 
-                pipeline = std::make_unique<QueryPipeline>();
-                pipeline->init(Pipe(format));
+                QueryPipelineBuilder builder;
+                builder.init(Pipe(format));
 
                 if (columns_description.hasDefaults())
                 {
-                    pipeline->addSimpleTransform([&](const Block & header)
+                    builder.addSimpleTransform([&](const Block & header)
                     {
                         return std::make_shared<AddingDefaultsTransform>(header, columns_description, *format, context);
                     });
                 }
+
+                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
 
                 reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
@@ -477,8 +482,6 @@ Pipe StorageFile::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    BlockInputStreams blocks_input;
-
     if (use_table_fd)   /// need to call ctr BlockInputStream
         paths = {""};   /// when use fd, paths are empty
     else
@@ -573,7 +576,7 @@ public:
 
         write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
-        writer = FormatFactory::instance().getOutputStreamParallelIfPossible(storage.format_name,
+        writer = FormatFactory::instance().getOutputFormatParallelIfPossible(storage.format_name,
             *write_buf, metadata_snapshot->getSampleBlock(), context,
             {}, format_settings);
     }
@@ -583,18 +586,18 @@ public:
     void onStart() override
     {
         if (!prefix_written)
-            writer->writePrefix();
+            writer->doWritePrefix();
         prefix_written = true;
     }
 
     void consume(Chunk chunk) override
     {
-        writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
+        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onFinish() override
     {
-        writer->writeSuffix();
+        writer->doWriteSuffix();
     }
 
     // void flush() override
@@ -607,7 +610,7 @@ private:
     StorageMetadataPtr metadata_snapshot;
     std::unique_lock<std::shared_timed_mutex> lock;
     std::unique_ptr<WriteBuffer> write_buf;
-    BlockOutputStreamPtr writer;
+    OutputFormatPtr writer;
     bool prefix_written{false};
 };
 

@@ -1,5 +1,6 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/Operators.h>
 
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
@@ -36,7 +37,7 @@ static void skipTSVRow(ReadBuffer & in, const size_t num_columns)
   */
 static void checkForCarriageReturn(ReadBuffer & in)
 {
-    if (in.position()[0] == '\r' || (in.position() != in.buffer().begin() && in.position()[-1] == '\r'))
+    if (!in.eof() && (in.position()[0] == '\r' || (in.position() != in.buffer().begin() && in.position()[-1] == '\r')))
         throw Exception("\nYou have carriage return (\\r, 0x0D, ASCII 13) at end of first row."
             "\nIt's like your input data has DOS/Windows style line separators, that are illegal in TabSeparated format."
             " You must transform your file to Unix format."
@@ -134,7 +135,7 @@ void TabSeparatedRowInputFormat::readPrefix()
         /// In this format, we assume that column name or type cannot contain BOM,
         ///  so, if format has header,
         ///  then BOM at beginning of stream cannot be confused with name or type of field, and it is safe to skip it.
-        skipBOMIfExists(in);
+        skipBOMIfExists(*in);
     }
 
     /// This is a bit of abstraction leakage, but we have almost the same code in other places.
@@ -146,12 +147,12 @@ void TabSeparatedRowInputFormat::readPrefix()
             String column_name;
             for (;;)
             {
-                readEscapedString(column_name, in);
-                if (!checkChar('\t', in))
+                readEscapedString(column_name, *in);
+                if (!checkChar('\t', *in))
                 {
                     /// Check last column for \r before adding it, otherwise an error will be:
                     ///     "Unknown field found in TSV header"
-                    checkForCarriageReturn(in);
+                    checkForCarriageReturn(*in);
                     addInputColumn(column_name);
                     break;
                 }
@@ -160,15 +161,15 @@ void TabSeparatedRowInputFormat::readPrefix()
             }
 
 
-            if (!in.eof())
+            if (!in->eof())
             {
-                assertChar('\n', in);
+                assertChar('\n', *in);
             }
         }
         else
         {
             setupAllColumnsByTableSchema();
-            skipTSVRow(in, column_mapping->column_indexes_for_input_fields.size());
+            skipTSVRow(*in, column_mapping->column_indexes_for_input_fields.size());
         }
     }
     else if (!column_mapping->is_set)
@@ -176,14 +177,14 @@ void TabSeparatedRowInputFormat::readPrefix()
 
     if (with_types)
     {
-        skipTSVRow(in, column_mapping->column_indexes_for_input_fields.size());
+        skipTSVRow(*in, column_mapping->column_indexes_for_input_fields.size());
     }
 }
 
 
 bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
-    if (in.eof())
+    if (in->eof())
         return false;
 
     updateDiagnosticInfo();
@@ -201,20 +202,20 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
         else
         {
             NullOutput null_sink;
-            readEscapedStringInto(null_sink, in);
+            readEscapedStringInto(null_sink, *in);
         }
 
         /// skip separators
         if (file_column + 1 < column_mapping->column_indexes_for_input_fields.size())
         {
-            assertChar('\t', in);
+            assertChar('\t', *in);
         }
-        else if (!in.eof())
+        else if (!in->eof())
         {
             if (unlikely(row_num == 1))
-                checkForCarriageReturn(in);
+                checkForCarriageReturn(*in);
 
-            assertChar('\n', in);
+            assertChar('\n', *in);
         }
     }
 
@@ -227,8 +228,8 @@ bool TabSeparatedRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
 bool TabSeparatedRowInputFormat::readField(IColumn & column, const DataTypePtr & type,
     const SerializationPtr & serialization, bool is_last_file_column)
 {
-    const bool at_delimiter = !is_last_file_column && !in.eof() && *in.position() == '\t';
-    const bool at_last_column_line_end = is_last_file_column && (in.eof() || *in.position() == '\n');
+    const bool at_delimiter = !is_last_file_column && !in->eof() && *in->position() == '\t';
+    const bool at_last_column_line_end = is_last_file_column && (in->eof() || *in->position() == '\n');
 
     if (format_settings.tsv.empty_as_default && (at_delimiter || at_last_column_line_end))
     {
@@ -236,9 +237,9 @@ bool TabSeparatedRowInputFormat::readField(IColumn & column, const DataTypePtr &
         return false;
     }
     else if (format_settings.null_as_default && !type->isNullable())
-        return SerializationNullable::deserializeTextEscapedImpl(column, in, format_settings, serialization);
+        return SerializationNullable::deserializeTextEscapedImpl(column, *in, format_settings, serialization);
 
-    serialization->deserializeTextEscaped(column, in, format_settings);
+    serialization->deserializeTextEscaped(column, *in, format_settings);
     return true;
 }
 
@@ -246,7 +247,7 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
 {
     for (size_t file_column = 0; file_column < column_mapping->column_indexes_for_input_fields.size(); ++file_column)
     {
-        if (file_column == 0 && in.eof())
+        if (file_column == 0 && in->eof())
         {
             out << "<End of stream>\n";
             return false;
@@ -272,21 +273,21 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
         /// Delimiters
         if (file_column + 1 == column_mapping->column_indexes_for_input_fields.size())
         {
-            if (!in.eof())
+            if (!in->eof())
             {
                 try
                 {
-                    assertChar('\n', in);
+                    assertChar('\n', *in);
                 }
                 catch (const DB::Exception &)
                 {
-                    if (*in.position() == '\t')
+                    if (*in->position() == '\t')
                     {
                         out << "ERROR: Tab found where line feed is expected."
                                " It's like your file has more columns than expected.\n"
                                "And if your file has the right number of columns, maybe it has an unescaped tab in a value.\n";
                     }
-                    else if (*in.position() == '\r')
+                    else if (*in->position() == '\r')
                     {
                         out << "ERROR: Carriage return found where line feed is expected."
                                " It's like your file has DOS/Windows style line separators, that is illegal in TabSeparated format.\n";
@@ -294,7 +295,7 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
                     else
                     {
                         out << "ERROR: There is no line feed. ";
-                        verbosePrintString(in.position(), in.position() + 1, out);
+                        verbosePrintString(in->position(), in->position() + 1, out);
                         out << " found instead.\n";
                     }
                     return false;
@@ -305,25 +306,25 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
         {
             try
             {
-                assertChar('\t', in);
+                assertChar('\t', *in);
             }
             catch (const DB::Exception &)
             {
-                if (*in.position() == '\n')
+                if (*in->position() == '\n')
                 {
                     out << "ERROR: Line feed found where tab is expected."
                            " It's like your file has less columns than expected.\n"
                            "And if your file has the right number of columns, "
                            "maybe it has an unescaped backslash in value before tab, which causes the tab to be escaped.\n";
                 }
-                else if (*in.position() == '\r')
+                else if (*in->position() == '\r')
                 {
                     out << "ERROR: Carriage return found where tab is expected.\n";
                 }
                 else
                 {
                     out << "ERROR: There is no tab. ";
-                    verbosePrintString(in.position(), in.position() + 1, out);
+                    verbosePrintString(in->position(), in->position() + 1, out);
                     out << " found instead.\n";
                 }
                 return false;
@@ -342,19 +343,19 @@ void TabSeparatedRowInputFormat::tryDeserializeField(const DataTypePtr & type, I
         bool can_be_parsed_as_null = removeLowCardinality(type)->isNullable();
 
         // check null value for type is not nullable. don't cross buffer bound for simplicity, so maybe missing some case
-        if (!can_be_parsed_as_null && !in.eof())
+        if (!can_be_parsed_as_null && !in->eof())
         {
-            if (*in.position() == '\\' && in.available() >= 2)
+            if (*in->position() == '\\' && in->available() >= 2)
             {
-                ++in.position();
-                if (*in.position() == 'N')
+                ++in->position();
+                if (*in->position() == 'N')
                 {
-                    ++in.position();
+                    ++in->position();
                     throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected NULL value of not Nullable type {}", type->getName());
                 }
                 else
                 {
-                    --in.position();
+                    --in->position();
                 }
             }
         }
@@ -365,13 +366,13 @@ void TabSeparatedRowInputFormat::tryDeserializeField(const DataTypePtr & type, I
     else
     {
         NullOutput null_sink;
-        readEscapedStringInto(null_sink, in);
+        readEscapedStringInto(null_sink, *in);
     }
 }
 
 void TabSeparatedRowInputFormat::syncAfterError()
 {
-    skipToUnescapedNextLineOrEOF(in);
+    skipToUnescapedNextLineOrEOF(*in);
 }
 
 void TabSeparatedRowInputFormat::resetParser()
@@ -383,11 +384,11 @@ void TabSeparatedRowInputFormat::resetParser()
     columns_to_fill_with_default_values.clear();
 }
 
-void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
+void registerInputFormatTabSeparated(FormatFactory & factory)
 {
     for (const auto * name : {"TabSeparated", "TSV"})
     {
-        factory.registerInputFormatProcessor(name, [](
+        factory.registerInputFormat(name, [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
@@ -399,7 +400,7 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
 
     for (const auto * name : {"TabSeparatedRaw", "TSVRaw"})
     {
-        factory.registerInputFormatProcessor(name, [](
+        factory.registerInputFormat(name, [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
@@ -411,7 +412,7 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
 
     for (const auto * name : {"TabSeparatedWithNames", "TSVWithNames"})
     {
-        factory.registerInputFormatProcessor(name, [](
+        factory.registerInputFormat(name, [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,
@@ -423,7 +424,7 @@ void registerInputFormatProcessorTabSeparated(FormatFactory & factory)
 
     for (const auto * name : {"TabSeparatedWithNamesAndTypes", "TSVWithNamesAndTypes"})
     {
-        factory.registerInputFormatProcessor(name, [](
+        factory.registerInputFormat(name, [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,

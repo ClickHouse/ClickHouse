@@ -11,9 +11,9 @@
 #    include <DataTypes/convertMySQLDataType.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
-#    include <Formats/MySQLSource.h>
+#    include <Processors/Sources/MySQLSource.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
-#    include <Processors/QueryPipeline.h>
+#    include <QueryPipeline/QueryPipelineBuilder.h>
 #    include <IO/Operators.h>
 #    include <Interpreters/Context.h>
 #    include <Parsers/ASTCreateQuery.h>
@@ -196,6 +196,10 @@ ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->database = getDatabaseName();
     create_query->set(create_query->storage, database_engine_define);
+
+    if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
+
     return create_query;
 }
 
@@ -284,8 +288,7 @@ std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime(ContextP
     std::map<String, UInt64> tables_with_modification_time;
     StreamSettings mysql_input_stream_settings(local_context->getSettingsRef());
     auto result = std::make_unique<MySQLSource>(mysql_pool.get(), query.str(), tables_status_sample_block, mysql_input_stream_settings);
-    QueryPipeline pipeline;
-    pipeline.init(Pipe(std::move(result)));
+    QueryPipeline pipeline(std::move(result));
 
     Block block;
     PullingPipelineExecutor executor(pipeline);

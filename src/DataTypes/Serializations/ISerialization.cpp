@@ -5,6 +5,7 @@
 #include <IO/Operators.h>
 #include <Common/escapeForFileName.h>
 #include <DataTypes/NestedUtils.h>
+#include <base/EnumReflection.h>
 
 
 namespace DB
@@ -17,30 +18,11 @@ namespace ErrorCodes
 
 String ISerialization::Substream::toString() const
 {
-    switch (type)
-    {
-        case ArrayElements:
-            return "ArrayElements";
-        case ArraySizes:
-            return "ArraySizes";
-        case NullableElements:
-            return "NullableElements";
-        case NullMap:
-            return "NullMap";
-        case TupleElement:
-            return "TupleElement(" + tuple_element_name + ", "
-                + std::to_string(escape_tuple_delimiter) + ")";
-        case DictionaryKeys:
-            return "DictionaryKeys";
-        case DictionaryIndexes:
-            return "DictionaryIndexes";
-        case SparseElements:
-            return "SparseElements";
-        case SparseOffsets:
-            return "SparseOffsets";
-    }
+    if (type == TupleElement)
+        return fmt::format("TupleElement({}, escape_tuple_delimiter={})",
+            tuple_element_name, escape_tuple_delimiter ? "true" : "false");
 
-    __builtin_unreachable();
+    return String(magic_enum::enum_name(type));
 }
 
 String ISerialization::SubstreamPath::toString() const
@@ -57,9 +39,21 @@ String ISerialization::SubstreamPath::toString() const
     return wb.str();
 }
 
+void ISerialization::enumerateStreams(
+    SubstreamPath & path,
+    const StreamCallback & callback,
+    DataTypePtr type,
+    ColumnPtr column) const
+{
+    path.push_back(Substream::Regular);
+    path.back().data = {type, column, getPtr(), nullptr};
+    callback(path);
+    path.pop_back();
+}
+
 void ISerialization::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
 {
-    callback(path);
+    enumerateStreams(path, callback, nullptr, nullptr);
 }
 
 void ISerialization::serializeBinaryBulk(const IColumn & column, WriteBuffer &, size_t, size_t) const
@@ -104,38 +98,46 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     }
 }
 
-static String getNameForSubstreamPath(
+namespace
+{
+
+using SubstreamIterator = ISerialization::SubstreamPath::const_iterator;
+
+String getNameForSubstreamPath(
     String stream_name,
-    const ISerialization::SubstreamPath & path,
+    SubstreamIterator begin,
+    SubstreamIterator end,
     bool escape_tuple_delimiter)
 {
     using Substream = ISerialization::Substream;
 
     size_t array_level = 0;
-    for (const auto & elem : path)
+    for (auto it = begin; it != end; ++it)
     {
-        if (elem.type == Substream::NullMap)
+        if (it->type == Substream::NullMap)
             stream_name += ".null";
-        else if (elem.type == Substream::ArraySizes)
+        else if (it->type == Substream::ArraySizes)
             stream_name += ".size" + toString(array_level);
-        else if (elem.type == Substream::ArrayElements)
+        else if (it->type == Substream::ArrayElements)
             ++array_level;
-        else if (elem.type == Substream::DictionaryKeys)
+        else if (it->type == Substream::DictionaryKeys)
             stream_name += ".dict";
-        else if (elem.type == Substream::SparseOffsets)
+        else if (it->type == Substream::SparseOffsets)
             stream_name += ".sparse.idx";
-        else if (elem.type == Substream::TupleElement)
+        else if (it->type == Substream::TupleElement)
         {
             /// For compatibility reasons, we use %2E (escaped dot) instead of dot.
             /// Because nested data may be represented not by Array of Tuple,
             ///  but by separate Array columns with names in a form of a.b,
             ///  and name is encoded as a whole.
-            stream_name += (escape_tuple_delimiter && elem.escape_tuple_delimiter ?
-                escapeForFileName(".") : ".") + escapeForFileName(elem.tuple_element_name);
+            stream_name += (escape_tuple_delimiter && it->escape_tuple_delimiter ?
+                escapeForFileName(".") : ".") + escapeForFileName(it->tuple_element_name);
         }
     }
 
     return stream_name;
+}
+
 }
 
 String ISerialization::getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path)
@@ -152,12 +154,17 @@ String ISerialization::getFileNameForStream(const String & name_in_storage, cons
     else
         stream_name = escapeForFileName(name_in_storage);
 
-    return getNameForSubstreamPath(std::move(stream_name), path, true);
+    return getNameForSubstreamPath(std::move(stream_name), path.begin(), path.end(), true);
 }
 
 String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path)
 {
-    auto subcolumn_name = getNameForSubstreamPath("", path, false);
+    return getSubcolumnNameForStream(path, path.size());
+}
+
+String ISerialization::getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len)
+{
+    auto subcolumn_name = getNameForSubstreamPath("", path.begin(), path.begin() + prefix_len, false);
     if (!subcolumn_name.empty())
         subcolumn_name = subcolumn_name.substr(1); // It starts with a dot.
 
@@ -195,4 +202,44 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
     return true;
 }
 
+size_t ISerialization::getArrayLevel(const SubstreamPath & path)
+{
+    size_t level = 0;
+    for (const auto & elem : path)
+        level += elem.type == Substream::ArrayElements;
+    return level;
 }
+
+bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len)
+{
+    if (prefix_len == 0 || prefix_len > path.size())
+        return false;
+
+    size_t last_elem = prefix_len - 1;
+    return path[last_elem].type == Substream::NullMap
+            || path[last_elem].type == Substream::TupleElement
+            || path[last_elem].type == Substream::ArraySizes;
+}
+
+ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
+{
+    assert(prefix_len < path.size());
+
+    SubstreamData res = path[prefix_len].data;
+    res.creator.reset();
+    for (ssize_t i = static_cast<ssize_t>(prefix_len) - 1; i >= 0; --i)
+    {
+        const auto & creator = path[i].data.creator;
+        if (creator)
+        {
+            res.type = res.type ? creator->create(res.type) : res.type;
+            res.serialization = res.serialization ? creator->create(res.serialization) : res.serialization;
+            res.column = res.column ? creator->create(res.column) : res.column;
+        }
+    }
+
+    return res;
+}
+
+}
+

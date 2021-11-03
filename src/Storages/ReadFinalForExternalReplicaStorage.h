@@ -7,7 +7,7 @@
 #if USE_MYSQL || USE_LIBPQXX
 
 #include <Storages/StorageProxy.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB

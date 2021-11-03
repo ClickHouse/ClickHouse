@@ -15,12 +15,12 @@ BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, Block header, Param
 
 bool BinaryRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 {
-    if (in.eof())
+    if (in->eof())
         return false;
 
     size_t num_columns = columns.size();
     for (size_t i = 0; i < num_columns; ++i)
-        serializations[i]->deserializeBinary(*columns[i], in);
+        serializations[i]->deserializeBinary(*columns[i], *in);
 
     return true;
 }
@@ -35,14 +35,14 @@ void BinaryRowInputFormat::readPrefix()
 
     if (with_names || with_types)
     {
-        readVarUInt(columns, in);
+        readVarUInt(columns, *in);
     }
 
     if (with_names)
     {
         for (size_t i = 0; i < columns; ++i)
         {
-            readStringBinary(tmp, in);
+            readStringBinary(tmp, *in);
         }
     }
 
@@ -50,15 +50,15 @@ void BinaryRowInputFormat::readPrefix()
     {
         for (size_t i = 0; i < columns; ++i)
         {
-            readStringBinary(tmp, in);
+            readStringBinary(tmp, *in);
         }
     }
 }
 
 
-void registerInputFormatProcessorRowBinary(FormatFactory & factory)
+void registerInputFormatRowBinary(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("RowBinary", [](
+    factory.registerInputFormat("RowBinary", [](
         ReadBuffer & buf,
         const Block & sample,
         const IRowInputFormat::Params & params,
@@ -67,7 +67,7 @@ void registerInputFormatProcessorRowBinary(FormatFactory & factory)
         return std::make_shared<BinaryRowInputFormat>(buf, sample, params, false, false);
     });
 
-    factory.registerInputFormatProcessor("RowBinaryWithNamesAndTypes", [](
+    factory.registerInputFormat("RowBinaryWithNamesAndTypes", [](
         ReadBuffer & buf,
         const Block & sample,
         const IRowInputFormat::Params & params,

@@ -9,8 +9,8 @@
 #if USE_LIBPQXX
 #include "ExternalQueryBuilder.h"
 #include <Core/Block.h>
-#include <common/LocalDateTime.h>
-#include <common/logger_useful.h>
+#include <base/LocalDateTime.h>
+#include <base/logger_useful.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
 

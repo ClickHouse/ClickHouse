@@ -33,15 +33,16 @@ public:
     static void shutdownNamedSessions();
 
     Session(const ContextPtr & global_context_, ClientInfo::Interface interface_);
-    Session(Session &&);
     ~Session();
 
+    Session(const Session &&) = delete;
+    Session& operator=(const Session &&) = delete;
     Session(const Session &) = delete;
     Session& operator=(const Session &) = delete;
 
     /// Provides information about the authentication type of a specified user.
     Authentication::Type getAuthenticationType(const String & user_name) const;
-    Authentication::Digest getPasswordDoubleSHA1(const String & user_name) const;
+
     /// Same as getAuthenticationType, but adds LoginFailure event in case of error.
     Authentication::Type getAuthenticationTypeOrLogInFailure(const String & user_name) const;
 
@@ -68,6 +69,9 @@ public:
     ContextMutablePtr makeQueryContext(const ClientInfo & query_client_info) const;
     ContextMutablePtr makeQueryContext(ClientInfo && query_client_info) const;
 
+    /// Releases the currently used session ID so it becomes available for reuse by another session.
+    void releaseSessionID();
+
 private:
     std::shared_ptr<SessionLog> getSessionLog() const;
     ContextMutablePtr makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const;
@@ -87,6 +91,8 @@ private:
 
     std::shared_ptr<NamedSessionData> named_session;
     bool named_session_created = false;
+
+    Poco::Logger * log = nullptr;
 };
 
 }

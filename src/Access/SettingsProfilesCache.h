@@ -2,7 +2,7 @@
 
 #include <Access/EnabledSettings.h>
 #include <Poco/LRUCache.h>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 #include <map>
 #include <unordered_map>
 

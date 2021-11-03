@@ -15,8 +15,7 @@ limitations under the License. */
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessFlags.h>
-#include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/StreamLocalLimits.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 
 
 namespace DB
@@ -32,10 +31,16 @@ namespace ErrorCodes
 
 BlockIO InterpreterWatchQuery::execute()
 {
+    BlockIO res;
+    res.pipeline = QueryPipelineBuilder::getPipeline(buildQueryPipeline());
+    return res;
+}
+
+QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
+{
     if (!getContext()->getSettingsRef().allow_experimental_live_view)
         throw Exception("Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')", ErrorCodes::SUPPORT_IS_DISABLED);
 
-    BlockIO res;
     const ASTWatchQuery & query = typeid_cast<const ASTWatchQuery &>(*query_ptr);
     auto table_id = getContext()->resolveStorageID(query, Context::ResolveOrdinary);
 
@@ -85,10 +90,9 @@ BlockIO InterpreterWatchQuery::execute()
         pipe.setQuota(getContext()->getQuota());
     }
 
-    res.pipeline.init(std::move(pipe));
-
-    return res;
+    QueryPipelineBuilder pipeline;
+    pipeline.init(std::move(pipe));
+    return pipeline;
 }
-
 
 }

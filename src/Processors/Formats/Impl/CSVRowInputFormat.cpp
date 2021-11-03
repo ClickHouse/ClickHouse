@@ -1,4 +1,5 @@
 #include <IO/ReadHelpers.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/Operators.h>
 
 #include <Formats/verbosePrintString.h>
@@ -160,7 +161,7 @@ void CSVRowInputFormat::readPrefix()
 {
     /// In this format, we assume, that if first string field contain BOM as value, it will be written in quotes,
     ///  so BOM at beginning of stream cannot be confused with BOM in first string value, and it is safe to skip it.
-    skipBOMIfExists(in);
+    skipBOMIfExists(*in);
 
     size_t num_columns = data_types.size();
     const auto & header = getPort().getHeader();
@@ -179,15 +180,15 @@ void CSVRowInputFormat::readPrefix()
             do
             {
                 String column_name;
-                skipWhitespacesAndTabs(in);
-                readCSVString(column_name, in, format_settings.csv);
-                skipWhitespacesAndTabs(in);
+                skipWhitespacesAndTabs(*in);
+                readCSVString(column_name, *in, format_settings.csv);
+                skipWhitespacesAndTabs(*in);
 
                 addInputColumn(column_name);
             }
-            while (checkChar(format_settings.csv.delimiter, in));
+            while (checkChar(format_settings.csv.delimiter, *in));
 
-            skipDelimiter(in, format_settings.csv.delimiter, true);
+            skipDelimiter(*in, format_settings.csv.delimiter, true);
 
             for (auto read_column : column_mapping->read_columns)
             {
@@ -202,7 +203,7 @@ void CSVRowInputFormat::readPrefix()
         }
         else
         {
-            skipRow(in, format_settings.csv, num_columns);
+            skipRow(*in, format_settings.csv, num_columns);
             setupAllColumnsByTableSchema();
         }
     }
@@ -213,7 +214,7 @@ void CSVRowInputFormat::readPrefix()
 
 bool CSVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
-    if (in.eof())
+    if (in->eof())
         return false;
 
     updateDiagnosticInfo();
@@ -232,22 +233,22 @@ bool CSVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ext
 
         if (table_column)
         {
-            skipWhitespacesAndTabs(in);
+            skipWhitespacesAndTabs(*in);
             ext.read_columns[*table_column] = readField(*columns[*table_column], data_types[*table_column],
                 serializations[*table_column], is_last_file_column);
 
             if (!ext.read_columns[*table_column])
                 have_default_columns = true;
-            skipWhitespacesAndTabs(in);
+            skipWhitespacesAndTabs(*in);
         }
         else
         {
             /// We never read this column from the file, just skip it.
             String tmp;
-            readCSVString(tmp, in, format_settings.csv);
+            readCSVString(tmp, *in, format_settings.csv);
         }
 
-        skipDelimiter(in, delimiter, is_last_file_column);
+        skipDelimiter(*in, delimiter, is_last_file_column);
     }
 
     if (have_default_columns)
@@ -277,13 +278,13 @@ bool CSVRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
 
     for (size_t file_column = 0; file_column < column_mapping->column_indexes_for_input_fields.size(); ++file_column)
     {
-        if (file_column == 0 && in.eof())
+        if (file_column == 0 && in->eof())
         {
             out << "<End of stream>\n";
             return false;
         }
 
-        skipWhitespacesAndTabs(in);
+        skipWhitespacesAndTabs(*in);
         if (column_mapping->column_indexes_for_input_fields[file_column].has_value())
         {
             const auto & header = getPort().getHeader();
@@ -300,26 +301,26 @@ bool CSVRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
             if (!deserializeFieldAndPrintDiagnosticInfo(skipped_column_str, skipped_column_type, *skipped_column, out, file_column))
                 return false;
         }
-        skipWhitespacesAndTabs(in);
+        skipWhitespacesAndTabs(*in);
 
         /// Delimiters
         if (file_column + 1 == column_mapping->column_indexes_for_input_fields.size())
         {
-            if (in.eof())
+            if (in->eof())
                 return false;
 
             /// we support the extra delimiter at the end of the line
-            if (*in.position() == delimiter)
+            if (*in->position() == delimiter)
             {
-                ++in.position();
-                if (in.eof())
+                ++in->position();
+                if (in->eof())
                     break;
             }
 
-            if (!in.eof() && *in.position() != '\n' && *in.position() != '\r')
+            if (!in->eof() && *in->position() != '\n' && *in->position() != '\r')
             {
                 out << "ERROR: There is no line feed. ";
-                verbosePrintString(in.position(), in.position() + 1, out);
+                verbosePrintString(in->position(), in->position() + 1, out);
                 out << " found instead.\n"
                        " It's like your file has more columns than expected.\n"
                        "And if your file has the right number of columns, maybe it has an unquoted string value with a comma.\n";
@@ -327,17 +328,17 @@ bool CSVRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
                 return false;
             }
 
-            skipEndOfLine(in);
+            skipEndOfLine(*in);
         }
         else
         {
             try
             {
-                assertChar(delimiter, in);
+                assertChar(delimiter, *in);
             }
             catch (const DB::Exception &)
             {
-                if (*in.position() == '\n' || *in.position() == '\r')
+                if (*in->position() == '\n' || *in->position() == '\r')
                 {
                     out << "ERROR: Line feed found where delimiter (" << delimiter << ") is expected."
                            " It's like your file has less columns than expected.\n"
@@ -346,7 +347,7 @@ bool CSVRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
                 else
                 {
                     out << "ERROR: There is no delimiter (" << delimiter << "). ";
-                    verbosePrintString(in.position(), in.position() + 1, out);
+                    verbosePrintString(in->position(), in->position() + 1, out);
                     out << " found instead.\n";
                 }
                 return false;
@@ -360,7 +361,7 @@ bool CSVRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
 
 void CSVRowInputFormat::syncAfterError()
 {
-    skipToNextLineOrEOF(in);
+    skipToNextLineOrEOF(*in);
 }
 
 void CSVRowInputFormat::tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
@@ -374,15 +375,15 @@ void CSVRowInputFormat::tryDeserializeField(const DataTypePtr & type, IColumn & 
     else
     {
         String tmp;
-        readCSVString(tmp, in, format_settings.csv);
+        readCSVString(tmp, *in, format_settings.csv);
     }
 }
 
 bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column)
 {
-    const bool at_delimiter = !in.eof() && *in.position() == format_settings.csv.delimiter;
+    const bool at_delimiter = !in->eof() && *in->position() == format_settings.csv.delimiter;
     const bool at_last_column_line_end = is_last_file_column
-                                         && (in.eof() || *in.position() == '\n' || *in.position() == '\r');
+                                         && (in->eof() || *in->position() == '\n' || *in->position() == '\r');
 
     /// Note: Tuples are serialized in CSV as separate columns, but with empty_as_default or null_as_default
     /// only one empty or NULL column will be expected
@@ -401,12 +402,12 @@ bool CSVRowInputFormat::readField(IColumn & column, const DataTypePtr & type, co
     else if (format_settings.null_as_default && !type->isNullable())
     {
         /// If value is null but type is not nullable then use default value instead.
-        return SerializationNullable::deserializeTextCSVImpl(column, in, format_settings, serialization);
+        return SerializationNullable::deserializeTextCSVImpl(column, *in, format_settings, serialization);
     }
     else
     {
         /// Read the column normally.
-        serialization->deserializeTextCSV(column, in, format_settings);
+        serialization->deserializeTextCSV(column, *in, format_settings);
         return true;
     }
 }
@@ -420,11 +421,11 @@ void CSVRowInputFormat::resetParser()
 }
 
 
-void registerInputFormatProcessorCSV(FormatFactory & factory)
+void registerInputFormatCSV(FormatFactory & factory)
 {
     for (bool with_names : {false, true})
     {
-        factory.registerInputFormatProcessor(with_names ? "CSVWithNames" : "CSV", [=](
+        factory.registerInputFormat(with_names ? "CSVWithNames" : "CSV", [=](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,

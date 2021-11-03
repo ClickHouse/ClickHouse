@@ -13,7 +13,7 @@
 #include <Parsers/ASTSettingsProfileElement.h>
 #include <Parsers/ParserSettingsProfileElement.h>
 #include <Parsers/ParserDatabaseOrNone.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
 

@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <DataStreams/PushingToSinkBlockOutputStream.h>
-#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/tests/gtest_disk.h>
 #include <Formats/FormatFactory.h>
@@ -16,8 +14,12 @@
 #include <Common/tests/gtest_global_register.h>
 
 #include <memory>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <QueryPipeline/Chain.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 #if !defined(__clang__)
 #    pragma GCC diagnostic push
@@ -100,9 +102,11 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr con
         block.insert(column);
     }
 
-    auto out = std::make_shared<PushingToSinkBlockOutputStream>(table->write({}, metadata_snapshot, context));
-    out->write(block);
-    out->writeSuffix();
+    QueryPipeline pipeline(table->write({}, metadata_snapshot, context));
+
+    PushingPipelineExecutor executor(pipeline);
+    executor.push(block);
+    executor.finish();
 
     return data;
 }
@@ -120,9 +124,7 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(
         context, QueryProcessingStage::Complete, metadata_snapshot, query_info);
 
-    QueryPipeline pipeline;
-    pipeline.init(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));
-    BlockInputStreamPtr in = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
+    QueryPipeline pipeline(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));
 
     Block sample;
     {
@@ -135,12 +137,16 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     tryRegisterFormats();
 
     WriteBufferFromOwnString out_buf;
-    BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream("Values", out_buf, sample, context);
+    auto output = FormatFactory::instance().getOutputFormat("Values", out_buf, sample, context);
+    pipeline.complete(output);
 
-    copyData(*in, *output);
+    Block data;
 
-    output->flush();
+    CompletedPipelineExecutor executor(pipeline);
+    executor.execute();
+    // output->flush();
 
+    out_buf.finalize();
     return out_buf.str();
 }
 

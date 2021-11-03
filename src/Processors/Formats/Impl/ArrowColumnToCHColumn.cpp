@@ -14,8 +14,8 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/NestedUtils.h>
-#include <common/DateLUTImpl.h>
-#include <common/types.h>
+#include <base/DateLUTImpl.h>
+#include <base/types.h>
 #include <Processors/Chunk.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
@@ -26,6 +26,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/castColumn.h>
+#include <Common/quoteString.h>
 #include <algorithm>
 #include <arrow/builder.h>
 #include <arrow/array.h>
@@ -367,15 +368,10 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
         }
         case arrow::Type::TIMESTAMP:
             return readColumnWithTimestampData(arrow_column, column_name);
-#if defined(ARCADIA_BUILD)
-            case arrow::Type::DECIMAL:
-                return readColumnWithDecimalData<Decimal128, arrow::Decimal128Array>(arrow_column, column_name);
-#else
         case arrow::Type::DECIMAL128:
             return readColumnWithDecimalData<Decimal128, arrow::Decimal128Array>(arrow_column, column_name);
         case arrow::Type::DECIMAL256:
             return readColumnWithDecimalData<Decimal256, arrow::Decimal256Array>(arrow_column, column_name);
-#endif
         case arrow::Type::MAP:
         {
             auto arrow_nested_column = getNestedArrowColumn(arrow_column);
@@ -573,7 +569,17 @@ void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arr
         else
             column = readColumnFromArrowColumn(arrow_column, header_column.name, format_name, false, dictionary_values);
 
-        column.column = castColumn(column, header_column.type);
+        try
+        {
+            column.column = castColumn(column, header_column.type);
+        }
+        catch (Exception & e)
+        {
+            e.addMessage(fmt::format("while converting column {} from type {} to type {}",
+                backQuote(header_column.name), column.type->getName(), header_column.type->getName()));
+            throw;
+        }
+
         column.type = header_column.type;
         num_rows = column.column->size();
         columns_list.push_back(std::move(column.column));
