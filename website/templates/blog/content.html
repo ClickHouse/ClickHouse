@@ -5,7 +5,7 @@
             {% if page.meta.image %}
                 <img class="img-fluid mb-3" src="{{ page.meta.image }}" alt="{{ title }}" title="{{ title }}" />
             {% endif %}
-            <h1 class="display-2 mt-3 mb-5">{{ title }}</h1>
+            <h1 class="display-4 mb-3">{{ title }}</h1>
         </header>
 
         <div class="row">
@@ -63,3 +63,5 @@
         {% endfor %}
     {% endif %}
 </div>
+
+{% include "templates/blog/footer.html" %}

@@ -7,14 +7,13 @@
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledSettings.h>
-#include <Access/SettingsProfilesInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Logger.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
 #include <assert.h>
@@ -119,10 +118,8 @@ namespace
         AccessRights res = access;
         res.modifyFlags(modifier);
 
-        /// Anyone has access to the "system" and "information_schema" database.
+        /// Anyone has access to the "system" database.
         res.grant(AccessType::SELECT, DatabaseCatalog::SYSTEM_DATABASE);
-        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA);
-        res.grant(AccessType::SELECT, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE);
         return res;
     }
 
@@ -310,25 +307,23 @@ std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
 }
 
 
-SettingsChanges ContextAccess::getDefaultSettings() const
+std::shared_ptr<const Settings> ContextAccess::getDefaultSettings() const
 {
     std::lock_guard lock{mutex};
     if (enabled_settings)
-    {
-        if (auto info = enabled_settings->getInfo())
-            return info->settings;
-    }
-    return {};
+        return enabled_settings->getSettings();
+    static const auto everything_by_default = std::make_shared<Settings>();
+    return everything_by_default;
 }
 
 
-std::shared_ptr<const SettingsProfilesInfo> ContextAccess::getDefaultProfileInfo() const
+std::shared_ptr<const SettingsConstraints> ContextAccess::getSettingsConstraints() const
 {
     std::lock_guard lock{mutex};
     if (enabled_settings)
-        return enabled_settings->getInfo();
-    static const auto everything_by_default = std::make_shared<SettingsProfilesInfo>(*manager);
-    return everything_by_default;
+        return enabled_settings->getConstraints();
+    static const auto no_constraints = std::make_shared<SettingsConstraints>();
+    return no_constraints;
 }
 
 

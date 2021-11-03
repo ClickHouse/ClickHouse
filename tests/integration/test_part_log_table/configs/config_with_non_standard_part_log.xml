@@ -1,6 +1,6 @@
-<clickhouse>
+<yandex>
     <part_log>
         <database>database_name</database> <!-- ignored -->
         <table>own_part_log</table>
     </part_log>
-</clickhouse>
+</yandex>

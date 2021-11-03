@@ -1,1 +1,0 @@
-../../en/sql-reference/distributed-ddl.md

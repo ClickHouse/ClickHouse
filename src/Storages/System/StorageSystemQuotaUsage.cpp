@@ -9,8 +9,8 @@
 #include <Interpreters/Context.h>
 #include <Access/AccessControlManager.h>
 #include <Access/QuotaUsage.h>
-#include <Access/Common/AccessFlags.h>
-#include <base/range.h>
+#include <Access/AccessFlags.h>
+#include <common/range.h>
 
 
 namespace DB

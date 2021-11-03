@@ -13,12 +13,11 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <cstring>
 #include <filesystem>
-#include <base/FnTraits.h>
 
 
 namespace DB
@@ -75,18 +74,18 @@ namespace
 
         if (has_password_plaintext)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::PLAINTEXT_PASSWORD};
-            user->auth_data.setPassword(config.getString(user_config + ".password"));
+            user->authentication = Authentication{Authentication::PLAINTEXT_PASSWORD};
+            user->authentication.setPassword(config.getString(user_config + ".password"));
         }
         else if (has_password_sha256_hex)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::SHA256_PASSWORD};
-            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
+            user->authentication = Authentication{Authentication::SHA256_PASSWORD};
+            user->authentication.setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
         }
         else if (has_password_double_sha1_hex)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::DOUBLE_SHA1_PASSWORD};
-            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
+            user->authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
+            user->authentication.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
         }
         else if (has_ldap)
         {
@@ -98,15 +97,15 @@ namespace
             if (ldap_server_name.empty())
                 throw Exception("LDAP server name cannot be empty for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
-            user->auth_data = AuthenticationData{AuthenticationType::LDAP};
-            user->auth_data.setLDAPServerName(ldap_server_name);
+            user->authentication = Authentication{Authentication::LDAP};
+            user->authentication.setLDAPServerName(ldap_server_name);
         }
         else if (has_kerberos)
         {
             const auto realm = config.getString(user_config + ".kerberos.realm", "");
 
-            user->auth_data = AuthenticationData{AuthenticationType::KERBEROS};
-            user->auth_data.setKerberosRealm(realm);
+            user->authentication = Authentication{Authentication::KERBEROS};
+            user->authentication.setKerberosRealm(realm);
         }
 
         const auto profile_name_config = user_config + ".profile";
@@ -196,9 +195,6 @@ namespace
             user->access.revoke(AccessType::ACCESS_MANAGEMENT);
             user->access.revokeGrantOption(AccessType::ALL);
         }
-
-        String default_database = config.getString(user_config + ".default_database", "");
-        user->default_database = default_database;
 
         return user;
     }
@@ -363,7 +359,7 @@ namespace
 
     SettingsProfileElements parseSettingsConstraints(const Poco::Util::AbstractConfiguration & config,
                                                      const String & path_to_constraints,
-                                                     Fn<void(std::string_view)> auto && check_setting_name_function)
+                                                     const std::function<void(const std::string_view &)> & check_setting_name_function)
     {
         SettingsProfileElements profile_elements;
         Poco::Util::AbstractConfiguration::Keys keys;
@@ -400,7 +396,7 @@ namespace
     std::shared_ptr<SettingsProfile> parseSettingsProfile(
         const Poco::Util::AbstractConfiguration & config,
         const String & profile_name,
-        Fn<void(std::string_view)> auto && check_setting_name_function)
+        const std::function<void(const std::string_view &)> & check_setting_name_function)
     {
         auto profile = std::make_shared<SettingsProfile>();
         profile->setName(profile_name);
@@ -442,7 +438,7 @@ namespace
 
     std::vector<AccessEntityPtr> parseSettingsProfiles(
         const Poco::Util::AbstractConfiguration & config,
-        Fn<void(std::string_view)> auto && check_setting_name_function)
+        const std::function<void(const std::string_view &)> & check_setting_name_function)
     {
         std::vector<AccessEntityPtr> profiles;
         Poco::Util::AbstractConfiguration::Keys profile_names;

@@ -51,7 +51,7 @@ std::string WindowFrame::toString() const
 
 void WindowFrame::toString(WriteBuffer & buf) const
 {
-    buf << type << " BETWEEN ";
+    buf << toString(type) << " BETWEEN ";
     if (begin_type == BoundaryType::Current)
     {
         buf << "CURRENT ROW";
@@ -101,9 +101,9 @@ void WindowFrame::checkValid() const
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Frame start offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
-                type,
+                toString(type),
                 applyVisitor(FieldVisitorToString(), begin_offset),
-                begin_offset.getType());
+                Field::Types::toString(begin_offset.getType()));
         }
 
         if (end_type == BoundaryType::Offset
@@ -114,9 +114,9 @@ void WindowFrame::checkValid() const
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Frame end offset for '{}' frame must be a nonnegative 32-bit integer, '{}' of type '{}' given",
-                type,
+                toString(type),
                 applyVisitor(FieldVisitorToString(), end_offset),
-                end_offset.getType());
+                Field::Types::toString(end_offset.getType()));
         }
     }
 

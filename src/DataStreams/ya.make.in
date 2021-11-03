@@ -1,0 +1,18 @@
+OWNER(g:clickhouse)
+
+LIBRARY()
+
+PEERDIR(
+    clickhouse/src/Common
+    contrib/libs/poco/MongoDB
+    contrib/restricted/boost/libs
+)
+
+NO_COMPILER_WARNINGS()
+
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -P 'tests|PostgreSQL' | grep -v -F examples | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

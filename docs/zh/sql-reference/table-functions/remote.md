@@ -16,27 +16,27 @@ remoteSecure('addresses_expr', db.table[, 'user'[, 'password'], sharding_key])
 **参数**
 
 - `addresses_expr` – 代表远程服务器地址的一个表达式。可以只是单个服务器地址。 服务器地址可以是 `host:port` 或 `host`。
-
+   
     `host` 可以指定为服务器名称，或是IPV4或IPV6地址。IPv6地址在方括号中指定。
-
+   
     `port` 是远程服务器上的TCP端口。 如果省略端口，则 `remote` 使用服务器配置文件中的 [tcp_port](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port) （默认情况为，9000），`remoteSecure` 使用 [tcp_port_secure](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-tcp_port_secure) （默认情况为，9440）。
 
     IPv6地址需要指定端口。
-
+ 
     类型: [String](../../sql-reference/data-types/string.md)。
-
+    
     - `db` — 数据库名。类型: [String](../../sql-reference/data-types/string.md)。
     - `table` — 表名。类型: [String](../../sql-reference/data-types/string.md)。
     - `user` — 用户名。如果未指定用户，则使用 `default` 。类型: [String](../../sql-reference/data-types/string.md)。
     - `password` — 用户密码。如果未指定密码，则使用空密码。类型: [String](../../sql-reference/data-types/string.md)。
     - `sharding_key` — 分片键以支持在节点之间分布数据。 例如: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`。 类型: [UInt32](../../sql-reference/data-types/int-uint.md)。
-
+    
     **返回值**
-
+    
     来自远程服务器的数据集。
-
+    
     **用法**
-
+    
     使用 `remote` 表函数没有创建一个 `Distributed` 表更优，因为在这种情况下，将为每个请求重新建立服务器连接。此外，如果设置了主机名，则会解析这些名称，并且在使用各种副本时不会计入错误。 在处理大量查询时，始终优先创建 `Distributed` 表，不要使用 `remote` 表函数。
 
     该 `remote` 表函数可以在以下情况下是有用的:
@@ -45,7 +45,7 @@ remoteSecure('addresses_expr', db.table[, 'user'[, 'password'], sharding_key])
     -   在多个ClickHouse集群之间的用户研究目的的查询。
     -   手动发出的不频繁分布式请求。
     -   每次重新定义服务器集的分布式请求。
-
+    
     **地址**
 
 ``` text
@@ -101,4 +101,4 @@ INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALU
 SELECT * FROM remote_table;
 ```
 
-[原始文章](https://clickhouse.com/docs/en/query_language/table_functions/remote/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/table_functions/remote/) <!--hide-->
