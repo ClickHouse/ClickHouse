@@ -23,7 +23,7 @@ def get_key_and_app_from_aws():
 
 def handler(event, context):
     private_key, app_id = get_key_and_app_from_aws()
-    main(private_key, app_id, True)
+    main(private_key, app_id, True, True)
 
 def get_installation_id(jwt_token):
     headers = {
@@ -159,6 +159,7 @@ def main(github_secret_key, github_app_id, push_to_cloudwatch, delete_offline_ru
             print(group, f"({len(group_runners)})")
             for runner in group_runners:
                 print('\t', runner)
+
     if delete_offline_runners:
         print("Going to delete offline runners")
         for runner in runners:
