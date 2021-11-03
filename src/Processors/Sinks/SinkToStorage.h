@@ -8,6 +8,9 @@ namespace DB
 /// Sink which is returned from Storage::write.
 class SinkToStorage : public ExceptionKeepingTransform
 {
+/// PartitionedSink owns nested sinks.
+friend class PartitionedSink;
+
 public:
     explicit SinkToStorage(const Block & header);
 
@@ -35,4 +38,5 @@ public:
     void consume(Chunk) override {}
 };
 
+using SinkPtr = std::shared_ptr<SinkToStorage>;
 }
