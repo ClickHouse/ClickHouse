@@ -8,8 +8,8 @@
 #include <Interpreters/Context.h>
 #include <Access/AccessControlManager.h>
 #include <Access/Quota.h>
-#include <Access/Common/AccessFlags.h>
-#include <base/range.h>
+#include <Access/AccessFlags.h>
+#include <common/range.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
 

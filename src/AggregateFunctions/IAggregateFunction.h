@@ -7,9 +7,11 @@
 #include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/Exception.h>
-#include <base/types.h>
+#include <common/types.h>
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #include <cstddef>
 #include <memory>

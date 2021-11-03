@@ -160,28 +160,25 @@ namespace
             if (args.size() <= db_name_index)
                 return;
 
-            String name = evaluateConstantExpressionForDatabaseName(args[db_name_index], data.context)->as<ASTLiteral &>().value.safeGet<String>();
+            String db_name = evaluateConstantExpressionForDatabaseName(args[db_name_index], data.context)->as<ASTLiteral &>().value.safeGet<String>();
 
+            String table_name;
             size_t table_name_index = static_cast<size_t>(-1);
-
-            QualifiedTableName qualified_name;
-
-            if (function.name == "Distributed")
-                qualified_name.table = name;
-            else
-                qualified_name = QualifiedTableName::parseFromString(name);
-
-            if (qualified_name.database.empty())
+            size_t dot = String::npos;
+            if (function.name != "Distributed")
+                dot = db_name.find('.');
+            if (dot != String::npos)
             {
-                std::swap(qualified_name.database, qualified_name.table);
+                table_name = db_name.substr(dot + 1);
+                db_name.resize(dot);
+            }
+            else
+            {
                 table_name_index = 2;
                 if (args.size() <= table_name_index)
                     return;
-                qualified_name.table = evaluateConstantExpressionForDatabaseName(args[table_name_index], data.context)->as<ASTLiteral &>().value.safeGet<String>();
+                table_name = evaluateConstantExpressionForDatabaseName(args[table_name_index], data.context)->as<ASTLiteral &>().value.safeGet<String>();
             }
-
-            const String & db_name = qualified_name.database;
-            const String & table_name = qualified_name.table;
 
             if (db_name.empty() || table_name.empty())
                 return;

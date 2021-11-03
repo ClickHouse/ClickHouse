@@ -82,9 +82,9 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
     writer = *writer_status;
 }
 
-void registerOutputFormatArrow(FormatFactory & factory)
+void registerOutputFormatProcessorArrow(FormatFactory & factory)
 {
-    factory.registerOutputFormat(
+    factory.registerOutputFormatProcessor(
         "Arrow",
         [](WriteBuffer & buf,
            const Block & sample,
@@ -94,7 +94,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
         });
 
-    factory.registerOutputFormat(
+    factory.registerOutputFormatProcessor(
         "ArrowStream",
         [](WriteBuffer & buf,
            const Block & sample,
@@ -112,7 +112,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatArrow(FormatFactory &)
+void registerOutputFormatProcessorArrow(FormatFactory &)
 {
 }
 }

@@ -48,8 +48,6 @@ public:
 
     void drop(ContextPtr context) override;
 
-    void alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata) override;
-
 private:
     String data_path;
     using NameToASTCreate = std::unordered_map<String, ASTPtr>;

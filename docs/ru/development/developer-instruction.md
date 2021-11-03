@@ -40,7 +40,7 @@ ClickHouse не работает и не собирается на 32-битны
 
 Выполните в терминале:
 
-    git clone git@github.com:ClickHouse/ClickHouse.git
+    git clone --recursive git@github.com:ClickHouse/ClickHouse.git
     cd ClickHouse
 
 Замените первое вхождение слова `ClickHouse` в команде для git на имя вашего аккаунта на GitHub.
@@ -82,7 +82,7 @@ ClickHouse не работает и не собирается на 32-битны
 
 Работа с сабмодулями git может быть достаточно болезненной. Следующие команды позволят содержать их в порядке:
 
-    # ! Каждая команда принимает аргумент
+    # ! Каждая команда принимает аргумент --recursive
     # Обновить URLs удалённого репозитория для каждого сабмодуля, используется относительно редко
     git submodule sync
     # Добавить новые сабмодули
@@ -96,16 +96,16 @@ ClickHouse не работает и не собирается на 32-битны
 
     # Synchronizes submodules' remote URL with .gitmodules
     # Обновить URLs удалённого репозитория для каждого сабмодуля
-    git submodule sync
+    git submodule sync --recursive
     # Обновить существующие модули и добавить отсутствующие
-    git submodule update --init
+    git submodule update --init --recursive
     # Удалить все изменения в сабмодуле относительно HEAD
     git submodule foreach git reset --hard
     # Очистить игнорируемые файлы
     git submodule foreach git clean -xfd
     # Повторить последние 4 команды для каждого из сабмодулей
-    git submodule foreach git submodule sync
-    git submodule foreach git submodule update --init
+    git submodule foreach git submodule sync --recursive
+    git submodule foreach git submodule update --init --recursive
     git submodule foreach git submodule foreach git reset --hard
     git submodule foreach git submodule foreach git clean -xfd
 
@@ -251,13 +251,13 @@ sudo ./llvm.sh 12
 
 ## Написание кода {#napisanie-koda}
 
-Описание архитектуры ClickHouse: https://clickhouse.com/docs/ru/development/architecture/
+Описание архитектуры ClickHouse: https://clickhouse.tech/docs/ru/development/architecture/
 
-Стиль кода: https://clickhouse.com/docs/ru/development/style/
+Стиль кода: https://clickhouse.tech/docs/ru/development/style/
 
-Рекомендации по добавлению сторонних библиотек и поддержанию в них пользовательских изменений: https://clickhouse.com/docs/ru/development/contrib/#adding-third-party-libraries
+Рекомендации по добавлению сторонних библиотек и поддержанию в них пользовательских изменений: https://clickhouse.tech/docs/ru/development/contrib/#adding-third-party-libraries
 
-Разработка тестов: https://clickhouse.com/docs/ru/development/tests/
+Разработка тестов: https://clickhouse.tech/docs/ru/development/tests/
 
 Список задач: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
@@ -267,8 +267,8 @@ sudo ./llvm.sh 12
 
     sudo apt install wget xz-utils
 
-    wget https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz
-    wget https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/hits/tsv/hits_v1.tsv.xz
+    wget https://datasets.clickhouse.tech/visits/tsv/visits_v1.tsv.xz
 
     xz -v -d hits_v1.tsv.xz
     xz -v -d visits_v1.tsv.xz

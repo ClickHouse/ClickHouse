@@ -475,4 +475,4 @@ GRANT INSERT(x,y) ON db.table TO john
 
 この `ADMIN OPTION` 特典できるユーザー補助金の役割を他のユーザーです。
 
-[元の記事](https://clickhouse.com/docs/en/query_language/grant/) <!--hide-->
+[元の記事](https://clickhouse.tech/docs/en/query_language/grant/) <!--hide-->

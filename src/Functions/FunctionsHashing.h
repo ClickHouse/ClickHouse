@@ -6,8 +6,10 @@
 #include <MurmurHash2.h>
 #include <MurmurHash3.h>
 
-#include "config_functions.h"
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#    include "config_core.h"
+#endif
 
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
@@ -18,7 +20,6 @@
 #endif
 
 #if USE_SSL
-#    include <openssl/md4.h>
 #    include <openssl/md5.h>
 #    include <openssl/sha.h>
 #endif
@@ -43,8 +44,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/TargetSpecific.h>
 #include <Functions/PerformanceAdaptors.h>
-#include <base/range.h>
-#include <base/bit_cast.h>
+#include <common/range.h>
+#include <common/bit_cast.h>
 
 
 namespace DB
@@ -137,24 +138,10 @@ struct HalfMD5Impl
     static constexpr bool use_int_hash_for_pods = false;
 };
 
-struct MD4Impl
-{
-    static constexpr auto name = "MD4";
-    enum { length = MD4_DIGEST_LENGTH };
-
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
-    {
-        MD4_CTX ctx;
-        MD4_Init(&ctx);
-        MD4_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        MD4_Final(out_char_data, &ctx);
-    }
-};
-
 struct MD5Impl
 {
     static constexpr auto name = "MD5";
-    enum { length = MD5_DIGEST_LENGTH };
+    enum { length = 16 };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -168,7 +155,7 @@ struct MD5Impl
 struct SHA1Impl
 {
     static constexpr auto name = "SHA1";
-    enum { length = SHA_DIGEST_LENGTH };
+    enum { length = 20 };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -182,7 +169,7 @@ struct SHA1Impl
 struct SHA224Impl
 {
     static constexpr auto name = "SHA224";
-    enum { length = SHA224_DIGEST_LENGTH };
+    enum { length = 28 };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -196,7 +183,7 @@ struct SHA224Impl
 struct SHA256Impl
 {
     static constexpr auto name = "SHA256";
-    enum { length = SHA256_DIGEST_LENGTH };
+    enum { length = 32 };
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
@@ -204,20 +191,6 @@ struct SHA256Impl
         SHA256_Init(&ctx);
         SHA256_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
         SHA256_Final(out_char_data, &ctx);
-    }
-};
-
-struct SHA384Impl
-{
-    static constexpr auto name = "SHA384";
-    enum { length = SHA384_DIGEST_LENGTH };
-
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
-    {
-        SHA512_CTX ctx;
-        SHA384_Init(&ctx);
-        SHA384_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        SHA384_Final(out_char_data, &ctx);
     }
 };
 
@@ -266,6 +239,7 @@ struct SipHash128Impl
     }
 };
 
+#if !defined(ARCADIA_BUILD)
 /** Why we need MurmurHash2?
   * MurmurHash2 is an outdated hash function, superseded by MurmurHash3 and subsequently by CityHash, xxHash, HighwayHash.
   * Usually there is no reason to use MurmurHash.
@@ -387,6 +361,7 @@ struct MurmurHash3Impl128
         MurmurHash3_x64_128(begin, size, 0, out_char_data);
     }
 };
+#endif
 
 /// http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452
 /// Care should be taken to do all calculation in unsigned integers (to avoid undefined behaviour on overflow)
@@ -660,7 +635,7 @@ private:
     template <typename FromType>
     ColumnPtr executeType(const ColumnsWithTypeAndName & arguments) const
     {
-        using ColVecType = ColumnVectorOrDecimal<FromType>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
 
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(arguments[0].column.get()))
         {
@@ -787,7 +762,7 @@ private:
     template <typename FromType, bool first>
     void executeIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
-        using ColVecType = ColumnVectorOrDecimal<FromType>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
 
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
@@ -844,7 +819,7 @@ private:
     template <typename FromType, bool first>
     void executeBigIntType(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to) const
     {
-        using ColVecType = ColumnVectorOrDecimal<FromType>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<FromType>, ColumnDecimal<FromType>, ColumnVector<FromType>>;
 
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(column))
         {
@@ -1346,17 +1321,17 @@ private:
 struct NameIntHash32 { static constexpr auto name = "intHash32"; };
 struct NameIntHash64 { static constexpr auto name = "intHash64"; };
 
+#if USE_SSL
+using FunctionHalfMD5 = FunctionAnyHash<HalfMD5Impl>;
+#endif
 using FunctionSipHash64 = FunctionAnyHash<SipHash64Impl>;
 using FunctionIntHash32 = FunctionIntHash<IntHash32Impl, NameIntHash32>;
 using FunctionIntHash64 = FunctionIntHash<IntHash64Impl, NameIntHash64>;
 #if USE_SSL
-using FunctionMD4 = FunctionStringHashFixedString<MD4Impl>;
-using FunctionHalfMD5 = FunctionAnyHash<HalfMD5Impl>;
 using FunctionMD5 = FunctionStringHashFixedString<MD5Impl>;
 using FunctionSHA1 = FunctionStringHashFixedString<SHA1Impl>;
 using FunctionSHA224 = FunctionStringHashFixedString<SHA224Impl>;
 using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
-using FunctionSHA384 = FunctionStringHashFixedString<SHA384Impl>;
 using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
 #endif
 using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
@@ -1365,12 +1340,14 @@ using FunctionFarmFingerprint64 = FunctionAnyHash<ImplFarmFingerprint64>;
 using FunctionFarmHash64 = FunctionAnyHash<ImplFarmHash64>;
 using FunctionMetroHash64 = FunctionAnyHash<ImplMetroHash64>;
 
+#if !defined(ARCADIA_BUILD)
 using FunctionMurmurHash2_32 = FunctionAnyHash<MurmurHash2Impl32>;
 using FunctionMurmurHash2_64 = FunctionAnyHash<MurmurHash2Impl64>;
 using FunctionGccMurmurHash = FunctionAnyHash<GccMurmurHashImpl>;
 using FunctionMurmurHash3_32 = FunctionAnyHash<MurmurHash3Impl32>;
 using FunctionMurmurHash3_64 = FunctionAnyHash<MurmurHash3Impl64>;
 using FunctionMurmurHash3_128 = FunctionStringHashFixedString<MurmurHash3Impl128>;
+#endif
 
 using FunctionJavaHash = FunctionAnyHash<JavaHashImpl>;
 using FunctionJavaHashUTF16LE = FunctionAnyHash<JavaHashUTF16LEImpl>;

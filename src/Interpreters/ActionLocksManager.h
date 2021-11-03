@@ -4,7 +4,7 @@
 #include <Interpreters/StorageID.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/ActionLock.h>
-#include <base/types.h>
+#include <common/types.h>
 
 #include <mutex>
 #include <unordered_map>

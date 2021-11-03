@@ -10,7 +10,8 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Access/Common/AccessFlags.h>
+#include <Access/AccessFlags.h>
+#include <DataStreams/IBlockOutputStream.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
@@ -19,7 +20,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -274,7 +275,7 @@ bool StorageMaterializedView::optimize(
 void StorageMaterializedView::alter(
     const AlterCommands & params,
     ContextPtr local_context,
-    AlterLockHolder &)
+    TableLockHolder &)
 {
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
@@ -306,8 +307,9 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
         for (const auto & command : commands)
         {
             if (!command.isCommentAlter() && command.type != AlterCommand::MODIFY_QUERY)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                    command.type, getName());
+                throw Exception(
+                    "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                    ErrorCodes::NOT_IMPLEMENTED);
         }
     }
     else
@@ -315,8 +317,9 @@ void StorageMaterializedView::checkAlterIsPossible(const AlterCommands & command
         for (const auto & command : commands)
         {
             if (!command.isCommentAlter())
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}",
-                    command.type, getName());
+                throw Exception(
+                    "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                    ErrorCodes::NOT_IMPLEMENTED);
         }
     }
 }

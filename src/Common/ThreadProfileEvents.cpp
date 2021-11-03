@@ -21,7 +21,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-#include <base/errnoToString.h>
+#include <common/errnoToString.h>
 
 
 namespace DB
