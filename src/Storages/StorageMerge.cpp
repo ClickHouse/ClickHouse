@@ -285,8 +285,15 @@ Pipe StorageMerge::read(
 
         if (processed_stage == QueryProcessingStage::FetchColumns && !storage_columns.getAliases().empty())
         {
+            ASTPtr where_expression;
+            if (query_info.query->as<ASTSelectQuery>()->where())
+                where_expression = query_info.query->as<ASTSelectQuery>()->where()->clone();
+
             auto syntax_result = TreeRewriter(local_context).analyzeSelect(query_info.query, TreeRewriterResult({}, storage, storage_metadata_snapshot));
             ASTPtr required_columns_expr_list = std::make_shared<ASTExpressionList>();
+
+            if (where_expression)
+                query_info.query->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
 
             ASTPtr column_expr;
             for (const auto & column : real_column_names)
@@ -314,8 +321,8 @@ Pipe StorageMerge::read(
                 required_columns_expr_list->children.emplace_back(std::move(column_expr));
             }
 
-            syntax_result = TreeRewriter(local_context).analyze(required_columns_expr_list, storage_columns.getAllPhysical(),
-                                                                storage, storage_metadata_snapshot);
+            syntax_result = TreeRewriter(local_context).analyze(
+                required_columns_expr_list, storage_columns.getAllPhysical(), storage, storage_metadata_snapshot);
             auto alias_actions = ExpressionAnalyzer(required_columns_expr_list, syntax_result, local_context).getActionsDAG(true);
             required_columns = alias_actions->getRequiredColumns().getNames();
         }
@@ -711,27 +718,30 @@ void StorageMerge::convertingSourceStream(
     if (!where_expression)
         return;
 
-    for (size_t column_index : collections::range(0, header.columns()))
+    if (processed_stage > QueryProcessingStage::FetchColumns)
     {
-        ColumnWithTypeAndName header_column = header.getByPosition(column_index);
-        ColumnWithTypeAndName before_column = before_block_header.getByName(header_column.name);
-        /// If the processed_stage greater than FetchColumns and the block structure between streams is different.
-        /// the where expression maybe invalid because of convertingBlockInputStream.
-        /// So we need to throw exception.
-        if (!header_column.type->equals(*before_column.type.get()) && processed_stage > QueryProcessingStage::FetchColumns)
+        for (size_t column_index : collections::range(0, header.columns()))
         {
-            NamesAndTypesList source_columns = metadata_snapshot->getSampleBlock().getNamesAndTypesList();
-            auto virtual_column = *getVirtuals().tryGetByName("_table");
-            source_columns.emplace_back(NameAndTypePair{virtual_column.name, virtual_column.type});
-            auto syntax_result = TreeRewriter(local_context).analyze(where_expression, source_columns);
-            ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, local_context}.getActions(false, false);
-            Names required_columns = actions->getRequiredColumns();
-
-            for (const auto & required_column : required_columns)
+            ColumnWithTypeAndName header_column = header.getByPosition(column_index);
+            ColumnWithTypeAndName before_column = before_block_header.getByName(header_column.name);
+            /// If the processed_stage greater than FetchColumns and the block structure between streams is different.
+            /// the where expression maybe invalid because of convertingBlockInputStream.
+            /// So we need to throw exception.
+            if (!header_column.type->equals(*before_column.type.get()))
             {
-                if (required_column == header_column.name)
-                    throw Exception("Block structure mismatch in Merge Storage: different types:\n" + before_block_header.dumpStructure()
-                                    + "\n" + header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
+                NamesAndTypesList source_columns = metadata_snapshot->getSampleBlock().getNamesAndTypesList();
+                auto virtual_column = *getVirtuals().tryGetByName("_table");
+                source_columns.emplace_back(NameAndTypePair{virtual_column.name, virtual_column.type});
+                auto syntax_result = TreeRewriter(local_context).analyze(where_expression, source_columns);
+                ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, local_context}.getActions(false, false);
+                Names required_columns = actions->getRequiredColumns();
+
+                for (const auto & required_column : required_columns)
+                {
+                    if (required_column == header_column.name)
+                        throw Exception("Block structure mismatch in Merge Storage: different types:\n" + before_block_header.dumpStructure()
+                                        + "\n" + header.dumpStructure(), ErrorCodes::LOGICAL_ERROR);
+                }
             }
         }
     }
