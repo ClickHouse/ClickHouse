@@ -120,6 +120,10 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
     if (sigaction(pause_signal, &sa, previous_handler))
         throwFromErrno("Failed to setup signal handler for query profiler", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
+#if defined(OS_LINUX)
+    write_trace_iteration = 0;
+#endif
+
     try
     {
         struct sigevent sev {};
