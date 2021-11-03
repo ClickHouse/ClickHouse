@@ -213,7 +213,7 @@ public:
     DependenciesInfo getLoadingDependenciesInfo(const StorageID & table_id) const;
 
     TableNamesSet tryRemoveLoadingDependencies(const StorageID & table_id, bool check_dependencies, bool is_drop_database = false);
-    TableNamesSet tryRemoveLoadingDependenciesUnlocked(const QualifiedTableName & table_name, bool check_dependencies, bool is_drop_database = false);
+    TableNamesSet tryRemoveLoadingDependenciesUnlocked(const QualifiedTableName & removing_table, bool check_dependencies, bool is_drop_database = false);
     void checkTableCanBeRemovedOrRenamed(const StorageID & table_id) const;
 
     void updateLoadingDependencies(const StorageID & table_id, TableNamesSet && new_dependencies);

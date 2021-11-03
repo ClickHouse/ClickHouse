@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 drop dictionary if exists default.test_dict_01051_d;
 drop table if exists default.test_01051_d;
 drop table if exists default.test_view_01051_d;

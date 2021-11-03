@@ -63,18 +63,20 @@ if [[ $engine == "Atomic" ]]; then
 else
     echo "OK"
 fi
+
+$CLICKHOUSE_CLIENT -q "drop table mv"
 $CLICKHOUSE_CLIENT -q "create database ${CLICKHOUSE_DATABASE}_1"
 
-t_database=${CLICKHOUSE_DATABASE}_1
-$CLICKHOUSE_CLIENT -q "rename table t to $t_database.t"
+t_database=${CLICKHOUSE_DATABASE}
 
 if [[ $engine == "Atomic" ]]; then
-    $CLICKHOUSE_CLIENT -q "rename database ${t_database} to ${t_database}_renamed"
-    t_database="${t_database}_renamed"
+    $CLICKHOUSE_CLIENT -q "rename table t to ${CLICKHOUSE_DATABASE}_1.t"
+    $CLICKHOUSE_CLIENT -q "rename database ${CLICKHOUSE_DATABASE}_1 to ${CLICKHOUSE_DATABASE}_1_renamed"
+    t_database="${CLICKHOUSE_DATABASE}_1_renamed"
 fi
 
 $CLICKHOUSE_CLIENT -q "select table, arraySort(dependencies_table),
-arraySort(loading_dependencies_table), arraySort(loading_dependent_table) from system.tables where database=currentDatabase() order by table"
+arraySort(loading_dependencies_table), arraySort(loading_dependent_table) from system.tables where database in (currentDatabase(), '$t_database') order by table"
 
 $CLICKHOUSE_CLIENT -q "drop table ${t_database}.t;"
 $CLICKHOUSE_CLIENT -q "drop table s;"
@@ -90,7 +92,9 @@ fi
 $CLICKHOUSE_CLIENT -q "drop table join;"
 $CLICKHOUSE_CLIENT -q "drop dictionary dict1;"
 $CLICKHOUSE_CLIENT -q "drop table dict_src;"
-$CLICKHOUSE_CLIENT -q "drop database if exists ${t_database}"
+if [[ $t_database != "$CLICKHOUSE_DATABASE" ]]; then
+    $CLICKHOUSE_CLIENT -q "drop database if exists ${t_database}"
+fi
 
 $CLICKHOUSE_CLIENT -q "drop database if exists ${CLICKHOUSE_DATABASE}_1"
 $CLICKHOUSE_CLIENT -q "create database ${CLICKHOUSE_DATABASE}_1"
