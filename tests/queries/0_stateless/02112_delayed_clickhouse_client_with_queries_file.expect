@@ -23,8 +23,5 @@ send -- "select * from t format TSV\r"
 expect "1"
 expect ":) "
 
-send -- "exit\r"
-expect eof
-
 spawn bash -c "\$CLICKHOUSE_TESTS_DIR/helpers/02112_clean.sh"
 
