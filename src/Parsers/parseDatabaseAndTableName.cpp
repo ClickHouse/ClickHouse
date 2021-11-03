@@ -78,7 +78,7 @@ bool parseDatabase(IParser::Pos & pos, Expected & expected, String & database_st
 bool parseDatabaseASTPtr(IParser::Pos & pos, Expected & expected, ASTPtr & database)
 {
     ParserToken s_dot(TokenType::Dot);
-    ParserIdentifier identifier_parser(true);
+    ParserIdentifier identifier_parser(/* allow_query_parameter */true);
 
     return identifier_parser.parse(pos, database, expected);
 }
