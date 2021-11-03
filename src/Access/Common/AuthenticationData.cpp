@@ -59,7 +59,7 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
             static const auto info = make_info("KERBEROS");
             return info;
         }
-        case AuthenticationType::MAX_TYPE:
+        case AuthenticationType::MAX:
             break;
     }
     throw Exception("Unknown authentication type: " + std::to_string(static_cast<int>(type_)), ErrorCodes::LOGICAL_ERROR);
@@ -101,7 +101,7 @@ void AuthenticationData::setPassword(const String & password_)
     switch (type)
     {
         case AuthenticationType::PLAINTEXT_PASSWORD:
-            return setPasswordHashBinary(Util::encodePlainText(password_));
+            return setPasswordHashBinary(Util::stringToDigest(password_));
 
         case AuthenticationType::SHA256_PASSWORD:
             return setPasswordHashBinary(Util::encodeSHA256(password_));
@@ -114,7 +114,7 @@ void AuthenticationData::setPassword(const String & password_)
         case AuthenticationType::KERBEROS:
             throw Exception("Cannot specify password for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
 
-        case AuthenticationType::MAX_TYPE:
+        case AuthenticationType::MAX:
             break;
     }
     throw Exception("setPassword(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
@@ -187,7 +187,7 @@ void AuthenticationData::setPasswordHashBinary(const Digest & hash)
         case AuthenticationType::KERBEROS:
             throw Exception("Cannot specify password binary hash for authentication type " + toString(type), ErrorCodes::LOGICAL_ERROR);
 
-        case AuthenticationType::MAX_TYPE:
+        case AuthenticationType::MAX:
             break;
     }
     throw Exception("setPasswordHashBinary(): authentication type " + toString(type) + " not supported", ErrorCodes::NOT_IMPLEMENTED);
