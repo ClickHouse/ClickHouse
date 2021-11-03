@@ -998,8 +998,8 @@ Allows a user to log formatted queries and to write to the [system.query_log](..
 
 Possible values:
 
--   0 — Formatted queries are not logged.
--   1 — Formatted queries are logged.
+-   0 — Formatted queries are not logged in the system table.
+-   1 — Formatted queries are logged in the system table.
 
 Default value: `0`.
 
