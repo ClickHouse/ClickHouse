@@ -275,7 +275,6 @@ if __name__ == "__main__":
 
     my_env = get_env_for_runner(build_path, repo_path, result_path, work_path)
 
-
     json_path = os.path.join(work_path, 'params.json')
     with open(json_path, 'w', encoding='utf-8') as json_params:
         json_params.write(json.dumps(get_json_params_dict(check_name, pr_info.sha, pr_info.number, images_with_version)))
@@ -286,7 +285,7 @@ if __name__ == "__main__":
     run_command = f"{runner_path} | tee {output_path_log}"
 
     with open(output_path_log, 'w', encoding='utf-8') as log:
-        with subprocess.Popen(run_command, shell=True, stderr=log, stdout=log) as process:
+        with subprocess.Popen(run_command, shell=True, stderr=log, stdout=log, env=my_env) as process:
             retcode = process.wait()
             if retcode == 0:
                 logging.info("Run tests successfully")
