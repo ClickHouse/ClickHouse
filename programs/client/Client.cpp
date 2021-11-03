@@ -408,6 +408,9 @@ void Client::prepareForInteractive()
     clearTerminal();
     showClientVersion();
 
+    if (delayed_interactive)
+        std::cout << std::endl;
+
     /// Load Warnings at the beginning of connection
     if (!config().has("no-warnings"))
     {
@@ -563,8 +566,9 @@ void Client::connect()
     if (is_interactive)
     {
         std::cout << "Connected to " << server_name << " server version " << server_version << " revision " << server_revision << "."
-                    << std::endl
                     << std::endl;
+        if (!delayed_interactive)
+            std::cout << std::endl;
 
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);

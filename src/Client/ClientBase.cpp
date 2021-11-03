@@ -1705,6 +1705,9 @@ void ClientBase::init(int argc, char ** argv)
         config().setString("history_file", options["history_file"].as<std::string>());
     if (options.count("verbose"))
         config().setBool("verbose", true);
+    if (options.count("interactive"))
+        config().setBool("interactive", true);
+
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.count("server_logs_file"))
