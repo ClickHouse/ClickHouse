@@ -8,7 +8,6 @@ import time
 import sys
 
 from github import Github
-import requests
 
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
