@@ -17,4 +17,12 @@ echo "Going to configure runner"
 sudo -u ubuntu ./config.sh --url $RUNNER_URL --token $RUNNER_TOKEN --name $INSTANCE_ID --runnergroup Default --labels 'self-hosted,Linux,X64,builder' --work _work
 
 echo "Run"
-sudo -u ubuntu ./run.sh
+i=0 retries=10
+while [[ $i -lt $retries ]]; do
+    sudo -u ubuntu ./run.sh ||:
+    ((++i))
+    echo "Runner failed, will try to restart"
+    sleep 5
+done
+
+poweroff
