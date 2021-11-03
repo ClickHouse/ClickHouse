@@ -5,11 +5,12 @@ import json
 import time
 import fnmatch
 from collections import namedtuple
+import sys
 
 import requests
 import boto3
 
-API_URL = 'https://api.github.com/repos/ClickHouse/ClickHouse/'
+API_URL = 'https://api.github.com/repos/ClickHouse/ClickHouse'
 
 SUSPICIOUS_CHANGED_FILES_NUMBER = 200
 
@@ -136,7 +137,7 @@ def get_workflow_description_from_event(event):
     action = event['action']
     sender_login = event['sender']['login']
     run_id = event['workflow_run']['id']
-    event = event['workflow_run']['event']
+    event_type = event['workflow_run']['event']
     fork_owner = event['workflow_run']['head_repository']['owner']['login']
     fork_branch = event['workflow_run']['head_branch']
     orgs_data = _exec_get_with_retry(event['sender']['organizations_url'])
@@ -145,7 +146,7 @@ def get_workflow_description_from_event(event):
         action=action,
         sender_login=sender_login,
         run_id=run_id,
-        event=event,
+        event=event_type,
         fork_owner_login=fork_owner,
         fork_branch=fork_branch,
         sender_orgs=sender_orgs,
@@ -210,9 +211,15 @@ def get_token_from_aws():
     return data['clickhouse_robot_token']
 
 def main(event):
+    print("Got event", event)
     token = get_token_from_aws()
-    workflow_description = get_workflow_description_from_event(event)
+    event_data = json.loads(event['body'])
+    print("Event body", event_data)
+    print("Type of event_data", type(event_data))
+    workflow_description = get_workflow_description_from_event(event_data)
     logging.info("Got workflow description %s", workflow_description)
+    if workflow_description.event != "requested":
+        logging.info("Exiting, event type is %s", workflow_description.event)
 
     if is_trusted_sender(workflow_description.sender_login, workflow_description.sender_orgs):
         approve_run(workflow_description.run_id, token)
@@ -241,3 +248,4 @@ def main(event):
 def handler(event, _):
     logging.basicConfig(level=logging.INFO)
     main(event)
+
