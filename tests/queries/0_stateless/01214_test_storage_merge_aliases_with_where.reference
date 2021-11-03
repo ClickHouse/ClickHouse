@@ -1,0 +1,14 @@
+-- { echo  }
+SELECT * FROM tt_m order by a;
+1	1
+2	4
+3	0
+SELECT * FROM tt_m WHERE b != 0 order by a;
+1	1
+2	4
+SELECT * FROM tt_m WHERE b != 1 order by a;
+2	4
+3	0
+SELECT * FROM tt_m WHERE b != a * 2 order by a;
+1	1
+3	0
