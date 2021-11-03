@@ -612,7 +612,6 @@ Pipe StorageRabbitMQ::read(
 
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
     auto modified_context = addSettings(local_context);
-    auto block_size = getMaxBlockSize();
 
     if (!connection->isConnected())
     {
@@ -630,7 +629,7 @@ Pipe StorageRabbitMQ::read(
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto rabbit_source = std::make_shared<RabbitMQSource>(
-                *this, metadata_snapshot, modified_context, column_names, block_size);
+                *this, metadata_snapshot, modified_context, column_names, 1, rabbitmq_settings->rabbitmq_commit_on_select);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
