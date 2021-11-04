@@ -18,6 +18,8 @@
 * Session logging for audit. Logging all successful and failed login and logout events to a new `system.session_log` table. [#22415](https://github.com/ClickHouse/ClickHouse/pull/22415) ([Vasily Nemkov](https://github.com/Enmk)) ([Vitaly Baranov](https://github.com/vitlibar)).
 * Support multidimensional cosine distance and euclidean distance functions; L1, L2, Lp, Linf distances and norms. Scalar product on tuples and various arithmetic operators on tuples. This fully closes [#4509](https://github.com/ClickHouse/ClickHouse/issues/4509) and even more. [#27933](https://github.com/ClickHouse/ClickHouse/pull/27933) ([Alexey Boykov](https://github.com/mathalex)).
 * Add support for compression and decompression for `INTO OUTPUT` and `FROM INFILE` (with autodetect or with additional optional parameter). [#27135](https://github.com/ClickHouse/ClickHouse/pull/27135) ([Filatenkov Artur](https://github.com/FArthur-cmd)).
+* Add CORS (Cross Origin Resource Sharing) support with HTTP `OPTIONS` request. It means, now Grafana will work with serverless requests without a kludges. Closes [#18693](https://github.com/ClickHouse/ClickHouse/issues/18693). [#29155](https://github.com/ClickHouse/ClickHouse/pull/29155) ([Filatenkov Artur](https://github.com/FArthur-cmd)).
+* Queries with JOIN ON now supports disjunctions (OR). [#21320](https://github.com/ClickHouse/ClickHouse/pull/21320) ([Ilya Golshtein](https://github.com/ilejn)).
 * Added function `tokens`. That allow to split string into tokens using non-alpha numeric ASCII characters as separators. [#29981](https://github.com/ClickHouse/ClickHouse/pull/29981) ([Maksim Kita](https://github.com/kitaisreal)). Added function `ngrams` to extract ngrams from text. Closes [#29699](https://github.com/ClickHouse/ClickHouse/issues/29699). [#29738](https://github.com/ClickHouse/ClickHouse/pull/29738) ([Maksim Kita](https://github.com/kitaisreal)).
 * Add functions for Unicode normalization: `normalizeUTF8NFC`, `normalizeUTF8NFD`, `normalizeUTF8NFKC`, `normalizeUTF8NFKD` functions. [#28633](https://github.com/ClickHouse/ClickHouse/pull/28633) ([darkkeks](https://github.com/darkkeks)).
 * Streaming consumption of application log files in ClickHouse with `FileLog` table engine. It's like `Kafka` or `RabbitMQ` engine but for append-only and rotated logs in local filesystem. Closes [#6953](https://github.com/ClickHouse/ClickHouse/issues/6953). [#25969](https://github.com/ClickHouse/ClickHouse/pull/25969) ([flynn](https://github.com/ucasfl)) ([Kseniia Sumarokova](https://github.com/kssenii)).
@@ -30,7 +32,6 @@
 * HSTS can be enabled for Clickhouse HTTP server by setting `hsts_max_age` in configuration file with a positive number. [#29516](https://github.com/ClickHouse/ClickHouse/pull/29516) ([凌涛](https://github.com/lingtaolf)).
 * Huawei OBS Storage support. Closes [#24294](https://github.com/ClickHouse/ClickHouse/issues/24294). [#29511](https://github.com/ClickHouse/ClickHouse/pull/29511) ([kevin wan](https://github.com/MaxWk)).
 * New function `mapContainsKeyLike` to get the map that key matches a simple regular expression. [#29471](https://github.com/ClickHouse/ClickHouse/pull/29471) ([凌涛](https://github.com/lingtaolf)). New function `mapExtractKeyLike` to get the map only kept elements matched specified pattern. [#30793](https://github.com/ClickHouse/ClickHouse/pull/30793) ([凌涛](https://github.com/lingtaolf)).
-
 * Implemented `ALTER TABLE x MODIFY COMMENT`. [#29264](https://github.com/ClickHouse/ClickHouse/pull/29264) ([Vasily Nemkov](https://github.com/Enmk)).
 * Adds H3 inspection functions that are missing from ClickHouse but are available via the H3 api: https://h3geo.org/docs/api/inspection. [#29209](https://github.com/ClickHouse/ClickHouse/pull/29209) ([Bharat Nallan](https://github.com/bharatnc)).
 * Allow non-replicated ALTER TABLE FETCH and ATTACH in Replicated databases. [#29202](https://github.com/ClickHouse/ClickHouse/pull/29202) ([Kevin Michel](https://github.com/kmichel-aiven)).
@@ -40,19 +41,12 @@
 * Add aggregate function `exponentialMovingAverage` that can be used as window function. This closes [#27511](https://github.com/ClickHouse/ClickHouse/issues/27511). [#28914](https://github.com/ClickHouse/ClickHouse/pull/28914) ([alexey-milovidov](https://github.com/alexey-milovidov)).
 * Allow to include subcolumns of table columns into `DESCRIBE` query result (can be enabled by setting `describe_include_subcolumns`). [#28905](https://github.com/ClickHouse/ClickHouse/pull/28905) ([Anton Popov](https://github.com/CurtizJ)).
 * `Executable`, `ExecutablePool` added option `send_chunk_header`. If this option is true then chunk rows_count with line break will be sent to client before chunk. [#28833](https://github.com/ClickHouse/ClickHouse/pull/28833) ([Maksim Kita](https://github.com/kitaisreal)).
-
 * `tokenbf_v1` and `ngram` support Map with key of String of FixedSring type. It enhance data skipping in query with map key filter. ```sql CREATE TABLE map_tokenbf ( row_id UInt32, map Map(String, String), INDEX map_tokenbf map TYPE ngrambf_v1(4,256,2,0) GRANULARITY 1 ) Engine=MergeTree() Order by id ``` With table above, the query `select * from map_tokebf where map['K']='V'` will skip the granule that doesn't contain key `A` . Of course, how many rows will skipped is depended on the `granularity` and `index_granularity` you set. [#28511](https://github.com/ClickHouse/ClickHouse/pull/28511) ([凌涛](https://github.com/lingtaolf)).
 * Send profile events from server to client. New packet type `ProfileEvents` was introduced. Closes [#26177](https://github.com/ClickHouse/ClickHouse/issues/26177). [#28364](https://github.com/ClickHouse/ClickHouse/pull/28364) ([Dmitry Novik](https://github.com/novikd)).
 * Bit shift operations for `FixedString` and `String` data types. This closes [#27763](https://github.com/ClickHouse/ClickHouse/issues/27763). [#28325](https://github.com/ClickHouse/ClickHouse/pull/28325) ([小路](https://github.com/nicelulu)).
 * Support adding / deleting tables to replication from PostgreSQL dynamically in database engine MaterializedPostgreSQL. Support alter for database settings. Closes [#27573](https://github.com/ClickHouse/ClickHouse/issues/27573). [#28301](https://github.com/ClickHouse/ClickHouse/pull/28301) ([Kseniia Sumarokova](https://github.com/kssenii)).
-
-
 * Added function accurateCastOrDefault(x, T). Closes [#21330](https://github.com/ClickHouse/ClickHouse/issues/21330). Authors @taiyang-li. [#23028](https://github.com/ClickHouse/ClickHouse/pull/23028) ([Maksim Kita](https://github.com/kitaisreal)).
-
 * Add Function `toUUIDOrDefault`, `toUInt8/16/32/64/256OrDefault`, `toInt8/16/32/64/128/256OrDefault`, which enables user defining default value(not null) when string parsing is failed. [#21330](https://github.com/ClickHouse/ClickHouse/pull/21330) ([taiyang-li](https://github.com/taiyang-li)).
-* Queries with JOIN ON support OR. [#21320](https://github.com/ClickHouse/ClickHouse/pull/21320) ([Ilya Golshtein](https://github.com/ilejn)).
-
-* Add CORS support. Add headers for preflight options request. Closes [#18693](https://github.com/ClickHouse/ClickHouse/issues/18693). [#29155](https://github.com/ClickHouse/ClickHouse/pull/29155) ([Filatenkov Artur](https://github.com/FArthur-cmd)).
 
 #### Performance Improvement
 
