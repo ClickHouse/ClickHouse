@@ -549,10 +549,6 @@ Pipe StorageHive::read(
     sources_info->database = hive_database;
     sources_info->table_name = hive_table;
     sources_info->hms_client = hms_client;
-    for (const auto & hive_file : sources_info->hive_files)
-    {
-        std::cout << "hive file:" << hive_file->getPath() << std::endl;
-    }
     sources_info->partition_name_types = partition_name_types;
     for (const auto & column : column_names)
     {

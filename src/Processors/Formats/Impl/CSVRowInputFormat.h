@@ -25,6 +25,8 @@ public:
 
     String getName() const override { return "CSVRowInputFormat"; }
 
+    void readPrefix() override;
+
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
@@ -52,6 +54,8 @@ private:
     std::vector<String> readTypes() override { return readHeaderRow(); }
 
     String readFieldIntoString();
+
+    std::vector<String> input_field_names;
 };
 
 }

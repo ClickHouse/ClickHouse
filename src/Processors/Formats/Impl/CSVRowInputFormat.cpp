@@ -36,6 +36,86 @@ CSVRowInputFormat::CSVRowInputFormat(
             ErrorCodes::BAD_ARGUMENTS);
 }
 
+void CSVRowInputFormat::readPrefix()
+{
+    if (with_names || with_types || data_types.at(0)->textCanContainOnlyValidUTF8())
+    {
+        /// We assume that column name or type cannot contain BOM, so, if format has header,
+        /// then BOM at beginning of stream cannot be confused with name or type of field, and it is safe to skip it.
+        skipBOMIfExists(*in);
+    }
+
+    /// This is a bit of abstraction leakage, but we need it in parallel parsing:
+    /// we check if this InputFormat is working with the "real" beginning of the data.
+    if (with_names && getCurrentUnitNumber() == 0)
+    {
+        if (format_settings.with_names_use_header)
+        {
+            std::vector<bool> read_columns(data_types.size(), false);
+
+            if (format_settings.csv.input_field_names.empty())
+            {
+                auto column_names = readNames();
+                for (const auto & name : column_names)
+                    addInputColumn(name, read_columns);
+            }
+            else
+            {
+                /// For Hive Text file, read the first row to get exact number of columns.
+                char * old_pos = in->position();
+                auto values = readHeaderRow();
+                in->position() = old_pos;
+
+                input_field_names = format_settings.csv.input_field_names;
+                input_field_names.resize(values.size());
+                for (const auto & column_name : input_field_names)
+                    addInputColumn(column_name, read_columns);
+            }
+
+            for (size_t i = 0; i != read_columns.size(); ++i)
+            {
+                if (!read_columns[i])
+                    column_mapping->not_presented_columns.push_back(i);
+            }
+        }
+        else
+        {
+            setupAllColumnsByTableSchema();
+            skipNames();
+        }
+    }
+    else if (!column_mapping->is_set)
+        setupAllColumnsByTableSchema();
+
+    if (with_types && getCurrentUnitNumber() == 0)
+    {
+        if (format_settings.with_types_use_header)
+        {
+            auto types = readTypes();
+            if (types.size() != column_mapping->column_indexes_for_input_fields.size())
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "The number of data types differs from the number of column names in input data");
+
+            /// Check that types from input matches types from header.
+            for (size_t i = 0; i < types.size(); ++i)
+            {
+                if (column_mapping->column_indexes_for_input_fields[i] &&
+                    data_types[*column_mapping->column_indexes_for_input_fields[i]]->getName() != types[i])
+                {
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Type of '{}' must be {}, not {}",
+                        getPort().getHeader().getByPosition(*column_mapping->column_indexes_for_input_fields[i]).name,
+                        data_types[*column_mapping->column_indexes_for_input_fields[i]]->getName(), types[i]);
+                }
+            }
+        }
+        else
+            skipTypes();
+    }
+}
+
 static void skipEndOfLine(ReadBuffer & in)
 {
     /// \n (Unix) or \r\n (DOS/Windows) or \n\r (Mac OS Classic)
@@ -58,81 +138,6 @@ static void skipEndOfLine(ReadBuffer & in)
     else if (!in.eof())
         throw Exception("Expected end of line", ErrorCodes::INCORRECT_DATA);
 }
-
-// try to skip end of line. If not end of line, reset position and return false, otherwise skip and return true.
-static bool trySkipEndOfLine(ReadBuffer & in)
-{
-    /// \n (Unix) or \r\n (DOS/Windows) or \n\r (Mac OS Classic)
-    bool end_of_line = false;
-    char * old_pos = in.position();
-
-    if (*in.position() == '\n')
-    {
-        ++in.position();
-        if (!in.eof() && *in.position() == '\r')
-            ++in.position();
-        end_of_line = true;
-    }
-    else if (*in.position() == '\r')
-    {
-        ++in.position();
-        if (!in.eof() && *in.position() == '\n')
-        {
-            ++in.position();
-            end_of_line = true;
-        }
-    }
-
-    if (!end_of_line)
-    {
-        in.position() = old_pos;
-    }
-    return end_of_line;
-}
-
-static void skipDelimiter(ReadBuffer & in, const char delimiter, bool is_last_column)
-{
-    if (is_last_column)
-    {
-        if (in.eof())
-            return;
-
-        /// we support the extra delimiter at the end of the line
-        if (*in.position() == delimiter)
-        {
-            ++in.position();
-            if (in.eof())
-                return;
-        }
-
-        skipEndOfLine(in);
-    }
-    else
-        assertChar(delimiter, in);
-}
-
-
-// try skip delimiter and possible end of line. if there are end of line after delimiter, return true, otherwise return false.
-static bool trySkipDelimiter(ReadBuffer & in, const char delimiter)
-{
-    if (in.eof())
-        return false;
-
-    /// we support the extra delimiter at the end of the line
-    if (*in.position() == delimiter)
-    {
-        ++in.position();
-        if (in.eof())
-            return false;
-        return trySkipEndOfLine(in);
-    }
-    else if (!trySkipEndOfLine(in))
-    {
-        throw Exception("Expected end of line", ErrorCodes::INCORRECT_DATA);
-    }
-    return true;
-}
-
 
 /// Skip `whitespace` symbols allowed in CSV.
 static inline void skipWhitespacesAndTabs(ReadBuffer & in)
