@@ -23,7 +23,7 @@ def get_key_and_app_from_aws():
 
 def handler(event, context):
     private_key, app_id = get_key_and_app_from_aws()
-    main(private_key, app_id, True, True)
+    main(private_key, app_id, True, False)
 
 def get_installation_id(jwt_token):
     headers = {
