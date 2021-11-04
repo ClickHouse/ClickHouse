@@ -122,7 +122,7 @@ def get_test_times(output):
 
 
 def clear_ip_tables_and_restart_daemons():
-    logging.info("Dump iptables after run %s", subprocess.check_output("iptables -L", shell=True))
+    logging.info("Dump iptables after run %s", subprocess.check_output("sudo iptables -L", shell=True))
     try:
         logging.info("Killing all alive docker containers")
         subprocess.check_output("timeout -s 9 10m docker kill $(docker ps -q)", shell=True)
@@ -161,7 +161,7 @@ def clear_ip_tables_and_restart_daemons():
         for i in range(1000):
             iptables_iter = i
             # when rules will be empty, it will raise exception
-            subprocess.check_output("iptables -D DOCKER-USER 1", shell=True)
+            subprocess.check_output("sudo iptables -D DOCKER-USER 1", shell=True)
     except subprocess.CalledProcessError as err:
         logging.info("All iptables rules cleared, " + str(iptables_iter) + "iterations, last error: " + str(err))
 
@@ -565,7 +565,7 @@ class ClickhouseIntegrationTestsRunner:
             return self.run_flaky_check(repo_path, build_path)
 
         self._install_clickhouse(build_path)
-        logging.info("Dump iptables before run %s", subprocess.check_output("iptables -L", shell=True))
+        logging.info("Dump iptables before run %s", subprocess.check_output("sudo iptables -L", shell=True))
         all_tests = self._get_all_tests(repo_path)
         parallel_skip_tests = self._get_parallel_tests_skip_list(repo_path)
         logging.info("Found %s tests first 3 %s", len(all_tests), ' '.join(all_tests[:3]))
