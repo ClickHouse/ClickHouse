@@ -170,7 +170,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
     req.SetKey(key);
 
     /**
-     * If remote_filesustem_method = 'read_threadpool', then for MergeTree family tables
+     * If remote_filesystem_read_method = 'read_threadpool', then for MergeTree family tables
      * exact byte ranges to read are always passed here.
      */
     if (read_until_position)
