@@ -41,10 +41,10 @@ def test_attach_partition_with_large_destination(started_cluster, engine):
     assert node.query("SELECT n FROM db.destination ORDER BY n") == "2\n4\n6\n8\n"
 
     # Cleanup
-    create_force_drop_flag()
+    create_force_drop_flag(node)
     node.query("DROP TABLE db.source_1 SYNC")
-    create_force_drop_flag()
+    create_force_drop_flag(node)
     node.query("DROP TABLE db.source_2 SYNC")
-    create_force_drop_flag()
+    create_force_drop_flag(node)
     node.query("DROP TABLE db.destination SYNC")
     node.query("DROP DATABASE db")
