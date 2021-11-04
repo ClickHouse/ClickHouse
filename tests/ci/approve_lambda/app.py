@@ -6,6 +6,7 @@ import time
 import fnmatch
 from collections import namedtuple
 import sys
+import jwt
 
 import requests
 import boto3
@@ -82,6 +83,40 @@ TRUSTED_CONTRIBUTORS = {
     "zlobober"      # Developer of YT
 }
 
+
+def get_installation_id(jwt_token):
+    headers = {
+        "Authorization": f"Bearer {jwt_token}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+    response = requests.get("https://api.github.com/app/installations", headers=headers)
+    response.raise_for_status()
+    data = response.json()
+    return data[0]['id']
+
+def get_access_token(jwt_token, installation_id):
+    headers = {
+        "Authorization": f"Bearer {jwt_token}",
+        "Accept": "application/vnd.github.v3+json",
+    }
+    response = requests.post(f"https://api.github.com/app/installations/{installation_id}/access_tokens", headers=headers)
+    response.raise_for_status()
+    data = response.json()
+    return data['token']
+
+def get_key_and_app_from_aws():
+    secret_name = "clickhouse_github_secret_key"
+    session = boto3.session.Session()
+    client = session.client(
+        service_name='secretsmanager',
+    )
+    get_secret_value_response = client.get_secret_value(
+        SecretId=secret_name
+    )
+    data = json.loads(get_secret_value_response['SecretString'])
+    return data['clickhouse-app-key'], int(data['clickhouse-app-id'])
+
+
 def is_trusted_sender(pr_user_login, pr_user_orgs):
     if pr_user_login in TRUSTED_CONTRIBUTORS:
         logging.info("User '%s' is trusted", pr_user_login)
@@ -119,6 +154,10 @@ def _exec_post_with_retry(url, token, data=None):
                 response = requests.post(url, headers=headers, json=data)
             else:
                 response = requests.post(url, headers=headers)
+            if response.status_code == 403:
+                data = response.json()
+                if 'message' in data and data['message'] == 'This workflow run is not waiting for approval':
+                    return data
             response.raise_for_status()
             return response.json()
         except Exception as ex:
@@ -127,11 +166,9 @@ def _exec_post_with_retry(url, token, data=None):
 
     raise Exception("Cannot execute POST request with retry")
 
-
 def _get_pull_requests_from(owner, branch):
     url = f"{API_URL}/pulls?head={owner}:{branch}"
     return _exec_get_with_retry(url)
-
 
 def get_workflow_description_from_event(event):
     action = event['action']
@@ -199,16 +236,16 @@ def label_manual_approve(pull_request, token):
     _exec_post_with_retry(url, token, data)
 
 def get_token_from_aws():
-    secret_name = "clickhouse_robot_token"
-    session = boto3.session.Session()
-    client = session.client(
-        service_name='secretsmanager',
-    )
-    get_secret_value_response = client.get_secret_value(
-        SecretId=secret_name
-    )
-    data = json.loads(get_secret_value_response['SecretString'])
-    return data['clickhouse_robot_token']
+    private_key, app_id = get_key_and_app_from_aws()
+    payload = {
+        "iat": int(time.time()) - 60,
+        "exp": int(time.time()) + (10 * 60),
+        "iss": app_id,
+    }
+
+    encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")
+    installation_id = get_installation_id(encoded_jwt)
+    return get_access_token(encoded_jwt, installation_id)
 
 def main(event):
     print("Got event", event)
@@ -248,4 +285,3 @@ def main(event):
 def handler(event, _):
     logging.basicConfig(level=logging.INFO)
     main(event)
-
