@@ -6,6 +6,7 @@
 #include <base/logger_useful.h>
 #include <Common/ActionBlocker.h>
 
+#include <DataTypes/Serializations/SerializationInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>

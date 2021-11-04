@@ -17,8 +17,6 @@
 #include <Compression/CompressedWriteBuffer.h>
 
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
-
 #include <Columns/ColumnArray.h>
 
 #include <Interpreters/Context.h>

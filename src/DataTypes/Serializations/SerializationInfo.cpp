@@ -17,7 +17,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int INCORRECT_DATA;
     extern const int CORRUPTED_DATA;
 }
 

@@ -47,7 +47,7 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
 
     if (!offsets_concrete->empty() && _size <= offsets_concrete->getData().back())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Size sparse columns ({}) should be greater than last position of non-default value ({})",
+            "Size of sparse column ({}) should be greater than last position of non-default value ({})",
                 _size, offsets_concrete->getData().back());
 
 #ifndef NDEBUG
