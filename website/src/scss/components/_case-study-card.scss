@@ -172,6 +172,12 @@
 			position: relative;
 			transition: 0.4s left;
 			transition-delay: 0.6s;
+
+			@media screen and (min-width: 980px) {
+				flex: 0 0 250px;
+				max-width: 250px;
+				width: 250px;
+			}
 		}
 	
 		&.is-open .col-lg-3 {
