@@ -80,7 +80,8 @@ BlockIO InterpreterRenameQuery::executeToTables(const ASTRenameQuery & rename, c
     {
         bool ignore = elem.if_exists;
 
-        if (ignore) {
+        if (ignore)
+        {
             if (rename.exchange)
             {
                 ignore = rename.dictionary ? (!database_catalog.isDictionaryExist(StorageID(elem.to_database_name, elem.to_table_name)) ||
