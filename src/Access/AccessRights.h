@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Access/Common/AccessRightsElement.h>
+#include <functional>
 #include <memory>
 #include <vector>
 
