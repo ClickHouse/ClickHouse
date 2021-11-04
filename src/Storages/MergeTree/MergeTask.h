@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/ColumnSizeEstimator.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Compression/CompressedReadBufferFromFile.h>

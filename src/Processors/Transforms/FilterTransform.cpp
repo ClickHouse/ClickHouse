@@ -4,8 +4,6 @@
 #include <Columns/ColumnsCommon.h>
 #include <Core/Field.h>
 
-#include <iostream>
-
 namespace DB
 {
 

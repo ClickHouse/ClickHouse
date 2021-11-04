@@ -57,6 +57,7 @@ void SerializationInfoTuple::replaceData(const SerializationInfo & other)
     for (size_t i = 0; i < elems.size(); ++i)
         elems[i]->replaceData(*info_tuple.elems[i]);
 }
+
 MutableSerializationInfoPtr SerializationInfoTuple::clone() const
 {
     MutableSerializationInfos elems_cloned;
@@ -70,7 +71,6 @@ MutableSerializationInfoPtr SerializationInfoTuple::clone() const
 void SerializationInfoTuple::serialializeKindBinary(WriteBuffer & out) const
 {
     SerializationInfo::serialializeKindBinary(out);
-
     for (const auto & elem : elems)
         elem->serialializeKindBinary(out);
 }
@@ -78,7 +78,6 @@ void SerializationInfoTuple::serialializeKindBinary(WriteBuffer & out) const
 void SerializationInfoTuple::deserializeFromKindsBinary(ReadBuffer & in)
 {
     SerializationInfo::deserializeFromKindsBinary(in);
-
     for (const auto & elem : elems)
         elem->deserializeFromKindsBinary(in);
 }

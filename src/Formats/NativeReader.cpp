@@ -13,8 +13,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 
-#include <Columns/ColumnSparse.h>
-
 
 namespace DB
 {

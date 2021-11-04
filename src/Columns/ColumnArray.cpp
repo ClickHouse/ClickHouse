@@ -185,7 +185,7 @@ StringRef ColumnArray::getDataAt(size_t n) const
 bool ColumnArray::isDefaultAt(size_t n) const
 {
     const auto & offsets_data = getOffsets();
-    return offsets_data[n] == offsets_data[n - 1];
+    return offsets_data[n] == offsets_data[static_cast<ssize_t>(n) - 1];
 }
 
 
