@@ -145,7 +145,7 @@ def get_images_with_versions(images_path):
 
 def download_builds(result_path, build_urls):
     for url in build_urls:
-        if url.endswith('/clickhouse') or url.endswith('/clickhouse-odbc-bridge') or url.endswith('/clickhouse-library-bridge'):
+        if url.endswith('.deb'):
             fname = os.path.basename(url)
             logging.info("Will download %s to %s", fname, result_path)
             dowload_build_with_progress(url, os.path.join(result_path, fname))
