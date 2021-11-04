@@ -25,6 +25,7 @@ public:
     {
         Table from;
         Table to;
+        bool if_exists{false};   /// If this directive is used, one will not get an error if the table/database/dictionary to be renamed/exchanged doesn't exist.
     };
 
     using Elements = std::vector<Element>;

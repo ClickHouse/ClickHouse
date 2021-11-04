@@ -13,17 +13,23 @@ CREATE TABLE t2 ENGINE=MergeTree() ORDER BY tuple() AS SELECT rowNumberInAllBloc
 EXCHANGE TABLES t1 AND t3; -- { serverError 60 }
 EXCHANGE TABLES t4 AND t2; -- { serverError 60 }
 RENAME TABLE t0 TO t1; -- { serverError 57 }
-DROP TABLE t1;
-RENAME TABLE t0 TO t1;
+
+RENAME DATABASE IF EXISTS test_non_exists TO test_non_exists_renamed;
+EXCHANGE TABLES IF EXISTS t1 AND t3;
+EXCHANGE TABLES IF EXISTS t4 AND t2;
+RENAME TABLE IF EXISTS t3 TO t4;
+
+DROP TABLE IF EXISTS t1;
+RENAME TABLE IF EXISTS t0 TO t1;
 SELECT * FROM t1;
 SELECT * FROM t2;
 
-EXCHANGE TABLES t1 AND t2;
+EXCHANGE TABLES IF EXISTS t1 AND t2;
 SELECT * FROM t1;
 SELECT * FROM t2;
 
-RENAME TABLE t1 TO t1tmp, t2 TO t2tmp;
-RENAME TABLE t1tmp TO t2, t2tmp TO t1;
+RENAME TABLE IF EXISTS t1 TO t1tmp, t2 TO t2tmp;
+RENAME TABLE IF EXISTS t1tmp TO t2, t2tmp TO t1;
 SELECT * FROM t1;
 SELECT * FROM t2;
 
@@ -44,8 +50,8 @@ EXCHANGE TABLES test_01109_other_atomic.t3 AND test_01109_ordinary.t4; -- { serv
 EXCHANGE TABLES test_01109_ordinary.t4 AND test_01109_other_atomic.t3; -- { serverError 48 }
 EXCHANGE TABLES test_01109_ordinary.t4 AND test_01109_ordinary.t4; -- { serverError 48 }
 
-EXCHANGE TABLES t1 AND test_01109_other_atomic.t3;
-EXCHANGE TABLES t2 AND t2;
+EXCHANGE TABLES IF EXISTS t1 AND test_01109_other_atomic.t3;
+EXCHANGE TABLES IF EXISTS t2 AND t2;
 SELECT * FROM t1;
 SELECT * FROM t2;
 SELECT * FROM test_01109_other_atomic.t3;
