@@ -16,9 +16,9 @@ MAX_RETRY = 3
 NUM_WORKERS = 5
 SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
-CLICKHOUSE_BINARY_PATH = "/usr/bin/clickhouse"
-CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-odbc-bridge"
-CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-library-bridge"
+CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
+CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-odbc-bridge"
+CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-library-bridge"
 
 TRIES_COUNT = 10
 MAX_TIME_SECONDS = 3600
@@ -231,7 +231,7 @@ class ClickhouseIntegrationTestsRunner:
                     log_name = "install_" + f + ".log"
                     log_path = os.path.join(str(self.path()), log_name)
                     with open(log_path, 'w') as log:
-                        cmd = "dpkg -i {}".format(full_path)
+                        cmd = "dpkg -x {} .".format(full_path)
                         logging.info("Executing installation cmd %s", cmd)
                         retcode = subprocess.Popen(cmd, shell=True, stderr=log, stdout=log).wait()
                         if retcode == 0:
