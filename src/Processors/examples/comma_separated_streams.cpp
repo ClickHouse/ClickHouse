@@ -10,12 +10,10 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <Processors/Formats/Impl/CSVRowInputFormat.h>
-
-#include <DataStreams/copyData.h>
-#include <Processors/Formats/OutputStreamToOutputFormat.h>
 #include <Processors/Formats/Impl/CSVRowOutputFormat.h>
-#include <Processors/Formats/InputStreamFromInputFormat.h>
-
+#include <Formats/FormatFactory.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 using namespace DB;
 
@@ -100,13 +98,18 @@ try
     format_settings.with_names_use_header = true;
 
     RowInputFormatParams in_params{DEFAULT_INSERT_BLOCK_SIZE};
-    InputFormatPtr input_format = std::make_shared<CSVRowInputFormat>(sample, in_buf, in_params, true, format_settings);
-    BlockInputStreamPtr block_input = std::make_shared<InputStreamFromInputFormat>(std::move(input_format));
+    InputFormatPtr input_format = std::make_shared<CSVRowInputFormat>(sample, in_buf, in_params, true, false, format_settings);
+    auto pipeline = QueryPipeline(std::move(input_format));
+    auto reader = std::make_unique<PullingPipelineExecutor>(pipeline);
 
     RowOutputFormatParams out_params;
-    BlockOutputStreamPtr block_output = std::make_shared<OutputStreamToOutputFormat>(
-        std::make_shared<CSVRowOutputFormat>(out_buf, sample, false, out_params, format_settings));
-    copyData(*block_input, *block_output);
+    OutputFormatPtr output_format = std::make_shared<CSVRowOutputFormat>(out_buf, sample, true, true, out_params, format_settings);
+    Block res;
+    while (reader->pull(res))
+    {
+        output_format->write(res);
+    }
+    output_format->flush();
     return 0;
 }
 catch (...)
