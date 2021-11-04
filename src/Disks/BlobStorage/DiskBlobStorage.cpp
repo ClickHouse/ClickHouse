@@ -132,7 +132,11 @@ bool DiskBlobStorage::supportZeroCopyReplication() const
 
 bool DiskBlobStorage::checkUniqueId(const String & id) const
 {
-    auto blobs_list_response = blob_container_client->ListBlobs();
+    Azure::Storage::Blobs::ListBlobsOptions blobs_list_options;
+    blobs_list_options.Prefix = id;
+
+    // TODO: does it return at most 5k blobs? Do we ever need the continuation token?
+    auto blobs_list_response = blob_container_client->ListBlobs(blobs_list_options);
     auto blobs_list = blobs_list_response.Blobs;
 
     for (auto blob : blobs_list)
