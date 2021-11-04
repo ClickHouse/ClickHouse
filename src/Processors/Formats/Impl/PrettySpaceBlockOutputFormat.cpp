@@ -113,9 +113,9 @@ void PrettySpaceBlockOutputFormat::writeSuffix()
 }
 
 
-void registerOutputFormatProcessorPrettySpace(FormatFactory & factory)
+void registerOutputFormatPrettySpace(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("PrettySpace", [](
+    factory.registerOutputFormat("PrettySpace", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,
@@ -124,7 +124,7 @@ void registerOutputFormatProcessorPrettySpace(FormatFactory & factory)
         return std::make_shared<PrettySpaceBlockOutputFormat>(buf, sample, format_settings);
     });
 
-    factory.registerOutputFormatProcessor("PrettySpaceNoEscapes", [](
+    factory.registerOutputFormat("PrettySpaceNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,

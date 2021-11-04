@@ -2222,6 +2222,16 @@ bool ParserMySQLGlobalVariable::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     return true;
 }
 
+bool ParserExistsExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (ParserKeyword("EXISTS").ignore(pos, expected) && ParserSubquery().parse(pos, node, expected))
+    {
+        node = makeASTFunction("exists", node);
+        return true;
+    }
+    return false;
+}
+
 
 bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -2245,6 +2255,7 @@ bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
         || ParserFunction().parse(pos, node, expected)
         || ParserQualifiedAsterisk().parse(pos, node, expected)
         || ParserAsterisk().parse(pos, node, expected)
+        || ParserExistsExpression().parse(pos, node, expected)
         || ParserCompoundIdentifier(false, true).parse(pos, node, expected)
         || ParserSubstitution().parse(pos, node, expected)
         || ParserMySQLGlobalVariable().parse(pos, node, expected);

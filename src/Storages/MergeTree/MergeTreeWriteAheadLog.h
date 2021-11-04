@@ -1,7 +1,7 @@
 #pragma once
 
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Disks/IDisk.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
@@ -78,7 +78,7 @@ private:
     String path;
 
     std::unique_ptr<WriteBuffer> out;
-    std::unique_ptr<NativeBlockOutputStream> block_out;
+    std::unique_ptr<NativeWriter> block_out;
 
     Int64 min_block_number = std::numeric_limits<Int64>::max();
     Int64 max_block_number = -1;

@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/RollupStep.h>
 #include <Processors/Transforms/RollupTransform.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {

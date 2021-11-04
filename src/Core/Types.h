@@ -6,6 +6,7 @@
 #include <base/strong_typedef.h>
 #include <base/Decimal.h>
 #include <base/defines.h>
+#include <base/UUID.h>
 
 
 namespace DB
@@ -96,8 +97,6 @@ using UInt128 = ::UInt128;
 using UInt256 = ::UInt256;
 using Int128 = ::Int128;
 using Int256 = ::Int256;
-
-STRONG_TYPEDEF(UInt128, UUID)
 
 /// Not a data type in database, defined just for convenience.
 using Strings = std::vector<String>;

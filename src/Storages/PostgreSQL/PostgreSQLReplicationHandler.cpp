@@ -1,6 +1,6 @@
 #include "PostgreSQLReplicationHandler.h"
 
-#include <DataStreams/PostgreSQLSource.h>
+#include <Processors/Transforms/PostgreSQLSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
@@ -9,7 +9,6 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Common/setThreadName.h>
 #include <Interpreters/Context.h>
-#include <DataStreams/copyData.h>
 #include <Databases/DatabaseOnDisk.h>
 
 
@@ -221,7 +220,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
         initial_sync();
     }
     /// Always drop replication slot if it is CREATE query and not ATTACH.
-    else if (!is_attach || new_publication)
+    else if (!is_attach)
     {
         if (!user_managed_slot)
             dropReplicationSlot(tx);
@@ -283,7 +282,9 @@ ASTPtr PostgreSQLReplicationHandler::getCreateNestedTableQuery(StorageMaterializ
 {
     postgres::Connection connection(connection_info);
     pqxx::nontransaction tx(connection.getRef());
-    auto table_structure = std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, true, true, true));
+    auto table_structure = std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, table_name, postgres_schema, true, true, true));
+    if (!table_structure)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to get PostgreSQL table structure");
     return storage->getCreateNestedTableQuery(std::move(table_structure));
 }
 
@@ -423,7 +424,6 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
         {
             tx.exec(query_str);
             LOG_DEBUG(log, "Created publication {} with tables list: {}", publication_name, tables_list);
-            new_publication = true;
         }
         catch (Exception & e)
         {
@@ -633,7 +633,8 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
 
                 NameSet diff;
                 std::sort(expected_tables.begin(), expected_tables.end());
-                std::set_symmetric_difference(expected_tables.begin(), expected_tables.end(), result_tables.begin(), result_tables.end(),
+                std::set_symmetric_difference(expected_tables.begin(), expected_tables.end(),
+                                              result_tables.begin(), result_tables.end(),
                                               std::inserter(diff, diff.begin()));
                 if (!diff.empty())
                 {
@@ -659,12 +660,15 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                         listed_tables += table_name;
                     }
 
-                    LOG_WARNING(log,
-                                "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}."
-                                "\nPublication tables: {}.\nTables list: {}",
-                                publication_name, diff_tables, publication_tables, listed_tables);
+                    LOG_ERROR(log,
+                              "Publication {} already exists, but specified tables list differs from publication tables list in tables: {}. ",
+                              "Will use tables list from setting. "
+                              "To avoid redundant work, you can try ALTER PUBLICATION query to remove redundant tables. "
+                              "Or you can you ALTER SETTING. "
+                              "\nPublication tables: {}.\nTables list: {}",
+                              publication_name, diff_tables, publication_tables, listed_tables);
 
-                    connection.execWithRetry([&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
+                    return std::set(expected_tables.begin(), expected_tables.end());
                 }
             }
         }
@@ -672,7 +676,11 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
 
     if (result_tables.empty())
     {
-        if (tables_list.empty())
+        if (!tables_list.empty())
+        {
+            result_tables = std::set(expected_tables.begin(), expected_tables.end());
+        }
+        else
         {
             /// Fetch all tables list from database. Publication does not exist yet, which means
             /// that no replication took place. Publication will be created in
@@ -736,7 +744,17 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
     if (!is_materialized_postgresql_database)
         return nullptr;
 
-    return std::make_unique<PostgreSQLTableStructure>(fetchPostgreSQLTableStructure(tx, probablyDoubleQuoteWithSchema(table_name, false), true, true, true));
+    PostgreSQLTableStructure structure;
+    try
+    {
+        structure = fetchPostgreSQLTableStructure(tx, table_name, probablyDoubleQuoteWithSchema(table_name, false), true, true, true);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    return std::make_unique<PostgreSQLTableStructure>(std::move(structure));
 }
 
 

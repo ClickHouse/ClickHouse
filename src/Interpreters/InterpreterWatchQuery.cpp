@@ -14,9 +14,8 @@ limitations under the License. */
 #include <Parsers/ASTWatchQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/Context.h>
-#include <Access/AccessFlags.h>
-#include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/StreamLocalLimits.h>
+#include <Access/Common/AccessFlags.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 
 
 namespace DB

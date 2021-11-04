@@ -4,8 +4,7 @@
 #include <Columns/ColumnLowCardinality.h>
 
 #include <Core/SortCursor.h>
-#include <DataStreams/TemporaryFileStream.h>
-#include <DataStreams/materializeBlock.h>
+#include <Formats/TemporaryFileStream.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MergeJoin.h>
@@ -13,9 +12,9 @@
 #include <Interpreters/join_common.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Sources/BlocksListSource.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 
 namespace DB
@@ -592,9 +591,10 @@ void MergeJoin::mergeInMemoryRightBlocks()
         builder.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, 0, 0, nullptr, 0));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
-    auto sorted_input = PipelineExecutingBlockInputStream(std::move(pipeline));
+    PullingPipelineExecutor executor(pipeline);
 
-    while (Block block = sorted_input.read())
+    Block block;
+    while (executor.pull(block))
     {
         if (!block.rows())
             continue;

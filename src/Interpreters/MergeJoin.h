@@ -7,7 +7,7 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/SortedBlocksWriter.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {

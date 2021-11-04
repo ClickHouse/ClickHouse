@@ -19,9 +19,7 @@
 #include <chrono>
 
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
@@ -543,6 +541,22 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         {
             new_values["UncompressedCacheBytes"] = uncompressed_cache->weight();
             new_values["UncompressedCacheCells"] = uncompressed_cache->count();
+        }
+    }
+
+    {
+        if (auto index_mark_cache = getContext()->getIndexMarkCache())
+        {
+            new_values["IndexMarkCacheBytes"] = index_mark_cache->weight();
+            new_values["IndexMarkCacheFiles"] = index_mark_cache->count();
+        }
+    }
+
+    {
+        if (auto index_uncompressed_cache = getContext()->getIndexUncompressedCache())
+        {
+            new_values["IndexUncompressedCacheBytes"] = index_uncompressed_cache->weight();
+            new_values["IndexUncompressedCacheCells"] = index_uncompressed_cache->count();
         }
     }
 

@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
 
 namespace DB

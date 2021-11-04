@@ -141,7 +141,7 @@ This will also create system tables even if message queue is empty.
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
 
-Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeeper.
+Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeper.
 
 ## SHUTDOWN {#query_language-system-shutdown}
 

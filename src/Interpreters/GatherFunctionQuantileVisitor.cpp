@@ -47,7 +47,7 @@ void GatherFunctionQuantileData::visit(ASTFunction & function, ASTPtr & ast)
 void GatherFunctionQuantileData::FuseQuantileAggregatesData::addFuncNode(ASTPtr & ast)
 {
     const auto * func = ast->as<ASTFunction>();
-    if (!func)
+    if (!func || func->parameters == nullptr)
         return;
 
     const auto & arguments = func->arguments->children;
