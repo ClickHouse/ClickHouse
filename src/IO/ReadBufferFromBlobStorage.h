@@ -35,7 +35,7 @@ private:
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     std::vector<uint8_t> tmp_buffer;
     const String path;
-    off_t offset = 0;
+    size_t offset = 0;
     size_t buf_size;
     size_t total_size;
     bool initialized = false;

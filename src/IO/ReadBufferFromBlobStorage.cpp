@@ -40,7 +40,7 @@ bool ReadBufferFromBlobStorage::nextImpl()
     if (!initialized)
         initialize();
 
-    if (static_cast<size_t>(offset) >= total_size)
+    if (offset >= total_size)
         return false;
 
     size_t to_read_bytes = std::min(total_size - offset, buf_size);
@@ -100,7 +100,7 @@ void ReadBufferFromBlobStorage::initialize()
         // TODO: is it the right way?
         /// try to rewind to offset in the buffer
         size_t total_read_bytes = 0;
-        while (total_read_bytes < static_cast<size_t>(offset))
+        while (total_read_bytes < offset)
         {
             size_t to_read_bytes = std::min(offset - total_read_bytes, buf_size);
             size_t bytes_read = data_stream->Read(tmp_buffer.data(), to_read_bytes);
