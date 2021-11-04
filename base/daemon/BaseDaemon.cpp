@@ -1,4 +1,4 @@
-#if defined(__clang__) && __clang_major__ >= 13
+#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
@@ -63,9 +63,7 @@
 #include <Common/Elf.h>
 #include <filesystem>
 
-#if !defined(ARCADIA_BUILD)
-#   include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 #if defined(OS_DARWIN)
 #   pragma GCC diagnostic ignored "-Wunused-macros"

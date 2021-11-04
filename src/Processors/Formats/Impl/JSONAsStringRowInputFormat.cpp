@@ -171,9 +171,9 @@ bool JSONAsStringRowInputFormat::readRow(MutableColumns & columns, RowReadExtens
     return !buf.eof();
 }
 
-void registerInputFormatProcessorJSONAsString(FormatFactory & factory)
+void registerInputFormatJSONAsString(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("JSONAsString", [](
+    factory.registerInputFormat("JSONAsString", [](
             ReadBuffer & buf,
             const Block & sample,
             const RowInputFormatParams & params,
@@ -185,7 +185,7 @@ void registerInputFormatProcessorJSONAsString(FormatFactory & factory)
 
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONAsString", &fileSegmentationEngineJSONEachRowImpl);
+    factory.registerFileSegmentationEngine("JSONAsString", &fileSegmentationEngineJSONEachRow);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory)

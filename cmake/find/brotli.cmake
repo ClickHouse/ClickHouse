@@ -16,7 +16,7 @@ endif()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/brotli/c/include/brotli/decode.h")
     if (USE_INTERNAL_BROTLI_LIBRARY)
-        message (WARNING "submodule contrib/brotli is missing. to fix try run: \n git submodule update --init --recursive")
+        message (WARNING "submodule contrib/brotli is missing. to fix try run: \n git submodule update --init")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot find internal brotli")
         set (USE_INTERNAL_BROTLI_LIBRARY 0)
     endif ()

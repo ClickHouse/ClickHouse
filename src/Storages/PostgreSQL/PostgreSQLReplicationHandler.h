@@ -97,9 +97,6 @@ private:
     /// If it is not attach, i.e. a create query, then if publication already exists - always drop it.
     bool is_attach;
 
-    /// If new publication is created at start up - always drop replication slot if it exists.
-    bool new_publication = false;
-
     String postgres_database;
     String postgres_schema;
     String current_database_name;
