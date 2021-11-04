@@ -188,7 +188,6 @@ void RemoteCacheController::flush()
     jobj.stringify(buf);
 
     std::ofstream meta_file(local_path + "/meta.txt", std::ios::out);
-    //LOG_TRACE(&Poco::Logger::get("RemoteCacheController"), "flush meta:" + buf.str());
     meta_file << buf.str();
     meta_file.close();
 }
@@ -259,7 +258,6 @@ size_t LocalCachedFileReader::read(char * buf, size_t size)
     std::lock_guard lock(mutex);
     auto ret_size = fread(buf, 1, size, fs);
     offset += ret_size;
-    LOG_TRACE(&Poco::Logger::get("LocalCachedFileReader"), "read file {} {} {}", local_path, ret_size, size);
     return ret_size;
 }
 
@@ -286,7 +284,6 @@ size_t LocalCachedFileReader::size()
     }
     Poco::File file_handle(local_path);
     auto ret = file_handle.getSize();
-    LOG_TRACE(&Poco::Logger::get("LocalCachedFileReader"), "file size:{} @ {}", local_path, ret);
     file_size = ret;
     return ret;
 }
@@ -323,7 +320,6 @@ std::unique_ptr<RemoteReadBuffer> RemoteReadBuffer::create(
     auto rrb = std::make_unique<RemoteReadBuffer>(buff_size);
     auto * raw_rbp = readbuffer.release();
     std::shared_ptr<ReadBuffer> srb(raw_rbp);
-    LOG_TRACE(&Poco::Logger::get("RemoteReadBuffer"), "original buffer is null {}", srb == nullptr);
     RemoteReadBufferCache::CreateReaderError error;
     int retry = 0;
     do
