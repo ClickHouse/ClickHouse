@@ -95,4 +95,4 @@ SELECT comment FROM system.dictionaries WHERE name == 'dictionary_with_comment' 
 
 **See Also**
 
--   [system.dictionaries](../../operations/system-tables/dictionaries.md) — This table contains information about [external dictionaries](../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
+-   [system.dictionaries](../../../operations/system-tables/dictionaries.md) — This table contains information about [external dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md).
