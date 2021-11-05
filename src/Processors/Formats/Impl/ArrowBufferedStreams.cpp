@@ -9,7 +9,6 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
-#include <IO/RemoteReadBufferCache.h>
 #include <arrow/buffer.h>
 #include <arrow/io/memory.h>
 #include <arrow/result.h>
