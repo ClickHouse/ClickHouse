@@ -98,5 +98,8 @@ using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsD
 HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::AbstractConfiguration &);
 HDFSFSPtr createHDFSFS(hdfsBuilder * builder);
 
+String getNameNodeUrl(const String & hdfs_url);
+String getNameNodeCluster(const String & hdfs_url);
+
 }
 #endif

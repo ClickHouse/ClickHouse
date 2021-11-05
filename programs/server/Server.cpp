@@ -43,6 +43,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UseSSL.h>
+#include <IO/RemoteReadBufferCache.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DNSCacheUpdater.h>
@@ -504,6 +505,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
 if (ThreadFuzzer::instance().isEffective())
     global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
+
+if (config().has("local_cache_dir") && config().has("local_cache_quota"))
+    RemoteReadBufferCache::instance().initOnce(config().getString("local_cache_dir"), config().getUInt64("local_cache_quota"));
 
 #if defined(SANITIZER)
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");

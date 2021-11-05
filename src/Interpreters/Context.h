@@ -27,7 +27,8 @@
 
 namespace Poco::Net { class IPAddress; }
 namespace zkutil { class ZooKeeper; }
-
+namespace hdfs { class FileSystem; }
+// namespace Apache { namespace Hadoop { namespace Hive { class ThriftHiveMetastoreClient; }}}
 
 namespace DB
 {
@@ -147,6 +148,9 @@ using InputBlocksReader = std::function<Block(ContextPtr)>;
 /// Used in distributed task processing
 using ReadTaskCallback = std::function<String()>;
 
+// class HDFSFSPtr;
+// using HDFSFileSystemPtr = std::shared_ptr<hdfs::FileSystem>;
+
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -173,6 +177,9 @@ struct SharedContextHolder
 private:
     std::unique_ptr<ContextSharedPart> shared;
 };
+
+class HMSClient;
+using HMSClientPtr = std::shared_ptr<HMSClient>;
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -687,6 +694,9 @@ public:
     void resetZooKeeper() const;
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
+
+    HMSClientPtr getHMSClient(const String & name) const;
+    // HDFSFileSystemPtr getHDFSFileSystem(const String & name) const;
 
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 

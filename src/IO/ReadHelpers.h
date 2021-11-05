@@ -1054,6 +1054,32 @@ inline void readCSVSimple(T & x, ReadBuffer & buf)
         assertChar(maybe_quote, buf);
 }
 
+// Enable read "t" and "f" as UInt8 value in Hive TEXT File.
+inline void readCSVSimple(UInt8 & x, ReadBuffer & buf)
+{
+    if (buf.eof())
+        throwReadAfterEOF();
+
+    char maybe_quote = *buf.position();
+
+    if (maybe_quote == '\'' || maybe_quote == '\"')
+        ++buf.position();
+
+    if (*buf.position() == 't' || *buf.position() == 'f')
+    {
+        bool tmp = false;
+        readBoolTextWord(tmp, buf);
+        x = tmp;
+    }
+    else
+    {
+        readText(x, buf);
+    }
+
+    if (maybe_quote == '\'' || maybe_quote == '\"')
+        assertChar(maybe_quote, buf);
+}
+
 template <typename T>
 inline std::enable_if_t<is_arithmetic_v<T>, void>
 readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
