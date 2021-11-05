@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <base/types.h>
 
 
@@ -78,6 +79,7 @@ struct FormatSettings
         bool crlf_end_of_line = false;
         bool input_format_enum_as_number = false;
         bool input_format_arrays_as_nested_csv = false;
+        Names input_field_names;
         String null_representation = "\\N";
     } csv;
 

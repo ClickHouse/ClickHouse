@@ -80,3 +80,6 @@ target_link_libraries (shell_command_inout PRIVATE clickhouse_common_io)
 
 add_executable (executable_udf executable_udf.cpp)
 target_link_libraries (executable_udf PRIVATE dbms)
+
+add_executable(hive_metastore_client hive_metastore_client.cpp)
+target_link_libraries (hive_metastore_client PUBLIC hivemetastore ${THRIFT_LIBRARY})

@@ -61,7 +61,6 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE;
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
-    extern const int THERE_IS_NO_COLUMN;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_EXCEPTION;
 }
@@ -519,7 +518,7 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
 void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table)
 {
     Columns columns_list;
-    UInt64 num_rows = 0;
+    UInt64 num_rows = table->num_rows();
 
     columns_list.reserve(header.rows());
 
@@ -555,10 +554,15 @@ void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arr
                 read_from_nested = nested_tables[nested_table_name]->has(header_column.name);
             }
 
-
-            // TODO: What if some columns were not presented? Insert NULLs? What if a column is not nullable?
             if (!read_from_nested)
-                throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
+            {
+                ColumnWithTypeAndName column;
+                column.name = header_column.name;
+                column.type = header_column.type;
+                column.column = header_column.column->cloneResized(num_rows);
+                columns_list.push_back(std::move(column.column));
+                continue;
+            }
         }
 
         std::shared_ptr<arrow::ChunkedArray> arrow_column = name_to_column_ptr[header_column.name];
@@ -581,7 +585,6 @@ void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arr
         }
 
         column.type = header_column.type;
-        num_rows = column.column->size();
         columns_list.push_back(std::move(column.column));
     }
 

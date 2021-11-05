@@ -197,6 +197,21 @@ HDFSFSPtr createHDFSFS(hdfsBuilder * builder)
     return fs;
 }
 
+String getNameNodeUrl(const String & hdfs_url)
+{
+    const size_t pos = hdfs_url.find('/', hdfs_url.find("//") + 2);
+    String namenode_url = hdfs_url.substr(0, pos) + "/";
+    return namenode_url;
+}
+
+String getNameNodeCluster(const String &hdfs_url)
+{
+    auto pos1 = hdfs_url.find("//") + 2;
+    auto pos2 = hdfs_url.find('/', pos1);
+
+    return hdfs_url.substr(pos1, pos2 - pos1);
+}
+
 }
 
 #endif

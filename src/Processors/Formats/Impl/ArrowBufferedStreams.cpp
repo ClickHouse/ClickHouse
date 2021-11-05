@@ -5,13 +5,17 @@
 #include "ArrowBufferedStreams.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
-
+#include <IO/RemoteReadBufferCache.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
+#include <IO/RemoteReadBufferCache.h>
 #include <arrow/buffer.h>
 #include <arrow/io/memory.h>
 #include <arrow/result.h>
+#include <base/logger_useful.h>
+#include <Common/Stopwatch.h>
+#include <Poco/Logger.h>
 
 #include <sys/stat.h>
 
@@ -130,6 +134,12 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in)
         // if fd is a regular file i.e. not stdin
         if (res == 0 && S_ISREG(stat.st_mode))
             return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*fd_in, stat.st_size);
+    }
+
+    if (auto * fd_in = dynamic_cast<RemoteReadBuffer *>(&in))
+    {
+        if (fd_in->seekable())
+            return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*fd_in, fd_in->size());
     }
 
     // fallback to loading the entire file in memory
