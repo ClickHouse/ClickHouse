@@ -106,6 +106,7 @@ void ReadBufferFromBlobStorage::initialize()
             size_t bytes_read = data_stream->Read(tmp_buffer.data(), to_read_bytes);
             total_read_bytes += bytes_read;
         }
+        assert(total_read_bytes == offset);
     }
 
     initialized = true;
