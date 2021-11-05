@@ -248,13 +248,9 @@ class ClickhouseIntegrationTestsRunner:
         os.chmod(CLICKHOUSE_BINARY_PATH, 0o777)
         os.chmod(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, 0o777)
         os.chmod(CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH, 0o777)
-        result_path_bin = os.path.join(str(self.base_path()), "clickhouse")
-        result_path_odbc_bridge = os.path.join(str(self.base_path()), "clickhouse-odbc-bridge")
-        result_path_library_bridge = os.path.join(str(self.base_path()), "clickhouse-library-bridge")
-        shutil.copy(CLICKHOUSE_BINARY_PATH, result_path_bin)
-        shutil.copy(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, result_path_odbc_bridge)
-        shutil.copy(CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH, result_path_library_bridge)
-        return None, None
+        shutil.copy(CLICKHOUSE_BINARY_PATH, os.getenv("CLICKHOUSE_TESTS_SERVER_BIN_PATH"))
+        shutil.copy(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, os.getenv("CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"))
+        shutil.copy(CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH, os.getenv("CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH"))
 
     def _compress_logs(self, dir, relpaths, result_path):
         subprocess.check_call("tar czf {} -C {} {}".format(result_path, dir, ' '.join(relpaths)), shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
