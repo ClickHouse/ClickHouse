@@ -50,7 +50,7 @@ void WriteBufferFromBlobStorage::nextImpl()
         block_ids.push_back(block_id);
 
         Azure::Core::IO::MemoryBodyStream tmp_buffer(reinterpret_cast<uint8_t *>(pos + read), part_len);
-        block_blob_client.StageBlock(block_ids.back(), tmp_buffer);
+        block_blob_client.StageBlock(block_id, tmp_buffer);
 
         read += part_len;
     }
@@ -60,6 +60,8 @@ void WriteBufferFromBlobStorage::finalize()
 {
     if (finalized)
         return;
+
+    next();
 
     auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
     block_blob_client.CommitBlockList(block_ids);
