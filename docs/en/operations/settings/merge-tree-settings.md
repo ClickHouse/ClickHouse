@@ -346,11 +346,13 @@ The value of the `min_bytes_to_rebalance_partition_over_jbod` setting should be 
 
 ## detach_not_byte_identical_parts {#detach_not_byte_identical_parts}
 
-Controls what to do with non byte-identical parts of [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) tables: remove or detach them. Activate this setting if you need to analyse parts later.
+Enables detaching a part instead of removing it if the part differs from other replicas after a merge or a mutation. Activate this setting if you want to analyse such parts later.
+
+The setting is applicable to [replicated MergeTree](../../engines/table-engines/mergetree-family/replication.md) tables.
 
 Possible values:
 
--   0 — Non byte-identical parts are removed.
--   1 — Non byte-identical parts are detached.
+-   0 — Parts are removed.
+-   1 — Parts are detached.
 
 Default value: `0`.
