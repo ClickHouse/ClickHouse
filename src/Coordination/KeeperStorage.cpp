@@ -10,6 +10,7 @@
 #include <Poco/SHA1Engine.h>
 #include <Poco/Base64Encoder.h>
 #include <boost/algorithm/string.hpp>
+#include <Common/hex.h>
 
 namespace DB
 {
@@ -1217,6 +1218,64 @@ void KeeperStorage::clearDeadWatches(int64_t session_id)
         }
 
         sessions_and_watchers.erase(watches_it);
+    }
+}
+
+void KeeperStorage::dumpWatches(WriteBufferFromOwnString & buf) const
+{
+    auto write_str_set = [&buf](const std::unordered_set<String> & objs)
+    {
+        for (const String & obj : objs)
+        {
+            buf << "\t" << obj << "\n";
+        }
+    };
+
+    for (const auto & e : sessions_and_watchers)
+    {
+        buf << "0x" << getHexUIntLowercase(e.first) << "\n";
+        write_str_set(e.second);
+    }
+}
+
+void KeeperStorage::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
+{
+    auto write_int_vec = [&buf](const std::vector<Int64> & objs)
+    {
+        for (Int64 obj : objs)
+        {
+            buf << "\t0x" << getHexUIntLowercase(obj) << "\n";
+        }
+    };
+
+    for (const auto & e : watches)
+    {
+        buf << e.first << "\n";
+        write_int_vec(e.second);
+    }
+
+    for (const auto & e : list_watches)
+    {
+        buf << e.first << "\n";
+        write_int_vec(e.second);
+    }
+}
+
+void KeeperStorage::dumpEphemerals(WriteBufferFromOwnString & buf) const
+{
+    auto write_str_set = [&buf](const std::unordered_set<String> & objs)
+    {
+        for (const String & obj : objs)
+        {
+            buf << "\t" << obj << "\n";
+        }
+    };
+
+    buf << "Sessions with Ephemerals (" << getEphemeralCount() << "):\n";
+    for (const auto & e : ephemerals)
+    {
+        buf << "0x" << getHexUIntLowercase(e.first) << "\n";
+        write_str_set(e.second);
     }
 }
 

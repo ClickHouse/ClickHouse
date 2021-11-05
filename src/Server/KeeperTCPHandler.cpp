@@ -19,6 +19,8 @@
 #include <queue>
 #include <mutex>
 #include <Coordination/FourLetterCommand.h>
+#include <Common/hex.h>
+
 
 #ifdef POCO_HAVE_FD_EPOLL
     #include <sys/epoll.h>
@@ -200,7 +202,10 @@ KeeperTCPHandler::KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSoc
     , session_timeout(0, global_context->getConfigRef().getUInt("keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
     , responses(std::make_unique<ThreadSafeResponseQueue>(std::numeric_limits<size_t>::max()))
+    , established(Poco::Timestamp())
+    , conn_stats(std::make_shared<KeeperStats>())
 {
+    KeeperTCPHandler::registerConnection(this);
 }
 
 void KeeperTCPHandler::sendHandshake(bool has_leader)
@@ -351,7 +356,6 @@ void KeeperTCPHandler::runImpl()
 
     session_stopwatch.start();
     bool close_received = false;
-    Stopwatch process_time_stopwatch;
 
     try
     {
@@ -362,8 +366,8 @@ void KeeperTCPHandler::runImpl()
             PollResult result = poll_wrapper->poll(session_timeout, in);
             if (result.has_requests && !close_received)
             {
-                process_time_stopwatch.start();
                 auto [received_op, received_xid] = receiveRequest();
+                packageReceived();
 
                 if (received_op == Coordination::OpNum::Close)
                 {
@@ -375,18 +379,13 @@ void KeeperTCPHandler::runImpl()
                 {
                     LOG_TRACE(log, "Received heartbeat for session #{}", session_id);
                 }
+                else
+                    operations[received_xid] = Poco::Timestamp();
 
                 /// Each request restarts session stopwatch
                 session_stopwatch.restart();
             }
 
-            /// Do request statistics,
-            /// not accurate when there is watch response in the channel
-            if (result.responses_count != 0)
-            {
-                process_time_stopwatch.stop();
-                keeper_dispatcher->updateKeeperStat(process_time_stopwatch.elapsedMilliseconds());
-            }
             /// Process exact amount of responses from pipe
             /// otherwise state of responses queue and signaling pipe
             /// became inconsistent and race condition is possible.
@@ -402,6 +401,9 @@ void KeeperTCPHandler::runImpl()
                     LOG_DEBUG(log, "Session #{} successfully closed", session_id);
                     return;
                 }
+
+                updateStats(response);
+                packageSent();
 
                 response->write(*out);
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
@@ -491,6 +493,169 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
     if (!keeper_dispatcher->putRequest(request, session_id))
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Session {} already disconnected", session_id);
     return std::make_pair(opnum, xid);
+}
+
+void KeeperTCPHandler::packageSent()
+{
+    conn_stats->incrementPacketsSent();
+    keeper_dispatcher->incrementPacketsSent();
+}
+
+void KeeperTCPHandler::packageReceived()
+{
+    conn_stats->incrementPacketsReceived();
+    keeper_dispatcher->incrementPacketsReceived();
+}
+
+void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response)
+{
+    /// update statistics ignoring watch response and heartbeat.
+    if (response->xid != Coordination::WATCH_XID && response->getOpNum() != Coordination::OpNum::Heartbeat)
+    {
+        Int64 elapsed = (Poco::Timestamp() - operations[response->xid]) / 1000;
+        conn_stats->updateLatency(elapsed);
+        keeper_dispatcher->updateKeeperStat(elapsed);
+
+        {
+            std::lock_guard lock(last_op_mutex);
+            last_op.update(
+                Coordination::toString(response->getOpNum()),
+                response->xid,
+                response->zxid,
+                Poco::Timestamp().epochMicroseconds() / 1000,
+                elapsed);
+        }
+    }
+}
+
+void KeeperTCPHandler::dumpStats(WriteBufferFromOwnString & buf, bool brief)
+{
+    auto write_str = [&buf](const String & str) { buf.write(str.data(), str.size()); };
+    using std::to_string;
+
+    buf.write(' ');
+    write_str(socket().peerAddress().toString());
+    write_str("(recved=");
+    write_str(to_string(conn_stats->getPacketsReceived()));
+    write_str(",sent=");
+    write_str(to_string(conn_stats->getPacketsSent()));
+    if (!brief)
+    {
+        if (session_id != 0)
+        {
+            write_str(",sid=0x");
+            write_str(getHexUIntLowercase(getSessionId()));
+
+            write_str(",lop=");
+            LastOp op;
+            {
+                std::lock_guard lock(last_op_mutex);
+                op = last_op.clone();
+            }
+            write_str(op.getLastOp());
+            write_str(",est=");
+            write_str(to_string(getEstablished().epochMicroseconds() / 1000));
+            write_str(",to=");
+            write_str(to_string(getSessionTimeout()));
+            Int64 last_cxid = op.getLastCxid();
+            if (last_cxid >= 0)
+            {
+                write_str(",lcxid=0x");
+                write_str(getHexUIntLowercase(last_cxid));
+            }
+            write_str(",lzxid=0x");
+            write_str(getHexUIntLowercase(op.getLastZxid()));
+            write_str(",lresp=");
+            write_str(to_string(op.getLastResponseTime()));
+
+            write_str(",llat=");
+            write_str(to_string(conn_stats->getLastLatency()));
+            write_str(",minlat=");
+            write_str(to_string(conn_stats->getMinLatency()));
+            write_str(",avglat=");
+            write_str(to_string(conn_stats->getAvgLatency()));
+            write_str(",maxlat=");
+            write_str(to_string(conn_stats->getMaxLatency()));
+        }
+    }
+    buf.write(')');
+    buf.write('\n');
+}
+
+void KeeperTCPHandler::resetStats()
+{
+    conn_stats->reset();
+    std::lock_guard lock(last_op_mutex);
+    {
+        last_op.reset();
+    }
+}
+
+Int64 KeeperTCPHandler::getPacketsReceived() const
+{
+    return conn_stats->getPacketsReceived();
+}
+Int64 KeeperTCPHandler::getPacketsSent() const
+{
+    return conn_stats->getPacketsReceived();
+}
+Int64 KeeperTCPHandler::getSessionId() const
+{
+    return session_id;
+}
+Int64 KeeperTCPHandler::getSessionTimeout() const
+{
+    return session_timeout.totalMilliseconds();
+}
+Poco::Timestamp KeeperTCPHandler::getEstablished() const
+{
+    return established;
+}
+LastOp KeeperTCPHandler::getLastOp() const
+{
+    return last_op;
+}
+
+KeeperStatsPtr KeeperTCPHandler::getSessionStats() const
+{
+    return conn_stats;
+}
+KeeperTCPHandler::~KeeperTCPHandler()
+{
+    KeeperTCPHandler::unregisterConnection(this);
+}
+
+std::mutex KeeperTCPHandler::conns_mutex;
+std::unordered_set<KeeperTCPHandler *> KeeperTCPHandler::connections;
+
+void KeeperTCPHandler::registerConnection(KeeperTCPHandler * conn)
+{
+    std::lock_guard lock(conns_mutex);
+    connections.insert(conn);
+}
+
+void KeeperTCPHandler::unregisterConnection(KeeperTCPHandler * conn)
+{
+    std::lock_guard lock(conns_mutex);
+    connections.erase(conn);
+}
+
+void KeeperTCPHandler::dumpConnections(WriteBufferFromOwnString & buf, bool brief)
+{
+    std::lock_guard lock(conns_mutex);
+    for (auto * conn : connections)
+    {
+        conn->dumpStats(buf, brief);
+    }
+}
+
+void KeeperTCPHandler::resetConnsStats()
+{
+    std::lock_guard lock(conns_mutex);
+    for (auto * conn : connections)
+    {
+        conn->resetStats();
+    }
 }
 
 }

@@ -34,6 +34,9 @@ void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco
     }
 }
 
+
+const String KeeperSettings::DEFAULT_FOUR_LETTER_WORD_CMD = "conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro";
+
 KeeperSettings::KeeperSettings()
     : server_id(NOT_EXIST)
     , tcp_port(NOT_EXIST)
@@ -167,7 +170,7 @@ KeeperSettings::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
         ret->super_digest = config.getString("keeper_server.superdigest");
     }
 
-    ret->four_letter_word_white_list = config.getString("keeper_server.four_letter_word_white_list", "*");
+    ret->four_letter_word_white_list = config.getString("keeper_server.four_letter_word_white_list", DEFAULT_FOUR_LETTER_WORD_CMD);
 
     ret->log_storage_path = getLogsPathFromConfig(config, standalone_keeper_);
     ret->snapshot_storage_path = getSnapshotsPathFromConfig(config, standalone_keeper_);

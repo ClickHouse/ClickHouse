@@ -82,8 +82,14 @@ public:
 
     UInt64 getNodeCount() const override;
     UInt64 getWatchCount() const override;
+    UInt64 getWatchPathCount() const override;
+
+    void dumpWatches(WriteBufferFromOwnString & buf) const override;
+    void dumpWatchesByPath(WriteBufferFromOwnString & buf) const override;
+    void dumpEphemerals(WriteBufferFromOwnString & buf) const override;
 
     UInt64 getEphemeralCount() const override;
+    UInt64 getEphemeralNodeCount() const override;
     UInt64 getApproximateDataSize() const override;
 
     void shutdownStorage();

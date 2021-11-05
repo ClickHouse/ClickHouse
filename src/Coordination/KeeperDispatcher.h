@@ -25,49 +25,6 @@ using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeep
 /// Process user requests via consensus and return responses.
 class KeeperDispatcher : public IKeeperInfo
 {
-
-public:
-
-    /// Request statistics
-    class KeeperStats
-    {
-    public:
-        explicit KeeperStats() = default;
-
-        UInt64 getMinLatency() const;
-        UInt64 getMaxLatency() const;
-
-        UInt64 getAvgLatency() const;
-
-        UInt64 getPacketsReceived() const;
-        UInt64 getPacketsSent() const;
-
-        void incrementPacketsReceived();
-        void incrementPacketsSent();
-
-        void updateLatency(UInt64 latency_ms);
-        void reset();
-
-    private:
-        void inline resetLatency();
-        void inline resetRequestCounters();
-
-        mutable std::shared_mutex mutex;
-
-        /// all response with watch response excluded
-        UInt64 packets_sent = 0;
-        /// All client request include ordinary requests, heart beat and session establish etc.
-        UInt64 packets_received = 0;
-
-        /// For consistent with zookeeper measured by millisecond,
-        /// otherwise maybe microsecond is better
-        UInt64 total_latency = 0;
-        UInt64 max_latency = 0;
-        UInt64 min_latency = 0;
-
-        UInt64 count = 0;
-    };
-
 private:
     mutable std::mutex push_request_mutex;
 
@@ -198,6 +155,9 @@ public:
     UInt64 getOutstandingRequests() const override;
     UInt64 getNumAliveConnections() const override;
 
+    UInt64 getDataDirSize() const override;
+    UInt64 getSnapDirSize() const override;
+
     /// Request statistics such as qps, latency etc.
     std::shared_ptr<KeeperStats> getKeeperStats() const
     {
@@ -224,10 +184,20 @@ public:
         return settings;
     }
 
+    inline void incrementPacketsSent()
+    {
+        keeper_stats->incrementPacketsSent();
+    }
+
+    inline void incrementPacketsReceived()
+    {
+        keeper_stats->incrementPacketsReceived();
+    }
+
     void dumpConf(WriteBufferFromOwnString & buf) const;
+    void dumpSessions(WriteBufferFromOwnString & buf) const override;
 };
 
-using KeeperStatsPtr = std::shared_ptr<KeeperDispatcher::KeeperStats>;
 }
 
 #endif

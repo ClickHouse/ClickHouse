@@ -3,6 +3,10 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <future>
 #include <chrono>
+#include <Poco/Path.h>
+#include <Poco/File.h>
+#include <Poco/DirectoryIterator.h>
+#include <Common/hex.h>
 
 namespace DB
 {
@@ -14,89 +18,25 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
-UInt64 KeeperDispatcher::KeeperStats::getMinLatency() const
-{
-    std::shared_lock lock(mutex);
-    return min_latency;
-}
+using Poco::Path;
+using Poco::File;
+using Poco::DirectoryIterator;
 
-UInt64 KeeperDispatcher::KeeperStats::getMaxLatency() const
+UInt64 getDirSize(Path dir)
 {
-    std::shared_lock lock(mutex);
-    return max_latency;
-}
+    DirectoryIterator it(dir);
+    DirectoryIterator end;
 
-UInt64 KeeperDispatcher::KeeperStats::getAvgLatency() const
-{
-    std::shared_lock lock(mutex);
-    if (count != 0)
+    UInt64 size{0};
+    while (it != end)
     {
-        return total_latency / count;
+        if (it->isFile())
+            size += it->getSize();
+        else
+            size += getDirSize(it->path());
+        ++it;
     }
-    return 0;
-}
-
-UInt64 KeeperDispatcher::KeeperStats::getPacketsReceived() const
-{
-    std::shared_lock lock(mutex);
-    return packets_received;
-}
-
-UInt64 KeeperDispatcher::KeeperStats::getPacketsSent() const
-{
-    std::shared_lock lock(mutex);
-    return packets_sent;
-}
-
-void KeeperDispatcher::KeeperStats::incrementPacketsReceived()
-{
-    std::unique_lock lock(mutex);
-    packets_received++;
-}
-
-void KeeperDispatcher::KeeperStats::incrementPacketsSent()
-{
-    std::unique_lock lock(mutex);
-    packets_sent++;
-}
-
-void KeeperDispatcher::KeeperStats::updateLatency(UInt64 latency_ms)
-{
-    std::unique_lock lock(mutex);
-
-    total_latency += (latency_ms);
-    count++;
-
-    if (latency_ms < min_latency)
-    {
-        min_latency = latency_ms;
-    }
-
-    if (latency_ms > max_latency)
-    {
-        max_latency = latency_ms;
-    }
-}
-
-void KeeperDispatcher::KeeperStats::reset()
-{
-    std::unique_lock lock(mutex);
-    resetLatency();
-    resetRequestCounters();
-}
-
-void KeeperDispatcher::KeeperStats::resetLatency()
-{
-    total_latency = 0;
-    count = 0;
-    max_latency = 0;
-    min_latency = 0;
-}
-
-void KeeperDispatcher::KeeperStats::resetRequestCounters()
-{
-    packets_received = 0;
-    packets_sent = 0;
+    return size;
 }
 
 KeeperDispatcher::KeeperDispatcher()
@@ -302,7 +242,6 @@ void KeeperDispatcher::setResponse(int64_t session_id, const Coordination::ZooKe
             session_to_response_callback.erase(session_response_callback);
         }
     }
-    keeper_stats->incrementPacketsSent();
 }
 
 bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & request, int64_t session_id)
@@ -333,7 +272,6 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     {
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
     }
-    keeper_stats->incrementPacketsReceived();
     return true;
 }
 
@@ -684,9 +622,30 @@ UInt64 KeeperDispatcher::getNumAliveConnections() const
     return session_to_response_callback.size();
 }
 
+UInt64 KeeperDispatcher::getDataDirSize() const
+{
+    return getDirSize(Path(settings->log_storage_path));
+}
+
+UInt64 KeeperDispatcher::getSnapDirSize() const
+{
+    return getDirSize(Path(settings->snapshot_storage_path));
+}
+
 void KeeperDispatcher::dumpConf(WriteBufferFromOwnString & buf) const
 {
     settings->dump(buf);
+}
+
+void KeeperDispatcher::dumpSessions(WriteBufferFromOwnString & buf) const
+{
+    std::lock_guard lock(session_to_response_callback_mutex);
+    buf << "Sessions dump (" << session_to_response_callback.size() << "):\n";
+
+    for (const auto & e : session_to_response_callback)
+    {
+        buf << "0x" << getHexUIntLowercase(e.first) << "\n";
+    }
 }
 
 }

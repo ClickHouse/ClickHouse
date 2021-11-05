@@ -18,6 +18,9 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <unordered_map>
+#include <Coordination/KeeperInfos.h>
+#include <Coordination/KeeperStats.h>
+#include <Poco/Timestamp.h>
 
 namespace DB
 {
@@ -29,11 +32,38 @@ using ThreadSafeResponseQueue = ConcurrentBoundedQueue<Coordination::ZooKeeperRe
 
 using ThreadSafeResponseQueuePtr = std::unique_ptr<ThreadSafeResponseQueue>;
 
-class KeeperTCPHandler : public Poco::Net::TCPServerConnection
+class KeeperTCPHandler : public Poco::Net::TCPServerConnection, IConnectionInfo
 {
+public:
+    static void registerConnection(KeeperTCPHandler * conn);
+    static void unregisterConnection(KeeperTCPHandler * conn);
+    /// dump all connections statistics
+    static void dumpConnections(WriteBufferFromOwnString & buf, bool brief);
+    static void resetConnsStats();
+
+private:
+    static std::mutex conns_mutex;
+    /// all connections
+    static std::unordered_set<KeeperTCPHandler *> connections;
+
 public:
     KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_);
     void run() override;
+
+    void dumpStats(WriteBufferFromOwnString & buf, bool brief);
+    void resetStats();
+
+    /// statistics methods
+    Int64 getPacketsReceived() const override;
+    Int64 getPacketsSent() const override;
+    Int64 getSessionId() const override;
+    Int64 getSessionTimeout() const override;
+    Poco::Timestamp getEstablished() const override;
+    LastOp getLastOp() const override;
+    KeeperStatsPtr getSessionStats() const override;
+
+    ~KeeperTCPHandler() override;
+
 private:
     IServer & server;
     Poco::Logger * log;
@@ -62,6 +92,22 @@ private:
     bool tryExecuteFourLetterWordCmd(Int32 & four_letter_cmd);
 
     std::pair<Coordination::OpNum, Coordination::XID> receiveRequest();
+
+    void packageSent();
+    void packageReceived();
+
+    void updateStats(Coordination::ZooKeeperResponsePtr & response);
+
+    Poco::Timestamp established;
+
+    using Operations = std::map<Coordination::XID, Poco::Timestamp>;
+    Operations operations;
+
+    std::mutex last_op_mutex;
+    LastOp last_op;
+
+    KeeperStatsPtr conn_stats;
+
 };
 
 }
