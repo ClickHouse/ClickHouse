@@ -83,38 +83,32 @@ void PostgreSQLReplicationHandler::startup()
 }
 
 
-String PostgreSQLReplicationHandler::probablyDoubleQuoteWithSchema(const String & table_name, bool quote) const
+std::pair<String, String> PostgreSQLReplicationHandler::getSchemaAndTableName(const String & table_name) const
 {
-    if (table_name.starts_with("\""))
-    {
-        if (!quote)
-            return table_name.substr(1, table_name.size() - 1);
-        return table_name;
-    }
-
     /// !schema_list.empty() -- We replicate all tables from specifies schemas.
     /// In this case when tables list is fetched, we append schema with dot. But without quotes.
 
     /// If there is a setting `tables_list`, then table names can be put there along with schema,
     /// separated by dot and with no quotes. We add double quotes in this case.
 
+    if (!postgres_schema.empty())
+        return std::make_pair(postgres_schema, table_name);
+
     if (auto pos = table_name.find('.'); schema_as_a_part_of_table_name && pos != std::string::npos)
-    {
-        auto schema  = table_name.substr(0, pos);
-        auto table = table_name.substr(pos + 1);
-        return doubleQuoteString(schema) + '.' + doubleQuoteString(table);
-    }
+        return std::make_pair(table_name.substr(0, pos), table_name.substr(pos + 1));
 
-    if (postgres_schema.empty())
-    {
-        /// We do no need quotes to fetch table structure in case there is no schema. (will not work)
-        if (quote)
-            return doubleQuoteString(table_name);
-        else
-            return table_name;
-    }
+    return std::make_pair("", table_name);
+}
 
-    return doubleQuoteString(postgres_schema) + '.' + doubleQuoteString(table_name);
+
+String PostgreSQLReplicationHandler::doubleQuoteWithSchema(const String & table_name) const
+{
+    auto [schema, table] = getSchemaAndTableName(table_name);
+
+    if (schema.empty())
+        return doubleQuoteString(table);
+
+    return doubleQuoteString(schema) + '.' + doubleQuoteString(table);
 }
 
 
@@ -128,6 +122,8 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
     }
     catch (const pqxx::broken_connection & pqxx_error)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
         if (!is_attach)
             throw;
 
@@ -136,10 +132,10 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
     }
     catch (...)
     {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+
         if (!is_attach)
             throw;
-
-        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
@@ -236,10 +232,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             auto * materialized_storage = storage->as <StorageMaterializedPostgreSQL>();
             try
             {
-                /// FIXME: Looks like it is possible we might get here if there is no nested storage or at least nested storage id field might be empty.
-                ///        Caught it somehow when doing something else incorrectly, but do not see any reason how it could happen.
-                /// Try load nested table, set materialized table metadata.
-                nested_storages[table_name] = materialized_storage->prepare();
+                nested_storages[table_name] = materialized_storage->getNested();
             }
             catch (Exception & e)
             {
@@ -299,7 +292,7 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection &
 
     /// Load from snapshot, which will show table state before creation of replication slot.
     /// Already connected to needed database, no need to add it to query.
-    auto quoted_name = probablyDoubleQuoteWithSchema(table_name);
+    auto quoted_name = doubleQuoteWithSchema(table_name);
     query_str = fmt::format("SELECT * FROM {}", quoted_name);
     LOG_DEBUG(log, "Loading PostgreSQL table {}.{}", postgres_database, quoted_name);
 
@@ -324,7 +317,7 @@ StoragePtr PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection &
     CompletedPipelineExecutor executor(block_io.pipeline);
     executor.execute();
 
-    nested_storage = materialized_storage->prepare();
+    materialized_storage->set(nested_storage);
     auto nested_table_id = nested_storage->getStorageID();
     LOG_DEBUG(log, "Loaded table {}.{} (uuid: {})", nested_table_id.database_name, nested_table_id.table_name, toString(nested_table_id.uuid));
 
@@ -408,7 +401,7 @@ void PostgreSQLReplicationHandler::createPublicationIfNeeded(pqxx::nontransactio
             WriteBufferFromOwnString buf;
             for (const auto & storage_data : materialized_storages)
             {
-                buf << probablyDoubleQuoteWithSchema(storage_data.first);
+                buf << doubleQuoteWithSchema(storage_data.first);
                 buf << ",";
             }
             tables_list = buf.str();
@@ -690,10 +683,6 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                 result_tables = fetchPostgreSQLTablesList(tx, schema_list.empty() ? postgres_schema : schema_list);
             }
         }
-        else
-        {
-            result_tables = std::set(expected_tables.begin(), expected_tables.end());
-        }
     }
 
 
@@ -711,7 +700,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
         for (auto & table_name : tables_names)
         {
             boost::trim(table_name);
-            buf << probablyDoubleQuoteWithSchema(table_name);
+            buf << doubleQuoteWithSchema(table_name);
             buf << ",";
         }
         tables_list = buf.str();
@@ -747,7 +736,8 @@ PostgreSQLTableStructurePtr PostgreSQLReplicationHandler::fetchTableStructure(
     PostgreSQLTableStructure structure;
     try
     {
-        structure = fetchPostgreSQLTableStructure(tx, table_name, probablyDoubleQuoteWithSchema(table_name, false), true, true, true);
+        auto [schema, table] = getSchemaAndTableName(table_name);
+        structure = fetchPostgreSQLTableStructure(tx, table, schema, true, true, true);
     }
     catch (...)
     {
@@ -781,13 +771,9 @@ void PostgreSQLReplicationHandler::addTableToReplication(StorageMaterializedPost
             if (!nested)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Internal table was not created");
 
-            {
-                postgres::Connection tmp_connection(connection_info);
-                nested_storage = loadFromSnapshot(tmp_connection, snapshot_name, postgres_table_name, materialized_storage);
-            }
-            auto nested_table_id = nested_storage->getStorageID();
-            materialized_storage->setNestedStorageID(nested_table_id);
-            nested_storage = materialized_storage->prepare();
+            postgres::Connection tmp_connection(connection_info);
+            nested_storage = loadFromSnapshot(tmp_connection, snapshot_name, postgres_table_name, materialized_storage);
+            materialized_storage->set(nested_storage);
         }
 
         {
@@ -863,6 +849,7 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
         {
             auto storage = DatabaseCatalog::instance().getTable(StorageID(current_database_name, table_name), context);
             auto * materialized_storage = storage->as <StorageMaterializedPostgreSQL>();
+            auto materialized_table_lock = materialized_storage->lockForShare(String(), context->getSettingsRef().lock_acquire_timeout);
 
             /// If for some reason this temporary table already exists - also drop it.
             auto temp_materialized_storage = materialized_storage->createTemporary();
@@ -890,34 +877,30 @@ void PostgreSQLReplicationHandler::reloadFromSnapshot(const std::vector<std::pai
 
             try
             {
-                auto materialized_table_lock = materialized_storage->lockForShare(String(), context->getSettingsRef().lock_acquire_timeout);
                 InterpreterRenameQuery(ast_rename, nested_context).execute();
 
-                {
-                    auto nested_storage = DatabaseCatalog::instance().getTable(StorageID(table_id.database_name, table_id.table_name),
-                                                                               nested_context);
-                    auto nested_table_lock = nested_storage->lockForShare(String(), context->getSettingsRef().lock_acquire_timeout);
-                    auto nested_table_id = nested_storage->getStorageID();
+                auto nested_storage = DatabaseCatalog::instance().getTable(StorageID(table_id.database_name, table_id.table_name, temp_table_id.uuid), nested_context);
+                materialized_storage->set(nested_storage);
 
-                    materialized_storage->setNestedStorageID(nested_table_id);
-                    nested_storage = materialized_storage->prepare();
+                auto nested_sample_block = nested_storage->getInMemoryMetadataPtr()->getSampleBlock();
+                auto materialized_sample_block = materialized_storage->getInMemoryMetadataPtr()->getSampleBlock();
+                assertBlocksHaveEqualStructure(nested_sample_block, materialized_sample_block, "while reloading table in the background");
 
-                    auto nested_storage_metadata = nested_storage->getInMemoryMetadataPtr();
-                    auto nested_sample_block = nested_storage_metadata->getSampleBlock();
-                    LOG_DEBUG(log, "Updated table {}. New structure: {}",
-                              nested_table_id.getNameForLogs(), nested_sample_block.dumpStructure());
+                LOG_INFO(log, "Updated table {}. New structure: {}",
+                         nested_storage->getStorageID().getNameForLogs(), nested_sample_block.dumpStructure());
 
-                    auto materialized_storage_metadata = nested_storage->getInMemoryMetadataPtr();
-                    auto materialized_sample_block = materialized_storage_metadata->getSampleBlock();
+                /// Pass pointer to new nested table into replication consumer, remove current table from skip list and set start lsn position.
+                consumer->updateNested(table_name, nested_storage, relation_id, start_lsn);
 
-                    assertBlocksHaveEqualStructure(nested_sample_block, materialized_sample_block, "while reloading table in the background");
+                auto table_to_drop = DatabaseCatalog::instance().getTable(StorageID(temp_table_id.database_name, temp_table_id.table_name, table_id.uuid), nested_context);
+                auto drop_table_id = table_to_drop->getStorageID();
 
-                    /// Pass pointer to new nested table into replication consumer, remove current table from skip list and set start lsn position.
-                    consumer->updateNested(table_name, nested_storage, relation_id, start_lsn);
-                }
+                if (drop_table_id == nested_storage->getStorageID())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                    "Cannot drop table because is has the same uuid as new table: {}", drop_table_id.getNameForLogs());
 
-                LOG_DEBUG(log, "Dropping table {}", temp_table_id.getNameForLogs());
-                InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, nested_context, nested_context, temp_table_id, true);
+                LOG_DEBUG(log, "Dropping table {}", drop_table_id.getNameForLogs());
+                InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Drop, nested_context, nested_context, drop_table_id, true);
             }
             catch (...)
             {

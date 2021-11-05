@@ -117,13 +117,9 @@ public:
 
     StorageID getNestedStorageID() const;
 
-    void setNestedStorageID(const StorageID & id) { nested_table_id.emplace(id); }
+    void set(StoragePtr nested_storage);
 
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
-
-    /// Get nested table (or throw if it does not exist), set in-memory metadata (taken from nested table)
-    /// for current table, set has_nested = true.
-    StoragePtr prepare();
 
     bool supportsFinal() const override { return true; }
 
