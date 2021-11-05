@@ -195,18 +195,25 @@ void MergeTreeReaderStream::adjustForRange(MarkRange range)
     auto [right_offset, mark_range_bytes] = getRightOffsetAndBytesRange(range.begin, range.end);
     if (!right_offset)
     {
+        if (last_right_offset && !last_right_offset.value())
+            return;
+
+        last_right_offset = 0; // Zero value means the end of file.
         if (cached_buffer)
             cached_buffer->setReadUntilEnd();
         if (non_cached_buffer)
             non_cached_buffer->setReadUntilEnd();
     }
-    else if (right_offset > last_right_offset)
+    else
     {
+        if (last_right_offset && right_offset <= last_right_offset.value())
+            return;
+
         last_right_offset = right_offset;
         if (cached_buffer)
-            cached_buffer->setReadUntilPosition(last_right_offset);
+            cached_buffer->setReadUntilPosition(right_offset);
         if (non_cached_buffer)
-            non_cached_buffer->setReadUntilPosition(last_right_offset);
+            non_cached_buffer->setReadUntilPosition(right_offset);
     }
 }
 
