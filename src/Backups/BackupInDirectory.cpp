@@ -9,6 +9,7 @@
 #include <Common/quoteString.h>
 #include <Disks/DiskSelector.h>
 #include <Disks/IDisk.h>
+#include <Disks/DiskLocal.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
@@ -32,6 +33,7 @@ namespace ErrorCodes
     extern const int BACKUP_ENTRY_ALREADY_EXISTS;
     extern const int BACKUP_ENTRY_NOT_FOUND;
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
 }
 
@@ -40,12 +42,21 @@ namespace
     const UInt64 BACKUP_VERSION = 1;
 }
 
-BackupInDirectory::BackupInDirectory(OpenMode open_mode_, const DiskPtr & disk_, const String & path_, const std::shared_ptr<const IBackup> & base_backup_)
-    : open_mode(open_mode_), disk(disk_), path(path_), path_with_sep(path_), base_backup(base_backup_)
+BackupInDirectory::BackupInDirectory(const String & backup_name_, OpenMode open_mode_, const DiskPtr & disk_, const String & path_, const ContextPtr & context_, const std::optional<BackupInfo> & base_backup_info_)
+    : backup_name(backup_name_), open_mode(open_mode_), disk(disk_), path(path_), context(context_), base_backup_info(base_backup_info_)
 {
-    if (!path_with_sep.ends_with('/'))
-        path_with_sep += '/';
-    trimRight(path, '/');
+    if (!path.empty() && (path.back() != '/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup {}: Path to backup must end with '/', but {} doesn't.", getName(), path);
+
+    if (!disk)
+    {
+        if (path.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup {}: Path to backup must not be empty.", getName());
+
+        disk = std::make_shared<DiskLocal>("internal", path, 0);
+        path = "";
+    }
+
     open();
 }
 
@@ -58,19 +69,32 @@ void BackupInDirectory::open()
 {
     if (open_mode == OpenMode::WRITE)
     {
-        if (disk->exists(path))
-            throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", quoteString(path));
-        disk->createDirectories(path);
-        directory_was_created = true;
-        writePathToBaseBackup();
+        if (disk->exists(path + ".contents"))
+            throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", getName());
+
+        if (!path.empty() && !disk->isDirectory(path))
+        {
+            disk->createDirectories(path);
+            directory_was_created = true;
+        }
+        writeBaseBackupInfo();
     }
 
     if (open_mode == OpenMode::READ)
     {
-        if (!disk->isDirectory(path))
-            throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", quoteString(path));
+        if (!path.empty() && !disk->isDirectory(path))
+            throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", getName());
         readContents();
-        readPathToBaseBackup();
+        readBaseBackupInfo();
+    }
+
+    if (base_backup_info)
+    {
+        BackupFactory::CreateParams params;
+        params.backup_info = *base_backup_info;
+        params.open_mode = OpenMode::READ;
+        params.context = context;
+        base_backup = BackupFactory::instance().createBackup(params);
     }
 }
 
@@ -87,36 +111,34 @@ void BackupInDirectory::close()
     }
 }
 
-void BackupInDirectory::writePathToBaseBackup()
+void BackupInDirectory::writeBaseBackupInfo()
 {
-    String file_path = path_with_sep + ".base_backup";
-    if (!base_backup)
+    String file_path = path + ".base_backup";
+    if (!base_backup_info)
     {
         disk->removeFileIfExists(file_path);
         return;
     }
     auto out = disk->writeFile(file_path);
-    writeString(base_backup->getPath(), *out);
+    writeString(base_backup_info->toString(), *out);
 }
 
-void BackupInDirectory::readPathToBaseBackup()
+void BackupInDirectory::readBaseBackupInfo()
 {
-    if (base_backup)
+    if (base_backup_info)
         return;
-    String file_path = path_with_sep + ".base_backup";
+    String file_path = path + ".base_backup";
     if (!disk->exists(file_path))
         return;
     auto in = disk->readFile(file_path);
-    String base_backup_path;
-    readStringUntilEOF(base_backup_path, *in);
-    if (base_backup_path.empty())
-        return;
-    base_backup = BackupFactory::instance().openBackup(base_backup_path);
+    String str;
+    readStringUntilEOF(str, *in);
+    base_backup_info.emplace(BackupInfo::fromString(str));
 }
 
 void BackupInDirectory::writeContents()
 {
-    auto out = disk->writeFile(path_with_sep + ".contents");
+    auto out = disk->writeFile(path + ".contents");
     writeVarUInt(BACKUP_VERSION, *out);
 
     writeVarUInt(infos.size(), *out);
@@ -136,11 +158,11 @@ void BackupInDirectory::writeContents()
 
 void BackupInDirectory::readContents()
 {
-    auto in = disk->readFile(path_with_sep + ".contents");
+    auto in = disk->readFile(path + ".contents");
     UInt64 version;
     readVarUInt(version, *in);
     if (version != BACKUP_VERSION)
-        throw Exception(ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED, "Backup {}: Version {} is not supported", quoteString(path), version);
+        throw Exception(ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED, "Backup {}: Version {} is not supported", getName(), version);
 
     size_t num_infos;
     readVarUInt(num_infos, *in);
@@ -162,16 +184,6 @@ void BackupInDirectory::readContents()
         }
         infos.emplace(path_in_backup, info);
     }
-}
-
-IBackup::OpenMode BackupInDirectory::getOpenMode() const
-{
-    return open_mode;
-}
-
-String BackupInDirectory::getPath() const
-{
-    return path;
 }
 
 Strings BackupInDirectory::list(const String & prefix, const String & terminator) const
@@ -209,7 +221,7 @@ size_t BackupInDirectory::getSize(const String & name) const
     auto it = infos.find(name);
     if (it == infos.end())
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", quoteString(path), quoteString(name));
+            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", getName(), quoteString(name));
     return it->second.size;
 }
 
@@ -219,7 +231,7 @@ UInt128 BackupInDirectory::getChecksum(const String & name) const
     auto it = infos.find(name);
     if (it == infos.end())
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", quoteString(path), quoteString(name));
+            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", getName(), quoteString(name));
     return it->second.checksum;
 }
 
@@ -230,7 +242,7 @@ BackupEntryPtr BackupInDirectory::read(const String & name) const
     auto it = infos.find(name);
     if (it == infos.end())
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", quoteString(path), quoteString(name));
+            ErrorCodes::BACKUP_ENTRY_NOT_FOUND, "Backup {}: Entry {} not found in the backup", getName(), quoteString(name));
 
     const auto & info = it->second;
     if (!info.size)
@@ -242,7 +254,7 @@ BackupEntryPtr BackupInDirectory::read(const String & name) const
     if (!info.base_size)
     {
         /// Data goes completely from this backup, the base backup isn't used.
-        return std::make_unique<BackupEntryFromImmutableFile>(disk, path_with_sep + name, info.size, info.checksum);
+        return std::make_unique<BackupEntryFromImmutableFile>(disk, path + name, info.size, info.checksum);
     }
 
     if (info.size < info.base_size)
@@ -250,7 +262,7 @@ BackupEntryPtr BackupInDirectory::read(const String & name) const
         throw Exception(
             ErrorCodes::BACKUP_DAMAGED,
             "Backup {}: Entry {} has its data size less than in the base backup {}: {} < {}",
-            quoteString(path), quoteString(name), quoteString(base_backup->getPath()), info.size, info.base_size);
+            getName(), quoteString(name), base_backup->getName(), info.size, info.base_size);
     }
 
     if (!base_backup)
@@ -258,7 +270,7 @@ BackupEntryPtr BackupInDirectory::read(const String & name) const
         throw Exception(
             ErrorCodes::NO_BASE_BACKUP,
             "Backup {}: Entry {} is marked to be read from a base backup, but there is no base backup specified",
-            quoteString(path), quoteString(name));
+            getName(), quoteString(name));
     }
 
     if (!base_backup->exists(name))
@@ -266,7 +278,7 @@ BackupEntryPtr BackupInDirectory::read(const String & name) const
         throw Exception(
             ErrorCodes::WRONG_BASE_BACKUP,
             "Backup {}: Entry {} is marked to be read from a base backup, but doesn't exist there",
-            quoteString(path), quoteString(name));
+            getName(), quoteString(name));
     }
 
     auto base_entry = base_backup->read(name);
@@ -276,7 +288,7 @@ BackupEntryPtr BackupInDirectory::read(const String & name) const
         throw Exception(
             ErrorCodes::WRONG_BASE_BACKUP,
             "Backup {}: Entry {} has unexpected size in the base backup {}: {} (expected size: {})",
-            quoteString(path), quoteString(name), quoteString(base_backup->getPath()), base_size, info.base_size);
+            getName(), quoteString(name), base_backup->getName(), base_size, info.base_size);
     }
 
     auto base_checksum = base_entry->getChecksum();
@@ -285,7 +297,7 @@ BackupEntryPtr BackupInDirectory::read(const String & name) const
         throw Exception(
             ErrorCodes::WRONG_BASE_BACKUP,
             "Backup {}: Entry {} has unexpected checksum in the base backup {}",
-            quoteString(path), quoteString(name), quoteString(base_backup->getPath()));
+            getName(), quoteString(name), base_backup->getName());
     }
 
     if (info.size == info.base_size)
@@ -298,7 +310,7 @@ BackupEntryPtr BackupInDirectory::read(const String & name) const
     /// and the ending goes from this backup.
     return std::make_unique<BackupEntryConcat>(
         std::move(base_entry),
-        std::make_unique<BackupEntryFromImmutableFile>(disk, path_with_sep + name, info.size - info.base_size),
+        std::make_unique<BackupEntryFromImmutableFile>(disk, path + name, info.size - info.base_size),
         info.checksum);
 }
 
@@ -311,7 +323,7 @@ void BackupInDirectory::write(const String & name, BackupEntryPtr entry)
 
     if (infos.contains(name))
         throw Exception(
-            ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Backup {}: Entry {} already exists", quoteString(path), quoteString(name));
+            ErrorCodes::BACKUP_ENTRY_ALREADY_EXISTS, "Backup {}: Entry {} already exists", getName(), quoteString(name));
 
     UInt64 size = entry->getSize();
     std::optional<UInt128> checksum = entry->getChecksum();
@@ -421,7 +433,7 @@ void BackupInDirectory::write(const String & name, BackupEntryPtr entry)
             maybe_hashing_read_buffer = &hashing_read_buffer.emplace(*read_buffer);
 
         /// Copy the entry's data after `copy_pos`.
-        String out_file_path = path_with_sep + name;
+        String out_file_path = path + name;
         disk->createDirectories(directoryPath(out_file_path));
         auto out = disk->writeFile(out_file_path);
 
@@ -449,6 +461,48 @@ void BackupInDirectory::finalizeWriting()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal operation: Cannot write to a backup opened for reading");
     writeContents();
     finalized = true;
+}
+
+
+void registerBackupEngineFile(BackupFactory & factory)
+{
+    auto creator_fn = [](const BackupFactory::CreateParams & params)
+    {
+        String backup_name = params.backup_info.toString();
+        const String & engine_name = params.backup_info.backup_engine_name;
+        const auto & args = params.backup_info.args;
+
+        DiskPtr disk;
+        String path;
+        if (engine_name == "File")
+        {
+            if (args.size() != 1)
+            {
+                throw Exception(
+                    "Backup engine 'File' requires 1 argument (path)",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            }
+            path = args[0].safeGet<String>();
+        }
+        else if (engine_name == "Disk")
+        {
+            if (args.size() < 1 || args.size() > 2)
+            {
+                throw Exception(
+                    "Backup engine 'Disk' requires 1 or 2 arguments",
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+            }
+            String disk_name = args[0].safeGet<String>();
+            disk = params.context->getDisk(disk_name);
+            if (args.size() >= 2)
+                path = args[1].safeGet<String>();
+        }
+
+        return std::make_shared<BackupInDirectory>(backup_name, params.open_mode, disk, path, params.context, params.base_backup_info);
+    };
+
+    factory.registerBackupEngine("File", creator_fn);
+    factory.registerBackupEngine("Disk", creator_fn);
 }
 
 }
