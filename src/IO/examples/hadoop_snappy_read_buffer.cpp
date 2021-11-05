@@ -10,7 +10,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/HadoopSnappyReadBuffer.h>
 
-std::string testHadoopSnappyReadBuffer(size_t buf_size)
+std::string uncompress(size_t buf_size)
 {
     using namespace DB;
 
@@ -28,11 +28,11 @@ std::string testHadoopSnappyReadBuffer(size_t buf_size)
 
 int main()
 {
-    auto output = testHadoopSnappyReadBuffer(1024 * 1024);
+    auto output = uncompress(1024 * 1024);
     for (size_t i = 1; i < 1024; ++i)
     {
         size_t buf_size = 1024 * i;
-        if (testHadoopSnappyReadBuffer(buf_size) != output)
+        if (uncompress(buf_size) != output)
         {
             std::cout << "test hadoop snappy read buffer failed, buf_size:" << buf_size << std::endl;
             return 1;

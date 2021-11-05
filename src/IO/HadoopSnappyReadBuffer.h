@@ -10,6 +10,16 @@
 
 namespace DB
 {
+
+
+/*
+ * Hadoop-snappy format is one of the compression formats base on Snappy used in Hadoop. It uses its own framing format as follows:
+ * 1. A compressed file consists of one or more blocks.
+ * 2. A block consists of uncompressed length (big endian 4 byte integer) and one or more subblocks.
+ * 3. A subblock consists of compressed length (big endian 4 byte integer) and raw compressed data.
+ *
+ * HadoopSnappyDecoder implements the decompression of data compressed with hadoop-snappy format.
+ */
 class HadoopSnappyDecoder
 {
 public:
@@ -56,7 +66,7 @@ private:
     int total_uncompressed_length = 0;
 };
 
-
+/// HadoopSnappyReadBuffer implements read buffer for data compressed with hadoop-snappy format.
 class HadoopSnappyReadBuffer : public BufferWithOwnMemory<ReadBuffer>
 {
 public:
