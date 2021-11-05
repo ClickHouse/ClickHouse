@@ -29,7 +29,7 @@ RemoteCacheController::recover(const std::string & local_path_, std::function<vo
     Poco::File meta_file(local_path_ + "/meta.txt");
     if (!dir_handle.exists() || !data_file.exists() || !meta_file.exists())
     {
-        LOG_ERROR(&Poco::Logger::get("RemoteCacheController"), "not exists direcotry " + local_path_);
+        LOG_ERROR(&Poco::Logger::get("RemoteCacheController"), "not exists directory" + local_path_);
         return nullptr;
     }
 
@@ -519,7 +519,7 @@ std::tuple<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCache::Create
     {
         if (citer->second.cache_controller->isValid())
         {
-            // move the key to the list end, this case should not happend?
+            // move the key to the list end, this case should not happen?
             keys.splice(keys.end(), keys, citer->second.key_iterator);
             return {std::make_shared<LocalCachedFileReader>(citer->second.cache_controller.get(), file_size), CreateReaderError::OK};
         }
