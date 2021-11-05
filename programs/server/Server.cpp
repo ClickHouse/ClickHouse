@@ -76,6 +76,7 @@
 #include <Common/Elf.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/CertificateReloader.h>
 #include <Server/ProtocolServerAdapter.h>
 #include <Server/HTTP/HTTPServer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
@@ -85,9 +86,6 @@
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
 #   include "Common/config_version.h"
-#   if USE_OPENCL
-#       include "Common/BitonicSort.h" // Y_IGNORE
-#   endif
 #endif
 
 #if defined(OS_LINUX)
@@ -877,6 +875,9 @@ if (ThreadFuzzer::instance().isEffective())
             global_context->updateInterserverCredentials(*config);
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
+#if USE_SSL
+            CertificateReloader::instance().reload(*config);
+#endif
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
@@ -1458,6 +1459,10 @@ if (ThreadFuzzer::instance().isEffective())
         if (servers->empty())
              throw Exception("No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)",
                 ErrorCodes::NO_ELEMENTS_IN_CONFIG);
+
+#if USE_SSL
+        CertificateReloader::instance().init(config());
+#endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
         async_metrics.start();
