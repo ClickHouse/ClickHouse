@@ -102,7 +102,7 @@ def test_predefined_connection_configuration(started_cluster):
 
 
 result = ''
-def test_url_reconnect_at_start(started_cluster):
+def test_url_reconnect(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
     with PartitionManager() as pm:
@@ -120,7 +120,7 @@ def test_url_reconnect_at_start(started_cluster):
         thread = threading.Thread(target=select)
         thread.start()
 
-        time.sleep(1)
+        time.sleep(4)
         pm._delete_rule({'destination': node1.ip_address, 'source_port': 50075, 'action': 'REJECT'})
 
         thread.join()
