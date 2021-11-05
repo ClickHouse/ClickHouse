@@ -116,6 +116,7 @@ public:
         {
             to_read_block.erase(name_type.name);
         }
+        format_settings.csv.delimiter = '\x01';
         format_settings.csv.input_field_names = text_input_field_names;
     }
 
@@ -159,16 +160,14 @@ public:
                     curr_file->getSize(),
                     std::move(raw_read_buf));
                 // std::unique_ptr<ReadBuffer> remote_read_buf = std::move(raw_read_buf);
-                std::unique_ptr<ReadBuffer> read_buf;
                 if (curr_file->getFormat() == StorageHive::FileFormat::TEXT)
                     read_buf = wrapReadBufferWithCompressionMethod(std::move(remote_read_buf), compression);
                 else
                     read_buf = std::move(remote_read_buf);
 
-                auto input_format = FormatFactory::instance().getInput(
+                auto input_format = FormatFactory::instance().getInputFormat(
                     format, *read_buf, to_read_block, getContext(), max_block_size, format_settings);
                 pipeline = QueryPipeline(std::move(input_format));
-
                 reader = std::make_unique<PullingPipelineExecutor>(pipeline);
             }
 
@@ -202,13 +201,14 @@ public:
                 }
                 return Chunk(std::move(columns), num_rows);
             }
-
             reader.reset();
             pipeline.reset();
+            read_buf.reset();
         }
     }
 
 private:
+    std::unique_ptr<ReadBuffer> read_buf;
     QueryPipeline pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
     SourcesInfoPtr source_info;
@@ -498,7 +498,7 @@ Pipe StorageHive::read(
                 writeString("\n", wb);
 
                 ReadBufferFromString buffer(wb.str());
-                auto format = FormatFactory::instance().getInput(
+                auto format = FormatFactory::instance().getInputFormat(
                     "CSV", buffer, partition_key_expr->getSampleBlock(), getContext(), getContext()->getSettingsRef().max_block_size);
                 auto pipeline = QueryPipeline(std::move(format));
                 auto reader = std::make_unique<PullingPipelineExecutor>(pipeline);

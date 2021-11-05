@@ -10,6 +10,7 @@
 #include <base/types.h>
 #include <ThriftHiveMetastore.h>
 #include <Storages/HDFS/HDFSCommon.h>
+#include <Common/LRUCache.h>
 
 
 namespace DB

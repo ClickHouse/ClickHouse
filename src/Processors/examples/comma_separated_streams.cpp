@@ -93,6 +93,8 @@ try
         "c",
         "g",
         "h",
+        "i",
+        "j",
     };
     format_settings.csv.delimiter = '\x01';
     format_settings.with_names_use_header = true;
