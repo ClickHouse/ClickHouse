@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Common/TypePromotion.h>
 #include <memory>
 
 
@@ -12,10 +13,14 @@ using BackupEntryPtr = std::unique_ptr<IBackupEntry>;
 /// Represents a backup, i.e. a storage of BackupEntries which can be accessed by their names.
 /// A backup can be either incremental or non-incremental. An incremental backup doesn't store
 /// the data of the entries which are not changed compared to its base backup.
-class IBackup
+class IBackup : public std::enable_shared_from_this<IBackup>, public TypePromotion<IBackup>
 {
 public:
+    IBackup() {}
     virtual ~IBackup() = default;
+
+    /// Name of the backup.
+    virtual const String & getName() const = 0;
 
     enum class OpenMode
     {
@@ -25,9 +30,6 @@ public:
 
     /// A backup can be open either in READ or WRITE mode.
     virtual OpenMode getOpenMode() const = 0;
-
-    /// Returns the path to the backup.
-    virtual String getPath() const = 0;
 
     /// Returns names of entries stored in the backup.
     /// If `prefix` isn't empty the function will return only the names starting with

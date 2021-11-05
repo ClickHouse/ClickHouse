@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Backups/IBackup.h>
+#include <Backups/BackupInfo.h>
 #include <map>
 #include <mutex>
 
@@ -9,23 +10,29 @@ namespace DB
 {
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
+class Context;
+using ContextPtr = std::shared_ptr<const Context>;
 
 /// Represents a backup stored on a disk.
 /// A backup is stored as a directory, each entry is stored as a file in that directory.
 /// Also three system files are stored:
-/// 1) ".base" is an XML file with information about the base backup.
+/// 1) ".base_backup" is a text file with information about the base backup.
 /// 2) ".contents" is a binary file containing a list of all entries along with their sizes
 /// and checksums and information whether the base backup should be used for each entry
-/// 3) ".write_lock" is a temporary empty file which is created before writing of a backup
-/// and deleted after finishing that writing.
 class BackupInDirectory : public IBackup
 {
 public:
-    BackupInDirectory(OpenMode open_mode_, const DiskPtr & disk_, const String & path_, const std::shared_ptr<const IBackup> & base_backup_ = {});
+    BackupInDirectory(
+        const String & backup_name_,
+        OpenMode open_mode_,
+        const DiskPtr & disk_,
+        const String & path_,
+        const ContextPtr & context_,
+        const std::optional<BackupInfo> & base_backup_info = {});
     ~BackupInDirectory() override;
 
-    OpenMode getOpenMode() const override;
-    String getPath() const override;
+    const String & getName() const override { return backup_name; }
+    OpenMode getOpenMode() const override { return open_mode; }
     Strings list(const String & prefix, const String & terminator) const override;
     bool exists(const String & name) const override;
     size_t getSize(const String & name) const override;
@@ -37,8 +44,8 @@ public:
 private:
     void open();
     void close();
-    void writePathToBaseBackup();
-    void readPathToBaseBackup();
+    void writeBaseBackupInfo();
+    void readBaseBackupInfo();
     void writeContents();
     void readContents();
 
@@ -52,10 +59,12 @@ private:
         UInt128 base_checksum{0, 0};
     };
 
+    const String backup_name;
     const OpenMode open_mode;
-    const DiskPtr disk;
+    DiskPtr disk;
     String path;
-    String path_with_sep;
+    ContextPtr context;
+    std::optional<BackupInfo> base_backup_info;
     std::shared_ptr<const IBackup> base_backup;
     std::map<String, EntryInfo> infos;
     bool directory_was_created = false;
