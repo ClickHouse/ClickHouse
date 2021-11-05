@@ -55,6 +55,7 @@ using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
 struct KeeperSettings
 {
     static constexpr int NOT_EXIST = -1;
+    static const String DEFAULT_FOUR_LETTER_WORD_CMD;
 
     KeeperSettings();
     int server_id;

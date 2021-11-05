@@ -10,6 +10,7 @@ from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry
 from io import StringIO
 import csv
+import re
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', main_configs=['configs/enable_keeper1.xml', 'configs/use_keeper.xml'],
@@ -42,6 +43,17 @@ def destroy_zk_client(zk):
         pass
 
 
+def clear_znodes():
+    zk = None
+    try:
+        zk = get_fake_zk(node3.name, timeout=30.0)
+        nodes = zk.get_children('/')
+        for node in [n for n in nodes if 'test_4lw_' in n]:
+            zk.delete('/' + node)
+    finally:
+        destroy_zk_client(zk)
+
+
 def wait_node(node):
     for _ in range(100):
         zk = None
@@ -71,8 +83,8 @@ def get_fake_zk(nodename, timeout=30.0):
     return _fake_zk_instance
 
 
-def get_keeper_socket(nodename):
-    hosts = cluster.get_instance_ip(nodename)
+def get_keeper_socket(node_name):
+    hosts = cluster.get_instance_ip(node_name)
     client = socket.socket()
     client.settimeout(10)
     client.connect((hosts, 9181))
@@ -81,19 +93,50 @@ def get_keeper_socket(nodename):
 
 def close_keeper_socket(cli):
     if cli is not None:
-        print("close socket")
         cli.close()
+
+
+def reset_node_stats(node_name=node1.name):
+    client = None
+    try:
+        client = get_keeper_socket(node_name)
+        client.send(b'srst')
+        client.recv(10)
+    finally:
+        if client is not None:
+            client.close()
+
+
+def send_4lw_cmd(node_name=node1.name, cmd='ruok'):
+    client = None
+    try:
+        client = get_keeper_socket(node_name)
+        client.send(cmd.encode())
+        data = client.recv(100_000)
+        data = data.decode()
+        return data
+    finally:
+        if client is not None:
+            client.close()
+
+
+def reset_conn_stats(node_name=node1.name):
+    client = None
+    try:
+        client = get_keeper_socket(node_name)
+        client.send(b'crst')
+        client.recv(10_000)
+    finally:
+        if client is not None:
+            client.close()
 
 
 def test_cmd_ruok(started_cluster):
     client = None
     try:
         wait_nodes()
-        client = get_keeper_socket("node1")
-        client.send(b'ruok')
-        data = client.recv(4)
-        print(data)
-        assert data.decode() == 'imok'
+        data = send_4lw_cmd(cmd='ruok')
+        assert data == 'imok'
     finally:
         close_keeper_socket(client)
 
@@ -103,18 +146,20 @@ def do_some_action(zk, create_cnt=0, get_cnt=0, set_cnt=0, ephemeral_cnt=0, watc
     assert create_cnt >= set_cnt
     assert create_cnt >= watch_cnt
     assert create_cnt >= delete_cnt
+    # ensure not delete watched node
+    assert create_cnt >= (delete_cnt + watch_cnt)
 
     for i in range(create_cnt):
-        zk.create("/normal_node_" + str(i), b"")
+        zk.create("/test_4lw_normal_node_" + str(i), b"")
 
     for i in range(get_cnt):
-        zk.get("/normal_node_" + str(i))
+        zk.get("/test_4lw_normal_node_" + str(i))
 
     for i in range(set_cnt):
-        zk.set("/normal_node_" + str(i), b"new-value")
+        zk.set("/test_4lw_normal_node_" + str(i), b"new-value")
 
     for i in range(ephemeral_cnt):
-        zk.create("/ephemeral_node_" + str(i), ephemeral=True)
+        zk.create("/test_4lw_ephemeral_node_" + str(i), ephemeral=True)
 
     fake_ephemeral_event = None
 
@@ -124,35 +169,28 @@ def do_some_action(zk, create_cnt=0, get_cnt=0, set_cnt=0, ephemeral_cnt=0, watc
         fake_ephemeral_event = event
 
     for i in range(watch_cnt):
-        zk.exists("/normal_node_" + str(i), watch=fake_ephemeral_callback)
+        zk.exists("/test_4lw_normal_node_" + str(i), watch=fake_ephemeral_callback)
 
     for i in range(create_cnt - delete_cnt, create_cnt):
-        zk.delete("/normal_node_" + str(i))
+        zk.delete("/test_4lw_normal_node_" + str(i))
 
 
 def test_cmd_mntr(started_cluster):
-    client = None
     zk = None
     try:
         wait_nodes()
+        clear_znodes()
 
         # reset stat first
-        client = get_keeper_socket("node1")
-        client.send(b'srst')
-        data = client.recv(10_000)
-        client.close()
-        assert data.decode() == "Server stats reset."
+        reset_node_stats(node1.name)
 
         zk = get_fake_zk(node1.name, timeout=30.0)
         do_some_action(zk, create_cnt=10, get_cnt=10, set_cnt=5, ephemeral_cnt=2, watch_cnt=2, delete_cnt=2)
 
-        client = get_keeper_socket("node1")
-        client.send(b'mntr')
-        data = client.recv(10_000_000)
-        assert len(data) != 0
+        data = send_4lw_cmd(cmd='mntr')
 
         # print(data.decode())
-        reader = csv.reader(data.decode().split('\n'), delimiter='\t')
+        reader = csv.reader(data.split('\n'), delimiter='\t')
         result = {}
 
         for row in reader:
@@ -169,10 +207,10 @@ def test_cmd_mntr(started_cluster):
         assert int(result["zk_max_latency"]) >= int(result["zk_avg_latency"])
 
         assert int(result["zk_packets_received"]) == 31
-        # contains 31 user request response, 1 session establish response
-        assert int(result["zk_packets_sent"]) == 32
+        # contains 31 user request response
+        assert int(result["zk_packets_sent"]) == 31
 
-        assert 1 <= int(result["zk_num_alive_connections"]) <= 4
+        assert int(result["zk_num_alive_connections"]) == 1
         assert int(result["zk_outstanding_requests"]) == 0
 
         assert result["zk_server_state"] == "leader"
@@ -182,8 +220,7 @@ def test_cmd_mntr(started_cluster):
         #   3 nodes created by clickhouse "/clickhouse/task_queue/ddl"
         #   1 root node
         assert int(result["zk_znode_count"]) == 14
-        # ClickHouse may watch "/clickhouse/task_queue/ddl"
-        assert int(result["zk_watch_count"]) >= 2
+        assert int(result["zk_watch_count"]) == 2
         assert int(result["zk_ephemerals_count"]) == 2
         assert int(result["zk_approximate_data_size"]) > 0
 
@@ -195,28 +232,22 @@ def test_cmd_mntr(started_cluster):
 
     finally:
         destroy_zk_client(zk)
-        close_keeper_socket(client)
 
 
 def test_cmd_srst(started_cluster):
     client = None
     try:
         wait_nodes()
+        clear_znodes()
 
-        # reset stat first
-        client = get_keeper_socket("node1")
-        client.send(b'srst')
-        data = client.recv(10_000)
-        client.close()
-        assert data.decode() == "Server stats reset."
+        data = send_4lw_cmd(cmd='srst')
+        assert data == "Server stats reset."
 
-        client = get_keeper_socket("node1")
-        client.send(b'mntr')
-        data = client.recv(10_000_000)
+        data = send_4lw_cmd(cmd='mntr')
         assert len(data) != 0
 
-        # print(data.decode())
-        reader = csv.reader(data.decode().split('\n'), delimiter='\t')
+        # print(data)
+        reader = csv.reader(data.split('\n'), delimiter='\t')
         result = {}
 
         for row in reader:
@@ -234,15 +265,11 @@ def test_cmd_conf(started_cluster):
     client = None
     try:
         wait_nodes()
-        client = get_keeper_socket("node1")
+        clear_znodes()
 
-        # reset stat first
-        client.send(b'conf')
-        data = client.recv(10_000_000)
-        assert len(data) != 0
+        data = send_4lw_cmd(cmd='conf')
 
-        # print(data.decode())
-        reader = csv.reader(data.decode().split('\n'), delimiter='=')
+        reader = csv.reader(data.split('\n'), delimiter='=')
         result = {}
 
         for row in reader:
@@ -259,7 +286,7 @@ def test_cmd_conf(started_cluster):
         assert result["log_storage_path"] == "/var/lib/clickhouse/coordination/log"
         assert result["snapshot_storage_path"] == "/var/lib/clickhouse/coordination/snapshots"
 
-        assert result["session_timeout_ms"] == "10000"
+        assert result["session_timeout_ms"] == "30000"
         assert result["operation_timeout_ms"] == "5000"
         assert result["dead_session_check_period_ms"] == "500"
         assert result["heart_beat_interval_ms"] == "500"
@@ -288,3 +315,298 @@ def test_cmd_conf(started_cluster):
 
     finally:
         close_keeper_socket(client)
+
+
+def test_cmd_isro(started_cluster):
+    wait_nodes()
+    assert send_4lw_cmd(node1.name, 'isro') == 'rw'
+    assert send_4lw_cmd(node2.name, 'isro') == 'ro'
+
+
+def test_cmd_srvr(started_cluster):
+    zk = None
+    try:
+        wait_nodes()
+        clear_znodes()
+
+        reset_node_stats(node1.name)
+
+        zk = get_fake_zk(node1.name, timeout=30.0)
+        do_some_action(zk, create_cnt=10)
+
+        data = send_4lw_cmd(cmd='srvr')
+
+        print("srvr output -------------------------------------")
+        print(data)
+
+        reader = csv.reader(data.split('\n'), delimiter=':')
+        result = {}
+
+        for row in reader:
+            if len(row) != 0:
+                result[row[0].strip()] = row[1].strip()
+
+        assert 'ClickHouse Keeper version' in result
+        assert 'Latency min/avg/max' in result
+        assert result['Received'] == '10'
+        assert result['Sent'] == '10'
+        assert int(result['Connections']) == 1
+        assert int(result['Zxid']) > 14
+        assert result['Mode'] == 'leader'
+        assert result['Node count'] == '14'
+
+    finally:
+        destroy_zk_client(zk)
+
+
+def test_cmd_stat(started_cluster):
+    zk = None
+    try:
+        wait_nodes()
+        clear_znodes()
+        reset_node_stats(node1.name)
+        reset_conn_stats(node1.name)
+
+        zk = get_fake_zk(node1.name, timeout=30.0)
+        do_some_action(zk, create_cnt=10)
+
+        data = send_4lw_cmd(cmd='stat')
+
+        print("stat output -------------------------------------")
+        print(data)
+
+        # keeper statistics
+        stats = [n for n in data.split('\n') if '=' not in n]
+        reader = csv.reader(stats, delimiter=':')
+        result = {}
+
+        for row in reader:
+            if len(row) != 0:
+                result[row[0].strip()] = row[1].strip()
+
+        assert 'ClickHouse Keeper version' in result
+        assert 'Latency min/avg/max' in result
+        assert result['Received'] == '10'
+        assert result['Sent'] == '10'
+        assert int(result['Connections']) == 1
+        assert int(result['Zxid']) > 14
+        assert result['Mode'] == 'leader'
+        assert result['Node count'] == '14'
+
+        # filter connection statistics
+        cons = [n for n in data.split('\n') if '=' in n]
+        # filter connection created by 'cons'
+        cons = [n for n in cons if 'recved=0' not in n and len(n) > 0]
+        assert len(cons) == 1
+
+        conn_stat = re.match(r'(.*?)[:].*[(](.*?)[)].*', cons[0].strip(), re.S).group(2)
+        assert conn_stat is not None
+
+        result = {}
+        for col in conn_stat.split(','):
+            col = col.strip().split('=')
+            result[col[0]] = col[1]
+
+        assert result['recved'] == '10'
+        assert result['sent'] == '10'
+
+    finally:
+        destroy_zk_client(zk)
+
+
+def test_cmd_cons(started_cluster):
+    zk = None
+    try:
+        wait_nodes()
+        clear_znodes()
+        reset_conn_stats()
+
+        zk = get_fake_zk(node1.name, timeout=30.0)
+        do_some_action(zk, create_cnt=10)
+
+        data = send_4lw_cmd(cmd='cons')
+
+        print("cons output -------------------------------------")
+        print(data)
+
+        # filter connection created by 'cons'
+        cons = [n for n in data.split('\n') if 'recved=0' not in n and len(n) > 0]
+        assert len(cons) == 1
+
+        conn_stat = re.match(r'(.*?)[:].*[(](.*?)[)].*', cons[0].strip(), re.S).group(2)
+        assert conn_stat is not None
+
+        result = {}
+        for col in conn_stat.split(','):
+            col = col.strip().split('=')
+            result[col[0]] = col[1]
+
+        assert result['recved'] == '10'
+        assert result['sent'] == '10'
+        assert 'sid' in result
+        assert result['lop'] == 'Create'
+        assert 'est' in result
+        assert result['to'] == '30000'
+        assert result['lcxid'] == '0x000000000000000a'
+        assert 'lzxid' in result
+        assert 'lresp' in result
+        assert int(result['llat']) >= 0
+        assert int(result['minlat']) >= 0
+        assert int(result['avglat']) >= 0
+        assert int(result['maxlat']) >= 0
+
+    finally:
+        destroy_zk_client(zk)
+
+
+def test_cmd_crst(started_cluster):
+    zk = None
+    try:
+        wait_nodes()
+        clear_znodes()
+        reset_conn_stats()
+
+        zk = get_fake_zk(node1.name, timeout=30.0)
+        do_some_action(zk, create_cnt=10)
+
+        data = send_4lw_cmd(cmd='crst')
+
+        print("crst output -------------------------------------")
+        print(data)
+
+        data = send_4lw_cmd(cmd='cons')
+
+        # 2 connections, 1 for 'cons' command, 1 for zk
+        cons = [n for n in data.split('\n') if len(n) > 0]
+        assert len(cons) == 2
+
+        conn_stat = re.match(r'(.*?)[:].*[(](.*?)[)].*', cons[0].strip(), re.S).group(2)
+        assert conn_stat is not None
+
+        result = {}
+        for col in conn_stat.split(','):
+            col = col.strip().split('=')
+            result[col[0]] = col[1]
+
+        assert result['recved'] == '0'
+        assert result['sent'] == '0'
+        assert 'sid' in result
+        assert result['lop'] == 'NA'
+        assert 'est' in result
+        assert result['to'] == '30000'
+        assert 'lcxid' not in result
+        assert result['lzxid'] == '0xffffffffffffffff'
+        assert result['lresp'] == '0'
+        assert int(result['llat']) == 0
+        assert int(result['minlat']) == 0
+        assert int(result['avglat']) == 0
+        assert int(result['maxlat']) == 0
+
+    finally:
+        destroy_zk_client(zk)
+
+
+def test_cmd_dump(started_cluster):
+    zk = None
+    try:
+        wait_nodes()
+        clear_znodes()
+        reset_node_stats()
+
+        zk = get_fake_zk(node1.name, timeout=30.0)
+        do_some_action(zk, ephemeral_cnt=2)
+
+        data = send_4lw_cmd(cmd='dump')
+
+        print("dump output -------------------------------------")
+        print(data)
+
+        list_data = data.split('\n')
+
+        session_count = int(re.match(r'.*[(](.*?)[)].*', list_data[0], re.S).group(1))
+        assert session_count == 1
+
+        assert '\t' + '/test_4lw_ephemeral_node_0' in list_data
+        assert '\t' + '/test_4lw_ephemeral_node_1' in list_data
+    finally:
+        destroy_zk_client(zk)
+
+
+def test_cmd_wchs(started_cluster):
+    zk = None
+    try:
+        wait_nodes()
+        clear_znodes()
+        reset_node_stats()
+
+        zk = get_fake_zk(node1.name, timeout=30.0)
+        do_some_action(zk, create_cnt=2, watch_cnt=2)
+
+        data = send_4lw_cmd(cmd='wchs')
+
+        print("wchs output -------------------------------------")
+        print(data)
+
+        list_data = [n for n in data.split('\n') if len(n.strip()) > 0]
+
+        # 37 connections watching 632141 paths
+        # Total watches:632141
+        matcher = re.match(r'([0-9].*) connections watching ([0-9].*) paths', list_data[0], re.S)
+        conn_count = int(matcher.group(1))
+        watch_path_count = int(matcher.group(2))
+        watch_count = int(re.match(r'Total watches:([0-9].*)', list_data[1], re.S).group(1))
+
+        assert conn_count == 1
+        assert watch_path_count == 2
+        assert watch_count == 2
+    finally:
+        destroy_zk_client(zk)
+
+
+def test_cmd_wchc(started_cluster):
+    zk = None
+    try:
+        wait_nodes()
+        clear_znodes()
+        reset_node_stats()
+
+        zk = get_fake_zk(node1.name, timeout=30.0)
+        do_some_action(zk, create_cnt=2, watch_cnt=2)
+
+        data = send_4lw_cmd(cmd='wchc')
+
+        print("wchc output -------------------------------------")
+        print(data)
+
+        list_data = [n for n in data.split('\n') if len(n.strip()) > 0]
+
+        assert len(list_data) == 3
+        assert '\t' + '/test_4lw_normal_node_0' in list_data
+        assert '\t' + '/test_4lw_normal_node_1' in list_data
+    finally:
+        destroy_zk_client(zk)
+
+
+def test_cmd_wchp(started_cluster):
+    zk = None
+    try:
+        wait_nodes()
+        clear_znodes()
+        reset_node_stats()
+
+        zk = get_fake_zk(node1.name, timeout=30.0)
+        do_some_action(zk, create_cnt=2, watch_cnt=2)
+
+        data = send_4lw_cmd(cmd='wchp')
+
+        print("wchp output -------------------------------------")
+        print(data)
+
+        list_data = [n for n in data.split('\n') if len(n.strip()) > 0]
+
+        assert len(list_data) == 4
+        assert '/test_4lw_normal_node_0' in list_data
+        assert '/test_4lw_normal_node_1' in list_data
+    finally:
+        destroy_zk_client(zk)
+

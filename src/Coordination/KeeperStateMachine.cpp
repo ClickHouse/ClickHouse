@@ -356,10 +356,40 @@ UInt64 KeeperStateMachine::getWatchCount() const
     return storage->getWatchCount();
 }
 
+UInt64 KeeperStateMachine::getWatchPathCount() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getWatchPathCount();
+}
+
 UInt64 KeeperStateMachine::getEphemeralCount() const
 {
     std::lock_guard lock(storage_and_responses_lock);
     return storage->getEphemeralCount();
+}
+
+UInt64 KeeperStateMachine::getEphemeralNodeCount() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getEphemeralNodeCount();
+}
+
+void KeeperStateMachine::dumpWatches(WriteBufferFromOwnString & buf) const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    storage->dumpWatches(buf);
+}
+
+void KeeperStateMachine::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    storage->dumpWatchesByPath(buf);
+}
+
+void KeeperStateMachine::dumpEphemerals(WriteBufferFromOwnString & buf) const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    storage->dumpEphemerals(buf);
 }
 
 UInt64 KeeperStateMachine::getApproximateDataSize() const

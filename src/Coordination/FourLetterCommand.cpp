@@ -1,8 +1,14 @@
+#include <unistd.h>
 #include <Coordination/FourLetterCommand.h>
 #include <Coordination/KeeperDispatcher.h>
+#include <Server/KeeperTCPHandler.h>
+#include <base/logger_useful.h>
+#include <Poco/Environment.h>
+#include <Poco/Path.h>
 #include <Poco/StringTokenizer.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
+#include <Common/hex.h>
 
 namespace DB
 {
@@ -93,11 +99,44 @@ void FourLetterCommandFactory::registerCommands(const KeeperDispatcher & keeper_
         FourLetterCommandPtr mntr_command = std::make_shared<MonitorCommand>(keeper_dispatcher);
         factory.registerCommand(mntr_command);
 
-        FourLetterCommandPtr srst_command = std::make_shared<StatResetCommand>(keeper_dispatcher);
-        factory.registerCommand(srst_command);
-
         FourLetterCommandPtr conf_command = std::make_shared<ConfCommand>(keeper_dispatcher);
         factory.registerCommand(conf_command);
+
+        FourLetterCommandPtr cons_command = std::make_shared<ConsCommand>(keeper_dispatcher);
+        factory.registerCommand(cons_command);
+
+        FourLetterCommandPtr brief_watch_command = std::make_shared<BriefWatchCommand>(keeper_dispatcher);
+        factory.registerCommand(brief_watch_command);
+
+        FourLetterCommandPtr data_size_command = std::make_shared<DataSizeCommand>(keeper_dispatcher);
+        factory.registerCommand(data_size_command);
+
+        FourLetterCommandPtr dump_command = std::make_shared<DumpCommand>(keeper_dispatcher);
+        factory.registerCommand(dump_command);
+
+        FourLetterCommandPtr envi_command = std::make_shared<EnviCommand>(keeper_dispatcher);
+        factory.registerCommand(envi_command);
+
+        FourLetterCommandPtr is_rad_only_command = std::make_shared<IsReadOnlyCommand>(keeper_dispatcher);
+        factory.registerCommand(is_rad_only_command);
+
+        FourLetterCommandPtr rest_conn_stats_command = std::make_shared<RestConnStatsCommand>(keeper_dispatcher);
+        factory.registerCommand(rest_conn_stats_command);
+
+        FourLetterCommandPtr server_stat_command = std::make_shared<ServerStatCommand>(keeper_dispatcher);
+        factory.registerCommand(server_stat_command);
+
+        FourLetterCommandPtr stat_command = std::make_shared<StatCommand>(keeper_dispatcher);
+        factory.registerCommand(stat_command);
+
+        FourLetterCommandPtr stat_reset_command = std::make_shared<StatResetCommand>(keeper_dispatcher);
+        factory.registerCommand(stat_reset_command);
+
+        FourLetterCommandPtr watch_by_path_command = std::make_shared<WatchByPathCommand>(keeper_dispatcher);
+        factory.registerCommand(watch_by_path_command);
+
+        FourLetterCommandPtr watch_command = std::make_shared<WatchCommand>(keeper_dispatcher);
+        factory.registerCommand(watch_command);
 
         factory.initializeWhiteList(keeper_dispatcher);
         factory.setInitialize(true);
@@ -146,21 +185,9 @@ void FourLetterCommandFactory::initializeWhiteList(const KeeperDispatcher & keep
     }
 }
 
-String RuokCommand::name()
-{
-    return "ruok";
-}
-
 String RuokCommand::run()
 {
     return "imok";
-}
-
-RuokCommand::~RuokCommand() = default;
-
-String MonitorCommand::name()
-{
-    return "mntr";
 }
 
 String MonitorCommand::run()
@@ -191,7 +218,7 @@ String MonitorCommand::run()
 
     print(ret, "znode_count", state_machine.getNodeCount());
     print(ret, "watch_count", state_machine.getWatchCount());
-    print(ret, "ephemerals_count", state_machine.getEphemeralCount());
+    print(ret, "ephemerals_count", state_machine.getEphemeralNodeCount());
     print(ret, "approximate_data_size", state_machine.getApproximateDataSize());
 
 #if defined(__linux__) || defined(__APPLE__)
@@ -203,11 +230,9 @@ String MonitorCommand::run()
     {
         print(ret, "followers", raft_info.getFollowerCount());
         print(ret, "synced_followers", raft_info.getSyncedFollowerCount());
-        /// TODO implementation
         /// print(ret, "pending_syncs", 0);
     }
 
-    /// TODO Maybe the next 3 metrics are useless.
     /// print(ret, "last_proposal_size", -1);
     /// print(ret, "max_proposal_size", -1);
     /// print(ret, "min_proposal_size", -1);
@@ -233,13 +258,6 @@ void MonitorCommand::print(IFourLetterCommand::StringBuffer & buf, const String 
     print(buf, key, std::to_string(value));
 }
 
-MonitorCommand::~MonitorCommand() = default;
-
-String StatResetCommand::name()
-{
-    return "srst";
-}
-
 String StatResetCommand::run()
 {
     KeeperStatsPtr stats = keeper_dispatcher.getKeeperStats();
@@ -247,23 +265,9 @@ String StatResetCommand::run()
     return "Server stats reset.";
 }
 
-StatResetCommand::~StatResetCommand() = default;
-
-String NopCommand::name()
-{
-    return "nopc";
-}
-
 String NopCommand::run()
 {
-    return DB::String();
-}
-
-NopCommand::~NopCommand() = default;
-
-String ConfCommand::name()
-{
-    return "conf";
+    return "";
 }
 
 String ConfCommand::run()
@@ -273,6 +277,168 @@ String ConfCommand::run()
     return buf.str();
 }
 
-ConfCommand::~ConfCommand() = default;
+String ConsCommand::run()
+{
+    StringBuffer buf;
+    KeeperTCPHandler::dumpConnections(buf, false);
+    return buf.str();
+}
+
+String RestConnStatsCommand::run()
+{
+    KeeperTCPHandler::resetConnsStats();
+    return "Connection stats reset.";
+}
+
+String ServerStatCommand::run()
+{
+    using std::to_string;
+    StringBuffer buf;
+
+    auto write = [&buf](const String & key, const String & value) {
+        buf.write(key.data(), key.size());
+        buf.write(": ", 2);
+        buf.write(value.data(), value.size());
+        buf.write('\n');
+    };
+
+    KeeperStatsPtr stats = keeper_dispatcher.getKeeperStats();
+    const IKeeperInfo & keeper_info = keeper_dispatcher.getKeeperInfo();
+    const IStateMachineInfo & state_machine = keeper_dispatcher.getStateMachineInfo();
+
+    write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
+
+    StringBuffer latency;
+    latency << stats->getMinLatency() << "/" << stats->getAvgLatency() << "/" << stats->getMaxLatency() << "\n";
+    write("Latency min/avg/max", latency.str());
+
+    write("Received", to_string(stats->getPacketsReceived()));
+    write("Sent ", to_string(stats->getPacketsSent()));
+    write("Connections", to_string(keeper_info.getNumAliveConnections()));
+    write("Outstanding", to_string(keeper_info.getOutstandingRequests()));
+    write("Zxid", to_string(state_machine.getLastProcessedZxid()));
+    write("Mode", keeper_info.getRole());
+    write("Node count", to_string(state_machine.getNodeCount()));
+
+    return buf.str();
+}
+
+String StatCommand::run()
+{
+    using std::to_string;
+    StringBuffer buf;
+
+    auto write = [&buf](const String & key, const String & value) { buf << key << ": " << value << '\n'; };
+
+    KeeperStatsPtr stats = keeper_dispatcher.getKeeperStats();
+    const IKeeperInfo & keeper_info = keeper_dispatcher.getKeeperInfo();
+    const IStateMachineInfo & state_machine = keeper_dispatcher.getStateMachineInfo();
+
+    write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
+
+    buf << "Clients:\n";
+    KeeperTCPHandler::dumpConnections(buf, true);
+    buf << '\n';
+
+    StringBuffer latency;
+    latency << stats->getMinLatency() << "/" << stats->getAvgLatency() << "/" << stats->getMaxLatency() << "\n";
+    write("Latency min/avg/max", latency.str());
+
+    write("Received", to_string(stats->getPacketsReceived()));
+    write("Sent ", to_string(stats->getPacketsSent()));
+    write("Connections", to_string(keeper_info.getNumAliveConnections()));
+    write("Outstanding", to_string(keeper_info.getOutstandingRequests()));
+    write("Zxid", to_string(state_machine.getLastProcessedZxid()));
+    write("Mode", keeper_info.getRole());
+    write("Node count", to_string(state_machine.getNodeCount()));
+
+    return buf.str();
+}
+
+String BriefWatchCommand::run()
+{
+    StringBuffer buf;
+    const IStateMachineInfo & state_machine = keeper_dispatcher.getStateMachineInfo();
+    buf << keeper_dispatcher.getNumAliveConnections() << " connections watching " << state_machine.getWatchPathCount() << " paths\n";
+    buf << "Total watches:" << state_machine.getWatchCount();
+    return buf.str();
+}
+
+String WatchCommand::run()
+{
+    StringBuffer buf;
+    const IStateMachineInfo & state_machine = keeper_dispatcher.getStateMachineInfo();
+    state_machine.dumpWatches(buf);
+    return buf.str();
+}
+
+String WatchByPathCommand::run()
+{
+    StringBuffer buf;
+    const IStateMachineInfo & state_machine = keeper_dispatcher.getStateMachineInfo();
+    state_machine.dumpWatchesByPath(buf);
+    return buf.str();
+}
+
+String DataSizeCommand::run()
+{
+    StringBuffer buf;
+    buf << "datadir_size: " << keeper_dispatcher.getSnapDirSize() << '\n';
+    buf << "logdir_size: " << keeper_dispatcher.getDataDirSize() << '\n';
+    return buf.str();
+}
+
+String DumpCommand::run()
+{
+    StringBuffer buf;
+    const IStateMachineInfo & state_machine = keeper_dispatcher.getStateMachineInfo();
+    keeper_dispatcher.dumpSessions(buf);
+    state_machine.dumpEphemerals(buf);
+    return buf.str();
+}
+
+String EnviCommand::run()
+{
+    using Poco::Environment;
+    using Poco::Path;
+
+    StringBuffer buf;
+    buf << "Environment:\n";
+    buf << "clickhouse.keeper.version=" << (String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH) << '\n';
+
+    buf << "host.name" << Environment::nodeName() << '\n';
+    buf << "os.name" << Environment::osDisplayName() << '\n';
+    buf << "os.arch" << Environment::osArchitecture() << '\n';
+    buf << "os.version" << Environment::osVersion() << '\n';
+    buf << "cpu.count" << Environment::processorCount() << '\n';
+
+    try
+    {
+        buf << "ip.address" << Environment::nodeId() << '\n';
+    }
+    catch (...)
+    {
+        Poco::Logger * log = &Poco::Logger::get("EnviCommand");
+        LOG_WARNING(log, "Can not get server ip address.");
+    }
+
+    char user_name[128];
+    getlogin_r(user_name, 128);
+    buf << "user.name" << user_name << '\n';
+
+    buf << "user.home" << Path::home() << '\n';
+    buf << "user.dir" << Path::current() << '\n';
+    buf << "user.tmp" << Path::temp() << '\n';
+
+    return buf.str();
+}
+
+String IsReadOnlyCommand::run()
+{
+    if (keeper_dispatcher.getRole() == "observer")
+        return "ro";
+    else
+        return "rw";
+}
 
 }

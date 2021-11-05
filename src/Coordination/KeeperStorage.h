@@ -198,7 +198,26 @@ public:
         return watches.size() + list_watches.size();
     }
 
+    UInt64 getWatchPathCount() const
+    {
+        UInt64 ret{0};
+        for (const auto & watch : watches)
+        {
+            ret += watch.second.size();
+        }
+        for (const auto & watch : list_watches)
+        {
+            ret += watch.second.size();
+        }
+        return ret;
+    }
+
     UInt64 getEphemeralCount() const
+    {
+        return ephemerals.size();
+    }
+
+    UInt64 getEphemeralNodeCount() const
     {
         UInt64 ret{0};
         for (const auto & ephs : ephemerals)
@@ -207,6 +226,10 @@ public:
         }
         return ret;
     }
+
+    void dumpWatches(WriteBufferFromOwnString & buf) const;
+    void dumpWatchesByPath(WriteBufferFromOwnString & buf) const;
+    void dumpEphemerals(WriteBufferFromOwnString & buf) const;
 
     UInt64 getApproximateDataSize() const
     {
