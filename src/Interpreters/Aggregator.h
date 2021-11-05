@@ -183,6 +183,8 @@ struct AggregationMethodOneNumber
 
     AggregationMethodOneNumber() = default;
 
+    explicit AggregationMethodOneNumber(size_t size_hint) : data(size_hint) { }
+
     template <typename Other>
     explicit AggregationMethodOneNumber(const Other & other) : data(other.data)
     {
@@ -225,6 +227,8 @@ struct AggregationMethodString
     {
     }
 
+    AggregationMethodString(size_t size_hint) : data(size_hint) { }
+
     using State = ColumnsHashing::HashMethodString<typename Data::value_type, Mapped>;
 
     static const bool low_cardinality_optimization = false;
@@ -249,6 +253,8 @@ struct AggregationMethodStringNoCache
     Data data;
 
     AggregationMethodStringNoCache() = default;
+
+    explicit AggregationMethodStringNoCache(size_t size_hint) : data(size_hint) { }
 
     template <typename Other>
     explicit AggregationMethodStringNoCache(const Other & other) : data(other.data)
@@ -280,6 +286,8 @@ struct AggregationMethodFixedString
 
     AggregationMethodFixedString() = default;
 
+    AggregationMethodFixedString(size_t size_hint) : data(size_hint) { }
+
     template <typename Other>
     explicit AggregationMethodFixedString(const Other & other) : data(other.data)
     {
@@ -308,6 +316,8 @@ struct AggregationMethodFixedStringNoCache
     Data data;
 
     AggregationMethodFixedStringNoCache() = default;
+
+    explicit AggregationMethodFixedStringNoCache(size_t size_hint) : data(size_hint) { }
 
     template <typename Other>
     explicit AggregationMethodFixedStringNoCache(const Other & other) : data(other.data)
@@ -381,6 +391,8 @@ struct AggregationMethodKeysFixed
     Data data;
 
     AggregationMethodKeysFixed() = default;
+
+    explicit AggregationMethodKeysFixed(size_t size_hint) : data(size_hint) { }
 
     template <typename Other>
     explicit AggregationMethodKeysFixed(const Other & other) : data(other.data)
@@ -472,6 +484,8 @@ struct AggregationMethodSerialized
     Data data;
 
     AggregationMethodSerialized() = default;
+
+    AggregationMethodSerialized(size_t size_hint) : data(size_hint) { }
 
     template <typename Other>
     explicit AggregationMethodSerialized(const Other & other) : data(other.data)
@@ -652,21 +666,7 @@ struct AggregatedDataVariants : private boost::noncopyable
 
     ~AggregatedDataVariants();
 
-    void init(Type type_)
-    {
-        switch (type_)
-        {
-            case Type::EMPTY:       break;
-            case Type::without_key: break;
-
-        #define M(NAME, IS_TWO_LEVEL) \
-            case Type::NAME: (NAME) = std::make_unique<decltype(NAME)::element_type>(); break;
-            APPLY_FOR_AGGREGATED_VARIANTS(M)
-        #undef M
-        }
-
-        type = type_;
-    }
+    void init(Type type_, std::optional<size_t> size_hint = std::nullopt);
 
     /// Number of rows (different keys).
     size_t size() const

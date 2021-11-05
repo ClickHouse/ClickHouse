@@ -28,6 +28,39 @@
 #include <Core/ProtocolDefines.h>
 
 
+namespace
+{
+// the std::is_constructible trait isn't suitable here because some classes have template constructors with semantics different from providing size hints.
+template <typename...>
+struct HasConstructorOfNumberOfElements : std::false_type
+{
+};
+
+template <typename... Ts>
+struct HasConstructorOfNumberOfElements<StringHashTable<Ts...>> : std::true_type
+{
+};
+
+template <typename... Ts>
+struct HasConstructorOfNumberOfElements<HashMapTable<Ts...>> : std::true_type
+{
+};
+
+template <typename... Ts>
+struct HasConstructorOfNumberOfElements<HashTable<Ts...>> : std::true_type
+{
+};
+
+template <typename Method>
+auto constructWithReserveIfPossible(size_t size_hint)
+{
+    if constexpr (HasConstructorOfNumberOfElements<typename Method::Data>::value)
+        return std::make_unique<Method>(size_hint);
+    else
+        return std::make_unique<Method>();
+}
+}
+
 namespace ProfileEvents
 {
     extern const Event ExternalAggregationWritePart;
@@ -86,6 +119,29 @@ void AggregatedDataVariants::convertToTwoLevel()
         default:
             throw Exception("Wrong data variant passed.", ErrorCodes::LOGICAL_ERROR);
     }
+}
+
+void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
+{
+    switch (type_)
+    {
+        case Type::EMPTY:
+            break;
+        case Type::without_key:
+            break;
+
+#define M(NAME, IS_TWO_LEVEL) \
+    case Type::NAME: \
+        if (size_hint) \
+            NAME = constructWithReserveIfPossible<decltype(NAME)::element_type>(*size_hint); \
+        else \
+            NAME = std::make_unique<decltype(NAME)::element_type>(); \
+        break;
+            APPLY_FOR_AGGREGATED_VARIANTS(M)
+#undef M
+    }
+
+    type = type_;
 }
 
 Block Aggregator::getHeader(bool final) const
