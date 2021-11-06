@@ -182,8 +182,6 @@ used_storages:                         []
 used_table_functions:                  []
 ```
 
-**Смотрите также**
+**См. также**
 
 -   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — в этой таблице содержится информация о цепочке каждого выполненного запроса.
-
-[Оригинальная статья](https://clickhouse.com/docs/ru/operations/system_tables/query_log) <!--hide-->
