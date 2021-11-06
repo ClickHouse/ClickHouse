@@ -27,6 +27,7 @@
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Core/ProtocolDefines.h>
 
+#include <Parsers/ASTSelectQuery.h>
 
 namespace
 {
@@ -142,6 +143,38 @@ void AggregatedDataVariants::init(Type type_, std::optional<size_t> size_hint)
     }
 
     type = type_;
+}
+
+Aggregator::Params::StatsCollectingParams::StatsCollectingParams() = default;
+
+Aggregator::Params::StatsCollectingParams::StatsCollectingParams(
+    const ASTPtr & select_query_,
+    bool collect_hash_table_stats_during_aggregation_,
+    size_t max_entries_for_hash_table_stats_,
+    size_t max_size_to_preallocate_for_aggregation_)
+    : key(0)
+    , collect_hash_table_stats_during_aggregation(collect_hash_table_stats_during_aggregation_)
+    , max_entries_for_hash_table_stats(max_entries_for_hash_table_stats_)
+    , max_size_to_preallocate_for_aggregation(max_size_to_preallocate_for_aggregation_)
+{
+    if (!select_query_)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "query ptr cannot be null");
+    const auto & select = select_query_->as<DB::ASTSelectQuery &>();
+
+    if (!select.tables())
+    {
+        // It may happen in some corner cases like `select 1 as num group by num`.
+        collect_hash_table_stats_during_aggregation = false;
+        return;
+    }
+
+    SipHash hash;
+    hash.update(select.tables()->getTreeHash());
+    if (const auto where = select.where())
+        hash.update(where->getTreeHash());
+    if (const auto group_by = select.groupBy())
+        hash.update(group_by->getTreeHash());
+    key = hash.get64();
 }
 
 Block Aggregator::getHeader(bool final) const

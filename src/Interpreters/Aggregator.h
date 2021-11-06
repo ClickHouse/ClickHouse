@@ -34,6 +34,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -929,29 +930,60 @@ public:
         bool compile_aggregate_expressions;
         size_t min_count_to_compile_aggregate_expression;
 
+        struct StatsCollectingParams
+        {
+            StatsCollectingParams();
+
+            StatsCollectingParams(
+                const ASTPtr & select_query_,
+                bool collect_hash_table_stats_during_aggregation_,
+                size_t max_entries_for_hash_table_stats_,
+                size_t max_size_to_preallocate_for_aggregation_);
+
+            UInt64 key = 0;
+            bool collect_hash_table_stats_during_aggregation = false;
+            size_t max_entries_for_hash_table_stats = 0;
+            size_t max_size_to_preallocate_for_aggregation = 0;
+        };
+        StatsCollectingParams stats_collecting_params;
+
         Params(
             const Block & src_header_,
-            const ColumnNumbers & keys_, const AggregateDescriptions & aggregates_,
-            bool overflow_row_, size_t max_rows_to_group_by_, OverflowMode group_by_overflow_mode_,
-            size_t group_by_two_level_threshold_, size_t group_by_two_level_threshold_bytes_,
+            const ColumnNumbers & keys_,
+            const AggregateDescriptions & aggregates_,
+            bool overflow_row_,
+            size_t max_rows_to_group_by_,
+            OverflowMode group_by_overflow_mode_,
+            size_t group_by_two_level_threshold_,
+            size_t group_by_two_level_threshold_bytes_,
             size_t max_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
-            VolumePtr tmp_volume_, size_t max_threads_,
+            VolumePtr tmp_volume_,
+            size_t max_threads_,
             size_t min_free_disk_space_,
             bool compile_aggregate_expressions_,
             size_t min_count_to_compile_aggregate_expression_,
-            const Block & intermediate_header_ = {})
-            : src_header(src_header_),
-            intermediate_header(intermediate_header_),
-            keys(keys_), aggregates(aggregates_), keys_size(keys.size()), aggregates_size(aggregates.size()),
-            overflow_row(overflow_row_), max_rows_to_group_by(max_rows_to_group_by_), group_by_overflow_mode(group_by_overflow_mode_),
-            group_by_two_level_threshold(group_by_two_level_threshold_), group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_),
-            max_bytes_before_external_group_by(max_bytes_before_external_group_by_),
-            empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_),
-            tmp_volume(tmp_volume_), max_threads(max_threads_),
-            min_free_disk_space(min_free_disk_space_),
-            compile_aggregate_expressions(compile_aggregate_expressions_),
-            min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
+            const Block & intermediate_header_ = {},
+            const StatsCollectingParams & stats_collecting_params_ = {})
+            : src_header(src_header_)
+            , intermediate_header(intermediate_header_)
+            , keys(keys_)
+            , aggregates(aggregates_)
+            , keys_size(keys.size())
+            , aggregates_size(aggregates.size())
+            , overflow_row(overflow_row_)
+            , max_rows_to_group_by(max_rows_to_group_by_)
+            , group_by_overflow_mode(group_by_overflow_mode_)
+            , group_by_two_level_threshold(group_by_two_level_threshold_)
+            , group_by_two_level_threshold_bytes(group_by_two_level_threshold_bytes_)
+            , max_bytes_before_external_group_by(max_bytes_before_external_group_by_)
+            , empty_result_for_aggregation_by_empty_set(empty_result_for_aggregation_by_empty_set_)
+            , tmp_volume(tmp_volume_)
+            , max_threads(max_threads_)
+            , min_free_disk_space(min_free_disk_space_)
+            , compile_aggregate_expressions(compile_aggregate_expressions_)
+            , min_count_to_compile_aggregate_expression(min_count_to_compile_aggregate_expression_)
+            , stats_collecting_params(stats_collecting_params_)
         {
         }
 

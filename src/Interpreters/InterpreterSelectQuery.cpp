@@ -2062,7 +2062,6 @@ void InterpreterSelectQuery::executeWhere(QueryPlan & query_plan, const ActionsD
     query_plan.addStep(std::move(where_step));
 }
 
-
 void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const ActionsDAGPtr & expression, bool overflow_row, bool final, InputOrderInfoPtr group_by_info)
 {
     auto expression_before_aggregation = std::make_unique<ExpressionStep>(query_plan.getCurrentDataStream(), expression);
@@ -2085,6 +2084,12 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
 
     const Settings & settings = context->getSettingsRef();
 
+    const auto stats_collecting_params = Aggregator::Params::StatsCollectingParams(
+        query_ptr,
+        settings.collect_hash_table_stats_during_aggregation,
+        settings.max_entries_for_hash_table_stats,
+        settings.max_size_to_preallocate_for_aggregation);
+
     Aggregator::Params params(
         header_before_aggregation,
         keys,
@@ -2102,7 +2107,9 @@ void InterpreterSelectQuery::executeAggregation(QueryPlan & query_plan, const Ac
         settings.max_threads,
         settings.min_free_disk_space_for_temporary_data,
         settings.compile_aggregate_expressions,
-        settings.min_count_to_compile_aggregate_expression);
+        settings.min_count_to_compile_aggregate_expression,
+        Block{},
+        stats_collecting_params);
 
     SortDescription group_by_sort_description;
 
