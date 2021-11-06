@@ -432,7 +432,7 @@ Pipe StorageHive::read(
             }
         }
 
-        // Load sub-file level minmax index and appy
+        // Load sub-file level minmax index and apply
         std::set<int> skip_splits;
         if (file->hasSubMinMaxIndex())
         {
