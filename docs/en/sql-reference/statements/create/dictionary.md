@@ -7,13 +7,13 @@ toc_title: DICTIONARY
 
 Creates a new [external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts.md) with given [structure](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md), [source](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md), [layout](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) and [lifetime](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 
-Syntax:
+**Syntax**
 
 ``` sql
 CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 (
     key1 type1  [DEFAULT|EXPRESSION expr1] [IS_OBJECT_ID],
-    key2 type2  [DEFAULT|EXPRESSION expr2] ,
+    key2 type2  [DEFAULT|EXPRESSION expr2],
     attr1 type2 [DEFAULT|EXPRESSION expr3] [HIERARCHICAL|INJECTIVE],
     attr2 type2 [DEFAULT|EXPRESSION expr4] [HIERARCHICAL|INJECTIVE]
 )
@@ -45,7 +45,7 @@ Input table `source_table`:
 └────┴────────┘
 ```
 
-Create the dictionary:
+Creating the dictionary:
 
 ``` sql
 CREATE DICTIONARY dictionary_with_comment
