@@ -235,7 +235,7 @@ JSONExtractKeys(json[, a, b, c...])
 
 Array with the keys of the JSON.
 
-Type: [Array](../../sql-reference/data-types/array.md)
+Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
 
 **Example**
 
