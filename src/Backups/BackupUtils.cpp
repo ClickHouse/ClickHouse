@@ -426,7 +426,7 @@ namespace
     ASTPtr readCreateQueryFromBackup(const DatabaseAndTableName & table_name, const BackupPtr & backup)
     {
         String create_query_path = getMetadataPathInBackup(table_name);
-        auto read_buffer = backup->read(create_query_path)->getReadBuffer();
+        auto read_buffer = backup->readFile(create_query_path)->getReadBuffer();
         String create_query_str;
         readStringUntilEOF(create_query_str, *read_buffer);
         read_buffer.reset();
@@ -437,7 +437,7 @@ namespace
     ASTPtr readCreateQueryFromBackup(const String & database_name, const BackupPtr & backup)
     {
         String create_query_path = getMetadataPathInBackup(database_name);
-        auto read_buffer = backup->read(create_query_path)->getReadBuffer();
+        auto read_buffer = backup->readFile(create_query_path)->getReadBuffer();
         String create_query_str;
         readStringUntilEOF(create_query_str, *read_buffer);
         read_buffer.reset();
@@ -546,7 +546,7 @@ namespace
             }
 
             RestoreObjectsTasks restore_objects_tasks;
-            Strings table_names = backup->list("metadata/" + escapeForFileName(database_name) + "/", "/");
+            Strings table_names = backup->listFiles("metadata/" + escapeForFileName(database_name) + "/", "/");
             for (const String & table_name : table_names)
             {
                 if (except_list.contains(table_name))
@@ -565,7 +565,7 @@ namespace
     {
         restore_tasks.emplace_back([except_list, context, backup, renaming_config]() -> RestoreDataTasks
         {
-            Strings database_names = backup->list("metadata/", "/");
+            Strings database_names = backup->listFiles("metadata/", "/");
             RestoreObjectsTasks restore_objects_tasks;
             for (const String & database_name : database_names)
             {
@@ -650,10 +650,10 @@ UInt64 estimateBackupSize(const BackupEntries & backup_entries, const BackupPtr 
         UInt64 data_size = entry->getSize();
         if (base_backup)
         {
-            if (base_backup->exists(name) && (data_size == base_backup->getSize(name)))
+            if (base_backup->fileExists(name) && (data_size == base_backup->getFileSize(name)))
             {
                 auto checksum = entry->getChecksum();
-                if (checksum && (*checksum == base_backup->getChecksum(name)))
+                if (checksum && (*checksum == base_backup->getFileChecksum(name)))
                     continue;
             }
         }
@@ -664,7 +664,7 @@ UInt64 estimateBackupSize(const BackupEntries & backup_entries, const BackupPtr 
 
 void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries, size_t num_threads)
 {
-    if (!num_threads)
+    if (!num_threads || !backup->supportsWritingInMultipleThreads())
         num_threads = 1;
     std::vector<ThreadFromGlobalPool> threads;
     size_t num_active_threads = 0;
@@ -691,7 +691,7 @@ void writeBackupEntries(BackupMutablePtr backup, BackupEntries && backup_entries
         {
             try
             {
-                backup->write(name, std::move(entry));
+                backup->addFile(name, std::move(entry));
             }
             catch (...)
             {
