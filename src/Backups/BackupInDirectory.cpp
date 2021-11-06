@@ -5,6 +5,7 @@
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackupEntry.h>
 #include <Common/StringUtils/StringUtils.h>
+#include <Common/hex.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <Disks/DiskSelector.h>
@@ -17,6 +18,7 @@
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
+#include <Poco/Util/XMLConfiguration.h>
 #include <boost/range/adaptor/map.hpp>
 
 
@@ -40,6 +42,13 @@ namespace ErrorCodes
 namespace
 {
     const UInt64 BACKUP_VERSION = 1;
+
+    UInt128 unhexChecksum(const String & checksum)
+    {
+        if (checksum.size() != sizeof(UInt128) * 2)
+            throw Exception(ErrorCodes::BACKUP_DAMAGED, "Unexpected size of checksum: {}, must be {}", checksum.size(), sizeof(UInt128) * 2);
+        return unhexUInt<UInt128>(checksum.data());
+    }
 }
 
 BackupInDirectory::BackupInDirectory(const String & backup_name_, OpenMode open_mode_, const DiskPtr & disk_, const String & path_, const ContextPtr & context_, const std::optional<BackupInfo> & base_backup_info_)
@@ -77,15 +86,13 @@ void BackupInDirectory::open()
             disk->createDirectories(path);
             directory_was_created = true;
         }
-        writeBaseBackupInfo();
     }
 
     if (open_mode == OpenMode::READ)
     {
         if (!path.empty() && !disk->isDirectory(path))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", getName());
-        readContents();
-        readBaseBackupInfo();
+        readMetadata();
     }
 
     if (base_backup_info)
@@ -111,78 +118,79 @@ void BackupInDirectory::close()
     }
 }
 
-void BackupInDirectory::writeBaseBackupInfo()
+void BackupInDirectory::writeMetadata()
 {
-    String file_path = path + ".base_backup";
-    if (!base_backup_info)
-    {
-        disk->removeFileIfExists(file_path);
-        return;
-    }
-    auto out = disk->writeFile(file_path);
-    writeString(base_backup_info->toString(), *out);
-}
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
+    config->setUInt("version", BACKUP_VERSION);
 
-void BackupInDirectory::readBaseBackupInfo()
-{
     if (base_backup_info)
-        return;
-    String file_path = path + ".base_backup";
-    if (!disk->exists(file_path))
-        return;
-    auto in = disk->readFile(file_path);
-    String str;
-    readStringUntilEOF(str, *in);
-    base_backup_info.emplace(BackupInfo::fromString(str));
-}
+        config->setString("base_backup", base_backup_info->toString());
 
-void BackupInDirectory::writeContents()
-{
-    auto out = disk->writeFile(path + ".contents");
-    writeVarUInt(BACKUP_VERSION, *out);
-
-    writeVarUInt(infos.size(), *out);
-    for (const auto & [path_in_backup, info] : infos)
+    size_t index = 0;
+    for (const auto & [name, info] : infos)
     {
-        writeBinary(path_in_backup, *out);
-        writeVarUInt(info.size, *out);
+        String prefix = index ? "contents.file[" + std::to_string(index) + "]." : "contents.file.";
+        config->setString(prefix + "name", name);
+        config->setUInt(prefix + "size", info.size);
         if (info.size)
         {
-            writeBinary(info.checksum, *out);
-            writeVarUInt(info.base_size, *out);
-            if (info.base_size && (info.base_size != info.size))
-                writeBinary(info.base_checksum, *out);
+            config->setString(prefix + "checksum", getHexUIntLowercase(info.checksum));
+            if (info.base_size)
+            {
+                config->setUInt(prefix + "base_size", info.base_size);
+                if (info.base_size != info.size)
+                    config->setString(prefix + "base_checksum", getHexUIntLowercase(info.base_checksum));
+            }
         }
+        ++index;
     }
+
+    std::ostringstream stream;
+    config->save(stream);
+    auto out = disk->writeFile(path + ".backup");
+    writeString(std::move(stream).str(), *out);
 }
 
-void BackupInDirectory::readContents()
+void BackupInDirectory::readMetadata()
 {
-    auto in = disk->readFile(path + ".contents");
-    UInt64 version;
-    readVarUInt(version, *in);
+    auto in = disk->readFile(path + ".backup");
+    String str;
+    readStringUntilEOF(str, *in);
+    std::istringstream stream(std::move(str));
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
+    config->load(stream);
+
+    UInt64 version = config->getUInt("version", 1);
     if (version != BACKUP_VERSION)
         throw Exception(ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED, "Backup {}: Version {} is not supported", getName(), version);
 
-    size_t num_infos;
-    readVarUInt(num_infos, *in);
+    if (config->has("base_backup") && !base_backup_info)
+        base_backup_info.emplace(BackupInfo::fromString(config->getString("base_backup")));
+
     infos.clear();
-    for (size_t i = 0; i != num_infos; ++i)
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config->keys("contents", keys);
+    for (const auto & key : keys)
     {
-        String path_in_backup;
-        readBinary(path_in_backup, *in);
-        EntryInfo info;
-        readVarUInt(info.size, *in);
-        if (info.size)
+        if ((key == "file") || key.starts_with("file["))
         {
-            readBinary(info.checksum, *in);
-            readVarUInt(info.base_size, *in);
-            if (info.base_size && (info.base_size != info.size))
-                readBinary(info.base_checksum, *in);
-            else if (info.base_size)
-                info.base_checksum = info.checksum;
+            String prefix = "contents." + key + ".";
+            String name = config->getString(prefix + "name");
+            EntryInfo & info = infos.emplace(name, EntryInfo{}).first->second;
+            info.size = config->getUInt(prefix + "size");
+            if (info.size)
+            {
+                info.checksum = unhexChecksum(config->getString(prefix + "checksum"));
+                if (config->has(prefix + "base_size"))
+                {
+                    info.base_size = config->getUInt(prefix + "base_size");
+                    if (info.base_size == info.size)
+                        info.base_checksum = info.checksum;
+                    else
+                        info.base_checksum = unhexChecksum(config->getString(prefix + "base_checksum"));
+                }
+            }
         }
-        infos.emplace(path_in_backup, info);
     }
 }
 
@@ -459,7 +467,7 @@ void BackupInDirectory::finalizeWriting()
 {
     if (open_mode != OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal operation: Cannot write to a backup opened for reading");
-    writeContents();
+    writeMetadata();
     finalized = true;
 }
 

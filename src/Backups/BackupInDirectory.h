@@ -44,10 +44,8 @@ public:
 private:
     void open();
     void close();
-    void writeBaseBackupInfo();
-    void readBaseBackupInfo();
-    void writeContents();
-    void readContents();
+    void writeMetadata();
+    void readMetadata();
 
     struct EntryInfo
     {
