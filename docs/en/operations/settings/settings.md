@@ -994,7 +994,7 @@ log_query_views=1
 
 ## log_formatted_queries {#settings-log-formatted-queries}
 
-Allows a user to log formatted queries and to write to the [system.query_log](../../operations/system-tables/query_log.md) system table.
+Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table.
 
 Possible values:
 

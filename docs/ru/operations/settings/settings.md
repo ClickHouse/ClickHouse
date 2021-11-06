@@ -924,7 +924,7 @@ log_query_threads=1
 
 ## log_formatted_queries {#settings-log-formatted-queries}
 
-Позволяет пользователю регистрировать отформатированные запросы и записывать их в системную таблицу [system.query_log](../../operations/system-tables/query_log.md).
+Позволяет регистрировать отформатированные запросы в системной таблице [system.query_log](../../operations/system-tables/query_log.md).
 
 Возможные значения:
 
