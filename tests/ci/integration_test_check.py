@@ -285,7 +285,7 @@ if __name__ == "__main__":
     output_path_log = os.path.join(result_path, "main_script_log.txt")
 
     runner_path = os.path.join(repo_path, "tests/integration", "ci-runner.py")
-    run_command = f"{runner_path} | tee {output_path_log}"
+    run_command = f"sudo {runner_path} | tee {output_path_log}"
 
     with open(output_path_log, 'w', encoding='utf-8') as log:
         with subprocess.Popen(run_command, shell=True, stderr=log, stdout=log, env=my_env) as process:
