@@ -86,6 +86,9 @@ void BackupInDirectory::open()
             disk->createDirectories(path);
             directory_was_created = true;
         }
+
+        timestamp = std::time(nullptr);
+        uuid = UUIDHelpers::generateV4();
     }
 
     if (open_mode == OpenMode::READ)
@@ -102,6 +105,12 @@ void BackupInDirectory::open()
         params.open_mode = OpenMode::READ;
         params.context = context;
         base_backup = BackupFactory::instance().createBackup(params);
+
+        if (open_mode == OpenMode::WRITE)
+            base_backup_uuid = base_backup->getUUID();
+        else if (base_backup_uuid != base_backup->getUUID())
+            throw Exception(ErrorCodes::WRONG_BASE_BACKUP, "Backup {}: The base backup {} has different UUID ({} != {})",
+                            getName(), base_backup->getName(), toString(base_backup->getUUID()), (base_backup_uuid ? toString(*base_backup_uuid) : ""));
     }
 }
 
@@ -122,9 +131,13 @@ void BackupInDirectory::writeMetadata()
 {
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
     config->setUInt("version", BACKUP_VERSION);
+    config->setString("timestamp", toString(LocalDateTime{timestamp}));
+    config->setString("uuid", toString(uuid));
 
     if (base_backup_info)
         config->setString("base_backup", base_backup_info->toString());
+    if (base_backup_uuid)
+        config->setString("base_backup_uuid", toString(*base_backup_uuid));
 
     size_t index = 0;
     for (const auto & [name, info] : infos)
@@ -160,12 +173,18 @@ void BackupInDirectory::readMetadata()
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config{new Poco::Util::XMLConfiguration()};
     config->load(stream);
 
-    UInt64 version = config->getUInt("version", 1);
+    UInt64 version = config->getUInt("version");
     if (version != BACKUP_VERSION)
         throw Exception(ErrorCodes::BACKUP_VERSION_NOT_SUPPORTED, "Backup {}: Version {} is not supported", getName(), version);
 
+    timestamp = parse<LocalDateTime>(config->getString("timestamp")).to_time_t();
+    uuid = parse<UUID>(config->getString("uuid"));
+
     if (config->has("base_backup") && !base_backup_info)
-        base_backup_info.emplace(BackupInfo::fromString(config->getString("base_backup")));
+        base_backup_info = BackupInfo::fromString(config->getString("base_backup"));
+
+    if (config->has("base_backup_uuid") && !base_backup_uuid)
+        base_backup_uuid = parse<UUID>(config->getString("base_backup_uuid"));
 
     infos.clear();
     Poco::Util::AbstractConfiguration::Keys keys;

@@ -33,6 +33,8 @@ public:
 
     const String & getName() const override { return backup_name; }
     OpenMode getOpenMode() const override { return open_mode; }
+    time_t getTimestamp() const override { return timestamp; }
+    UUID getUUID() const override { return uuid; }
     Strings list(const String & prefix, const String & terminator) const override;
     bool exists(const String & name) const override;
     size_t getSize(const String & name) const override;
@@ -59,11 +61,14 @@ private:
 
     const String backup_name;
     const OpenMode open_mode;
+    UUID uuid;
+    time_t timestamp;
     DiskPtr disk;
     String path;
     ContextPtr context;
     std::optional<BackupInfo> base_backup_info;
     std::shared_ptr<const IBackup> base_backup;
+    std::optional<UUID> base_backup_uuid;
     std::map<String, EntryInfo> infos;
     bool directory_was_created = false;
     bool finalized = false;
