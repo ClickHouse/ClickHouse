@@ -6,9 +6,10 @@
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <stdlib.h>
 
 #ifdef __SSE2__
@@ -767,17 +768,6 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
         return ReturnType(false);
     };
 
-    auto ignore_delimiter = [&]
-    {
-        if (!buf.eof() && !isNumericASCII(*buf.position()))
-        {
-            ++buf.position();
-            return true;
-        }
-        else
-            return false;
-    };
-
     auto append_digit = [&](auto & x)
     {
         if (!buf.eof() && isNumericASCII(*buf.position()))
@@ -791,27 +781,44 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
     };
 
     UInt16 year = 0;
+    UInt8 month = 0;
+    UInt8 day = 0;
+
     if (!append_digit(year)
         || !append_digit(year) // NOLINT
         || !append_digit(year) // NOLINT
         || !append_digit(year)) // NOLINT
         return error();
 
-    if (!ignore_delimiter())
+    if (buf.eof())
         return error();
 
-    UInt8 month = 0;
-    if (!append_digit(month))
-        return error();
-    append_digit(month);
+    if (isNumericASCII(*buf.position()))
+    {
+        /// YYYYMMDD
+        if (!append_digit(month)
+            || !append_digit(month) // NOLINT
+            || !append_digit(day)
+            || !append_digit(day)) // NOLINT
+            return error();
+    }
+    else
+    {
+        ++buf.position();
 
-    if (!ignore_delimiter())
-        return error();
+        if (!append_digit(month))
+            return error();
+        append_digit(month);
 
-    UInt8 day = 0;
-    if (!append_digit(day))
-        return error();
-    append_digit(day);
+        if (!buf.eof() && !isNumericASCII(*buf.position()))
+            ++buf.position();
+        else
+            return error();
+
+        if (!append_digit(day))
+            return error();
+        append_digit(day);
+    }
 
     date = LocalDate(year, month, day);
     return ReturnType(true);
@@ -1120,7 +1127,7 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
     }
 }
 
-void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
+void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
 {
     assert(current >= in.position());
     assert(current <= in.buffer().end());
@@ -1140,7 +1147,7 @@ void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
     in.position() = current;
 }
 
-bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current)
+bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current)
 {
     assert(current <= in.buffer().end());
 

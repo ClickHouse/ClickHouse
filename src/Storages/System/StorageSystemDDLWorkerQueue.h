@@ -1,7 +1,7 @@
 #pragma once
 #include <Interpreters/DDLWorker.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <future>
 
 namespace DB

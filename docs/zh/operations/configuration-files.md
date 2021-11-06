@@ -3,7 +3,7 @@
 ClickHouse支持多配置文件管理。主配置文件是`/etc/clickhouse-server/config.xml`。其余文件须在目录`/etc/clickhouse-server/config.d`。
 
 !!! 注意：
-    所有配置文件必须是XML格式。此外，配置文件须有相同的跟元素，通常是`<yandex>`。
+    所有配置文件必须是XML格式。此外，配置文件须有相同的跟元素，通常是`<clickhouse>`。
 
 主配置文件中的一些配置可以通过`replace`或`remove`属性被配置文件覆盖。
 
@@ -13,7 +13,7 @@ ClickHouse支持多配置文件管理。主配置文件是`/etc/clickhouse-serve
 
 如果指定`remove`属性，则删除该元素。
 
-此外，配置文件还可指定"substitutions"。如果一个元素有`incl`属性，则文件中的相应替换值将被使用。默认情况下，具有替换的文件的路径为`/etc/metrika.xml`。这可以在服务配置中的[include_from](server-configuration-parameters/settings.md#server_configuration_parameters-include_from)元素中被修改。替换值在这个文件的`/yandex/substitution_name`元素中被指定。如果`incl`中指定的替换值不存在，则将其记录在日志中。为防止ClickHouse记录丢失的替换，请指定`optional="true"`属性（例如，[宏](server-configuration-parameters/settings.md)设置）。
+此外，配置文件还可指定"substitutions"。如果一个元素有`incl`属性，则文件中的相应替换值将被使用。默认情况下，具有替换的文件的路径为`/etc/metrika.xml`。这可以在服务配置中的[include_from](server-configuration-parameters/settings.md#server_configuration_parameters-include_from)元素中被修改。替换值在这个文件的`/clickhouse/substitution_name`元素中被指定。如果`incl`中指定的替换值不存在，则将其记录在日志中。为防止ClickHouse记录丢失的替换，请指定`optional="true"`属性（例如，[宏](server-configuration-parameters/settings.md)设置）。
 
 替换也可以从ZooKeeper执行。为此，请指定属性`from_zk = "/path/to/node"`。元素值被替换为ZooKeeper节点`/path/to/node`的内容。您还可以将整个XML子树放在ZooKeeper节点上，并将其完全插入到源元素中。
 
@@ -26,7 +26,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 ```
 
 ``` xml
-<yandex>
+<clickhouse>
     <users>
       <alice>
           <profile>analytics</profile>
@@ -37,7 +37,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
           <quota>analytics</quota>
       </alice>
     </users>
-</yandex>
+</clickhouse>
 ```
 
 对于每个配置文件，服务器还会在启动时生成 `file-preprocessed.xml` 文件。这些文件包含所有已完成的替换和复盖，并且它们旨在提供信息。如果zookeeper替换在配置文件中使用，但ZooKeeper在服务器启动时不可用，则服务器将从预处理的文件中加载配置。

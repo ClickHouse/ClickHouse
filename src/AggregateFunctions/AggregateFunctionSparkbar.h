@@ -2,11 +2,11 @@
 
 #include <DataTypes/DataTypeString.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <common/range.h>
+#include <base/range.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnString.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/HashTable/HashMap.h>
 

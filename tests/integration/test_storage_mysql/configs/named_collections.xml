@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <named_collections>
         <mysql1>
             <user>root</user>
@@ -22,4 +22,4 @@
             <table>test_table</table>
         </mysql3>
     </named_collections>
-</yandex>
+</clickhouse>

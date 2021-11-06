@@ -72,6 +72,7 @@ static void loadDatabase(
     }
     else if (fs::exists(fs::path(database_path)))
     {
+        /// TODO Remove this code (it's required for compatibility with versions older than 20.7)
         /// Database exists, but .sql file is absent. It's old-style Ordinary database (e.g. system or default)
         database_attach_query = "ATTACH DATABASE " + backQuoteIfNeed(database) + " ENGINE = Ordinary";
     }
@@ -160,7 +161,7 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
     bool create_default_db_if_not_exists = !default_database_name.empty();
     bool metadata_dir_for_default_db_already_exists = databases.count(default_database_name);
     if (create_default_db_if_not_exists && !metadata_dir_for_default_db_already_exists)
-        databases.emplace(default_database_name, path + "/" + escapeForFileName(default_database_name));
+        databases.emplace(default_database_name, std::filesystem::path(path) / escapeForFileName(default_database_name));
 
     TablesLoader::Databases loaded_databases;
     for (const auto & [name, db_path] : databases)

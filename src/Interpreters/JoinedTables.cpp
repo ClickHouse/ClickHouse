@@ -128,7 +128,7 @@ private:
             /// Table has an alias. We do not need to rewrite qualified names with table alias (match == ColumnMatch::TableName).
             auto match = IdentifierSemantic::canReferColumnToTable(identifier, table);
             if (match == IdentifierSemantic::ColumnMatch::AliasedTableName ||
-                match == IdentifierSemantic::ColumnMatch::DbAndTable)
+                match == IdentifierSemantic::ColumnMatch::DBAndTable)
             {
                 if (rewritten)
                     throw Exception("Failed to rewrite distributed table names. Ambiguous column '" + identifier.name() + "'",

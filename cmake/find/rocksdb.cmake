@@ -15,7 +15,7 @@ option(USE_INTERNAL_ROCKSDB_LIBRARY "Set to FALSE to use system ROCKSDB library 
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/rocksdb/CMakeLists.txt")
     if (USE_INTERNAL_ROCKSDB_LIBRARY)
-        message (WARNING "submodule contrib is missing. to fix try run: \n git submodule update --init --recursive")
+        message (WARNING "submodule contrib is missing. to fix try run: \n git submodule update --init")
         message(${RECONFIGURE_MESSAGE_LEVEL} "cannot find internal rocksdb")
     endif()
     set (MISSING_INTERNAL_ROCKSDB 1)

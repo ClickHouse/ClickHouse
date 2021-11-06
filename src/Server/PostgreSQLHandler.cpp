@@ -7,11 +7,10 @@
 #include "PostgreSQLHandler.h"
 #include <Parsers/parseQuery.h>
 #include <Common/setThreadName.h>
+#include <base/scope_guard.h>
 #include <random>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>

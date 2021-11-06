@@ -1,5 +1,5 @@
 #pragma once
-#include <common/DateLUTImpl.h>
+#include <base/DateLUTImpl.h>
 
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDate32.h>
