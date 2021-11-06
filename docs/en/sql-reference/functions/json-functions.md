@@ -223,7 +223,7 @@ Parses a JSON string and extracts the keys.
 **Syntax**
 
 ``` sql
-JSONExtractKeys(json[, p, a, t, h])
+JSONExtractKeys(json[, a, b, c...])
 ```
 
 **Arguments**
