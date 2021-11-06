@@ -31,6 +31,12 @@ public:
     /// A backup can be open either in READ or WRITE mode.
     virtual OpenMode getOpenMode() const = 0;
 
+    /// Returns the time point when this backup was created.
+    virtual time_t getTimestamp() const = 0;
+
+    /// Returns UUID of the backup.
+    virtual UUID getUUID() const = 0;
+
     /// Returns names of entries stored in the backup.
     /// If `prefix` isn't empty the function will return only the names starting with
     /// the prefix (but without the prefix itself).
