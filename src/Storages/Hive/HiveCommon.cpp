@@ -23,7 +23,7 @@ std::shared_ptr<HMSClient::HiveTableMeta> HMSClient::getTableMeta(const std::str
         client->get_table(*table, db_name, table_name);
 
         /**
-          * query the lastest partition info to check new change
+          * query the latest partition info to check new change
           */
         client->get_partitions(partitions, db_name, table_name, -1);
     }
@@ -54,7 +54,7 @@ std::shared_ptr<HMSClient::HiveTableMeta> HMSClient::getTableMeta(const std::str
         auto & pinfo = partition_infos[partition.sd.location];
         pinfo.partition = partition;
 
-        // query files under the patition by hdfs api is costly, we reuse the files in case the partion has no change
+        // query files under the partition by hdfs api is costly, we reuse the files in case the partition has no change
         if (result)
         {
             auto it = old_partition_infos.find(partition.sd.location);
