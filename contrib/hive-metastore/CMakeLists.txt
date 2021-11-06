@@ -16,4 +16,5 @@ add_custom_command(
 add_library(hivemetastore ${SRCS})
 add_dependencies(hivemetastore ${THRIFT_LIBRARY})
 target_link_libraries(hivemetastore PUBLIC ${THRIFT_LIBRARY})
-target_include_directories(hivemetastore SYSTEM PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+# target_include_directories(hivemetastore SYSTEM PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
+include_directories(SYSTEM ${CMAKE_CURRENT_BINARY_DIR})
