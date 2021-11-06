@@ -50,10 +50,10 @@ target_link_libraries (${THRIFT_LIBRARY} PRIVATE boost::headers_only)
 
 set(COMPILER_DIR "${ClickHouse_SOURCE_DIR}/contrib/thrift/compiler/cpp")
 configure_file(${COMPILER_DIR}/src/thrift/version.h.in ${COMPILER_DIR}/src/thrift/version.h)
-set(thrift-compiler_SOURCES
+set(thrift_compiler_SOURCES
     ${COMPILER_DIR}/src/thrift/main.cc
     ${COMPILER_DIR}/src/thrift/audit/t_audit.cpp
-    ${COMPILER_DIR}/src/thrift/generate/t_cpp_generator.cpp
+    ${COMPILER_DIR}/src/thrift/generate/t_cpp_generator.cc
     ${COMPILER_DIR}/src/thrift/common.cc
     ${COMPILER_DIR}/src/thrift/generate/t_generator.cc
     ${COMPILER_DIR}/src/thrift/parse/t_typedef.cc
@@ -63,7 +63,7 @@ set(thrift-compiler_SOURCES
     ${COMPILER_DIR}/src/thrift/thriftl.cc
     ${COMPILER_DIR}/src/thrift/thrifty.hh
 )
-add_executable(thrift-compiler ${thrift-compiler_SOURCES})
+add_executable(thrift-compiler ${thrift_compiler_SOURCES})
 include_directories(thrift-compiler SYSTEM ${COMPILER_DIR}/src)
 
 # === orc
