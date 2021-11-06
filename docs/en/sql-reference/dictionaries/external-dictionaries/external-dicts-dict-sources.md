@@ -462,6 +462,9 @@ Setting fields:
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 -   `query` – The custom query. Optional parameter.
 
+!!! info "Note"
+    The `table` and `query` fields cannot be used together. And there must be one of the sources of either `table` or `query`.
+
 ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
 
 If you have a problems with encodings when using Oracle, see the corresponding [F.A.Q.](../../../faq/integration/oracle-odbc.md) item.
@@ -537,6 +540,9 @@ Setting fields:
 
 -   `query` – The custom query. Optional parameter.
 
+!!! info "Note"
+    The `table` or `where` fields cannot be used together with the `query` field. And there must be one of the sources of either `table` or `query`.
+
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
 
 Example of settings:
@@ -552,8 +558,8 @@ Example of settings:
       <table>table_name</table>
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
-	  <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
       <fail_on_connection_loss>true</fail_on_connection_loss>
+	  <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
   </mysql>
 </source>
 ```
@@ -570,8 +576,8 @@ SOURCE(MYSQL(
     table 'table_name'
     where 'id=10'
     invalidate_query 'SQL_QUERY'
-    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
     fail_on_connection_loss 'true'
+	query 'SELECT id, value_1, value_2 FROM db_name.table_name'
 ))
 ```
 
@@ -589,8 +595,8 @@ Example of settings:
         <db>default</db>
         <table>ids</table>
         <where>id=10</where>
-        <query>SELECT id, value_1, value_2 FROM default.ids</query>
         <secure>1</secure>
+		<query>SELECT id, value_1, value_2 FROM default.ids</query>
     </clickhouse>
 </source>
 ```
@@ -606,8 +612,8 @@ SOURCE(CLICKHOUSE(
     db 'default'
     table 'ids'
     where 'id=10'
-    query 'SELECT id, value_1, value_2 FROM default.ids'
     secure 1
+	query 'SELECT id, value_1, value_2 FROM default.ids'
 ));
 ```
 
@@ -621,8 +627,11 @@ Setting fields:
 -   `table` – Name of the table.
 -   `where` – The selection criteria. May be omitted.
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
--   `query` – The custom query. Optional parameter.
 -   `secure` - Use ssl for connection.
+-   `query` – The custom query. Optional parameter.
+
+!!! info "Note"
+    The `table` or `where` fields cannot be used together with the `query` field. And there must be one of the sources of either `table` or `query`.
 
 ### Mongodb {#dicts-external_dicts_dict_sources-mongodb}
 
@@ -729,10 +738,13 @@ Setting fields:
 -   `column_family` – Name of the column family (table).
 -   `allow_filering` – Flag to allow or not potentially expensive conditions on clustering key columns. Default value is 1.
 -   `partition_key_prefix` – Number of partition key columns in primary key of the Cassandra table. Required for compose key dictionaries. Order of key columns in the dictionary definition must be the same as in Cassandra. Default value is 1 (the first key column is a partition key and other key columns are clustering key).
--   `consistency` – Consistency level. Possible values: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default is `One`.
+-   `consistency` – Consistency level. Possible values: `One`, `Two`, `Three`, `All`, `EachQuorum`, `Quorum`, `LocalQuorum`, `LocalOne`, `Serial`, `LocalSerial`. Default value is `One`.
 -   `where` – Optional selection criteria.
 -   `max_threads` – The maximum number of threads to use for loading data from multiple partitions in compose key dictionaries.
 -   `query` – The custom query. Optional parameter.
+
+!!! info "Note"
+    The `column_family` or `where` fields cannot be used together with the `query` field. And there must be one of the sources of either `column_family` or `query`.
 
 ### PosgreSQL {#dicts-external_dicts_dict_sources-postgresql}
 
@@ -783,6 +795,9 @@ Setting fields:
     -   `replica/priority` – The replica priority. When attempting to connect, ClickHouse traverses the replicas in order of priority. The lower the number, the higher the priority.
 -   `db` – Name of the database.
 -   `table` – Name of the table.
--   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL, for example, `id > 10 AND id < 20`. Optional parameter.
+-   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in PostgreSQL. For example, `id > 10 AND id < 20`. Optional parameter.
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-lifetime.md).
 -   `query` – The custom query. Optional parameter.
+
+!!! info "Note"
+    The `table` or `where` fields cannot be used together with the `query` field. And there must be one of the sources of either `table` or `query`.
