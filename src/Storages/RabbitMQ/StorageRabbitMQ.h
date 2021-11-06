@@ -67,6 +67,9 @@ public:
     bool updateChannel(ChannelPtr & channel);
     void updateQueues(std::vector<String> & queues_) { queues_ = queues; }
 
+    void incrementReader();
+    void decrementReader();
+
 protected:
     StorageRabbitMQ(
             const StorageID & table_id_,
@@ -128,6 +131,9 @@ private:
 
     uint64_t milliseconds_to_wait;
 
+    /**
+     * ╰( ͡° ͜ʖ ͡° )つ──☆* Evil atomics:
+     */
     /// Needed for tell MV or producer baskground tasks
     /// that they must finish as soon as possible.
     std::atomic<bool> shutdown_called{false};
@@ -139,6 +145,17 @@ private:
     std::atomic<bool> rabbit_is_ready = false;
     /// Allow to remove exchange only once.
     std::atomic<bool> exchange_removed = false;
+    /// For select query we must be aware of the end of streaming
+    /// to be able to turn off the loop.
+    std::atomic<size_t> readers_count = 0;
+
+    /// In select query we start event loop, but do not stop it
+    /// after that select is finished. Then in a thread, which
+    /// checks for MV we also check if we have select readers.
+    /// If not - we turn off the loop. The checks are done under
+    /// mutex to avoid having a turned off loop when select was
+    /// started.
+    std::mutex loop_mutex;
 
     size_t read_attempts = 0;
     mutable bool drop_table = false;
@@ -152,6 +169,10 @@ private:
     void streamingToViewsFunc();
     void loopingFunc();
     void connectionFunc();
+
+    void startLoop();
+    void stopLoop();
+    void stopLoopIfNoReaders();
 
     static Names parseSettings(String settings_list);
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
