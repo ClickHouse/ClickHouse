@@ -216,7 +216,7 @@ Example:
 SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
 ```
 
-## JSONExtractKeys(json[, indices_or_keys]…) {#jsonextractkeysjson-indices-or-keys}
+## JSONExtractKeys {#jsonextractkeysjson-indices-or-keys}
 
 Parses a JSON string and extracts the keys.
 
