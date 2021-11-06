@@ -445,6 +445,9 @@ if (USE_HDFS)
     dbms_target_link_libraries(PRIVATE ${HDFS3_LIBRARY})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
 
+    foreach (module ${all_modules})
+        target_include_directories (${module} hivemetastore)
+    endforeach ()
     dbms_target_link_libraries(PRIVATE hivemetastore ${THRIFT_LIBRARY})
 endif()
 
