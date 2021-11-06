@@ -514,9 +514,9 @@ void ORCBlockOutputFormat::prepareWriter()
     writer = orc::createWriter(*schema, &output_stream, options);
 }
 
-void registerOutputFormatProcessorORC(FormatFactory & factory)
+void registerOutputFormatORC(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("ORC", [](
+    factory.registerOutputFormat("ORC", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams &,
@@ -533,7 +533,7 @@ void registerOutputFormatProcessorORC(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
-    void registerOutputFormatProcessorORC(FormatFactory &)
+    void registerOutputFormatORC(FormatFactory &)
     {
     }
 }

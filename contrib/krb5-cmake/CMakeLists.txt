@@ -1,6 +1,6 @@
 find_program(AWK_PROGRAM awk)
 if(NOT AWK_PROGRAM)
-	message(FATAL_ERROR "You need the awk program to build ClickHouse with krb5 enabled.")
+    message(FATAL_ERROR "You need the awk program to build ClickHouse with krb5 enabled.")
 endif()
 
 set(KRB5_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/krb5/src")

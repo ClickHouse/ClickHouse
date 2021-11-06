@@ -1,7 +1,7 @@
 #pragma once
 #include <Storages/IStorage.h>
 #include <TableFunctions/ITableFunction.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/StorageProxy.h>
 #include <Common/CurrentThread.h>
 #include <Processors/Transforms/ExpressionTransform.h>

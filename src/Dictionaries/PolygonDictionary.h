@@ -50,13 +50,22 @@ public:
         Tuple,
     };
 
+    struct Configuration
+    {
+        InputType input_type = InputType::MultiPolygon;
+
+        PointType point_type = PointType::Array;
+
+        /// Store polygon key column. That will allow to read columns from polygon dictionary.
+        bool store_polygon_key_column = false;
+    };
+
     IPolygonDictionary(
             const StorageID & dict_id_,
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
             DictionaryLifetime dict_lifetime_,
-            InputType input_type_,
-            PointType point_type_);
+            Configuration configuration_);
 
     std::string getTypeName() const override { return "Polygon"; }
 
@@ -74,7 +83,7 @@ public:
 
     double getHitRate() const override { return 1.0; }
 
-    size_t getElementCount() const override { return attributes.empty() ? 0 : attributes.front()->size(); }
+    size_t getElementCount() const override { return attributes_columns.empty() ? 0 : attributes_columns.front()->size(); }
 
     double getLoadFactor() const override { return 1.0; }
 
@@ -97,7 +106,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
     /** Single coordinate type. */
     using Coord = Float32;
@@ -120,9 +129,7 @@ protected:
     const DictionaryStructure dict_struct;
     const DictionarySourcePtr source_ptr;
     const DictionaryLifetime dict_lifetime;
-
-    const InputType input_type;
-    const PointType point_type;
+    const Configuration configuration;
 
 private:
     /** Helper functions for loading the data from the configuration.
@@ -146,7 +153,9 @@ private:
         ValueSetter && set_value,
         DefaultValueExtractor & default_value_extractor) const;
 
-    Columns attributes;
+    ColumnPtr key_attribute_column;
+
+    Columns attributes_columns;
 
     size_t bytes_allocated = 0;
     mutable std::atomic<size_t> query_count{0};

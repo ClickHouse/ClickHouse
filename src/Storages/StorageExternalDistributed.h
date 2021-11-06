@@ -1,10 +1,8 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
-#endif
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 

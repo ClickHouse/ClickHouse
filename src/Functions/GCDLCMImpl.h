@@ -2,13 +2,11 @@
 
 #include <DataTypes/NumberTraits.h>
 #include <Common/Exception.h>
-#include <common/extended_types.h>
+#include <base/extended_types.h>
 #include <limits>
 #include <type_traits>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 
 namespace DB

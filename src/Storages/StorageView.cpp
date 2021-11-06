@@ -14,8 +14,9 @@
 
 #include <Common/typeid_cast.h>
 
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>

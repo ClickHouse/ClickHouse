@@ -1,14 +1,12 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_AWS_S3
 
 #include <atomic>
 #include <optional>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include "Disks/DiskFactory.h"
 #include "Disks/Executor.h"
 
@@ -71,13 +69,14 @@ public:
         String bucket_,
         String s3_root_path_,
         String metadata_path_,
+        ContextPtr context_,
         SettingsPtr settings_,
         GetDiskSettings settings_getter_);
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        size_t estimated_size) const override;
+        std::optional<size_t> size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
@@ -177,6 +176,8 @@ private:
     static constexpr int RESTORABLE_SCHEMA_VERSION = 1;
     /// Directories with data.
     const std::vector<String> data_roots {"data", "store"};
+
+    ContextPtr context;
 };
 
 }

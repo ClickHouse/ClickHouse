@@ -7,7 +7,7 @@
 #include <Processors/Executors/ExecutingGraph.h>
 #include <Common/ThreadPool.h>
 #include <Common/EventCounter.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <queue>
 #include <stack>

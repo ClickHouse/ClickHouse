@@ -16,7 +16,7 @@ endif()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libgsasl/src/gsasl.h")
     if (USE_INTERNAL_LIBGSASL_LIBRARY)
-        message (WARNING "submodule contrib/libgsasl is missing. to fix try run: \n git submodule update --init --recursive")
+        message (WARNING "submodule contrib/libgsasl is missing. to fix try run: \n git submodule update --init")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal libgsasl")
         set (USE_INTERNAL_LIBGSASL_LIBRARY 0)
     endif ()

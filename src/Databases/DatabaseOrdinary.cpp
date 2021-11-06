@@ -23,7 +23,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 namespace fs = std::filesystem;
 
@@ -176,7 +176,7 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     /// if (create_query->uuid != UUIDHelpers::Nil)
                     ///     DatabaseCatalog::instance().addUUIDMapping(create_query->uuid);
 
-                    const std::string table_name = file_name.substr(0, file_name.size() - 4);
+                    const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
                     LOG_DEBUG(log, "Skipping permanently detached table {}.", backQuote(table_name));
                     return;
                 }

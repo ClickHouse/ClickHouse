@@ -2,10 +2,10 @@
 
 #include <cmath>
 #include <limits>
-#include <common/DecomposedFloat.h>
+#include <base/DecomposedFloat.h>
 #include <Core/Defines.h>
 #include <Core/Types.h>
-#include <common/extended_types.h>
+#include <base/extended_types.h>
 #include <Common/NaNUtils.h>
 
 /** Preceptually-correct number comparisons.
