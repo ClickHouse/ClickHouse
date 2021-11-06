@@ -218,7 +218,7 @@ SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8')
 
 ## JSONExtractKeys(json[, indices_or_keys]…) {#jsonextractkeysjson-indices-or-keys}
 
-Parses a JSON and extracts a key.
+Parses a JSON string and extracts the keys.
 
 **Syntax**
 
