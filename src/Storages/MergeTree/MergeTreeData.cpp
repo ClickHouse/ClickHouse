@@ -3423,7 +3423,6 @@ Pipe MergeTreeData::alterPartition(
 
                     case PartitionCommand::MoveDestinationType::TABLE:
                     {
-                        checkPartitionCanBeDropped(command.partition);
                         String dest_database = query_context->resolveDatabase(command.to_database);
                         auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
                         movePartitionToTable(dest_storage, command.partition, query_context);
