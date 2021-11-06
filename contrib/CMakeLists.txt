@@ -37,7 +37,6 @@ add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
 add_subdirectory (nanodbc-cmake)
-add_subdirectory (hive-metastore)
 
 if (USE_INTERNAL_CAPNP_LIBRARY AND NOT MISSING_INTERNAL_CAPNP_LIBRARY)
     add_subdirectory(capnproto-cmake)
@@ -183,6 +182,7 @@ if (USE_INTERNAL_PARQUET_LIBRARY)
     # {BUILD_DIR}/contrib/arrow/cpp/build/release/parquet-reader some_file.parquet
 
     add_subdirectory(arrow-cmake)
+    add_subdirectory (hive-metastore)
 
     # The library is large - avoid bloat.
     target_compile_options (${ARROW_LIBRARY} PRIVATE -g0)
