@@ -237,13 +237,46 @@ ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
 
 void StorageRabbitMQ::loopingFunc()
 {
-    if (!rabbit_is_ready)
-        return;
+    connection->getHandler().startLoop();
+}
 
-    if (connection->isConnected())
-    {
-        connection->getHandler().startLoop();
-    }
+
+void StorageRabbitMQ::stopLoop()
+{
+    connection->getHandler().updateLoopState(Loop::STOP);
+}
+
+void StorageRabbitMQ::stopLoopIfNoReaders()
+{
+    /// Stop the loop if no select was started.
+    /// There can be a case that selects are finished
+    /// but not all sources decremented the counter, then
+    /// it is ok that the loop is not stopped, because
+    /// there is a background task (streaming_task), which
+    /// also checks whether there is an idle loop.
+    std::lock_guard lock(loop_mutex);
+    if (readers_count)
+        return;
+    connection->getHandler().updateLoopState(Loop::STOP);
+}
+
+void StorageRabbitMQ::startLoop()
+{
+    assert(rabbit_is_ready);
+    connection->getHandler().updateLoopState(Loop::RUN);
+    looping_task->activateAndSchedule();
+}
+
+
+void StorageRabbitMQ::incrementReader()
+{
+    ++readers_count;
+}
+
+
+void StorageRabbitMQ::decrementReader()
+{
+    --readers_count;
 }
 
 
@@ -265,9 +298,7 @@ void StorageRabbitMQ::connectionFunc()
 void StorageRabbitMQ::deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop)
 {
     if (stop_loop)
-    {
-        connection->getHandler().updateLoopState(Loop::STOP);
-    }
+        stopLoop();
 
     std::unique_lock<std::mutex> lock(task_mutex, std::defer_lock);
     if (lock.try_lock())
@@ -578,7 +609,7 @@ void StorageRabbitMQ::unbindExchange()
         {
             streaming_task->deactivate();
 
-            connection->getHandler().updateLoopState(Loop::STOP);
+            stopLoop();
             looping_task->deactivate();
 
             auto rabbit_channel = connection->createChannel();
@@ -619,6 +650,8 @@ Pipe StorageRabbitMQ::read(
     if (num_created_consumers == 0)
         return {};
 
+    std::lock_guard lock(loop_mutex);
+
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
     auto modified_context = addSettings(local_context);
     auto block_size = getMaxBlockSize();
@@ -654,10 +687,7 @@ Pipe StorageRabbitMQ::read(
     }
 
     if (!connection->getHandler().loopRunning() && connection->isConnected())
-    {
-        connection->getHandler().updateLoopState(Loop::RUN);
-        looping_task->activateAndSchedule();
-    }
+        startLoop();
 
     LOG_DEBUG(log, "Starting reading {} streams", pipes.size());
     auto united_pipe = Pipe::unitePipes(std::move(pipes));
@@ -898,19 +928,19 @@ void StorageRabbitMQ::initializeBuffers()
 
 void StorageRabbitMQ::streamingToViewsFunc()
 {
-    if (rabbit_is_ready && (connection->isConnected() || connection->reconnect()))
+    if (rabbit_is_ready)
     {
-        initializeBuffers();
-
         try
         {
             auto table_id = getStorageID();
 
             // Check if at least one direct dependency is attached
             size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
+            bool rabbit_connected = connection->isConnected() || connection->reconnect();
 
-            if (dependencies_count)
+            if (dependencies_count && rabbit_connected)
             {
+                initializeBuffers();
                 auto start_time = std::chrono::steady_clock::now();
 
                 // Keep streaming as long as there are attached views and streaming is not cancelled
@@ -926,7 +956,7 @@ void StorageRabbitMQ::streamingToViewsFunc()
                         /// Reschedule with backoff.
                         if (milliseconds_to_wait < BACKOFF_TRESHOLD)
                             milliseconds_to_wait *= 2;
-                        connection->getHandler().updateLoopState(Loop::STOP);
+                        stopLoopIfNoReaders();
                         break;
                     }
                     else
@@ -938,7 +968,7 @@ void StorageRabbitMQ::streamingToViewsFunc()
                     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
                     if (duration.count() > MAX_THREAD_WORK_DURATION_MS)
                     {
-                        connection->getHandler().updateLoopState(Loop::STOP);
+                        stopLoopIfNoReaders();
                         LOG_TRACE(log, "Reschedule streaming. Thread work duration limit exceeded.");
                         break;
                     }
@@ -950,6 +980,11 @@ void StorageRabbitMQ::streamingToViewsFunc()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+
+    /// If there is no running select, stop the loop which was
+    /// activated by previous select.
+    if (connection->getHandler().loopRunning())
+        stopLoopIfNoReaders();
 
     if (!shutdown_called)
         streaming_task->scheduleAfter(milliseconds_to_wait);
@@ -1005,10 +1040,7 @@ bool StorageRabbitMQ::streamToViews()
     block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
 
     if (!connection->getHandler().loopRunning())
-    {
-        connection->getHandler().updateLoopState(Loop::RUN);
-        looping_task->activateAndSchedule();
-    }
+        startLoop();
 
     {
         CompletedPipelineExecutor executor(block_io.pipeline);
@@ -1097,7 +1129,7 @@ bool StorageRabbitMQ::streamToViews()
     }
     else
     {
-        looping_task->activateAndSchedule();
+        startLoop();
     }
 
     /// Do not reschedule, do not stop event loop.
