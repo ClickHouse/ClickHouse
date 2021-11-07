@@ -5,17 +5,17 @@ toc_title: COMMENT
 
 # ALTER TABLE … MODIFY COMMENT {#alter-modify-comment}
 
-Adds, modifies, or removes comment to the table, regardless if it was set before or not. Comment change is reflected in both [system.tables](../../../operations/system-tables/tables.md) and `SHOW CREATE TABLE` query.
+Добавляет, изменяет или удаляет комментарий к таблице, независимо от того, был ли он установлен раньше или нет. Изменение комментария отражается как в системной таблице [system.tables](../../../operations/system-tables/tables.md), так и в результате выполнения запроса `SHOW CREATE TABLE`.
 
-**Syntax**
+**Синтаксис**
 
 ``` sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 ```
 
-**Examples**
+**Примеры**
 
-Creating a table with comment (for more information, see the [COMMENT] clause(../../../sql-reference/statements/create/table.md#comment-table)):
+Создание таблицы с комментарием (для более подробной информации смотрите секцию [COMMENT](../../../sql-reference/statements/create/table.md#comment-table)):
 
 ``` sql
 CREATE TABLE table_with_comment
@@ -27,14 +27,14 @@ ENGINE = Memory()
 COMMENT 'The temporary table';
 ```
 
-Modifying the table comment:
+Изменение комментария:
 
 ``` sql
 ALTER TABLE table_with_comment MODIFY COMMENT 'new comment on a table';
 SELECT comment FROM system.tables WHERE database = currentDatabase() AND name = 'table_with_comment';
 ```
 
-Output of a new comment:
+Вывод нового комментария:
 
 ```text
 ┌─comment────────────────┐
@@ -42,14 +42,14 @@ Output of a new comment:
 └────────────────────────┘
 ```
 
-Removing the table comment:
+Удаление комментария:
 
 ``` sql
 ALTER TABLE table_with_comment MODIFY COMMENT '';
 SELECT comment FROM system.tables WHERE database = currentDatabase() AND name = 'table_with_comment';
 ```
 
-Output of a removed comment:
+Вывод удаленного комментария:
 
 ```text
 ┌─comment─┐
