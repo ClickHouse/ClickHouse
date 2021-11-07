@@ -13,13 +13,14 @@ select mapKeys(a) from table_map;
 select mapFromArrays(c, d) from table_map;
 drop table if exists table_map;
 
-CREATE TABLE table_map (a Map(UInt8, Int), b UInt8, c UInt32) engine = MergeTree order by tuple();
-insert into table_map select map(number, number), number, number from numbers(1000, 3);
+CREATE TABLE table_map (a Map(UInt8, Int), b UInt8, c UInt32, d Array(String), e Array(String)) engine = MergeTree order by tuple();
+insert into table_map select map(number, number), number, number, [number, number, number], [number*2, number*3, number*4] from numbers(1000, 3);
 select mapContains(a, b), mapContains(a, c), mapContains(a, 233) from table_map;
 select mapContains(a, 'aaa') from table_map; -- { serverError 386 }
 select mapContains(b, 'aaa') from table_map; -- { serverError 43 }
 select mapKeys(a) from table_map;
 select mapValues(a) from table_map;
+select mapFromArrays(d, e) from table_map;
 drop table if exists table_map;
 
 

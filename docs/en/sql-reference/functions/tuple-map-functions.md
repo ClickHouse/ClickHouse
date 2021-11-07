@@ -429,6 +429,38 @@ Result:
 │ {}                         │
 └────────────────────────────┘
 ```  
+
+
+## mapFromArrays {#mapFromArrays}  
+  
+**Syntax**
+
+```sql
+mapFromArrays(keys, values)
+```  
+  
+**Parameters**
+  
+-   `keys` — Given key array to create a map from.
+-   `values`  - Given value array to create a map from.
+  
+**Returned value**
+
+- A map whose keys and values are from input arrays respectively.
+  
+**Example**
+
+Query:
+
+```sql
+select mapFromArrays(['a', 'b', 'c'], [1, 2, 3])
+```
+  
+```text
+┌─mapFromArrays(['a', 'b', 'c'], [1, 2, 3])─┐
+│ {'a':1,'b':2,'c':3}                       │
+└───────────────────────────────────────────┘
+```  
   
 
 [Original article](https://clickhouse.com/docs/en/sql-reference/functions/tuple-map-functions/) <!--hide-->
