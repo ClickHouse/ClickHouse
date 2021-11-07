@@ -46,7 +46,7 @@ Removing the table comment:
 
 ``` sql
 ALTER TABLE table_with_comment MODIFY COMMENT '';
-SELECT comment FROM system.tables WHERE database = currentDatabase() and name = 'table_with_comment';
+SELECT comment FROM system.tables WHERE database = currentDatabase() AND name = 'table_with_comment';
 ```
 
 Output of a removed comment:
