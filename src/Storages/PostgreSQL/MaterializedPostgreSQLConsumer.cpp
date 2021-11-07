@@ -388,7 +388,6 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
             else
                 table_name = relation_name;
 
-            LOG_TRACE(log, "GOT MESSAGE FOR TABLE: {}", table_name);
             if (!isSyncAllowed(relation_id, relation_name))
                 return;
 
@@ -602,7 +601,6 @@ void MaterializedPostgreSQLConsumer::markTableAsSkipped(Int32 relation_id, const
     /// Empty lsn string means - continue waiting for valid lsn.
     skip_list.insert({relation_id, ""});
 
-    LOG_TRACE(log, "trying to mark table as skipped: {}", relation_name);
     if (storages.count(relation_name))
     {
         /// Erase cached schema identifiers. It will be updated again once table is allowed back into replication stream
@@ -791,7 +789,6 @@ bool MaterializedPostgreSQLConsumer::consume(std::vector<std::pair<Int32, String
     /// false: no data was read, reschedule.
     /// true: some data was read, schedule as soon as possible.
     auto read_next = readFromReplicationSlot();
-    LOG_TRACE(log, "LSN: {}", final_lsn);
     return read_next;
 }
 
