@@ -156,7 +156,28 @@ def get_commit(gh, commit_sha):
     commit = repo.get_commit(commit_sha)
     return commit
 
-def process_logs(s3_client, additional_logs, s3_path_prefix):
+def process_logs(s3_client, additional_logs, s3_path_prefix, test_results):
+    proccessed_logs = {}
+    # Firstly convert paths of logs from test_results to urls to s3.
+    for test_result in test_results:
+        if len(test_result) <= 3:
+            continue
+
+        # Convert from string repr of list to list.
+        test_log_paths = eval(test_result[3])
+        test_log_urls = []
+        for log_path in test_log_paths:
+            if log_path in proccessed_logs:
+                test_log_urls.append(proccessed_logs[log_path])
+            elif log_path:
+                url = s3_client.upload_test_report_to_s3(
+                    log_path,
+                    s3_path_prefix + "/" + os.path.basename(log_path))
+                test_log_urls.append(url)
+                proccessed_logs[log_path] = url
+
+        test_result[3] = test_log_urls
+
     additional_urls = []
     for log_path in additional_logs:
         if log_path:
@@ -200,7 +221,7 @@ def process_results(result_folder):
 def upload_results(s3_client, pr_number, commit_sha, test_results, raw_log, additional_files, check_name):
     additional_files = [raw_log] + additional_files
     s3_path_prefix = f"{pr_number}/{commit_sha}/" + check_name.lower().replace(' ', '_').replace('(', '_').replace(')', '_').replace(',', '_')
-    additional_urls = process_logs(s3_client, additional_files, s3_path_prefix)
+    additional_urls = process_logs(s3_client, additional_files, s3_path_prefix, test_results)
 
     branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
     branch_name = "master"
