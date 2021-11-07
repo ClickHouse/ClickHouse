@@ -175,7 +175,7 @@ public:
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                 "Function {} requires 2 arguments, but {} given", getName(), arguments.size());
-        
+
         const auto * keys_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
         if (!keys_type)
             throw Exception{"First argument for function " + getName() + " must be a Array",
