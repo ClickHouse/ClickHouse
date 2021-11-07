@@ -2426,7 +2426,7 @@ zookeeperSessionUptime()
 
 -   Нет.
 
-**Returned value**
+**Возвращаемое значение**
 
 -   Аптайм текущего сеанса ZooKeeper в секундах.
 
