@@ -7,6 +7,7 @@ import json
 import time
 import subprocess
 import csv
+import ast
 
 from github import Github
 import requests
@@ -164,7 +165,7 @@ def process_logs(s3_client, additional_logs, s3_path_prefix, test_results):
             continue
 
         # Convert from string repr of list to list.
-        test_log_paths = eval(test_result[3])
+        test_log_paths = ast.literal_eval(test_result[3])
         test_log_urls = []
         for log_path in test_log_paths:
             if log_path in proccessed_logs:
