@@ -2463,3 +2463,39 @@ Result:
 │ Linux 4.15.0-55-generic │
 └─────────────────────────┘
 ```
+
+## zookeeperSessionUptime {#zookeepersessionuptime}
+
+Returns uptime of current ZooKeeper session in seconds.
+
+**Syntax**
+
+``` sql
+zookeeperSessionUptime()
+```
+
+**Arguments**
+
+-   None.
+
+**Returned value**
+
+-   Uptime of current ZooKeeper session in seconds.
+
+Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+
+**Example**
+
+Query:
+
+``` sql
+SELECT zookeeperSessionUptime();
+```
+
+Result:
+
+``` text
+┌─zookeeperSessionUptime()─┐
+│                      286 │
+└──────────────────────────┘
+```
