@@ -36,7 +36,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     size_t estimated_size = size.has_value() ? *size : 0;
 
     if (!existing_memory
-        && settings.local_fs_method == ReadMethod::mmap
+        && settings.local_fs_method == LocalFSReadMethod::mmap
         && settings.mmap_threshold
         && settings.mmap_cache
         && estimated_size >= settings.mmap_threshold)
@@ -58,21 +58,21 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
     {
         std::unique_ptr<ReadBufferFromFileBase> res;
 
-        if (settings.local_fs_method == ReadMethod::read)
+        if (settings.local_fs_method == LocalFSReadMethod::read)
         {
             res = std::make_unique<ReadBufferFromFile>(filename, buffer_size, actual_flags, existing_memory, alignment);
         }
-        else if (settings.local_fs_method == ReadMethod::pread || settings.local_fs_method == ReadMethod::mmap)
+        else if (settings.local_fs_method == LocalFSReadMethod::pread || settings.local_fs_method == LocalFSReadMethod::mmap)
         {
             res = std::make_unique<ReadBufferFromFilePReadWithDescriptorsCache>(filename, buffer_size, actual_flags, existing_memory, alignment);
         }
-        else if (settings.local_fs_method == ReadMethod::pread_fake_async)
+        else if (settings.local_fs_method == LocalFSReadMethod::pread_fake_async)
         {
             static AsynchronousReaderPtr reader = std::make_shared<SynchronousReader>();
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(
                 reader, settings.priority, filename, buffer_size, actual_flags, existing_memory, alignment);
         }
-        else if (settings.local_fs_method == ReadMethod::pread_threadpool)
+        else if (settings.local_fs_method == LocalFSReadMethod::pread_threadpool)
         {
             static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolReader>(16, 1000000);
             res = std::make_unique<AsynchronousReadBufferFromFileWithDescriptorsCache>(

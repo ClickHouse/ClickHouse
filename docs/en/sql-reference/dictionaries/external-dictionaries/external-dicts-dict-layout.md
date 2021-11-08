@@ -26,7 +26,7 @@ You can view the list of external dictionaries and their statuses in the `system
 The configuration looks like this:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         ...
         <layout>
@@ -36,7 +36,7 @@ The configuration looks like this:
         </layout>
         ...
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 Corresponding [DDL-query](../../../sql-reference/statements/create/dictionary.md):
@@ -289,7 +289,7 @@ Details of the algorithm:
 Configuration example:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         ...
 
@@ -317,7 +317,7 @@ Configuration example:
         </structure>
 
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 or

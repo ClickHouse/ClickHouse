@@ -221,39 +221,4 @@ void NativeReader::updateAvgValueSizeHints(const Block & block)
     }
 }
 
-void IndexForNativeFormat::read(ReadBuffer & istr, const NameSet & required_columns)
-{
-    while (!istr.eof())
-    {
-        blocks.emplace_back();
-        IndexOfBlockForNativeFormat & block = blocks.back();
-
-        readVarUInt(block.num_columns, istr);
-        readVarUInt(block.num_rows, istr);
-
-        if (block.num_columns < required_columns.size())
-            throw Exception("Index contain less than required columns", ErrorCodes::INCORRECT_INDEX);
-
-        for (size_t i = 0; i < block.num_columns; ++i)
-        {
-            IndexOfOneColumnForNativeFormat column_index;
-
-            readBinary(column_index.name, istr);
-            readBinary(column_index.type, istr);
-            readBinary(column_index.location.offset_in_compressed_file, istr);
-            readBinary(column_index.location.offset_in_decompressed_block, istr);
-
-            if (required_columns.count(column_index.name))
-                block.columns.push_back(std::move(column_index));
-        }
-
-        if (block.columns.size() < required_columns.size())
-            throw Exception("Index contain less than required columns", ErrorCodes::INCORRECT_INDEX);
-        if (block.columns.size() > required_columns.size())
-            throw Exception("Index contain duplicate columns", ErrorCodes::INCORRECT_INDEX);
-
-        block.num_columns = block.columns.size();
-    }
-}
-
 }

@@ -250,6 +250,17 @@
     M(S3WriteRequestsRedirects, "Number of redirects in POST, DELETE, PUT and PATCH requests to S3 storage.") \
     M(QueryMemoryLimitExceeded, "Number of times when memory limit exceeded for query.") \
     \
+    M(RemoteFSReadMicroseconds, "Time of reading from remote filesystem.") \
+    M(RemoteFSReadBytes, "Read bytes from remote filesystem.") \
+    \
+    M(RemoteFSSeeks, "Total number of seeks for async buffer") \
+    M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem") \
+    M(RemoteFSCancelledPrefetches, "Number of cancelled prefecthes (because of seek)") \
+    M(RemoteFSUnusedPrefetches, "Number of prefetches pending at buffer destruction") \
+    M(RemoteFSPrefetchedReads, "Number of reads from prefecthed buffer") \
+    M(RemoteFSUnprefetchedReads, "Number of reads from unprefetched buffer") \
+    M(RemoteFSBuffers, "Number of buffers created for asynchronous reading from remote filesystem") \
+    \
     M(SleepFunctionCalls, "Number of times a sleep function (sleep, sleepEachRow) has been called.") \
     M(SleepFunctionMicroseconds, "Time spent sleeping due to a sleep function call.") \
     \
