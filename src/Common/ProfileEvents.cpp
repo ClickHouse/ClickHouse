@@ -260,6 +260,13 @@
     M(ThreadPoolReaderPageCacheMissElapsedMicroseconds, "Time spent reading data inside the asynchronous job in ThreadPoolReader - when read was not done from page cache.") \
     \
     M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
+    \
+    M(DiskCacheRequestsIn, "Requests to local cache for remote FS.") \
+    M(DiskCacheRequestsOut, "Requests from local cache for remote FS to remote FS.") \
+    M(DiskCacheBytesTotal, "Total bytes from local cache for remote FS.") \
+    M(DiskCacheBytesCached, "Bytes from local cache for remote FS.") \
+    M(DiskCacheBytesRemote, "Bytes not found in local cache for remote FS.") \
+    M(DiskCacheBytesRemoteSkipCache, "Bytes not looking in local cache for remote FS.") \
 
 
 namespace ProfileEvents

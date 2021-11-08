@@ -2,7 +2,19 @@
 #include <Common/Exception.h>
 #include <Common/hex.h>
 #include <Common/SipHash.h>
+#include <Common/ProfileEvents.h>
 #include <base/getThreadId.h>
+
+namespace ProfileEvents
+{
+    extern const Event DiskCacheRequestsIn;
+    extern const Event DiskCacheRequestsOut;
+    extern const Event DiskCacheBytesTotal;
+    extern const Event DiskCacheBytesCached;
+    extern const Event DiskCacheBytesRemote;
+    extern const Event DiskCacheBytesRemoteSkipCache;
+    extern const Event S3ReadBytes;
+}
 
 namespace DB
 {
@@ -643,6 +655,7 @@ public:
         current_offset(offset_), end_offset(size_ ? offset_ + size_ : size_),
         downloader(std::move(downloader_))
     {
+        ProfileEvents::increment(ProfileEvents::DiskCacheRequestsIn, 1);
         log = &Poco::Logger::get("CacheableMultipartReadBufferDecorator");
         ensureFrom();
     }
@@ -727,6 +740,32 @@ public:
                 res = from->next();
         }
         LOG_TRACE(log, "next() -> {}", res);
+
+        if (res)
+        {
+            auto buffer = from->buffer();
+            size_t size = buffer.size();
+            ProfileEvents::increment(ProfileEvents::DiskCacheBytesTotal, size);
+
+            switch (current_type)
+            {
+                case DiskCachePolicy::CachePart::CachePartType::CACHED:
+                    ProfileEvents::increment(ProfileEvents::DiskCacheBytesCached, size);
+                    break;
+                case DiskCachePolicy::CachePart::CachePartType::ABSENT:
+                    ProfileEvents::increment(ProfileEvents::DiskCacheBytesRemote, size);
+                    ProfileEvents::increment(ProfileEvents::S3ReadBytes, size);
+                    break;
+                case DiskCachePolicy::CachePart::CachePartType::ABSENT_NO_CACHE:
+                    ProfileEvents::increment(ProfileEvents::DiskCacheBytesRemote, size);
+                    ProfileEvents::increment(ProfileEvents::DiskCacheBytesRemoteSkipCache, size);
+                    ProfileEvents::increment(ProfileEvents::S3ReadBytes, size);
+                    break;
+                default:
+                    break;
+            }
+        }
+
         return res;
     }
 
@@ -847,6 +886,7 @@ private:
                     cache_disk->removeFileIfExists(cache_path);
                 }
 
+                ProfileEvents::increment(ProfileEvents::DiskCacheRequestsOut, 1);
                 auto s3from = downloader->get(part.offset, part.size);
                 if (s3from.stream)
                 {
@@ -862,6 +902,7 @@ private:
             if (part.type == DiskCachePolicy::CachePart::CachePartType::ABSENT_NO_CACHE)
             {
                 LOG_TRACE(log, "ensureFrom download from s3 {}-{} without caching", part.offset, part.size);
+                ProfileEvents::increment(ProfileEvents::DiskCacheRequestsOut, 1);
                 auto s3from = downloader->get(part.offset, part.size);
                 if (s3from.stream)
                 {
@@ -869,6 +910,8 @@ private:
                     current_offset = part.offset + s3from.expected_size;
                 }
             }
+
+            current_type = part.type;
         }
     }
 
@@ -884,6 +927,8 @@ private:
     std::unique_ptr<WriteBuffer> cache;
 
     Poco::Logger * log = nullptr;
+
+    DiskCachePolicy::CachePart::CachePartType current_type = DiskCachePolicy::CachePart::CachePartType::EMPTY;
 };
 
 

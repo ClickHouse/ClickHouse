@@ -107,7 +107,9 @@ bool ReadBufferFromS3::nextImpl()
 
     BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset()); /// use the buffer returned by `impl`
 
-    ProfileEvents::increment(ProfileEvents::S3ReadBytes, working_buffer.size());
+    if (!disk_cache)
+        ProfileEvents::increment(ProfileEvents::S3ReadBytes, working_buffer.size());
+
     offset += working_buffer.size();
 
     return true;
