@@ -62,11 +62,17 @@ namespace ProfileEvents
         struct Snapshot
         {
             Snapshot();
+            Snapshot(Snapshot const & other);
+            Snapshot(Snapshot &&) = default;
 
             const Count & operator[] (Event event) const
             {
                 return counters_holder[event];
             }
+
+            Snapshot & operator=(Snapshot &&) = default;
+
+            friend Snapshot operator-(Snapshot const & lhs, Snapshot const & rhs);
 
         private:
             std::unique_ptr<Count[]> counters_holder;
