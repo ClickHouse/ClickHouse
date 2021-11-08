@@ -56,7 +56,6 @@ TRUSTED_CONTRIBUTORS = {
     "damozhaeva",   # DOCSUP
     "den-crane",
     "gyuton",       # DOCSUP
-    "gyuton",       # technical writer, Yandex
     "hagen1778",    # Roman Khavronenko, seasoned contributor
     "hczhcz",
     "hexiaoting",   # Seasoned contributor
@@ -64,7 +63,6 @@ TRUSTED_CONTRIBUTORS = {
     "javisantana",  # a Spanish ClickHouse enthusiast, ex-Carto
     "ka1bi4",       # DOCSUP
     "kirillikoff",  # DOCSUP
-    "kitaisreal",   # Seasoned contributor
     "kreuzerkrieg",
     "lehasm",       # DOCSUP
     "michon470",    # DOCSUP
@@ -79,7 +77,7 @@ TRUSTED_CONTRIBUTORS = {
     "s-mx",         # Maxim Sabyanin, former employee, present contributor
     "sevirov",      # technical writer, Yandex
     "spongedu",     # Seasoned contributor
-    "ucasFL",       # Amos Bird's friend
+    "ucasfl",       # Amos Bird's friend
     "vdimir",       # Employee
     "vzakaznikov",
     "YiuRULE",
