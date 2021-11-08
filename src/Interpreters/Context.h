@@ -14,13 +14,10 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/isLocalAddress.h>
+#include <Common/config.h>
 #include <base/types.h>
 
 #include "config_core.h"
-
-#if !defined(ARCADIA_BUILD)
-#include <Common/config.h>
-#endif
 
 #include <functional>
 #include <memory>
