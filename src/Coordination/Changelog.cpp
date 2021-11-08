@@ -386,7 +386,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
 
         removeAllLogs();
         min_log_id = last_commited_log_index;
-        max_log_id = last_commited_log_index == 0 ? 0 : last_commited_log_index - 1;
+        max_log_id = last_commited_log_index - 1;
     }
     else if (last_log_is_not_complete) /// if it's complete just start new one
     {
