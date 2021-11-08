@@ -18,6 +18,8 @@
 #include <Interpreters/Context.h>
 #include <Parsers/IParser.h>
 #include <Parsers/Lexer.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <base/range.h>
 
 #include "config_functions.h"
@@ -263,21 +265,21 @@ public:
             return false;
 
         std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        out << current_element.getElement();
+        auto output_str = out.str();
+        ColumnString & col_str = assert_cast<ColumnString &>(dest);
+
         if (current_element.isString())
         {
-            std::string_view element = current_element.getString();
-            if (element.starts_with('\"') && element.size() > 1)
-                out << element.substr(1, element.size() - 1);
-            else
-                out << element;
+            ReadBufferFromString buf(output_str);
+            String unquoted_output_str;
+            readJSONString(unquoted_output_str, buf);
+            col_str.insertData(unquoted_output_str.data(), unquoted_output_str.size());
         }
         else
         {
-            out << current_element.getElement();
+            col_str.insertData(output_str.data(), output_str.size());
         }
-        auto output_str = out.str();
-        ColumnString & col_str = assert_cast<ColumnString &>(dest);
-        col_str.insertData(output_str.data(), output_str.size());
         return true;
     }
 };

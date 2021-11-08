@@ -23,10 +23,14 @@ SELECT JSON_VALUE('', '$.hello');
 
 SELECT JSON_VALUE('{"foo foo":"bar"}', '$."foo foo"');
 bar
-SELECT JSON_VALUE('{"smiley":"\\uD83D\\uDE0A"}', '$.smiley');
-😊
 SELECT JSON_VALUE('{"hello":"\\uD83C\\uDF3A \\uD83C\\uDF38 \\uD83C\\uDF37 Hello, World \\uD83C\\uDF37 \\uD83C\\uDF38 \\uD83C\\uDF3A"}', '$.hello');
 🌺 🌸 🌷 Hello, World 🌷 🌸 🌺
+SELECT JSON_VALUE('{"a":"Hello \\"World\\" \\\\"}', '$.a');
+Hello "World" \\
+select JSON_VALUE('{"a":"\\n\\u0000"}', '$.a');
+\n\0
+select JSON_VALUE('{"a":"\\u263a"}', '$.a');
+☺
 SELECT '--JSON_QUERY--';
 --JSON_QUERY--
 SELECT JSON_QUERY('{"hello":1}', '$');
