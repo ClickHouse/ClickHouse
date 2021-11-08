@@ -444,15 +444,34 @@ CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' 
 
 When the `input_format_tsv_enum_as_number` setting is enabled:
 
+Query:
+
 ```sql
 SET input_format_tsv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+SELECT * FROM table_with_enum_column_for_tsv_insert;
+```
+
+Result:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+```
+
+Query:
+
+```sql
+SET input_format_tsv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
 ```
 
 throws an exception.
 
-When the `input_format_tsv_enum_as_number` setting is disabled, the `INSERT` query:
+When the `input_format_tsv_enum_as_number` setting is disabled:
+
+Query:
 
 ```sql
 SET input_format_tsv_enum_as_number = 0;
@@ -471,8 +490,6 @@ Result:
 │ 103 │ first  │
 └─────┴────────┘
 ```
-
-throws an exception.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
@@ -1610,15 +1627,33 @@ CREATE TABLE table_with_enum_column_for_csv_insert (Id Int32,Value Enum('first' 
 
 When the `input_format_csv_enum_as_number` setting is enabled:
 
+Query:
+
 ```sql
 SET input_format_csv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2
+```
+
+Result:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+```
+
+Query:
+
+```sql
+SET input_format_csv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
 ```
 
 throws an exception.
 
-When the `input_format_csv_enum_as_number` setting is disabled, the `INSERT` query:
+When the `input_format_csv_enum_as_number` setting is disabled:
+
+Query:
 
 ```sql
 SET input_format_csv_enum_as_number = 0;
@@ -1637,6 +1672,7 @@ Result:
 │ 103 │ first │
 └─────┴───────┘
 ```
+
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
 Use DOS/Windows-style line separator (CRLF) in CSV instead of Unix style (LF).
