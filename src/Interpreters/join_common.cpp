@@ -580,11 +580,10 @@ NotJoinedBlocks::NotJoinedBlocks(std::unique_ptr<RightColumnsFiller> filler_,
     }
 
     if (column_indices_left.size() + column_indices_right.size() + same_result_keys.size() != result_sample_block.columns())
-        throw Exception("Error in columns mapping in RIGHT|FULL JOIN. Left: " + toString(column_indices_left.size()) +
-                        ", right: " + toString(column_indices_right.size()) +
-                        ", same: " + toString(same_result_keys.size()) +
-                        ", result: " + toString(result_sample_block.columns()),
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Error in columns mapping in RIGHT|FULL JOIN. Left: {}, right: {}, same: {}, result: {}",
+                        column_indices_left.size(), column_indices_right.size(),
+                        same_result_keys.size(), result_sample_block.columns());
 }
 
 void NotJoinedBlocks::setRightIndex(size_t right_pos, size_t result_position)
