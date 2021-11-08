@@ -12,6 +12,7 @@ import test
 import util
 import website
 
+TEMPORARY_FILE_NAME = 'single.md'
 
 def recursive_values(item):
     if isinstance(item, dict):
@@ -101,6 +102,14 @@ def concatenate(lang, docs_path, single_page_file, nav):
 
     single_page_file.flush()
 
+def get_temporary_file_name(lang, args):
+    return os.path.join(args.docs_dir, lang, TEMPORARY_FILE_NAME)
+
+def remove_temporary_files(lang, args):
+    single_md_path = get_temporary_file_name(lang, args)
+    if os.path.exists(single_md_path):
+        os.unlink(single_md_path)
+
 
 def build_single_page_version(lang, args, nav, cfg):
     logging.info(f'Building single page version for {lang}')
@@ -109,7 +118,7 @@ def build_single_page_version(lang, args, nav, cfg):
     extra['single_page'] = True
     extra['is_amp'] = False
 
-    single_md_path = os.path.join(args.docs_dir, lang, 'single.md')
+    single_md_path = get_temporary_file_name(lang, args)
     with open(single_md_path, 'w') as single_md:
         concatenate(lang, args.docs_dir, single_md, nav)
 
@@ -226,5 +235,4 @@ def build_single_page_version(lang, args, nav, cfg):
 
         logging.info(f'Finished building single page version for {lang}')
 
-        if os.path.exists(single_md_path):
-            os.unlink(single_md_path)
+        remove_temporary_files(lang, args)
