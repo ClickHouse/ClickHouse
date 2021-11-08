@@ -28,7 +28,7 @@ public:
         ExpressionActionsSettings actions_settings,
         const MergeTreeReaderSettings & reader_settings_,
         const Names & virt_column_names_,
-        std::optional<MergeTreeReadTaskCallback> read_task_callback_);
+        std::optional<ParallelReadingExtension> extension_);
 
     String getName() const override { return "MergeTreeThread"; }
 

@@ -16,6 +16,14 @@ class UncompressedCache;
 class MarkCache;
 struct PrewhereExprInfo;
 
+
+struct ParallelReadingExtension
+{
+    MergeTreeReadTaskCallback callback;
+    size_t count_participating_replicas{0};
+    size_t number_of_current_replica{0};
+};
+
 /// Base class for MergeTreeThreadSelectProcessor and MergeTreeSelectProcessor
 class MergeTreeBaseSelectProcessor : public SourceWithProgress
 {
@@ -32,7 +40,7 @@ public:
         const MergeTreeReaderSettings & reader_settings_,
         bool use_uncompressed_cache_,
         const Names & virt_column_names_ = {},
-        std::optional<MergeTreeReadTaskCallback> read_task_callback_ = {});
+        std::optional<ParallelReadingExtension> extension = {});
 
     ~MergeTreeBaseSelectProcessor() override;
 
@@ -97,8 +105,8 @@ protected:
     MergeTreeReaderPtr pre_reader;
 
     MergeTreeReadTaskPtr task;
-    std::optional<MergeTreeReadTaskCallback> read_task_callback;
 
+    std::optional<ParallelReadingExtension> extension;
 private:
 
     enum class Status {
@@ -108,7 +116,7 @@ private:
 
     /// It will reinitialize
     Status performRequestToCoordinator(MarkRanges requested_ranges);
-    void fillBufferedRanged(MarkRanges ranges);
+    void fillBufferedRanged(MergeTreeReadTask * current_task);
 
     std::deque<MarkRanges> buffered_ranges;
 };

@@ -17,8 +17,8 @@ $CLICKHOUSE_CLIENT $SETTINGS -nm -q '''
     drop table if exists test.dist_hits SYNC;
     drop table if exists test.dist_visits SYNC;
 
-    create table test.dist_hits as test.hits engine = Distributed('test_cluster_one_shard_three_replicas', test, hits, rand());
-    create table test.dist_visits as test.visits engine = Distributed('test_cluster_one_shard_three_replicas', test, visits, rand());
+    create table test.dist_hits as test.hits engine = Distributed('test_cluster_one_shard_three_replicas_localhost', test, hits, rand());
+    create table test.dist_visits as test.visits engine = Distributed('test_cluster_one_shard_three_replicas_localhost', test, visits, rand());
 ''';
 
 
@@ -41,8 +41,10 @@ SkipList=(
 )
 
 # for TESTNAME in "${PreviouslyFailed[@]}"
-for TESTNAME in *.sql;
+for TESTPATH in $CURDIR/*.sql;
 do
+    TESTNAME=$(basename $TESTPATH)
+
     if [[ " ${SkipList[*]} " =~ " ${TESTNAME} " ]]; then
         echo  "Skipping $TESTNAME "
         continue
@@ -53,12 +55,12 @@ do
     # prepare test
     NEW_TESTNAME="/tmp/dist_$TESTNAME"
     # Added g to sed command to replace all tables, not the first
-    cat $TESTNAME | sed -e 's/test.hits/test.dist_hits/g'  | sed -e 's/test.visits/test.dist_visits/g' > $NEW_TESTNAME
+    cat $TESTPATH | sed -e 's/test.hits/test.dist_hits/g'  | sed -e 's/test.visits/test.dist_visits/g' > $NEW_TESTNAME
 
     TESTNAME_RESULT="/tmp/result_$TESTNAME"
     NEW_TESTNAME_RESULT="/tmp/result_dist_$TESTNAME"
 
-    $CLICKHOUSE_CLIENT $SETTINGS -nm --testmode < $TESTNAME > $TESTNAME_RESULT
+    $CLICKHOUSE_CLIENT $SETTINGS -nm --testmode < $TESTPATH > $TESTNAME_RESULT
     $CLICKHOUSE_CLIENT $SETTINGS -nm --testmode < $NEW_TESTNAME > $NEW_TESTNAME_RESULT
 
     expected=$(cat $TESTNAME_RESULT | md5sum)

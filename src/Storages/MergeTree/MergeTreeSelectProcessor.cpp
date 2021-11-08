@@ -23,12 +23,12 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const Names & virt_column_names_,
     size_t part_index_in_query_,
     bool has_limit_below_one_block_,
-    std::optional<MergeTreeReadTaskCallback> read_task_callback_)
+    std::optional<ParallelReadingExtension> extension_)
     : MergeTreeBaseSelectProcessor{
         metadata_snapshot_->getSampleBlockForColumns(required_columns_, storage_.getVirtuals(), storage_.getStorageID()),
         storage_, metadata_snapshot_, prewhere_info_, std::move(actions_settings), max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
-        reader_settings_, use_uncompressed_cache_, virt_column_names_, read_task_callback_},
+        reader_settings_, use_uncompressed_cache_, virt_column_names_, extension_},
     required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
     sample_block(metadata_snapshot_->getSampleBlock()),
@@ -40,7 +40,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     /// Actually it means that parallel reading from replicas enabled
     /// and we have to collaborate with initiator.
     /// In this case we won't set approximate rows, bacause it will be accounted multiple times
-    if (!read_task_callback_.has_value())
+    if (!extension_.has_value())
         addTotalRowsApprox(total_rows);
     ordered_names = header_without_virtual_columns.getNames();
 }

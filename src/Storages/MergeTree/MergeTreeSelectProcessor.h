@@ -32,7 +32,7 @@ public:
         const Names & virt_column_names = {},
         size_t part_index_in_query_ = 0,
         bool has_limit_below_one_block_ = false,
-        std::optional<MergeTreeReadTaskCallback> read_task_callback_ = {});
+        std::optional<ParallelReadingExtension> extension_ = {});
 
     ~MergeTreeSelectProcessor() override;
 

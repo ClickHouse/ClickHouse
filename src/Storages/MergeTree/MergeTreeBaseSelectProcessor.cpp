@@ -12,6 +12,9 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
+#include <consistent_hashing.h>
+
+#include <city.h>
 
 namespace DB
 {
@@ -35,7 +38,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     const MergeTreeReaderSettings & reader_settings_,
     bool use_uncompressed_cache_,
     const Names & virt_column_names_,
-    std::optional<MergeTreeReadTaskCallback> read_task_callback_)
+    std::optional<ParallelReadingExtension> extension_)
     : SourceWithProgress(transformHeader(std::move(header), prewhere_info_, storage_.getPartitionValueType(), virt_column_names_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
@@ -47,7 +50,7 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
     , use_uncompressed_cache(use_uncompressed_cache_)
     , virt_column_names(virt_column_names_)
     , partition_value_type(storage.getPartitionValueType())
-    , read_task_callback(read_task_callback_)
+    , extension(extension_)
 {
     header_without_virtual_columns = getPort().getHeader();
 
@@ -92,7 +95,7 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
     {
         auto res = getNewTaskImpl();
 
-        if (!read_task_callback.has_value())
+        if (!extension.has_value())
         {
             if (res)
                 finalizeNewTask();
@@ -106,7 +109,7 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
         if (task->mark_ranges.empty())
             continue;
 
-        fillBufferedRanged(task->mark_ranges);
+        fillBufferedRanged(task.get());
 
         while (!buffered_ranges.empty())
         {
@@ -563,7 +566,7 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
         .mark_ranges = std::move(request_ranges)
     };
 
-    auto responce = read_task_callback.value()(std::move(request));
+    auto responce = extension.value().callback(std::move(request));
 
     task->mark_ranges = std::move(responce.mark_ranges);
 
@@ -580,63 +583,40 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
     return Status::Accepted;
 }
 
-void MergeTreeBaseSelectProcessor::fillBufferedRanged(MarkRanges ranges)
+void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * current_task)
 {
-    // const size_t max_batch_size = 10;
-    // size_t current_batch_size = 0;
+    // assert(extension.has_value());
 
-    // buffered_ranges.emplace_back();
-
-    // for (const auto & range : ranges)
-    // {
-    //     auto expand_if_needed = [&]
-    //     {
-    //         if (current_batch_size > max_batch_size)
-    //         {
-    //             buffered_ranges.emplace_back();
-    //             current_batch_size = 0;
-    //         }
-
-    //     };
-
-    //     expand_if_needed();
-
-    //     if (range.end - range.begin < max_batch_size)
-    //     {
-    //         buffered_ranges.back().push_back(range);
-    //         current_batch_size += range.end - range.begin;
-    //         continue;
-    //     }
-
-    //     auto current_begin = range.begin;
-    //     auto current_end = range.begin + max_batch_size;
-
-    //     while (current_end < range.end)
-    //     {
-    //         buffered_ranges.back().emplace_back(current_begin, current_end);
-    //         current_batch_size += current_end - current_begin;
-    //         current_begin = current_end;
-    //         current_end = current_end + max_batch_size;
-
-    //         expand_if_needed();
-    //     }
-
-    //     if (range.end - current_begin > 0)
-    //     {
-    //         buffered_ranges.back().emplace_back(current_begin, range.end);
-    //         current_batch_size += range.end - current_begin;
-
-    //         /// Do not need to update current_begin and current_end
-
-    //         expand_if_needed();
-    //     }
+    // String log_message = "Got ranges: ";
+    // for (const auto & range: current_task->mark_ranges) {
+    //     log_message += fmt::format("({}, {}), ", range.begin, range.end);
     // }
+    // log_message += '\n';
 
-    // if (buffered_ranges.back().empty())
-    //     buffered_ranges.pop_back();
+    // auto calculate_hash = [&](MarkRange range)
+    // {
+    //     auto what = fmt::format("{}_{}_{}", current_task->data_part->info.getPartName(), range.begin, range.end);
+    //     auto hash = CityHash_v1_0_2::CityHash64(what.data(), what.size());
+    //     return ConsistentHashing(hash, extension->count_participating_replicas);
+    // };
 
-    std::sort(ranges.begin(), ranges.end());
-    buffered_ranges.emplace_back(std::move(ranges));
+    std::sort(current_task->mark_ranges.begin(), current_task->mark_ranges.end());
+
+    // auto it = std::remove_if(current_task->mark_ranges.begin(), current_task->mark_ranges.end(), [&](MarkRange range) {
+    //     return calculate_hash(range) != extension->number_of_current_replica;
+    // });
+
+    // current_task->mark_ranges.erase(it, current_task->mark_ranges.end());
+
+    // log_message += "Applied consistent hash: ";
+    // for (const auto & range: current_task->mark_ranges) {
+    //     log_message += fmt::format("({}, {}), ", range.begin, range.end);
+    // }
+    // log_message += '\n';
+
+    // LOG_TRACE(&Poco::Logger::get("MergeTreeBaseSelectProcessor"), log_message);
+
+    buffered_ranges.emplace_back(std::move(current_task->mark_ranges));
 }
 
 MergeTreeBaseSelectProcessor::~MergeTreeBaseSelectProcessor() = default;

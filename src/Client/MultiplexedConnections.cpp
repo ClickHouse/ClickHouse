@@ -18,6 +18,14 @@ namespace ErrorCodes
 }
 
 
+size_t getAutoInc() {
+    static size_t autoinc = 0;
+    auto result = autoinc;
+    ++autoinc;
+    return result;
+}
+
+
 MultiplexedConnections::MultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler)
     : settings(settings_), drain_timeout(settings.drain_timeout), receive_timeout(settings.receive_timeout)
 {
@@ -133,7 +141,14 @@ void MultiplexedConnections::sendQuery(
         }
 
         if (settings.parallel_reading_from_replicas)
+        {
             modified_settings.collaborate_with_initiator = true;
+            modified_settings.count_participating_replicas = settings.max_parallel_replicas;
+            modified_settings.number_of_current_replica = getAutoInc() % settings.max_parallel_replicas;
+
+            std::cout << fmt::format("{} {}", modified_settings.count_participating_replicas, modified_settings.number_of_current_replica);
+        }
+
     }
 
     size_t num_replicas = replica_states.size();
@@ -147,6 +162,7 @@ void MultiplexedConnections::sendQuery(
         {
             if (settings.enable_sample_offset_parallel_processing)
                 modified_settings.parallel_replica_offset = i;
+
             replica_states[i].connection->sendQuery(timeouts, query, query_id,
                 stage, &modified_settings, &client_info, with_pending_data);
         }
