@@ -403,6 +403,36 @@ void Client::initialize(Poco::Util::Application & self)
 }
 
 
+void Client::prepareForInteractive()
+{
+    clearTerminal();
+    showClientVersion();
+
+    if (delayed_interactive)
+        std::cout << std::endl;
+
+    /// Load Warnings at the beginning of connection
+    if (!config().has("no-warnings"))
+    {
+        try
+        {
+            std::vector<String> messages = loadWarningMessages();
+            if (!messages.empty())
+            {
+                std::cout << "Warnings:" << std::endl;
+                for (const auto & message : messages)
+                    std::cout << " * " << message << std::endl;
+                std::cout << std::endl;
+            }
+        }
+        catch (...)
+        {
+            /// Ignore exception
+        }
+    }
+}
+
+
 int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
@@ -429,36 +459,11 @@ try
 
     processConfig();
 
-    if (is_interactive)
-    {
-        clearTerminal();
-        showClientVersion();
-    }
-
     connect();
 
-    if (is_interactive)
+    if (is_interactive && !delayed_interactive)
     {
-        /// Load Warnings at the beginning of connection
-        if (!config().has("no-warnings"))
-        {
-            try
-            {
-                std::vector<String> messages = loadWarningMessages();
-                if (!messages.empty())
-                {
-                    std::cout << "Warnings:" << std::endl;
-                    for (const auto & message : messages)
-                        std::cout << " * " << message << std::endl;
-                    std::cout << std::endl;
-                }
-            }
-            catch (...)
-            {
-                /// Ignore exception
-            }
-        }
-
+        prepareForInteractive();
         runInteractive();
     }
     else
@@ -481,6 +486,12 @@ try
             // Shouldn't be set without an exception, but check it just in
             // case so that at least we don't lose an error.
             return -1;
+        }
+
+        if (delayed_interactive)
+        {
+            prepareForInteractive();
+            runInteractive();
         }
     }
 
@@ -555,8 +566,9 @@ void Client::connect()
     if (is_interactive)
     {
         std::cout << "Connected to " << server_name << " server version " << server_version << " revision " << server_revision << "."
-                    << std::endl
                     << std::endl;
+        if (!delayed_interactive)
+            std::cout << std::endl;
 
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
@@ -1156,11 +1168,11 @@ void Client::processConfig()
     /// - stdin is not a terminal. In this case queries are read from it.
     /// - -qf (--queries-file) command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
-    if (stdin_is_a_tty && !config().has("query") && queries_files.empty())
-    {
-        if (config().has("query") && config().has("queries-file"))
-            throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
 
+    delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
+    if (stdin_is_a_tty
+        && (delayed_interactive || (!config().has("query") && queries_files.empty())))
+    {
         is_interactive = true;
     }
     else
