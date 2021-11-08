@@ -135,6 +135,29 @@ def clear_ip_tables_and_restart_daemons():
     except subprocess.CalledProcessError as err:
         logging.info("docker rm excepted: " + str(err))
 
+    # don't restart docker if it's disabled
+    if os.environ.get("CLICKHOUSE_TESTS_RUNNER_RESTART_DOCKER", '1') == '1':
+        try:
+            logging.info("Stopping docker daemon")
+            subprocess.check_output("service docker stop", shell=True)
+        except subprocess.CalledProcessError as err:
+            logging.info("docker stop excepted: " + str(err))
+
+        try:
+            for i in range(200):
+                try:
+                    logging.info("Restarting docker %s", i)
+                    subprocess.check_output("service docker start", shell=True)
+                    subprocess.check_output("docker ps", shell=True)
+                    break
+                except subprocess.CalledProcessError as err:
+                    time.sleep(0.5)
+                    logging.info("Waiting docker to start, current %s", str(err))
+            else:
+                raise Exception("Docker daemon doesn't responding")
+        except subprocess.CalledProcessError as err:
+            logging.info("Can't reload docker: " + str(err))
+
     iptables_iter = 0
     try:
         for i in range(1000):
