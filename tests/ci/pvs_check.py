@@ -50,7 +50,7 @@ def get_commit(gh, commit_sha):
     return commit
 
 def upload_results(s3_client, pr_number, commit_sha, test_results, additional_files):
-    s3_path_prefix = str(pr_number) + "/" + commit_sha + "/" + NAME.lower().replace(' ', '_')
+    s3_path_prefix = str(pr_number) + "/" + commit_sha + "/" + NAME.lower().replace(' ', '_').replace('(', '_').replace(')', '_')
     additional_urls = process_logs(s3_client, additional_files, s3_path_prefix)
 
     branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
