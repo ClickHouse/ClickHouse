@@ -840,7 +840,7 @@ namespace
     struct ProfileEventsSnapshot
     {
         UInt64 thread_id;
-        ProfileEvents::Counters::Snapshot counters;
+        ProfileEvents::CountersIncrement counters;
         Int64 memory_usage;
         time_t current_time;
     };
@@ -858,7 +858,7 @@ namespace
         auto & value_column = columns[VALUE_COLUMN_INDEX];
         for (ProfileEvents::Event event = 0; event < ProfileEvents::Counters::num_counters; ++event)
         {
-            UInt64 value = snapshot.counters[event];
+            Int64 value = snapshot.counters[event];
 
             if (value == 0)
                 continue;
@@ -910,7 +910,7 @@ void TCPHandler::sendProfileEvents()
         { "thread_id",    std::make_shared<DataTypeUInt64>()   },
         { "type",         ProfileEvents::TypeEnum              },
         { "name",         std::make_shared<DataTypeString>()   },
-        { "value",        std::make_shared<DataTypeUInt64>()   },
+        { "value",        std::make_shared<DataTypeInt64>()   },
     };
 
     ColumnsWithTypeAndName temp_columns;
@@ -937,7 +937,10 @@ void TCPHandler::sendProfileEvents()
             auto counters = thread->performance_counters.getPartiallyAtomicSnapshot();
             auto memory_usage = thread->memory_tracker.get();
             auto previous_snapshot = last_sent_snapshots.find(thread_id);
-            auto increment = previous_snapshot != last_sent_snapshots.end() ? counters - previous_snapshot->second : counters;
+            auto increment =
+                previous_snapshot != last_sent_snapshots.end()
+                ? CountersIncrement(counters, previous_snapshot->second)
+                : CountersIncrement(counters);
             snapshots.push_back(ProfileEventsSnapshot{
                 thread_id,
                 std::move(increment),
@@ -952,7 +955,10 @@ void TCPHandler::sendProfileEvents()
         group_snapshot.memory_usage = thread_group->memory_tracker.get();
         auto group_counters         = thread_group->performance_counters.getPartiallyAtomicSnapshot();
         auto prev_group_snapshot    = last_sent_snapshots.find(0);
-        group_snapshot.counters     = prev_group_snapshot != last_sent_snapshots.end() ? group_counters - prev_group_snapshot->second : group_counters;
+        group_snapshot.counters     =
+            prev_group_snapshot != last_sent_snapshots.end()
+            ? CountersIncrement(group_counters, prev_group_snapshot->second)
+            : CountersIncrement(group_counters);
         new_snapshots[0]            = std::move(group_counters);
     }
     last_sent_snapshots = std::move(new_snapshots);
