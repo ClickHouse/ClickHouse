@@ -90,6 +90,9 @@ function start()
         # use root to match with current uid
         clickhouse start --user root >/var/log/clickhouse-server/stdout.log 2>>/var/log/clickhouse-server/stderr.log
         sleep 0.5
+        cat /var/log/clickhouse-server/stdout.log
+        tail -n200 /var/log/clickhouse-server/stderr.log
+        tail -n200 /var/log/clickhouse-server/clickhouse-server.log
         counter=$((counter + 1))
     done
 
