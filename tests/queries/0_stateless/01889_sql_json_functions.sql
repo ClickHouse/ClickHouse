@@ -13,8 +13,10 @@ SELECT JSON_VALUE('{"hello":{"world":"!"}}', '$.hello');
 SELECT JSON_VALUE('{hello:world}', '$.hello'); -- invalid json => default value (empty string)
 SELECT JSON_VALUE('', '$.hello');
 SELECT JSON_VALUE('{"foo foo":"bar"}', '$."foo foo"');
-SELECT JSON_VALUE('{"smiley":"\\uD83D\\uDE0A"}', '$.smiley');
 SELECT JSON_VALUE('{"hello":"\\uD83C\\uDF3A \\uD83C\\uDF38 \\uD83C\\uDF37 Hello, World \\uD83C\\uDF37 \\uD83C\\uDF38 \\uD83C\\uDF3A"}', '$.hello');
+SELECT JSON_VALUE('{"a":"Hello \\"World\\" \\\\"}', '$.a');
+select JSON_VALUE('{"a":"\\n\\u0000"}', '$.a');
+select JSON_VALUE('{"a":"\\u263a"}', '$.a');
 
 SELECT '--JSON_QUERY--';
 SELECT JSON_QUERY('{"hello":1}', '$');
