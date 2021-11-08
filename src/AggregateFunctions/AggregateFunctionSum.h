@@ -2,7 +2,6 @@
 
 #include <cstring>
 #include <memory>
-#include <experimental/type_traits>
 #include <type_traits>
 
 #include <IO/WriteHelpers.h>
