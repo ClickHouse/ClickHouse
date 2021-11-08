@@ -269,9 +269,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     ctx->is_cancelled = [merges_blocker = global_ctx->merges_blocker,
         ttl_merges_blocker = global_ctx->ttl_merges_blocker,
-        need_remove = ctx->need_remove_expired_values]() -> bool
+        need_remove = ctx->need_remove_expired_values,
+        merge_list_element = global_ctx->merge_list_element_ptr]() -> bool
     {
-        return merges_blocker->isCancelled() || (need_remove && ttl_merges_blocker->isCancelled());
+        return merges_blocker->isCancelled()
+            || (need_remove && ttl_merges_blocker->isCancelled())
+            || merge_list_element->is_cancelled.load(std::memory_order_relaxed);
     };
 
     /// This is the end of preparation. Execution will be per block.
