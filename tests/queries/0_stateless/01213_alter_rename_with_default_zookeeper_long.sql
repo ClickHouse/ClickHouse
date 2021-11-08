@@ -38,11 +38,11 @@ CREATE TABLE table_rename_with_ttl
   date1 Date,
   date2 Date,
   value1 String,
-  value2 String TTL date1 + INTERVAL 10000 MONTH
+  value2 String TTL date1 + INTERVAL 500 MONTH
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/{database}/test_01213/table_rename_with_ttl', '1')
 ORDER BY tuple()
-TTL date2 + INTERVAL 10000 MONTH;
+TTL date2 + INTERVAL 500 MONTH;
 
 INSERT INTO table_rename_with_ttl SELECT toDateTime(toDate('2019-10-01') + number % 3, 'Europe/Moscow'), toDateTime(toDate('2018-10-01') + number % 3, 'Europe/Moscow'), toString(number), toString(number) from numbers(9);
 
