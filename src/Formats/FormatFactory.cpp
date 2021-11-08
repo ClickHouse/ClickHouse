@@ -52,14 +52,14 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.avro.output_sync_interval = settings.output_format_avro_sync_interval;
     format_settings.avro.schema_registry_url = settings.format_avro_schema_registry_url.toString();
     format_settings.avro.string_column_pattern = settings.output_format_avro_string_column_pattern.toString();
+    format_settings.avro.output_rows_in_file = settings.output_format_avro_rows_in_file;
     format_settings.csv.allow_double_quotes = settings.format_csv_allow_double_quotes;
     format_settings.csv.allow_single_quotes = settings.format_csv_allow_single_quotes;
     format_settings.csv.crlf_end_of_line = settings.output_format_csv_crlf_end_of_line;
     format_settings.csv.delimiter = settings.format_csv_delimiter;
-    format_settings.csv.empty_as_default = settings.input_format_defaults_for_omitted_fields;
+    format_settings.csv.empty_as_default = settings.input_format_csv_empty_as_default;
     format_settings.csv.input_format_enum_as_number = settings.input_format_csv_enum_as_number;
-    format_settings.csv.null_representation = settings.output_format_csv_null_representation;
-    format_settings.csv.unquoted_null_literal_as_null = settings.input_format_csv_unquoted_null_literal_as_null;
+    format_settings.csv.null_representation = settings.format_csv_null_representation;
     format_settings.csv.input_format_arrays_as_nested_csv = settings.input_format_csv_arrays_as_nested_csv;
     format_settings.custom.escaping_rule = settings.format_custom_escaping_rule;
     format_settings.custom.field_delimiter = settings.format_custom_field_delimiter;
@@ -102,15 +102,17 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.tsv.crlf_end_of_line = settings.output_format_tsv_crlf_end_of_line;
     format_settings.tsv.empty_as_default = settings.input_format_tsv_empty_as_default;
     format_settings.tsv.input_format_enum_as_number = settings.input_format_tsv_enum_as_number;
-    format_settings.tsv.null_representation = settings.output_format_tsv_null_representation;
+    format_settings.tsv.null_representation = settings.format_tsv_null_representation;
     format_settings.values.accurate_types_of_literals = settings.input_format_values_accurate_types_of_literals;
     format_settings.values.deduce_templates_of_expressions = settings.input_format_values_deduce_templates_of_expressions;
     format_settings.values.interpret_expressions = settings.input_format_values_interpret_expressions;
     format_settings.with_names_use_header = settings.input_format_with_names_use_header;
+    format_settings.with_types_use_header = settings.input_format_with_types_use_header;
     format_settings.write_statistics = settings.output_format_write_statistics;
     format_settings.arrow.low_cardinality_as_dictionary = settings.output_format_arrow_low_cardinality_as_dictionary;
     format_settings.arrow.import_nested = settings.input_format_arrow_import_nested;
     format_settings.orc.import_nested = settings.input_format_orc_import_nested;
+    format_settings.defaults_for_omitted_fields = settings.input_format_defaults_for_omitted_fields;
     format_settings.capn_proto.enum_comparing_mode = settings.format_capn_proto_enum_comparising_mode;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
