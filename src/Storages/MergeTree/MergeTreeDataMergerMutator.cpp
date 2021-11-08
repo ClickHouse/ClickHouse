@@ -684,10 +684,15 @@ MergeTreeDataMergerMutator::getColumnsForNewDataPart(
     NameSet removed_columns;
     NameToNameMap renamed_columns_to_from;
     NameToNameMap renamed_columns_from_to;
+    ColumnsDescription part_columns(source_part->getColumns());
 
     /// All commands are validated in AlterCommand so we don't care about order
     for (const auto & command : commands_for_removes)
     {
+        /// If we don't have this column in source part, than we don't need to materialize it
+        if (!part_columns.has(command.column_name))
+            continue;
+
         if (command.type == MutationCommand::DROP_COLUMN)
             removed_columns.insert(command.column_name);
 

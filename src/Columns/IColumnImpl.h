@@ -149,22 +149,34 @@ double IColumn::getRatioOfDefaultRowsImpl(double sample_ratio) const
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Value of 'sample_ratio' must be in interval (0.0; 1.0], but got: {}", sample_ratio);
 
+    /// Randomize a little to avoid boundary effects.
+    std::uniform_int_distribution<size_t> dist(1, static_cast<size_t>(1.0 / sample_ratio));
+
     size_t num_rows = size();
     size_t num_sampled_rows = static_cast<size_t>(num_rows * sample_ratio);
-    if (num_sampled_rows == 0)
-        return 0.0;
-
-    size_t step = num_rows / num_sampled_rows;
-    std::uniform_int_distribution<size_t> dist(1, step);
-
+    size_t num_checked_rows = dist(thread_local_rng);
+    num_sampled_rows = std::min(num_sampled_rows + dist(thread_local_rng), num_rows);
     size_t res = 0;
-    for (size_t i = 0; i < num_rows; i += step)
+
+    if (num_sampled_rows == num_rows)
     {
-        size_t idx = std::min(i + dist(thread_local_rng), num_rows - 1);
-        res += static_cast<const Derived &>(*this).isDefaultAt(idx);
+        for (size_t i = 0; i < num_rows; ++i)
+            res += static_cast<const Derived &>(*this).isDefaultAt(i);
+        num_checked_rows = num_rows;
+    }
+    else if (num_sampled_rows != 0)
+    {
+        for (size_t i = num_checked_rows; i < num_rows; ++i)
+        {
+            if (num_checked_rows * num_rows <= i * num_sampled_rows)
+            {
+                res += static_cast<const Derived &>(*this).isDefaultAt(i);
+                ++num_checked_rows;
+            }
+        }
     }
 
-    return static_cast<double>(res) / num_sampled_rows;
+    return static_cast<double>(res) / num_checked_rows;
 }
 
 template <typename Derived>
