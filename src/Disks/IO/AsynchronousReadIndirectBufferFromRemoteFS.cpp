@@ -59,7 +59,14 @@ String AsynchronousReadIndirectBufferFromRemoteFS::getFileName() const
 
 bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
 {
-    /// Position is set only for MergeTree tables.
+    /**
+     * Note: read_until_position here can be zero only for non-MergeTree tables.
+     * For mergeTree tables it must be guaranteed that setReadUntilPosition() or
+     * setReadUntilEnd() is called before any read or prefetch.
+     * setReadUntilEnd() always sets read_until_position to file size.
+     * setReadUntilPosition(pos) always has pos > 0, because if
+     * right_offset_in_compressed_file is 0, then setReadUntilEnd() is used.
+     */
     if (read_until_position)
     {
         /// Everything is already read.
