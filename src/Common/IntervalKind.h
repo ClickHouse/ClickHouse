@@ -58,4 +58,15 @@ struct IntervalKind
     /// For example, `IntervalKind::tryParseString('second', result)` returns `result` equals `IntervalKind::Kind::Second`.
     static bool tryParseString(const std::string & kind, IntervalKind::Kind & result);
 };
+
+#define FOR_EACH_INTERVAL_KIND(M) \
+    M(Second) \
+    M(Minute) \
+    M(Hour) \
+    M(Day) \
+    M(Week) \
+    M(Month) \
+    M(Quarter) \
+    M(Year)
+
 }

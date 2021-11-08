@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class AccessControlManager;
+class AccessControl;
 class ASTShowGrantsQuery;
 struct IAccessEntity;
 using AccessEntityPtr = std::shared_ptr<const IAccessEntity>;
@@ -20,7 +20,7 @@ public:
 
     BlockIO execute() override;
 
-    static ASTs getGrantQueries(const IAccessEntity & user_or_role, const AccessControlManager & access_control);
+    static ASTs getGrantQueries(const IAccessEntity & user_or_role, const AccessControl & access_control);
     static ASTs getAttachGrantQueries(const IAccessEntity & user_or_role);
 
     bool ignoreQuota() const override { return true; }

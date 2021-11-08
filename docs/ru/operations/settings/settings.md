@@ -922,6 +922,17 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 log_query_threads=1
 ```
 
+## log_formatted_queries {#settings-log-formatted-queries}
+
+Позволяет регистрировать отформатированные запросы в системной таблице [system.query_log](../../operations/system-tables/query_log.md).
+
+Возможные значения:
+
+-   0 — отформатированные запросы не регистрируются в системной таблице.
+-   1 — отформатированные запросы регистрируются в системной таблице.
+
+Значение по умолчанию: `0`.
+
 ## log_comment {#settings-log-comment}
 
 Задаёт значение поля `log_comment` таблицы [system.query_log](../system-tables/query_log.md) и текст комментария в логе сервера.
