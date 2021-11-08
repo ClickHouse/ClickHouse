@@ -192,12 +192,19 @@ public:
 
         Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
+        RemoteFSStream res;
+
         if (!outcome.IsSuccess())
-            throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+        {
+            if (outcome.GetError().GetExceptionName() == "InvalidRange")
+            { /// offset is out of available size
+                return res;
+            }
+            else
+                throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
+        }
 
         read_result = outcome.GetResultWithOwnership();
-
-        RemoteFSStream res;
 
         String range_header = read_result.GetContentRange();
         Range range;

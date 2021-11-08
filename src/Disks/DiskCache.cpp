@@ -413,7 +413,7 @@ void DiskCacheLRUPolicy::read(const String & key, size_t offset, size_t size)
 DiskCache::DiskCache(std::shared_ptr<DiskLocal> cache_disk_, std::shared_ptr<DiskCachePolicy> cache_policy_) :
     cache_disk(cache_disk_), cache_policy(cache_policy_)
 {
-
+    reload();
 }
 
 class CacheableReadBufferDecorator : public ReadBuffer
@@ -846,21 +846,28 @@ private:
                     LOG_TRACE(log, "Remove cached file {}", cache_path);
                     cache_disk->removeFileIfExists(cache_path);
                 }
+
                 auto s3from = downloader->get(part.offset, part.size);
-                String cache_path = cache_base_path + "_" + std::to_string(part.offset);
-                from = std::unique_ptr<ReadBuffer>{ new CacheableReadBufferDecorator(s3from.stream,
-                    cache_disk, cache_policy, cache_key, cache_path,
-                    s3from.file_size,
-                    part.offset, s3from.expected_size) };
-                current_offset = part.offset + s3from.expected_size;
+                if (s3from.stream)
+                {
+                    String cache_path = cache_base_path + "_" + std::to_string(part.offset);
+                    from = std::unique_ptr<ReadBuffer>{ new CacheableReadBufferDecorator(s3from.stream,
+                        cache_disk, cache_policy, cache_key, cache_path,
+                        s3from.file_size,
+                        part.offset, s3from.expected_size) };
+                    current_offset = part.offset + s3from.expected_size;
+                }
             }
 
             if (part.type == DiskCachePolicy::CachePart::CachePartType::ABSENT_NO_CACHE)
             {
                 LOG_TRACE(log, "ensureFrom download from s3 {}-{} without caching", part.offset, part.size);
                 auto s3from = downloader->get(part.offset, part.size);
-                from = std::move(s3from.stream);
-                current_offset = part.offset + s3from.expected_size;
+                if (s3from.stream)
+                {
+                    from = std::move(s3from.stream);
+                    current_offset = part.offset + s3from.expected_size;
+                }
             }
         }
     }
@@ -927,6 +934,76 @@ String DiskCache::getCacheBasePath(const String & key)
     path += key;
     //path += "_" + std::to_string(offset);
     return path;
+}
+
+void DiskCache::reload()
+{
+    String root = cache_disk->getPath();
+
+    if (!cache_disk->exists(root))
+        return;
+
+    auto & log = Poco::Logger::get("DiskCache");
+
+    LOG_TRACE(&log, "Reload DiskCache from {}", root);
+
+    for (auto it = cache_disk->iterateDirectory(root); it->isValid(); it->next())
+    {
+        if (cache_disk->isDirectory(it->path()))
+        {
+            std::unordered_set<String> files_to_remove;
+
+            LOG_TRACE(&log, "Reload DiskCache folder {}", it->path());
+            for (auto itf = cache_disk->iterateDirectory(it->path()); itf->isValid(); itf->next())
+            {
+                if (!cache_disk->isFile(itf->path()))
+                    continue;
+
+                String name = itf->name();
+                if (files_to_remove.count(itf->path()))
+                    continue;
+
+                /// name should be 'KEY(lower case hex, 32 symbols)_OFFSET(dec, 1+ symbols)'
+
+                auto delimiter = name.find('_');
+                if (delimiter != 32)
+                {
+                    LOG_WARNING(&log, "Wrong file name in disk cache: {}", name);
+                    continue;
+                }
+
+                String key = name.substr(0, delimiter);
+                String off = name.substr(delimiter + 1);
+
+                if (key.find_first_not_of("0123456789abcdef") != std::string::npos
+                        || off.empty() || off.find_first_not_of("0123456789") != std::string::npos)
+                {
+                    LOG_WARNING(&log, "Wrong file name in disk cache: {}", name);
+                    continue;
+                }
+
+                LOG_TRACE(&log, "Reload DiskCache file {}", itf->path());
+
+                size_t offset = std::stoull(off);
+                size_t size = cache_disk->getFileSize(itf->path());
+
+                size_t cache_file_size = 0;
+
+                auto to_remove = cache_policy->add(key, cache_file_size, offset, size);
+                for (auto & entry_to_remove : to_remove)
+                {
+                    String cache_path_ = DiskCache::getCacheBasePath(entry_to_remove.first) + "_" + std::to_string(entry_to_remove.second);
+                    files_to_remove.insert(cache_path_);
+                }
+            }
+
+            for (auto & file_to_remove : files_to_remove)
+            {
+                LOG_TRACE(&log, "Remove cached file {}", file_to_remove);
+                cache_disk->removeFileIfExists(file_to_remove);
+            }
+        }
+    }
 }
 
 }

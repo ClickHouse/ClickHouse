@@ -155,6 +155,9 @@ public:
 private:
     String getKey(const String & path);
 
+    // reload cache from disk after restart
+    void reload();
+
     std::shared_ptr<DiskLocal> cache_disk;
     std::shared_ptr<DiskCachePolicy> cache_policy;
 };
