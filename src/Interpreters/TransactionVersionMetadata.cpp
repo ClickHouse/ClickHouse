@@ -1,35 +1,18 @@
-#include <Common/TransactionMetadata.h>
-#include <Common/SipHash.h>
+#include <Interpreters/TransactionVersionMetadata.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <Interpreters/TransactionLog.h>
+
+//#include <base/logger_useful.h>
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int SERIALIZATION_ERROR;
-extern const int LOGICAL_ERROR;
-}
-
-DataTypePtr TransactionID::getDataType()
-{
-    DataTypes types;
-    types.push_back(std::make_shared<DataTypeUInt64>());
-    types.push_back(std::make_shared<DataTypeUInt64>());
-    types.push_back(std::make_shared<DataTypeUUID>());
-    return std::make_shared<DataTypeTuple>(std::move(types));
-}
-
-TIDHash TransactionID::getHash() const
-{
-    SipHash hash;
-    hash.update(start_csn);
-    hash.update(local_tid);
-    hash.update(host_id);
-    return hash.get64();
+    extern const int SERIALIZATION_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 /// It can be used for introspection purposes only
@@ -62,8 +45,8 @@ void VersionMetadata::lockMaxTID(const TransactionID & tid, const String & error
     if (!locked)
     {
         throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Serialization error: "
-                        "Transaction {} tried to remove data part, "
-                        "but it's locked ({}) by another transaction {} which is currently removing this part. {}",
+                                                         "Transaction {} tried to remove data part, "
+                                                         "but it's locked ({}) by another transaction {} which is currently removing this part. {}",
                         tid, expected_max_lock_value, getMaxTID(), error_context);
     }
 
@@ -112,10 +95,13 @@ bool VersionMetadata::isVisible(const MergeTreeTransaction & txn)
 
 bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current_tid)
 {
+    //Poco::Logger * log = &Poco::Logger::get("WTF");
     assert(mintid);
     CSN min = mincsn.load(std::memory_order_relaxed);
     TIDHash max_lock = maxtid_lock.load(std::memory_order_relaxed);
     CSN max = maxcsn.load(std::memory_order_relaxed);
+
+    //LOG_TRACE(log, "Checking if mintid {} mincsn {} maxtidhash {} maxcsn {} visible for {} {}", mintid, min, max_lock, max, snapshot_version, current_tid);
 
     [[maybe_unused]] bool had_mincsn = min;
     [[maybe_unused]] bool had_maxtid = max_lock;
@@ -151,13 +137,14 @@ bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current
 
     /// Data part has mintid/maxtid, but does not have mincsn/maxcsn.
     /// It means that some transaction is creating/removing the part right now or has done it recently
-    /// and we don't know if it was already committed ot not.
+    /// and we don't know if it was already committed or not.
     assert(!had_mincsn || (had_maxtid && !had_maxcsn));
     assert(!current_tid || (mintid != current_tid && max_lock != current_tid.getHash()));
 
     /// Before doing CSN lookup, let's check some extra conditions.
-    /// If snapshot_version <= some_tid.start_csn, then changes of transaction with some_tid
-    /// are definitely not visible for us, so we don't need to check if it was committed.
+    /// If snapshot_version <= some_tid.start_csn, then changes of the transaction with some_tid
+    /// are definitely not visible for us (because the transaction can be committed with greater CSN only),
+    /// so we don't need to check if it was committed.
     if (snapshot_version <= mintid.start_csn)
         return false;
 
@@ -169,16 +156,18 @@ bool VersionMetadata::isVisible(Snapshot snapshot_version, TransactionID current
     /// But for long-running writing transactions we will always do
     /// CNS lookup and get 0 (UnknownCSN) until the transaction is committer/rolled back.
     min = TransactionLog::instance().getCSN(mintid);
+    //LOG_TRACE(log, "Got min {}", min);
     if (!min)
         return false;   /// Part creation is not committed yet
 
-    /// We don't need to check if CSNs are already writen or not,
-    /// because once writen CSN cannot be changed, so it's safe to overwrite it (with tha same value).
+    /// We don't need to check if CSNs are already written or not,
+    /// because once written CSN cannot be changed, so it's safe to overwrite it (with the same value).
     mincsn.store(min, std::memory_order_relaxed);
 
     if (max_lock)
     {
         max = TransactionLog::instance().getCSN(max_lock);
+        //LOG_TRACE(log, "Got ax {}", max);
         if (max)
             maxcsn.store(max, std::memory_order_relaxed);
     }
@@ -219,6 +208,15 @@ bool VersionMetadata::canBeRemoved(Snapshot oldest_snapshot_version)
     }
 
     return max <= oldest_snapshot_version;
+}
+
+DataTypePtr getTransactionIDDataType()
+{
+    DataTypes types;
+    types.push_back(std::make_shared<DataTypeUInt64>());
+    types.push_back(std::make_shared<DataTypeUInt64>());
+    types.push_back(std::make_shared<DataTypeUUID>());
+    return std::make_shared<DataTypeTuple>(std::move(types));
 }
 
 }

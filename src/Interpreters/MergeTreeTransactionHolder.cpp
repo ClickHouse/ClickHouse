@@ -61,7 +61,7 @@ MergeTreeTransactionHolder::MergeTreeTransactionHolder(const MergeTreeTransactio
     txn = nullptr;
 }
 
-MergeTreeTransactionHolder & MergeTreeTransactionHolder::operator=(const MergeTreeTransactionHolder &)
+MergeTreeTransactionHolder & MergeTreeTransactionHolder::operator=(const MergeTreeTransactionHolder &)  // NOLINT
 {
     assert(txn == nullptr);
     return *this;

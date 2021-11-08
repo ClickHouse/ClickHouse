@@ -1,6 +1,7 @@
 #include <Interpreters/TransactionLog.h>
-#include <Common/TransactionMetadata.h>
+#include <Interpreters/TransactionVersionMetadata.h>
 #include <Common/Exception.h>
+#include <Core/ServerUUID.h>
 #include <base/logger_useful.h>
 
 namespace DB
@@ -20,9 +21,9 @@ TransactionLog & TransactionLog::instance()
 TransactionLog::TransactionLog()
     : log(&Poco::Logger::get("TransactionLog"))
 {
-    latest_snapshot = 1;
-    csn_counter = 1;
-    local_tid_counter = 1;
+    latest_snapshot = Tx::MaxReservedCSN;
+    csn_counter = Tx::MaxReservedCSN;
+    local_tid_counter = Tx::MaxReservedLocalTID;
 }
 
 Snapshot TransactionLog::getLatestSnapshot() const
@@ -37,7 +38,7 @@ MergeTreeTransactionPtr TransactionLog::beginTransaction()
         std::lock_guard lock{running_list_mutex};
         Snapshot snapshot = latest_snapshot.load();
         LocalTID ltid = 1 + local_tid_counter.fetch_add(1);
-        txn = std::make_shared<MergeTreeTransaction>(snapshot, ltid, UUIDHelpers::Nil);
+        txn = std::make_shared<MergeTreeTransaction>(snapshot, ltid, ServerUUID::get());
         bool inserted = running_list.try_emplace(txn->tid.getHash(), txn).second;
         if (!inserted)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "I's a bug: TID {} {} exists", txn->tid.getHash(), txn->tid);

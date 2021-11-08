@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: long, no-parallel
+# Test is too heavy, avoid parallel run in Flaky Check
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

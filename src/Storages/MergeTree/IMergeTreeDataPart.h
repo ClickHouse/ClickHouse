@@ -13,7 +13,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Common/TransactionMetadata.h>
+#include <Interpreters/TransactionVersionMetadata.h>
 
 #include <shared_mutex>
 

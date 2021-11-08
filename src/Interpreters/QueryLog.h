@@ -3,7 +3,7 @@
 #include <Core/NamesAndAliases.h>
 #include <Interpreters/SystemLog.h>
 #include <Interpreters/ClientInfo.h>
-#include <Common/TransactionMetadata.h>
+#include <Interpreters/TransactionVersionMetadata.h>
 
 namespace ProfileEvents
 {

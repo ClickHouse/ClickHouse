@@ -29,7 +29,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes &) const override
     {
-        return TransactionID::getDataType();
+        return getTransactionIDDataType();
     }
 
     bool isDeterministic() const override { return false; }

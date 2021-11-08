@@ -2725,7 +2725,7 @@ MergeTreeData::DataPartsVector MergeTreeData::removePartsInRangeFromWorkingSet(
 
 void MergeTreeData::restoreAndActivatePart(const DataPartPtr & part, DataPartsLock * acquired_lock)
 {
-    auto lock = (acquired_lock) ? DataPartsLock() : lockParts();
+    auto lock = (acquired_lock) ? DataPartsLock() : lockParts();    //-V1018
     assert(part->getState() != DataPartState::Committed);
     addPartContributionToColumnAndSecondaryIndexSizes(part);
     addPartContributionToDataVolume(part);

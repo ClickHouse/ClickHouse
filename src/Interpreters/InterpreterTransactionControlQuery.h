@@ -20,8 +20,8 @@ public:
     bool ignoreLimits() const override { return true; }
 private:
     BlockIO executeBegin(ContextMutablePtr session_context);
-    BlockIO executeCommit(ContextMutablePtr session_context);
-    BlockIO executeRollback(ContextMutablePtr session_context);
+    static BlockIO executeCommit(ContextMutablePtr session_context);
+    static BlockIO executeRollback(ContextMutablePtr session_context);
 
 private:
     ContextMutablePtr query_context;
