@@ -65,7 +65,7 @@ def upload_results(s3_client, pr_number, commit_sha, test_results, additional_fi
     raw_log_url = additional_urls[0]
     additional_urls.pop(0)
 
-    html_report = create_test_html_report(NAME, test_results, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls)
+    html_report = create_test_html_report(NAME, test_results, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls, False)
     with open('report.html', 'w') as f:
         f.write(html_report)
 
@@ -77,7 +77,7 @@ def upload_results(s3_client, pr_number, commit_sha, test_results, additional_fi
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     repo_path = os.path.join(os.getenv("REPO_COPY", os.path.abspath("../../")))
-    temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'pvs_check')
+    temp_path = os.path.join(os.getenv("TEMP_PATH"))
 
     with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
         event = json.load(event_file)
