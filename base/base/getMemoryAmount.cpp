@@ -31,7 +31,7 @@ uint64_t getMemoryAmountOrZero()
     std::ifstream cgroup_limit("/sys/fs/cgroup/memory/memory.limit_in_bytes");
     if (cgroup_limit.is_open())
     {
-        int64_t memory_limit = 0; // in case of read error
+        uint64_t memory_limit = 0; // in case of read error
         cgroup_limit >> memory_limit;
         if (memory_limit > 0 && memory_limit < memory_amount)
             memory_amount = memory_limit;
