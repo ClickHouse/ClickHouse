@@ -138,6 +138,9 @@ empty input fields are replaced with default values. For complex default express
 
 Each element of [Nested](../sql-reference/data-types/nested-data-structures/nested.md) structures is represented as array.
 
+In input data ENUM values can be represented as names or as ids. First we try to match input value to ENUM name, if we fail and input value is a number, then we try to match this number to ENUM id.
+If input data contains only ENUM ids, it's recommended to enable setting [input_format_tsv_enum_as_number](../operations/settings/settings.md#settings-input_format_tsv_enum_as_number) to optimize ENUM parsing.
+
 For example:
 
 ``` sql
@@ -407,6 +410,9 @@ If setting [input_format_csv_empty_as_default](../operations/settings/settings.m
 empty unquoted input values are replaced with default values. For complex default expressions [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#settings-input_format_defaults_for_omitted_fields) must be enabled too.
 
 `NULL` is formatted according to setting [format_csv_null_representation](../operations/settings/settings.md#settings-format_csv_null_representation) (default value is `\N`).
+
+In input data ENUM values can be represented as names or as ids. First we try to match input value to ENUM name, if we fail and input value is a number, then we try to match this number to ENUM id.
+If input data contains only ENUM ids, it's recommended to enable setting [input_format_csv_enum_as_number](../operations/settings/settings.md#settings-input_format_csv_enum_as_number) to optimize ENUM parsing.
 
 The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
 
