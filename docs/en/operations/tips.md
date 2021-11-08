@@ -72,8 +72,8 @@ For HDD, enable the write cache.
 ## File System {#file-system}
 
 Ext4 is the most reliable option. Set the mount options `noatime`.
-XFS is also suitable, but it hasn’t been as thoroughly tested with ClickHouse.
-Most other file systems should also work fine. File systems with delayed allocation work better.
+XFS should be avoided. It works mostly fine but there are some reports about lower performance.
+Most other file systems should also work fine.
 
 ## Linux Kernel {#linux-kernel}
 
