@@ -2,8 +2,10 @@
 
 #include <Client/ClientBase.h>
 
+
 namespace DB
 {
+
 class Client : public ClientBase
 {
 public:
