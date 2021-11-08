@@ -399,7 +399,7 @@ Default value: 1.
 
 ## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
-When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) and [TabSeparated](../../interfaces/formats.md#tabseparated) formats.
+When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv), [TabSeparated](../../interfaces/formats.md#tabseparated) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
 
 !!! note "Note"
     When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
@@ -417,14 +417,20 @@ When enabled, replace empty input fields in TSV with default values. For complex
 
 Disabled by default.
 
+## input_format_csv_empty_as_default {#settings-input-format-csv-empty-as-default}
+
+When enabled, replace empty input fields in CSV with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
+
+Enabled by default.
+
 ## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
 
-Enables or disables parsing enum values as enum ids for TSV input format.
+When enabled, always treat enum values as enum ids for TSV input format. It's recommended to enable this setting if data contains only enum ids to optimize enum parsing.
 
 Possible values:
 
--   0 — Enum values are parsed as values.
--   1 — Enum values are parsed as enum IDs.
+-   0 — Enum values are parsed as values or as enum IDs.
+-   1 — Enum values are parsed only as enum IDs.
 
 Default value: 0.
 
@@ -438,10 +444,39 @@ CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' 
 
 When the `input_format_tsv_enum_as_number` setting is enabled:
 
+Query:
+
 ```sql
 SET input_format_tsv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	1;
+SELECT * FROM table_with_enum_column_for_tsv_insert;
+```
+
+Result:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+```
+
+Query:
+
+```sql
+SET input_format_tsv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
+```
+
+throws an exception.
+
+When the `input_format_tsv_enum_as_number` setting is disabled:
+
+Query:
+
+```sql
+SET input_format_tsv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
 SELECT * FROM table_with_enum_column_for_tsv_insert;
 ```
 
@@ -455,15 +490,6 @@ Result:
 │ 103 │ first  │
 └─────┴────────┘
 ```
-
-When the `input_format_tsv_enum_as_number` setting is disabled, the `INSERT` query:
-
-```sql
-SET input_format_tsv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-```
-
-throws an exception.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
@@ -540,8 +566,40 @@ To improve insert performance, we recommend disabling this check if you are sure
 
 Supported formats:
 
--   [CSVWithNames](../../interfaces/formats.md#csvwithnames)
--   [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [CSVWithNames](../../interfaces/formats.md#csvwithnamesandtypes)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [TabSeparatedWithNamesAndTypes](../../interfaces/formats.md#tabseparatedwithnamesandtypes)
+- [JSONCompactEachRowWithNames](../../interfaces/formats.md#jsoncompacteachrowwithnames)
+- [JSONCompactEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompacteachrowwithnamesandtypes)
+- [JSONCompactStringsEachRowWithNames](../../interfaces/formats.md#jsoncompactstringseachrowwithnames)
+- [JSONCompactStringsEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompactstringseachrowwithnamesandtypes)
+- [RowBinaryWithNames](../../interfaces/formats.md#rowbinarywithnames-rowbinarywithnames)
+- [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes-rowbinarywithnamesandtypes)
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 1.
+
+## input_format_with_types_use_header {#settings-input-format-with-types-use-header}
+
+Controls whether format parser should check if data types from the input data match data types from the target table.
+
+Supported formats:
+
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [CSVWithNames](../../interfaces/formats.md#csvwithnamesandtypes)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [TabSeparatedWithNamesAndTypes](../../interfaces/formats.md#tabseparatedwithnamesandtypes)
+- [JSONCompactEachRowWithNames](../../interfaces/formats.md#jsoncompacteachrowwithnames)
+- [JSONCompactEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompacteachrowwithnamesandtypes)
+- [JSONCompactStringsEachRowWithNames](../../interfaces/formats.md#jsoncompactstringseachrowwithnames)
+- [JSONCompactStringsEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompactstringseachrowwithnamesandtypes)
+- [RowBinaryWithNames](../../interfaces/formats.md#rowbinarywithnames-rowbinarywithnames)
+- [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes-rowbinarywithnamesandtypes)
 
 Possible values:
 
@@ -954,6 +1012,16 @@ Example:
 log_query_views=1
 ```
 
+## log_formatted_queries {#settings-log-formatted-queries}
+
+Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table.
+
+Possible values:
+
+-   0 — Formatted queries are not logged in the system table.
+-   1 — Formatted queries are logged in the system table.
+
+Default value: `0`.
 
 ## log_comment {#settings-log-comment}
 
@@ -1397,6 +1465,32 @@ Minimum count of executing same expression before it is get compiled.
 
 Default value: `3`.
 
+## compile_aggregate_expressions {#compile_aggregate_expressions}
+
+Enables or disables JIT-compilation of aggregate functions to native code. Enabling this setting can improve the performance.
+
+Possible values:
+
+-   0 — Aggregation is done without JIT compilation.
+-   1 — Aggregation is done using JIT compilation.
+
+Default value: `1`.
+
+**See Also** 
+
+-   [min_count_to_compile_aggregate_expression](#min_count_to_compile_aggregate_expression)
+
+## min_count_to_compile_aggregate_expression {#min_count_to_compile_aggregate_expression}
+
+The minimum number of identical aggregate expressions to start JIT-compilation. Works only if the [compile_aggregate_expressions](#compile_aggregate_expressions) setting is enabled.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Identical aggregate expressions are always JIT-compiled.
+
+Default value: `3`.
+
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md#json) format.
@@ -1512,18 +1606,14 @@ When `output_format_json_quote_denormals = 1`, the query returns:
 
 The character is interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
 
-## input_format_csv_unquoted_null_literal_as_null {#settings-input_format_csv_unquoted_null_literal_as_null}
-
-For CSV input format enables or disables parsing of unquoted `NULL` as literal (synonym for `\N`).
-
 ## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
 
-Enables or disables parsing enum values as enum ids for CSV input format.
+When enabled, always treat enum values as enum ids for CSV input format. It's recommended to enable this setting if data contains only enum ids to optimize enum parsing.
 
 Possible values:
 
--   0 — Enum values are parsed as values.
--   1 — Enum values are parsed as enum IDs.
+-   0 — Enum values are parsed as values or as enum IDs.
+-   1 — Enum values are parsed only as enum IDs.
 
 Default value: 0.
 
@@ -1537,28 +1627,51 @@ CREATE TABLE table_with_enum_column_for_csv_insert (Id Int32,Value Enum('first' 
 
 When the `input_format_csv_enum_as_number` setting is enabled:
 
+Query:
+
 ```sql
 SET input_format_csv_enum_as_number = 1;
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2
+```
+
+Result:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+```
+
+Query:
+
+```sql
+SET input_format_csv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
+```
+
+throws an exception.
+
+When the `input_format_csv_enum_as_number` setting is disabled:
+
+Query:
+
+```sql
+SET input_format_csv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
 SELECT * FROM table_with_enum_column_for_csv_insert;
 ```
 
 Result:
 
 ```text
-┌──Id─┬─Value─────┐
-│ 102 │ second    │
-└─────┴───────────┘
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+┌──Id─┬─Value─┐
+│ 103 │ first │
+└─────┴───────┘
 ```
-
-When the `input_format_csv_enum_as_number` setting is disabled, the `INSERT` query:
-
-```sql
-SET input_format_csv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
-```
-
-throws an exception.
 
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
@@ -1751,9 +1864,11 @@ Do not merge aggregation states from different servers for distributed query pro
 
 Possible values:
 
--   0 — Disabled (final query processing is done on the initiator node).
--   1 - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
--   2 - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+-   `0` — Disabled (final query processing is done on the initiator node).
+-   `1` - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
+-   `2` - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+
+Default value: `0`
 
 **Example**
 
@@ -1784,29 +1899,27 @@ FORMAT PrettyCompactMonoBlock
 └───────┘
 ```
 
-Default value: 0
+## distributed_push_down_limit {#distributed-push-down-limit}
 
-## distributed_push_down_limit (#distributed-push-down-limit}
-
-LIMIT will be applied on each shard separatelly.
+Enables or disables [LIMIT](#limit) applying on each shard separatelly.
 
 This will allow to avoid:
+-  Sending extra rows over network;
+-  Processing rows behind the limit on the initiator.
 
-- sending extra rows over network,
-- processing rows behind the limit on the initiator.
-
-It is possible if at least one of the following conditions met:
-
-- `distributed_group_by_no_merge` > 0
-- query **does not have `GROUP BY`/`DISTINCT`/`LIMIT BY`**, but it has `ORDER BY`/`LIMIT`.
-- query **has `GROUP BY`/`DISTINCT`/`LIMIT BY`** with `ORDER BY`/`LIMIT` and:
-  - `optimize_skip_unused_shards_limit` is enabled
-  - `optimize_distributed_group_by_sharding_key` is enabled
+Starting from 21.9 version you cannot get inaccurate results anymore, since `distributed_push_down_limit` changes query execution only if at least one of the conditions met:
+-  [distributed_group_by_no_merge](#distributed-group-by-no-merge) > 0.
+-  Query **does not have** `GROUP BY`/`DISTINCT`/`LIMIT BY`, but it has `ORDER BY`/`LIMIT`.
+-  Query **has** `GROUP BY`/`DISTINCT`/`LIMIT BY` with `ORDER BY`/`LIMIT` and:
+    -  [optimize_skip_unused_shards](#optimize-skip-unused-shards) is enabled.
+    -  [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key) is enabled.
 
 Possible values:
 
--  0 - Disabled
--  1 - Enabled
+-  0 — Disabled.
+-  1 — Enabled.
+
+Default value: `1`.
 
 See also:
 
@@ -1920,6 +2033,7 @@ Default value: 0
 See also:
 
 -   [distributed_group_by_no_merge](#distributed-group-by-no-merge)
+-   [distributed_push_down_limit](#distributed-push-down-limit)
 -   [optimize_skip_unused_shards](#optimize-skip-unused-shards)
 
 !!! note "Note"
@@ -2875,9 +2989,9 @@ Possible values:
 
 Default value: `1`.
 
-## output_format_csv_null_representation {#output_format_csv_null_representation}
+## format_csv_null_representation {#format_csv_null_representation}
 
-Defines the representation of `NULL` for [CSV](../../interfaces/formats.md#csv) output format. User can set any string as a value, for example, `My NULL`.
+Defines the representation of `NULL` for [CSV](../../interfaces/formats.md#csv) output and input formats. User can set any string as a value, for example, `My NULL`.
 
 Default value: `\N`.
 
@@ -2900,7 +3014,7 @@ Result
 Query
 
 ```sql
-SET output_format_csv_null_representation = 'My NULL';
+SET format_csv_null_representation = 'My NULL';
 SELECT * FROM csv_custom_null FORMAT CSV;
 ```
 
@@ -2912,9 +3026,9 @@ My NULL
 My NULL
 ```
 
-## output_format_tsv_null_representation {#output_format_tsv_null_representation}
+## format_tsv_null_representation {#format_tsv_null_representation}
 
-Defines the representation of `NULL` for [TSV](../../interfaces/formats.md#tabseparated) output format. User can set any string as a value, for example, `My NULL`.
+Defines the representation of `NULL` for [TSV](../../interfaces/formats.md#tabseparated) output and input formats. User can set any string as a value, for example, `My NULL`.
 
 Default value: `\N`.
 
@@ -2937,7 +3051,7 @@ Result
 Query
 
 ```sql
-SET output_format_tsv_null_representation = 'My NULL';
+SET format_tsv_null_representation = 'My NULL';
 SELECT * FROM tsv_custom_null FORMAT TSV;
 ```
 
@@ -3830,6 +3944,21 @@ Default value: `0`.
 **See Also**
 
 -   [optimize_move_to_prewhere](#optimize_move_to_prewhere) setting
+
+## describe_include_subcolumns {#describe_include_subcolumns}
+
+Enables describing subcolumns for a [DESCRIBE](../../sql-reference/statements/describe-table.md) query. For example, members of a [Tuple](../../sql-reference/data-types/tuple.md) or subcolumns of a [Map](../../sql-reference/data-types/map.md#map-subcolumns), [Nullable](../../sql-reference/data-types/nullable.md#finding-null) or an [Array](../../sql-reference/data-types/array.md#array-size) data type.
+
+Possible values:
+
+-   0 — Subcolumns are not included in `DESCRIBE` queries.
+-   1 — Subcolumns are included in `DESCRIBE` queries.
+
+Default value: `0`.
+
+**Example**
+
+See an example for the [DESCRIBE](../../sql-reference/statements/describe-table.md) statement.
 
 ## async_insert {#async-insert}
 
