@@ -155,7 +155,8 @@ BlockIO InterpreterRenameQuery::executeToDatabase(const ASTRenameQuery &, const 
 
     auto db = descriptions.front().if_exists ? catalog.tryGetDatabase(old_name) : catalog.getDatabase(old_name);
 
-    if (db) {
+    if (db)
+    {
         catalog.assertDatabaseDoesntExist(new_name);
         db->renameDatabase(new_name);
     }
