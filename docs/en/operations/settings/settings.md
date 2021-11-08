@@ -992,6 +992,16 @@ Example:
 log_query_views=1
 ```
 
+## log_formatted_queries {#settings-log-formatted-queries}
+
+Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table.
+
+Possible values:
+
+-   0 — Formatted queries are not logged in the system table.
+-   1 — Formatted queries are logged in the system table.
+
+Default value: `0`.
 
 ## log_comment {#settings-log-comment}
 
