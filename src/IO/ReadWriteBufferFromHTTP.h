@@ -63,8 +63,6 @@ public:
         return session;
     }
 
-    ConnectionTimeouts & getTimeouts() { return timeouts; }
-
     void updateSession(const Poco::URI & uri)
     {
         ++redirects;
@@ -126,6 +124,15 @@ namespace detail
         ReadSettings settings;
         Poco::Logger * log;
 
+        bool withPartialContent() const
+        {
+            /**
+             * Add range header if we have some passed range (for disk web)
+             * or if we want to retry GET request on purpose.
+             */
+            return read_range.begin || read_range.end || retry_with_range_header;
+        }
+
         std::istream * call(Poco::URI uri_, Poco::Net::HTTPResponse & response)
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.
@@ -139,16 +146,9 @@ namespace detail
                 request.setChunkedTransferEncoding(true);
 
             for (auto & http_header_entry: http_header_entries)
-            {
                 request.set(std::get<0>(http_header_entry), std::get<1>(http_header_entry));
-            }
 
-            /**
-              * Add range header if we have some passed range (for disk web)
-              * or if we want to retry GET request on purpose.
-              */
-            bool with_partial_content = read_range.begin || read_range.end || retry_with_range_header;
-            if (with_partial_content)
+            if (withPartialContent())
             {
                 if (read_range.end)
                     request.set("Range", fmt::format("bytes={}-{}", read_range.begin + bytes_read, *read_range.end));
@@ -172,25 +172,6 @@ namespace detail
 
                 istr = receiveResponse(*sess, request, response, true);
                 response.getCookies(cookies);
-
-                if (with_partial_content && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
-                {
-                    /// Having `200 OK` instead of `206 Partial Content` is acceptable in case we retried with range.begin == 0.
-                    if (read_range.begin)
-                    {
-                        /// Do not throw here, because this method is called with retries.
-                        if (!exception)
-                            exception = std::make_exception_ptr(
-                                Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE, "Cannot read with range: {}", request.get("Range")));
-                        return nullptr;
-                    }
-                    else if (read_range.end)
-                    {
-                        /// We could have range.begin == 0 and range.end != 0 in case of DiskWeb and failing to read with partial content
-                        /// will affect only performance, so a warning is enough.
-                        LOG_WARNING(log, "Unable to read with range header: [{}, {}]", read_range.begin, *read_range.end);
-                    }
-                }
 
                 content_encoding = response.get("Content-Encoding", "");
                 return istr;
@@ -247,12 +228,13 @@ namespace detail
                 initialize();
         }
 
+        /**
+         * Note: In case of error return false if error is not retriable, otherwise throw.
+         */
         bool initialize()
         {
             Poco::Net::HTTPResponse response;
             istr = call(uri, response);
-            if (!istr) /// Can be nullptr in case we failed to read with range header.
-                return false;
 
             while (isRedirect(response.getStatus()))
             {
@@ -262,6 +244,26 @@ namespace detail
                 session->updateSession(uri_redirect);
 
                 istr = call(uri_redirect, response);
+            }
+
+            if (withPartialContent() && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
+            {
+                /// Having `200 OK` instead of `206 Partial Content` is acceptable in case we retried with range.begin == 0.
+                if (read_range.begin)
+                {
+                    if (!exception)
+                        exception = std::make_exception_ptr(
+                            Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
+                                      "Cannot read with range: [{}, {}]", read_range.begin, read_range.end ? *read_range.end : '-'));
+
+                    return false;
+                }
+                else if (read_range.end)
+                {
+                    /// We could have range.begin == 0 and range.end != 0 in case of DiskWeb and failing to read with partial content
+                    /// will affect only performance, so a warning is enough.
+                    LOG_WARNING(log, "Unable to read with range header: [{}, {}]", read_range.begin, *read_range.end);
+                }
             }
 
             if (!bytes_read && !read_range.end && response.hasContentLength())
