@@ -399,7 +399,7 @@ Default value: 1.
 
 ## input_format_defaults_for_omitted_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
-When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) and [TabSeparated](../../interfaces/formats.md#tabseparated) formats.
+When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv), [TabSeparated](../../interfaces/formats.md#tabseparated) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
 
 !!! note "Note"
     When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
@@ -416,6 +416,12 @@ Default value: 1.
 When enabled, replace empty input fields in TSV with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
 
 Disabled by default.
+
+## input_format_csv_empty_as_default {#settings-input-format-csv-empty-as-default}
+
+When enabled, replace empty input fields in CSV with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
+
+Enabled by default.
 
 ## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
 
@@ -540,8 +546,40 @@ To improve insert performance, we recommend disabling this check if you are sure
 
 Supported formats:
 
--   [CSVWithNames](../../interfaces/formats.md#csvwithnames)
--   [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [CSVWithNames](../../interfaces/formats.md#csvwithnamesandtypes)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [TabSeparatedWithNamesAndTypes](../../interfaces/formats.md#tabseparatedwithnamesandtypes)
+- [JSONCompactEachRowWithNames](../../interfaces/formats.md#jsoncompacteachrowwithnames)
+- [JSONCompactEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompacteachrowwithnamesandtypes)
+- [JSONCompactStringsEachRowWithNames](../../interfaces/formats.md#jsoncompactstringseachrowwithnames)
+- [JSONCompactStringsEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompactstringseachrowwithnamesandtypes)
+- [RowBinaryWithNames](../../interfaces/formats.md#rowbinarywithnames-rowbinarywithnames)
+- [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes-rowbinarywithnamesandtypes)
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 1.
+
+## input_format_with_types_use_header {#settings-input-format-with-types-use-header}
+
+Controls whether format parser should check if data types from the input data match data types from the target table.
+
+Supported formats:
+
+- [CSVWithNames](../../interfaces/formats.md#csvwithnames)
+- [CSVWithNames](../../interfaces/formats.md#csvwithnamesandtypes)
+- [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
+- [TabSeparatedWithNamesAndTypes](../../interfaces/formats.md#tabseparatedwithnamesandtypes)
+- [JSONCompactEachRowWithNames](../../interfaces/formats.md#jsoncompacteachrowwithnames)
+- [JSONCompactEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompacteachrowwithnamesandtypes)
+- [JSONCompactStringsEachRowWithNames](../../interfaces/formats.md#jsoncompactstringseachrowwithnames)
+- [JSONCompactStringsEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompactstringseachrowwithnamesandtypes)
+- [RowBinaryWithNames](../../interfaces/formats.md#rowbinarywithnames-rowbinarywithnames)
+- [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes-rowbinarywithnamesandtypes)
 
 Possible values:
 
@@ -954,6 +992,16 @@ Example:
 log_query_views=1
 ```
 
+## log_formatted_queries {#settings-log-formatted-queries}
+
+Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table.
+
+Possible values:
+
+-   0 — Formatted queries are not logged in the system table.
+-   1 — Formatted queries are logged in the system table.
+
+Default value: `0`.
 
 ## log_comment {#settings-log-comment}
 
@@ -1397,6 +1445,32 @@ Minimum count of executing same expression before it is get compiled.
 
 Default value: `3`.
 
+## compile_aggregate_expressions {#compile_aggregate_expressions}
+
+Enables or disables JIT-compilation of aggregate functions to native code. Enabling this setting can improve the performance.
+
+Possible values:
+
+-   0 — Aggregation is done without JIT compilation.
+-   1 — Aggregation is done using JIT compilation.
+
+Default value: `1`.
+
+**See Also** 
+
+-   [min_count_to_compile_aggregate_expression](#min_count_to_compile_aggregate_expression)
+
+## min_count_to_compile_aggregate_expression {#min_count_to_compile_aggregate_expression}
+
+The minimum number of identical aggregate expressions to start JIT-compilation. Works only if the [compile_aggregate_expressions](#compile_aggregate_expressions) setting is enabled.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Identical aggregate expressions are always JIT-compiled.
+
+Default value: `3`.
+
 ## output_format_json_quote_64bit_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md#json) format.
@@ -1511,10 +1585,6 @@ When `output_format_json_quote_denormals = 1`, the query returns:
 ## format_csv_delimiter {#settings-format_csv_delimiter}
 
 The character is interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
-
-## input_format_csv_unquoted_null_literal_as_null {#settings-input_format_csv_unquoted_null_literal_as_null}
-
-For CSV input format enables or disables parsing of unquoted `NULL` as literal (synonym for `\N`).
 
 ## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
 
@@ -1751,9 +1821,11 @@ Do not merge aggregation states from different servers for distributed query pro
 
 Possible values:
 
--   0 — Disabled (final query processing is done on the initiator node).
--   1 - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
--   2 - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+-   `0` — Disabled (final query processing is done on the initiator node).
+-   `1` - Do not merge aggregation states from different servers for distributed query processing (query completelly processed on the shard, initiator only proxy the data), can be used in case it is for certain that there are different keys on different shards.
+-   `2` - Same as `1` but applies `ORDER BY` and `LIMIT` (it is not possible when the query processed completelly on the remote node, like for `distributed_group_by_no_merge=1`) on the initiator (can be used for queries with `ORDER BY` and/or `LIMIT`).
+
+Default value: `0`
 
 **Example**
 
@@ -1784,19 +1856,33 @@ FORMAT PrettyCompactMonoBlock
 └───────┘
 ```
 
-Default value: 0
+## distributed_push_down_limit {#distributed-push-down-limit}
 
-## distributed_push_down_limit (#distributed-push-down-limit}
+Enables or disables [LIMIT](#limit) applying on each shard separatelly.
 
-LIMIT will be applied on each shard separatelly. Usually you don't need to use it, since this will be done automatically if it is possible, i.e. for simple query SELECT FROM LIMIT.
+This will allow to avoid:
+-  Sending extra rows over network;
+-  Processing rows behind the limit on the initiator.
+
+Starting from 21.9 version you cannot get inaccurate results anymore, since `distributed_push_down_limit` changes query execution only if at least one of the conditions met:
+-  [distributed_group_by_no_merge](#distributed-group-by-no-merge) > 0.
+-  Query **does not have** `GROUP BY`/`DISTINCT`/`LIMIT BY`, but it has `ORDER BY`/`LIMIT`.
+-  Query **has** `GROUP BY`/`DISTINCT`/`LIMIT BY` with `ORDER BY`/`LIMIT` and:
+    -  [optimize_skip_unused_shards](#optimize-skip-unused-shards) is enabled.
+    -  [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key) is enabled.
 
 Possible values:
 
--  0 - Disabled
--  1 - Enabled
+-  0 — Disabled.
+-  1 — Enabled.
 
-!!! note "Note"
-    That with this setting the result of the query may be inaccurate.
+Default value: `1`.
+
+See also:
+
+-   [distributed_group_by_no_merge](#distributed-group-by-no-merge)
+-   [optimize_skip_unused_shards](#optimize-skip-unused-shards)
+-   [optimize_distributed_group_by_sharding_key](#optimize-distributed-group-by-sharding-key)
 
 ## optimize_skip_unused_shards_limit {#optimize-skip-unused-shards-limit}
 
@@ -1808,7 +1894,7 @@ Default value: 1000
 
 ## optimize_skip_unused_shards {#optimize-skip-unused-shards}
 
-Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise does nothing).
+Enables or disables skipping of unused shards for [SELECT](../../sql-reference/statements/select/index.md) queries that have sharding key condition in `WHERE/PREWHERE` (assuming that the data is distributed by sharding key, otherwise a query yields incorrect result).
 
 Possible values:
 
@@ -1904,6 +1990,7 @@ Default value: 0
 See also:
 
 -   [distributed_group_by_no_merge](#distributed-group-by-no-merge)
+-   [distributed_push_down_limit](#distributed-push-down-limit)
 -   [optimize_skip_unused_shards](#optimize-skip-unused-shards)
 
 !!! note "Note"
@@ -1943,6 +2030,21 @@ Possible values:
 -   1 — Optimization enabled.
 
 Default value: `0`.
+
+## optimize_trivial_count_query {#optimize-trivial-count-query}
+
+Enables or disables the optimization to trivial query `SELECT count() FROM table` using metadata from MergeTree. If you need to use row-level security, disable this setting.
+
+Possible values:
+
+   - 0 — Optimization disabled.
+   - 1 — Optimization enabled.
+   
+Default value: `1`.
+
+See also:
+
+-   [optimize_functions_to_subcolumns](#optimize-functions-to-subcolumns)
 
 ## distributed_replica_error_half_life {#settings-distributed_replica_error_half_life}
 
@@ -2844,9 +2946,9 @@ Possible values:
 
 Default value: `1`.
 
-## output_format_csv_null_representation {#output_format_csv_null_representation}
+## format_csv_null_representation {#format_csv_null_representation}
 
-Defines the representation of `NULL` for [CSV](../../interfaces/formats.md#csv) output format. User can set any string as a value, for example, `My NULL`.
+Defines the representation of `NULL` for [CSV](../../interfaces/formats.md#csv) output and input formats. User can set any string as a value, for example, `My NULL`.
 
 Default value: `\N`.
 
@@ -2869,7 +2971,7 @@ Result
 Query
 
 ```sql
-SET output_format_csv_null_representation = 'My NULL';
+SET format_csv_null_representation = 'My NULL';
 SELECT * FROM csv_custom_null FORMAT CSV;
 ```
 
@@ -2881,9 +2983,9 @@ My NULL
 My NULL
 ```
 
-## output_format_tsv_null_representation {#output_format_tsv_null_representation}
+## format_tsv_null_representation {#format_tsv_null_representation}
 
-Defines the representation of `NULL` for [TSV](../../interfaces/formats.md#tabseparated) output format. User can set any string as a value, for example, `My NULL`.
+Defines the representation of `NULL` for [TSV](../../interfaces/formats.md#tabseparated) output and input formats. User can set any string as a value, for example, `My NULL`.
 
 Default value: `\N`.
 
@@ -2906,7 +3008,7 @@ Result
 Query
 
 ```sql
-SET output_format_tsv_null_representation = 'My NULL';
+SET format_tsv_null_representation = 'My NULL';
 SELECT * FROM tsv_custom_null FORMAT TSV;
 ```
 
@@ -3542,7 +3644,7 @@ Default value: empty list — means whole PostgreSQL database will be replicated
 
 ## materialized_postgresql_allow_automatic_update {#materialized-postgresql-allow-automatic-update}
 
-Allow reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
+Allows reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
 
 Possible values:
 
@@ -3553,11 +3655,11 @@ Default value: `0`.
 
 ## materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
 
-Allows to have user-managed replication slots. Must be used together with `materialized_postgresql_snapshot`.
+A user-created replication slot. Must be used together with [materialized_postgresql_snapshot](#materialized-postgresql-snapshot).
 
-## materialized_postgresql_replication_slot {#materialized-postgresql-replication-slot}
+## materialized_postgresql_snapshot {#materialized-postgresql-snapshot}
 
-A text string identifying a snapshot, from which initial dump of tables will be performed. Must be used together with `materialized_postgresql_replication_slot`.
+A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with [materialized_postgresql_replication_slot](#materialized-postgresql-replication-slot).
 
 ## allow_experimental_projection_optimization {#allow-experimental-projection-optimization}
 
@@ -3614,6 +3716,16 @@ Possible values:
 -   Positive integer.
 
 Default value: `1000`.
+
+## http_max_single_read_retries {#http-max-single-read-retries}
+
+Sets the maximum number of retries during a single HTTP read.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1024`.
 
 ## log_queries_probability {#log-queries-probability}
 
@@ -3724,3 +3836,166 @@ Exception: Total regexp lengths too large.
 **See Also**
 
 -   [max_hyperscan_regexp_length](#max-hyperscan-regexp-length)
+
+## enable_positional_arguments {#enable-positional-arguments}
+
+Enables or disables supporting positional arguments for [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md) statements. When you want to use column numbers instead of column names in these clauses, set `enable_positional_arguments = 1`.
+
+Possible values:
+
+-   0 — Positional arguments aren't supported.
+-   1 — Positional arguments are supported: column numbers can use instead of column names.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE positional_arguments(one Int, two Int, three Int) ENGINE=Memory();
+
+INSERT INTO positional_arguments VALUES (10, 20, 30), (20, 20, 10), (30, 10, 20);
+
+SET enable_positional_arguments = 1;
+
+SELECT * FROM positional_arguments ORDER BY 2,3;
+```
+
+Result:
+
+```text
+┌─one─┬─two─┬─three─┐
+│  30 │  10 │   20  │
+│  20 │  20 │   10  │
+│  10 │  20 │   30  │
+└─────┴─────┴───────┘
+```
+
+## optimize_move_to_prewhere {#optimize_move_to_prewhere}
+
+Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries.
+
+Works only for [*MergeTree](../../engines/table-engines/mergetree-family/index.md) tables.
+
+Possible values:
+
+-   0 — Automatic `PREWHERE` optimization is disabled.
+-   1 — Automatic `PREWHERE` optimization is enabled.
+
+Default value: `1`.
+
+## optimize_move_to_prewhere_if_final {#optimize_move_to_prewhere_if_final}
+
+Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries with [FINAL](../../sql-reference/statements/select/from.md#select-from-final) modifier.
+
+Works only for [*MergeTree](../../engines/table-engines/mergetree-family/index.md) tables.
+
+Possible values:
+
+-   0 — Automatic `PREWHERE` optimization in `SELECT` queries with `FINAL` modifier is disabled.
+-   1 — Automatic `PREWHERE` optimization in `SELECT` queries with `FINAL` modifier is enabled.
+
+Default value: `0`.
+
+**See Also**
+
+-   [optimize_move_to_prewhere](#optimize_move_to_prewhere) setting
+
+## describe_include_subcolumns {#describe_include_subcolumns}
+
+Enables describing subcolumns for a [DESCRIBE](../../sql-reference/statements/describe-table.md) query. For example, members of a [Tuple](../../sql-reference/data-types/tuple.md) or subcolumns of a [Map](../../sql-reference/data-types/map.md#map-subcolumns), [Nullable](../../sql-reference/data-types/nullable.md#finding-null) or an [Array](../../sql-reference/data-types/array.md#array-size) data type.
+
+Possible values:
+
+-   0 — Subcolumns are not included in `DESCRIBE` queries.
+-   1 — Subcolumns are included in `DESCRIBE` queries.
+
+Default value: `0`.
+
+**Example**
+
+See an example for the [DESCRIBE](../../sql-reference/statements/describe-table.md) statement.
+
+## async_insert {#async-insert}
+
+Enables or disables asynchronous inserts. This makes sense only for insertion over HTTP protocol. Note that deduplication isn't working for such inserts.
+
+If enabled, the data is combined into batches before the insertion into tables, so it is possible to do small and frequent insertions into ClickHouse (up to 15000 queries per second) without buffer tables.
+
+The data is inserted either after the [async_insert_max_data_size](#async-insert-max-data-size) is exceeded or after [async_insert_busy_timeout_ms](#async-insert-busy-timeout-ms) milliseconds since the first `INSERT` query. If the [async_insert_stale_timeout_ms](#async-insert-stale-timeout-ms) is set to a non-zero value, the data is inserted after `async_insert_stale_timeout_ms` milliseconds since the last query.
+
+If [wait_for_async_insert](#wait-for-async-insert) is enabled, every client will wait for the data to be processed and flushed to the table. Otherwise, the query would be processed almost instantly, even if the data is not inserted.
+
+Possible values:
+
+-   0 — Insertions are made synchronously, one after another. 
+-   1 — Multiple asynchronous insertions enabled. 
+
+Default value: `0`.
+
+## async_insert_threads {#async-insert-threads}
+
+The maximum number of threads for background data parsing and insertion.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Asynchronous insertions are disabled.
+
+Default value: `16`.
+
+## wait_for_async_insert {#wait-for-async-insert}
+
+Enables or disables waiting for processing of asynchronous insertion. If enabled, server will return `OK` only after the data is inserted. Otherwise, it will return `OK` even if the data wasn't inserted.
+
+Possible values:
+
+-   0 — Server returns `OK` even if the data is not yet inserted.
+-   1 — Server returns `OK` only after the data is inserted.
+
+Default value: `1`.
+
+## wait_for_async_insert_timeout {#wait-for-async-insert-timeout}
+
+The timeout in seconds for waiting for processing of asynchronous insertion.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Disabled.
+
+Default value: [lock_acquire_timeout](#lock_acquire_timeout).
+
+## async_insert_max_data_size {#async-insert-max-data-size}
+
+The maximum size of the unparsed data in bytes collected per query before being inserted.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Asynchronous insertions are disabled.
+
+Default value: `1000000`.
+
+## async_insert_busy_timeout_ms {#async-insert-busy-timeout-ms}
+
+The maximum timeout in milliseconds since the first `INSERT` query before inserting collected data.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Timeout disabled.
+
+Default value: `200`.
+
+## async_insert_stale_timeout_ms {#async-insert-stale-timeout-ms}
+
+The maximum timeout in milliseconds since the last `INSERT` query before dumping collected data. If enabled, the settings prolongs the [async_insert_busy_timeout_ms](#async-insert-busy-timeout-ms) with every `INSERT` query as long as [async_insert_max_data_size](#async-insert-max-data-size) is not exceeded.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Timeout disabled.
+
+Default value: `0`.

@@ -7,7 +7,7 @@ if (NOT USE_INTERNAL_NANODBC_LIBRARY)
 endif ()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/nanodbc/CMakeLists.txt")
-    message (FATAL_ERROR "submodule contrib/nanodbc is missing. to fix try run: \n git submodule update --init --recursive")
+    message (FATAL_ERROR "submodule contrib/nanodbc is missing. to fix try run: \n git submodule update --init")
 endif()
 
 set (NANODBC_LIBRARY nanodbc)

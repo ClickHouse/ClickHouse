@@ -14,7 +14,7 @@
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 
 /** Very simple thread pool similar to boost::threadpool.
   * Advantages:

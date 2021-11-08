@@ -1,22 +1,19 @@
-#include <common/map.h>
-#include <common/range.h>
+#include <base/map.h>
+#include <base/range.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
-#include <DataTypes/Serializations/SerializationTupleElement.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/NestedUtils.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -30,7 +27,6 @@ namespace ErrorCodes
     extern const int DUPLICATE_COLUMN;
     extern const int EMPTY_DATA_PASSED;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
-    extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
 }
@@ -105,11 +101,6 @@ std::string DataTypeTuple::doGetName() const
 static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 {
     return assert_cast<ColumnTuple &>(column).getColumn(idx);
-}
-
-static inline const IColumn & extractElementColumn(const IColumn & column, size_t idx)
-{
-    return assert_cast<const ColumnTuple &>(column).getColumn(idx);
 }
 
 template <typename F>
@@ -234,74 +225,6 @@ size_t DataTypeTuple::getSizeOfValueInMemory() const
     return res;
 }
 
-template <typename OnSuccess, typename OnContinue>
-auto DataTypeTuple::getSubcolumnEntity(const String & subcolumn_name,
-    const OnSuccess & on_success, const OnContinue & on_continue) const
-{
-    using ReturnType = decltype(on_success(0));
-    for (size_t i = 0; i < names.size(); ++i)
-    {
-        if (startsWith(subcolumn_name, names[i]))
-        {
-            size_t name_length = names[i].size();
-
-            if (subcolumn_name.size() == name_length)
-                return on_success(i);
-
-            if (subcolumn_name[name_length] == '.')
-                return on_continue(i, subcolumn_name.substr(name_length + 1));
-        }
-    }
-
-    return ReturnType{};
-}
-
-DataTypePtr DataTypeTuple::tryGetSubcolumnType(const String & subcolumn_name) const
-{
-    if (subcolumn_name == MAIN_SUBCOLUMN_NAME)
-        return shared_from_this();
-
-    auto on_success = [&](size_t pos) { return elems[pos]; };
-    auto on_continue = [&](size_t pos, const String & next_subcolumn) { return elems[pos]->tryGetSubcolumnType(next_subcolumn); };
-
-    return getSubcolumnEntity(subcolumn_name, on_success, on_continue);
-}
-
-ColumnPtr DataTypeTuple::getSubcolumn(const String & subcolumn_name, const IColumn & column) const
-{
-    auto on_success = [&](size_t pos) { return extractElementColumn(column, pos).getPtr(); };
-    auto on_continue = [&](size_t pos, const String & next_subcolumn)
-    {
-        return elems[pos]->getSubcolumn(next_subcolumn, extractElementColumn(column, pos));
-    };
-
-    if (auto subcolumn = getSubcolumnEntity(subcolumn_name, on_success, on_continue))
-        return subcolumn;
-
-    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
-}
-
-SerializationPtr DataTypeTuple::getSubcolumnSerialization(
-    const String & subcolumn_name, const BaseSerializationGetter & base_serialization_getter) const
-{
-    auto on_success = [&](size_t pos)
-    {
-        return std::make_shared<SerializationTupleElement>(base_serialization_getter(*elems[pos]), names[pos]);
-    };
-
-    auto on_continue = [&](size_t pos, const String & next_subcolumn)
-    {
-        auto next_serialization = elems[pos]->getSubcolumnSerialization(next_subcolumn, base_serialization_getter);
-        return std::make_shared<SerializationTupleElement>(next_serialization, names[pos]);
-    };
-
-    if (auto serialization = getSubcolumnEntity(subcolumn_name, on_success, on_continue))
-        return serialization;
-
-    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, getName());
-}
-
-
 SerializationPtr DataTypeTuple::doGetDefaultSerialization() const
 {
     SerializationTuple::ElementSerializations serializations(elems.size());
@@ -310,7 +233,7 @@ SerializationPtr DataTypeTuple::doGetDefaultSerialization() const
     {
         String elem_name = use_explicit_names ? names[i] : toString(i + 1);
         auto serialization = elems[i]->getDefaultSerialization();
-        serializations[i] = std::make_shared<SerializationTupleElement>(serialization, elem_name);
+        serializations[i] = std::make_shared<SerializationNamed>(serialization, elem_name);
     }
 
     return std::make_shared<SerializationTuple>(std::move(serializations), use_explicit_names);
@@ -325,7 +248,7 @@ SerializationPtr DataTypeTuple::getSerialization(const String & column_name, con
         String elem_name = use_explicit_names ? names[i] : toString(i + 1);
         auto subcolumn_name = Nested::concatenateName(column_name, elem_name);
         auto serializaion = elems[i]->getSerialization(subcolumn_name, callback);
-        serializations[i] = std::make_shared<SerializationTupleElement>(serializaion, elem_name);
+        serializations[i] = std::make_shared<SerializationNamed>(serializaion, elem_name);
     }
 
     return std::make_shared<SerializationTuple>(std::move(serializations), use_explicit_names);

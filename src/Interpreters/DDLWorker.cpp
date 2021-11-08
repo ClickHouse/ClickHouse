@@ -24,12 +24,12 @@
 #include <Common/isLocalAddress.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
-#include <common/sleep.h>
-#include <common/getFQDNOrHostName.h>
-#include <common/logger_useful.h>
+#include <base/sleep.h>
+#include <base/getFQDNOrHostName.h>
+#include <base/logger_useful.h>
 #include <random>
 #include <pcg_random.hpp>
-#include <common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 
 #include <Interpreters/ZooKeeperLog.h>
 

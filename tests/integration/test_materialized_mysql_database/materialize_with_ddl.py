@@ -980,3 +980,33 @@ def mysql_settings_test(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("DROP DATABASE test_database")
     mysql_node.query("DROP DATABASE test_database")
 
+def materialized_mysql_large_transaction(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS largetransaction")
+    clickhouse_node.query("DROP DATABASE IF EXISTS largetransaction")
+    mysql_node.query("CREATE DATABASE largetransaction")
+
+    mysql_node.query("CREATE TABLE largetransaction.test_table ("
+                     "`key` INT NOT NULL PRIMARY KEY AUTO_INCREMENT, "
+                     "`value` INT NOT NULL) ENGINE = InnoDB;")
+    num_rows = 200000
+    rows_per_insert = 5000
+    values = ",".join(["(1)" for _ in range(rows_per_insert)])
+    for i in range(num_rows//rows_per_insert):
+        mysql_node.query(f"INSERT INTO largetransaction.test_table (`value`) VALUES {values};")
+
+
+    clickhouse_node.query("CREATE DATABASE largetransaction ENGINE = MaterializedMySQL('{}:3306', 'largetransaction', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SELECT COUNT() FROM largetransaction.test_table", f"{num_rows}\n")
+
+    mysql_node.query("UPDATE largetransaction.test_table SET value = 2;")
+
+    # Attempt to restart clickhouse after it has started processing
+    # the transaction, but before it has completed it.
+    while int(clickhouse_node.query("SELECT COUNT() FROM largetransaction.test_table WHERE value = 2")) == 0:
+        time.sleep(0.2)
+    clickhouse_node.restart_clickhouse()
+
+    check_query(clickhouse_node, "SELECT COUNT() FROM largetransaction.test_table WHERE value = 2", f"{num_rows}\n")
+
+    clickhouse_node.query("DROP DATABASE largetransaction")
+    mysql_node.query("DROP DATABASE largetransaction")

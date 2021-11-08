@@ -163,6 +163,13 @@ def test_partition_by(started_cluster):
     assert "3,2,1\n" == get_s3_file_content(started_cluster, bucket, "test_1.csv")
     assert "78,43,45\n" == get_s3_file_content(started_cluster, bucket, "test_45.csv")
 
+    filename = "test2_{_partition_id}.csv"
+    instance.query(f"create table p ({table_format}) engine=S3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}', 'CSV') partition by column3")
+    instance.query(f"insert into p values {values}")
+    assert "1,2,3\n" == get_s3_file_content(started_cluster, bucket, "test2_3.csv")
+    assert "3,2,1\n" == get_s3_file_content(started_cluster, bucket, "test2_1.csv")
+    assert "78,43,45\n" == get_s3_file_content(started_cluster, bucket, "test2_45.csv")
+
 
 def test_partition_by_string_column(started_cluster):
     bucket = started_cluster.minio_bucket
@@ -436,12 +443,12 @@ def test_remote_host_filter(started_cluster):
 
     query = "select *, column1*column2*column3 from s3('http://{}:{}/{}/test.csv', 'CSV', '{}')".format(
         "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket, format)
-    assert "not allowed in config.xml" in instance.query_and_get_error(query)
+    assert "not allowed in configuration file" in instance.query_and_get_error(query)
 
     other_values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
     query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format(
         "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket, format, other_values)
-    assert "not allowed in config.xml" in instance.query_and_get_error(query)
+    assert "not allowed in configuration file" in instance.query_and_get_error(query)
 
 
 @pytest.mark.parametrize("s3_storage_args", [

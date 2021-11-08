@@ -1,22 +1,23 @@
-#include <Storages/RabbitMQ/StorageRabbitMQ.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataStreams/UnionBlockInputStream.h>
-#include <DataStreams/copyData.h>
+#include <amqpcpp.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
-#include <Storages/RabbitMQ/RabbitMQSink.h>
-#include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/Transforms/ExpressionTransform.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
+#include <Storages/RabbitMQ/RabbitMQSink.h>
+#include <Storages/RabbitMQ/RabbitMQSource.h>
+#include <Storages/RabbitMQ/StorageRabbitMQ.h>
+#include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -26,14 +27,11 @@
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/config_version.h>
+#include <Common/parseAddress.h>
+#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
-#include <common/logger_useful.h>
-#include <Common/quoteString.h>
-#include <Common/parseAddress.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
-#include <amqpcpp.h>
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -631,12 +629,19 @@ Pipe StorageRabbitMQ::read(
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto rabbit_stream = std::make_shared<RabbitMQBlockInputStream>(
+        auto rabbit_source = std::make_shared<RabbitMQSource>(
                 *this, metadata_snapshot, modified_context, column_names, block_size);
 
-        auto converting_stream = std::make_shared<ConvertingBlockInputStream>(
-            rabbit_stream, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Name);
-        pipes.emplace_back(std::make_shared<SourceFromInputStream>(converting_stream));
+        auto converting_dag = ActionsDAG::makeConvertingActions(
+            rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
+            sample_block.getColumnsWithTypeAndName(),
+            ActionsDAG::MatchColumnsMode::Name);
+
+        auto converting = std::make_shared<ExpressionActions>(std::move(converting_dag));
+        auto converting_transform = std::make_shared<ExpressionTransform>(rabbit_source->getPort().getHeader(), std::move(converting));
+
+        pipes.emplace_back(std::move(rabbit_source));
+        pipes.back().addTransform(std::move(converting_transform));
     }
 
     if (!connection->getHandler().loopRunning() && connection->isConnected())
@@ -963,14 +968,17 @@ bool StorageRabbitMQ::streamToViews()
     auto block_size = getMaxBlockSize();
 
     // Create a stream for each consumer and join them in a union stream
-    BlockInputStreams streams;
-    streams.reserve(num_created_consumers);
+    std::vector<std::shared_ptr<RabbitMQSource>> sources;
+    Pipes pipes;
+    sources.reserve(num_created_consumers);
+    pipes.reserve(num_created_consumers);
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        auto stream = std::make_shared<RabbitMQBlockInputStream>(
+        auto source = std::make_shared<RabbitMQSource>(
                 *this, metadata_snapshot, rabbitmq_context, column_names, block_size, false);
-        streams.emplace_back(stream);
+        sources.emplace_back(source);
+        pipes.emplace_back(source);
 
         // Limit read batch to maximum block size to allow DDL
         StreamLocalLimits limits;
@@ -981,15 +989,10 @@ bool StorageRabbitMQ::streamToViews()
 
         limits.timeout_overflow_mode = OverflowMode::BREAK;
 
-        stream->setLimits(limits);
+        source->setLimits(limits);
     }
 
-    // Join multiple streams if necessary
-    BlockInputStreamPtr in;
-    if (streams.size() > 1)
-        in = std::make_shared<UnionBlockInputStream>(streams, nullptr, streams.size());
-    else
-        in = streams[0];
+    block_io.pipeline.complete(Pipe::unitePipes(std::move(pipes)));
 
     if (!connection->getHandler().loopRunning())
     {
@@ -998,13 +1001,8 @@ bool StorageRabbitMQ::streamToViews()
     }
 
     {
-        PushingPipelineExecutor executor(block_io.pipeline);
-        in->readPrefix();
-        executor.start();
-        while (auto block = in->read())
-            executor.push(std::move(block));
-        in->readSuffix();
-        executor.finish();
+        CompletedPipelineExecutor executor(block_io.pipeline);
+        executor.execute();
     }
 
     /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
@@ -1021,8 +1019,8 @@ bool StorageRabbitMQ::streamToViews()
         if (connection->reconnect())
         {
             LOG_DEBUG(log, "Connection restored, updating channels");
-            for (auto & stream : streams)
-                stream->as<RabbitMQBlockInputStream>()->updateChannel();
+            for (auto & source : sources)
+                source->updateChannel();
         }
         else
         {
@@ -1033,14 +1031,14 @@ bool StorageRabbitMQ::streamToViews()
     else
     {
         /// Commit
-        for (auto & stream : streams)
+        for (auto & source : sources)
         {
-            if (stream->as<RabbitMQBlockInputStream>()->queueEmpty())
+            if (source->queueEmpty())
                 ++queue_empty;
 
-            if (stream->as<RabbitMQBlockInputStream>()->needChannelUpdate())
+            if (source->needChannelUpdate())
             {
-                auto buffer = stream->as<RabbitMQBlockInputStream>()->getBuffer();
+                auto buffer = source->getBuffer();
                 if (buffer)
                 {
                     if (buffer->queuesCount() != queues.size())
@@ -1068,7 +1066,7 @@ bool StorageRabbitMQ::streamToViews()
              *    the same channel will also commit all previously not-committed messages. Anyway I do not think that for ack frame this
              *    will ever happen.
              */
-            if (!stream->as<RabbitMQBlockInputStream>()->sendAck())
+            if (!source->sendAck())
             {
                 /// Iterate loop to activate error callbacks if they happened
                 connection->getHandler().iterateLoop();

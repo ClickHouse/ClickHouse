@@ -8,10 +8,11 @@
 #include <IO/WriteHelpers.h>
 #include <Common/createHardLink.h>
 #include <Common/quoteString.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/checkStackSize.h>
 #include <boost/algorithm/string.hpp>
 #include <Common/filesystemHelpers.h>
+#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
 
 namespace DB
@@ -494,6 +495,15 @@ String IDiskRemote::getUniqueId(const String & path) const
     if (!metadata.remote_fs_objects.empty())
         id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].first;
     return id;
+}
+
+
+AsynchronousReaderPtr IDiskRemote::getThreadPoolReader()
+{
+    constexpr size_t pool_size = 50;
+    constexpr size_t queue_size = 1000000;
+    static AsynchronousReaderPtr reader = std::make_shared<ThreadPoolRemoteFSReader>(pool_size, queue_size);
+    return reader;
 }
 
 }

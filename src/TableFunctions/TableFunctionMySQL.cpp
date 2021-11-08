@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
-#endif
 
 #if USE_MYSQL
 #include <Core/Defines.h>
@@ -8,7 +6,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/convertMySQLDataType.h>
-#include <Formats/MySQLSource.h>
+#include <Processors/Sources/MySQLSource.h>
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>

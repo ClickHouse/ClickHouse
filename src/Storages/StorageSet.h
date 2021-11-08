@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
@@ -51,10 +51,10 @@ private:
     void restoreFromFile(const String & file_path);
 
     /// Insert the block into the state.
-    virtual void insertBlock(const Block & block) = 0;
+    virtual void insertBlock(const Block & block, ContextPtr context) = 0;
     /// Call after all blocks were inserted.
     virtual void finishInsert() = 0;
-    virtual size_t getSize() const = 0;
+    virtual size_t getSize(ContextPtr context) const = 0;
 };
 
 
@@ -81,9 +81,9 @@ public:
 private:
     SetPtr set;
 
-    void insertBlock(const Block & block) override;
+    void insertBlock(const Block & block, ContextPtr) override;
     void finishInsert() override;
-    size_t getSize() const override;
+    size_t getSize(ContextPtr) const override;
 
 protected:
     StorageSet(

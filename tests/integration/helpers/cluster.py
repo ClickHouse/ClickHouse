@@ -760,7 +760,7 @@ class ClickHouseCluster:
                      hostname=None, env_variables=None, image="clickhouse/integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
                      zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True,
-                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="yandex"):
+                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="clickhouse"):
 
         """Add an instance to the cluster.
 
@@ -1827,7 +1827,7 @@ class ClickHouseInstance:
             main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True,
             hostname=None, env_variables=None,
             image="clickhouse/integration-test", tag="latest",
-            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None, config_root_name="yandex"):
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None, config_root_name="clickhouse"):
 
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -1921,11 +1921,25 @@ class ClickHouseInstance:
         return self.is_built_with_sanitizer('memory')
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
-    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
-              ignore_error=False):
-        logging.debug(f"Executing query {sql} on {self.name}")
-        return self.client.query(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password,
-                                 database=database, ignore_error=ignore_error)
+    def query(self, sql,
+              stdin=None,
+              timeout=None,
+              settings=None,
+              user=None,
+              password=None,
+              database=None,
+              ignore_error=False,
+              query_id=None):
+        logging.debug("Executing query %s on %s", sql, self.name)
+        return self.client.query(sql,
+                                 stdin=stdin,
+                                 timeout=timeout,
+                                 settings=settings,
+                                 user=user,
+                                 password=password,
+                                 database=database,
+                                 ignore_error=ignore_error,
+                                 query_id=query_id)
 
     def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
                          ignore_error=False,
@@ -2022,11 +2036,12 @@ class ClickHouseInstance:
                 logging.warning("ClickHouse process already stopped")
                 return
 
+            self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
+
             sleep_time = 0.1
             num_steps = int(stop_wait_sec / sleep_time)
             stopped = False
             for step in range(num_steps):
-                self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
                 time.sleep(sleep_time)
                 ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
                 if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND":
@@ -2041,12 +2056,31 @@ class ClickHouseInstance:
 
     def start_clickhouse(self, start_wait_sec=30):
         if not self.stay_alive:
-            raise Exception("clickhouse can be started again only with stay_alive=True instance")
+            raise Exception("ClickHouse can be started again only with stay_alive=True instance")
 
-        self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
-        # wait start
-        from helpers.test_tools import assert_eq_with_retry
-        assert_eq_with_retry(self, "select 1", "1", retry_count=int(start_wait_sec / 0.5), sleep_time=0.5)
+        time_to_sleep = 0.5
+        start_tries = 5
+
+        total_tries = int(start_wait_sec / time_to_sleep)
+        query_tries = int(total_tries / start_tries)
+
+        for i in range(start_tries):
+            # sometimes after SIGKILL (hard reset) server may refuse to start for some time
+            # for different reasons.
+            self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
+            started = False
+            for _ in range(query_tries):
+                try:
+                    self.query("select 1")
+                    started = True
+                    break
+                except:
+                    time.sleep(time_to_sleep)
+            if started:
+                break
+        else:
+            raise Exception("Cannot start ClickHouse, see additional info in logs")
+
 
     def restart_clickhouse(self, stop_start_wait_sec=30, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
@@ -2058,11 +2092,11 @@ class ClickHouseInstance:
     def contains_in_log(self, substring, from_host=False):
         if from_host:
             result = subprocess_check_call(["bash", "-c",
-                f'[ -f {self.logs_dir}/clickhouse-server.log ] && grep "{substring}" {self.logs_dir}/clickhouse-server.log || true'
+                f'[ -f {self.logs_dir}/clickhouse-server.log ] && grep -a "{substring}" {self.logs_dir}/clickhouse-server.log || true'
             ])
         else:
             result = self.exec_in_container(["bash", "-c",
-                f'[ -f /var/log/clickhouse-server/clickhouse-server.log ] && grep "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
+                f'[ -f /var/log/clickhouse-server/clickhouse-server.log ] && grep -a "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
             ])
         return len(result) > 0
 
@@ -2070,18 +2104,18 @@ class ClickHouseInstance:
         logging.debug(f"grep in log called %s", substring)
         if from_host:
             result = subprocess_check_call(["bash", "-c",
-                f'grep "{substring}" {self.logs_dir}/clickhouse-server.log || true'
+                f'grep -a "{substring}" {self.logs_dir}/clickhouse-server.log || true'
             ])
         else:
             result = self.exec_in_container(["bash", "-c",
-                f'grep "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
+                f'grep -a "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
             ])
         logging.debug("grep result %s", result)
         return result
 
     def count_in_log(self, substring):
         result = self.exec_in_container(
-            ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log | wc -l'.format(substring)])
+            ["bash", "-c", 'grep -a "{}" /var/log/clickhouse-server/clickhouse-server.log | wc -l'.format(substring)])
         return result
 
     def wait_for_log_line(self, regexp, filename='/var/log/clickhouse-server/clickhouse-server.log', timeout=30, repetitions=1, look_behind_lines=100):
@@ -2305,6 +2339,9 @@ class ClickHouseInstance:
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(["bash", "-c", "echo '{}' > {}".format(replacement, path_to_config)])
 
+    def replace_in_config(self, path_to_config, replace, replacement):
+        self.exec_in_container(["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"])
+
     def create_dir(self, destroy_dir=True):
         """Create the instance directory and all the needed files there."""
 
@@ -2337,17 +2374,20 @@ class ClickHouseInstance:
         dictionaries_dir = p.abspath(p.join(instance_config_dir, 'dictionaries'))
         os.mkdir(dictionaries_dir)
 
-        def write_embedded_config(name, dest_dir):
+        def write_embedded_config(name, dest_dir, fix_log_level=False):
             with open(p.join(HELPERS_DIR, name), 'r') as f:
                 data = f.read()
-                data = data.replace('yandex', self.config_root_name)
+                data = data.replace('clickhouse', self.config_root_name)
+                if fix_log_level:
+                    data = data.replace('<level>test</level>', '<level>trace</level>')
                 with open(p.join(dest_dir, name), 'w') as r:
                     r.write(data)
 
         logging.debug("Copy common configuration from helpers")
         # The file is named with 0_ prefix to be processed before other configuration overloads.
         if self.copy_common_configs:
-            write_embedded_config('0_common_instance_config.xml', self.config_d_dir)
+            need_fix_log_level = self.tag != 'latest'
+            write_embedded_config('0_common_instance_config.xml', self.config_d_dir, need_fix_log_level)
 
         write_embedded_config('0_common_instance_users.xml', users_d_dir)
 

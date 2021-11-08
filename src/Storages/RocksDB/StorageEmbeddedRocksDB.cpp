@@ -17,8 +17,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
@@ -28,7 +28,7 @@
 
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <rocksdb/db.h>
 #include <rocksdb/table.h>

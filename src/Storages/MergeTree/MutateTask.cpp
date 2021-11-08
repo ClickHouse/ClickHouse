@@ -1,16 +1,17 @@
 #include <Storages/MergeTree/MutateTask.h>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/escapeForFileName.h>
-#include <DataStreams/TTLBlockInputStream.h>
-#include <DataStreams/TTLCalcInputStream.h>
-#include <DataStreams/DistinctSortedBlockInputStream.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/ColumnGathererStream.h>
-#include <DataStreams/SquashingBlockInputStream.h>
 #include <Parsers/queryToString.h>
+#include <Interpreters/SquashingTransform.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MutationCommands.h>
@@ -18,7 +19,6 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric BackgroundPoolTask;
     extern const Metric PartMutation;
 }
 
@@ -183,7 +183,7 @@ static std::vector<ProjectionDescriptionRawPtr> getProjectionsForNewDataPart(
 /// Return set of indices which should be recalculated during mutation also
 /// wraps input stream into additional expression stream
 static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
-    BlockInputStreamPtr & input_stream,
+    QueryPipeline & pipeline,
     const NameSet & updated_columns,
     const StorageMetadataPtr & metadata_snapshot,
     ContextPtr context,
@@ -235,9 +235,9 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
         }
     }
 
-    if (!indices_to_recalc.empty() && input_stream)
+    if (!indices_to_recalc.empty() && pipeline.initialized())
     {
-        auto indices_recalc_syntax = TreeRewriter(context).analyze(indices_recalc_expr_list, input_stream->getHeader().getNamesAndTypesList());
+        auto indices_recalc_syntax = TreeRewriter(context).analyze(indices_recalc_expr_list, pipeline.getHeader().getNamesAndTypesList());
         auto indices_recalc_expr = ExpressionAnalyzer(
                 indices_recalc_expr_list,
                 indices_recalc_syntax, context).getActions(false);
@@ -247,8 +247,11 @@ static std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
         /// MutationsInterpreter which knows about skip indices and stream 'in' already has
         /// all required columns.
         /// TODO move this logic to single place.
-        input_stream = std::make_shared<MaterializingBlockInputStream>(
-            std::make_shared<ExpressionBlockInputStream>(input_stream, indices_recalc_expr));
+        QueryPipelineBuilder builder;
+        builder.init(std::move(pipeline));
+        builder.addTransform(std::make_shared<ExpressionTransform>(builder.getHeader(), indices_recalc_expr));
+        builder.addTransform(std::make_shared<MaterializingTransform>(builder.getHeader()));
+        pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     }
     return indices_to_recalc;
 }
@@ -334,15 +337,14 @@ static NameToNameVector collectFilesForRenames(
 {
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
-    for (const NameAndTypePair & column : source_part->getColumns())
+    for (const auto & column : source_part->getColumns())
     {
         auto serialization = source_part->getSerializationForColumn(column);
         serialization->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
                 ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
-            },
-            {});
+            });
     }
 
     NameToNameVector rename_vector;
@@ -472,7 +474,7 @@ void finalizeMutatedPart(
     new_data_part->setBytesOnDisk(
         MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->volume->getDisk(), new_data_part->getFullRelativePath()));
     new_data_part->default_codec = codec;
-    new_data_part->calculateColumnsSizesOnDisk();
+    new_data_part->calculateColumnsAndSecondaryIndicesSizesOnDisk();
     new_data_part->storage.lockSharedData(*new_data_part);
 }
 
@@ -501,7 +503,8 @@ struct MutationContext
 
     std::unique_ptr<CurrentMetrics::Increment> num_mutations;
 
-    BlockInputStreamPtr mutating_stream{nullptr}; // in
+    QueryPipeline mutating_pipeline; // in
+    std::unique_ptr<PullingPipelineExecutor> mutating_executor;
     Block updated_header;
 
     std::unique_ptr<MutationsInterpreter> interpreter;
@@ -566,8 +569,9 @@ public:
             level_parts[current_level] = std::move(parts);
         }
 
-    void onCompleted() override {}
-    StorageID getStorageID() override { return {"Mutate", "Task"}; }
+    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
@@ -628,12 +632,19 @@ public:
             if (projection.type == ProjectionDescription::Type::Aggregate)
                 projection_merging_params.mode = MergeTreeData::MergingParams::Aggregating;
 
+            const Settings & settings = ctx->context->getSettingsRef();
+
             LOG_DEBUG(log, "Merged {} parts in level {} to {}", selected_parts.size(), current_level, projection_future_part->name);
             auto tmp_part_merge_task = ctx->mutator->mergePartsToTemporaryPart(
                 projection_future_part,
                 projection.metadata,
                 ctx->mutate_entry,
-                std::make_unique<MergeListElement>((*ctx->mutate_entry)->table_id, projection_future_part),
+                std::make_unique<MergeListElement>(
+                    (*ctx->mutate_entry)->table_id,
+                    projection_future_part,
+                    settings.memory_profiler_step,
+                    settings.memory_profiler_sample_probability,
+                    settings.max_untracked_memory),
                 *ctx->holder,
                 ctx->time_of_mutation,
                 ctx->context,
@@ -642,7 +653,7 @@ public:
                 {},
                 projection_merging_params,
                 ctx->new_data_part.get(),
-                "tmp_merge_");
+                ".tmp_proj");
 
             next_level_parts.push_back(executeHere(tmp_part_merge_task));
 
@@ -754,7 +765,6 @@ private:
     State state{State::NEED_PREPARE};
     MutationContextPtr ctx;
 
-    Block block;
     size_t block_num = 0;
 
     using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
@@ -788,24 +798,25 @@ void PartMergerWriter::prepare()
 
 bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
 {
-    if (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && (block = ctx->mutating_stream->read()))
+    Block cur_block;
+    if (MutationHelpers::checkOperationIsNotCanceled(*ctx->merges_blocker, ctx->mutate_entry) && ctx->mutating_executor->pull(cur_block))
     {
         if (ctx->minmax_idx)
-            ctx->minmax_idx->update(block, ctx->data->getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
+            ctx->minmax_idx->update(cur_block, ctx->data->getMinMaxColumnsNames(ctx->metadata_snapshot->getPartitionKey()));
 
-        ctx->out->write(block);
+        ctx->out->write(cur_block);
 
         for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
         {
             const auto & projection = *ctx->projections_to_build[i];
-            auto projection_block = projection_squashes[i].add(projection.calculate(block, ctx->context));
+            auto projection_block = projection_squashes[i].add(projection.calculate(cur_block, ctx->context));
             if (projection_block)
                 projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
                     *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
         }
 
-        (*ctx->mutate_entry)->rows_written += block.rows();
-        (*ctx->mutate_entry)->bytes_written_uncompressed += block.bytes();
+        (*ctx->mutate_entry)->rows_written += cur_block.rows();
+        (*ctx->mutate_entry)->bytes_written_uncompressed += cur_block.bytes();
 
         /// Need execute again
         return true;
@@ -819,8 +830,8 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         auto projection_block = projection_squash.add({});
         if (projection_block)
         {
-            projection_parts[projection.name].emplace_back(
-                MergeTreeDataWriter::writeTempProjectionPart(*ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
+            projection_parts[projection.name].emplace_back(MergeTreeDataWriter::writeTempProjectionPart(
+                *ctx->data, ctx->log, projection_block, projection, ctx->new_data_part.get(), ++block_num));
         }
     }
 
@@ -876,8 +887,9 @@ public:
 
     explicit MutateAllPartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
 
-    void onCompleted() override {}
-    StorageID getStorageID() override { return {"Mutate", "Task"}; }
+    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
@@ -929,18 +941,25 @@ private:
         auto skip_part_indices = MutationHelpers::getIndicesForNewDataPart(ctx->metadata_snapshot->getSecondaryIndices(), ctx->for_file_renames);
         ctx->projections_to_build = MutationHelpers::getProjectionsForNewDataPart(ctx->metadata_snapshot->getProjections(), ctx->for_file_renames);
 
-        if (ctx->mutating_stream == nullptr)
+        if (!ctx->mutating_pipeline.initialized())
             throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
+        QueryPipelineBuilder builder;
+        builder.init(std::move(ctx->mutating_pipeline));
+
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
-            ctx->mutating_stream = std::make_shared<MaterializingBlockInputStream>(
-                std::make_shared<ExpressionBlockInputStream>(ctx->mutating_stream, ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot)));
+        {
+            builder.addTransform(
+                std::make_shared<ExpressionTransform>(builder.getHeader(), ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot)));
+
+            builder.addTransform(std::make_shared<MaterializingTransform>(builder.getHeader()));
+        }
 
         if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
-            ctx->mutating_stream = std::make_shared<TTLBlockInputStream>(ctx->mutating_stream, *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
+            builder.addTransform(std::make_shared<TTLTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
 
         if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)
-            ctx->mutating_stream = std::make_shared<TTLCalcInputStream>(ctx->mutating_stream, *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
+            builder.addTransform(std::make_shared<TTLCalcTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
 
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
 
@@ -951,8 +970,8 @@ private:
             skip_part_indices,
             ctx->compression_codec);
 
-        ctx->mutating_stream->readPrefix();
-        ctx->out->writePrefix();
+        ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+        ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
 
         part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
     }
@@ -961,9 +980,11 @@ private:
     void finalize()
     {
         ctx->new_data_part->minmax_idx = std::move(ctx->minmax_idx);
-        ctx->mutating_stream->readSuffix();
+        ctx->mutating_executor.reset();
+        ctx->mutating_pipeline.reset();
 
         static_pointer_cast<MergedBlockOutputStream>(ctx->out)->writeSuffixAndFinalizePart(ctx->new_data_part, ctx->need_sync);
+        ctx->out.reset();
     }
 
     enum class State
@@ -987,8 +1008,9 @@ class MutateSomePartColumnsTask : public IExecutableTask
 public:
     explicit MutateSomePartColumnsTask(MutationContextPtr ctx_) : ctx(ctx_) {}
 
-    void onCompleted() override {}
-    StorageID getStorageID() override { return {"Mutate", "Task"}; }
+    void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+    UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
     bool executeStep() override
     {
@@ -1059,7 +1081,7 @@ private:
 
             if (!ctx->disk->isDirectory(it->path()))
                 ctx->disk->createHardLink(it->path(), destination);
-            else if (!startsWith("tmp_", it->name())) // ignore projection tmp merge dir
+            else if (!endsWith(".tmp_proj", it->name())) // ignore projection tmp merge dir
             {
                 // it's a projection part directory
                 ctx->disk->createDirectories(destination);
@@ -1079,16 +1101,16 @@ private:
 
         ctx->compression_codec = ctx->source_part->default_codec;
 
-        if (ctx->mutating_stream)
+        if (ctx->mutating_pipeline.initialized())
         {
-            if (ctx->mutating_stream == nullptr)
-                throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
+            QueryPipelineBuilder builder;
+            builder.init(std::move(ctx->mutating_pipeline));
 
             if (ctx->execute_ttl_type == ExecuteTTLType::NORMAL)
-                ctx->mutating_stream = std::make_shared<TTLBlockInputStream>(ctx->mutating_stream, *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
+                builder.addTransform(std::make_shared<TTLTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
 
             if (ctx->execute_ttl_type == ExecuteTTLType::RECALCULATE)
-                ctx->mutating_stream = std::make_shared<TTLCalcInputStream>(ctx->mutating_stream, *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true);
+                builder.addTransform(std::make_shared<TTLCalcTransform>(builder.getHeader(), *ctx->data, ctx->metadata_snapshot, ctx->new_data_part, ctx->time_of_mutation, true));
 
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
@@ -1101,8 +1123,9 @@ private:
                 &ctx->source_part->index_granularity_info
             );
 
-            ctx->mutating_stream->readPrefix();
-            ctx->out->writePrefix();
+            ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+            ctx->mutating_executor = std::make_unique<PullingPipelineExecutor>(ctx->mutating_pipeline);
+
             ctx->projections_to_build = std::vector<ProjectionDescriptionRawPtr>{ctx->projections_to_recalc.begin(), ctx->projections_to_recalc.end()};
 
             part_merger_writer_task = std::make_unique<PartMergerWriter>(ctx);
@@ -1112,9 +1135,10 @@ private:
 
     void finalize()
     {
-        if (ctx->mutating_stream)
+        if (ctx->mutating_executor)
         {
-            ctx->mutating_stream->readSuffix();
+            ctx->mutating_executor.reset();
+            ctx->mutating_pipeline.reset();
 
             auto changed_checksums =
                 static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out)->writeSuffixAndGetChecksums(
@@ -1260,9 +1284,9 @@ bool MutateTask::prepare()
         ctx->materialized_indices = ctx->interpreter->grabMaterializedIndices();
         ctx->materialized_projections = ctx->interpreter->grabMaterializedProjections();
         ctx->mutation_kind = ctx->interpreter->getMutationKind();
-        ctx->mutating_stream = ctx->interpreter->execute();
+        ctx->mutating_pipeline = ctx->interpreter->execute();
         ctx->updated_header = ctx->interpreter->getUpdatedHeader();
-        ctx->mutating_stream->setProgressCallback(MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress));
+        ctx->mutating_pipeline.setProgressCallback(MergeProgressCallback((*ctx->mutate_entry)->ptr(), ctx->watch_prev_elapsed, *ctx->stage_progress));
     }
 
     ctx->single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + ctx->future_part->name, ctx->space_reservation->getDisk(), 0);
@@ -1292,7 +1316,7 @@ bool MutateTask::prepare()
     ctx->need_sync = needSyncPart(ctx->source_part->rows_count, ctx->source_part->getBytesOnDisk(), *data_settings);
     ctx->execute_ttl_type = ExecuteTTLType::NONE;
 
-    if (ctx->mutating_stream)
+    if (ctx->mutating_pipeline.initialized())
         ctx->execute_ttl_type = MergeTreeDataMergerMutator::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
 
 
@@ -1311,7 +1335,7 @@ bool MutateTask::prepare()
             ctx->updated_columns.emplace(name_type.name);
 
         ctx->indices_to_recalc = MutationHelpers::getIndicesToRecalculate(
-            ctx->mutating_stream, ctx->updated_columns, ctx->metadata_snapshot, ctx->context, ctx->materialized_indices, ctx->source_part);
+            ctx->mutating_pipeline, ctx->updated_columns, ctx->metadata_snapshot, ctx->context, ctx->materialized_indices, ctx->source_part);
         ctx->projections_to_recalc = MutationHelpers::getProjectionsToRecalculate(
             ctx->updated_columns, ctx->metadata_snapshot, ctx->materialized_projections, ctx->source_part);
 

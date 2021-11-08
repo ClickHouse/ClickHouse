@@ -9,7 +9,7 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -629,6 +629,14 @@ LogEntryPtr Changelog::entryAt(uint64_t index)
 
     src = entry->second;
     return src;
+}
+
+LogEntryPtr Changelog::getLatestConfigChange() const
+{
+    for (const auto & [_, entry] : logs)
+        if (entry->get_val_type() == nuraft::conf)
+            return entry;
+    return nullptr;
 }
 
 nuraft::ptr<nuraft::buffer> Changelog::serializeEntriesToBuffer(uint64_t index, int32_t count)

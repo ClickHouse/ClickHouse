@@ -93,15 +93,15 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 ### `Docker`安装包 {#from-docker-image}
 
-要在Docker中运行ClickHouse，请遵循[Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/)上的指南。它是官方的`deb`安装包。
+要在Docker中运行ClickHouse，请遵循[Docker Hub](https://hub.docker.com/r/clickhouse/clickhouse-server/)上的指南。它是官方的`deb`安装包。
 
 ### 其他环境安装包 {#from-other}
 
 对于非linux操作系统和Arch64 CPU架构，ClickHouse将会以`master`分支的最新提交的进行编译提供(它将会有几小时的延迟)。
 
--   [macOS](https://builds.clickhouse.tech/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/macos/clickhouse' && chmod a+x ./clickhouse`
--   [FreeBSD](https://builds.clickhouse.tech/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
--   [AArch64](https://builds.clickhouse.tech/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.tech/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
+-   [macOS](https://builds.clickhouse.com/master/macos/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/macos/clickhouse' && chmod a+x ./clickhouse`
+-   [FreeBSD](https://builds.clickhouse.com/master/freebsd/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/freebsd/clickhouse' && chmod a+x ./clickhouse`
+-   [AArch64](https://builds.clickhouse.com/master/aarch64/clickhouse) — `curl -O 'https://builds.clickhouse.com/master/aarch64/clickhouse' && chmod a+x ./clickhouse`
 
 下载后，您可以使用`clickhouse client`连接服务，或者使用`clickhouse local`模式处理数据，不过您必须要额外在GitHub下载[server](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)和[users](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/users.xml)配置文件。
 

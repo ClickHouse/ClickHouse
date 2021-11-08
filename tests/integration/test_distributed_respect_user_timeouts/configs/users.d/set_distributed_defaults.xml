@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <profiles>
         <default>
             <connections_with_failover_max_tries>3</connections_with_failover_max_tries>
@@ -32,4 +32,4 @@
     </users>
 
     <quotas><default></default></quotas>
-</yandex>
+</clickhouse>

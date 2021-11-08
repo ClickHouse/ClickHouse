@@ -21,7 +21,7 @@
 
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Logger.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -69,7 +69,7 @@ void UserDefinedSQLObjectsLoader::loadUserDefinedObject(ContextPtr context, User
                     0,
                     context->getSettingsRef().max_parser_depth);
 
-                InterpreterCreateFunctionQuery interpreter(ast, context, true /*is internal*/);
+                InterpreterCreateFunctionQuery interpreter(ast, context, false /*persist_function*/);
                 interpreter.execute();
             }
         }
@@ -83,6 +83,9 @@ void UserDefinedSQLObjectsLoader::loadUserDefinedObject(ContextPtr context, User
 
 void UserDefinedSQLObjectsLoader::loadObjects(ContextPtr context)
 {
+    if (unlikely(!enable_persistence))
+        return;
+
     LOG_DEBUG(log, "loading user defined objects");
 
     String dir_path = context->getPath() + "user_defined/";
@@ -108,8 +111,11 @@ void UserDefinedSQLObjectsLoader::loadObjects(ContextPtr context)
     }
 }
 
-void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name, const IAST & ast)
+void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name, const IAST & ast, bool replace)
 {
+    if (unlikely(!enable_persistence))
+        return;
+
     String dir_path = context->getPath() + "user_defined/";
     String file_path;
 
@@ -121,7 +127,7 @@ void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQL
         }
     }
 
-    if (std::filesystem::exists(file_path))
+    if (!replace && std::filesystem::exists(file_path))
         throw Exception(ErrorCodes::OBJECT_ALREADY_STORED_ON_DISK, "User defined object {} already stored on disk", backQuote(file_path));
 
     LOG_DEBUG(log, "Storing object {} to file {}", backQuote(object_name), file_path);
@@ -129,9 +135,9 @@ void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQL
     WriteBufferFromOwnString create_statement_buf;
     formatAST(ast, create_statement_buf, false);
     writeChar('\n', create_statement_buf);
-
     String create_statement = create_statement_buf.str();
-    WriteBufferFromFile out(file_path, create_statement.size(), O_WRONLY | O_CREAT | O_EXCL);
+
+    WriteBufferFromFile out(file_path, create_statement.size());
     writeString(create_statement, out);
     out.next();
     if (context->getSettingsRef().fsync_metadata)
@@ -143,6 +149,9 @@ void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQL
 
 void UserDefinedSQLObjectsLoader::removeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name)
 {
+    if (unlikely(!enable_persistence))
+        return;
+
     String dir_path = context->getPath() + "user_defined/";
     LOG_DEBUG(log, "Removing file for user defined object {} from {}", backQuote(object_name), dir_path);
 
@@ -160,6 +169,11 @@ void UserDefinedSQLObjectsLoader::removeObject(ContextPtr context, UserDefinedSQ
         throw Exception(ErrorCodes::OBJECT_WAS_NOT_STORED_ON_DISK, "User defined object {} was not stored on disk", backQuote(file_path.string()));
 
     std::filesystem::remove(file_path);
+}
+
+void UserDefinedSQLObjectsLoader::enable(bool enable_persistence_)
+{
+    enable_persistence = enable_persistence_;
 }
 
 }

@@ -1,11 +1,11 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/ISource.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <iostream>
 
 #include <Common/setThreadName.h>
-#include <common/scope_guard_safe.h>
+#include <base/scope_guard_safe.h>
 
 namespace DB
 {
@@ -41,6 +41,7 @@ public:
 
     void finish()
     {
+        std::unique_lock lock(mutex);
         is_finished = true;
         condvar.notify_all();
     }
@@ -64,7 +65,7 @@ protected:
 private:
     Chunk data;
     bool has_data = false;
-    std::atomic_bool is_finished = false;
+    bool is_finished = false;
     std::mutex mutex;
     std::condition_variable condvar;
 };

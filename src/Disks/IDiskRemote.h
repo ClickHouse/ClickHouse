@@ -1,12 +1,10 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #include <atomic>
-#include "Disks/DiskFactory.h"
-#include "Disks/Executor.h"
+#include <Disks/DiskFactory.h>
+#include <Disks/Executor.h>
 #include <utility>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
@@ -33,6 +31,10 @@ protected:
 };
 
 using RemoteFSPathKeeperPtr = std::shared_ptr<RemoteFSPathKeeper>;
+
+
+class IAsynchronousReader;
+using AsynchronousReaderPtr = std::shared_ptr<IAsynchronousReader>;
 
 
 /// Base Disk class for remote FS's, which are not posix-compatible (DiskS3 and DiskHDFS)
@@ -126,6 +128,8 @@ public:
     virtual void removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper) = 0;
 
     virtual RemoteFSPathKeeperPtr createFSPathKeeper() const = 0;
+
+    static AsynchronousReaderPtr getThreadPoolReader();
 
 protected:
     Poco::Logger * log;

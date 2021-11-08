@@ -1,6 +1,6 @@
 ---
 title: 'Package Repository Behind CDN'
-image: 'https://blog-images.clickhouse.tech/en/2020/package-repository-behind-cdn/main.jpg'
+image: 'https://blog-images.clickhouse.com/en/2020/package-repository-behind-cdn/main.jpg'
 date: '2020-07-02'
 tags: ['article', 'CDN', 'Cloudflare', 'repository', 'deb', 'rpm', 'tgz']
 ---
@@ -12,7 +12,7 @@ On initial open-source launch, ClickHouse packages were published at an independ
 
 Distributing packages via our own repository was working totally fine until ClickHouse has started getting traction in countries far from Moscow, most notably the USA and China. Downloading large files of packages from remote location was especially painful for Chinese ClickHouse users, likely due to how China is connected to the rest of the world via its famous firewall. But at least it worked (with high latencies and low throughput), while in some smaller countries there was completely no access to this repository and people living there had to host their own mirrors on neutral ground as a workaround.
 
-Earlier this year we made the ClickHouse official website to be served via global CDN by [Cloudflare](https://www.cloudflare.com) on a `clickhouse.tech` domain. To solve the download issues discussed above, we have also configured a new location for ClickHouse packages that are also served by Cloudflare at [repo.clickhouse.com](https://repo.clickhouse.com). It used to have some quirks, but now it seems to be working fine while improving throughput and latencies in remote geographical locations by over an order of magnitude.
+Earlier this year we made the ClickHouse official website to be served via global CDN by [Cloudflare](https://www.cloudflare.com) on a `clickhouse.com` domain. To solve the download issues discussed above, we have also configured a new location for ClickHouse packages that are also served by Cloudflare at [repo.clickhouse.com](https://repo.clickhouse.com). It used to have some quirks, but now it seems to be working fine while improving throughput and latencies in remote geographical locations by over an order of magnitude.
 
 ## Switching To Repository Behind CDN
 
@@ -51,11 +51,11 @@ Ever heard the [“serverless computing”](https://en.wikipedia.org/wiki/Server
 Implementing it required a little bit of research, but the overall solution appeared to be quite elegant:
 
 1. For a ClickHouse database, it was a no-brainer to use [Yandex Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse). With a few clicks in the admin interface, we got a running ClickHouse cluster with properly configured high-availability and automated backups. Ad-hoc SQL queries could be run from that same admin interface.
-2. Cloudflare allows customers to run custom code on CDN edge servers in a serverless fashion (so-called [workers](https://workers.cloudflare.com)). Those workers are executed in a tight sandbox which doesn't allow for anything complicated, but this feature fits perfectly to gather some data about download events and send it somewhere else. This is normally a paid feature, but special thanks to Connor Peshek from Cloudflare who arranged a lot of extra features for free on `clickhouse.tech` when we have applied to their [open-source support program](https://developers.cloudflare.com/sponsorships/). 
+2. Cloudflare allows customers to run custom code on CDN edge servers in a serverless fashion (so-called [workers](https://workers.cloudflare.com)). Those workers are executed in a tight sandbox which doesn't allow for anything complicated, but this feature fits perfectly to gather some data about download events and send it somewhere else. This is normally a paid feature, but special thanks to Connor Peshek from Cloudflare who arranged a lot of extra features for free on `clickhouse.com` when we have applied to their [open-source support program](https://developers.cloudflare.com/sponsorships/).
 3. To avoid publicly exposing yet another ClickHouse instance (like we did with **[playground](/docs/en/getting-started/playground/)** regardless of being a 100% anti-pattern), the download event data is sent to [Yandex Cloud Functions](https://cloud.yandex.com/services/functions). It's a generic serverless computing framework at Yandex Cloud, which also allows running custom code without maintaining any servers, but with less strict sandbox limitations and direct access to other cloud services like Managed ClickHouse that was needed for this task.
 4. It didn't require much effort to choose a visualization tool either, as [DataLens BI](https://cloud.yandex.com/docs/datalens/) is tightly integrated with ClickHouse, capable to build what's required right from the UI, and satisfies the “no servers” requirement because it's a SaaS solution. Public access option for charts and dashboards have also appeared to be handy.
 
-There's not so much data collected yet, but here's a live example of how the resulting data visualization looks like. For example, here we can see that LTS releases of ClickHouse are not so popular yet *(yes, we have [LTS releases](https://clickhouse.tech/docs/en/faq/operations/production/)!)*:
+There's not so much data collected yet, but here's a live example of how the resulting data visualization looks like. For example, here we can see that LTS releases of ClickHouse are not so popular yet *(yes, we have [LTS releases](https://clickhouse.com/docs/en/faq/operations/production/)!)*:
 ![iframe](https://datalens.yandex/qk01mwxkgiysm?_embedded=1)
 
 While here we confirmed that `rpm` is at least as popular as `deb`:
