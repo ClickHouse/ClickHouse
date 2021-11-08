@@ -108,7 +108,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ASTRenameQuery::Element& ref = elements.emplace_back();
 
         if (!exchange)
-            ref.if_exists = s_if_exists.ignore( pos, expected);
+            ref.if_exists = s_if_exists.ignore(pos, expected);
 
         if (!parseDatabaseAndTable(ref.from, pos, expected)
             || !ignore_delim()
