@@ -182,11 +182,9 @@ if (USE_INTERNAL_PARQUET_LIBRARY)
     # {BUILD_DIR}/contrib/arrow/cpp/build/release/parquet-reader some_file.parquet
 
     add_subdirectory(arrow-cmake)
-    add_subdirectory (hive-metastore)
 
     # The library is large - avoid bloat.
     target_compile_options (${ARROW_LIBRARY} PRIVATE -g0)
-    target_compile_options (${THRIFT_LIBRARY} PRIVATE -g0)
     target_compile_options (${PARQUET_LIBRARY} PRIVATE -g0)
 endif()
 
@@ -244,6 +242,10 @@ endif ()
 
 if (USE_INTERNAL_PROTOBUF_LIBRARY)
     add_subdirectory(protobuf-cmake)
+endif ()
+
+if (USE_INTERNAL_THRIFT_LIBRARY)
+    add_subdirectory(thrift-cmake)
 endif ()
 
 if (USE_INTERNAL_HDFS3_LIBRARY)
@@ -346,6 +348,8 @@ endif()
 if (USE_S2_GEOMETRY)
     add_subdirectory(s2geometry-cmake)
 endif()
+
+add_subdirectory (hive-metastore)
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
