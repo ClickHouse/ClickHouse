@@ -1555,19 +1555,19 @@ namespace recurrent_detail
         }
     }
 
-    template<typename T> void setValueToOutputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/, T /*value*/)
+    template<typename T> void setValueToOutputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/, T /*value*/, T /*state_value*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getLastValueFromInputColumn() is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setValueToOutputColumn() is not implemented");
     }
 
-    template<> void setValueToOutputColumn<Float64>(const WindowTransform * transform, size_t function_index, Float64 value)
+    template<> void setValueToOutputColumn<Float64>(const WindowTransform * transform, size_t function_index, Float64 value, Float64 state_value)
     {
         const auto & workspace = transform->workspaces[function_index];
         auto current_row = transform->current_row;
         const auto & current_block = transform->blockAt(current_row);
         IColumn & to = *current_block.output_columns[function_index];
 
-        *static_cast<Float64 *>(static_cast<void *>(workspace.aggregate_function_state.data())) = value;
+        *static_cast<Float64 *>(static_cast<void *>(workspace.aggregate_function_state.data())) = state_value;
         assert_cast<ColumnFloat64 &>(to).getData().push_back(value);
     }
 
@@ -1617,7 +1617,13 @@ struct RecurrentWindowFunction : public WindowFunction
     template<typename T>
     static void setValueToOutputColumn(const WindowTransform * transform, size_t function_index, T value)
     {
-        recurrent_detail::setValueToOutputColumn<T>(transform, function_index, value);
+        recurrent_detail::setValueToOutputColumn<T>(transform, function_index, value, value);
+    }
+
+    template<typename T>
+    static void setValueToOutputColumn(const WindowTransform * transform, size_t function_index, T value, T state_value)
+    {
+        recurrent_detail::setValueToOutputColumn<T>(transform, function_index, value, state_value);
     }
 
     template<typename T>
@@ -1801,7 +1807,7 @@ struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowF
 
         Float64 t = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
-        Float64 result = exp((last_t - t) / decay_length);
+        Float64 result = exp((last_t - t) / decay_length) + 1.0;
 
         setValueToOutputColumn(transform, function_index, result);
     }
@@ -1859,16 +1865,17 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFun
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
-        Float64 last_val = getLastValueFromOutputColumn<Float64>(transform, function_index);
+        Float64 last_sum = getLastValueFromOutputColumn<Float64>(transform, function_index);
         Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         Float64 x = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_VALUE);
         Float64 t = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         Float64 c = exp((last_t - t) / decay_length);
-        Float64 result = (x + c * last_val) / c;
+        Float64 new_sum = x + c * last_sum;
+        Float64 result = new_sum / (c + 1.0);
 
-        setValueToOutputColumn(transform, function_index, result);
+        setValueToOutputColumn(transform, function_index, result, new_sum);
     }
 
     private:
