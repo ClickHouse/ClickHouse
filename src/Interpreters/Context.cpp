@@ -2,7 +2,6 @@
 #include <set>
 #include <optional>
 #include <memory>
-#include <ThriftHiveMetastore.h>
 #include <Poco/Mutex.h>
 #include <Poco/UUID.h>
 #include <Poco/Net/IPAddress.h>
@@ -27,7 +26,6 @@
 #include <Storages/MergeTree/ReplicatedFetchList.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/Hive/HiveCommon.h>
 #include <Storages/CompressionCodecSelector.h>
 #include <Storages/StorageS3Settings.h>
 #include <Disks/DiskLocal.h>
@@ -86,14 +84,18 @@
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
-#include <Storages/HDFS/HDFSCommon.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
+#include <filesystem>
+
+#if USE_HDFS
+#include <ThriftHiveMetastore.h>
 #include <thrift/protocol/TBinaryProtocol.h>
 #include <thrift/transport/TBufferTransports.h>
 #include <thrift/transport/TSocket.h>
-#include <filesystem>
-
+#include <Storages/HDFS/HDFSCommon.h>
+#include <Storages/Hive/HiveCommon.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -161,10 +163,10 @@ struct ContextSharedPart
     mutable std::mutex storage_policies_mutex;
     /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
+#if USE_HDFS
     /// Separate mutex for re-initialization of hive metastore client. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex hive_metastore_mutex;
-    /// Separate mutex for re-initialization of hdfs file system. This operation could take a long time and must not interfere with another operations.
-    mutable std::mutex hdfs_filesystem_mutex;
+#endif
 
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
@@ -177,8 +179,9 @@ struct ContextSharedPart
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
 
+#if USE_HDFS
     mutable std::map<String, HMSClientPtr> hive_metastore_clients; /// Map for hive metastore clients
-    // mutable std::map<String, HDFSFileSystemPtr> hdfs_filesystems; /// Map for hdfs file systems.
+#endif
 
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
@@ -1821,6 +1824,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
+#if USE_HDFS
 HMSClientPtr Context::getHMSClient(const String & name) const
 {
     using namespace apache::thrift;
@@ -1868,6 +1872,7 @@ HMSClientPtr Context::getHMSClient(const String & name) const
     }
     return it->second;
 }
+#endif
 
 namespace
 {

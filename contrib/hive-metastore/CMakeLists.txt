@@ -4,17 +4,15 @@ set (SRCS
     ${CMAKE_CURRENT_BINARY_DIR}/ThriftHiveMetastore.cpp
 )
 
-set(THRIFT_COMPILER ${ClickHouse_BINARY_DIR}/contrib/arrow-cmake/thrift-compiler)
+set(THRIFT_COMPILER_PATH ${ClickHouse_BINARY_DIR}/contrib/thrift-cmake/thrift-compiler)
 add_custom_command(
   OUTPUT ${SRCS}
-  COMMAND ${THRIFT_COMPILER}
+  COMMAND ${THRIFT_COMPILER_PATH}
   ARGS -r --gen cpp -out ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_LIST_DIR}/hive_metastore.thrift
   COMMENT "Running cpp thrift compiler for hive_metastore.thrift"
-  DEPENDS thrift-compiler
+  DEPENDS ${THRIFT_COMPILER}
   VERBATIM)
 
 add_library(hivemetastore ${SRCS})
-add_dependencies(hivemetastore ${THRIFT_LIBRARY})
 target_link_libraries(hivemetastore PUBLIC ${THRIFT_LIBRARY})
-# target_include_directories(hivemetastore SYSTEM PUBLIC ${CMAKE_CURRENT_BINARY_DIR})
-include_directories(SYSTEM ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(hivemetastore SYSTEM PUBLIC ${CMAKE_CURRENT_BINARY_DIR})

@@ -18,6 +18,10 @@
 
 #include "config_core.h"
 
+#if !defined(ARCADIA_BUILD)
+#include <Common/config.h>
+#endif
+
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -27,8 +31,6 @@
 
 namespace Poco::Net { class IPAddress; }
 namespace zkutil { class ZooKeeper; }
-namespace hdfs { class FileSystem; }
-// namespace Apache { namespace Hadoop { namespace Hive { class ThriftHiveMetastoreClient; }}}
 
 namespace DB
 {
@@ -148,9 +150,6 @@ using InputBlocksReader = std::function<Block(ContextPtr)>;
 /// Used in distributed task processing
 using ReadTaskCallback = std::function<String()>;
 
-// class HDFSFSPtr;
-// using HDFSFileSystemPtr = std::shared_ptr<hdfs::FileSystem>;
-
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
 struct IHostContext
@@ -178,8 +177,10 @@ private:
     std::unique_ptr<ContextSharedPart> shared;
 };
 
+#if USE_HDFS
 class HMSClient;
 using HMSClientPtr = std::shared_ptr<HMSClient>;
+#endif
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -695,8 +696,9 @@ public:
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 
+#if USE_HDFS
     HMSClientPtr getHMSClient(const String & name) const;
-    // HDFSFileSystemPtr getHDFSFileSystem(const String & name) const;
+#endif
 
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
