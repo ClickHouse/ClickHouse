@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
+import sys
 import logging
 import os
 import subprocess
+
 from get_robot_token import get_best_robot_token
-import sys
 from ssh import SSHKey
 from cherry_pick_utils.backport import Backport
 from cherry_pick_utils.cherrypick import CherryPick
