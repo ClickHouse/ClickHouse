@@ -192,10 +192,15 @@ void MergeTreeReaderStream::seekToStart()
 
 void MergeTreeReaderStream::adjustForRange(MarkRange range)
 {
+    /**
+     * Note: this method is called multiple times for the same range of marks -- each time we
+     * read from stream, but we must update last_right_offset only if it is bigger than
+     * the last one to avoid redundantly cancelling prefetches.
+     */
     auto [right_offset, mark_range_bytes] = getRightOffsetAndBytesRange(range.begin, range.end);
     if (!right_offset)
     {
-        if (last_right_offset && !last_right_offset.value())
+        if (last_right_offset && *last_right_offset == 0)
             return;
 
         last_right_offset = 0; // Zero value means the end of file.
