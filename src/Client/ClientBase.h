@@ -235,6 +235,24 @@ protected:
     } profile_events;
 
     QueryProcessingStage::Enum query_processing_stage;
+
+    struct HostPort
+    {
+        String host;
+        std::optional<int> port{};
+        friend std::istream & operator>>(std::istream & in, HostPort & hostPort) {
+            String
+                host_with_port,
+                delimiter = ":";
+            in >> host_with_port;
+            size_t delimiter_pos = host_with_port.find(delimiter);
+            hostPort.host = host_with_port.substr(0, delimiter_pos);
+            if (delimiter_pos < host_with_port.length())
+                hostPort.port = std::stoi(host_with_port.substr(delimiter_pos + 1, host_with_port.length()));
+            return in;
+        }
+    };
+    std::vector<HostPort> hosts_ports{};
 };
 
 }

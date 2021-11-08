@@ -1869,7 +1869,7 @@ void ClientBase::init(int argc, char ** argv)
 
     /// Output of help message.
     if (options.count("help")
-        || (options.count("host") && options["host"].as<std::vector<std::string>>()[0] == "elp")) /// If user writes -help instead of --help.
+        || (options.count("host") && options["host"].as<std::vector<HostPort>>()[0].host == "elp")) /// If user writes -help instead of --help.
     {
         printHelpMessage(options_description);
         exit(0);
