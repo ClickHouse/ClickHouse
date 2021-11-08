@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Client/ClientBase.h>
-#include <istream>
-#include <optional>
 
 namespace DB
 {
