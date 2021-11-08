@@ -31,5 +31,7 @@ select map( 'aa', 4, 'bb' , 5) as m, mapContains(m, 'aa'), mapContains(m, 'k');
 select map(0, 0) as m, mapContains(m, number % 2) from numbers(2);
 
 select mapFromArrays(['aa', 'bb'], [4, 5]);
+select mapFromArrays(['aa', 'bb'], materialize([4, 5]));
+select mapFromArrays(['aa', 'bb'], materialize([4, 5])) from numbers(3);
 select mapFromArrays(['aa', 'bb'], [4, 5], [6, 7]); -- { serverError 42 }
 select mapFromArrays(['aa', 'bb'], [4, 5, 6]); -- { serverError 190 }
