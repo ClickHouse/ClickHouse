@@ -32,7 +32,8 @@ class RowPolicyCache;
 class EnabledQuota;
 class QuotaCache;
 struct QuotaUsage;
-struct SettingsProfilesInfo;
+struct SettingsProfile;
+using SettingsProfilePtr = std::shared_ptr<const SettingsProfile>;
 class EnabledSettings;
 class SettingsProfilesCache;
 class SettingsProfileElements;
@@ -83,10 +84,6 @@ public:
 
     /// Adds LDAPAccessStorage which allows querying remote LDAP server for user info.
     void addLDAPStorage(const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_);
-
-    void addReplicatedStorage(const String & storage_name,
-                              const String & zookeeper_path,
-                              const zkutil::GetZooKeeper & get_zookeeper_function);
 
     /// Adds storages from <users_directories> config.
     void addStoragesFromUserDirectoriesConfig(const Poco::Util::AbstractConfiguration & config,
@@ -143,13 +140,12 @@ public:
 
     std::vector<QuotaUsage> getAllQuotasUsage() const;
 
-    std::shared_ptr<const EnabledSettings> getEnabledSettings(
-        const UUID & user_id,
-        const SettingsProfileElements & settings_from_user,
-        const boost::container::flat_set<UUID> & enabled_roles,
-        const SettingsProfileElements & settings_from_enabled_roles) const;
+    std::shared_ptr<const EnabledSettings> getEnabledSettings(const UUID & user_id,
+                                                              const SettingsProfileElements & settings_from_user,
+                                                              const boost::container::flat_set<UUID> & enabled_roles,
+                                                              const SettingsProfileElements & settings_from_enabled_roles) const;
 
-    std::shared_ptr<const SettingsProfilesInfo> getSettingsProfileInfo(const UUID & profile_id);
+    std::shared_ptr<const SettingsChanges> getProfileSettings(const String & profile_name) const;
 
     const ExternalAuthenticators & getExternalAuthenticators() const;
 

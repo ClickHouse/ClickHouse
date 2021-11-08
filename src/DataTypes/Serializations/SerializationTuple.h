@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/SimpleTextSerialization.h>
-#include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationTupleElement.h>
 
 namespace DB
 {
@@ -9,7 +9,7 @@ namespace DB
 class SerializationTuple final : public SimpleTextSerialization
 {
 public:
-    using ElementSerializationPtr = std::shared_ptr<const SerializationNamed>;
+    using ElementSerializationPtr = std::shared_ptr<const SerializationTupleElement>;
     using ElementSerializations = std::vector<ElementSerializationPtr>;
 
     SerializationTuple(const ElementSerializations & elems_, bool have_explicit_names_)
@@ -31,11 +31,7 @@ public:
 
     /** Each sub-column in a tuple is serialized in separate stream.
       */
-    void enumerateStreams(
-        SubstreamPath & path,
-        const StreamCallback & callback,
-        DataTypePtr type,
-        ColumnPtr column) const override;
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const override;
 
     void serializeBinaryBulkStatePrefix(
             SerializeBinaryBulkSettings & settings,

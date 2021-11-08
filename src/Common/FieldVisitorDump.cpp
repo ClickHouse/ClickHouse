@@ -20,11 +20,11 @@ template <typename T>
 static inline void writeQuoted(const DecimalField<T> & x, WriteBuffer & buf)
 {
     writeChar('\'', buf);
-    writeText(x.getValue(), x.getScale(), buf, {});
+    writeText(x.getValue(), x.getScale(), buf);
     writeChar('\'', buf);
 }
 
-String FieldVisitorDump::operator() (const Null & x) const { return x.isNegativeInfinity() ? "-Inf" : (x.isPositiveInfinity() ? "+Inf" : "NULL"); }
+String FieldVisitorDump::operator() (const Null &) const { return "NULL"; }
 String FieldVisitorDump::operator() (const UInt64 & x) const { return formatQuotedWithPrefix(x, "UInt64_"); }
 String FieldVisitorDump::operator() (const Int64 & x) const { return formatQuotedWithPrefix(x, "Int64_"); }
 String FieldVisitorDump::operator() (const Float64 & x) const { return formatQuotedWithPrefix(x, "Float64_"); }

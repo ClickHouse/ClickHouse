@@ -18,6 +18,8 @@ namespace ErrorCodes
 }
 
 
+SettingsConstraints::SettingsConstraints() = default;
+
 SettingsConstraints::SettingsConstraints(const AccessControlManager & manager_) : manager(&manager_)
 {
 }
@@ -199,10 +201,13 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
         }
     };
 
-    if (reaction == THROW_ON_VIOLATION)
-        manager->checkSettingNameIsAllowed(setting_name);
-    else if (!manager->isSettingNameAllowed(setting_name))
-        return false;
+    if (manager)
+    {
+        if (reaction == THROW_ON_VIOLATION)
+            manager->checkSettingNameIsAllowed(setting_name);
+        else if (!manager->isSettingNameAllowed(setting_name))
+            return false;
+    }
 
     Field current_value, new_value;
     if (current_settings.tryGet(setting_name, current_value))

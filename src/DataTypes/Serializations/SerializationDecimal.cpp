@@ -44,10 +44,10 @@ void SerializationDecimal<T>::readText(T & x, ReadBuffer & istr, UInt32 precisio
 }
 
 template <typename T>
-void SerializationDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+void SerializationDecimal<T>::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
 {
     T value = assert_cast<const ColumnType &>(column).getData()[row_num];
-    writeText(value, this->scale, ostr, settings.decimal_trailing_zeros);
+    writeText(value, this->scale, ostr);
 }
 
 template <typename T>
