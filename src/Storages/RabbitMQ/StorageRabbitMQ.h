@@ -134,7 +134,7 @@ private:
     /**
      * ╰( ͡° ͜ʖ ͡° )つ──☆* Evil atomics:
      */
-    /// Needed for tell MV or producer baskground tasks
+    /// Needed for tell MV or producer background tasks
     /// that they must finish as soon as possible.
     std::atomic<bool> shutdown_called{false};
     /// Counter for producer buffers, needed for channel id.
