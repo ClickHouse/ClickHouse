@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int SIZES_OF_ARRAYS_DOESNT_MATCH;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -197,8 +198,33 @@ public:
     ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
-        const auto * col_keys = typeid_cast<const ColumnArray *>(arguments[0].column.get());
-        const auto * col_values = typeid_cast<const ColumnArray *>(arguments[1].column.get());
+        bool is_keys_const = isColumnConst(*arguments[0].column);
+        const ColumnArray * col_keys;
+        if (is_keys_const)
+        {
+            auto tmp = arguments[0].column->convertToFullColumnIfConst();
+            col_keys = checkAndGetColumn<ColumnArray>(tmp.get());
+        }
+        else
+        {
+            col_keys = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
+        }
+
+        bool is_values_const = isColumnConst(*arguments[1].column);
+        const ColumnArray * col_values;
+        if (is_values_const)
+        {
+            auto tmp = arguments[1].column->convertToFullColumnIfConst();
+            col_values = checkAndGetColumn<ColumnArray>(tmp.get());
+        }
+        else
+        {
+            col_values = checkAndGetColumn<ColumnArray>(arguments[1].column.get());
+        }
+
+        if (!col_keys || !col_values)
+            throw Exception("Arguments of function " + getName() + " must be array.", ErrorCodes::ILLEGAL_COLUMN);
+
         if (!col_keys->hasEqualOffsets(*col_values))
             throw Exception("Array arguments for function " + getName() + " must have equal sizes", ErrorCodes::SIZES_OF_ARRAYS_DOESNT_MATCH);
 
