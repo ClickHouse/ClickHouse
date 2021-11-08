@@ -69,7 +69,7 @@ void DiskCacheLRUPolicy::complete(const String & key, size_t offset, FileDownloa
         p->second.erase(q);
         if (p->second.empty())
             cache_in_progress.erase(p);
-        throw Exception("File downloading error with size more than reserverd", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("File downloading error with size more than reserved", ErrorCodes::LOGICAL_ERROR);
     }
     else
     {
@@ -90,17 +90,23 @@ void DiskCacheLRUPolicy::error(const String & key, size_t offset)
     complete(key, offset, FileDownloadStatus::ERROR);
 }
 
-std::list<std::pair<String, size_t>> DiskCacheLRUPolicy::add(const String & key, size_t file_size, size_t offset, size_t size)
+std::list<std::pair<String, size_t>> DiskCacheLRUPolicy::add(const String & key, size_t file_size,
+    size_t offset, size_t size, bool restore)
 {
     std::unique_lock<std::mutex> lock(cache_mutex);
 
+    std::list<std::pair<String, size_t>> res = reserve_unsafe(size, true);
+
     if (size > cache_size_limit)
     { // Should never be here if code correct
-        complete(key, offset, FileDownloadStatus::ERROR);
-        throw Exception("Should not try to insert more than possibly cache size", ErrorCodes::LOGICAL_ERROR);
-    }
+        if (!restore)
+        {
+            complete(key, offset, FileDownloadStatus::ERROR);
+            throw Exception("Should not try to insert more than possibly cache size", ErrorCodes::LOGICAL_ERROR);
+        }
 
-    std::list<std::pair<String, size_t>> res = reserve_unsafe(size);
+        return res;
+    }
 
     auto p = cache_map.find(key);
 
@@ -116,7 +122,8 @@ std::list<std::pair<String, size_t>> DiskCacheLRUPolicy::add(const String & key,
         {
             LOG_ERROR(log, "Key {} ({}+{}) collision with ({}+{})",
                 key, offset, size, entry_before->second->offset, entry_before->second->size);
-            complete(key, offset, FileDownloadStatus::ERROR);
+            if (!restore)
+                complete(key, offset, FileDownloadStatus::ERROR);
             throw Exception("Could not insert already existing data, remove it first", ErrorCodes::LOGICAL_ERROR);
         }
 
@@ -125,7 +132,8 @@ std::list<std::pair<String, size_t>> DiskCacheLRUPolicy::add(const String & key,
         {
             LOG_ERROR(log, "Key {} ({}+{}) collision with ({}+{})",
                 key, offset, size, entry_after->second->offset, entry_after->second->size);
-            complete(key, offset, FileDownloadStatus::ERROR);
+            if (!restore)
+                complete(key, offset, FileDownloadStatus::ERROR);
             throw Exception("Could not insert already existing data, remove it first", ErrorCodes::LOGICAL_ERROR);
         }
     }
@@ -148,7 +156,8 @@ std::list<std::pair<String, size_t>> DiskCacheLRUPolicy::add(const String & key,
     cache_map[key].parts[offset] = cache_list.begin();
     cache_size += size;
 
-    complete(key, offset, FileDownloadStatus::DOWNLOADED);
+    if (!restore)
+        complete(key, offset, FileDownloadStatus::DOWNLOADED);
 
     LOG_TRACE(log, "Cache size after add {} ({}+{}) : {}", key, offset, size, cache_size);
 
@@ -204,15 +213,14 @@ std::list<std::pair<String, size_t>> DiskCacheLRUPolicy::reserve(size_t size)
     return reserve_unsafe(size);
 }
 
-std::list<std::pair<String, size_t>> DiskCacheLRUPolicy::reserve_unsafe(size_t size)
+std::list<std::pair<String, size_t>> DiskCacheLRUPolicy::reserve_unsafe(size_t size, bool free_only)
 {
     std::list<std::pair<String, size_t>> keys_to_remove;
 
     if (size + reserved_size > cache_size_limit)
-    { // TODO: do something here
-        LOG_ERROR(log, "Try to reserve {} + {}, limit {}", size, reserved_size, cache_size_limit);
+    {
+        LOG_INFO(log, "Try to reserve {} + {}, limit {}", size, reserved_size, cache_size_limit);
         return keys_to_remove;
-        //throw Exception("Should not try to reserve more than possibly cache size", ErrorCodes::LOGICAL_ERROR);
     }
 
     auto last = cache_list.end();
@@ -221,14 +229,14 @@ std::list<std::pair<String, size_t>> DiskCacheLRUPolicy::reserve_unsafe(size_t s
     {
         if (last == cache_list.begin())
         { // Should never be here if code correct
-            throw Exception("Should not be here, non-zero cache_size with empty cache list", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Non-zero cache size with empty cache list", ErrorCodes::LOGICAL_ERROR);
         }
 
         --last;
 
         if (last->size > cache_size)
         { // Should never be here if code correct
-            throw Exception("Should not be here, cache_size less than one cache element", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Cache size less than one cache element", ErrorCodes::LOGICAL_ERROR);
         }
 
         keys_to_remove.push_back(std::make_pair(last->key, last->offset));
@@ -241,9 +249,10 @@ std::list<std::pair<String, size_t>> DiskCacheLRUPolicy::reserve_unsafe(size_t s
 
     cache_list.erase(last, cache_list.end());
 
-    reserved_size += size;
+    if (!free_only)
+        reserved_size += size;
 
-    LOG_TRACE(log, "Reserve {}, total {}", size, reserved_size);
+    LOG_TRACE(log, "New reserved {}, total reserved {}", size, reserved_size);
 
     return keys_to_remove;
 }
@@ -283,11 +292,6 @@ DiskCachePolicy::CachePart DiskCacheLRUPolicy::find(const String & key, size_t o
             auto & parts = p->second.parts;
             auto entry = parts.lower_bound(offset);
 
-            if (entry != parts.end())
-            {
-                LOG_TRACE(log, "Key {}, entry {}+{}", key, entry->second->offset, entry->second->size);
-            }
-
             if (entry != parts.end() && entry->second->offset == offset)
             { // found cached part with same offset
                 res.size = entry->second->size;
@@ -303,7 +307,6 @@ DiskCachePolicy::CachePart DiskCacheLRUPolicy::find(const String & key, size_t o
             { // try previous cached part
                 size_t next_offset = entry != parts.end() ? entry->second->offset : 0;
                 --entry;
-                LOG_TRACE(log, "Key {}, prev entry {}+{}", key, entry->second->offset, entry->second->size);
                 if (entry->second->offset + entry->second->size > offset)
                 { // found cached part with lower offset
                     res.offset = entry->second->offset;
@@ -352,7 +355,7 @@ DiskCachePolicy::CachePart DiskCacheLRUPolicy::find(const String & key, size_t o
                     if (cq->second->status == FileDownloadStatus::DOWNLOADING)
                     {
                         if (read_thread_ids.count(thread_id))
-                        { /// Workaroud for avoiding deadlocks when current thread already downloading some object
+                        { /// Workaround for avoiding deadlocks when current thread already downloading some object
                             LOG_TRACE(log, "Skip cache usage to avoid deadlock for key {}", key);
                             res.type = DiskCachePolicy::CachePart::CachePartType::ABSENT_NO_CACHE;
                             return res;
@@ -440,8 +443,7 @@ public:
         cache_file_size(file_size_),
         part_offset(part_offset_), expected_size(expected_size_)
     {
-        String name = "CacheableReadBufferDecorator " + std::to_string(reinterpret_cast<size_t>(this));
-        log = &Poco::Logger::get(name);
+        log = &Poco::Logger::get("CacheableReadBufferDecorator");
 
         LOG_TRACE(log, "Create for {} ({}+{}) of {}", cache_key, part_offset, expected_size, cache_file_size);
 
@@ -467,133 +469,104 @@ public:
 
     void set(BufferBase::Position ptr, size_t size, size_t offset) override
     {
-        LOG_TRACE(log, "set(ptr, {}, {})", size, offset);
-        return from->BufferBase::set(ptr, size, offset);
+        from->BufferBase::set(ptr, size, offset);
     }
     BufferBase::Buffer & internalBuffer() override
     {
-        LOG_TRACE(log, "internalBuffer()");
         return from->internalBuffer();
     }
     BufferBase::Buffer & buffer() override
     {
-        LOG_TRACE(log, "buffer()");
         return from->buffer();
     }
     BufferBase::Position & position() override
     {
-        LOG_TRACE(log, "position()");
         return from->position();
     }
     size_t offset() const override
     {
-        LOG_TRACE(log, "offset()");
         return from->offset();
     }
     size_t available() const override
     {
-        LOG_TRACE(log, "available()");
         return from->available();
     }
     void swap(BufferBase & other) override
     {
-        LOG_TRACE(log, "swap(other)");
         from->swap(other);
     }
     size_t count() const override
     {
-        LOG_TRACE(log, "count()");
         return from->count();
     }
     bool hasPendingData() const override
     {
-        LOG_TRACE(log, "hasPendingData()");
-        bool res = from->hasPendingData();
-        LOG_TRACE(log, "hasPendingData() -> {}", res);
-        return res;
+        return from->hasPendingData();
     }
     bool isPadded() const override
     {
-        LOG_TRACE(log, "isPadded()");
         return from->isPadded();
     }
 
     void set(BufferBase::Position ptr, size_t size) override
     {
-        LOG_TRACE(log, "internalBuffer()");
         from->set(ptr, size);
     }
     bool next() override
     {
-        LOG_TRACE(log, "next()");
         if (!from->next())
         {
-            LOG_TRACE(log, "next() -> false");
             return false;
         }
         auto buffer = from->buffer();
         LOG_TRACE(log, "Write to cache {} bytes", buffer.size());
         cache->write(buffer.begin(), buffer.size());
         cache_part_size += buffer.size();
-        LOG_TRACE(log, "next() -> true");
         return true;
     }
     void nextIfAtEnd() override
     {
-        LOG_TRACE(log, "nextIfAtEnd()");
         from->nextIfAtEnd();
     }
     bool eof() override
     {
-        LOG_TRACE(log, "eof()");
-        bool res = from->eof();
-        LOG_TRACE(log, "eof() -> {}", res);
-        return res;
+        return from->eof();
     }
     void ignore(size_t n) override
     {
-        LOG_TRACE(log, "ignore({})", n);
         from->ignore(n);
     }
     size_t tryIgnore(size_t n) override
     {
-        LOG_TRACE(log, "tryIgnore({})", n);
         return from->tryIgnore(n);
     }
     void ignoreAll() override
     {
-        LOG_TRACE(log, "internalBuffer()");
         from->ignoreAll();
     }
     bool peek(char & c) override
     {
-        LOG_TRACE(log, "peek(c)");
         return from->peek(c);
     }
     bool read(char & c) override
     {
-        LOG_TRACE(log, "read(c)");
         return from->read(c);
     }
     void readStrict(char & c) override
     {
-        LOG_TRACE(log, "readStrict(c)");
-        return from->readStrict(c);
+        from->readStrict(c);
     }
     size_t read(char * to, size_t n) override
     {
-        LOG_TRACE(log, "read(to, {})", n);
         return from->read(to, n);
     }
     void readStrict(char * to, size_t n) override
     {
-        LOG_TRACE(log, "readStrict(to, {})", n);
         from->readStrict(to, n);
     }
     void prefetch() override
     {
-        LOG_TRACE(log, "prefetch()");
-        return from->prefetch();
+        from->prefetch();
     }
 
 private:
@@ -660,77 +633,63 @@ public:
         ensureFrom();
     }
 
-    void set(BufferBase::Position, size_t size, size_t offset) override
+    void set(BufferBase::Position, size_t, size_t) override
     {
-        LOG_TRACE(log, "set(ptr, {}, {})", size, offset);
         throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     BufferBase::Buffer & internalBuffer() override
     {
-        LOG_TRACE(log, "internalBuffer()");
         throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     BufferBase::Buffer & buffer() override
     {
-        LOG_TRACE(log, "buffer()");
         return from->buffer();
     }
 
     BufferBase::Position & position() override
     {
-        LOG_TRACE(log, "position()");
         return from->position();
     }
 
     size_t offset() const override
     {
-        LOG_TRACE(log, "offset()");
         return from->offset();
     }
 
     size_t available() const override
     {
-        LOG_TRACE(log, "available()");
         return from->available();
     }
 
     void swap(BufferBase &) override
     {
-        LOG_TRACE(log, "swap(other)");
         throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     size_t count() const override
     {
-        LOG_TRACE(log, "count()");
         throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     bool hasPendingData() const override
     {
-        LOG_TRACE(log, "hasPendingData()");
-        bool res = from->hasPendingData();
-        LOG_TRACE(log, "hasPendingData() -> {}", res);
-        return res;
+        return from->hasPendingData();
     }
 
     bool isPadded() const override
     {
-        LOG_TRACE(log, "isPadded()");
         throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void set(BufferBase::Position, size_t size) override
+    void set(BufferBase::Position, size_t) override
     {
-        LOG_TRACE(log, "set(pos, {})", size);
         throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     bool next() override
     {
-        LOG_TRACE(log, "next()");
         bool res = from->next();
         if (!res)
         {
@@ -739,7 +698,6 @@ public:
             if (from)
                 res = from->next();
         }
-        LOG_TRACE(log, "next() -> {}", res);
 
         if (res)
         {
@@ -771,78 +729,75 @@ public:
 
     void nextIfAtEnd() override
     {
-        LOG_TRACE(log, "nextIfAtEnd()");
         throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     bool eof() override
     {
-        LOG_TRACE(log, "eof()");
         throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void ignore(size_t n) override
+    void ignore(size_t) override
     {
-        LOG_TRACE(log, "ignore({})", n);
         throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    size_t tryIgnore(size_t n) override
+    size_t tryIgnore(size_t) override
     {
-        LOG_TRACE(log, "tryIgnore({})", n);
         throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void ignoreAll() override
     {
-        LOG_TRACE(log, "internalBuffer()");
         throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
     bool peek(char & c) override
     {
-        LOG_TRACE(log, "peek(c)");
         return from->peek(c);
     }
 
     bool read(char & c) override
     {
-        LOG_TRACE(log, "read(c)");
         return from->read(c);
     }
 
     void readStrict(char & c) override
     {
-        LOG_TRACE(log, "readStrict(c)");
-        return from->readStrict(c);
+        from->readStrict(c);
     }
 
     size_t read(char * to, size_t n) override
     {
-        LOG_TRACE(log, "read(to, {})", n);
         return from->read(to, n);
     }
 
     void readStrict(char * to, size_t n) override
     {
-        LOG_TRACE(log, "readStrict(to, {})", n);
         from->readStrict(to, n);
     }
 
     void prefetch() override
     {
-        LOG_TRACE(log, "prefetch()");
         from->prefetch();
     }
 
 private:
     void ensureFrom()
     {
-        if (!from)
-        {
-            LOG_TRACE(log, "ensureFrom(init)");
+        int retries = 3;
 
-            auto part = cache_policy->find(cache_key, current_offset, end_offset ? end_offset - current_offset : 0);
+        while (!from)
+        {
+            size_t max_size = end_offset ? end_offset - current_offset : 0;
+            DiskCachePolicy::CachePart part(current_offset, max_size);
+            if (retries > 0)
+                part = cache_policy->find(cache_key, current_offset, max_size);
+            else
+            {   // Max retry attempts reached
+                // Came here when part present in index but absent on disk, several times
+                part.type = DiskCachePolicy::CachePart::CachePartType::ABSENT_NO_CACHE;
+            }
 
             if (part.type == DiskCachePolicy::CachePart::CachePartType::EMPTY)
                 return;
@@ -866,7 +821,8 @@ private:
                     {
                         LOG_WARNING(log, "Cached file {} not found, try to download", cache_path);
                         cache_policy->remove(cache_key, part.offset, part.size);
-                        part.type = DiskCachePolicy::CachePart::CachePartType::ABSENT;
+                        --retries;
+                        continue; // retry
                     }
                     else
                     {
@@ -912,6 +868,7 @@ private:
             }
 
             current_type = part.type;
+            break;
         }
     }
 
@@ -934,19 +891,16 @@ private:
 
 std::unique_ptr<ReadBuffer> DiskCache::find(const String & path, size_t offset, size_t size, std::shared_ptr<DiskCacheDownloader> downloader)
 {
-    // TODO: find with other offset
-    // TODO: mutithreading
     String cache_key = getKey(path);
 
     String cache_path = getCacheBasePath(cache_key);
 
-    return std::unique_ptr<ReadBuffer>{ new CacheableMultipartReadBufferDecorator(cache_disk, cache_policy, 
+    return std::unique_ptr<ReadBuffer>{ new CacheableMultipartReadBufferDecorator(cache_disk, cache_policy,
         cache_key, cache_path, offset, size, downloader) };
 }
 
 void DiskCache::remove(const String & path)
 {
-    // TODO: mutithreading
     String cache_key = getKey(path);
     auto to_remove = cache_policy->remove(cache_key);
 
@@ -973,12 +927,7 @@ String DiskCache::getKey(const String & path)
 
 String DiskCache::getCacheBasePath(const String & key)
 {
-    // TODO: use std::path 
-    String path = key.substr(0, 3);
-    path += "/";
-    path += key;
-    //path += "_" + std::to_string(offset);
-    return path;
+    return fs::path(key.substr(0, 3)) / key;
 }
 
 void DiskCache::reload()
@@ -1034,7 +983,7 @@ void DiskCache::reload()
 
                 size_t cache_file_size = 0;
 
-                auto to_remove = cache_policy->add(key, cache_file_size, offset, size);
+                auto to_remove = cache_policy->add(key, cache_file_size, offset, size, true);
                 for (auto & entry_to_remove : to_remove)
                 {
                     String cache_path_ = DiskCache::getCacheBasePath(entry_to_remove.first) + "_" + std::to_string(entry_to_remove.second);

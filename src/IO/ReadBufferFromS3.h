@@ -49,8 +49,6 @@ public:
         UInt64 max_single_read_retries_,
         size_t buffer_size_);
 
-    ~ReadBufferFromS3() override;
-
     bool nextImpl() override;
 
     off_t seek(off_t off, int whence) override;

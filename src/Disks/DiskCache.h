@@ -43,7 +43,8 @@ public:
 
     /// insert file in cache index
     /// returns list of keys to remove from cache (as reserve)
-    virtual std::list<std::pair<String, size_t>> add(const String & key, size_t file_size, size_t offset, size_t size) = 0;
+    virtual std::list<std::pair<String, size_t>> add(const String & key, size_t file_size,
+        size_t offset, size_t size, bool restore = false) = 0;
 
     /// call on download error
     virtual void error(const String & key, size_t offset) = 0;
@@ -66,7 +67,8 @@ public:
 
     CachePart find(const String & key, size_t offset, size_t size) override;
     std::list<std::pair<String, size_t>> reserve(size_t size) override;
-    std::list<std::pair<String, size_t>> add(const String & key, size_t file_size, size_t offset, size_t size) override;
+    std::list<std::pair<String, size_t>> add(const String & key, size_t file_size,
+        size_t offset, size_t size, bool restore = false) override;
     void error(const String & key, size_t offset) override;
     CachePartList remove(const String & key) override;
     void remove(const String & key, size_t offset, size_t size) override;
@@ -74,7 +76,7 @@ public:
 
 private:
     void complete(const String & key, size_t offset, FileDownloadStatus status);
-    std::list<std::pair<String, size_t>> reserve_unsafe(size_t size);
+    std::list<std::pair<String, size_t>> reserve_unsafe(size_t size, bool free_only = false);
 
     size_t cache_size_limit = 0;
     size_t nodes_limit = 0;

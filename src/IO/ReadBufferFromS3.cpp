@@ -43,12 +43,6 @@ ReadBufferFromS3::ReadBufferFromS3(
     , max_single_read_retries(max_single_read_retries_)
     , buffer_size(buffer_size_)
 {
-    LOG_TRACE(log, "Create object {}", reinterpret_cast<size_t>(this));
-}
-
-ReadBufferFromS3::~ReadBufferFromS3()
-{
-    LOG_TRACE(log, "Destroy object {}", reinterpret_cast<size_t>(this));
 }
 
 bool ReadBufferFromS3::nextImpl()
@@ -117,8 +111,6 @@ bool ReadBufferFromS3::nextImpl()
 
 off_t ReadBufferFromS3::seek(off_t offset_, int whence)
 {
-    LOG_TRACE(log, "Seek({}, {})", offset_, whence);
-
     if (impl)
         throw Exception("Seek is allowed only before first read attempt from the buffer.", ErrorCodes::CANNOT_SEEK_THROUGH_FILE);
 
@@ -183,7 +175,6 @@ public:
 
     RemoteFSStream get(size_t offset, size_t size) override
     {
-        LOG_TRACE(&Poco::Logger::get("S3Downloader"), "Start download from object {}", reinterpret_cast<size_t>(this));
         Aws::S3::Model::GetObjectRequest req;
         req.SetBucket(bucket);
         req.SetKey(key);
@@ -221,7 +212,6 @@ public:
         }
 
         res.stream = std::make_unique<ReadBufferFromIStream>(read_result.GetBody(), buffer_size);
-        LOG_TRACE(&Poco::Logger::get("S3Downloader"), "Init in object {}, stream {}", reinterpret_cast<size_t>(this), reinterpret_cast<size_t>(&*res.stream));
         return res;
     }
 
