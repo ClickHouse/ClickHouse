@@ -366,7 +366,7 @@ std::vector<String> Client::loadWarningMessages()
 
             default:
                 throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_SERVER, "Unknown packet {} from server {}",
-                                packet.type, connection->getDescription());
+                    packet.type, connection->getDescription());
         }
     }
 }
@@ -496,10 +496,10 @@ void Client::connect()
 
     if (is_interactive)
         std::cout << "Connecting to "
-                  << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at "
+                    << (!connection_parameters.default_database.empty() ? "database " + connection_parameters.default_database + " at "
                                                                       : "")
-                  << connection_parameters.host << ":" << connection_parameters.port
-                  << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
+                    << connection_parameters.host << ":" << connection_parameters.port
+                    << (!connection_parameters.user.empty() ? " as user " + connection_parameters.user : "") << "." << std::endl;
 
     String server_name;
     UInt64 server_version_major = 0;
@@ -526,11 +526,11 @@ void Client::connect()
             && e.code() == DB::ErrorCodes::AUTHENTICATION_FAILED)
         {
             std::cerr << std::endl
-                      << "If you have installed ClickHouse and forgot password you can reset it in the configuration file." << std::endl
-                      << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml" << std::endl
-                      << "and deleting this file will reset the password." << std::endl
-                      << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed." << std::endl
-                      << std::endl;
+                << "If you have installed ClickHouse and forgot password you can reset it in the configuration file." << std::endl
+                << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml" << std::endl
+                << "and deleting this file will reset the password." << std::endl
+                << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed." << std::endl
+                << std::endl;
         }
 
         throw;
@@ -553,14 +553,14 @@ void Client::connect()
         if (client_version_tuple < server_version_tuple)
         {
             std::cout << "ClickHouse client version is older than ClickHouse server. "
-                      << "It may lack support for new features." << std::endl
-                      << std::endl;
+                        << "It may lack support for new features." << std::endl
+                        << std::endl;
         }
         else if (client_version_tuple > server_version_tuple)
         {
             std::cout << "ClickHouse server version is older than ClickHouse client. "
-                      << "It may indicate that the server is out of date and can be upgraded." << std::endl
-                      << std::endl;
+                        << "It may indicate that the server is out of date and can be upgraded." << std::endl
+                        << std::endl;
         }
     }
 
@@ -576,16 +576,16 @@ void Client::connect()
             catch (...)
             {
                 std::cerr << "Warning: could not switch to server time zone: " << time_zone
-                          << ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
-                          << "Proceeding with local time zone." << std::endl
-                          << std::endl;
+                            << ", reason: " << getCurrentExceptionMessage(/* with_stacktrace = */ false) << std::endl
+                            << "Proceeding with local time zone." << std::endl
+                            << std::endl;
             }
         }
         else
         {
             std::cerr << "Warning: could not determine server time zone. "
-                      << "Proceeding with local time zone." << std::endl
-                      << std::endl;
+                        << "Proceeding with local time zone." << std::endl
+                        << std::endl;
         }
     }
 
@@ -834,8 +834,8 @@ bool Client::processWithFuzzing(const String & full_query)
             {
                 // Just report it, we'll terminate below.
                 fmt::print(stderr,
-                           "Error while reconnecting to the server: {}\n",
-                           getCurrentExceptionMessage(true));
+                    "Error while reconnecting to the server: {}\n",
+                    getCurrentExceptionMessage(true));
 
                 // The reconnection might fail, but we'll still be connected
                 // in the sense of `connection->isConnected() = true`,
@@ -910,7 +910,7 @@ bool Client::processWithFuzzing(const String & full_query)
                 const auto text_2 = ast_2->formatForErrorMessage();
                 const auto * tmp_pos = text_2.c_str();
                 const auto ast_3 = parseQuery(tmp_pos, tmp_pos + text_2.size(),
-                                              false /* allow_multi_statements */);
+                    false /* allow_multi_statements */);
                 const auto text_3 = ast_3->formatForErrorMessage();
                 if (text_3 != text_2)
                 {
@@ -919,8 +919,8 @@ bool Client::processWithFuzzing(const String & full_query)
                     printChangedSettings();
 
                     fmt::print(stderr,
-                               "Got the following (different) text after formatting the fuzzed query and parsing it back:\n'{}'\n, expected:\n'{}'\n",
-                               text_3, text_2);
+                       "Got the following (different) text after formatting the fuzzed query and parsing it back:\n'{}'\n, expected:\n'{}'\n",
+                       text_3, text_2);
                     fmt::print(stderr, "In more detail:\n");
                     fmt::print(stderr, "AST-1 (generated by fuzzer):\n'{}'\n", parsed_query->dumpTree());
                     fmt::print(stderr, "Text-1 (AST-1 formatted):\n'{}'\n", query_to_execute);
