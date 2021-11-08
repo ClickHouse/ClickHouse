@@ -295,6 +295,8 @@ jobs:
     steps:
       - name: Check out repository code
         uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
       - name: PVS Check
         env:
           TEMP_PATH: ${{runner.temp}}/pvs_check
