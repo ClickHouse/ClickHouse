@@ -12,6 +12,7 @@ from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from version_helper import get_version_from_repo, update_version_local
 
+# some change
 
 def get_build_config(build_check_name, build_number, repo_path):
     if build_check_name == 'ClickHouse build check (actions)':
