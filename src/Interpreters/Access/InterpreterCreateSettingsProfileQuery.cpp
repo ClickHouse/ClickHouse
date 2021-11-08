@@ -1,7 +1,7 @@
 #include <Interpreters/Access/InterpreterCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/SettingsProfile.h>
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
@@ -42,7 +42,7 @@ namespace
 BlockIO InterpreterCreateSettingsProfileQuery::execute()
 {
     auto & query = query_ptr->as<ASTCreateSettingsProfileQuery &>();
-    auto & access_control = getContext()->getAccessControlManager();
+    auto & access_control = getContext()->getAccessControl();
     if (query.alter)
         getContext()->checkAccess(AccessType::ALTER_SETTINGS_PROFILE);
     else
