@@ -56,6 +56,7 @@ def get_env_for_runner(build_path, repo_path, result_path, work_path):
     my_env["CLICKHOUSE_TESTS_RESULT_PATH"] = result_path
     my_env["CLICKHOUSE_TESTS_BASE_CONFIG_DIR"] = f"{repo_path}/programs/server"
     my_env["CLICKHOUSE_TESTS_JSON_PARAMS_PATH"] = os.path.join(work_path, "params.json")
+    my_env["CLICKHOUSE_TESTS_RUNNER_RESTART_DOCKER"] = '0'
 
     return my_env
 
