@@ -777,15 +777,15 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
             auto join_mask_col = JoinCommon::getColumnAsMask(block, onexprs[onexpr_idx].condColumnNames().second);
             /// Save blocks that do not hold conditions in ON section
             ColumnUInt8::MutablePtr not_joined_map = nullptr;
-            if (!multiple_disjuncts && isRightOrFull(kind) && join_mask_col)
+            if (!multiple_disjuncts && isRightOrFull(kind) && !join_mask_col.isConstant())
             {
-                const auto & join_mask = assert_cast<const ColumnUInt8 &>(*join_mask_col).getData();
+                const auto & join_mask = join_mask_col.getData();
                 /// Save rows that do not hold conditions
                 not_joined_map = ColumnUInt8::create(block.rows(), 0);
-                for (size_t i = 0, sz = join_mask.size(); i < sz; ++i)
+                for (size_t i = 0, sz = join_mask->size(); i < sz; ++i)
                 {
                     /// Condition hold, do not save row
-                    if (join_mask[i])
+                    if ((*join_mask)[i])
                         continue;
 
                     /// NULL key will be saved anyway because, do not save twice
@@ -802,7 +802,8 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
                 {
                     size_t size = insertFromBlockImpl<strictness_>(
                         *this, data->type, map, rows, key_columns, key_sizes[onexpr_idx], stored_block, null_map,
-                        join_mask_col ? &assert_cast<const ColumnUInt8 &>(*join_mask_col).getData() : nullptr,
+                        /// If mask is false constant, rows are added to hashmap anyway. It's not a happy-flow, so this case is not optimized
+                        join_mask_col.getData(),
                         data->pool);
 
                     if (multiple_disjuncts)
@@ -846,7 +847,7 @@ struct JoinOnKeyColumns
     ColumnPtr null_map_holder;
 
     /// Only rows where mask == true can be joined
-    ColumnPtr join_mask_column;
+    JoinCommon::JoinMask join_mask_column;
 
     Sizes key_sizes;
 
@@ -859,17 +860,10 @@ struct JoinOnKeyColumns
         , null_map_holder(extractNestedColumnsAndNullMap(key_columns, null_map))
         , join_mask_column(JoinCommon::getColumnAsMask(block, cond_column_name))
         , key_sizes(key_sizes_)
-    {}
-
-    bool isRowFiltered(size_t i) const
     {
-        if (join_mask_column)
-        {
-            UInt8ColumnDataPtr mask = &assert_cast<const ColumnUInt8 &>(*(join_mask_column)).getData();
-            return !(*mask)[i];
-        }
-        return false;
     }
+
+    bool isRowFiltered(size_t i) const { return join_mask_column.isRowFiltered(i); }
 };
 
 class AddedColumns
@@ -985,6 +979,7 @@ public:
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
     std::vector<JoinOnKeyColumns> join_on_keys;
+
     size_t rows_to_add;
     std::unique_ptr<IColumn::Offsets> offsets_to_replicate;
     bool need_filter = false;
@@ -998,6 +993,7 @@ private:
     std::optional<TypeIndex> asof_type;
     ASOF::Inequality asof_inequality;
     const IColumn * left_asof_key = nullptr;
+
     bool is_join_get;
 
     void addColumn(const ColumnWithTypeAndName & src_column, const std::string & qualified_name)
@@ -1949,12 +1945,14 @@ private:
 
         for (auto & it = *nulls_position; it != end && rows_added < max_block_size; ++it)
         {
-            const Block * block = it->first;
-            const NullMap & nullmap = assert_cast<const ColumnUInt8 &>(*it->second).getData();
+            const auto * block = it->first;
+            ConstNullMapPtr nullmap = nullptr;
+            if (it->second)
+                nullmap = &assert_cast<const ColumnUInt8 &>(*it->second).getData();
 
-            for (size_t row = 0; row < nullmap.size(); ++row)
+            for (size_t row = 0; row < block->rows(); ++row)
             {
-                if (nullmap[row])
+                if (nullmap && (*nullmap)[row])
                 {
                     for (size_t col = 0; col < columns_keys_and_right.size(); ++col)
                         columns_keys_and_right[col]->insertFrom(*block->getByPosition(col).column, row);
