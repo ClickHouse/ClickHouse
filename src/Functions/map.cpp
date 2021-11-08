@@ -198,24 +198,26 @@ public:
     ColumnPtr executeImpl(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
     {
+        ColumnPtr holder_keys;
         bool is_keys_const = isColumnConst(*arguments[0].column);
         const ColumnArray * col_keys;
         if (is_keys_const)
         {
-            auto tmp = arguments[0].column->convertToFullColumnIfConst();
-            col_keys = checkAndGetColumn<ColumnArray>(tmp.get());
+            holder_keys = arguments[0].column->convertToFullColumnIfConst();
+            col_keys = checkAndGetColumn<ColumnArray>(holder_keys.get());
         }
         else
         {
             col_keys = checkAndGetColumn<ColumnArray>(arguments[0].column.get());
         }
 
+        ColumnPtr holder_values;
         bool is_values_const = isColumnConst(*arguments[1].column);
         const ColumnArray * col_values;
         if (is_values_const)
         {
-            auto tmp = arguments[1].column->convertToFullColumnIfConst();
-            col_values = checkAndGetColumn<ColumnArray>(tmp.get());
+            holder_values = arguments[1].column->convertToFullColumnIfConst();
+            col_values = checkAndGetColumn<ColumnArray>(holder_values.get());
         }
         else
         {
