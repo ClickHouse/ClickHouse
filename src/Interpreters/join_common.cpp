@@ -1,17 +1,17 @@
 #include <Interpreters/join_common.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnConst.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <IO/WriteHelpers.h>
-
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
+
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -492,23 +492,27 @@ bool typesEqualUpToNullability(DataTypePtr left_type, DataTypePtr right_type)
     return left_type_strict->equals(*right_type_strict);
 }
 
-ColumnPtr getColumnAsMask(const Block & block, const String & column_name)
+JoinMask getColumnAsMask(const Block & block, const String & column_name)
 {
     if (column_name.empty())
-        return nullptr;
+        return JoinMask(true);
 
     const auto & src_col = block.getByName(column_name);
 
     DataTypePtr col_type = recursiveRemoveLowCardinality(src_col.type);
     if (isNothing(col_type))
-        return ColumnUInt8::create(block.rows(), 0);
+        return JoinMask(false);
 
-    const auto & join_condition_col = recursiveRemoveLowCardinality(src_col.column->convertToFullColumnIfConst());
+    if (const auto * const_cond = checkAndGetColumn<ColumnConst>(*src_col.column))
+    {
+        return JoinMask(const_cond->getBool(0));
+    }
 
+    ColumnPtr join_condition_col = recursiveRemoveLowCardinality(src_col.column->convertToFullColumnIfConst());
     if (const auto * nullable_col = typeid_cast<const ColumnNullable *>(join_condition_col.get()))
     {
         if (isNothing(assert_cast<const DataTypeNullable &>(*col_type).getNestedType()))
-            return ColumnUInt8::create(block.rows(), 0);
+            return JoinMask(false);
 
         /// Return nested column with NULL set to false
         const auto & nest_col = assert_cast<const ColumnUInt8 &>(nullable_col->getNestedColumn());
@@ -517,10 +521,10 @@ ColumnPtr getColumnAsMask(const Block & block, const String & column_name)
         auto res = ColumnUInt8::create(nullable_col->size(), 0);
         for (size_t i = 0, sz = nullable_col->size(); i < sz; ++i)
             res->getData()[i] = !null_map.getData()[i] && nest_col.getData()[i];
-        return res;
+        return JoinMask(std::move(res));
     }
     else
-        return join_condition_col;
+        return JoinMask(std::move(join_condition_col));
 }
 
 
