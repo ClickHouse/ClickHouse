@@ -434,6 +434,46 @@ Possible values:
 
 Default value: 0.
 
+**Example**
+
+Consider the table:
+
+```sql
+CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' = 1, 'second' = 2)) ENGINE=Memory();
+```
+
+When the `input_format_tsv_enum_as_number` setting is enabled:
+
+```sql
+SET input_format_tsv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
+```
+
+throws an exception.
+
+When the `input_format_tsv_enum_as_number` setting is disabled, the `INSERT` query:
+
+```sql
+SET input_format_tsv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
+SELECT * FROM table_with_enum_column_for_tsv_insert;
+```
+
+Result:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+┌──Id─┬─Value──┐
+│ 103 │ first  │
+└─────┴────────┘
+```
+
+throws an exception.
+
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
 Enables or disables the initialization of [NULL](../../sql-reference/syntax.md#null-literal) fields with [default values](../../sql-reference/statements/create/table.md#create-default-values), if data type of these fields is not [nullable](../../sql-reference/data-types/nullable.md#data_type-nullable).
@@ -1560,6 +1600,43 @@ Possible values:
 
 Default value: 0.
 
+**Examples**
+
+Consider the table:
+
+```sql
+CREATE TABLE table_with_enum_column_for_csv_insert (Id Int32,Value Enum('first' = 1, 'second' = 2)) ENGINE=Memory();
+```
+
+When the `input_format_csv_enum_as_number` setting is enabled:
+
+```sql
+SET input_format_csv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
+```
+
+throws an exception.
+
+When the `input_format_csv_enum_as_number` setting is disabled, the `INSERT` query:
+
+```sql
+SET input_format_csv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
+SELECT * FROM table_with_enum_column_for_csv_insert;
+```
+
+Result:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+┌──Id─┬─Value─┐
+│ 103 │ first │
+└─────┴───────┘
+```
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
 Use DOS/Windows-style line separator (CRLF) in CSV instead of Unix style (LF).
