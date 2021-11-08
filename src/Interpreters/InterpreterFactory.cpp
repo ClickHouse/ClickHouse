@@ -63,7 +63,6 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
-#include <Interpreters/InterpreterExternalDDLQuery.h>
 #include <Interpreters/InterpreterTransactionControlQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 

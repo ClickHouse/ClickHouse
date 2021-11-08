@@ -12,7 +12,7 @@
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
 #include <Common/hex.h>
-#include <Common/TransactionMetadata.h>
+#include <Interpreters/TransactionVersionMetadata.h>
 
 namespace DB
 {
@@ -84,8 +84,8 @@ StorageSystemParts::StorageSystemParts(const StorageID & table_id_)
         {"projections",                                 std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
 
         {"visible",                                     std::make_shared<DataTypeUInt8>()},
-        {"mintid",                                      TransactionID::getDataType()},
-        {"maxtid",                                      TransactionID::getDataType()},
+        {"mintid",                                      getTransactionIDDataType()},
+        {"maxtid",                                      getTransactionIDDataType()},
         {"mincsn",                                      std::make_shared<DataTypeUInt64>()},
         {"maxcsn",                                      std::make_shared<DataTypeUInt64>()},
     }

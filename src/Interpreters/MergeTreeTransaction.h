@@ -1,5 +1,5 @@
 #pragma once
-#include <Common/TransactionMetadata.h>
+#include <Interpreters/TransactionVersionMetadata.h>
 #include <boost/noncopyable.hpp>
 #include <Storages/IStorage_fwd.h>
 

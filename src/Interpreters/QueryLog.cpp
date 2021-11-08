@@ -117,7 +117,7 @@ NamesAndTypesList QueryLogElement::getNamesAndTypes()
         {"used_storages", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"used_table_functions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
 
-        {"transaction_id", TransactionID::getDataType()}
+        {"transaction_id", getTransactionIDDataType()},
     };
 
 }

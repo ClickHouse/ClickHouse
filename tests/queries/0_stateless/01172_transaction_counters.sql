@@ -18,6 +18,7 @@ begin transaction;
 insert into txn_counters(n) values (3);
 select 3, system.parts.name, txn_counters.mintid = system.parts.mintid from txn_counters join system.parts on txn_counters._part = system.parts.name where database=currentDatabase() and table='txn_counters' order by system.parts.name;
 select 4, name, mincsn, maxtid, maxcsn from system.parts where database=currentDatabase() and table='txn_counters' order by system.parts.name;
+select 5, transactionID().3 == serverUUID();
 commit;
 
 drop table txn_counters;
