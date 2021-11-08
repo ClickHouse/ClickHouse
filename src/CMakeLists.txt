@@ -446,7 +446,7 @@ if (USE_HDFS)
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
 
     foreach (module ${all_modules})
-        target_include_directories (${module} ${ClickHouse_BINARY_DIR}/contrib/hive-metastore)
+        target_include_directories (${module} SYSTEM BEFORE PUBLIC ${ClickHouse_BINARY_DIR}/contrib/hive-metastore)
     endforeach ()
     dbms_target_link_libraries(PRIVATE hivemetastore ${THRIFT_LIBRARY})
 endif()
