@@ -1,7 +1,7 @@
 #pragma once
 
 #include <TableFunctions/ITableFunction.h>
-#include <base/types.h>
+#include <common/types.h>
 
 
 namespace DB

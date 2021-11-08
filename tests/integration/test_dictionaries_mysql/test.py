@@ -7,7 +7,7 @@ import time
 import logging
 
 DICTS = ['configs/dictionaries/mysql_dict1.xml', 'configs/dictionaries/mysql_dict2.xml']
-CONFIG_FILES = ['configs/remote_servers.xml', 'configs/named_collections.xml']
+CONFIG_FILES = ['configs/remote_servers.xml']
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance', main_configs=CONFIG_FILES, with_mysql=True, dictionaries=DICTS)
 
@@ -155,55 +155,6 @@ def test_mysql_dictionaries_custom_query_partial_load_complex_key(started_cluste
 
     execute_mysql_query(mysql_connection, "DROP TABLE test.test_table_1;")
     execute_mysql_query(mysql_connection, "DROP TABLE test.test_table_2;")
-
-
-def test_predefined_connection_configuration(started_cluster):
-    mysql_connection = get_mysql_conn(started_cluster)
-
-    execute_mysql_query(mysql_connection, "DROP TABLE IF EXISTS test.test_table")
-    execute_mysql_query(mysql_connection, "CREATE TABLE IF NOT EXISTS test.test_table (id Integer, value Integer);")
-    execute_mysql_query(mysql_connection, "INSERT INTO test.test_table VALUES (100, 200);")
-
-    instance.query('''
-    DROP DICTIONARY IF EXISTS dict;
-    CREATE DICTIONARY dict (id UInt32, value UInt32)
-    PRIMARY KEY id
-    SOURCE(MYSQL(NAME mysql1))
-        LIFETIME(MIN 1 MAX 2)
-        LAYOUT(HASHED());
-    ''')
-    result = instance.query("SELECT dictGetUInt32(dict, 'value', toUInt64(100))")
-    assert(int(result) == 200)
-
-    instance.query('''
-    DROP DICTIONARY dict;
-    CREATE DICTIONARY dict (id UInt32, value UInt32)
-    PRIMARY KEY id
-    SOURCE(MYSQL(NAME mysql2))
-        LIFETIME(MIN 1 MAX 2)
-        LAYOUT(HASHED());
-    ''')
-    result = instance.query_and_get_error("SELECT dictGetUInt32(dict, 'value', toUInt64(100))")
-    instance.query('''
-    DROP DICTIONARY dict;
-    CREATE DICTIONARY dict (id UInt32, value UInt32)
-    PRIMARY KEY id
-    SOURCE(MYSQL(NAME unknown_collection))
-        LIFETIME(MIN 1 MAX 2)
-        LAYOUT(HASHED());
-    ''')
-    result = instance.query_and_get_error("SELECT dictGetUInt32(dict, 'value', toUInt64(100))")
-
-    instance.query('''
-    DROP DICTIONARY dict;
-    CREATE DICTIONARY dict (id UInt32, value UInt32)
-    PRIMARY KEY id
-    SOURCE(MYSQL(NAME mysql3 PORT 3306))
-        LIFETIME(MIN 1 MAX 2)
-        LAYOUT(HASHED());
-    ''')
-    result = instance.query("SELECT dictGetUInt32(dict, 'value', toUInt64(100))")
-    assert(int(result) == 200)
 
 
 def create_mysql_db(mysql_connection, name):

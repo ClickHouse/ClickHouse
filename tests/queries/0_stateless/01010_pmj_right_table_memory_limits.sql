@@ -1,5 +1,3 @@
--- Tags: no-parallel, no-fasttest
-
 SET max_memory_usage = 32000000;
 SET join_on_disk_max_files_to_merge = 4;
 

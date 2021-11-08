@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
 
 # To generate reference file for this test use the following commands:
 # ninja ProtobufDelimitedMessagesSerializer

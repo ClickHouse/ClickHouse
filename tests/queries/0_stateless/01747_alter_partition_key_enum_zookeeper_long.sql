@@ -1,5 +1,3 @@
--- Tags: long, zookeeper
-
 DROP TABLE IF EXISTS report;
 
 CREATE TABLE report

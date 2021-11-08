@@ -2,12 +2,12 @@
 #include <Access/SettingsConstraints.h>
 #include <Access/AccessControlManager.h>
 #include <Access/SettingsProfile.h>
+#include <Parsers/ASTSettingsProfileElement.h>
 #include <Core/Settings.h>
 #include <Common/SettingsChanges.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Parsers/Access/ASTSettingsProfileElement.h>
-#include <base/removeDuplicates.h>
+#include <common/removeDuplicates.h>
 
 
 namespace DB

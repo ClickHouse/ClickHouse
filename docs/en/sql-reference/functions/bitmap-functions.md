@@ -107,7 +107,7 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 The subset.
 
-Type: [Bitmap object](#bitmap_functions-bitmapbuild).
+Type: `Bitmap object`.
 
 **Example**
 
@@ -125,9 +125,9 @@ Result:
 └───────────────────────────┘
 ```
 
-## subBitmap {#subbitmap}
+## subBitmap {#subBitmap}
 
-Returns the bitmap elements, starting from the `offset` position. The number of returned elements is limited by the `cardinality_limit` parameter. Analog of the [substring](string-functions.md#substring)) string function, but for bitmap.
+Creates a subset of bitmap limit the results to `cardinality_limit` with offset of `offset`.
 
 **Syntax**
 
@@ -137,15 +137,15 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **Arguments**
 
--   `bitmap` – The bitmap. Type: [Bitmap object](#bitmap_functions-bitmapbuild).
--   `offset` – The position of the first element of the subset. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
--   `cardinality_limit` – The maximum number of elements in the subset. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+-   `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
+-   `offset` – the number of offsets. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
+-   `cardinality_limit` – The subset cardinality upper limit. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
 **Returned value**
 
 The subset.
 
-Type: [Bitmap object](#bitmap_functions-bitmapbuild).
+Type: `Bitmap object`.
 
 **Example**
 

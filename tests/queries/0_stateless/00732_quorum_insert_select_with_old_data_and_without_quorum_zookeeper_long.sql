@@ -1,6 +1,3 @@
--- Tags: long, zookeeper, no-replicated-database
--- Tag no-replicated-database: Fails due to additional replicas or shards
-
 SET send_logs_level = 'fatal';
 
 DROP TABLE IF EXISTS quorum1;
