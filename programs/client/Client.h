@@ -1,11 +1,11 @@
 #pragma once
 
 #include <Client/ClientBase.h>
-
+#include <istream>
+#include <optional>
 
 namespace DB
 {
-
 class Client : public ClientBase
 {
 public:
@@ -29,7 +29,6 @@ protected:
                         const std::vector<Arguments> & external_tables_arguments) override;
     void processConfig() override;
 
-    std::vector<String> hosts{};
 private:
     void printChangedSettings() const;
     std::vector<String> loadWarningMessages();
