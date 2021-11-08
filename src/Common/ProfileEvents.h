@@ -117,7 +117,7 @@ namespace ProfileEvents
 
     struct CountersIncrement
     {
-        CountersIncrement() noexcept;
+        CountersIncrement() noexcept = default;
         explicit CountersIncrement(Counters::Snapshot const & snapshot);
         CountersIncrement(Counters::Snapshot const & after, Counters::Snapshot const & before);
 

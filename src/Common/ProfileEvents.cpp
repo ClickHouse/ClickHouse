@@ -358,10 +358,6 @@ void increment(Event event, Count amount)
     DB::CurrentThread::getProfileEvents().increment(event, amount);
 }
 
-CountersIncrement::CountersIncrement() noexcept
-    : increment_holder()
-{}
-
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
 {
     init();
