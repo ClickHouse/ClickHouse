@@ -112,7 +112,7 @@ configure
 start
 
 # shellcheck disable=SC2086 # No quotes because I want to split it into words.
-/s3downloader --dataset-names $DATASETS
+/s3downloader --url-prefix "$S3_URL" --dataset-names $DATASETS
 chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "ATTACH DATABASE IF NOT EXISTS datasets ENGINE = Ordinary"
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS test"

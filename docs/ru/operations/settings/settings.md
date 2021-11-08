@@ -922,6 +922,17 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 log_query_threads=1
 ```
 
+## log_formatted_queries {#settings-log-formatted-queries}
+
+Позволяет регистрировать отформатированные запросы в системной таблице [system.query_log](../../operations/system-tables/query_log.md).
+
+Возможные значения:
+
+-   0 — отформатированные запросы не регистрируются в системной таблице.
+-   1 — отформатированные запросы регистрируются в системной таблице.
+
+Значение по умолчанию: `0`.
+
 ## log_comment {#settings-log-comment}
 
 Задаёт значение поля `log_comment` таблицы [system.query_log](../system-tables/query_log.md) и текст комментария в логе сервера.
@@ -1358,6 +1369,32 @@ load_balancing = round_robin
 ## min_count_to_compile_expression {#min-count-to-compile-expression}
 
 Минимальное количество выполнений одного и того же выражения до его компиляции.
+
+Значение по умолчанию: `3`.
+
+## compile_aggregate_expressions {#compile_aggregate_expressions}
+
+Включает или отключает компиляцию агрегатных функций в нативный код во время выполнения запроса. Включение этой настройки может улучшить производительность выполнения запросов.
+
+Возможные значения:
+
+-   0 — агрегатные функции не компилируются в нативный код.
+-   1 — агрегатные функции компилируются в нативный код в процессе выполнения запроса.
+
+Значение по умолчанию: `1`.
+
+**См. также** 
+
+-   [min_count_to_compile_aggregate_expression](#min_count_to_compile_aggregate_expression)
+
+## min_count_to_compile_aggregate_expression {#min_count_to_compile_aggregate_expression}
+
+Минимальное количество вызовов агрегатной функции с одинаковым выражением, при котором функция будет компилироваться в нативный код в ходе выполнения запроса. Работает только если включена настройка [compile_aggregate_expressions](#compile_aggregate_expressions).  
+
+Возможные значения:
+
+-   Целое положительное число.
+-   0 — агрегатные функциии всегда компилируются в ходе выполнения запроса.
 
 Значение по умолчанию: `3`.
 

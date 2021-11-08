@@ -34,7 +34,7 @@
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledRolesInfo.h>
 #include <Access/EnabledRowPolicies.h>
@@ -206,7 +206,7 @@ struct ContextSharedPart
     String default_profile_name;                            /// Default profile name used for default values.
     String system_profile_name;                             /// Profile used by system processes
     String buffer_profile_name;                             /// Profile used by Buffer engine for flushing to the underlying
-    std::unique_ptr<AccessControlManager> access_control_manager;
+    std::unique_ptr<AccessControl> access_control;
     mutable UncompressedCachePtr uncompressed_cache;        /// The cache of decompressed blocks.
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     mutable UncompressedCachePtr index_uncompressed_cache;  /// The cache of decompressed blocks for MergeTree indices.
@@ -279,7 +279,7 @@ struct ContextSharedPart
     Context::ConfigReloadCallback config_reload_callback;
 
     ContextSharedPart()
-        : access_control_manager(std::make_unique<AccessControlManager>()), macros(std::make_unique<Macros>())
+        : access_control(std::make_unique<AccessControl>()), macros(std::make_unique<Macros>())
     {
         /// TODO: make it singleton (?)
         static std::atomic<size_t> num_calls{0};
@@ -371,7 +371,7 @@ struct ContextSharedPart
             distributed_schedule_pool.reset();
             message_broker_schedule_pool.reset();
             ddl_worker.reset();
-            access_control_manager.reset();
+            access_control.reset();
 
             /// Stop trace collector if any
             trace_collector.reset();
@@ -635,7 +635,7 @@ void Context::setConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->config = config;
-    shared->access_control_manager->setExternalAuthenticatorsConfig(*shared->config);
+    shared->access_control->setExternalAuthenticatorsConfig(*shared->config);
 }
 
 const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
@@ -645,33 +645,33 @@ const Poco::Util::AbstractConfiguration & Context::getConfigRef() const
 }
 
 
-AccessControlManager & Context::getAccessControlManager()
+AccessControl & Context::getAccessControl()
 {
-    return *shared->access_control_manager;
+    return *shared->access_control;
 }
 
-const AccessControlManager & Context::getAccessControlManager() const
+const AccessControl & Context::getAccessControl() const
 {
-    return *shared->access_control_manager;
+    return *shared->access_control;
 }
 
 void Context::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
 {
     auto lock = getLock();
-    shared->access_control_manager->setExternalAuthenticatorsConfig(config);
+    shared->access_control->setExternalAuthenticatorsConfig(config);
 }
 
 std::unique_ptr<GSSAcceptorContext> Context::makeGSSAcceptorContext() const
 {
     auto lock = getLock();
-    return std::make_unique<GSSAcceptorContext>(shared->access_control_manager->getExternalAuthenticators().getKerberosParams());
+    return std::make_unique<GSSAcceptorContext>(shared->access_control->getExternalAuthenticators().getKerberosParams());
 }
 
 void Context::setUsersConfig(const ConfigurationPtr & config)
 {
     auto lock = getLock();
     shared->users_config = config;
-    shared->access_control_manager->setUsersConfig(*shared->users_config);
+    shared->access_control->setUsersConfig(*shared->users_config);
 }
 
 ConfigurationPtr Context::getUsersConfig()
@@ -686,7 +686,7 @@ void Context::setUser(const UUID & user_id_)
 
     user_id = user_id_;
 
-    access = getAccessControlManager().getContextAccess(
+    access = getAccessControl().getContextAccess(
         user_id_, /* current_roles = */ {}, /* use_default_roles = */ true, settings, current_database, client_info);
 
     auto user = access->getUser();
@@ -759,7 +759,7 @@ void Context::calculateAccessRights()
 {
     auto lock = getLock();
     if (user_id)
-        access = getAccessControlManager().getContextAccess(
+        access = getAccessControl().getContextAccess(
             *user_id,
             current_roles ? *current_roles : std::vector<UUID>{},
             /* use_default_roles = */ false,
@@ -808,10 +808,10 @@ void Context::setInitialRowPolicy()
     initial_row_policy = nullptr;
     if (client_info.initial_user == client_info.current_user)
         return;
-    auto initial_user_id = getAccessControlManager().find<User>(client_info.initial_user);
+    auto initial_user_id = getAccessControl().find<User>(client_info.initial_user);
     if (!initial_user_id)
         return;
-    initial_row_policy = getAccessControlManager().getEnabledRowPolicies(*initial_user_id, {});
+    initial_row_policy = getAccessControl().getEnabledRowPolicies(*initial_user_id, {});
 }
 
 
@@ -832,7 +832,7 @@ void Context::setCurrentProfile(const String & profile_name)
     auto lock = getLock();
     try
     {
-        UUID profile_id = getAccessControlManager().getID<SettingsProfile>(profile_name);
+        UUID profile_id = getAccessControl().getID<SettingsProfile>(profile_name);
         setCurrentProfile(profile_id);
     }
     catch (Exception & e)
@@ -845,7 +845,7 @@ void Context::setCurrentProfile(const String & profile_name)
 void Context::setCurrentProfile(const UUID & profile_id)
 {
     auto lock = getLock();
-    auto profile_info = getAccessControlManager().getSettingsProfileInfo(profile_id);
+    auto profile_info = getAccessControl().getSettingsProfileInfo(profile_id);
     checkSettingsConstraints(profile_info->settings);
     applySettingsChanges(profile_info->settings);
     settings_constraints_and_current_profiles = profile_info->getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
@@ -1153,7 +1153,7 @@ std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsCons
     auto lock = getLock();
     if (settings_constraints_and_current_profiles)
         return settings_constraints_and_current_profiles;
-    static auto no_constraints_or_profiles = std::make_shared<SettingsConstraintsAndProfileIDs>(getAccessControlManager());
+    static auto no_constraints_or_profiles = std::make_shared<SettingsConstraintsAndProfileIDs>(getAccessControl());
     return no_constraints_or_profiles;
 }
 
@@ -2641,7 +2641,7 @@ void Context::setApplicationType(ApplicationType type)
 void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
 {
     shared->default_profile_name = config.getString("default_profile", "default");
-    getAccessControlManager().setDefaultProfileName(shared->default_profile_name);
+    getAccessControl().setDefaultProfileName(shared->default_profile_name);
 
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
     setCurrentProfile(shared->system_profile_name);

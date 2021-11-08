@@ -68,7 +68,6 @@ public:
         size_t row)>;
 
 private:
-
     using InputCreatorFunc = InputFormatPtr(
         ReadBuffer & buf,
         const Block & header,

@@ -3423,7 +3423,6 @@ Pipe MergeTreeData::alterPartition(
 
                     case PartitionCommand::MoveDestinationType::TABLE:
                     {
-                        checkPartitionCanBeDropped(command.partition);
                         String dest_database = query_context->resolveDatabase(command.to_database);
                         auto dest_storage = DatabaseCatalog::instance().getTable({dest_database, command.to_table}, query_context);
                         movePartitionToTable(dest_storage, command.partition, query_context);
@@ -3445,7 +3444,8 @@ Pipe MergeTreeData::alterPartition(
 
             case PartitionCommand::REPLACE_PARTITION:
             {
-                checkPartitionCanBeDropped(command.partition);
+                if (command.replace)
+                    checkPartitionCanBeDropped(command.partition);
                 String from_database = query_context->resolveDatabase(command.from_database);
                 auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
                 replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
@@ -3500,7 +3500,7 @@ Pipe MergeTreeData::alterPartition(
 }
 
 
-BackupEntries MergeTreeData::backup(const ASTs & partitions, ContextPtr local_context) const
+BackupEntries MergeTreeData::backup(const ASTs & partitions, ContextPtr local_context)
 {
     DataPartsVector data_parts;
     if (partitions.empty())
@@ -3522,7 +3522,7 @@ BackupEntries MergeTreeData::backupDataParts(const DataPartsVector & data_parts)
 
         auto temp_dir_it = temp_dirs.find(disk);
         if (temp_dir_it == temp_dirs.end())
-            temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp_backup_")).first;
+            temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup_")).first;
         auto temp_dir_owner = temp_dir_it->second;
         fs::path temp_dir = temp_dir_owner->getPath();
 
