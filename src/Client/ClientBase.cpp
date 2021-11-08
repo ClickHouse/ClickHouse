@@ -10,10 +10,15 @@
 #include <base/LocalDate.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
+#include "Common/Exception.h"
+#include "Common/getNumberOfPhysicalCPUCores.h"
+#include "Common/tests/gtest_global_context.h"
+#include "Common/typeid_cast.h"
 #include "Columns/ColumnString.h"
 #include "Columns/ColumnsNumber.h"
 #include "Core/Block.h"
 #include "Core/Protocol.h"
+#include "Formats/FormatFactory.h"
 
 #include <Common/config_version.h>
 #include <Common/UTF8Helpers.h>
@@ -77,6 +82,7 @@ namespace ErrorCodes
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int UNRECOGNIZED_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 }
@@ -842,6 +848,13 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 
 void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
 {
+    /// Get columns description from variable or (if it was empty) create it from sample.
+    auto columns_description_for_query = columns_description.empty() ? ColumnsDescription(sample.getNamesAndTypesList()) : columns_description;
+    if (columns_description_for_query.empty())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column description is empty and it can't be built from sample from table. Cannot execute query.");
+    }
+
     /// If INSERT data must be sent.
     auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
     if (!parsed_insert_query)
@@ -863,7 +876,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         /// Get name of this file (path to file)
         const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
         const auto in_file = in_file_node.value.safeGet<std::string>();
-
+        /// Get name of table
+        const auto table_name = parsed_insert_query->table_id.getTableName();
         std::string compression_method;
         /// Compression method can be specified in query
         if (parsed_insert_query->compression)
@@ -872,13 +886,35 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             compression_method = compression_method_node.value.safeGet<std::string>();
         }
 
-        /// Otherwise, it will be detected from file name automatically (by chooseCompressionMethod)
-        /// Buffer for reading from file is created and wrapped with appropriate compression method
-        auto in_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
+        /// Create temporary storage file, to support globs and parallel reading
+        StorageFile::CommonArguments args{
+            WithContext(global_context),
+            parsed_insert_query->table_id,
+            parsed_insert_query->format,
+            getFormatSettings(global_context),
+            compression_method,
+            columns_description_for_query,
+            ConstraintsDescription{},
+            String{},
+        };
+        StoragePtr storage = StorageFile::create(in_file, global_context->getUserFilesPath(), args);
+        storage->startup();
+        SelectQueryInfo query_info;
 
         try
         {
-            sendDataFrom(*in_buffer, sample, columns_description, parsed_query);
+            sendDataFromPipe(
+                storage->read(
+                        sample.getNames(),
+                        storage->getInMemoryMetadataPtr(),
+                        query_info,
+                        global_context,
+                        {},
+                        global_context->getSettingsRef().max_block_size,
+                        getNumberOfPhysicalCPUCores()
+                    ),
+                parsed_query
+            );
         }
         catch (Exception & e)
         {
@@ -892,7 +928,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
         try
         {
-            sendDataFrom(data_in, sample, columns_description, parsed_query);
+            sendDataFrom(data_in, sample, columns_description_for_query, parsed_query);
         }
         catch (Exception & e)
         {
@@ -917,7 +953,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         /// Send data read from stdin.
         try
         {
-            sendDataFrom(std_in, sample, columns_description, parsed_query);
+            sendDataFrom(std_in, sample, columns_description_for_query, parsed_query);
         }
         catch (Exception & e)
         {
@@ -952,6 +988,11 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         });
     }
 
+    sendDataFromPipe(std::move(pipe), parsed_query);
+}
+
+void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query)
+{
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
 
@@ -1634,6 +1675,8 @@ void ClientBase::init(int argc, char ** argv)
         ("hardware-utilization", "print hardware utilization information in progress bar")
         ("print-profile-events", po::value(&profile_events.print)->zero_tokens(), "Printing ProfileEvents packets")
         ("profile-events-delay-ms", po::value<UInt64>()->default_value(profile_events.delay_ms), "Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet)")
+
+        ("interactive", "Process queries-file or --query query and start interactive mode")
     ;
 
     addOptions(options_description);
@@ -1703,6 +1746,9 @@ void ClientBase::init(int argc, char ** argv)
         config().setString("history_file", options["history_file"].as<std::string>());
     if (options.count("verbose"))
         config().setBool("verbose", true);
+    if (options.count("interactive"))
+        config().setBool("interactive", true);
+
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.count("server_logs_file"))
