@@ -1,3 +1,5 @@
+-- Tags: no-debug, no-parallel, long
+
 DROP TABLE IF EXISTS table_with_single_pk;
 
 CREATE TABLE table_with_single_pk

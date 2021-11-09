@@ -3,13 +3,12 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Poco/Semaphore.h>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <mutex>
 #include <atomic>
 #include <Storages/RabbitMQ/Buffer_fwd.h>
-#include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
-#include <Storages/RabbitMQ/UVLoop.h>
+#include <Storages/RabbitMQ/RabbitMQConnection.h>
 #include <Common/thread_local_rng.h>
 #include <amqpcpp/libuv.h>
 #include <uv.h>
@@ -18,8 +17,6 @@
 
 namespace DB
 {
-
-using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
 
 class StorageRabbitMQ final: public shared_ptr_helper<StorageRabbitMQ>, public IStorage, WithContext
 {
@@ -76,7 +73,8 @@ protected:
             const StorageID & table_id_,
             ContextPtr context_,
             const ColumnsDescription & columns_,
-            std::unique_ptr<RabbitMQSettings> rabbitmq_settings_);
+            std::unique_ptr<RabbitMQSettings> rabbitmq_settings_,
+            bool is_attach_);
 
 private:
     ContextMutablePtr rabbitmq_context;
@@ -103,16 +101,9 @@ private:
 
     bool hash_exchange;
     Poco::Logger * log;
-    String address;
-    std::pair<String, UInt16> parsed_address;
-    std::pair<String, String> login_password;
-    String vhost;
-    String connection_string;
-    bool secure;
 
-    UVLoop loop;
-    std::shared_ptr<RabbitMQHandler> event_handler;
-    std::unique_ptr<AMQP::TcpConnection> connection; /// Connection for all consumers
+    RabbitMQConnectionPtr connection; /// Connection for all consumers
+    RabbitMQConfiguration configuration;
 
     size_t num_created_consumers = 0;
     Poco::Semaphore semaphore;
@@ -143,8 +134,11 @@ private:
     std::atomic<bool> stream_cancelled{false};
     size_t read_attempts = 0;
     mutable bool drop_table = false;
+    bool is_attach;
 
     ConsumerBufferPtr createReadBuffer();
+    void initializeBuffers();
+    bool initialized = false;
 
     /// Functions working in the background
     void streamingToViewsFunc();
@@ -155,7 +149,7 @@ private:
     static AMQP::ExchangeType defineExchangeType(String exchange_type_);
     static String getTableBasedName(String name, const StorageID & table_id);
 
-    std::shared_ptr<Context> addSettings(ContextPtr context) const;
+    ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
     void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool wait, bool stop_loop);
 
@@ -166,11 +160,10 @@ private:
     void bindExchange(AMQP::TcpChannel & rabbit_channel);
     void bindQueue(size_t queue_id, AMQP::TcpChannel & rabbit_channel);
 
-    bool restoreConnection(bool reconnecting);
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
 
-    String getRandomName() const
+    static String getRandomName()
     {
         std::uniform_int_distribution<int> distribution('a', 'z');
         String random_str(32, ' ');

@@ -259,9 +259,9 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
     fs::rename(from_file, to_file);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, size_t estimated_size) const
+std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> size) const
 {
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, estimated_size);
+    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

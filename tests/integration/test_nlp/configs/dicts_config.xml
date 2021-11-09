@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <synonyms_extensions>
         <extension>
             <name>en</name>
@@ -19,4 +19,4 @@
             <path>/etc/clickhouse-server/dictionaries/lem-en.bin</path>
         </lemmatizer>
     </lemmatizers>
-</yandex>
+</clickhouse>

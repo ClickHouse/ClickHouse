@@ -1,6 +1,8 @@
-#include <common/map.h>
-#include <common/range.h>
+#include <base/map.h>
+#include <base/range.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Core/Field.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
@@ -280,10 +282,27 @@ void SerializationTuple::deserializeTextCSV(IColumn & column, ReadBuffer & istr,
     });
 }
 
-void SerializationTuple::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void SerializationTuple::enumerateStreams(
+    SubstreamPath & path,
+    const StreamCallback & callback,
+    const SubstreamData & data) const
 {
-    for (const auto & elem : elems)
-        elem->enumerateStreams(callback, path);
+    const auto * type_tuple = data.type ? &assert_cast<const DataTypeTuple &>(*data.type) : nullptr;
+    const auto * column_tuple = data.column ? &assert_cast<const ColumnTuple &>(*data.column) : nullptr;
+    const auto * info_tuple = data.serialization_info ? &assert_cast<const SerializationInfoTuple &>(*data.serialization_info) : nullptr;
+
+    for (size_t i = 0; i < elems.size(); ++i)
+    {
+        SubstreamData next_data =
+        {
+            elems[i],
+            type_tuple ? type_tuple->getElement(i) : nullptr,
+            column_tuple ? column_tuple->getColumnPtr(i) : nullptr,
+            info_tuple ? info_tuple->getElementInfo(i) : nullptr,
+        };
+
+        elems[i]->enumerateStreams(path, callback, next_data);
+    }
 }
 
 struct SerializeBinaryBulkStateTuple : public ISerialization::SerializeBinaryBulkState
@@ -314,7 +333,7 @@ void SerializationTuple::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    auto * tuple_state = checkAndGetSerializeState<SerializeBinaryBulkStateTuple>(state, *this);
+    auto * tuple_state = checkAndGetState<SerializeBinaryBulkStateTuple>(state);
 
     for (size_t i = 0; i < elems.size(); ++i)
         elems[i]->serializeBinaryBulkStateSuffix(settings, tuple_state->states[i]);
@@ -340,7 +359,7 @@ void SerializationTuple::serializeBinaryBulkWithMultipleStreams(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    auto * tuple_state = checkAndGetSerializeState<SerializeBinaryBulkStateTuple>(state, *this);
+    auto * tuple_state = checkAndGetState<SerializeBinaryBulkStateTuple>(state);
 
     for (const auto i : collections::range(0, elems.size()))
     {
@@ -356,7 +375,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto * tuple_state = checkAndGetDeserializeState<DeserializeBinaryBulkStateTuple>(state, *this);
+    auto * tuple_state = checkAndGetState<DeserializeBinaryBulkStateTuple>(state);
 
     auto mutable_column = column->assumeMutable();
     auto & column_tuple = assert_cast<ColumnTuple &>(*mutable_column);

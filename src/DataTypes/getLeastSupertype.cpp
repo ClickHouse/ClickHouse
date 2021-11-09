@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <base/EnumReflection.h>
 
 
 namespace DB
@@ -32,11 +33,8 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename DataType>
-String typeToString(const DataType & type);
-
-template<> String typeToString(const DataTypePtr & type) { return type->getName(); }
-template<> String typeToString(const TypeIndex & type) { return getTypeName(type); }
+String typeToString(const DataTypePtr & type) { return type->getName(); }
+String typeToString(const TypeIndex & type) { return String(magic_enum::enum_name(type)); }
 
 template <typename DataTypes>
 String getExceptionMessagePrefix(const DataTypes & types)
@@ -436,17 +434,19 @@ DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_conversion_to_
     /// For Date and DateTime/DateTime64, the common type is DateTime/DateTime64. No other types are compatible.
     {
         UInt32 have_date = type_ids.count(TypeIndex::Date);
+        UInt32 have_date32 = type_ids.count(TypeIndex::Date32);
         UInt32 have_datetime = type_ids.count(TypeIndex::DateTime);
         UInt32 have_datetime64 = type_ids.count(TypeIndex::DateTime64);
 
-        if (have_date || have_datetime || have_datetime64)
+        if (have_date || have_date32 || have_datetime || have_datetime64)
         {
-            bool all_date_or_datetime = type_ids.size() == (have_date + have_datetime + have_datetime64);
+            bool all_date_or_datetime = type_ids.size() == (have_date + have_date32 + have_datetime + have_datetime64);
             if (!all_date_or_datetime)
-                return throw_or_return(getExceptionMessagePrefix(types) + " because some of them are Date/DateTime/DateTime64 and some of them are not",
+                return throw_or_return(getExceptionMessagePrefix(types)
+                    + " because some of them are Date/Date32/DateTime/DateTime64 and some of them are not",
                     ErrorCodes::NO_COMMON_TYPE);
 
-            if (have_datetime64 == 0)
+            if (have_datetime64 == 0 && have_date32 == 0)
             {
                 for (const auto & type : types)
                 {
@@ -455,6 +455,22 @@ DataTypePtr getLeastSupertype(const DataTypes & types, bool allow_conversion_to_
                 }
 
                 return std::make_shared<DataTypeDateTime>();
+            }
+
+            /// For Date and Date32, the common type is Date32
+            if (have_datetime == 0 && have_datetime64 == 0)
+            {
+                for (const auto & type : types)
+                {
+                    if (isDate32(type))
+                        return type;
+                }
+            }
+
+            /// For Datetime and Date32, the common type is Datetime64
+            if (have_datetime == 1 && have_date32 == 1 && have_datetime64 == 0)
+            {
+                return std::make_shared<DataTypeDateTime64>(0);
             }
 
             UInt8 max_scale = 0;
@@ -568,7 +584,7 @@ DataTypePtr getLeastSupertype(const TypeIndexSet & types, bool allow_conversion_
 
         if (!WhichDataType(type).isSimple())
             throw Exception(ErrorCodes::NO_COMMON_TYPE,
-                "Cannot get common type by type ids with parametric type {}", getTypeName(type));
+                "Cannot get common type by type ids with parametric type {}", typeToString(type));
 
         types_set.insert(type);
     }

@@ -160,7 +160,7 @@ void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
 
     Serializations serializations(num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        serializations[i] = header.getByPosition(i).type->getSerialization(*columns[i]);
+        serializations[i] = header.getByPosition(i).type->getSerialization(*columns[i]->getSerializationInfo());
 
     WidthsPerColumn widths;
     Widths max_widths;
@@ -407,9 +407,9 @@ void PrettyBlockOutputFormat::finalize()
 }
 
 
-void registerOutputFormatProcessorPretty(FormatFactory & factory)
+void registerOutputFormatPretty(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("Pretty", [](
+    factory.registerOutputFormat("Pretty", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,
@@ -418,7 +418,7 @@ void registerOutputFormatProcessorPretty(FormatFactory & factory)
         return std::make_shared<PrettyBlockOutputFormat>(buf, sample, format_settings);
     });
 
-    factory.registerOutputFormatProcessor("PrettyNoEscapes", [](
+    factory.registerOutputFormat("PrettyNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,

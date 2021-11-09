@@ -1,8 +1,10 @@
-if (APPLE OR SPLIT_SHARED_LIBRARIES OR NOT ARCH_AMD64 OR SANITIZE STREQUAL "undefined")
-    set (ENABLE_EMBEDDED_COMPILER OFF CACHE INTERNAL "")
+if (APPLE OR NOT ARCH_AMD64 OR SANITIZE STREQUAL "undefined")
+    set (ENABLE_EMBEDDED_COMPILER_DEFAULT OFF)
+else()
+    set (ENABLE_EMBEDDED_COMPILER_DEFAULT ON)
 endif()
 
-option (ENABLE_EMBEDDED_COMPILER "Enable support for 'compile_expressions' option for query execution" ON)
+option (ENABLE_EMBEDDED_COMPILER "Enable support for 'compile_expressions' option for query execution" ${ENABLE_EMBEDDED_COMPILER_DEFAULT})
 
 if (NOT ENABLE_EMBEDDED_COMPILER)
     set (USE_EMBEDDED_COMPILER 0)
@@ -10,7 +12,7 @@ if (NOT ENABLE_EMBEDDED_COMPILER)
 endif()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/llvm/llvm/CMakeLists.txt")
-    message (${RECONFIGURE_MESSAGE_LEVEL} "submodule /contrib/llvm is missing. to fix try run: \n git submodule update --init --recursive")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "submodule /contrib/llvm is missing. to fix try run: \n git submodule update --init")
 endif ()
 
 set (USE_EMBEDDED_COMPILER 1)

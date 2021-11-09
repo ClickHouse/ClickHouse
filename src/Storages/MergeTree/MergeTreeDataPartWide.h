@@ -45,11 +45,12 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
-        const SerializationInfoPtr & serialization_info_,
         const MergeTreeWriterSettings & writer_settings,
         const MergeTreeIndexGranularity & computed_index_granularity) const override;
 
     bool isStoredOnDisk() const override { return true; }
+
+    bool isStoredOnRemoteDisk() const override;
 
     bool supportsVerticalMerge() const override { return true; }
 

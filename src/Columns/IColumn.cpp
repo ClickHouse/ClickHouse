@@ -4,6 +4,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <Core/Field.h>
+#include <DataTypes/Serializations/SerializationInfo.h>
 
 
 namespace DB
@@ -61,6 +62,11 @@ ColumnPtr IColumn::createWithOffsets(const Offsets & offsets, const Field & defa
         res->insertMany(default_field, offsets_diff - 1);
 
     return res;
+}
+
+SerializationInfoPtr IColumn::getSerializationInfo() const
+{
+    return std::make_shared<SerializationInfo>(ISerialization::getKind(*this), SerializationInfo::Settings{});
 }
 
 bool isColumnNullable(const IColumn & column)

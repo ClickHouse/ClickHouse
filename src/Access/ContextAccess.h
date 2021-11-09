@@ -4,10 +4,11 @@
 #include <Access/RowPolicy.h>
 #include <Interpreters/ClientInfo.h>
 #include <Core/UUID.h>
-#include <common/scope_guard.h>
-#include <common/shared_ptr_helper.h>
+#include <base/scope_guard.h>
+#include <base/shared_ptr_helper.h>
 #include <boost/container/flat_set.hpp>
 #include <mutex>
+#include <unordered_map>
 
 
 namespace Poco { class Logger; }
@@ -25,7 +26,7 @@ struct QuotaUsage;
 struct Settings;
 struct SettingsProfilesInfo;
 class SettingsChanges;
-class AccessControlManager;
+class AccessControl;
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 
@@ -155,9 +156,9 @@ public:
     static std::shared_ptr<const ContextAccess> getFullAccess();
 
 private:
-    friend class AccessControlManager;
+    friend class AccessControl;
     ContextAccess() {}
-    ContextAccess(const AccessControlManager & manager_, const Params & params_);
+    ContextAccess(const AccessControl & access_control_, const Params & params_);
 
     void setUser(const UserPtr & user_) const;
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const;
@@ -203,7 +204,7 @@ private:
     template <bool throw_if_denied, typename Container, typename GetNameFunction>
     bool checkAdminOptionImplHelper(const Container & role_ids, const GetNameFunction & get_name_function) const;
 
-    const AccessControlManager * manager = nullptr;
+    const AccessControl * access_control = nullptr;
     const Params params;
     bool is_full_access = false;
     mutable Poco::Logger * trace_log = nullptr;

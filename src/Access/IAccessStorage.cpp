@@ -1,11 +1,13 @@
 #include <Access/IAccessStorage.h>
-#include <Access/User.h>
+#include <Access/Authentication.h>
 #include <Access/Credentials.h>
+#include <Access/User.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
+#include <base/FnTraits.h>
 
 
 namespace DB
@@ -96,7 +98,7 @@ namespace
 
         bool errors() const { return exception.has_value(); }
 
-        void showErrors(const char * format, const std::function<String(size_t)> & get_name_function)
+        void showErrors(const char * format, Fn<String(size_t)> auto && get_name_function)
         {
             if (!exception)
                 return;
@@ -494,7 +496,7 @@ bool IAccessStorage::areCredentialsValidImpl(
     if (credentials.getUserName() != user.getName())
         return false;
 
-    return user.authentication.areCredentialsValid(credentials, external_authenticators);
+    return Authentication::areCredentialsValid(credentials, user.auth_data, external_authenticators);
 }
 
 

@@ -87,7 +87,23 @@ The function is using uppercase letters `A-F` and not using any prefixes (like `
 
 For integer arguments, it prints hex digits (“nibbles”) from the most significant to least significant (big-endian or “human-readable” order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints both digits of every byte even if the leading digit is zero.
 
-**Example**
+Values of type [Date](../../sql-reference/data-types/date.md) and [DateTime](../../sql-reference/data-types/datetime.md) are formatted as corresponding integers (the number of days since Epoch for Date and the value of Unix Timestamp for DateTime).
+
+For [String](../../sql-reference/data-types/string.md) and [FixedString](../../sql-reference/data-types/fixedstring.md), all bytes are simply encoded as two hexadecimal numbers. Zero bytes are not omitted.
+
+Values of [Float](../../sql-reference/data-types/float.md) and [Decimal](../../sql-reference/data-types/decimal.md) types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
+
+**Arguments**
+
+-   `arg` — A value to convert to hexadecimal. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+
+**Returned value**
+
+-   A string with the hexadecimal representation of the argument.
+
+Type: [String](../../sql-reference/data-types/string.md).
+
+**Examples**
 
 Query:
 
@@ -101,28 +117,10 @@ Result:
 01
 ```
 
-Values of type `Date` and `DateTime` are formatted as corresponding integers (the number of days since Epoch for Date and the value of Unix Timestamp for DateTime).
-
-For `String` and `FixedString`, all bytes are simply encoded as two hexadecimal numbers. Zero bytes are not omitted.
-
-Values of floating point and Decimal types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
-
-**Arguments**
-
--   `arg` — A value to convert to hexadecimal. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
-
-**Returned value**
-
--   A string with the hexadecimal representation of the argument.
-
-Type: `String`.
-
-**Example**
-
 Query:
 
 ``` sql
-SELECT hex(toFloat32(number)) as hex_presentation FROM numbers(15, 2);
+SELECT hex(toFloat32(number)) AS hex_presentation FROM numbers(15, 2);
 ```
 
 Result:
@@ -137,7 +135,7 @@ Result:
 Query:
 
 ``` sql
-SELECT hex(toFloat64(number)) as hex_presentation FROM numbers(15, 2);
+SELECT hex(toFloat64(number)) AS hex_presentation FROM numbers(15, 2);
 ```
 
 Result:
@@ -210,52 +208,52 @@ Result:
 
 Returns a string containing the argument’s binary representation.
 
-Alias: `BIN`.
-
 **Syntax**
 
 ``` sql
 bin(arg)
 ```
 
+Alias: `BIN`.
+
 For integer arguments, it prints bin digits from the most significant to least significant (big-endian or “human-readable” order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints eight digits of every byte if the leading digit is zero.
 
-**Example**
+Values of type [Date](../../sql-reference/data-types/date.md) and [DateTime](../../sql-reference/data-types/datetime.md) are formatted as corresponding integers (the number of days since Epoch for `Date` and the value of Unix Timestamp for `DateTime`).
 
-Query:
+For [String](../../sql-reference/data-types/string.md) and [FixedString](../../sql-reference/data-types/fixedstring.md), all bytes are simply encoded as eight binary numbers. Zero bytes are not omitted.
 
-``` sql
-SELECT bin(1);
-```
-
-Result:
-
-``` text
-00000001
-```
-
-Values of type `Date` and `DateTime` are formatted as corresponding integers (the number of days since Epoch for Date and the value of Unix Timestamp for DateTime).
-
-For `String` and `FixedString`, all bytes are simply encoded as eight binary numbers. Zero bytes are not omitted.
-
-Values of floating-point and Decimal types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
+Values of [Float](../../sql-reference/data-types/float.md) and [Decimal](../../sql-reference/data-types/decimal.md) types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
 
 **Arguments**
 
--   `arg` — A value to convert to binary. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
+-   `arg` — A value to convert to binary. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md), or [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
 -   A string with the binary representation of the argument.
 
-Type: `String`.
+Type: [String](../../sql-reference/data-types/string.md).
 
-**Example**
+**Examples**
 
 Query:
 
 ``` sql
-SELECT bin(toFloat32(number)) as bin_presentation FROM numbers(15, 2);
+SELECT bin(14);
+```
+
+Result:
+
+``` text
+┌─bin(14)──┐
+│ 00001110 │
+└──────────┘
+```
+
+Query:
+
+``` sql
+SELECT bin(toFloat32(number)) AS bin_presentation FROM numbers(15, 2);
 ```
 
 Result:
@@ -270,7 +268,7 @@ Result:
 Query:
 
 ``` sql
-SELECT bin(toFloat64(number)) as bin_presentation FROM numbers(15, 2);
+SELECT bin(toFloat64(number)) AS bin_presentation FROM numbers(15, 2);
 ```
 
 Result:
@@ -284,14 +282,7 @@ Result:
 
 ## unbin {#unbinstr}
 
-Performs the opposite operation of [bin](#bin). It interprets each pair of binary digits (in the argument) as a number and converts it to the byte represented by the number. The return value is a binary string (BLOB).
-
-If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
-
-!!! note "Note"
-    If `unbin` is invoked from within the `clickhouse-client`, binary strings display using UTF-8.
-
-Alias: `UNBIN`.
+Interprets each pair of binary digits (in the argument) as a number and converts it to the byte represented by the number. The functions performs the opposite operation to [bin](#bin).
 
 **Syntax**
 
@@ -299,11 +290,18 @@ Alias: `UNBIN`.
 unbin(arg)
 ```
 
+Alias: `UNBIN`.
+
+For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs<Type>](../../sql-reference/functions/type-conversion-functions.md#reinterpretasuint8163264) functions.
+
+!!! note "Note"
+    If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.
+
+Supports binary digits `0` and `1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits, some implementation-defined result is returned (an exception isn’t thrown). 
+
 **Arguments**
 
--   `arg` — A string containing any number of binary digits. Type: [String](../../sql-reference/data-types/string.md).
-
-Supports binary digits `0-1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits, some implementation-defined result is returned (an exception isn’t thrown). For a numeric argument the inverse of bin(N) is not performed by unbin().
+-   `arg` — A string containing any number of binary digits. [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
 
@@ -311,7 +309,7 @@ Supports binary digits `0-1`. The number of binary digits does not have to be mu
 
 Type: [String](../../sql-reference/data-types/string.md).
 
-**Example**
+**Examples**
 
 Query:
 
@@ -330,14 +328,14 @@ Result:
 Query:
 
 ``` sql
-SELECT reinterpretAsUInt64(reverse(unbin('1010'))) AS num;
+SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num;
 ```
 
 Result:
 
 ``` text
 ┌─num─┐
-│  10 │
+│  14 │
 └─────┘
 ```
 
@@ -396,7 +394,7 @@ Result:
 Query:
 
 ``` sql
-select bitPositionsToArray(toInt8(-1)) as bit_positions;
+SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions;
 ```
 
 Result:

@@ -39,7 +39,7 @@ bool PredicateExpressionsOptimizer::optimize(ASTSelectQuery & select_query)
     if (!select_query.tables() || select_query.tables()->children.empty())
         return false;
 
-    if ((!select_query.where() && !select_query.prewhere()) || select_query.arrayJoinExpressionList())
+    if ((!select_query.where() && !select_query.prewhere()) || select_query.arrayJoinExpressionList().first)
         return false;
 
     const auto & tables_predicates = extractTablesPredicates(select_query.where(), select_query.prewhere());

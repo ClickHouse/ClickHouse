@@ -15,7 +15,7 @@
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/queryToString.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB

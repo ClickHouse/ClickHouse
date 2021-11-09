@@ -8,7 +8,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnCompressed.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 
 
 namespace DB
@@ -658,6 +658,7 @@ ColumnPtr ColumnNullable::createWithOffsets(const IColumn::Offsets & offsets, co
         auto default_column = nested_column->cloneEmpty();
         default_column->insertDefault();
 
+        /// Value in main column, when null map is 1 is implementation defined. So, take any value.
         new_values = nested_column->createWithOffsets(offsets, (*default_column)[0], total_rows, shift);
         new_null_map = null_map->createWithOffsets(offsets, Field(1u), total_rows, shift);
     }

@@ -90,6 +90,7 @@ public:
     NamesAndTypesList getNamesAndTypesList() const;
     Names getNames() const;
     DataTypes getDataTypes() const;
+    Names getDataTypeNames() const;
 
     /// Returns number of rows from first column in block, not equal to nullptr. If no columns, returns 0.
     size_t rows() const;
@@ -193,5 +194,13 @@ void assertCompatibleHeader(const Block & actual, const Block & desired, const s
 void getBlocksDifference(const Block & lhs, const Block & rhs, std::string & out_lhs_diff, std::string & out_rhs_diff);
 
 void convertToFullIfSparse(Block & block);
+
+/// Helps in-memory storages to extract columns from block.
+/// Properly handles cases, when column is a subcolumn and when it is compressed.
+ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column);
+
+/// Converts columns-constants to full columns ("materializes" them).
+Block materializeBlock(const Block & block);
+void materializeBlockInplace(Block & block);
 
 }

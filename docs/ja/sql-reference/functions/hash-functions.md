@@ -40,6 +40,10 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 └────────────────────┴────────┘
 ```
 
+## MD4 {#hash_functions-md4}
+
+文字列からMD4を計算し、結果のバイトセットをFixedString(16)として返します。
+
 ## MD5 {#hash_functions-md5}
 
 文字列からMD5を計算し、結果のバイトセットをFixedString(16)として返します。
@@ -143,7 +147,11 @@ SELECT groupBitXor(cityHash64(*)) FROM table
 
 ## SHA256 {#sha256}
 
-文字列からSHA-1、SHA-224、またはSHA-256を計算し、結果のバイトセットをFixedString(20)、FixedString(28)、またはFixedString(32)として返します。
+## SHA384 {#sha384}
+
+## SHA512 {#sha512}
+
+文字列からSHA-1、SHA-224、SHA-256、SHA-384、またはSHA-512を計算し、結果のバイトセットをFixedString(20)、FixedString(28)、FixedString(32)、FixedString(48)またはFixedString(64)として返します。
 この機能はかなりゆっくりと動作します（SHA-1はプロセッサコア毎秒約5万の短い文字列を処理しますが、SHA-224とSHA-256は約2.2万の短い文字列を処理
 この関数は、特定のハッシュ関数が必要で選択できない場合にのみ使用することをお勧めします。
 このような場合でも、SELECTに適用するのではなく、関数をオフラインで適用し、テーブルに挿入するときに値を事前に計算することをお勧めします。
@@ -481,4 +489,4 @@ SELECT xxHash32('Hello, world!');
 
 -   [xxHash](http://cyan4973.github.io/xxHash/).
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/hash_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/hash_functions/) <!--hide-->

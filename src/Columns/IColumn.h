@@ -4,7 +4,7 @@
 #include <Common/PODArray_fwd.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Core/Types.h>
 
 
@@ -26,9 +26,8 @@ class ColumnGathererStream;
 class Field;
 class WeakHash32;
 
-class ISerialization;
-using SerializationPtr = std::shared_ptr<const ISerialization>;
-
+class SerializationInfo;
+using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
 
 /*
  * Represents a set of equal ranges in previous column to perform sorting in current column.
@@ -186,7 +185,7 @@ public:
     virtual void insertMany(const Field & field, size_t length)
     {
         for (size_t i = 0; i < length; ++i)
-          insert(field);
+            insert(field);
     }
 
     /// Appends data located in specified memory chunk if it is possible (throws an exception if it cannot be implemented).
@@ -400,10 +399,12 @@ public:
 
     /// Returns column with @total_size elements.
     /// In result column values from current column are at positions from @offsets.
-    /// Other values are filled by @default_field.
+    /// Other values are filled by @default_value.
     /// @shift means how much rows to skip from the beginning of current column.
     /// Used to create full column from sparse.
     virtual Ptr createWithOffsets(const Offsets & offsets, const Field & default_field, size_t total_rows, size_t shift) const;
+
+    virtual SerializationInfoPtr getSerializationInfo() const;
 
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
@@ -526,6 +527,28 @@ protected:
 
     template <typename Derived>
     void getIndicesOfNonDefaultRowsImpl(Offsets & indices, size_t from, size_t limit) const;
+
+    /// Uses std::sort and partial_sort as default algorithms.
+    /// Implements 'less' and 'equals' via comparator.
+    /// If 'less' and 'equals' can be implemented more optimal
+    /// (e.g. with less number of comparisons), you can use
+    /// directly the second overload of this method.
+    template <typename Comparator>
+    void updatePermutationImpl(
+        size_t limit,
+        Permutation & res,
+        EqualRanges & equal_ranges,
+        Comparator cmp) const;
+
+    template <typename Less, typename Equals, typename Sort, typename PartialSort>
+    void updatePermutationImpl(
+        size_t limit,
+        Permutation & res,
+        EqualRanges & equal_ranges,
+        Less less,
+        Equals equals,
+        Sort full_sort,
+        PartialSort partial_sort) const;
 };
 
 using ColumnPtr = IColumn::Ptr;

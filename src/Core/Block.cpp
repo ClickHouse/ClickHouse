@@ -588,6 +588,17 @@ DataTypes Block::getDataTypes() const
     return res;
 }
 
+Names Block::getDataTypeNames() const
+{
+    Names res;
+    res.reserve(columns());
+
+    for (const auto & elem : data)
+        res.push_back(elem.type->getName());
+
+    return res;
+}
+
 
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs)
 {
@@ -705,6 +716,40 @@ void convertToFullIfSparse(Block & block)
 {
     for (auto & column : block)
         column.column = recursiveRemoveSparse(column.column);
+}
+
+ColumnPtr getColumnFromBlock(const Block & block, const NameAndTypePair & column)
+{
+    auto current_column = block.getByName(column.getNameInStorage()).column;
+    current_column = current_column->decompress();
+
+    if (column.isSubcolumn())
+        return column.getTypeInStorage()->getSubcolumn(column.getSubcolumnName(), current_column);
+
+    return current_column;
+}
+
+
+Block materializeBlock(const Block & block)
+{
+    if (!block)
+        return block;
+
+    Block res = block;
+    size_t columns = res.columns();
+    for (size_t i = 0; i < columns; ++i)
+    {
+        auto & element = res.getByPosition(i);
+        element.column = recursiveRemoveSparse(element.column->convertToFullColumnIfConst());
+    }
+
+    return res;
+}
+
+void materializeBlockInplace(Block & block)
+{
+    for (size_t i = 0; i < block.columns(); ++i)
+        block.getByPosition(i).column = recursiveRemoveSparse(block.getByPosition(i).column->convertToFullColumnIfConst());
 }
 
 }

@@ -1,21 +1,16 @@
 #pragma once
 
-
 #include <Core/Names.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/StorageID.h>
-#include <Poco/Util/XMLConfiguration.h>
-#include <Common/PODArray.h>
-#include <common/StringRef.h>
-#include "IDictionarySource.h"
+#include <Columns/ColumnsNumber.h>
+#include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <DataTypes/IDataType.h>
-#include <Columns/ColumnsNumber.h>
 
-#include <chrono>
 #include <memory>
 #include <mutex>
+
 
 namespace DB
 {
@@ -115,7 +110,7 @@ struct IDictionary : public IExternalLoadable
       */
     virtual DictionaryKeyType getKeyType() const = 0;
 
-    virtual DictionarySpecialKeyType getSpecialKeyType() const { return DictionarySpecialKeyType::None;}
+    virtual DictionarySpecialKeyType getSpecialKeyType() const { return DictionarySpecialKeyType::None; }
 
     /** Subclass must validate key columns and keys types
       * and return column representation of dictionary attribute.
@@ -199,7 +194,7 @@ struct IDictionary : public IExternalLoadable
                         getDictionaryID().getNameForLogs());
     }
 
-    virtual Pipe read(const Names & column_names, size_t max_block_size) const = 0;
+    virtual Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const = 0;
 
     bool supportUpdates() const override { return true; }
 
@@ -221,12 +216,25 @@ struct IDictionary : public IExternalLoadable
         return std::static_pointer_cast<const IDictionary>(IExternalLoadable::shared_from_this());
     }
 
+    void setDictionaryComment(String new_comment)
+    {
+        std::lock_guard lock{name_mutex};
+        dictionary_comment = std::move(new_comment);
+    }
+
+    String getDictionaryComment() const
+    {
+        std::lock_guard lock{name_mutex};
+        return dictionary_comment;
+    }
+
 private:
     mutable std::mutex name_mutex;
     mutable StorageID dictionary_id;
 
 protected:
     const String full_name;
+    String dictionary_comment;
 };
 
 }

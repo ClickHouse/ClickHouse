@@ -2,9 +2,11 @@
 
 #include <Common/COW.h>
 #include <Core/Types.h>
-#include <common/demangle.h>
+#include <base/demangle.h>
 #include <Common/typeid_cast.h>
+#include <Columns/IColumn.h>
 
+#include <boost/noncopyable.hpp>
 #include <unordered_map>
 #include <memory>
 #include <variant>
@@ -24,9 +26,14 @@ class WriteBuffer;
 class ProtobufReader;
 class ProtobufWriter;
 
-class IColumn;
-using ColumnPtr = COW<IColumn>::Ptr;
-using MutableColumnPtr = COW<IColumn>::MutablePtr;
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
+
+class ISerialization;
+using SerializationPtr = std::shared_ptr<const ISerialization>;
+
+class SerializationInfo;
+using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
 
 class Field;
 
@@ -40,7 +47,7 @@ struct NameAndTypePair;
  *  Currently there is only one special serialization: Sparse.
  *  Each serialization has its own implementation of IColumn as its in-memory representation.
  */
-class ISerialization
+class ISerialization : private boost::noncopyable, public std::enable_shared_from_this<ISerialization>
 {
 public:
     ISerialization() = default;
@@ -53,6 +60,8 @@ public:
     };
 
     virtual Kind getKind() const { return Kind::DEFAULT; }
+    SerializationPtr getPtr() const { return shared_from_this(); }
+
     static Kind getKind(const IColumn & column);
     static String kindToString(Kind kind);
     static Kind stringToKind(const String & str);
@@ -80,6 +89,24 @@ public:
       * Default implementations of ...WithMultipleStreams methods will call serializeBinaryBulk, deserializeBinaryBulk for single stream.
       */
 
+    struct ISubcolumnCreator
+    {
+        virtual DataTypePtr create(const DataTypePtr & prev) const = 0;
+        virtual SerializationPtr create(const SerializationPtr & prev) const = 0;
+        virtual ColumnPtr create(const ColumnPtr & prev) const = 0;
+        virtual ~ISubcolumnCreator() = default;
+    };
+
+    using SubcolumnCreatorPtr = std::shared_ptr<const ISubcolumnCreator>;
+
+    struct SubstreamData
+    {
+        SerializationPtr serialization;
+        DataTypePtr type;
+        ColumnPtr column;
+        SerializationInfoPtr serialization_info;
+    };
+
     struct Substream
     {
         enum Type
@@ -100,7 +127,10 @@ public:
 
             ObjectStructure,
             ObjectElement,
+
+            Regular,
         };
+
         Type type;
 
         /// Index of tuple element, starting at 1 or name.
@@ -110,6 +140,15 @@ public:
 
         /// Do we need to escape a dot in filenames for tuple elements.
         bool escape_tuple_delimiter = true;
+
+        /// Data for current substream.
+        SubstreamData data;
+
+        /// Creator of subcolumn for current substream.
+        SubcolumnCreatorPtr creator = nullptr;
+
+        /// Flag, that may help to traverse substream paths.
+        mutable bool visited = false;
 
         Substream(Type type_) : type(type_) {}
 
@@ -127,9 +166,16 @@ public:
 
     using StreamCallback = std::function<void(const SubstreamPath &)>;
 
-    virtual void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const;
+    virtual void enumerateStreams(
+        SubstreamPath & path,
+        const StreamCallback & callback,
+        const SubstreamData & data) const;
+
+    void enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const;
     void enumerateStreams(const StreamCallback & callback, SubstreamPath && path) const { enumerateStreams(callback, path); }
     void enumerateStreams(const StreamCallback & callback) const { enumerateStreams(callback, {}); }
+
+    void enumerateStreams(SubstreamPath & path, const StreamCallback & callback, const DataTypePtr & type) const;
 
     using OutputStreamGetter = std::function<WriteBuffer*(const SubstreamPath &)>;
     using InputStreamGetter = std::function<ReadBuffer*(const SubstreamPath &)>;
@@ -172,13 +218,6 @@ public:
 
         /// If not zero, may be used to avoid reallocations while reading column of String type.
         double avg_value_size_hint = 0;
-    };
-
-    struct Settings
-    {
-        size_t num_rows;
-        size_t num_default_rows;
-        double ratio_for_sparse_serialization;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.
@@ -284,31 +323,43 @@ public:
         serializeText(column, row_num, ostr, settings);
     }
 
+    /** Text deserialization without escaping and quoting. Reads all data until first \n or \t
+     *  into a temporary string and then call deserializeWholeText. It was implemented this way
+     *  because this function is rarely used and because proper implementation requires a lot of
+     *  additional code in data types serialization and ReadHelpers.
+     */
+    virtual void deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
+    virtual void serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const;
+
     static String getFileNameForStream(const NameAndTypePair & column, const SubstreamPath & path);
     static String getFileNameForStream(const String & name_in_storage, const SubstreamPath & path);
     static String getSubcolumnNameForStream(const SubstreamPath & path);
+    static String getSubcolumnNameForStream(const SubstreamPath & path, size_t prefix_len);
 
     static void addToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column);
     static ColumnPtr getFromSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path);
 
     static bool isSpecialCompressionAllowed(const SubstreamPath & path);
 
-    template <typename State, typename Serialization>
-    static State * checkAndGetSerializeState(SerializeBinaryBulkStatePtr & state, const Serialization &);
+    static size_t getArrayLevel(const SubstreamPath & path);
+    static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
+    static SubstreamData createFromPath(const SubstreamPath & path, size_t prefix_len);
 
-    template <typename State, typename Serialization>
-    static State * checkAndGetDeserializeState(DeserializeBinaryBulkStatePtr & state, const Serialization &);
+protected:
+    template <typename State, typename StatePtr>
+    State * checkAndGetState(const StatePtr & state) const;
 };
 
 using SerializationPtr = std::shared_ptr<const ISerialization>;
 using Serializations = std::vector<SerializationPtr>;
+using SerializationByName = std::unordered_map<String, SerializationPtr>;
 
-template <typename State, typename Serialization, typename StatePtr>
-static State * checkAndGetState(StatePtr & state)
+template <typename State, typename StatePtr>
+State * ISerialization::checkAndGetState(const StatePtr & state) const
 {
     if (!state)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Got empty state for {}", demangle(typeid(Serialization).name()));
+            "Got empty state for {}", demangle(typeid(*this).name()));
 
     auto * state_concrete = typeid_cast<State *>(state.get());
     if (!state_concrete)
@@ -316,24 +367,12 @@ static State * checkAndGetState(StatePtr & state)
         auto & state_ref = *state;
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Invalid State for {}. Expected: {}, got {}",
-                demangle(typeid(Serialization).name()),
+                demangle(typeid(*this).name()),
                 demangle(typeid(State).name()),
                 demangle(typeid(state_ref).name()));
     }
 
     return state_concrete;
-}
-
-template <typename State, typename Serialization>
-State * ISerialization::checkAndGetSerializeState(SerializeBinaryBulkStatePtr & state, const Serialization &)
-{
-    return checkAndGetState<State, Serialization>(state);
-}
-
-template <typename State, typename Serialization>
-State * ISerialization::checkAndGetDeserializeState(DeserializeBinaryBulkStatePtr & state, const Serialization &)
-{
-    return checkAndGetState<State, Serialization>(state);
 }
 
 }

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: race, zookeeper, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -78,7 +79,7 @@ timeout $TIMEOUT bash -c thread5 2> /dev/null &
 wait
 check_replication_consistency "alter_table" "count(), sum(a), sum(b), round(sum(c))"
 
-$CLICKHOUSE_CLIENT -n -q "DROP TABLE alter_table0;" &
-$CLICKHOUSE_CLIENT -n -q "DROP TABLE alter_table1;" &
+$CLICKHOUSE_CLIENT -n -q "DROP TABLE alter_table0;" 2> >(grep -F -v 'is already started to be removing by another replica right now') &
+$CLICKHOUSE_CLIENT -n -q "DROP TABLE alter_table1;" 2> >(grep -F -v 'is already started to be removing by another replica right now') &
 
 wait

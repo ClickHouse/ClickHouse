@@ -30,7 +30,6 @@ private:
 public:
     static constexpr auto DEFAULT_ROWS_SEARCH_SAMPLE_RATIO = 0.1;
     static constexpr auto DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION = 0.95;
-    // static constexpr auto MIN_ROWS_TO_SEARCH_DEFAULTS = DEFAULT_ROWS_SEARCH_STEP * 16;
 
     using Base = COWHelper<IColumn, ColumnSparse>;
     static Ptr create(const ColumnPtr & values_, const ColumnPtr & offsets_, size_t size_)
@@ -149,7 +148,7 @@ public:
 
     /// Return position of element in 'values' columns,
     /// that corresponds to n-th element of full column.
-    /// O(log(size)) complexity,
+    /// O(log(offsets.size())) complexity,
     size_t getValueIndex(size_t n) const;
 
     const IColumn & getValuesColumn() const { return *values; }
@@ -209,7 +208,16 @@ public:
     Iterator end() const { return Iterator(getOffsetsData(), _size, getOffsetsData().size(), _size); }
 
 private:
+    using Inserter = std::function<void(IColumn &)>;
+
+    /// Inserts value to 'values' column via callback.
+    /// Properly handles cases, when inserted value is default.
+    /// Used, when it's unknown in advance if inserted value is default.
+    void insertSingleValue(const Inserter & inserter);
+
     /// Contains default value at 0 position.
+    /// It's convenient, because it allows to execute, e.g functions or sorting,
+    /// for this column without handling different cases.
     WrappedPtr values;
 
     /// Sorted offsets of non-default values in the full column.

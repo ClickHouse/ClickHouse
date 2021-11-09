@@ -140,6 +140,9 @@ void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_na
     if (table->storesDataOnDisk())
         tryRemoveSymlink(table_name);
 
+    if (table->dropTableImmediately())
+        table->drop();
+
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, no_delay);
@@ -416,38 +419,47 @@ UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
     return UUIDHelpers::Nil;
 }
 
-void DatabaseAtomic::loadStoredObjects(
-    ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach, bool skip_startup_tables)
+void DatabaseAtomic::beforeLoadingMetadata(ContextMutablePtr /*context*/, bool force_restore, bool /*force_attach*/)
 {
+    if (!force_restore)
+        return;
+
     /// Recreate symlinks to table data dirs in case of force restore, because some of them may be broken
-    if (has_force_restore_data_flag)
+    for (const auto & table_path : fs::directory_iterator(path_to_table_symlinks))
     {
-        for (const auto & table_path : fs::directory_iterator(path_to_table_symlinks))
+        if (!fs::is_symlink(table_path))
         {
-            if (!fs::is_symlink(table_path))
-            {
-                throw Exception(ErrorCodes::ABORTED,
-                    "'{}' is not a symlink. Atomic database should contains only symlinks.", std::string(table_path.path()));
-            }
-
-            fs::remove(table_path);
-        }
-    }
-
-    DatabaseOrdinary::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach, skip_startup_tables);
-
-    if (has_force_restore_data_flag)
-    {
-        NameToPathMap table_names;
-        {
-            std::lock_guard lock{mutex};
-            table_names = table_name_to_path;
+            throw Exception(ErrorCodes::ABORTED,
+                "'{}' is not a symlink. Atomic database should contains only symlinks.", std::string(table_path.path()));
         }
 
-        fs::create_directories(path_to_table_symlinks);
-        for (const auto & table : table_names)
-            tryCreateSymlink(table.first, table.second, true);
+        fs::remove(table_path);
     }
+}
+
+void DatabaseAtomic::loadStoredObjects(
+    ContextMutablePtr local_context, bool force_restore, bool force_attach, bool skip_startup_tables)
+{
+    beforeLoadingMetadata(local_context, force_restore, force_attach);
+    DatabaseOrdinary::loadStoredObjects(local_context, force_restore, force_attach, skip_startup_tables);
+}
+
+void DatabaseAtomic::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
+{
+    DatabaseOrdinary::startupTables(thread_pool, force_restore, force_attach);
+
+    if (!force_restore)
+        return;
+
+    NameToPathMap table_names;
+    {
+        std::lock_guard lock{mutex};
+        table_names = table_name_to_path;
+    }
+
+    fs::create_directories(path_to_table_symlinks);
+    for (const auto & table : table_names)
+        tryCreateSymlink(table.first, table.second, true);
 }
 
 void DatabaseAtomic::tryCreateSymlink(const String & table_name, const String & actual_data_path, bool if_data_path_exist)

@@ -1,17 +1,18 @@
 #include "StorageSQLite.h"
 
 #if USE_SQLITE
-#include <common/range.h>
-#include <DataStreams/SQLiteSource.h>
+#include <base/range.h>
+#include <base/logger_useful.h>
+#include <Processors/Sources/SQLiteSource.h>
 #include <Databases/SQLite/SQLiteUtils.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
+#include <Processors/Formats/IOutputFormat.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/transformQueryForExternalDatabase.h>
@@ -41,6 +42,7 @@ StorageSQLite::StorageSQLite(
     , database_path(database_path_)
     , global_context(context_)
     , sqlite_db(sqlite_db_)
+    , log(&Poco::Logger::get("StorageSQLite (" + table_id_.table_name + ")"))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -70,6 +72,7 @@ Pipe StorageSQLite::read(
         "",
         remote_table_name,
         context_);
+    LOG_TRACE(log, "Query: {}", query);
 
     Block sample_block;
     for (const String & column_name : column_names)
@@ -102,7 +105,7 @@ public:
 
     void consume(Chunk chunk) override
     {
-        auto block = getPort().getHeader().cloneWithColumns(chunk.getColumns());
+        auto block = getHeader().cloneWithColumns(chunk.getColumns());
         WriteBufferFromOwnString sqlbuf;
 
         sqlbuf << "INSERT INTO ";
@@ -118,7 +121,7 @@ public:
 
         sqlbuf << ") VALUES ";
 
-        auto writer = FormatFactory::instance().getOutputStream("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
+        auto writer = FormatFactory::instance().getOutputFormat("Values", sqlbuf, metadata_snapshot->getSampleBlock(), storage.getContext());
         writer->write(block);
 
         sqlbuf << ";";

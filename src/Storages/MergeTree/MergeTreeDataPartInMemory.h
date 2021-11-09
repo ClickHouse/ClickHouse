@@ -40,12 +40,12 @@ public:
         const StorageMetadataPtr & metadata_snapshot,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
-        const SerializationInfoPtr & serialization_info,
         const MergeTreeWriterSettings & writer_settings,
         const MergeTreeIndexGranularity & computed_index_granularity) const override;
 
     bool isStoredOnDisk() const override { return false; }
-    bool hasColumnFiles(const NameAndTypePair & column) const override { return !!getColumnPosition(column.name); }
+    bool isStoredOnRemoteDisk() const override { return false; }
+    bool hasColumnFiles(const NameAndTypePair & column) const override { return !!getColumnPosition(column.getNameInStorage()); }
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return ""; }
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists) const override;
     void makeCloneInDetached(const String & prefix, const StorageMetadataPtr & metadata_snapshot) const override;

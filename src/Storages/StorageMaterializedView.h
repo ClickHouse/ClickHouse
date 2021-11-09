@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -50,7 +50,7 @@ public:
         const Names & deduplicate_by_columns,
         ContextPtr context) override;
 
-    void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
