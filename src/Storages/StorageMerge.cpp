@@ -264,7 +264,6 @@ Pipe StorageMerge::read(
     }
 
     auto sample_block = getInMemoryMetadataPtr()->getSampleBlock();
-    Names required_columns;
 
     for (const auto & table : selected_tables)
     {
@@ -283,19 +282,17 @@ Pipe StorageMerge::read(
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
         auto storage_columns = storage_metadata_snapshot->getColumns();
 
-        if (processed_stage == QueryProcessingStage::FetchColumns && !storage_columns.getAliases().empty())
+        SelectQueryInfo modified_query_info = query_info;
+        modified_query_info.query = query_info.query->clone();
+        auto syntax_result = TreeRewriter(local_context).analyzeSelect(modified_query_info.query, TreeRewriterResult({}, storage, storage_metadata_snapshot));
+
+        Names column_names_as_aliases;
+        bool with_aliases = processed_stage == QueryProcessingStage::FetchColumns && !storage_columns.getAliases().empty();
+        if (with_aliases)
         {
-            ASTPtr where_expression;
-            if (query_info.query->as<ASTSelectQuery>()->where())
-                where_expression = query_info.query->as<ASTSelectQuery>()->where()->clone();
-
-            auto syntax_result = TreeRewriter(local_context).analyzeSelect(query_info.query, TreeRewriterResult({}, storage, storage_metadata_snapshot));
             ASTPtr required_columns_expr_list = std::make_shared<ASTExpressionList>();
-
-            if (where_expression)
-                query_info.query->as<ASTSelectQuery>()->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
-
             ASTPtr column_expr;
+
             for (const auto & column : real_column_names)
             {
                 const auto column_default = storage_columns.getDefault(column);
@@ -324,18 +321,21 @@ Pipe StorageMerge::read(
             syntax_result = TreeRewriter(local_context).analyze(
                 required_columns_expr_list, storage_columns.getAllPhysical(), storage, storage_metadata_snapshot);
             auto alias_actions = ExpressionAnalyzer(required_columns_expr_list, syntax_result, local_context).getActionsDAG(true);
-            required_columns = alias_actions->getRequiredColumns().getNames();
+
+            column_names_as_aliases = alias_actions->getRequiredColumns().getNames();
+            if (column_names_as_aliases.empty())
+                column_names_as_aliases.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()));
         }
 
         auto source_pipe = createSources(
             storage_metadata_snapshot,
-            query_info,
+            modified_query_info,
             processed_stage,
             max_block_size,
             header,
             aliases,
             table,
-            required_columns.empty() ? real_column_names : required_columns,
+            with_aliases ? column_names_as_aliases : real_column_names,
             modified_context,
             current_streams,
             has_database_virtual_column,
