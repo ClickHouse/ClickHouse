@@ -33,6 +33,7 @@ private:
 
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
+    std::unique_ptr<Azure::Storage::Blobs::BlobClient> blob_client;
     std::vector<uint8_t> tmp_buffer;
     const String path;
     size_t offset = 0;
