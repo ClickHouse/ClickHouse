@@ -25,7 +25,10 @@ jobs:
           REPO_TEAM: "core"
         run: |
           ls -la "$GITHUB_WORKSPACE"
+          ls -la "$GITHUB_WORKSPACE/tests/ci"
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          ls -la "$TEMP_PATH"
+          ls -la "$REPO_COPY"
           cd $REPO_COPY/tests/ci
           python3 cherry_pick.py
       - name: Cleanup
