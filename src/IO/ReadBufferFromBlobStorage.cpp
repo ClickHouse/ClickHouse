@@ -51,7 +51,7 @@ bool ReadBufferFromBlobStorage::nextImpl()
     {
         try
         {
-            bytes_read = data_stream->Read(tmp_buffer.data(), to_read_bytes);
+            bytes_read = data_stream->ReadToCount(tmp_buffer.data(), to_read_bytes);
             break;
         }
         catch (const Exception & e)
