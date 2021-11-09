@@ -366,9 +366,9 @@ class Query:
         from urllib3.util.retry import Retry
 
         def requests_retry_session(
-            retries=3,
-            backoff_factor=0.3,
-            status_forcelist=(500, 502, 504),
+            retries=5,
+            backoff_factor=0.5,
+            status_forcelist=(403, 500, 502, 504),
             session=None,
         ):
             session = session or requests.Session()
