@@ -450,7 +450,8 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     if (auto * with_intersect_except = typeid_cast<ASTSelectIntersectExceptQuery *>(ast.get()))
     {
-        fuzz(with_intersect_except->list_of_selects);
+        auto selects = with_intersect_except->getListOfSelects();
+        fuzz(selects);
     }
     else if (auto * tables = typeid_cast<ASTTablesInSelectQuery *>(ast.get()))
     {
