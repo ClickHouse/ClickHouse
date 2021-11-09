@@ -6394,7 +6394,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
                 /// Cannot retry automatically, because some zookeeper ops were lost on the first attempt. Will retry on DDLWorker-level.
                 if (query_context->getZooKeeperMetadataTransaction())
                     throw Exception(
-                        "Cannot execute alter, because mutations version was suddenly changed due to concurrent alter",
+                        "Cannot execute alter, because alter partition version was suddenly changed due to concurrent alter",
                         ErrorCodes::CANNOT_ASSIGN_ALTER);
                 continue;
             }
@@ -7047,7 +7047,7 @@ bool StorageReplicatedMergeTree::dropAllPartsInPartition(
             /// Cannot retry automatically, because some zookeeper ops were lost on the first attempt. Will retry on DDLWorker-level.
             if (query_context->getZooKeeperMetadataTransaction())
                 throw Exception(
-                    "Cannot execute alter, because mutations version was suddenly changed due to concurrent alter",
+                    "Cannot execute alter, because alter partition version was suddenly changed due to concurrent alter",
                     ErrorCodes::CANNOT_ASSIGN_ALTER);
             continue;
         }
