@@ -30,6 +30,8 @@ struct ZooKeeperResponse : virtual Response
     XID xid = 0;
     int64_t zxid = 0;
 
+    ZooKeeperResponse() = default;
+    ZooKeeperResponse(const ZooKeeperResponse &) = default;
     virtual ~ZooKeeperResponse() override = default;
     virtual void readImpl(ReadBuffer &) = 0;
     virtual void writeImpl(WriteBuffer &) const = 0;

@@ -1,8 +1,9 @@
-#include <common/map.h>
+#include <base/map.h>
 
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
+#include <DataTypes/DataTypeMap.h>
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnMap.h>
@@ -250,10 +251,20 @@ void SerializationMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     deserializeText(column, rb, settings);
 }
 
-
-void SerializationMap::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void SerializationMap::enumerateStreams(
+    SubstreamPath & path,
+    const StreamCallback & callback,
+    const SubstreamData & data) const
 {
-    nested->enumerateStreams(callback, path);
+    SubstreamData next_data =
+    {
+        nested,
+        data.type ? assert_cast<const DataTypeMap &>(*data.type).getNestedType() : nullptr,
+        data.column ? assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr() : nullptr,
+        data.serialization_info,
+    };
+
+    nested->enumerateStreams(path, callback, next_data);
 }
 
 void SerializationMap::serializeBinaryBulkStatePrefix(

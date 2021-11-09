@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS date_table;
 CREATE TABLE date_table
 (

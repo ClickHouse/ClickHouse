@@ -8,19 +8,30 @@ namespace DB
 IMergedBlockOutputStream::IMergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part,
     const StorageMetadataPtr & metadata_snapshot_,
-    const SerializationInfoPtr & input_serialization_info_)
+    const NamesAndTypesList & columns_list,
+    bool reset_columns_)
     : storage(data_part->storage)
     , metadata_snapshot(metadata_snapshot_)
     , volume(data_part->volume)
     , part_path(data_part->isStoredOnDisk() ? data_part->getFullRelativePath() : "")
-    , input_serialization_info(input_serialization_info_)
-    , new_serialization_info(data_part->storage.getSettings()->ratio_of_defaults_for_sparse_serialization)
+    , reset_columns(reset_columns_)
 {
+    if (reset_columns)
+    {
+        SerializationInfo::Settings info_settings =
+        {
+            .ratio_for_sparse = storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
+            .choose_kind = false,
+        };
+
+        new_serialization_infos = SerializationInfoByName(columns_list, info_settings);
+    }
 }
 
 NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const MergeTreeDataPartPtr & data_part,
     NamesAndTypesList & columns,
+    SerializationInfoByName & serialization_infos,
     MergeTreeData::DataPart::Checksums & checksums)
 {
     const NameSet & empty_columns = data_part->expired_columns;
@@ -32,19 +43,13 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
 
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     std::map<String, size_t> stream_counts;
-    std::unordered_map<String, SerializationPtr> serialziations;
-    for (const NameAndTypePair & column : columns)
+    for (const auto & column : columns)
     {
-        auto serialization = IDataType::getSerialization(column, *data_part->serialization_info);
-
-        serialization->enumerateStreams(
+        data_part->getSerialization(column)->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
                 ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
-            },
-            {});
-
-        serialziations[column.name] = std::move(serialization);
+            });
     }
 
     NameSet remove_files;
@@ -66,7 +71,8 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
             }
         };
 
-        serialziations[column_name]->enumerateStreams(callback);
+        data_part->getSerialization(*column_with_type)->enumerateStreams(callback);
+        serialization_infos.erase(column_name);
     }
 
     /// Remove files on disk and checksums

@@ -195,23 +195,25 @@ class _NetworkManager:
                         print("Error removing network blocade container, will try again", str(ex))
                         time.sleep(i)
 
-            image = subprocess.check_output("docker images -q yandex/clickhouse-integration-helper 2>/dev/null", shell=True)
+            image = subprocess.check_output("docker images -q clickhouse/integration-helper 2>/dev/null", shell=True)
             if not image.strip():
                 print("No network image helper, will try download")
                 # for some reason docker api may hang if image doesn't exist, so we download it
                 # before running
                 for i in range(5):
                     try:
-                        subprocess.check_call("docker pull yandex/clickhouse-integration-helper", shell=True)   # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
+                        subprocess.check_call("docker pull clickhouse/integration-helper", shell=True)   # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
                         break
                     except:
                         time.sleep(i)
                 else:
-                    raise Exception("Cannot pull yandex/clickhouse-integration-helper image")
+                    raise Exception("Cannot pull clickhouse/integration-helper image")
 
-            self._container = self._docker_client.containers.run('yandex/clickhouse-integration-helper',
+            self._container = self._docker_client.containers.run('clickhouse/integration-helper',
                                                                  auto_remove=True,
                                                                  command=('sleep %s' % self.container_exit_timeout),
+                                                                 # /run/xtables.lock passed inside for correct iptables --wait
+                                                                 volumes={'/run/xtables.lock': {'bind': '/run/xtables.lock', 'mode': 'ro' }},
                                                                  detach=True, network_mode='host')
             container_id = self._container.id
             self._container_expire_time = time.time() + self.container_expire_timeout

@@ -183,12 +183,12 @@ public:
 
     double getRatioOfDefaultRows(double sample_ratio) const override
     {
-        return getRatioOfDefaultRowsImpl<ColumnLowCardinality>(sample_ratio);
+        return getIndexes().getRatioOfDefaultRows(sample_ratio);
     }
 
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
-        return getIndicesOfNonDefaultRowsImpl<ColumnLowCardinality>(indices, from, limit);
+        return getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
     }
 
     bool valuesHaveFixedSize() const override { return getDictionary().valuesHaveFixedSize(); }
@@ -344,9 +344,6 @@ private:
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint, const Collator * collator=nullptr) const;
 
     void getPermutationImpl(bool reverse, size_t limit, int nan_direction_hint, Permutation & res, const Collator * collator = nullptr) const;
-
-    template <typename Cmp>
-    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Cmp comparator) const;
 };
 
 

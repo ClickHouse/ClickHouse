@@ -6,7 +6,7 @@ option (USE_INTERNAL_DATASKETCHES_LIBRARY "Set to FALSE to use system DataSketch
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/datasketches-cpp/theta/CMakeLists.txt")
     if (USE_INTERNAL_DATASKETCHES_LIBRARY)
-       message(WARNING "submodule contrib/datasketches-cpp is missing. to fix try run: \n git submodule update --init --recursive")
+       message(WARNING "submodule contrib/datasketches-cpp is missing. to fix try run: \n git submodule update --init")
     endif()
     set(MISSING_INTERNAL_DATASKETCHES_LIBRARY 1)
     set(USE_INTERNAL_DATASKETCHES_LIBRARY 0)

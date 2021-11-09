@@ -87,7 +87,7 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance("restricted_dummy", main_configs=["configs/config_for_test_remote_host_filter.xml"],
                              with_minio=True)
-        cluster.add_instance("dummy", with_minio=True, main_configs=["configs/defaultS3.xml"])
+        cluster.add_instance("dummy", with_minio=True, main_configs=["configs/defaultS3.xml", "configs/named_collections.xml"])
         cluster.add_instance("s3_max_redirects", with_minio=True, main_configs=["configs/defaultS3.xml"],
                              user_configs=["configs/s3_max_redirects.xml"])
         logging.info("Starting cluster...")
@@ -162,6 +162,13 @@ def test_partition_by(started_cluster):
     assert "1,2,3\n" == get_s3_file_content(started_cluster, bucket, "test_3.csv")
     assert "3,2,1\n" == get_s3_file_content(started_cluster, bucket, "test_1.csv")
     assert "78,43,45\n" == get_s3_file_content(started_cluster, bucket, "test_45.csv")
+
+    filename = "test2_{_partition_id}.csv"
+    instance.query(f"create table p ({table_format}) engine=S3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}', 'CSV') partition by column3")
+    instance.query(f"insert into p values {values}")
+    assert "1,2,3\n" == get_s3_file_content(started_cluster, bucket, "test2_3.csv")
+    assert "3,2,1\n" == get_s3_file_content(started_cluster, bucket, "test2_1.csv")
+    assert "78,43,45\n" == get_s3_file_content(started_cluster, bucket, "test2_45.csv")
 
 
 def test_partition_by_string_column(started_cluster):
@@ -436,12 +443,12 @@ def test_remote_host_filter(started_cluster):
 
     query = "select *, column1*column2*column3 from s3('http://{}:{}/{}/test.csv', 'CSV', '{}')".format(
         "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket, format)
-    assert "not allowed in config.xml" in instance.query_and_get_error(query)
+    assert "not allowed in configuration file" in instance.query_and_get_error(query)
 
     other_values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
     query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format(
         "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket, format, other_values)
-    assert "not allowed in config.xml" in instance.query_and_get_error(query)
+    assert "not allowed in configuration file" in instance.query_and_get_error(query)
 
 
 @pytest.mark.parametrize("s3_storage_args", [
@@ -735,3 +742,18 @@ def test_truncate_table(started_cluster):
     assert(len(list(minio.list_objects(started_cluster.minio_bucket, 'truncate/'))) == 0)
     assert instance.query("SELECT * FROM {}".format(name)) == ""
 
+
+def test_predefined_connection_configuration(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+    name = "test_table"
+
+    instance.query("drop table if exists {}".format(name))
+    instance.query("CREATE TABLE {} (id UInt32) ENGINE = S3(s3_conf1, format='CSV')".format(name))
+
+    instance.query("INSERT INTO {} SELECT number FROM numbers(10)".format(name))
+    result = instance.query("SELECT * FROM {}".format(name))
+    assert result == instance.query("SELECT number FROM numbers(10)")
+
+    result = instance.query("SELECT * FROM s3(s3_conf1, format='CSV', structure='id UInt32')")
+    assert result == instance.query("SELECT number FROM numbers(10)")

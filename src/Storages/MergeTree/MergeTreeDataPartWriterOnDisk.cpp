@@ -68,7 +68,6 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     const MergeTreeIndices & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
-    const SerializationInfoPtr & serialization_info_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
     : IMergeTreeDataPartWriter(data_part_,
@@ -77,7 +76,6 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     , part_path(data_part_->getFullRelativePath())
     , marks_file_extension(marks_file_extension_)
     , default_codec(default_codec_)
-    , serialization_info(serialization_info_)
     , compute_granularity(index_granularity.empty())
 {
     if (settings.blocks_are_granules_size && !index_granularity.empty())

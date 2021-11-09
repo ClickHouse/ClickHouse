@@ -19,3 +19,4 @@
 #cmakedefine01 USE_KRB5
 #cmakedefine01 USE_SIMDJSON
 #cmakedefine01 USE_RAPIDJSON
+#cmakedefine01 USE_FILELOG

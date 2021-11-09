@@ -24,7 +24,6 @@ public:
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
-        const SerializationInfoPtr & serialization_info_,
         const MergeTreeWriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
 
@@ -85,7 +84,7 @@ private:
     /// Method for self check (used in debug-build only). Checks that written
     /// data and corresponding marks are consistent. Otherwise throws logical
     /// errors.
-    void validateColumnOfFixedSize(const String & name, const IDataType & type);
+    void validateColumnOfFixedSize(const NameAndTypePair & name_type);
 
     void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 

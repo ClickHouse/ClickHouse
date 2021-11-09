@@ -22,6 +22,7 @@
 
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string.hpp>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
@@ -71,7 +72,7 @@ DataTypePtr getDataTypeByColumn(const IColumn & column)
 {
     auto idx = column.getDataType();
     if (WhichDataType(idx).isSimple())
-        return DataTypeFactory::instance().get(getTypeName(idx));
+        return DataTypeFactory::instance().get(String(magic_enum::enum_name(idx)));
 
     if (const auto * column_array = checkAndGetColumn<ColumnArray>(&column))
         return std::make_shared<DataTypeArray>(getDataTypeByColumn(column_array->getData()));

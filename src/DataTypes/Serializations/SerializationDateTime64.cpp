@@ -3,7 +3,7 @@
 #include <Columns/ColumnVector.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <common/DateLUT.h>
+#include <base/DateLUT.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
@@ -17,9 +17,9 @@ namespace DB
 {
 
 SerializationDateTime64::SerializationDateTime64(
-    const DateLUTImpl & time_zone_, const DateLUTImpl & utc_time_zone_, UInt32 scale_)
+    UInt32 scale_, const TimezoneMixin & time_zone_)
     : SerializationDecimalBase<DateTime64>(DecimalUtils::max_precision<DateTime64>, scale_)
-    , time_zone(time_zone_), utc_time_zone(utc_time_zone_)
+    , TimezoneMixin(time_zone_)
 {
 }
 

@@ -7,8 +7,8 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/escapeForFileName.h>
-#include <common/range.h>
-#include <common/sleep.h>
+#include <base/range.h>
+#include <base/sleep.h>
 
 
 namespace DB
@@ -34,6 +34,7 @@ ReplicatedAccessStorage::ReplicatedAccessStorage(
     : IAccessStorage(storage_name_)
     , zookeeper_path(zookeeper_path_)
     , get_zookeeper(get_zookeeper_)
+    , refresh_queue(std::numeric_limits<size_t>::max())
 {
     if (zookeeper_path.empty())
         throw Exception("ZooKeeper path must be non-empty", ErrorCodes::BAD_ARGUMENTS);
@@ -63,9 +64,10 @@ void ReplicatedAccessStorage::shutdown()
     bool prev_stop_flag = stop_flag.exchange(true);
     if (!prev_stop_flag)
     {
-        /// Notify the worker thread to stop waiting for new queue items
-        refresh_queue.push(UUIDHelpers::Nil);
-        worker_thread.join();
+        refresh_queue.finish();
+
+        if (worker_thread.joinable())
+            worker_thread.join();
     }
 }
 
@@ -365,7 +367,7 @@ void ReplicatedAccessStorage::refreshEntities(const zkutil::ZooKeeperPtr & zooke
     const String zookeeper_uuids_path = zookeeper_path + "/uuid";
     auto watch_entities_list = [this](const Coordination::WatchResponse &)
     {
-        refresh_queue.push(UUIDHelpers::Nil);
+        [[maybe_unused]] bool push_result = refresh_queue.push(UUIDHelpers::Nil);
     };
     Coordination::Stat stat;
     const auto entity_uuid_strs = zookeeper->getChildrenWatch(zookeeper_uuids_path, &stat, watch_entities_list);
@@ -417,7 +419,7 @@ void ReplicatedAccessStorage::refreshEntityNoLock(const zkutil::ZooKeeperPtr & z
     const auto watch_entity = [this, id](const Coordination::WatchResponse & response)
     {
         if (response.type == Coordination::Event::CHANGED)
-            refresh_queue.push(id);
+            [[maybe_unused]] bool push_result = refresh_queue.push(id);
     };
     Coordination::Stat entity_stat;
     const String entity_path = zookeeper_path + "/uuid/" + toString(id);

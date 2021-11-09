@@ -1,5 +1,5 @@
 #include "readInvalidateQuery.h"
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
@@ -15,11 +15,8 @@ namespace ErrorCodes
     extern const int RECEIVED_EMPTY_DATA;
 }
 
-std::string readInvalidateQuery(Pipe pipe)
+std::string readInvalidateQuery(QueryPipeline pipeline)
 {
-    QueryPipeline pipeline;
-    pipeline.init(std::move(pipe));
-
     PullingPipelineExecutor executor(pipeline);
 
     Block block;

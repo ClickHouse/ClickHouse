@@ -1,13 +1,11 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include "config_functions.h"
 
 #if USE_SIMDJSON
-#    include <common/types.h>
+#    include <base/types.h>
 #    include <Common/Exception.h>
-#    include <common/defines.h>
+#    include <base/defines.h>
 #    include <simdjson.h>
 
 

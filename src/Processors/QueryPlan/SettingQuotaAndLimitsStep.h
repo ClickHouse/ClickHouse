@@ -3,7 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Storages/TableLockHolder.h>
-#include <DataStreams/StreamLocalLimits.h>
+#include <QueryPipeline/StreamLocalLimits.h>
 
 namespace DB
 {
@@ -32,7 +32,7 @@ public:
 
     String getName() const override { return "SettingQuotaAndLimits"; }
 
-    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
     ContextPtr context;

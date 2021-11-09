@@ -26,7 +26,6 @@ aの結果 `SELECT`、および実行する `INSERT`ファイルバックアッ�
 | [カスタム区切り](#format-customseparated)                       | ✔    | ✔    |
 | [値](#data-format-values)                                       | ✔    | ✔    |
 | [垂直](#vertical)                                               | ✗    | ✔    |
-| [VerticalRaw](#verticalraw)                                     | ✗    | ✔    |
 | [JSON](#json)                                                   | ✗    | ✔    |
 | [JSONCompact](#jsoncompact)                                     | ✗    | ✔    |
 | [JSONEachRow](#jsoneachrow)                                     | ✔    | ✔    |
@@ -560,7 +559,7 @@ CREATE TABLE IF NOT EXISTS example_table
 -   もし `input_format_defaults_for_omitted_fields = 1` のデフォルト値 `x` 等しい `0` しかし、デフォルト値は `a` 等しい `x * 2`.
 
 !!! note "警告"
-    データを挿入するとき `insert_sample_with_metadata = 1`,ClickHouseは、挿入と比較して、より多くの計算リソースを消費します `insert_sample_with_metadata = 0`.
+    データを挿入するとき `input_format_defaults_for_omitted_fields = 1`,ClickHouseは、挿入と比較して、より多くの計算リソースを消費します `input_format_defaults_for_omitted_fields = 0`.
 
 ### データの選択 {#selecting-data}
 
@@ -818,10 +817,6 @@ test: string with 'quotes' and      with some special
 ```
 
 この形式は、クエリ結果の出力にのみ適していますが、解析(テーブルに挿入するデータの取得)には適していません。
-
-## VerticalRaw {#verticalraw}
-
-に類似した [垂直](#vertical) しかし、エスケープ無効で。 この形式は、クエリ結果の出力にのみ適しており、解析（データの受信とテーブルへの挿入）には適していません。
 
 ## XML {#xml}
 
@@ -1210,4 +1205,4 @@ e.g. `schemafile.proto:MessageType`.
 -解析エラーの場合 `JSONEachRow` 新しい行(またはEOF)まですべてのデータをスキップします。 `\n` エラーを正しく数える。
 - `Template` と `CustomSeparated` 最後の列の後にdelimiterを使用し、行の間にdelimiterを使用すると、次の行の先頭を見つけることができます。
 
-[元の記事](https://clickhouse.tech/docs/en/interfaces/formats/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/interfaces/formats/) <!--hide-->

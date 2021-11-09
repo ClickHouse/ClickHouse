@@ -207,8 +207,6 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 
 Codecs can be combined in a pipeline, for example, `CODEC(Delta, Default)`.
 
-To select the best codec combination for you project, pass benchmarks similar to described in the Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article. One thing to note is that codec can't be applied for ALIAS column type.
-
 !!! warning "Warning"
     You can’t decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
 

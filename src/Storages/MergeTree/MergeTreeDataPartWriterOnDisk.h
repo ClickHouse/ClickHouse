@@ -6,7 +6,6 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Disks/IDisk.h>
 
@@ -88,7 +87,6 @@ public:
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const String & marks_file_extension,
         const CompressionCodecPtr & default_codec,
-        const SerializationInfoPtr & serialization_info_,
         const MergeTreeWriterSettings & settings,
         const MergeTreeIndexGranularity & index_granularity);
 
@@ -126,16 +124,12 @@ protected:
     const String part_path;
     const String marks_file_extension;
     const CompressionCodecPtr default_codec;
-    const SerializationInfoPtr serialization_info;
 
     const bool compute_granularity;
 
     std::vector<StreamPtr> skip_indices_streams;
     MergeTreeIndexAggregators skip_indices_aggregators;
     std::vector<size_t> skip_index_accumulated_marks;
-
-    using SerializationsMap = std::unordered_map<String, SerializationPtr>;
-    SerializationsMap serializations;
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;

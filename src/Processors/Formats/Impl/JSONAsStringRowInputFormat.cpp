@@ -2,7 +2,7 @@
 #include <Formats/JSONEachRowUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 JSONAsRowInputFormat::JSONAsRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_)
-    : IRowInputFormat(header_, in_, std::move(params_)), buf(in)
+    : IRowInputFormat(header_, in_, std::move(params_)), buf(*in)
 {
     if (header_.columns() > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -198,9 +198,9 @@ void JSONAsObjectRowInputFormat::readJSONObject(IColumn & column)
     serializations[0]->deserializeTextJSON(column, buf, format_settings);
 }
 
-void registerInputFormatProcessorJSONAsString(FormatFactory & factory)
+void registerInputFormatJSONAsString(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("JSONAsString", [](
+    factory.registerInputFormat("JSONAsString", [](
             ReadBuffer & buf,
             const Block & sample,
             const RowInputFormatParams & params,
@@ -212,7 +212,7 @@ void registerInputFormatProcessorJSONAsString(FormatFactory & factory)
 
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONAsString", &fileSegmentationEngineJSONEachRowImpl);
+    factory.registerFileSegmentationEngine("JSONAsString", &fileSegmentationEngineJSONEachRow);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factory)
@@ -220,9 +220,9 @@ void registerNonTrivialPrefixAndSuffixCheckerJSONAsString(FormatFactory & factor
     factory.registerNonTrivialPrefixAndSuffixChecker("JSONAsString", nonTrivialPrefixAndSuffixCheckerJSONEachRowImpl);
 }
 
-void registerInputFormatProcessorJSONAsObject(FormatFactory & factory)
+void registerInputFormatJSONAsObject(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("JSONAsObject", [](
+    factory.registerInputFormat("JSONAsObject", [](
         ReadBuffer & buf,
         const Block & sample,
         IRowInputFormat::Params params,
@@ -234,7 +234,7 @@ void registerInputFormatProcessorJSONAsObject(FormatFactory & factory)
 
 void registerFileSegmentationEngineJSONAsObject(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONAsObject", &fileSegmentationEngineJSONEachRowImpl);
+    factory.registerFileSegmentationEngine("JSONAsObject", &fileSegmentationEngineJSONEachRow);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONAsObject(FormatFactory & factory)

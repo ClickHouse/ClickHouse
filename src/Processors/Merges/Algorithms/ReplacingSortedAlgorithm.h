@@ -1,7 +1,7 @@
 #pragma once
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 
 namespace Poco
 {

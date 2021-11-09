@@ -38,6 +38,12 @@ def fail_request(cluster, request):
     assert response == 'OK', 'Expected "OK", but got "{}"'.format(response)
 
 
+def throttle_request(cluster, request):
+    response = cluster.exec_in_container(cluster.get_container_id('resolver'),
+                                         ["curl", "-s", "http://resolver:8080/throttle_request/{}".format(request)])
+    assert response == 'OK', 'Expected "OK", but got "{}"'.format(response)
+
+
 @pytest.fixture(scope="module")
 def cluster():
     try:
@@ -66,7 +72,7 @@ def drop_table(cluster):
 
 
 # S3 request will be failed for an appropriate part file write.
-FILES_PER_PART_BASE = 6  # partition.dat, default_compression_codec.txt, count.txt, columns.txt, checksums.txt, serialization.txt
+FILES_PER_PART_BASE = 5  # partition.dat, default_compression_codec.txt, count.txt, columns.txt, checksums.txt
 FILES_PER_PART_WIDE = FILES_PER_PART_BASE + 1 + 1 + 3 * 2  # Primary index, MinMax, Mark and data file for column(s)
 
 # In debug build there are additional requests (from MergeTreeDataPartWriterWide.cpp:554 due to additional validation).
@@ -186,3 +192,27 @@ def test_move_failover(cluster):
     # Ensure data is not corrupted.
     assert node.query("CHECK TABLE s3_failover_test") == '1\n'
     assert node.query("SELECT id,data FROM s3_failover_test FORMAT Values") == "(0,'data'),(1,'data')"
+
+
+# Check that throttled request retries and does not cause an error on disk with default `retry_attempts` (>0)
+def test_throttle_retry(cluster):
+    node = cluster.instances["node"]
+
+    node.query(
+        """
+        CREATE TABLE s3_throttle_retry_test (
+            id Int64
+        ) ENGINE=MergeTree()
+        ORDER BY id
+        SETTINGS storage_policy='s3_retryable'
+        """
+    )
+
+    data = "(42)"
+    node.query("INSERT INTO s3_throttle_retry_test VALUES {}".format(data))
+
+    throttle_request(cluster, 1)
+
+    assert node.query("""
+        SELECT * FROM s3_throttle_retry_test
+        """) == '42\n'

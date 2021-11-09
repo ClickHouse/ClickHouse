@@ -69,4 +69,4 @@ ClickHouse中至少存在两种类型的函数 - 常规函数（它们称之为�
 
 如果查询中的函数在请求服务器上执行，但您需要在远程服务器上执行它，则可以将其包装在«any»聚合函数中，或将其添加到«GROUP BY»中。
 
-[来源文章](https://clickhouse.tech/docs/en/query_language/functions/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/query_language/functions/) <!--hide-->

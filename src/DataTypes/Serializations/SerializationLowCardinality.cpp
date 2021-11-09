@@ -40,11 +40,29 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 {
 }
 
-void SerializationLowCardinality::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void SerializationLowCardinality::enumerateStreams(
+    SubstreamPath & path,
+    const StreamCallback & callback,
+    const SubstreamData & data) const
 {
+    const auto * column_lc = data.column ? &getColumnLowCardinality(*data.column) : nullptr;
+
+    SubstreamData dict_data =
+    {
+        dict_inner_serialization,
+        data.type ? dictionary_type : nullptr,
+        column_lc ? column_lc->getDictionary().getNestedColumn() : nullptr,
+        data.serialization_info,
+    };
+
     path.push_back(Substream::DictionaryKeys);
-    dict_inner_serialization->enumerateStreams(callback, path);
+    path.back().data = dict_data;
+
+    dict_inner_serialization->enumerateStreams(path, callback, dict_data);
+
     path.back() = Substream::DictionaryIndexes;
+    path.back().data = data;
+
     callback(path);
     path.pop_back();
 }
@@ -230,7 +248,7 @@ void SerializationLowCardinality::serializeBinaryBulkStateSuffix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    auto * low_cardinality_state = checkAndGetSerializeState<SerializeStateLowCardinality>(state, *this);
+    auto * low_cardinality_state = checkAndGetState<SerializeStateLowCardinality>(state);
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
     if (low_cardinality_state->shared_dictionary && settings.low_cardinality_max_dictionary_size)
@@ -469,7 +487,7 @@ void SerializationLowCardinality::serializeBinaryBulkWithMultipleStreams(
 
     const ColumnLowCardinality & low_cardinality_column = typeid_cast<const ColumnLowCardinality &>(column);
 
-    auto * low_cardinality_state = checkAndGetSerializeState<SerializeStateLowCardinality>(state, *this);
+    auto * low_cardinality_state = checkAndGetState<SerializeStateLowCardinality>(state);
     auto & global_dictionary = low_cardinality_state->shared_dictionary;
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
@@ -568,7 +586,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     if (!indexes_stream)
         throw Exception("Got empty stream for SerializationLowCardinality indexes.", ErrorCodes::LOGICAL_ERROR);
 
-    auto * low_cardinality_state = checkAndGetDeserializeState<DeserializeStateLowCardinality>(state, *this);
+    auto * low_cardinality_state = checkAndGetState<DeserializeStateLowCardinality>(state);
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
     auto read_dictionary = [this, low_cardinality_state, keys_stream]()
@@ -766,6 +784,7 @@ void SerializationLowCardinality::serializeTextJSON(const IColumn & column, size
 {
     serializeImpl(column, row_num, &ISerialization::serializeTextJSON, ostr, settings);
 }
+
 void SerializationLowCardinality::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeImpl(column, &ISerialization::deserializeTextJSON, istr, settings);
@@ -774,6 +793,16 @@ void SerializationLowCardinality::deserializeTextJSON(IColumn & column, ReadBuff
 void SerializationLowCardinality::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeImpl(column, row_num, &ISerialization::serializeTextXML, ostr, settings);
+}
+
+void SerializationLowCardinality::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &ISerialization::deserializeTextRaw, istr, settings);
+}
+
+void SerializationLowCardinality::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &ISerialization::serializeTextRaw, ostr, settings);
 }
 
 template <typename... Params, typename... Args>

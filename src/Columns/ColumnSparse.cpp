@@ -5,7 +5,7 @@
 #include <Common/WeakHash.h>
 #include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <algorithm>
 
@@ -34,7 +34,7 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
     const ColumnUInt64 * offsets_concrete = typeid_cast<const ColumnUInt64 *>(offsets.get());
 
     if (!offsets_concrete)
-        throw Exception("offsets_column must be a ColumnUInt64", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "'offsets' column must be a ColumnUInt64, got: {}", offsets->getName());
 
     /// 'values' should contain one extra element: default value at 0 position.
     if (offsets->size() + 1 != values->size())
@@ -44,6 +44,11 @@ ColumnSparse::ColumnSparse(MutableColumnPtr && values_, MutableColumnPtr && offs
     if (_size < offsets->size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Size of sparse column ({}) cannot be lower than number of non-default values ({})", _size, offsets->size());
+
+    if (!offsets_concrete->empty() && _size <= offsets_concrete->getData().back())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Size of sparse column ({}) should be greater than last position of non-default value ({})",
+                _size, offsets_concrete->getData().back());
 
 #ifndef NDEBUG
     const auto & offsets_data = getOffsetsData();
@@ -126,13 +131,24 @@ ColumnPtr ColumnSparse::convertToFullColumnIfSparse() const
     return values->createWithOffsets(getOffsetsData(), (*values)[0], _size, /*shift=*/ 1);
 }
 
-void ColumnSparse::insertData(const char * pos, size_t length)
+void ColumnSparse::insertSingleValue(const Inserter & inserter)
 {
-    _size += length;
-    return values->insertData(pos, length);
+    inserter(*values);
+
+    size_t last_idx = values->size() - 1;
+    if (values->isDefaultAt(last_idx))
+        values->popBack(1);
+    else
+        getOffsetsData().push_back(_size);
+
+    ++_size;
 }
 
-/// TODO: maybe need to reimplement it.
+void ColumnSparse::insertData(const char * pos, size_t length)
+{
+    insertSingleValue([&](IColumn & column) { column.insertData(pos, length); });
+}
+
 StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     return values->serializeValueIntoArena(getValueIndex(n), arena, begin);
@@ -140,8 +156,9 @@ StringRef ColumnSparse::serializeValueIntoArena(size_t n, Arena & arena, char co
 
 const char * ColumnSparse::deserializeAndInsertFromArena(const char * pos)
 {
-    ++_size;
-    return values->deserializeAndInsertFromArena(pos);
+    const char * res = nullptr;
+    insertSingleValue([&](IColumn & column) { res = column.deserializeAndInsertFromArena(pos); });
+    return res;
 }
 
 const char * ColumnSparse::skipSerializedInArena(const char * pos) const
@@ -168,9 +185,11 @@ void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t len
 
         size_t offset_start = std::lower_bound(src_offsets.begin(), src_offsets.end(), start) - src_offsets.begin();
         size_t offset_end = std::lower_bound(src_offsets.begin(), src_offsets.end(), end) - src_offsets.begin();
+        assert(offset_start <= offset_end);
 
         if (offset_start != offset_end)
         {
+            offsets_data.reserve(offsets_data.size() + offset_end - offset_start);
             insertManyDefaults(src_offsets[offset_start] - start);
             offsets_data.push_back(_size);
             ++_size;
@@ -184,7 +203,7 @@ void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t len
             }
 
             /// 'end' <= 'src_offsets[offsets_end]', but end is excluded, so index is 'offsets_end' - 1.
-            /// Since 'end' is excluded need, to subtract one more row from result.
+            /// Since 'end' is excluded, need to subtract one more row from result.
             insertManyDefaults(end - src_offsets[offset_end - 1] - 1);
             values->insertRangeFrom(src_values, offset_start + 1, offset_end - offset_start);
         }
@@ -197,24 +216,24 @@ void ColumnSparse::insertRangeFrom(const IColumn & src, size_t start, size_t len
     {
         for (size_t i = start; i < end; ++i)
         {
-            offsets_data.push_back(_size);
+            if (!src.isDefaultAt(i))
+            {
+                values->insertFrom(src, i);
+                offsets_data.push_back(_size);
+            }
+
             ++_size;
         }
-
-        values->insertRangeFrom(src, start, length);
     }
 }
 
 void ColumnSparse::insert(const Field & x)
 {
-    getOffsetsData().push_back(_size);
-    values->insert(x);
-    ++_size;
+    insertSingleValue([&](IColumn & column) { column.insert(x); });
 }
 
 void ColumnSparse::insertFrom(const IColumn & src, size_t n)
 {
-
     if (const auto * src_sparse = typeid_cast<const ColumnSparse *>(&src))
     {
         if (size_t value_index = src_sparse->getValueIndex(n))
@@ -225,8 +244,11 @@ void ColumnSparse::insertFrom(const IColumn & src, size_t n)
     }
     else
     {
-        getOffsetsData().push_back(_size);
-        values->insertFrom(src, n);
+        if (!src.isDefaultAt(n))
+        {
+            values->insertFrom(src, n);
+            getOffsetsData().push_back(_size);
+        }
     }
 
     ++_size;
@@ -338,10 +360,20 @@ void ColumnSparse::expand(const Filter & mask, bool inverted)
 
 ColumnPtr ColumnSparse::permute(const Permutation & perm, size_t limit) const
 {
-    limit = limit ? std::min(limit, _size) : _size;
+    return permuteImpl(*this, perm, limit);
+}
 
-    if (perm.size() < limit)
-        throw Exception("Size of permutation is less than required.", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
+ColumnPtr ColumnSparse::index(const IColumn & indexes, size_t limit) const
+{
+    return selectIndexImpl(*this, indexes, limit);
+}
+
+template <typename Type>
+ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+{
+    assert(limit <= indexes.size());
+    if (limit == 0)
+        return ColumnSparse::create(values->cloneEmpty());
 
     if (offsets->empty())
     {
@@ -364,14 +396,14 @@ ColumnPtr ColumnSparse::permute(const Permutation & perm, size_t limit) const
 
     if (execute_linear)
     {
-        PaddedPODArray<UInt64> indexes(_size);
+        PaddedPODArray<UInt64> values_index(_size);
         auto offset_it = begin();
         for (size_t i = 0; i < _size; ++i, ++offset_it)
-            indexes[i] = offset_it.getValueIndex();
+            values_index[i] = offset_it.getValueIndex();
 
         for (size_t i = 0; i < limit; ++i)
         {
-            size_t index = indexes[perm[i]];
+            size_t index = values_index[indexes[i]];
             if (index != 0)
             {
                 res_values->insertFrom(*values, index);
@@ -383,40 +415,12 @@ ColumnPtr ColumnSparse::permute(const Permutation & perm, size_t limit) const
     {
         for (size_t i = 0; i < limit; ++i)
         {
-            size_t index = getValueIndex(perm[i]);
+            size_t index = getValueIndex(indexes[i]);
             if (index != 0)
             {
                 res_values->insertFrom(*values, index);
                 res_offsets_data.push_back(i);
             }
-        }
-    }
-
-    return ColumnSparse::create(std::move(res_values), std::move(res_offsets), limit);
-}
-
-ColumnPtr ColumnSparse::index(const IColumn & indexes, size_t limit) const
-{
-    return selectIndexImpl(*this, indexes, limit);
-}
-
-template <typename Type>
-ColumnPtr ColumnSparse::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
-{
-    limit = limit ? std::min(limit, indexes.size()) : indexes.size();
-
-    auto res_offsets = offsets->cloneEmpty();
-    auto & res_offsets_data = assert_cast<ColumnUInt64 &>(*res_offsets).getData();
-    auto res_values = values->cloneEmpty();
-    res_values->insertDefault();
-
-    for (size_t i = 0; i < limit; ++i)
-    {
-        size_t index = getValueIndex(indexes[i]);
-        if (index != 0)
-        {
-            res_values->insertFrom(*values, index);
-            res_offsets_data.push_back(i);
         }
     }
 
@@ -466,7 +470,21 @@ int ColumnSparse::compareAtWithCollation(size_t n, size_t m, const IColumn & rhs
 
 bool ColumnSparse::hasEqualValues() const
 {
-    return offsets->empty();
+    size_t num_defaults = getNumberOfDefaults();
+    if (num_defaults == _size)
+        return true;
+
+    /// Have at least 1 default and 1 non-default values.
+    if (num_defaults != 0)
+        return false;
+
+    /// Check that probably all non-default values are equal.
+    /// It's suboptiomal, but it's a rare case.
+    for (size_t i = 2; i < values->size(); ++i)
+        if (values->compareAt(1, i, *values, 1) != 0)
+            return false;
+
+    return true;
 }
 
 void ColumnSparse::getPermutationImpl(bool reverse, size_t limit, int null_direction_hint, Permutation & res, const Collator * collator) const
@@ -554,7 +572,7 @@ void ColumnSparse::updatePermutationWithCollation(
 
 size_t ColumnSparse::byteSize() const
 {
-    return values->byteSize() + offsets->byteSize();
+    return values->byteSize() + offsets->byteSize() + sizeof(_size);
 }
 
 size_t ColumnSparse::byteSizeAt(size_t n) const
@@ -569,7 +587,7 @@ size_t ColumnSparse::byteSizeAt(size_t n) const
 
 size_t ColumnSparse::allocatedBytes() const
 {
-    return values->allocatedBytes() + offsets->allocatedBytes();
+    return values->allocatedBytes() + offsets->allocatedBytes() + sizeof(_size);
 }
 
 void ColumnSparse::protect()

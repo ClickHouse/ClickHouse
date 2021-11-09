@@ -16,12 +16,11 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
-    const SerializationInfoPtr & serialization_info_,
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_)
     : MergeTreeDataPartWriterOnDisk(data_part_, columns_list_, metadata_snapshot_,
         indices_to_recalc_, marks_file_extension_,
-        default_codec_, serialization_info_, settings_, index_granularity_)
+        default_codec_, settings_, index_granularity_)
     , plain_file(data_part->volume->getDisk()->writeFile(
             part_path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION,
             settings.max_compress_block_size,
@@ -34,29 +33,27 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
     , marks(*marks_file)
 {
     const auto & storage_columns = metadata_snapshot->getColumns();
-    serializations.reserve(columns_list.size());
     for (const auto & column : columns_list)
-    {
-        serializations.emplace(column.name, column.type->getSerialization(column.name, *serialization_info));
         addStreams(column, storage_columns.getCodecDescOrDefault(column.name, default_codec));
-    }
 }
 
 void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, const ASTPtr & effective_codec_desc)
 {
-    IDataType::StreamCallbackWithType callback = [&] (const ISerialization::SubstreamPath & substream_path, const IDataType & substream_type)
+    ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
+        assert(!substream_path.empty());
         String stream_name = ISerialization::getFileNameForStream(column, substream_path);
 
         /// Shared offsets for Nested type.
         if (compressed_streams.count(stream_name))
             return;
 
+        const auto & subtype = substream_path.back().data.type;
         CompressionCodecPtr compression_codec;
 
         /// If we can use special codec than just get it
         if (ISerialization::isSpecialCompressionAllowed(substream_path))
-            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, &substream_type, default_codec);
+            compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, subtype.get(), default_codec);
         else /// otherwise return only generic codecs and don't use info about data_type
             compression_codec = CompressionCodecFactory::instance().get(effective_codec_desc, nullptr, default_codec, true);
 
@@ -68,7 +65,8 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & column, 
         compressed_streams.emplace(stream_name, stream);
     };
 
-    column.type->enumerateStreams(serializations[column.name], callback);
+    ISerialization::SubstreamPath path;
+    data_part->getSerialization(column)->enumerateStreams(path, callback, column.type);
 }
 
 namespace
@@ -209,7 +207,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             writeIntBinary(UInt64(0), marks);
 
             writeColumnSingleGranule(
-                block.getByName(name_and_type->name), serializations[name_and_type->name],
+                block.getByName(name_and_type->name), data_part->getSerialization(*name_and_type),
                 stream_getter, granule.start_row, granule.rows_to_write);
 
             /// Each type always have at least one substream

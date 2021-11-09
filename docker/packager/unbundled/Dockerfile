@@ -1,5 +1,5 @@
-# docker build -t yandex/clickhouse-unbundled-builder .
-FROM yandex/clickhouse-deb-builder
+# docker build -t clickhouse/unbundled-builder .
+FROM clickhouse/deb-builder
 
 RUN export CODENAME="$(lsb_release --codename --short | tr 'A-Z' 'a-z')" \
     && wget -nv -O /tmp/arrow-keyring.deb "https://apache.jfrog.io/artifactory/arrow/ubuntu/apache-arrow-apt-source-latest-${CODENAME}.deb" \
@@ -18,15 +18,6 @@ RUN apt-get update \
         libc++-dev \
         libc++abi-dev \
         libboost-all-dev \
-        libboost-program-options-dev \
-        libboost-system-dev \
-        libboost-filesystem-dev \
-        libboost-thread-dev \
-        libboost-iostreams-dev \
-        libboost-regex-dev \
-        libboost-context-dev \
-        libboost-coroutine-dev \
-        libboost-graph-dev \
         zlib1g-dev \
         liblz4-dev \
         libdouble-conversion-dev \

@@ -24,7 +24,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/FieldVisitorToString.h>
 
-#include <common/DateLUT.h>
+#include <base/DateLUT.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 
 
@@ -77,8 +77,8 @@ static Field convertNumericType(const Field & from, const IDataType & type)
     if (from.getType() == Field::Types::Int256)
         return convertNumericTypeImpl<Int256, To>(from);
 
-    throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
-        + Field::Types::toString(from.getType()), ErrorCodes::TYPE_MISMATCH);
+    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
+        type.getName(), from.getType());
 }
 
 
@@ -136,8 +136,8 @@ static Field convertDecimalType(const Field & from, const To & type)
     if (from.getType() == Field::Types::Decimal128)
         return convertDecimalToDecimalType<Decimal128>(from, type);
 
-    throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
-        + Field::Types::toString(from.getType()), ErrorCodes::TYPE_MISMATCH);
+    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
+        type.getName(), from.getType());
 }
 
 
@@ -205,6 +205,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
+        if (which_type.isDate32() && src.getType() == Field::Types::Int64)
+        {
+            /// We don't need any conversion Int64 is under type of Date32
+            return src;
+        }
+
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
         {
             /// Already in needed type.
@@ -212,7 +218,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         }
 
         if (which_type.isDateTime64()
-            && (which_from_type.isNativeInt() || which_from_type.isNativeUInt() || which_from_type.isDate() || which_from_type.isDateTime() || which_from_type.isDateTime64()))
+            && (which_from_type.isNativeInt() || which_from_type.isNativeUInt() || which_from_type.isDate() || which_from_type.isDate32() || which_from_type.isDateTime() || which_from_type.isDateTime64()))
         {
             const auto scale = static_cast<const DataTypeDateTime64 &>(type).getScale();
             const auto decimal_value = DecimalUtils::decimalFromComponents<DateTime64>(src.reinterpret<Int64>(), 0, scale);
@@ -350,8 +356,9 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     else if (const DataTypeAggregateFunction * agg_func_type = typeid_cast<const DataTypeAggregateFunction *>(&type))
     {
         if (src.getType() != Field::Types::AggregateFunctionState)
-            throw Exception(String("Cannot convert ") + src.getTypeName() + " to " + agg_func_type->getName(),
-                    ErrorCodes::TYPE_MISMATCH);
+            throw Exception(ErrorCodes::TYPE_MISMATCH,
+                "Cannot convert {} to {}",
+                src.getTypeName(), agg_func_type->getName());
 
         const auto & name = src.get<AggregateFunctionStateData>().name;
         if (agg_func_type->getName() != name)
@@ -431,8 +438,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         return convertFieldToType(parsed, type, from_type_hint);
     }
 
-    throw Exception("Type mismatch in IN or VALUES section. Expected: " + type.getName() + ". Got: "
-        + Field::Types::toString(src.getType()), ErrorCodes::TYPE_MISMATCH);
+    throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch in IN or VALUES section. Expected: {}. Got: {}",
+        type.getName(), src.getType());
 }
 
 }

@@ -268,8 +268,7 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeData::DataPartPtr & data_part,
     const Names & required_columns,
-    const PrewhereInfoPtr & prewhere_info,
-    bool check_columns)
+    const PrewhereInfoPtr & prewhere_info)
 {
     Names column_names = required_columns;
     Names pre_column_names;
@@ -317,18 +316,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(
     MergeTreeReadTaskColumns result;
     NamesAndTypesList all_columns;
 
-    if (check_columns)
-    {
-        auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects();
-        result.pre_columns = storage_snapshot->getColumnsByNames(options, pre_column_names);
-        result.columns = storage_snapshot->getColumnsByNames(options, column_names);
-    }
-    else
-    {
-        result.pre_columns = data_part->getColumns().addTypes(pre_column_names);
-        result.columns = data_part->getColumns().addTypes(column_names);
-    }
-
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns().withExtendedObjects();
+    result.pre_columns = storage_snapshot->getColumnsByNames(options, pre_column_names);
+    result.columns = storage_snapshot->getColumnsByNames(options, column_names);
     result.should_reorder = should_reorder;
     return result;
 }

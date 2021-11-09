@@ -66,7 +66,8 @@ size_t deserializeOffsets(IColumn::Offsets & offsets,
     }
 
     /// Just try to guess number of offsets.
-    offsets.reserve(static_cast<size_t>(limit * ColumnSparse::DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION));
+    offsets.reserve(offsets.size()
+        + static_cast<size_t>(limit * (1.0 - ColumnSparse::DEFAULT_RATIO_FOR_SPARSE_SERIALIZATION)));
 
     bool first = true;
     size_t total_rows = state.num_trailing_defaults;
@@ -136,12 +137,49 @@ SerializationSparse::SerializationSparse(const SerializationPtr & nested_)
 {
 }
 
-void SerializationSparse::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+SerializationPtr SerializationSparse::SubcolumnCreator::create(const SerializationPtr & prev) const
 {
+    return std::make_shared<SerializationSparse>(prev);
+}
+
+ColumnPtr SerializationSparse::SubcolumnCreator::create(const ColumnPtr & prev) const
+{
+    return ColumnSparse::create(prev, offsets, size);
+}
+
+void SerializationSparse::enumerateStreams(
+    SubstreamPath & path,
+    const StreamCallback & callback,
+    const SubstreamData & data) const
+{
+    const auto * column_sparse = data.column ? &assert_cast<const ColumnSparse &>(*data.column) : nullptr;
+
+    size_t column_size = column_sparse ? column_sparse->size() : 0;
+
     path.push_back(Substream::SparseOffsets);
+    path.back().data =
+    {
+        std::make_shared<SerializationNumber<UInt64>>(),
+        data.type ? std::make_shared<DataTypeUInt64>() : nullptr,
+        column_sparse ? column_sparse->getOffsetsPtr() : nullptr,
+        data.serialization_info,
+    };
+
     callback(path);
+
     path.back() = Substream::SparseElements;
-    nested->enumerateStreams(callback, path);
+    path.back().creator = std::make_shared<SubcolumnCreator>(path.back().data.column, column_size);
+    path.back().data = data;
+
+    SubstreamData next_data =
+    {
+        nested,
+        data.type,
+        column_sparse ? column_sparse->getValuesPtr() : nullptr,
+        data.serialization_info,
+    };
+
+    nested->enumerateStreams(path, callback, next_data);
     path.pop_back();
 }
 
@@ -223,7 +261,7 @@ void SerializationSparse::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStatePtr & state,
     SubstreamsCache * cache) const
 {
-    auto * state_sparse = checkAndGetDeserializeState<DeserializeStateSparse>(state, *this);
+    auto * state_sparse = checkAndGetState<DeserializeStateSparse>(state);
 
     if (!settings.continuous_reading)
         state_sparse->reset();
