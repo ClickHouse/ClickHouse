@@ -3804,7 +3804,7 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 ## alter_partition_verbose_result {#alter-partition-verbose-result}
 
-Включает или отключает вывод информации о партах, к которым были успешно применены операции манипуляции с партициями и партами. Применимо к [ATTACH PARTITION|PART](../../sql-reference/statements/alteralter/partition/#alter_attach-partition) и к [FREEZE PARTITION](../../sql-reference/statements/alteralter/partition/#alter_freeze-partition)
+Включает или отключает вывод информации о партах, к которым были успешно применены операции манипуляции с партициями и партами. Применимо к [ATTACH PARTITION|PART](../../sql-reference/statements/alteralter/partition.md#alter_attach-partition) и к [FREEZE PARTITION](../../sql-reference/statements/alteralter/partition.md#alter_freeze-partition)
 
 Возможные значения:
 
