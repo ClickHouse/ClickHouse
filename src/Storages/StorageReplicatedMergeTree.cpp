@@ -2191,12 +2191,6 @@ bool StorageReplicatedMergeTree::executeReplaceRange(const LogEntry & entry)
         {
             renameTempPartAndReplace(part_desc->res_part, nullptr, &transaction);
             getCommitPartOps(ops, part_desc->res_part);
-
-            if (ops.size() > zkutil::MULTI_BATCH_SIZE)
-            {
-                zookeeper->multi(ops);
-                ops.clear();
-            }
         }
 
         if (!ops.empty())
@@ -6372,13 +6366,6 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             {
                 getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
                 ephemeral_locks[i].getUnlockOps(ops);
-
-                if (ops.size() > zkutil::MULTI_BATCH_SIZE)
-                {
-                    /// It is unnecessary to add parts to working set until we commit log entry
-                    zookeeper->multi(ops);
-                    ops.clear();
-                }
             }
 
             if (auto txn = query_context->getZooKeeperMetadataTransaction())
@@ -6403,7 +6390,14 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
             if (code == Coordination::Error::ZOK)
                 delimiting_block_lock->assumeUnlocked();
             else if (code == Coordination::Error::ZBADVERSION)
+            {
+                /// Cannot retry automatically, because some zookeeper ops were lost on the first attempt. Will retry on DDLWorker-level.
+                if (query_context->getZooKeeperMetadataTransaction())
+                    throw Exception(
+                        "Cannot execute alter, because mutations version was suddenly changed due to concurrent alter",
+                        ErrorCodes::CANNOT_ASSIGN_ALTER);
                 continue;
+            }
             else
                 zkutil::KeeperMultiException::check(code, ops, op_results);
 
@@ -6592,12 +6586,6 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
             {
                 dest_table_storage->getCommitPartOps(ops, dst_parts[i], block_id_paths[i]);
                 ephemeral_locks[i].getUnlockOps(ops);
-
-                if (ops.size() > zkutil::MULTI_BATCH_SIZE)
-                {
-                    zookeeper->multi(ops);
-                    ops.clear();
-                }
             }
 
             /// Check and update version to avoid race with DROP_RANGE
@@ -7055,7 +7043,14 @@ bool StorageReplicatedMergeTree::dropAllPartsInPartition(
         if (code == Coordination::Error::ZOK)
             delimiting_block_lock->assumeUnlocked();
         else if (code == Coordination::Error::ZBADVERSION)
+        {
+            /// Cannot retry automatically, because some zookeeper ops were lost on the first attempt. Will retry on DDLWorker-level.
+            if (query_context->getZooKeeperMetadataTransaction())
+                throw Exception(
+                    "Cannot execute alter, because mutations version was suddenly changed due to concurrent alter",
+                    ErrorCodes::CANNOT_ASSIGN_ALTER);
             continue;
+        }
         else
             zkutil::KeeperMultiException::check(code, ops, responses);
 
