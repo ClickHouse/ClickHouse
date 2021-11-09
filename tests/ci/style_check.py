@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-from github import Github
-from report import create_test_html_report
-import shutil
 import logging
 import subprocess
 import os
 import csv
-from s3_helper import S3Helper
 import time
 import json
+from github import Github
+from report import create_test_html_report
+from s3_helper import S3Helper
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 
@@ -84,15 +83,6 @@ def get_commit(gh, commit_sha):
     repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
     commit = repo.get_commit(commit_sha)
     return commit
-
-def update_check_with_curl(check_id):
-    cmd_template = ("curl -v --request PATCH --url https://api.github.com/repos/ClickHouse/ClickHouse/check-runs/{} "
-           "--header 'authorization: Bearer {}' "
-           "--header 'Accept: application/vnd.github.v3+json' "
-           "--header 'content-type: application/json' "
-           "-d '{{\"name\" : \"hello-world-name\"}}'")
-    cmd = cmd_template.format(check_id, os.getenv("GITHUB_TOKEN"))
-    subprocess.check_call(cmd, shell=True)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

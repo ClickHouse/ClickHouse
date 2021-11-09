@@ -2,17 +2,20 @@
 
 #if USE_AWS_S3
 
-#    include <Disks/DiskCache.h>
-#    include <IO/ReadBufferFromIStream.h>
-#    include <IO/ReadBufferFromS3.h>
-#    include <IO/ReadSettings.h>
-#    include <Common/Stopwatch.h>
-#    include <aws/s3/S3Client.h>
-#    include <aws/s3/model/GetObjectRequest.h>
-#    include <base/logger_useful.h>
+#include <Disks/DiskCache.h>
+#include <IO/ReadBufferFromIStream.h>
+#include <IO/ReadBufferFromS3.h>
+#include <IO/ReadSettings.h>
+#include <Common/Stopwatch.h>
 
-#    include <utility>
-#    include <regex>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/model/GetObjectRequest.h>
+
+#include <base/logger_useful.h>
+#include <base/sleep.h>
+
+#include <utility>
+#include <regex>
 
 
 namespace ProfileEvents
@@ -29,45 +32,82 @@ namespace ErrorCodes
     extern const int S3_ERROR;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 
 ReadBufferFromS3::ReadBufferFromS3(
-    std::shared_ptr<Aws::S3::S3Client> client_ptr_, std::shared_ptr<DiskCache> disk_cache_,
-    const String & bucket_, const String & key_, UInt64 max_single_read_retries_, size_t buffer_size_)
+    std::shared_ptr<Aws::S3::S3Client> client_ptr_, std::shared_ptr<DiskCache> disk_cache_, const String & bucket_, const String & key_,
+    UInt64 max_single_read_retries_, const ReadSettings & settings_, bool use_external_buffer_, size_t read_until_position_)
     : SeekableReadBuffer(nullptr, 0)
     , client_ptr(std::move(client_ptr_))
     , disk_cache(std::move(disk_cache_))
     , bucket(bucket_)
     , key(key_)
     , max_single_read_retries(max_single_read_retries_)
-    , buffer_size(buffer_size_)
+    , read_settings(settings_)
+    , use_external_buffer(use_external_buffer_)
+    , read_until_position(read_until_position_)
 {
 }
 
 bool ReadBufferFromS3::nextImpl()
 {
+    if (read_until_position)
+    {
+        if (read_until_position == offset)
+            return false;
+
+        if (read_until_position < offset)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
+    }
+
     bool next_result = false;
 
     if (impl)
     {
-        /// `impl` has been initialized earlier and now we're at the end of the current portion of data.
-        impl->position() = position();
-        assert(!impl->hasPendingData());
-    }
-    else
-    {
-        /// `impl` is not initialized and we're about to read the first portion of data.
-        impl = initialize();
-        next_result = impl->hasPendingData();
+        if (use_external_buffer)
+        {
+            /**
+            * use_external_buffer -- means we read into the buffer which
+            * was passed to us from somewhere else. We do not check whether
+            * previously returned buffer was read or not (no hasPendingData() check is needed),
+            * because this branch means we are prefetching data,
+            * each nextImpl() call we can fill a different buffer.
+            */
+            impl->set(internal_buffer.begin(), internal_buffer.size());
+            assert(working_buffer.begin() != nullptr);
+            assert(!internal_buffer.empty());
+        }
+        else
+        {
+            /**
+            * impl was initialized before, pass position() to it to make
+            * sure there is no pending data which was not read.
+            */
+            impl->position() = position();
+            assert(!impl->hasPendingData());
+        }
     }
 
-    auto sleep_time_with_backoff_milliseconds = std::chrono::milliseconds(100);
+    size_t sleep_time_with_backoff_milliseconds = 100;
     for (size_t attempt = 0; (attempt < max_single_read_retries) && !next_result; ++attempt)
     {
         Stopwatch watch;
         try
         {
+            if (!impl)
+            {
+                impl = initialize();
+
+                if (use_external_buffer)
+                {
+                    impl->set(internal_buffer.begin(), internal_buffer.size());
+                    assert(working_buffer.begin() != nullptr);
+                    assert(!internal_buffer.empty());
+                }
+            }
+
             /// Try to read a next portion of data.
             next_result = impl->next();
             watch.stop();
@@ -87,13 +127,11 @@ bool ReadBufferFromS3::nextImpl()
                 throw;
 
             /// Pause before next attempt.
-            std::this_thread::sleep_for(sleep_time_with_backoff_milliseconds);
+            sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
 
             /// Try to reinitialize `impl`.
             impl.reset();
-            impl = initialize();
-            next_result = impl->hasPendingData();
         }
     }
     if (!next_result)
@@ -168,20 +206,33 @@ public:
         const String & key_, Aws::S3::Model::GetObjectResult & read_result_, size_t buffer_size_) :
         client_ptr(client_ptr_), bucket(bucket_), key(key_), read_result(read_result_), buffer_size(buffer_size_)
     {
-
     }
 
     ~DiskCacheDownloaderS3() override {}
 
-    RemoteFSStream get(size_t offset, size_t size) override
+    RemoteFSStream get(size_t offset, size_t read_until_position) override
     {
         Aws::S3::Model::GetObjectRequest req;
         req.SetBucket(bucket);
         req.SetKey(key);
-        if (size)
-            req.SetRange(fmt::format("bytes={}-{}", offset, offset + size - 1));
+
+        /**
+         * If remote_filesystem_read_method = 'read_threadpool', then for MergeTree family tables
+         * exact byte ranges to read are always passed here.
+         */
+        if (read_until_position)
+        {
+            if (offset >= read_until_position)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
+
+            req.SetRange(fmt::format("bytes={}-{}", offset, read_until_position - 1));
+            LOG_DEBUG(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, read_until_position - 1);
+        }
         else
-            req.SetRange(fmt::format("bytes={}-", offset)); /// till end
+        {
+            req.SetRange(fmt::format("bytes={}-", offset));
+            LOG_DEBUG(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
+        }
 
         Aws::S3::Model::GetObjectOutcome outcome = client_ptr->GetObject(req);
 
@@ -190,7 +241,8 @@ public:
         if (!outcome.IsSuccess())
         {
             if (outcome.GetError().GetExceptionName() == "InvalidRange")
-            { /// offset is out of available size
+            {   /// offset is out of available size
+                /// May be when offset is equal to file size
                 return res;
             }
             else
@@ -227,7 +279,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
     LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
 
-    auto downloader = std::make_shared<DiskCacheDownloaderS3>(client_ptr, bucket, key, read_result, buffer_size);
+    auto downloader = std::make_shared<DiskCacheDownloaderS3>(client_ptr, bucket, key, read_result, read_settings.remote_fs_buffer_size);
 
     if (disk_cache)
     {

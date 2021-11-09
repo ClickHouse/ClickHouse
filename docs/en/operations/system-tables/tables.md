@@ -30,6 +30,8 @@ Columns:
 
 -   `engine_full` ([String](../../sql-reference/data-types/string.md)) - Parameters of the table engine.
 
+-   `as_select` ([String](../../sql-reference/data-types/string.md)) - `SELECT` query for view.
+
 -   `partition_key` ([String](../../sql-reference/data-types/string.md)) - The partition key expression specified in the table.
 
 -   `sorting_key` ([String](../../sql-reference/data-types/string.md)) - The sorting key expression specified in the table.
@@ -56,6 +58,7 @@ Columns:
 
 -   `comment` ([String](../../sql-reference/data-types/string.md)) - The comment for the table.
 
+-   `has_own_data` ([UInt8](../../sql-reference/data-types/int-uint.md)) — Flag that indicates whether the table itself stores some data on disk or only accesses some other source.
 
 The `system.tables` table is used in `SHOW TABLES` query implementation.
 
@@ -80,6 +83,7 @@ dependencies_database:      []
 dependencies_table:         []
 create_table_query:         CREATE TABLE base.t1 (`n` UInt64) ENGINE = MergeTree ORDER BY n SETTINGS index_granularity = 8192
 engine_full:                MergeTree ORDER BY n SETTINGS index_granularity = 8192
+as_select:                  SELECT database AS table_catalog
 partition_key:
 sorting_key:                n
 primary_key:                n
@@ -90,6 +94,7 @@ total_bytes:                99
 lifetime_rows:              ᴺᵁᴸᴸ
 lifetime_bytes:             ᴺᵁᴸᴸ
 comment:
+has_own_data:               0
 
 Row 2:
 ──────
@@ -105,6 +110,7 @@ dependencies_database:      []
 dependencies_table:         []
 create_table_query:         CREATE TABLE default.`53r93yleapyears` (`id` Int8, `febdays` Int8) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192
 engine_full:                MergeTree ORDER BY id SETTINGS index_granularity = 8192
+as_select:                  SELECT name AS catalog_name
 partition_key:
 sorting_key:                id
 primary_key:                id
@@ -115,6 +121,5 @@ total_bytes:                155
 lifetime_rows:              ᴺᵁᴸᴸ
 lifetime_bytes:             ᴺᵁᴸᴸ
 comment:
+has_own_data:               0
 ```
-
-[Original article](https://clickhouse.com/docs/en/operations/system-tables/tables) <!--hide-->

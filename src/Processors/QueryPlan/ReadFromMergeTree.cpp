@@ -135,7 +135,6 @@ Pipe ReadFromMergeTree::readFromPool(
         data,
         metadata_snapshot,
         prewhere_info,
-        true,
         required_columns,
         backoff_settings,
         settings.preferred_block_size_bytes,
@@ -174,7 +173,7 @@ ProcessorPtr ReadFromMergeTree::createSource(
     return std::make_shared<TSource>(
             data, metadata_snapshot, part.data_part, max_block_size, preferred_block_size_bytes,
             preferred_max_column_in_block_size_bytes, required_columns, part.ranges, use_uncompressed_cache, prewhere_info,
-            actions_settings, true, reader_settings, virt_column_names, part.part_index_in_query, has_limit_below_one_block);
+            actions_settings, reader_settings, virt_column_names, part.part_index_in_query, has_limit_below_one_block);
 }
 
 Pipe ReadFromMergeTree::readInOrder(
@@ -245,6 +244,16 @@ struct PartRangesReadInfo
 
     bool use_uncompressed_cache = false;
 
+    static bool checkAllPartsOnRemoteFS(const RangesInDataParts & parts)
+    {
+        for (const auto & part : parts)
+        {
+            if (!part.data_part->isStoredOnRemoteDisk())
+                return false;
+        }
+        return true;
+    }
+
     PartRangesReadInfo(
         const RangesInDataParts & parts,
         const Settings & settings,
@@ -271,9 +280,12 @@ struct PartRangesReadInfo
             data_settings.index_granularity,
             index_granularity_bytes);
 
+        auto all_parts_on_remote_disk = checkAllPartsOnRemoteFS(parts);
         min_marks_for_concurrent_read = MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
-            settings.merge_tree_min_rows_for_concurrent_read,
-            settings.merge_tree_min_bytes_for_concurrent_read,
+            all_parts_on_remote_disk ? settings.merge_tree_min_rows_for_concurrent_read_for_remote_filesystem
+                                     : settings.merge_tree_min_rows_for_concurrent_read,
+            all_parts_on_remote_disk ? settings.merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem
+                                     : settings.merge_tree_min_bytes_for_concurrent_read,
             data_settings.index_granularity,
             index_granularity_bytes,
             sum_marks);

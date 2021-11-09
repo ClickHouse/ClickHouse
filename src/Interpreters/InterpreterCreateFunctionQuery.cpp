@@ -1,7 +1,5 @@
 #include <Interpreters/InterpreterCreateFunctionQuery.h>
 
-#include <stack>
-
 #include <Access/ContextAccess.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -11,6 +9,7 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/UserDefinedSQLFunctionFactory.h>
+#include <Interpreters/executeDDLQueryOnCluster.h>
 
 
 namespace DB
@@ -24,45 +23,33 @@ namespace ErrorCodes
 
 BlockIO InterpreterCreateFunctionQuery::execute()
 {
-    auto current_context = getContext();
-    current_context->checkAccess(AccessType::CREATE_FUNCTION);
-
     FunctionNameNormalizer().visit(query_ptr.get());
-    auto * create_function_query = query_ptr->as<ASTCreateFunctionQuery>();
+    ASTCreateFunctionQuery & create_function_query = query_ptr->as<ASTCreateFunctionQuery &>();
 
-    if (!create_function_query)
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Expected CREATE FUNCTION query");
+    AccessRightsElements access_rights_elements;
+    access_rights_elements.emplace_back(AccessType::CREATE_FUNCTION);
+
+    if (create_function_query.or_replace)
+        access_rights_elements.emplace_back(AccessType::DROP_FUNCTION);
+
+    if (!create_function_query.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, getContext(), access_rights_elements);
+
+    auto current_context = getContext();
+    current_context->checkAccess(access_rights_elements);
 
     auto & user_defined_function_factory = UserDefinedSQLFunctionFactory::instance();
 
-    auto & function_name = create_function_query->function_name;
+    auto & function_name = create_function_query.function_name;
 
-    bool if_not_exists = create_function_query->if_not_exists;
-    bool replace = create_function_query->or_replace;
+    bool if_not_exists = create_function_query.if_not_exists;
+    bool replace = create_function_query.or_replace;
 
-    create_function_query->if_not_exists = false;
-    create_function_query->or_replace = false;
+    create_function_query.if_not_exists = false;
+    create_function_query.or_replace = false;
 
-    if (if_not_exists && user_defined_function_factory.tryGet(function_name) != nullptr)
-        return {};
-
-    validateFunction(create_function_query->function_core, function_name);
-
-    user_defined_function_factory.registerFunction(function_name, query_ptr, replace);
-
-    if (persist_function)
-    {
-        try
-        {
-            UserDefinedSQLObjectsLoader::instance().storeObject(current_context, UserDefinedSQLObjectType::Function, function_name, *query_ptr, replace);
-        }
-        catch (Exception & exception)
-        {
-            user_defined_function_factory.unregisterFunction(function_name);
-            exception.addMessage(fmt::format("while storing user defined function {} on disk", backQuote(function_name)));
-            throw;
-        }
-    }
+    validateFunction(create_function_query.function_core, function_name);
+    user_defined_function_factory.registerFunction(current_context, function_name, query_ptr, replace, if_not_exists, persist_function);
 
     return {};
 }

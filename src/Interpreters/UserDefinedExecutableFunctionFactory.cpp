@@ -206,6 +206,15 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const S
     return nullptr;
 }
 
+bool UserDefinedExecutableFunctionFactory::has(const String & function_name, ContextPtr context)
+{
+    const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
+    auto load_result = loader.getLoadResult(function_name);
+
+    bool result = load_result.object != nullptr;
+    return result;
+}
+
 std::vector<String> UserDefinedExecutableFunctionFactory::getRegisteredNames(ContextPtr context)
 {
     const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
