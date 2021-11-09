@@ -744,7 +744,7 @@ Setting fields:
 -   `query` – The custom query. Optional parameter.
 
 !!! info "Note"
-    The `column_family` or `where` fields cannot be used together with the `query` field. And there must be one of the sources of either `column_family` or `query`.
+    The `column_family` or `where` fields cannot be used together with the `query` field. And either one of the `column_family` or `query` fields must be declared.
 
 ### PosgreSQL {#dicts-external_dicts_dict_sources-postgresql}
 
