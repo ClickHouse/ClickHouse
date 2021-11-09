@@ -2986,7 +2986,7 @@ bool StorageReplicatedMergeTree::scheduleDataProcessingJob(BackgroundJobsAssigne
             [this, selected_entry] () mutable
             {
                 return processQueueEntry(selected_entry);
-            }, common_assignee_trigger, getStorageID()));
+            }, common_assignee_trigger, getStorageID()), /* need_trigger */ true);
         return true;
     }
 }
