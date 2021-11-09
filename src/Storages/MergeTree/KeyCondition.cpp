@@ -51,10 +51,7 @@ String Range::toString() const
 }
 
 
-/// Returns fixed_prefix only if the last char is '%', '_'
-/// Example:
-/// for `Hello\_World% ...` string it returns `Hello_World`
-/// for `%test%` returns an empty string.
+/// Example: for `Hello\_World% ...` string it returns `Hello_World`, and for `%test%` returns an empty string.
 static String extractFixedPrefixFromLikePattern(const String & like_pattern)
 {
     String fixed_prefix;
@@ -68,13 +65,7 @@ static String extractFixedPrefixFromLikePattern(const String & like_pattern)
             case '%':
                 [[fallthrough]];
             case '_':
-                if (pos + 1 == end) {
-                    return fixed_prefix;
-                }
-                else
-                {
-                    return "";
-                }
+                return fixed_prefix;
 
             case '\\':
                 ++pos;
