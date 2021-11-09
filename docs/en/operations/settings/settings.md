@@ -4061,7 +4061,7 @@ Possible values:
 
 Default value: `0`.
 
-**Пример**
+**Example**
 
 ```sql
 CREATE TABLE test(a Int64, d Date, s String) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY a;
