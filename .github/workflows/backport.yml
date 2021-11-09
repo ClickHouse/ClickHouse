@@ -16,6 +16,7 @@ jobs:
     steps:
       - name: Check out repository code
         uses: actions/checkout@v2
+        fetch-depth: 0 # otherwise we will have no info about branches
       - name: Cherry pick
         env:
           TEMP_PATH: ${{runner.temp}}/cherry_pick
