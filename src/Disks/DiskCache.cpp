@@ -450,7 +450,7 @@ public:
         auto dir_path = directoryPath(cache_path);
         if (!cache_disk->exists(dir_path))
             cache_disk->createDirectories(dir_path);
-        
+
         cache = cache_disk->writeFile(cache_path + ".tmp", 1024, DB::WriteMode::Rewrite);
     }
 
@@ -574,13 +574,13 @@ private:
     {
         cache->finalize();
         cache.reset(nullptr);
-        
+
         if (cache_part_size > expected_size)
         {
             LOG_ERROR(log, "Unexpected part size, got {}, expected {}", cache_part_size, expected_size);
             throw Exception("Unexpected part size", ErrorCodes::LOCAL_CACHE_ERROR);
         }
-        
+
         cache_disk->moveFile(cache_path + ".tmp", cache_path);
         LOG_TRACE(log, "Add key {}: {}+{} of {}", cache_key, part_offset, cache_part_size, cache_file_size);
         auto to_remove = cache_policy->add(cache_key, cache_file_size, part_offset, cache_part_size);

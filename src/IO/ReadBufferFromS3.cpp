@@ -206,11 +206,12 @@ public:
         const String & key_, Aws::S3::Model::GetObjectResult & read_result_, size_t buffer_size_) :
         client_ptr(client_ptr_), bucket(bucket_), key(key_), read_result(read_result_), buffer_size(buffer_size_)
     {
+        log = &Poco::Logger::get("DiskCacheDownloaderS3");
     }
 
     ~DiskCacheDownloaderS3() override {}
 
-    RemoteFSStream get(size_t offset, size_t read_until_position) override
+    RemoteFSStream get(size_t offset, size_t size) override
     {
         Aws::S3::Model::GetObjectRequest req;
         req.SetBucket(bucket);
@@ -220,13 +221,10 @@ public:
          * If remote_filesystem_read_method = 'read_threadpool', then for MergeTree family tables
          * exact byte ranges to read are always passed here.
          */
-        if (read_until_position)
+        if (size)
         {
-            if (offset >= read_until_position)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
-
-            req.SetRange(fmt::format("bytes={}-{}", offset, read_until_position - 1));
-            LOG_DEBUG(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, read_until_position - 1);
+            req.SetRange(fmt::format("bytes={}-{}", offset, offset + size - 1));
+            LOG_DEBUG(log, "Read S3 object. Bucket: {}, Key: {}, Range: {}-{}", bucket, key, offset, offset + size - 1);
         }
         else
         {
@@ -255,7 +253,7 @@ public:
         Range range;
         if (!range.parse(range_header))
         {
-            LOG_ERROR(&Poco::Logger::get("S3Downloader"), "Can't parse range: {}", range_header);
+            LOG_ERROR(log, "Can't parse range: {}", range_header);
         }
         else
         {
@@ -273,21 +271,26 @@ private:
     String key;
     Aws::S3::Model::GetObjectResult & read_result;
     size_t buffer_size;
+    Poco::Logger * log;
 };
 
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
-    LOG_TRACE(log, "Read S3 object. Bucket: {}, Key: {}, Offset: {}", bucket, key, offset);
+    if (read_until_position)
+    {
+        if (offset >= read_until_position)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
+    }
 
     auto downloader = std::make_shared<DiskCacheDownloaderS3>(client_ptr, bucket, key, read_result, read_settings.remote_fs_buffer_size);
 
     if (disk_cache)
     {
         String cache_key = bucket + "/" + key;
-        return disk_cache->find(cache_key, offset, 0, downloader);
+        return disk_cache->find(cache_key, offset, read_until_position ? read_until_position - offset : 0, downloader);
     }
 
-    return downloader->get(offset, 0).stream;
+    return downloader->get(offset, read_until_position ? read_until_position - offset : 0).stream;
 }
 
 }

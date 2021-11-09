@@ -141,7 +141,7 @@ DiskCacheWrapper::readFile(
     }
 
     if (metadata->status == FileDownloadStatus::DOWNLOADED)
-        return cache_disk->readFile(path, settings, estimated_size);
+        return cache_disk->readFile(path, settings, size);
 
     return DiskDecorator::readFile(path, settings, size);
 }

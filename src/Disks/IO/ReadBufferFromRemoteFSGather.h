@@ -67,6 +67,8 @@ private:
 
 
 #if USE_AWS_S3
+class DiskCache;
+
 /// Reads data from S3 using stored paths in metadata.
 class ReadBufferFromS3Gather final : public ReadBufferFromRemoteFSGather
 {
