@@ -28,3 +28,7 @@ target_link_libraries(clickhouse_aggregate_functions PRIVATE dbms PUBLIC ${CITYH
 if(ENABLE_EXAMPLES)
     add_subdirectory(examples)
 endif()
+
+if (USE_STATS)
+    target_link_libraries(clickhouse_aggregate_functions PRIVATE stats)
+endif()

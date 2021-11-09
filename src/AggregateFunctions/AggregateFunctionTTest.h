@@ -79,10 +79,18 @@ template <typename Data>
 class AggregateFunctionTTest :
     public IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data>>
 {
+private:
+    bool need_ci = false;
+    Float64 confidence_level;
 public:
-    AggregateFunctionTTest(const DataTypes & arguments)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data>>({arguments}, {})
+    AggregateFunctionTTest(const DataTypes & arguments, [[maybe_unused]] const Array & params)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionTTest<Data>>({arguments}, params)
     {
+        if (params.size() > 0)
+        {
+            need_ci = true;
+            confidence_level = params.at(0).safeGet<Float64>();
+        }
     }
 
     String getName() const override
@@ -92,22 +100,48 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        DataTypes types
+        if (need_ci)
         {
-            std::make_shared<DataTypeNumber<Float64>>(),
-            std::make_shared<DataTypeNumber<Float64>>(),
-        };
+            DataTypes types
+            {
+                std::make_shared<DataTypeNumber<Float64>>(),
+                std::make_shared<DataTypeNumber<Float64>>(),
+                std::make_shared<DataTypeNumber<Float64>>(),
+                std::make_shared<DataTypeNumber<Float64>>(),
+            };
 
-        Strings names
+            Strings names
+            {
+                "t_statistic",
+                "p_value",
+                "confidence_interval_low",
+                "confidence_interval_high",
+            };
+
+            return std::make_shared<DataTypeTuple>(
+                std::move(types),
+                std::move(names)
+            );
+        }
+        else
         {
-            "t_statistic",
-            "p_value"
-        };
+            DataTypes types
+            {
+                std::make_shared<DataTypeNumber<Float64>>(),
+                std::make_shared<DataTypeNumber<Float64>>(),
+            };
 
-        return std::make_shared<DataTypeTuple>(
-            std::move(types),
-            std::move(names)
-        );
+            Strings names
+            {
+                "t_statistic",
+                "p_value",
+            };
+
+            return std::make_shared<DataTypeTuple>(
+                std::move(types),
+                std::move(names)
+            );
+        }
     }
 
     bool allocatesMemoryInArena() const override { return false; }
@@ -140,7 +174,8 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        auto [t_statistic, p_value] = this->data(place).getResult();
+        auto & data = this->data(place);
+        auto [t_statistic, p_value] = data.getResult();
 
         /// Because p-value is a probability.
         p_value = std::min(1.0, std::max(0.0, p_value));
@@ -151,6 +186,15 @@ public:
 
         column_stat.getData().push_back(t_statistic);
         column_value.getData().push_back(p_value);
+
+        if (need_ci)
+        {
+            auto [ci_low, ci_high] = data.getConfidenceIntervals(confidence_level, data.getDegreesOfFreedom());
+            auto & column_ci_low = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(2));
+            auto & column_ci_high = assert_cast<ColumnVector<Float64> &>(column_tuple.getColumn(3));
+            column_ci_low.getData().push_back(ci_low);
+            column_ci_high.getData().push_back(ci_high);
+        }
     }
 };
 
