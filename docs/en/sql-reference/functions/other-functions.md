@@ -2480,7 +2480,7 @@ zookeeperSessionUptime()
 
 **Returned value**
 
--   Uptime of current ZooKeeper session in seconds.
+-   Uptime of the current ZooKeeper session in seconds.
 
 Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
