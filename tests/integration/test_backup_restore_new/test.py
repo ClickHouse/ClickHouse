@@ -3,8 +3,7 @@ import re
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance', main_configs=["configs/backups_disk.xml"])
-
+instance = cluster.add_instance('instance', main_configs=["configs/backups_disk.xml"], external_dirs=["/backups/"])
 
 def create_and_fill_table(engine="MergeTree"):
     if engine == "MergeTree":
@@ -18,7 +17,6 @@ def create_and_fill_table(engine="MergeTree"):
 def start_cluster():
     try:
         cluster.start()
-        cluster.exec_in_container(instance.docker_id, ["mkdir", "-p", "/var/lib/clickhouse/backups/"])
         yield cluster
     finally:
         cluster.shutdown()
@@ -126,7 +124,7 @@ def test_backup_not_found_or_already_exists():
 
 
 def test_file_engine():
-    backup_name = f"File('/var/lib/clickhouse/backups/file/')"
+    backup_name = f"File('/backups/file/')"
     create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
