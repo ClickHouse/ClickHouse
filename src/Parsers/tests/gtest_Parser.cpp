@@ -1,5 +1,6 @@
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserAlterQuery.h>
+#include <Parsers/ParserCreateQuery.h>
 
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/parseQuery.h>
@@ -132,15 +133,40 @@ INSTANTIATE_TEST_SUITE_P(ParserAlterCommand_MODIFY_COMMENT, ParserTest,
                 "MODIFY COMMENT ''",
                 "MODIFY COMMENT ''",
             },
-//            {
-//                // No comment - same as empty comment
-//                "MODIFY COMMENT NULL",
-//                "MODIFY COMMENT ''",
-//            },
             {
                 // Non-empty comment value
                 "MODIFY COMMENT 'some comment value'",
                 "MODIFY COMMENT 'some comment value'",
             }
         }
+)));
+
+
+INSTANTIATE_TEST_SUITE_P(ParserCreateQuery_DICTIONARY_WITH_COMMENT, ParserTest,
+    ::testing::Combine(
+        ::testing::Values(std::make_shared<ParserAlterCommand>()),
+        ::testing::ValuesIn(std::initializer_list<ParserTestCase>{
+        {
+            R"sql(CREATE DICTIONARY 2024_dictionary_with_comment
+(
+    id UInt64,
+    value String
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'source_table'))
+LAYOUT(FLAT())
+LIFETIME(MIN 0 MAX 1000)
+COMMENT 'Test dictionary with comment';
+)sql",
+        R"sql(CREATE DICTIONARY `2024_dictionary_with_comment`
+(
+    `id` UInt64,
+    `value` String
+)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() TABLE 'source_table'))
+LIFETIME(MIN 0 MAX 1000)
+LAYOUT(FLAT())
+COMMENT 'Test dictionary with comment')sql"
+    }}
 )));

@@ -11,7 +11,7 @@ option (USE_INTERNAL_CAPNP_LIBRARY "Set to FALSE to use system capnproto library
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/capnproto/CMakeLists.txt")
     if(USE_INTERNAL_CAPNP_LIBRARY)
-        message(WARNING "submodule contrib/capnproto is missing. to fix try run: \n git submodule update --init --recursive")
+        message(WARNING "submodule contrib/capnproto is missing. to fix try run: \n git submodule update --init")
         message(${RECONFIGURE_MESSAGE_LEVEL} "cannot find internal capnproto")
         set(USE_INTERNAL_CAPNP_LIBRARY 0)
     endif()
@@ -34,8 +34,6 @@ endif()
 if (CAPNP_LIBRARIES)
     set (USE_CAPNP 1)
 elseif(NOT MISSING_INTERNAL_CAPNP_LIBRARY)
-    add_subdirectory(contrib/capnproto-cmake)
-
     set (CAPNP_LIBRARIES capnpc)
     set (USE_CAPNP 1)
     set (USE_INTERNAL_CAPNP_LIBRARY 1)

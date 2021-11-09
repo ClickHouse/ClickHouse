@@ -7,8 +7,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/join_common.h>
 #include <Interpreters/asof.h>
-#include <DataStreams/IBlockStream_fwd.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/Exception.h>
@@ -49,7 +48,6 @@ enum class JoinTableSide
 
 class TableJoin
 {
-
 public:
     using NameToTypeMap = std::unordered_map<String, DataTypePtr>;
 
@@ -286,6 +284,10 @@ public:
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     String renamedRightColumnName(const String & name) const;
+
+    void resetKeys();
+    void resetToCross();
+
     std::unordered_map<String, String> leftToRightKeyRemap() const;
 
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);

@@ -40,7 +40,7 @@ ClickHouse не работает и не собирается на 32-битны
 
 Выполните в терминале:
 
-    git clone --recursive git@github.com:ClickHouse/ClickHouse.git
+    git clone git@github.com:ClickHouse/ClickHouse.git
     cd ClickHouse
 
 Замените первое вхождение слова `ClickHouse` в команде для git на имя вашего аккаунта на GitHub.
@@ -82,7 +82,7 @@ ClickHouse не работает и не собирается на 32-битны
 
 Работа с сабмодулями git может быть достаточно болезненной. Следующие команды позволят содержать их в порядке:
 
-    # ! Каждая команда принимает аргумент --recursive
+    # ! Каждая команда принимает аргумент
     # Обновить URLs удалённого репозитория для каждого сабмодуля, используется относительно редко
     git submodule sync
     # Добавить новые сабмодули
@@ -96,16 +96,16 @@ ClickHouse не работает и не собирается на 32-битны
 
     # Synchronizes submodules' remote URL with .gitmodules
     # Обновить URLs удалённого репозитория для каждого сабмодуля
-    git submodule sync --recursive
+    git submodule sync
     # Обновить существующие модули и добавить отсутствующие
-    git submodule update --init --recursive
+    git submodule update --init
     # Удалить все изменения в сабмодуле относительно HEAD
     git submodule foreach git reset --hard
     # Очистить игнорируемые файлы
     git submodule foreach git clean -xfd
     # Повторить последние 4 команды для каждого из сабмодулей
-    git submodule foreach git submodule sync --recursive
-    git submodule foreach git submodule update --init --recursive
+    git submodule foreach git submodule sync
+    git submodule foreach git submodule update --init
     git submodule foreach git submodule foreach git reset --hard
     git submodule foreach git submodule foreach git clean -xfd
 

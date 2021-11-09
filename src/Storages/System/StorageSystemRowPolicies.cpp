@@ -1,18 +1,18 @@
 #include <Storages/System/StorageSystemRowPolicies.h>
+#include <Access/AccessControl.h>
+#include <Access/Common/AccessFlags.h>
+#include <Access/RowPolicy.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTRolesOrUsersSet.h>
-#include <Access/AccessControlManager.h>
-#include <Access/RowPolicy.h>
-#include <Access/AccessFlags.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <base/range.h>
 #include <boost/range/algorithm_ext/push_back.hpp>
 
@@ -55,7 +55,7 @@ NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
 void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     context->checkAccess(AccessType::SHOW_ROW_POLICIES);
-    const auto & access_control = context->getAccessControlManager();
+    const auto & access_control = context->getAccessControl();
     std::vector<UUID> ids = access_control.findAll<RowPolicy>();
 
     size_t column_index = 0;

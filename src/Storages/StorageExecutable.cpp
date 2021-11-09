@@ -3,7 +3,8 @@
 #include <filesystem>
 
 #include <Common/ShellCommand.h>
-#include <DataStreams/materializeBlock.h>
+#include <Common/filesystemHelpers.h>
+
 #include <Core/Block.h>
 
 #include <IO/ReadHelpers.h>
@@ -11,11 +12,9 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
-#include <DataStreams/IBlockInputStream.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Formats/FormatFactory.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -114,9 +113,16 @@ Pipe StorageExecutable::read(
 {
     auto user_scripts_path = context->getUserScriptsPath();
     auto script_path = user_scripts_path + '/' + script_name;
-    if (!std::filesystem::exists(std::filesystem::path(script_path)))
+
+    if (!pathStartsWith(script_path, user_scripts_path))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "Executable file {} does not exists inside {}",
+            "Executable file {} must be inside user scripts folder {}",
+            script_name,
+            user_scripts_path);
+
+    if (!std::filesystem::exists(std::filesystem::path(script_path)))
+         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Executable file {} does not exist inside user scripts folder {}",
             script_name,
             user_scripts_path);
 
@@ -142,9 +148,9 @@ Pipe StorageExecutable::read(
         bool result = process_pool->tryBorrowObject(process, [&config, this]()
         {
             config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy{ true /*terminate_in_destructor*/, settings.command_termination_timeout };
-            auto shell_command = ShellCommand::execute(config);
+            auto shell_command = ShellCommand::executeDirect(config);
             return shell_command;
-        }, settings.max_command_execution_time * 1000);
+        }, settings.max_command_execution_time * 10000);
 
         if (!result)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
@@ -186,7 +192,7 @@ Pipe StorageExecutable::read(
 
         auto pipeline = std::make_shared<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(inputs[i])));
 
-        auto out = FormatFactory::instance().getOutputFormat(format, *write_buffer, materializeBlock(pipeline->getHeader()), context);
+        auto out = context->getOutputFormat(format, *write_buffer, materializeBlock(pipeline->getHeader()));
         out->setAutoFlush();
         pipeline->complete(std::move(out));
 

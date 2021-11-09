@@ -21,6 +21,13 @@ NamesAndTypesList StorageSystemDatabases::getNamesAndTypes()
     };
 }
 
+NamesAndAliases StorageSystemDatabases::getNamesAndAliases()
+{
+    return {
+        {"database", std::make_shared<DataTypeString>(), "name"}
+    };
+}
+
 void StorageSystemDatabases::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     const auto access = context->getAccess();

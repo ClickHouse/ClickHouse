@@ -16,9 +16,7 @@
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <filesystem>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_MYSQL
 #    include <Core/MySQL/MySQLClient.h>
@@ -36,7 +34,7 @@
 #endif
 
 #if USE_LIBPQXX
-#include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
+#include <Databases/PostgreSQL/DatabasePostgreSQL.h>
 #include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 #include <Storages/StoragePostgreSQL.h>
@@ -71,6 +69,7 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
         /// Before 20.7 it's possible that .sql metadata file does not exist for some old database.
         /// In this case Ordinary database is created on server startup if the corresponding metadata directory exists.
         /// So we should remove metadata directory if database creation failed.
+        /// TODO remove this code
         created = fs::create_directory(metadata_path);
 
         DatabasePtr impl = getImpl(create, metadata_path, context);
@@ -79,8 +78,8 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
             context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
 
         // Attach database metadata
-        if (impl && create.storage && create.storage->comment)
-            impl->setDatabaseComment(create.storage->comment->as<ASTLiteral>()->value.safeGet<String>());
+        if (impl && create.comment)
+            impl->setDatabaseComment(create.comment->as<ASTLiteral>()->value.safeGet<String>());
 
         return impl;
     }

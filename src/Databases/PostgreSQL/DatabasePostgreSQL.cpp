@@ -63,11 +63,12 @@ String DatabasePostgreSQL::getTableNameForLogs(const String & table_name) const
 }
 
 
-String DatabasePostgreSQL::formatTableName(const String & table_name) const
+String DatabasePostgreSQL::formatTableName(const String & table_name, bool quoted) const
 {
     if (configuration.schema.empty())
-        return doubleQuoteString(table_name);
-    return fmt::format("{}.{}", doubleQuoteString(configuration.schema), doubleQuoteString(table_name));
+        return quoted ? doubleQuoteString(table_name) : table_name;
+    return quoted ? fmt::format("{}.{}", doubleQuoteString(configuration.schema), doubleQuoteString(table_name))
+                  : fmt::format("{}.{}", configuration.schema, table_name);
 }
 
 
@@ -89,14 +90,23 @@ bool DatabasePostgreSQL::empty() const
 DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */) const
 {
     std::lock_guard<std::mutex> lock(mutex);
-
     Tables tables;
-    auto connection_holder = pool->get();
-    auto table_names = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
 
-    for (const auto & table_name : table_names)
-        if (!detached_or_dropped.count(table_name))
-            tables[table_name] = fetchTable(table_name, local_context, true);
+    /// Do not allow to throw here, because this might be, for example, a query to system.tables.
+    /// It must not fail on case of some postgres error.
+    try
+    {
+        auto connection_holder = pool->get();
+        auto table_names = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
+
+        for (const auto & table_name : table_names)
+            if (!detached_or_dropped.count(table_name))
+                tables[table_name] = fetchTable(table_name, local_context, true);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 }
@@ -170,7 +180,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr,
             return StoragePtr{};
 
         auto connection_holder = pool->get();
-        auto columns = fetchPostgreSQLTableStructure(connection_holder->get(), formatTableName(table_name)).columns;
+        auto columns = fetchPostgreSQLTableStructure(connection_holder->get(), table_name, configuration.schema).columns;
 
         if (!columns)
             return StoragePtr{};
@@ -349,7 +359,7 @@ ASTPtr DatabasePostgreSQL::getCreateDatabaseQuery() const
     create_query->set(create_query->storage, database_engine_define);
 
     if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->storage->set(create_query->storage->comment, std::make_shared<ASTLiteral>(comment_value));
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
 
     return create_query;
 }

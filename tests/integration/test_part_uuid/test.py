@@ -93,7 +93,7 @@ def test_part_uuid_wal(started_cluster):
 
     uuids = set()
     for node in [node1, node2]:
-        node.query("SYSTEM SYNC REPLICA t")
+        node.query("SYSTEM SYNC REPLICA t_wal")
         part_initial_uuid = uuid.UUID(node.query("SELECT uuid FROM system.parts WHERE table = 't_wal' AND active ORDER BY name").strip())
         assert "InMemory" == node.query("SELECT part_type FROM system.parts WHERE table = 't_wal' AND active ORDER BY name").strip()
         uuids.add(part_initial_uuid)
