@@ -15,7 +15,6 @@ ASTPtr ASTSelectIntersectExceptQuery::clone() const
         res->children.push_back(child->clone());
 
     res->final_operator = final_operator;
-    res->list_of_selects = list_of_selects->clone();
     return res;
 }
 
@@ -35,6 +34,23 @@ void ASTSelectIntersectExceptQuery::formatImpl(const FormatSettings & settings, 
 
         (*it)->formatImpl(settings, state, frame);
     }
+}
+
+ASTs ASTSelectIntersectExceptQuery::getListOfSelects() const
+{
+    /**
+     * Because of normalization actual number of selects is 2.
+     * But this is checked in InterpreterSelectIntersectExceptQuery.
+     */
+    ASTs selects;
+    for (const auto & child : children)
+    {
+        if (typeid_cast<ASTSelectQuery *>(child.get())
+            || typeid_cast<ASTSelectWithUnionQuery *>(child.get())
+            || typeid_cast<ASTSelectIntersectExceptQuery *>(child.get()))
+            selects.push_back(child);
+    }
+    return selects;
 }
 
 }

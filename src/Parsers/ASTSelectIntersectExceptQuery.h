@@ -25,10 +25,10 @@ public:
 
     const char * getQueryKindString() const override { return "SelectIntersectExcept"; }
 
+    ASTs getListOfSelects() const;
+
     /// Final operator after applying visitor.
     Operator final_operator = Operator::UNKNOWN;
-
-    ASTPtr list_of_selects;
 };
 
 }
