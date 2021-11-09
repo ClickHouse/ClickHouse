@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import requests
+import time
 
 
 class Query:
@@ -364,6 +365,10 @@ class Query:
     def _run(self, query, is_mutation=False):
         from requests.adapters import HTTPAdapter
         from urllib3.util.retry import Retry
+
+        # sleep a little, because we querying github too often
+        print("Request, is mutation", is_mutation)
+        time.sleep(0.5)
 
         def requests_retry_session(
             retries=5,
