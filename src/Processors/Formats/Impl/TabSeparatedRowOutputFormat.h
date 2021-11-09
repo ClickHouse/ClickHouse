@@ -35,7 +35,7 @@ public:
     void writeBeforeTotals() override;
     void writeBeforeExtremes() override;
 
-    void doWritePrefix() override;
+    void writePrefix() override;
 
     /// https://www.iana.org/assignments/media-types/text/tab-separated-values
     String getContentType() const override { return "text/tab-separated-values; charset=UTF-8"; }
