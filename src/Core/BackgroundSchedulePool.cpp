@@ -3,9 +3,9 @@
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <chrono>
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 
 
 namespace DB

@@ -7,7 +7,7 @@
 #include <Common/SettingsChanges.h>
 
 #include <Poco/Semaphore.h>
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <mutex>
 #include <list>

@@ -1,1 +1,0 @@
-../../../en/faq/integration/index.md

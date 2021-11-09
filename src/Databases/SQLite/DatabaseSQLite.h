@@ -1,13 +1,15 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
+#endif
 
 #if USE_SQLITE
 #include <Core/Names.h>
 #include <Databases/DatabasesCommon.h>
 #include <Parsers/ASTCreateQuery.h>
 
-#include <sqlite3.h>
+#include <sqlite3.h> // Y_IGNORE
 
 
 namespace DB
@@ -32,7 +34,7 @@ public:
 
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
 
     bool empty() const override;
 
