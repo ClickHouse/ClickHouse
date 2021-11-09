@@ -384,8 +384,8 @@ String WatchByPathCommand::run()
 String DataSizeCommand::run()
 {
     StringBuffer buf;
-    buf << "datadir_size: " << keeper_dispatcher.getSnapDirSize() << '\n';
-    buf << "logdir_size: " << keeper_dispatcher.getDataDirSize() << '\n';
+    buf << "snapshot_dir_size: " << keeper_dispatcher.getSnapDirSize() << '\n';
+    buf << "log_dir_size: " << keeper_dispatcher.getDataDirSize() << '\n';
     return buf.str();
 }
 
@@ -407,29 +407,19 @@ String EnviCommand::run()
     buf << "Environment:\n";
     buf << "clickhouse.keeper.version=" << (String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH) << '\n';
 
-    buf << "host.name" << Environment::nodeName() << '\n';
-    buf << "os.name" << Environment::osDisplayName() << '\n';
-    buf << "os.arch" << Environment::osArchitecture() << '\n';
-    buf << "os.version" << Environment::osVersion() << '\n';
-    buf << "cpu.count" << Environment::processorCount() << '\n';
-
-    try
-    {
-        buf << "ip.address" << Environment::nodeId() << '\n';
-    }
-    catch (...)
-    {
-        Poco::Logger * log = &Poco::Logger::get("EnviCommand");
-        LOG_WARNING(log, "Can not get server ip address.");
-    }
+    buf << "host.name=" << Environment::nodeName() << '\n';
+    buf << "os.name=" << Environment::osDisplayName() << '\n';
+    buf << "os.arch=" << Environment::osArchitecture() << '\n';
+    buf << "os.version=" << Environment::osVersion() << '\n';
+    buf << "cpu.count=" << Environment::processorCount() << '\n';
 
     char user_name[128];
     getlogin_r(user_name, 128);
-    buf << "user.name" << user_name << '\n';
+    buf << "user.name=" << user_name << '\n';
 
-    buf << "user.home" << Path::home() << '\n';
-    buf << "user.dir" << Path::current() << '\n';
-    buf << "user.tmp" << Path::temp() << '\n';
+    buf << "user.home=" << Path::home() << '\n';
+    buf << "user.dir=" << Path::current() << '\n';
+    buf << "user.tmp=" << Path::temp() << '\n';
 
     return buf.str();
 }
