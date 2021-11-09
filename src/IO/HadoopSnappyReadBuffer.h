@@ -44,7 +44,7 @@ public:
         total_uncompressed_length = 0;
     }
 
-    Status result;
+    Status result = Status::OK;
 
 private:
     inline bool checkBufferLength(int max) const;

@@ -265,8 +265,6 @@ StorageHive::StorageHive(
     switch (hdfs_file_format)
     {
         case FileFormat::TEXT:
-            format_name = "CSVWithNames";
-            break;
         case FileFormat::LZO_TEXT:
             format_name = "CSVWithNames";
             break;
@@ -622,7 +620,7 @@ void registerStorageHive(StorageFactory & factory)
                 args.columns,
                 args.constraints,
                 args.comment,
-                partition_by ? partition_by->ptr() : nullptr,
+                partition_by->ptr(),
                 std::move(hive_settings),
                 args.getContext());
         },
