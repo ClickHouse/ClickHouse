@@ -19,6 +19,7 @@ jobs:
           REPO_NAME: "ClickHouse"
           REPO_TEAM: "core"
         run: |
+          ls -la "$GITHUB_WORKSPACE"
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci
           python3 cherry_pick.py
