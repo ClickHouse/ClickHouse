@@ -10,18 +10,18 @@
 
 struct OvercommitRatio
 {
-    OvercommitRatio(Int64 commited_, Int64 soft_limit_)
-        : commited(commited_)
+    OvercommitRatio(Int64 committed_, Int64 soft_limit_)
+        : committed(committed_)
         , soft_limit(soft_limit_)
     {}
 
     friend bool operator<(OvercommitRatio const& lhs, OvercommitRatio const& rhs) noexcept
     {
         // (a / b < c / d) <=> (a * d < c * b)
-        return (lhs.commited  * rhs.soft_limit) < (rhs.commited * lhs.soft_limit);
+        return (lhs.committed  * rhs.soft_limit) < (rhs.committed * lhs.soft_limit);
     }
 
-    Int64 commited;
+    Int64 committed;
     Int64 soft_limit;
 };
 
@@ -53,7 +53,7 @@ protected:
         RUNNING,
     };
 
-    // Specifies memory tracker of the choosen to stop query.
+    // Specifies memory tracker of the chosen to stop query.
     // If soft limit is not set, all the queries which reach hard limit must stop.
     // This case is represented as picked tracker pointer is set to nullptr and
     // overcommit tracker is in RUNNING state.
