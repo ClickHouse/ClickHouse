@@ -100,16 +100,7 @@ public:
 
     ColumnPtr filter(const Filter & filt, ssize_t /*result_size_hint*/) const override
     {
-        size_t bytes = countBytesInFilter(filt);
-        return cloneDummy(bytes);
-    }
-
-    void expand(const IColumn::Filter & mask, bool inverted) override
-    {
-        size_t bytes = countBytesInFilter(mask);
-        if (inverted)
-            bytes = mask.size() - bytes;
-        s = bytes;
+        return cloneDummy(countBytesInFilter(filt));
     }
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override

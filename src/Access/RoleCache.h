@@ -9,14 +9,14 @@
 
 namespace DB
 {
-class AccessControl;
+class AccessControlManager;
 struct Role;
 using RolePtr = std::shared_ptr<const Role>;
 
 class RoleCache
 {
 public:
-    RoleCache(const AccessControl & access_control_);
+    RoleCache(const AccessControlManager & manager_);
     ~RoleCache();
 
     std::shared_ptr<const EnabledRoles> getEnabledRoles(
@@ -30,7 +30,7 @@ private:
     void roleChanged(const UUID & role_id, const RolePtr & changed_role);
     void roleRemoved(const UUID & role_id);
 
-    const AccessControl & access_control;
+    const AccessControlManager & manager;
     Poco::ExpireCache<UUID, std::pair<RolePtr, scope_guard>> cache;
     std::map<EnabledRoles::Params, std::weak_ptr<EnabledRoles>> enabled_roles;
     mutable std::mutex mutex;

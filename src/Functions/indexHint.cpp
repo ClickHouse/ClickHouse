@@ -41,8 +41,6 @@ public:
 
     bool isSuitableForConstantFolding() const override { return false; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
-
     String getName() const override
     {
         return name;

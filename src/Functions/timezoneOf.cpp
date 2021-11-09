@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <base/DateLUTImpl.h>
+#include <common/DateLUTImpl.h>
 #include <Core/Field.h>
 
 
@@ -31,8 +31,6 @@ public:
     static FunctionPtr create(ContextPtr) { return std::make_unique<FunctionTimezoneOf>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include "Sources.h"
 #include "Sinks.h"
 #include <Core/AccurateComparison.h>
-#include <base/range.h>
+#include <common/range.h>
 #include "GatherUtils.h"
 
 
@@ -34,7 +34,7 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<T> & sink)
 template <typename T, typename U>
 void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
 {
-    using NativeU = NativeType<U>;
+    using NativeU = typename NativeType<U>::Type;
 
     sink.elements.resize(sink.current_offset + slice.size);
     for (size_t i = 0; i < slice.size; ++i)
@@ -42,9 +42,9 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
         const auto & src = slice.data[i];
         auto & dst = sink.elements[sink.current_offset];
 
-        if constexpr (is_over_big_int<T> || is_over_big_int<U>)
+        if constexpr (OverBigInt<T> || OverBigInt<U>)
         {
-            if constexpr (is_decimal<T>)
+            if constexpr (IsDecimalNumber<T>)
                 dst = static_cast<NativeU>(src.value);
             else
                 dst = static_cast<NativeU>(src);
@@ -99,7 +99,7 @@ inline ALWAYS_INLINE void writeSlice(const NumericArraySlice<T> & slice, Generic
 {
     for (size_t i = 0; i < slice.size; ++i)
     {
-        if constexpr (is_decimal<T>)
+        if constexpr (IsDecimalNumber<T>)
         {
             DecimalField field(T(slice.data[i]), 0); /// TODO: Decimal scale
             sink.elements.insert(field);
@@ -397,9 +397,6 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
     const UInt8 * cond_pos = condition.data();
     const UInt8 * cond_end = cond_pos + condition.size();
 
-    bool a_is_short = src_a.getColumnSize() < condition.size();
-    bool b_is_short = src_b.getColumnSize() < condition.size();
-
     while (cond_pos < cond_end)
     {
         if (*cond_pos)
@@ -407,12 +404,9 @@ void NO_INLINE conditional(SourceA && src_a, SourceB && src_b, Sink && sink, con
         else
             writeSlice(src_b.getWhole(), sink);
 
-        if (!a_is_short || *cond_pos)
-            src_a.next();
-        if (!b_is_short || !*cond_pos)
-            src_b.next();
-
         ++cond_pos;
+        src_a.next();
+        src_b.next();
         sink.next();
     }
 }
@@ -558,9 +552,9 @@ bool sliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
                         size_t second_ind [[maybe_unused]])
 {
     /// TODO: Decimal scale
-    if constexpr (is_decimal<T> && is_decimal<U>)
+    if constexpr (IsDecimalNumber<T> && IsDecimalNumber<U>)
         return accurate::equalsOp(first.data[first_ind].value, second.data[second_ind].value);
-    else if constexpr (is_decimal<T> || is_decimal<U>)
+    else if constexpr (IsDecimalNumber<T> || IsDecimalNumber<U>)
         return false;
     else
         return accurate::equalsOp(first.data[first_ind], second.data[second_ind]);
@@ -588,7 +582,7 @@ bool insliceEqualElements(const NumericArraySlice<T> & first [[maybe_unused]],
                           size_t first_ind [[maybe_unused]],
                           size_t second_ind [[maybe_unused]])
 {
-    if constexpr (is_decimal<T>)
+    if constexpr (IsDecimalNumber<T>)
         return accurate::equalsOp(first.data[first_ind].value, first.data[second_ind].value);
     else
         return accurate::equalsOp(first.data[first_ind], first.data[second_ind]);

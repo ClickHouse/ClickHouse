@@ -11,13 +11,8 @@
 namespace ProfileEvents
 {
 
-std::shared_ptr<DB::DataTypeEnum8> TypeEnum = std::make_shared<DB::DataTypeEnum8>(DB::DataTypeEnum8::Values{
-    { "increment", static_cast<Int8>(INCREMENT)},
-    { "gauge",     static_cast<Int8>(GAUGE)},
-});
-
 /// Put implementation here to avoid extra linking dependencies for clickhouse_common_io
-void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, bool nonzero_only)
+void dumpToMapColumn(const Counters & counters, DB::IColumn * column, bool nonzero_only)
 {
     auto * column_map = column ? &typeid_cast<DB::ColumnMap &>(*column) : nullptr;
     if (!column_map)
@@ -31,7 +26,7 @@ void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, 
     size_t size = 0;
     for (Event event = 0; event < Counters::num_counters; ++event)
     {
-        UInt64 value = counters[event];
+        UInt64 value = counters[event].load(std::memory_order_relaxed);
 
         if (nonzero_only && 0 == value)
             continue;

@@ -23,7 +23,7 @@ if (NOT USE_INTERNAL_AWS_S3_LIBRARY)
 endif()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/aws/aws-cpp-sdk-s3")
-    message (WARNING "submodule contrib/aws is missing. to fix try run: \n git submodule update --init")
+    message (WARNING "submodule contrib/aws is missing. to fix try run: \n git submodule update --init --recursive")
     if (USE_INTERNAL_AWS_S3_LIBRARY)
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal S3 library")
     endif ()

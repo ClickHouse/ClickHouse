@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/tests/gtest_disk.h>
 #include <Formats/FormatFactory.h>
@@ -14,12 +16,8 @@
 #include <Common/tests/gtest_global_register.h>
 
 #include <memory>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <QueryPipeline/Chain.h>
-#include <QueryPipeline/QueryPipeline.h>
+#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
+#include <Processors/QueryPipeline.h>
 
 #if !defined(__clang__)
 #    pragma GCC diagnostic push
@@ -35,8 +33,7 @@ DB::StoragePtr createStorage(DB::DiskPtr & disk)
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
 
     StoragePtr table = StorageLog::create(
-        "Log", disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types},
-        ConstraintsDescription{}, String{}, false, 1048576);
+        disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types}, ConstraintsDescription{}, String{}, false, 1048576);
 
     table->startup();
 
@@ -103,11 +100,9 @@ std::string writeData(int rows, DB::StoragePtr & table, const DB::ContextPtr con
         block.insert(column);
     }
 
-    QueryPipeline pipeline(table->write({}, metadata_snapshot, context));
-
-    PushingPipelineExecutor executor(pipeline);
-    executor.push(block);
-    executor.finish();
+    BlockOutputStreamPtr out = table->write({}, metadata_snapshot, context);
+    out->write(block);
+    out->writeSuffix();
 
     return data;
 }
@@ -125,29 +120,26 @@ std::string readData(DB::StoragePtr & table, const DB::ContextPtr context)
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(
         context, QueryProcessingStage::Complete, metadata_snapshot, query_info);
 
-    QueryPipeline pipeline(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));
+    QueryPipeline pipeline;
+    pipeline.init(table->read(column_names, metadata_snapshot, query_info, context, stage, 8192, 1));
+    BlockInputStreamPtr in = std::make_shared<PipelineExecutingBlockInputStream>(std::move(pipeline));
 
     Block sample;
     {
         ColumnWithTypeAndName col;
         col.type = std::make_shared<DataTypeUInt64>();
-        col.name = "a";
         sample.insert(std::move(col));
     }
 
     tryRegisterFormats();
 
     WriteBufferFromOwnString out_buf;
-    auto output = FormatFactory::instance().getOutputFormat("Values", out_buf, sample, context);
-    pipeline.complete(output);
+    BlockOutputStreamPtr output = FormatFactory::instance().getOutputStream("Values", out_buf, sample, context);
 
-    Block data;
+    copyData(*in, *output);
 
-    CompletedPipelineExecutor executor(pipeline);
-    executor.execute();
-    // output->flush();
+    output->flush();
 
-    out_buf.finalize();
     return out_buf.str();
 }
 

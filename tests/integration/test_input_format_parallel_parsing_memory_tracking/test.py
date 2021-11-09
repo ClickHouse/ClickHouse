@@ -30,7 +30,7 @@ def test_memory_tracking_total():
         CREATE TABLE null (row String) ENGINE=Null;
     ''')
     instance.exec_in_container(['bash', '-c',
-                                'clickhouse local -q "SELECT arrayStringConcat(arrayMap(x->toString(cityHash64(x)), range(1000)), \' \') from numbers(10000)" > data.json'])
+                                'clickhouse client -q "SELECT arrayStringConcat(arrayMap(x->toString(cityHash64(x)), range(1000)), \' \') from numbers(10000)" > data.json'])
     for it in range(0, 20):
         # the problem can be triggered only via HTTP,
         # since clickhouse-client parses the data by itself.

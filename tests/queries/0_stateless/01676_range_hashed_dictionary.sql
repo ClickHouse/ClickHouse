@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP DATABASE IF EXISTS database_for_range_dict;
 
 CREATE DATABASE database_for_range_dict;

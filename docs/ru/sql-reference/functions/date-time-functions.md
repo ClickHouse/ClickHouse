@@ -26,7 +26,6 @@ SELECT
 ## timeZone {#timezone}
 
 Возвращает часовой пояс сервера.
-Если функция вызывается в контексте распределенной таблицы, то она генерирует обычный столбец со значениями, актуальными для каждого шарда. Иначе возвращается константа.
 
 **Синтаксис**
 
@@ -335,13 +334,13 @@ SELECT toStartOfISOYear(toDate('2017-01-01')) AS ISOYear20170101;
 **Синтаксис**
 
 ``` sql
-toStartOfSecond(value, [timezone])
+toStartOfSecond(value[, timezone])
 ```
 
 **Аргументы**
 
 -   `value` — дата и время. [DateTime64](../data-types/datetime64.md).
--   `timezone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) для возвращаемого значения (необязательно). Если параметр не задан, используется часовой пояс параметра `value`. [String](../data-types/string.md).
+-   `timezone` — [часовой пояс](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) для возвращаемого значения (необязательно). Если параметр не задан, используется часовой пояс параметра `value`. [String](../data-types/string.md). 
 
 **Возвращаемое значение**
 
@@ -559,13 +558,13 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 Отсекает от даты и времени части, меньшие чем указанная часть.
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 date_trunc(unit, value[, timezone])
 ```
 
-Синоним: `dateTrunc`.
+Синоним: `dateTrunc`. 
 
 **Аргументы**
 
@@ -649,7 +648,7 @@ date_add(unit, value, date)
     - `month`
     - `quarter`
     - `year`
-
+	
 -   `value` — значение интервала для добавления. [Int](../../sql-reference/data-types/int-uint.md).
 -   `date` — дата или дата со временем, к которой добавляется `value`. [Date](../../sql-reference/data-types/date.md) или [DateTime](../../sql-reference/data-types/datetime.md).
 
@@ -784,16 +783,16 @@ SELECT date_sub(YEAR, 3, toDate('2018-01-01'));
 
 Добавляет интервал времени к указанной дате или дате со временем.
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 timestamp_add(date, INTERVAL value unit)
 ```
 
-Синонимы: `timeStampAdd`, `TIMESTAMP_ADD`.
+Синонимы: `timeStampAdd`, `TIMESTAMP_ADD`. 
 
 **Аргументы**
-
+    
 -   `date` — дата или дата со временем. [Date](../../sql-reference/data-types/date.md) или [DateTime](../../sql-reference/data-types/datetime.md).
 -   `value` — значение интервала для добавления. [Int](../../sql-reference/data-types/int-uint.md).
 -   `unit` — единица измерения времени, в которой задан интервал для добавления. [String](../../sql-reference/data-types/string.md).
@@ -813,7 +812,7 @@ timestamp_add(date, INTERVAL value unit)
 Дата или дата со временем, полученная в результате добавления `value`, выраженного в `unit`, к `date`.
 
 Тип: [Date](../../sql-reference/data-types/date.md) или [DateTime](../../sql-reference/data-types/datetime.md).
-
+    
 **Пример**
 
 Запрос:
@@ -834,13 +833,13 @@ select timestamp_add(toDate('2018-01-01'), INTERVAL 3 MONTH);
 
 Вычитает интервал времени из указанной даты или даты со временем.
 
-**Синтакис**
+**Синтакис** 
 
 ``` sql
 timestamp_sub(unit, value, date)
 ```
 
-Синонимы: `timeStampSub`, `TIMESTAMP_SUB`.
+Синонимы: `timeStampSub`, `TIMESTAMP_SUB`. 
 
 **Аргументы**
 
@@ -855,8 +854,8 @@ timestamp_sub(unit, value, date)
     - `month`
     - `quarter`
     - `year`
-
--   `value` — значение интервала для вычитания. [Int](../../sql-reference/data-types/int-uint.md).
+	
+-   `value` — значение интервала для вычитания. [Int](../../sql-reference/data-types/int-uint.md).   
 -   `date` — дата или дата со временем. [Date](../../sql-reference/data-types/date.md) или [DateTime](../../sql-reference/data-types/datetime.md).
 
 **Возвращаемое значение**
@@ -883,9 +882,9 @@ select timestamp_sub(MONTH, 5, toDateTime('2018-12-18 01:02:03'));
 
 ## now {#now}
 
-Возвращает текущую дату и время.
+Возвращает текущую дату и время. 
 
-**Синтаксис**
+**Синтаксис** 
 
 ``` sql
 now([timezone])
@@ -1068,7 +1067,7 @@ SELECT dateName('year', date_value), dateName('month', date_value), dateName('da
 
 ## FROM\_UNIXTIME {#fromunixtime}
 
-Функция преобразует Unix timestamp в календарную дату и время.
+Функция преобразует Unix timestamp в календарную дату и время. 
 
 **Примеры**
 

@@ -4,7 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Interpreters/Context.h>
 
 #include <set>
@@ -37,7 +37,7 @@ DiskSelector::DiskSelector(const Poco::Util::AbstractConfiguration & config, con
 
         auto disk_config_prefix = config_prefix + "." + disk_name;
 
-        disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context, disks));
+        disks.emplace(disk_name, factory.create(disk_name, config, disk_config_prefix, context));
     }
     if (!has_default_disk)
         disks.emplace(default_disk_name, std::make_shared<DiskLocal>(default_disk_name, context->getPath(), 0));
@@ -62,16 +62,16 @@ DiskSelectorPtr DiskSelector::updateFromConfig(
         if (!std::all_of(disk_name.begin(), disk_name.end(), isWordCharASCII))
             throw Exception("Disk name can contain only alphanumeric and '_' (" + disk_name + ")", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
-        auto disk_config_prefix = config_prefix + "." + disk_name;
         if (result->getDisksMap().count(disk_name) == 0)
         {
-            result->addToDiskMap(disk_name, factory.create(disk_name, config, disk_config_prefix, context, result->getDisksMap()));
+            auto disk_config_prefix = config_prefix + "." + disk_name;
+            result->addToDiskMap(disk_name, factory.create(disk_name, config, disk_config_prefix, context));
         }
         else
         {
             auto disk = old_disks_minus_new_disks[disk_name];
 
-            disk->applyNewSettings(config, context, disk_config_prefix, result->getDisksMap());
+            disk->applyNewSettings(config, context);
 
             old_disks_minus_new_disks.erase(disk_name);
         }

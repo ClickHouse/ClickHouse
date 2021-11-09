@@ -14,7 +14,7 @@
 #include <Storages/StorageFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/escapeForFileName.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Common/assert_cast.h>
@@ -34,7 +34,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
-    extern const int CANNOT_OPEN_FILE;
     extern const int INCORRECT_FILE_NAME;
     extern const int SYNTAX_ERROR;
     extern const int TABLE_ALREADY_EXISTS;
@@ -48,7 +47,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     const String & database_name,
     const String & table_data_path_relative,
     ContextMutablePtr context,
-    bool force_restore)
+    bool has_force_restore_data_flag)
 {
     ast_create_query.attach = true;
     ast_create_query.database = database_name;
@@ -90,7 +89,7 @@ std::pair<String, StoragePtr> createTableFromAST(
             context->getGlobalContext(),
             columns,
             constraints,
-            force_restore)
+            has_force_restore_data_flag)
     };
 }
 
@@ -135,6 +134,61 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     formatAST(*create, statement_buf, false);
     writeChar('\n', statement_buf);
     return statement_buf.str();
+}
+
+void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata)
+{
+    auto & ast_create_query = query->as<ASTCreateQuery &>();
+
+    bool has_structure = ast_create_query.columns_list && ast_create_query.columns_list->columns;
+    if (ast_create_query.as_table_function && !has_structure)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot alter table {} because it was created AS table function"
+                                                     " and doesn't have structure in metadata", backQuote(ast_create_query.table));
+
+    assert(has_structure);
+    ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
+    ASTPtr new_indices = InterpreterCreateQuery::formatIndices(metadata.secondary_indices);
+    ASTPtr new_constraints = InterpreterCreateQuery::formatConstraints(metadata.constraints);
+    ASTPtr new_projections = InterpreterCreateQuery::formatProjections(metadata.projections);
+
+    ast_create_query.columns_list->replace(ast_create_query.columns_list->columns, new_columns);
+    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->indices, new_indices);
+    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->constraints, new_constraints);
+    ast_create_query.columns_list->setOrReplace(ast_create_query.columns_list->projections, new_projections);
+
+    if (metadata.select.select_query)
+    {
+        query->replace(ast_create_query.select, metadata.select.select_query);
+    }
+
+    /// MaterializedView is one type of CREATE query without storage.
+    if (ast_create_query.storage)
+    {
+        ASTStorage & storage_ast = *ast_create_query.storage;
+
+        bool is_extended_storage_def
+            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.sample_by || storage_ast.settings;
+
+        if (is_extended_storage_def)
+        {
+            if (metadata.sorting_key.definition_ast)
+                storage_ast.set(storage_ast.order_by, metadata.sorting_key.definition_ast);
+
+            if (metadata.primary_key.definition_ast)
+                storage_ast.set(storage_ast.primary_key, metadata.primary_key.definition_ast);
+
+            if (metadata.sampling_key.definition_ast)
+                storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
+
+            if (metadata.table_ttl.definition_ast)
+                storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
+            else if (storage_ast.ttl_table != nullptr) /// TTL was removed
+                storage_ast.ttl_table = nullptr;
+
+            if (metadata.settings_changes)
+                storage_ast.set(storage_ast.settings, metadata.settings_changes);
+        }
+    }
 }
 
 
@@ -469,12 +523,6 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
         ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
     }
 
-    if (const auto database_comment = getDatabaseComment(); !database_comment.empty())
-    {
-        auto & ast_create_query = ast->as<ASTCreateQuery &>();
-        ast_create_query.set(ast_create_query.comment, std::make_shared<ASTLiteral>(database_comment));
-    }
-
     return ast;
 }
 
@@ -604,19 +652,18 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
 {
     String query;
 
-    int metadata_file_fd = ::open(metadata_file_path.c_str(), O_RDONLY | O_CLOEXEC);
-
-    if (metadata_file_fd == -1)
+    try
     {
-        if (errno == ENOENT && !throw_on_error)
-            return nullptr;
-
-        throwFromErrnoWithPath("Cannot open file " + metadata_file_path, metadata_file_path,
-                               errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE);
+        ReadBufferFromFile in(metadata_file_path, METADATA_FILE_BUFFER_SIZE);
+        readStringUntilEOF(query, in);
     }
-
-    ReadBufferFromFile in(metadata_file_fd, metadata_file_path, METADATA_FILE_BUFFER_SIZE);
-    readStringUntilEOF(query, in);
+    catch (const Exception & e)
+    {
+        if (!throw_on_error && e.code() == ErrorCodes::FILE_DOESNT_EXIST)
+            return nullptr;
+        else
+            throw;
+    }
 
     /** Empty files with metadata are generated after a rough restart of the server.
       * Remove these files to slightly reduce the work of the admins on startup.
@@ -673,55 +720,4 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metada
     return ast;
 }
 
-void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context)
-{
-    std::lock_guard lock(modify_settings_mutex);
-
-    auto create_query = getCreateDatabaseQuery()->clone();
-    auto * create = create_query->as<ASTCreateQuery>();
-    auto * settings = create->storage->settings;
-    if (settings)
-    {
-        auto & storage_settings = settings->changes;
-        for (const auto & change : settings_changes)
-        {
-            auto it = std::find_if(storage_settings.begin(), storage_settings.end(),
-                                   [&](const auto & prev){ return prev.name == change.name; });
-            if (it != storage_settings.end())
-                it->value = change.value;
-            else
-                storage_settings.push_back(change);
-        }
-    }
-    else
-    {
-        auto storage_settings = std::make_shared<ASTSetQuery>();
-        storage_settings->is_standalone = false;
-        storage_settings->changes = settings_changes;
-        create->storage->set(create->storage->settings, storage_settings->clone());
-    }
-
-    create->attach = true;
-    create->if_not_exists = false;
-
-    WriteBufferFromOwnString statement_buf;
-    formatAST(*create, statement_buf, false);
-    writeChar('\n', statement_buf);
-    String statement = statement_buf.str();
-
-    String database_name_escaped = escapeForFileName(database_name);
-    fs::path metadata_root_path = fs::canonical(query_context->getGlobalContext()->getPath());
-    fs::path metadata_file_tmp_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql.tmp");
-    fs::path metadata_file_path = fs::path(metadata_root_path) / "metadata" / (database_name_escaped + ".sql");
-
-    WriteBufferFromFile out(metadata_file_tmp_path, statement.size(), O_WRONLY | O_CREAT | O_EXCL);
-    writeString(statement, out);
-
-    out.next();
-    if (getContext()->getSettingsRef().fsync_metadata)
-        out.sync();
-    out.close();
-
-    fs::rename(metadata_file_tmp_path, metadata_file_path);
-}
 }

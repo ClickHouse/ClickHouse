@@ -3,7 +3,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Interpreters/Context.h>
-#include <Access/Common/AccessType.h>
+#include <Access/AccessType.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/HTTPRequest.h>
@@ -11,11 +11,13 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
 #include <IO/ConnectionTimeoutsContext.h>
-#include <base/logger_useful.h>
-#include <base/range.h>
+#include <common/logger_useful.h>
+#include <common/range.h>
 #include <Bridge/IBridgeHelper.h>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 
 namespace DB

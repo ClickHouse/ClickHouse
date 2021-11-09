@@ -1,5 +1,9 @@
+---
+machine_translated: true
+machine_translated_rev: 5decc73b5dc60054f19087d3690c4eb99446a6c3
+---
 
-# system.data_type_families {#system_tables-data_type_families}
+# 系统。data_type_families {#system_tables-data_type_families}
 
 包含有关受支持的[数据类型](../../sql-reference/data-types/)的信息.
 

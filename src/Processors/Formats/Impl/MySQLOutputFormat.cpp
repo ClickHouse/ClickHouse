@@ -64,6 +64,7 @@ void MySQLOutputFormat::initialize()
     }
 }
 
+
 void MySQLOutputFormat::consume(Chunk chunk)
 {
     initialize();
@@ -105,9 +106,9 @@ void MySQLOutputFormat::flush()
     packet_endpoint->out->next();
 }
 
-void registerOutputFormatMySQLWire(FormatFactory & factory)
+void registerOutputFormatProcessorMySQLWire(FormatFactory & factory)
 {
-    factory.registerOutputFormat(
+    factory.registerOutputFormatProcessor(
         "MySQLWire",
         [](WriteBuffer & buf,
            const Block & sample,

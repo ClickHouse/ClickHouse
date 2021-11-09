@@ -1,13 +1,11 @@
 #include <Access/IAccessStorage.h>
-#include <Access/Authentication.h>
-#include <Access/Credentials.h>
 #include <Access/User.h>
+#include <Access/Credentials.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
-#include <base/FnTraits.h>
 
 
 namespace DB
@@ -98,7 +96,7 @@ namespace
 
         bool errors() const { return exception.has_value(); }
 
-        void showErrors(const char * format, Fn<String(size_t)> auto && get_name_function)
+        void showErrors(const char * format, const std::function<String(size_t)> & get_name_function)
         {
             if (!exception)
                 return;
@@ -199,16 +197,6 @@ String IAccessStorage::readName(const UUID & id) const
 }
 
 
-Strings IAccessStorage::readNames(const std::vector<UUID> & ids) const
-{
-    Strings res;
-    res.reserve(ids.size());
-    for (const auto & id : ids)
-        res.emplace_back(readName(id));
-    return res;
-}
-
-
 std::optional<String> IAccessStorage::tryReadName(const UUID & id) const
 {
     String name;
@@ -216,19 +204,6 @@ std::optional<String> IAccessStorage::tryReadName(const UUID & id) const
     if (!tryCall(func))
         return {};
     return name;
-}
-
-
-Strings IAccessStorage::tryReadNames(const std::vector<UUID> & ids) const
-{
-    Strings res;
-    res.reserve(ids.size());
-    for (const auto & id : ids)
-    {
-        if (auto name = tryReadName(id))
-            res.emplace_back(std::move(name).value());
-    }
-    return res;
 }
 
 
@@ -457,7 +432,7 @@ UUID IAccessStorage::login(
         if (!replace_exception_with_cannot_authenticate)
             throw;
 
-        tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed");
+        tryLogCurrentException(getLogger(), credentials.getUserName() + ": Authentication failed");
         throwCannotAuthenticate(credentials.getUserName());
     }
 }
@@ -496,7 +471,7 @@ bool IAccessStorage::areCredentialsValidImpl(
     if (credentials.getUserName() != user.getName())
         return false;
 
-    return Authentication::areCredentialsValid(credentials, user.auth_data, external_authenticators);
+    return user.authentication.areCredentialsValid(credentials, external_authenticators);
 }
 
 
