@@ -295,7 +295,8 @@ String ServerStatCommand::run()
     using std::to_string;
     StringBuffer buf;
 
-    auto write = [&buf](const String & key, const String & value) {
+    auto write = [&buf](const String & key, const String & value)
+    {
         buf.write(key.data(), key.size());
         buf.write(": ", 2);
         buf.write(value.data(), value.size());
