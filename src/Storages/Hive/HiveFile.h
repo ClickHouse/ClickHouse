@@ -1,8 +1,9 @@
 #pragma once
 #include <Common/config.h>
-#include "Core/Block.h"
+#include "config_formats.h"
 
-#if USE_HDFS
+#if USE_HDFS && USE_ORC && USE_PARQUET
+
 #include <vector>
 #include <memory>
 
@@ -11,6 +12,7 @@
 #include <orc/Statistics.hh>
 
 #include <Core/Field.h>
+#include <Core/Block.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/Hive/StorageHive.h>
 #include <Storages/Hive/HiveSettings.h>

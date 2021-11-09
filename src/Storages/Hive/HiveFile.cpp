@@ -1,11 +1,10 @@
-#include <boost/algorithm/string/classification.hpp>
-#include <boost/algorithm/string/trim.hpp>
-#include <Common/config.h>
+#include <Storages/Hive/HiveFile.h>
 
-#if USE_HDFS
-#include <memory>
+#if USE_HDFS && USE_ORC && USE_PARQUET
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/trim.hpp>
 #include <fmt/core.h>
 #include <arrow/api.h>
 #include <arrow/io/api.h>
@@ -21,7 +20,6 @@
 #include <Common/typeid_cast.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/Hive/HiveFile.h>
 
 namespace DB
 {

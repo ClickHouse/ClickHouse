@@ -107,8 +107,11 @@ endif()
 
 if (USE_HDFS)
     add_headers_and_sources(dbms Storages/HDFS)
-    add_headers_and_sources(dbms Storages/Hive)
     add_headers_and_sources(dbms Disks/HDFS)
+
+    if (USE_ORC AND USE_PARQUET)
+        add_headers_and_sources(dbms Storages/Hive)
+    endif()
 endif()
 
 if(USE_FILELOG)
@@ -445,10 +448,9 @@ if (USE_HDFS)
     dbms_target_link_libraries(PRIVATE ${HDFS3_LIBRARY})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
 
-    # foreach (module ${all_modules})
-        # target_include_directories (${module} SYSTEM BEFORE PUBLIC ${ClickHouse_BINARY_DIR}/contrib/hive-metastore)
-    # endforeach ()
-    dbms_target_link_libraries(PRIVATE hivemetastore)
+    if (USE_ORC AND USE_PARQUET)
+        dbms_target_link_libraries(PRIVATE hivemetastore)
+    endif()
 endif()
 
 if (USE_AWS_S3)

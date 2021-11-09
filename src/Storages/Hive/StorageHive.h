@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Common/config.h>
+#include "config_formats.h"
 
-#if USE_HDFS
+#if USE_HDFS && USE_ORC && USE_PARQUET
 
 #include <Poco/URI.h>
 #include <base/logger_useful.h>
