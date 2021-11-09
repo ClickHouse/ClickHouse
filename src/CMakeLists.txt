@@ -468,7 +468,7 @@ if (USE_BROTLI)
 endif()
 
 if (USE_SNAPPY)
-    target_link_libraries (clickhouse_common_io PRIVATE ${SNAPPY_LIBRARY})
+    target_link_libraries (clickhouse_common_io PUBLIC ${SNAPPY_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${SNAPPY_INCLUDE_DIR})
 endif()
 
