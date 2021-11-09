@@ -137,3 +137,15 @@ def test_file_engine():
 
     instance.query(f"RESTORE TABLE test.table FROM {backup_name}")
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+
+def test_database():
+    backup_name = new_backup_name()
+    create_and_fill_table()
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
+
+    instance.query(f"BACKUP DATABASE test TO {backup_name}")
+    instance.query("DROP DATABASE test")
+    instance.query(f"RESTORE DATABASE test FROM {backup_name}")
+
+    assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
