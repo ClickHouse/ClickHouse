@@ -13,7 +13,7 @@ from cherry_pick_utils.cherrypick import CherryPick
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    repo_path = os.path.join(os.getenv("REPO_COPY", os.path.abspath("../../")))
+    repo_path = os.path.join(os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../")))
     temp_path = os.path.join(os.getenv("TEMP_PATH"))
 
     if not os.path.exists(temp_path):
