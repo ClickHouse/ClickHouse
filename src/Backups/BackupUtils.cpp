@@ -18,6 +18,8 @@
 #include <boost/range/adaptor/reversed.hpp>
 #include <filesystem>
 
+namespace fs = std::filesystem;
+
 
 namespace DB
 {
@@ -546,9 +548,10 @@ namespace
             }
 
             RestoreObjectsTasks restore_objects_tasks;
-            Strings table_names = backup->listFiles("metadata/" + escapeForFileName(database_name) + "/", "/");
-            for (const String & table_name : table_names)
+            Strings table_metadata_filenames = backup->listFiles("metadata/" + escapeForFileName(database_name) + "/", "/");
+            for (const String & table_metadata_filename : table_metadata_filenames)
             {
+                String table_name = unescapeForFileName(fs::path{table_metadata_filename}.stem());
                 if (except_list.contains(table_name))
                     continue;
                 restoreTable({database_name, table_name}, {}, context, backup, renaming_config, restore_objects_tasks);
@@ -565,10 +568,11 @@ namespace
     {
         restore_tasks.emplace_back([except_list, context, backup, renaming_config]() -> RestoreDataTasks
         {
-            Strings database_names = backup->listFiles("metadata/", "/");
             RestoreObjectsTasks restore_objects_tasks;
-            for (const String & database_name : database_names)
+            Strings database_metadata_filenames = backup->listFiles("metadata/", "/");
+            for (const String & database_metadata_filename : database_metadata_filenames)
             {
+                String database_name = unescapeForFileName(fs::path{database_metadata_filename}.stem());
                 if (except_list.contains(database_name))
                     continue;
                 restoreDatabase(database_name, {}, context, backup, renaming_config, restore_objects_tasks);
@@ -747,7 +751,6 @@ RestoreObjectsTasks makeRestoreTasks(const Elements & elements, ContextMutablePt
             case ElementType::DATABASE:
             {
                 const String & database_name = element.name.first;
-                auto database = DatabaseCatalog::instance().getDatabase(database_name, context);
                 restoreDatabase(database_name, element.except_list, context, backup, renaming_config, restore_tasks);
                 break;
             }
