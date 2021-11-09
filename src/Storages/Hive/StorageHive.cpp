@@ -1,7 +1,6 @@
-#include <Common/config.h>
-#include "Interpreters/TreeRewriter.h"
+#include <Storages/Hive/StorageHive.h>
 
-#if USE_HDFS
+#if USE_HDFS && USE_ORC && USE_PARQUET
 
 #include <boost/algorithm/string/join.hpp>
 #include <Columns/IColumn.h>
@@ -19,6 +18,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/TreeRewriter.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/RemoteReadBufferCache.h>
 #include <Parsers/ASTExpressionList.h>
@@ -35,7 +35,6 @@
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/Hive/HiveFile.h>
 #include <Storages/Hive/HiveSettings.h>
-#include <Storages/Hive/StorageHive.h>
 #include <Storages/Hive/HiveCommon.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/StorageFactory.h>

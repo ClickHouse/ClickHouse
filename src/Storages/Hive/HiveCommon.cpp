@@ -1,8 +1,6 @@
 #include <Storages/Hive/HiveCommon.h>
 
-
-#if USE_HDFS
-
+#if USE_HDFS && USE_ORC && USE_PARQUET
 namespace DB
 {
 namespace ErrorCodes

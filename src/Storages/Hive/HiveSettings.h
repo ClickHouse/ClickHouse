@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Common/config.h>
+#include "config_formats.h"
 
-#if USE_HDFS
+#if USE_HDFS && USE_ORC && USE_PARQUET
+
 #include <Core/BaseSettings.h>
 #include <Core/Settings.h>
 #include <Poco/Util/AbstractConfiguration.h>

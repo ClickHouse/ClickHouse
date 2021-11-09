@@ -1,11 +1,11 @@
-#include <Common/config.h>
+#include <Storages/Hive/HiveSettings.h>
 
-#if USE_HDFS
+#if USE_HDFS && USE_ORC && USE_PARQUET
+
 #include <Common/Exception.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Storages/Hive/HiveSettings.h>
 
 namespace DB
 {

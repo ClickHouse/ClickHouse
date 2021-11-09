@@ -1,8 +1,10 @@
 #pragma once
 
 #include <Common/config.h>
+#include "config_formats.h"
 
-#if USE_HDFS
+#if USE_HDFS && USE_ORC && USE_PARQUET
+
 #include <mutex>
 #include <string>
 #include <base/types.h>
