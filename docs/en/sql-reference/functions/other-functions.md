@@ -2466,7 +2466,7 @@ Result:
 
 ## zookeeperSessionUptime {#zookeepersessionuptime}
 
-Returns uptime of current ZooKeeper session in seconds.
+Returns the uptime of the current ZooKeeper session in seconds.
 
 **Syntax**
 
