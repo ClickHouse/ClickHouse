@@ -110,7 +110,7 @@ StorageID StorageID::fromDictionaryConfig(const Poco::Util::AbstractConfiguratio
     return res;
 }
 
-String StorageID::getShortName() const
+String StorageID::getInternalDictionaryName() const
 {
     assertNotEmpty();
     if (hasUUID())

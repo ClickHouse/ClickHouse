@@ -1,9 +1,8 @@
 #include <Access/RoleCache.h>
 #include <Access/Role.h>
 #include <Access/EnabledRolesInfo.h>
-#include <Access/AccessControl.h>
+#include <Access/AccessControlManager.h>
 #include <boost/container/flat_set.hpp>
-#include <base/FnTraits.h>
 
 
 namespace DB
@@ -12,7 +11,7 @@ namespace
 {
     void collectRoles(EnabledRolesInfo & roles_info,
                       boost::container::flat_set<UUID> & skip_ids,
-                      Fn<RolePtr(const UUID &)> auto && get_role_function,
+                      const std::function<RolePtr(const UUID &)> & get_role_function,
                       const UUID & role_id,
                       bool is_current_role,
                       bool with_admin_option)
@@ -56,8 +55,8 @@ namespace
 }
 
 
-RoleCache::RoleCache(const AccessControl & access_control_)
-    : access_control(access_control_), cache(600000 /* 10 minutes */) {}
+RoleCache::RoleCache(const AccessControlManager & manager_)
+    : manager(manager_), cache(600000 /* 10 minutes */) {}
 
 
 RoleCache::~RoleCache() = default;
@@ -114,9 +113,7 @@ void RoleCache::collectEnabledRoles(EnabledRoles & enabled, scope_guard & notifi
     /// Collect enabled roles. That includes the current roles, the roles granted to the current roles, and so on.
     auto new_info = std::make_shared<EnabledRolesInfo>();
     boost::container::flat_set<UUID> skip_ids;
-
     auto get_role_function = [this](const UUID & id) { return getRole(id); };
-
     for (const auto & current_role : enabled.params.current_roles)
         collectRoles(*new_info, skip_ids, get_role_function, current_role, true, false);
 
@@ -136,7 +133,7 @@ RolePtr RoleCache::getRole(const UUID & role_id)
     if (role_from_cache)
         return role_from_cache->first;
 
-    auto subscription = access_control.subscribeForChanges(role_id,
+    auto subscription = manager.subscribeForChanges(role_id,
                                                     [this, role_id](const UUID &, const AccessEntityPtr & entity)
     {
         auto changed_role = entity ? typeid_cast<RolePtr>(entity) : nullptr;
@@ -146,7 +143,7 @@ RolePtr RoleCache::getRole(const UUID & role_id)
             roleRemoved(role_id);
     });
 
-    auto role = access_control.tryRead<Role>(role_id);
+    auto role = manager.tryRead<Role>(role_id);
     if (role)
     {
         auto cache_value = Poco::SharedPtr<std::pair<RolePtr, scope_guard>>(

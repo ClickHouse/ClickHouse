@@ -1,5 +1,3 @@
--- Tags: distributed
-
 -- TODO: correct testing with real unique shards
 
 set optimize_distributed_group_by_sharding_key=1;

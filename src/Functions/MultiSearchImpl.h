@@ -7,7 +7,7 @@
 namespace DB
 {
 
-template <typename Name, typename Impl>
+template <typename Impl>
 struct MultiSearchImpl
 {
     using ResultType = UInt8;
@@ -15,8 +15,6 @@ struct MultiSearchImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = false;
-    static constexpr auto name = Name::name;
-
     static auto getReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
 
     static void vectorConstant(

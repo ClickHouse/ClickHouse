@@ -1,6 +1,8 @@
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+    #include <Common/config.h>
+#endif
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
@@ -8,7 +10,7 @@
 
 #if USE_AWS_S3
 
-#include <aws/core/client/DefaultRetryStrategy.h>
+#include <aws/core/client/DefaultRetryStrategy.h> // Y_IGNORE
 #include <IO/S3Common.h>
 #include "DiskS3.h"
 #include "Disks/DiskCacheWrapper.h"
@@ -184,7 +186,6 @@ void registerDiskS3(DiskFactory & factory)
             uri.bucket,
             uri.key,
             metadata_path,
-            context,
             getSettings(config, config_prefix, context),
             getSettings);
 

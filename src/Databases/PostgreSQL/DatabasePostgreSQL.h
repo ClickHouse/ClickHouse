@@ -1,6 +1,8 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
+#endif
 
 #if USE_LIBPQXX
 
@@ -8,7 +10,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
+
 
 namespace DB
 {
@@ -30,7 +32,8 @@ public:
         const String & metadata_path_,
         const ASTStorage * database_engine_define,
         const String & dbname_,
-        const StoragePostgreSQLConfiguration & configuration,
+        const String & postgres_dbname_,
+        const String & postgres_schema_,
         postgres::PoolWithFailoverPtr pool_,
         bool cache_tables_);
 
@@ -67,7 +70,8 @@ protected:
 private:
     String metadata_path;
     ASTPtr database_engine_define;
-    StoragePostgreSQLConfiguration configuration;
+    String postgres_dbname;
+    String postgres_schema;
     postgres::PoolWithFailoverPtr pool;
     const bool cache_tables;
 
@@ -77,7 +81,7 @@ private:
 
     String getTableNameForLogs(const String & table_name) const;
 
-    String formatTableName(const String & table_name, bool quoted = true) const;
+    String formatTableName(const String & table_name) const;
 
     bool checkPostgresTable(const String & table_name) const;
 

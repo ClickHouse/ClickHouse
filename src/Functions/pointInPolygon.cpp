@@ -13,7 +13,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/ObjectPool.h>
 #include <Common/ProfileEvents.h>
-#include <base/arithmeticOverflow.h>
+#include <common/arithmeticOverflow.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>

@@ -1,13 +1,13 @@
 #pragma once
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 #include <Core/Block.h>
 #include <Interpreters/Context.h>
 
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
-#include <Processors/Sources/ShellCommandSource.h>
+#include <DataStreams/ShellCommandSource.h>
 
 
 namespace DB
@@ -27,16 +27,14 @@ class ExecutablePoolDictionarySource final : public IDictionarySource
 public:
     struct Configuration
     {
-        String command;
-        String format;
-        size_t pool_size;
-        size_t command_termination_timeout;
-        size_t max_command_execution_time;
+        const String command;
+        const String format;
+        const size_t pool_size;
+        const size_t command_termination_timeout;
+        const size_t max_command_execution_time;
         /// Implicit key means that the source script will return only values,
         /// and the correspondence to the requested keys is determined implicitly - by the order of rows in the result.
-        bool implicit_key;
-        /// Send number_of_rows\n before sending chunk to process
-        bool send_chunk_header;
+        const bool implicit_key;
     };
 
     ExecutablePoolDictionarySource(

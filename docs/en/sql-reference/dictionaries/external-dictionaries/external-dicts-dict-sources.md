@@ -10,7 +10,7 @@ An external dictionary can be connected from many different sources.
 If dictionary is configured using xml-file, the configuration looks like this:
 
 ``` xml
-<clickhouse>
+<yandex>
   <dictionary>
     ...
     <source>
@@ -21,7 +21,7 @@ If dictionary is configured using xml-file, the configuration looks like this:
     ...
   </dictionary>
   ...
-</clickhouse>
+</yandex>
 ```
 
 In case of [DDL-query](../../../sql-reference/statements/create/dictionary.md), equal configuration will looks like:
@@ -311,7 +311,7 @@ Configuring `/etc/odbc.ini` (or `~/.odbc.ini` if you signed in under a user that
 The dictionary configuration in ClickHouse:
 
 ``` xml
-<clickhouse>
+<yandex>
     <dictionary>
         <name>table_name</name>
         <source>
@@ -340,7 +340,7 @@ The dictionary configuration in ClickHouse:
             </attribute>
         </structure>
     </dictionary>
-</clickhouse>
+</yandex>
 ```
 
 or
@@ -416,7 +416,7 @@ Remarks:
 Configuring the dictionary in ClickHouse:
 
 ``` xml
-<clickhouse>
+<yandex>
     <dictionary>
         <name>test</name>
         <source>
@@ -446,7 +446,7 @@ Configuring the dictionary in ClickHouse:
             </attribute>
         </structure>
     </dictionary>
-</clickhouse>
+</yandex>
 ```
 
 or

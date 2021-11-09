@@ -49,7 +49,6 @@ public:
     AvroRowOutputFormat(WriteBuffer & out_, const Block & header_, const RowOutputFormatParams & params_, const FormatSettings & settings_);
     virtual ~AvroRowOutputFormat() override;
 
-    void consume(Chunk) override;
     String getName() const override { return "AvroRowOutputFormat"; }
     void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn &, const ISerialization &, size_t) override {}
@@ -59,11 +58,7 @@ public:
 private:
     FormatSettings settings;
     AvroSerializer serializer;
-    std::unique_ptr<avro::DataFileWriterBase> file_writer_ptr;
-
-    void consumeImpl(Chunk);
-    void consumeImplWithCallback(Chunk);
-
+    avro::DataFileWriterBase file_writer;
 };
 
 }
