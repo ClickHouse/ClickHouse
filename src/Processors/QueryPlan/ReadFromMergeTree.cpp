@@ -156,7 +156,8 @@ Pipe ReadFromMergeTree::readFromPool(
             {
                 .callback = read_task_callback.value(),
                 .count_participating_replicas = context->getSettingsRef().count_participating_replicas,
-                .number_of_current_replica = context->getSettingsRef().number_of_current_replica
+                .number_of_current_replica = context->getSettingsRef().number_of_current_replica,
+                .colums_to_read = required_columns
             };
         }
 
@@ -193,7 +194,8 @@ ProcessorPtr ReadFromMergeTree::createSource(
         {
             .callback = read_task_callback.value(),
             .count_participating_replicas = context->getSettingsRef().count_participating_replicas,
-            .number_of_current_replica = context->getSettingsRef().number_of_current_replica
+            .number_of_current_replica = context->getSettingsRef().number_of_current_replica,
+            .colums_to_read = required_columns
         };
     }
     return std::make_shared<TSource>(

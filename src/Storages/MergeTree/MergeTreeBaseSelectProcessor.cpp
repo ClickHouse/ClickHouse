@@ -566,7 +566,22 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
         .mark_ranges = std::move(request_ranges)
     };
 
+    AtomicStopwatch stop;
+
     auto responce = extension.value().callback(std::move(request));
+
+    LOG_TRACE(&Poco::Logger::get("MTBSP"), "Elapsed: {}ns", stop.elapsed());
+
+    auto dump_mark_ranges = [&] (MarkRanges ranges) {
+        String result;
+        for (const auto & range: ranges) {
+            result += fmt::format("[{} {}], ", range.begin, range.end);
+        }
+        result += '\n';
+        return result;
+    };
+
+    LOG_TRACE(&Poco::Logger::get("MTBSP"), "<<< {} {}", (responce.denied ? "denied" : "accepted"), dump_mark_ranges(responce.mark_ranges));
 
     task->mark_ranges = std::move(responce.mark_ranges);
 
@@ -585,10 +600,38 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
 
 void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * current_task)
 {
+    // const size_t max_batch_size = 10;
+
+    // MarkRanges new_ranges;
+
+    // for (const auto & range : current_task->mark_ranges)
+    // {
+    //     if (range.end - range.begin <= max_batch_size)
+    //     {
+    //         new_ranges.push_back(range);
+    //         continue;
+    //     }
+
+    //     auto current_begin = range.begin;
+    //     auto current_end = range.begin + max_batch_size;
+
+    //     while (current_end < range.end)
+    //     {
+    //         new_ranges.emplace_back(current_begin, current_end);
+    //         current_begin = current_end;
+    //         current_end = current_end + max_batch_size;
+    //     }
+
+    //     if (range.end - current_begin > 0)
+    //     {
+    //         new_ranges.emplace_back(current_begin, range.end);
+    //     }
+    // }
+
     // assert(extension.has_value());
 
     // String log_message = "Got ranges: ";
-    // for (const auto & range: current_task->mark_ranges) {
+    // for (const auto & range: new_ranges) {
     //     log_message += fmt::format("({}, {}), ", range.begin, range.end);
     // }
     // log_message += '\n';
@@ -600,23 +643,95 @@ void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * curren
     //     return ConsistentHashing(hash, extension->count_participating_replicas);
     // };
 
-    std::sort(current_task->mark_ranges.begin(), current_task->mark_ranges.end());
+    // std::sort(new_ranges.begin(), new_ranges.end());
 
-    // auto it = std::remove_if(current_task->mark_ranges.begin(), current_task->mark_ranges.end(), [&](MarkRange range) {
+    // auto it = std::remove_if(new_ranges.begin(), new_ranges.end(), [&](MarkRange range) {
     //     return calculate_hash(range) != extension->number_of_current_replica;
     // });
 
-    // current_task->mark_ranges.erase(it, current_task->mark_ranges.end());
+    // new_ranges.erase(it, new_ranges.end());
 
     // log_message += "Applied consistent hash: ";
-    // for (const auto & range: current_task->mark_ranges) {
+    // for (const auto & range: new_ranges) {
     //     log_message += fmt::format("({}, {}), ", range.begin, range.end);
     // }
     // log_message += '\n';
 
     // LOG_TRACE(&Poco::Logger::get("MergeTreeBaseSelectProcessor"), log_message);
 
-    buffered_ranges.emplace_back(std::move(current_task->mark_ranges));
+    // buffered_ranges.emplace_back(std::move(new_ranges));
+
+    // buffered_ranges.emplace_back(std::move(current_task->mark_ranges));
+
+
+    size_t sum_average_marks_size = 0;
+    if (extension.has_value())
+    {
+        for (const auto & name : extension->colums_to_read)
+        {
+            auto size = task->data_part->getColumnSize(name);
+            assert(size.marks != 0);
+            average_mark_size_bytes.emplace_back(size.data_compressed / size.marks);
+            sum_average_marks_size += average_mark_size_bytes.back();
+        }
+    }
+
+    const size_t max_batch_size = (8UL * 1024 * 1024 * 1024) / sum_average_marks_size;
+    assert(max_batch_size > 0);
+
+    LOG_TRACE(&Poco::Logger::get("MTBSP"), "Using max batch size equal to {}", max_batch_size);
+
+    size_t current_batch_size = 0;
+
+    buffered_ranges.emplace_back();
+
+    for (const auto & range : current_task->mark_ranges)
+    {
+        auto expand_if_needed = [&]
+        {
+            if (current_batch_size > max_batch_size)
+            {
+                buffered_ranges.emplace_back();
+                current_batch_size = 0;
+            }
+
+        };
+
+        expand_if_needed();
+
+        if (range.end - range.begin < max_batch_size)
+        {
+            buffered_ranges.back().push_back(range);
+            current_batch_size += range.end - range.begin;
+            continue;
+        }
+
+        auto current_begin = range.begin;
+        auto current_end = range.begin + max_batch_size;
+
+        while (current_end < range.end)
+        {
+            buffered_ranges.back().emplace_back(current_begin, current_end);
+            current_batch_size += current_end - current_begin;
+            current_begin = current_end;
+            current_end = current_end + max_batch_size;
+
+            expand_if_needed();
+        }
+
+        if (range.end - current_begin > 0)
+        {
+            buffered_ranges.back().emplace_back(current_begin, range.end);
+            current_batch_size += range.end - current_begin;
+
+            /// Do not need to update current_begin and current_end
+
+            expand_if_needed();
+        }
+    }
+
+    if (buffered_ranges.back().empty())
+        buffered_ranges.pop_back();
 }
 
 MergeTreeBaseSelectProcessor::~MergeTreeBaseSelectProcessor() = default;

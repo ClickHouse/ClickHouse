@@ -22,6 +22,10 @@ struct ParallelReadingExtension
     MergeTreeReadTaskCallback callback;
     size_t count_participating_replicas{0};
     size_t number_of_current_replica{0};
+    /// This is needed to estimate the number of bytes
+    /// between a pair of marks to perform one request
+    /// over the network for a 1Gb of data.
+    Names colums_to_read;
 };
 
 /// Base class for MergeTreeThreadSelectProcessor and MergeTreeSelectProcessor
@@ -107,6 +111,7 @@ protected:
     MergeTreeReadTaskPtr task;
 
     std::optional<ParallelReadingExtension> extension;
+    std::vector<size_t> average_mark_size_bytes;
 private:
 
     enum class Status {
