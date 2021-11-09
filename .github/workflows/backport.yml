@@ -17,6 +17,7 @@ jobs:
       - name: Check out repository code
         uses: actions/checkout@v2
         with:
+          token: ${{secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN}}
           fetch-depth: 0
       - name: Cherry pick
         env:
