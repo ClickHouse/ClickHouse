@@ -4,7 +4,7 @@
         <disks>
             <backups>
                 <type>local</type>
-                <path>/var/lib/clickhouse/backups/</path>
+                <path>/backups/</path>
             </backups>
         </disks>
     </storage_configuration>
