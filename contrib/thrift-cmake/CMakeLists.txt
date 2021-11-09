@@ -40,25 +40,23 @@ set(thriftcpp_threads_SOURCES
         "${LIBRARY_DIR}/src/thrift/concurrency/Mutex.cpp"
         )
 add_library(${THRIFT_LIBRARY} ${thriftcpp_SOURCES} ${thriftcpp_threads_SOURCES})
-# set_target_properties(${THRIFT_LIBRARY} PROPERTIES CXX_STANDARD 14) # REMOVE after https://github.com/apache/thrift/pull/1641
-# target_include_directories(${THRIFT_LIBRARY} SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/thrift/lib/cpp/src")
 target_include_directories(${THRIFT_LIBRARY} SYSTEM PUBLIC "${THRIFT_INCLUDE_DIR}")
 target_link_libraries (${THRIFT_LIBRARY} PRIVATE boost::headers_only)
 
-set(COMPILER_DIR "${ClickHouse_SOURCE_DIR}/contrib/thrift/compiler/cpp")
-configure_file(${COMPILER_DIR}/src/thrift/version.h.in ${COMPILER_DIR}/src/thrift/version.h)
-set(thrift_compiler_SOURCES
-    ${COMPILER_DIR}/src/thrift/main.cc
-    ${COMPILER_DIR}/src/thrift/audit/t_audit.cpp
-    ${COMPILER_DIR}/src/thrift/generate/t_cpp_generator.cc
-    ${COMPILER_DIR}/src/thrift/common.cc
-    ${COMPILER_DIR}/src/thrift/generate/t_generator.cc
-    ${COMPILER_DIR}/src/thrift/parse/t_typedef.cc
-    ${COMPILER_DIR}/src/thrift/parse/parse.cc
-    ${COMPILER_DIR}/src/thrift/version.h
-    ${COMPILER_DIR}/src/thrift/thrifty.cc
-    ${COMPILER_DIR}/src/thrift/thriftl.cc
-    ${COMPILER_DIR}/src/thrift/thrifty.hh
-)
-add_executable(${THRIFT_COMPILER} ${thrift_compiler_SOURCES})
-include_directories(${THRIFT_COMPILER} SYSTEM ${COMPILER_DIR}/src)
+# set(COMPILER_DIR "${ClickHouse_SOURCE_DIR}/contrib/thrift/compiler/cpp")
+# configure_file(${COMPILER_DIR}/src/thrift/version.h.in ${COMPILER_DIR}/src/thrift/version.h)
+# set(thrift_compiler_SOURCES
+#     ${COMPILER_DIR}/src/thrift/main.cc
+#     ${COMPILER_DIR}/src/thrift/audit/t_audit.cpp
+#     ${COMPILER_DIR}/src/thrift/generate/t_cpp_generator.cc
+#     ${COMPILER_DIR}/src/thrift/common.cc
+#     ${COMPILER_DIR}/src/thrift/generate/t_generator.cc
+#     ${COMPILER_DIR}/src/thrift/parse/t_typedef.cc
+#     ${COMPILER_DIR}/src/thrift/parse/parse.cc
+#     ${COMPILER_DIR}/src/thrift/version.h
+#     ${COMPILER_DIR}/src/thrift/thrifty.cc
+#     ${COMPILER_DIR}/src/thrift/thriftl.cc
+#     ${COMPILER_DIR}/src/thrift/thrifty.hh
+# )
+# add_executable(${THRIFT_COMPILER} ${thrift_compiler_SOURCES})
+# include_directories(${THRIFT_COMPILER} SYSTEM ${COMPILER_DIR}/src)
