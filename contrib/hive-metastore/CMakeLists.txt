@@ -1,7 +1,7 @@
 set (SRCS
-    ${CMAKE_CURRENT_BINARY_DIR}/hive_metastore_constants.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/hive_metastore_types.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/ThriftHiveMetastore.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/hive_metastore_constants.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/hive_metastore_types.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/ThriftHiveMetastore.cpp
 )
 
 # set(THRIFT_COMPILER_PATH ${ClickHouse_BINARY_DIR}/contrib/thrift-cmake/thrift-compiler)
