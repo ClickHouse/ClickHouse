@@ -463,7 +463,7 @@ Setting fields:
 -   `query` – The custom query. Optional parameter.
 
 !!! info "Note"
-    The `table` and `query` fields cannot be used together. And there must be one of the sources of either `table` or `query`.
+    The `table` and `query` fields cannot be used together. And either one of the `table` or `query` fields must be declared.
 
 ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
 
