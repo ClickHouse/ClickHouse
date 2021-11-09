@@ -51,7 +51,8 @@ void ApplyWithGlobalVisitor::visit(
 void ApplyWithGlobalVisitor::visit(
     ASTSelectIntersectExceptQuery & selects, const std::map<String, ASTPtr> & exprs, const ASTPtr & with_expression_list)
 {
-    for (auto & select : selects.list_of_selects->children)
+    auto selects_list = selects.getListOfSelects();
+    for (auto & select : selects_list)
     {
         if (ASTSelectWithUnionQuery * node_union = select->as<ASTSelectWithUnionQuery>())
         {
@@ -72,7 +73,7 @@ void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
 {
     if (ASTSelectWithUnionQuery * node_union = ast->as<ASTSelectWithUnionQuery>())
     {
-        auto * first_select = dynamic_cast<ASTSelectQuery *>(node_union->list_of_selects->children[0].get());
+        auto * first_select = typeid_cast<ASTSelectQuery *>(node_union->list_of_selects->children[0].get());
         if (first_select)
         {
             ASTPtr with_expression_list = first_select->with();

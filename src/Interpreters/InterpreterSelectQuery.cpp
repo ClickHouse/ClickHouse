@@ -878,9 +878,8 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
         return true;
 
     /** NOTE You can also check that the table in the subquery is distributed, and that it only looks at one shard.
-      * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
-      */
-
+     * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
+     */
     if (auto query_table = extractTableExpression(query, 0))
     {
         if (const auto * ast_union = query_table->as<ASTSelectWithUnionQuery>())
@@ -893,23 +892,30 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
             */
             std::function<bool(ASTPtr)> traverse_recursively = [&](ASTPtr child_ast) -> bool
             {
-                if (const auto * child = child_ast->as <ASTSelectQuery>())
-                    return hasWithTotalsInAnySubqueryInFromClause(child->as<ASTSelectQuery &>());
-
-                if (const auto * child = child_ast->as<ASTSelectWithUnionQuery>())
-                    for (const auto & subchild : child->list_of_selects->children)
+                if (const auto * select_child = child_ast->as <ASTSelectQuery>())
+                {
+                    if (hasWithTotalsInAnySubqueryInFromClause(select_child->as<ASTSelectQuery &>()))
+                        return true;
+                }
+                else if (const auto * union_child = child_ast->as<ASTSelectWithUnionQuery>())
+                {
+                    for (const auto & subchild : union_child->list_of_selects->children)
                         if (traverse_recursively(subchild))
                             return true;
-
-                if (const auto * child = child_ast->as<ASTSelectIntersectExceptQuery>())
-                    for (const auto & subchild : child->list_of_selects->children)
+                }
+                else if (const auto * intersect_child = child_ast->as<ASTSelectIntersectExceptQuery>())
+                {
+                    auto selects = intersect_child->getListOfSelects();
+                    for (const auto & subchild : selects)
                         if (traverse_recursively(subchild))
                             return true;
+                }
                 return false;
             };
 
             for (const auto & elem : ast_union->list_of_selects->children)
-                traverse_recursively(elem);
+                if (traverse_recursively(elem))
+                    return true;
         }
     }
 

@@ -105,7 +105,7 @@ private:
 
     void visit(ASTSelectIntersectExceptQuery & select, ASTPtr &) const
     {
-        for (auto & child : select.list_of_selects->children)
+        for (auto & child : select.getListOfSelects())
         {
             if (child->as<ASTSelectQuery>())
                 tryVisit<ASTSelectQuery>(child);
