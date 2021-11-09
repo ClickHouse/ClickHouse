@@ -15,6 +15,34 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
+namespace
+{
+    /// Checks multiple keys "key", "key[1]", "key[2]", and so on in the configuration
+    /// and find out if some of them have matching value.
+    bool findConfigKeyWithMatchingValue(const Poco::Util::AbstractConfiguration & config, const String & key, const std::function<bool(const String & value)> & match_function)
+    {
+        String current_key = key;
+        size_t counter = 0;
+        while (config.has(current_key))
+        {
+            if (match_function(config.getString(current_key)))
+                return true;
+            current_key = key + "[" + std::to_string(++counter) + "]";
+        }
+        return false;
+    }
+
+    bool isDiskAllowed(const String & disk_name, const Poco::Util::AbstractConfiguration & config)
+    {
+        return findConfigKeyWithMatchingValue(config, "backups.allowed_disk", [&](const String & value) { return value == disk_name; });
+    }
+
+    bool isPathAllowed(const String & path, const Poco::Util::AbstractConfiguration & config)
+    {
+        return findConfigKeyWithMatchingValue(config, "backups.allowed_path", [&](const String & value) { return path.starts_with(value); });
+    }
+}
+
 
 BackupInDirectory::BackupInDirectory(
     const String & backup_name_,
@@ -26,10 +54,12 @@ BackupInDirectory::BackupInDirectory(
     : BackupImpl(backup_name_, open_mode_, context_, base_backup_info_)
     , disk(disk_), path(path_)
 {
+    /// Path to backup must end with '/'
     if (path.back() != '/')
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup {}: Path to backup must end with '/', but {} doesn't.", getName(), quoteString(path));
     dir_path = fs::path(path).parent_path(); /// get path without terminating slash
 
+    /// If `disk` is not specified, we create an internal instance of `DiskLocal` here.
     if (!disk)
     {
         auto fspath = fs::path{dir_path};
@@ -100,6 +130,9 @@ void registerBackupEngineFile(BackupFactory & factory)
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
             }
             path = args[0].safeGet<String>();
+
+            if (!isPathAllowed(path, params.context->getConfigRef()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path {} is not allowed for backups", path);
         }
         else if (engine_name == "Disk")
         {
@@ -109,10 +142,14 @@ void registerBackupEngineFile(BackupFactory & factory)
                     "Backup engine 'Disk' requires 1 or 2 arguments",
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
             }
+
             String disk_name = args[0].safeGet<String>();
             disk = params.context->getDisk(disk_name);
             if (args.size() >= 2)
                 path = args[1].safeGet<String>();
+
+            if (!isDiskAllowed(disk_name, params.context->getConfigRef()))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk {} is not allowed for backups", disk_name);
         }
 
         return std::make_shared<BackupInDirectory>(backup_name, params.open_mode, disk, path, params.context, params.base_backup_info);
