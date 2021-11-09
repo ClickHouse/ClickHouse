@@ -1,12 +1,6 @@
 name: CIGithubActions
 on: # yamllint disable-line rule:truthy
-  pull_request:
-    types:
-      - labeled
-      - unlabeled
-      - synchronize
-      - reopened
-      - opened
+  push:
     branches:
       - master
 jobs:
