@@ -44,7 +44,30 @@ bool ReadBufferFromBlobStorage::nextImpl()
         return false;
 
     size_t to_read_bytes = std::min(total_size - offset, buf_size);
-    size_t bytes_read = data_stream->Read(tmp_buffer.data(), to_read_bytes);
+    size_t bytes_read = 0;
+
+    auto sleep_time_with_backoff_milliseconds = std::chrono::milliseconds(100);
+    for (int i = 0; i < 3; i++)
+    {
+        try
+        {
+            bytes_read = data_stream->Read(tmp_buffer.data(), to_read_bytes);
+            break;
+        }
+        catch (const Exception & e)
+        {
+            // TODO: can't get LOG_DEBUG to compile here
+            std::cout << "\n\nException caught during Azure Read: " << e.message() << "\n";
+
+            std::this_thread::sleep_for(sleep_time_with_backoff_milliseconds);
+            sleep_time_with_backoff_milliseconds *= 2;
+            initialized = false;
+            initialize();
+        }
+    }
+
+    if (bytes_read == 0)
+        return false;
 
     BufferBase::set(reinterpret_cast<char *>(tmp_buffer.data()), bytes_read, 0);
     offset += bytes_read;
@@ -72,8 +95,7 @@ off_t ReadBufferFromBlobStorage::seek(off_t offset_, int whence)
 
 off_t ReadBufferFromBlobStorage::getPosition()
 {
-    // TODO: which one is the right one?
-    // return offset - available();
+    // TODO: which one is the right one? In S3: return offset - available();
 
     return offset;
 }
@@ -84,30 +106,20 @@ void ReadBufferFromBlobStorage::initialize()
     if (initialized)
         return;
 
-    auto blob_client = blob_container_client->GetBlobClient(path);
-    auto download_response = blob_client.Download();
+    Azure::Storage::Blobs::DownloadBlobOptions download_options;
+    if (offset != 0)
+        download_options.Range = {static_cast<int64_t>(offset), {}};
+
+    blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
+
+    // TODO: try-catch for Download ?
+    auto download_response = blob_client->Download(download_options);
     data_stream = std::move(download_response.Value.BodyStream);
 
     if (data_stream == nullptr)
-    {
         throw Exception("Null data stream obtained while downloading a file from Blob Storage", ErrorCodes::RECEIVED_EMPTY_DATA);
-    }
 
     total_size = data_stream->Length();
-
-    if (offset != 0)
-    {
-        // TODO: is it the right way?
-        /// try to rewind to offset in the buffer
-        size_t total_read_bytes = 0;
-        while (total_read_bytes < offset)
-        {
-            size_t to_read_bytes = std::min(offset - total_read_bytes, buf_size);
-            size_t bytes_read = data_stream->Read(tmp_buffer.data(), to_read_bytes);
-            total_read_bytes += bytes_read;
-        }
-        assert(total_read_bytes == offset);
-    }
 
     initialized = true;
 }
