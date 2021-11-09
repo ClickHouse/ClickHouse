@@ -150,10 +150,13 @@ namespace detail
 
             if (withPartialContent())
             {
+                String range_header_value;
                 if (read_range.end)
-                    request.set("Range", fmt::format("bytes={}-{}", read_range.begin + bytes_read, *read_range.end));
+                    range_header_value = fmt::format("bytes={}-{}", read_range.begin + bytes_read, *read_range.end);
                 else
-                    request.set("Range", fmt::format("bytes={}-", read_range.begin + bytes_read));
+                    range_header_value = fmt::format("bytes={}-", read_range.begin + bytes_read);
+                LOG_TRACE(log, "Adding header: Range: {}", range_header_value);
+                request.set("Range", range_header_value);
             }
 
             if (!credentials.getUsername().empty())
@@ -360,7 +363,7 @@ namespace detail
                 catch (const Poco::Exception & e)
                 {
                     /**
-                     * Retry request unconditionally if nothing has beed read yet.
+                     * Retry request unconditionally if nothing has been read yet.
                      * Otherwise if it is GET method retry with range header starting from bytes_read.
                      */
                     bool can_retry_request = !bytes_read || method == Poco::Net::HTTPRequest::HTTP_GET;
@@ -368,9 +371,11 @@ namespace detail
                         throw;
 
                     LOG_ERROR(log,
-                              "HTTP request to `{}` failed at try {}/{} with bytes read: {}. "
+                              "HTTP request to `{}` failed at try {}/{} with bytes read: {}/{}. "
                               "Error: {}. (Current backoff wait is {}/{} ms)",
-                              uri.toString(), i, settings.http_max_tries, bytes_read, e.displayText(),
+                              uri.toString(), i, settings.http_max_tries,
+                              bytes_read, read_range.end ? toString(*read_range.end) : "unknown",
+                              e.displayText(),
                               milliseconds_to_wait, settings.http_retry_max_backoff_ms);
 
                     retry_with_range_header = true;
