@@ -53,7 +53,7 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
     }
     else
     {
-        range = { .begin = static_cast<size_t>(offset) };
+        range = { .begin = static_cast<size_t>(offset), .end = std::nullopt };
         LOG_DEBUG(log, "Reading from offset: {}", offset);
     }
 
