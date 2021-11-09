@@ -541,7 +541,7 @@ Setting fields:
 -   `query` – The custom query. Optional parameter.
 
 !!! info "Note"
-    The `table` or `where` fields cannot be used together with the `query` field. And there must be one of the sources of either `table` or `query`.
+    The `table` or `where` fields cannot be used together with the `query` field. And either one of the `table` or `query` fields must be declared.
 
 MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
 
