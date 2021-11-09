@@ -67,6 +67,7 @@ StorageHDFS::StorageHDFS(
     , partition_by(partition_by_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
+    checkHDFSURL(uri);
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
