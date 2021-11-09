@@ -24,6 +24,11 @@ using Poco::DirectoryIterator;
 
 UInt64 getDirSize(Path dir)
 {
+    if (!File(dir).exists())
+    {
+        return 0;
+    }
+
     DirectoryIterator it(dir);
     DirectoryIterator end;
 
