@@ -13,6 +13,7 @@ using DiskPtr = std::shared_ptr<IDisk>;
 class BackupInDirectory : public BackupImpl
 {
 public:
+    /// `disk`_ is allowed to be nullptr and that means the `path_` is a path in the local filesystem.
     BackupInDirectory(
         const String & backup_name_,
         OpenMode open_mode_,
