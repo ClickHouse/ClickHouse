@@ -109,7 +109,8 @@ def test_url_reconnect(started_cluster):
         node1.query(
             "insert into table function hdfs('hdfs://hdfs1:9000/storage_big', 'TSV', 'id Int32') select number from numbers(500000)")
 
-        pm._add_rule({'destination': node1.ip_address, 'source_port': 50075, 'action': 'REJECT'})
+        pm_rule = {'destination': node1.ip_address, 'source_port': 50075, 'action': 'REJECT'}
+        pm._add_rule(pm_rule)
 
         def select():
             global result
@@ -121,7 +122,7 @@ def test_url_reconnect(started_cluster):
         thread.start()
 
         time.sleep(4)
-        pm._delete_rule({'destination': node1.ip_address, 'source_port': 50075, 'action': 'REJECT'})
+        pm._delete_rule(pm_rule)
 
         thread.join()
 
