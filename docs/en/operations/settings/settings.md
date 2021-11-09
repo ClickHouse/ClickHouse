@@ -4052,7 +4052,7 @@ Default value: `0`.
 ## alter_partition_verbose_result {#alter-partition-verbose-result}
 
 Enables or disables the display of information about the parts to which the manipulation operations with partitions and parts have been successfully applied. 
-Applicable to [ATTACH PARTITION|PART](../../sql-reference/statements/alteralter/partition/#alter_attach-partition) и к [FREEZE PARTITION](../../sql-reference/statements/alteralter/partition/#alter_freeze-partition)
+Applicable to [ATTACH PARTITION|PART](../../sql-reference/statements/alteralter/partition.md#alter_attach-partition) и к [FREEZE PARTITION](../../sql-reference/statements/alteralter/partition.md#alter_freeze-partition)
 
 Possible values:
 
