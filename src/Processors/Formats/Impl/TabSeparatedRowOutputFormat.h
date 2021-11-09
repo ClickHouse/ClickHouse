@@ -23,6 +23,7 @@ public:
         const Block & header_,
         bool with_names_,
         bool with_types_,
+        bool is_raw_,
         const RowOutputFormatParams & params_,
         const FormatSettings & format_settings_);
 
@@ -39,10 +40,13 @@ public:
     /// https://www.iana.org/assignments/media-types/text/tab-separated-values
     String getContentType() const override { return "text/tab-separated-values; charset=UTF-8"; }
 
-protected:
-
+private:
+    void writeLine(const std::vector<String> & values);
     bool with_names;
     bool with_types;
+    bool is_raw;
+
+protected:
     const FormatSettings format_settings;
 };
 
