@@ -40,11 +40,25 @@
 
 #if defined(__amd64__)
 #define GLIBC_COMPAT_SYMBOL(func) __asm__(".symver " #func "," #func "@GLIBC_2.2.5");
+#define GLIBC_COMPAT_SYMBOL2(func, func_impl) __asm__(".symver " #func "," #func_impl "@GLIBC_2.2.5");
 #elif defined(__aarch64__)
 #define GLIBC_COMPAT_SYMBOL(func) __asm__(".symver " #func "," #func "@GLIBC_2.17");
+#define GLIBC_COMPAT_SYMBOL2(func, func_impl) __asm__(".symver " #func "," #func_impl "@GLIBC_2.17");
 #else
 #error Your platform is not supported.
 #endif
 
+#define GLIBC_COMPATIBILITY_ON
+
 GLIBC_COMPAT_SYMBOL(pthread_sigmask)
 GLIBC_COMPAT_SYMBOL(pthread_getattr_np)
+
+GLIBC_COMPAT_SYMBOL2(fstat, __fxstat)
+GLIBC_COMPAT_SYMBOL2(fstat64, __fxstat64)
+GLIBC_COMPAT_SYMBOL2(fstatat, __fxstatat)
+GLIBC_COMPAT_SYMBOL2(lstat, __lxstat)
+GLIBC_COMPAT_SYMBOL2(lstat64, __lxstat64)
+GLIBC_COMPAT_SYMBOL2(mknod, __xmknod)
+GLIBC_COMPAT_SYMBOL2(mknodat, __xmknodat)
+GLIBC_COMPAT_SYMBOL2(stat, __xstat)
+GLIBC_COMPAT_SYMBOL2(stat64, __xstat64)
