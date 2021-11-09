@@ -64,3 +64,18 @@
 
 /// Max depth of hierarchical dictionary
 #define DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH 1000
+
+/// Query profiler cannot work with sanitizers.
+/// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)
+/// And they do unwinding frequently (on every malloc/free, thread/mutex operations, etc).
+/// They change %rbp during unwinding and it confuses libunwind if signal comes during sanitizer unwinding
+///  and query profiler decide to unwind stack with libunwind at this moment.
+///
+/// Symptoms: you'll get silent Segmentation Fault - without sanitizer message and without usual ClickHouse diagnostics.
+///
+/// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
+#if !defined(SANITIZER)
+#define QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS 1000000000
+#else
+#define QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS 0
+#endif

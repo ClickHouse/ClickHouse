@@ -1,7 +1,7 @@
 #include "StoragePostgreSQL.h"
 
 #if USE_LIBPQXX
-#include <DataStreams/PostgreSQLSource.h>
+#include <Processors/Transforms/PostgreSQLSource.h>
 
 #include <Common/parseAddress.h>
 #include <Common/assert_cast.h>
@@ -22,7 +22,6 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 
-#include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 
 #include <IO/WriteHelpers.h>
@@ -399,7 +398,7 @@ StoragePostgreSQLConfiguration StoragePostgreSQL::getConfiguration(ASTs engine_a
         for (const auto & [arg_name, arg_value] : storage_specific_args)
         {
             if (arg_name == "on_conflict")
-                configuration.on_conflict = arg_value.safeGet<String>();
+                configuration.on_conflict = arg_value->as<ASTLiteral>()->value.safeGet<String>();
             else
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Unexpected key-value argument."

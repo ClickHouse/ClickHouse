@@ -6,10 +6,10 @@
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
+#include "Core/Protocol.h"
 #include <IO/Operators.h>
 #include <Functions/FunctionFactory.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Formats/FormatFactory.h>
 #include <Storages/StorageFactory.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
@@ -161,6 +161,8 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
             case Protocol::Server::Extremes:
                 continue;
             case Protocol::Server::Log:
+                continue;
+            case Protocol::Server::ProfileEvents:
                 continue;
 
             case Protocol::Server::Exception:
