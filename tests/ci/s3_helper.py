@@ -107,7 +107,8 @@ class S3Helper():
     def list_prefix(self, s3_prefix_path, bucket='clickhouse-builds'):
         objects = self.client.list_objects_v2(Bucket=bucket, Prefix=s3_prefix_path)
         result = []
-        for obj in objects['Contents']:
-            result.append(obj['Key'])
+        if 'Contents' in objects:
+            for obj in objects['Contents']:
+                result.append(obj['Key'])
 
         return result
