@@ -2,12 +2,12 @@
 
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
+#include <Storages/HDFS/HDFSCommon.h>
 
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
 #include <base/logger_useful.h>
 #include <base/FnTraits.h>
@@ -169,6 +169,7 @@ void registerDiskHDFS(DiskFactory & factory)
         fs::create_directories(disk);
 
         String uri{config.getString(config_prefix + ".endpoint")};
+        checkHDFSURL(uri);
 
         if (uri.back() != '/')
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);
