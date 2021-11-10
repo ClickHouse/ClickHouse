@@ -156,7 +156,7 @@ int mainImpl(int argc, char ** argv)
         pool.scheduleOrThrowOnError([=]{ thread(fd, mode, min_offset, max_offset, block_size, count); });
     pool.wait();
 
-    fsync(fd);
+    fdatasync(fd);
 
     watch.stop();
 
