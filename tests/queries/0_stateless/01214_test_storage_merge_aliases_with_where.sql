@@ -30,5 +30,5 @@ SELECT b FROM tt_m  order by b LIMIT 1 BY b;
 
 SELECT a FROM tt_m WHERE b = 12;
 SELECT max(a) FROM tt_m group by b order by b;
-SELECT a FROM tt_m LIMIT 1 BY b
+SELECT a FROM tt_m order by b LIMIT 1 BY b;
 

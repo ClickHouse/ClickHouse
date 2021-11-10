@@ -180,7 +180,8 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
 }
 
 
-SelectQueryInfo StorageMerge::getModifiedQueryInfo(const SelectQueryInfo & query_info, ContextPtr modified_context, const StorageID & storage_id) const
+SelectQueryInfo StorageMerge::getModifiedQueryInfo(
+    const SelectQueryInfo & query_info, ContextPtr modified_context, const StorageID & storage_id, bool is_merge_engine) const
 {
     SelectQueryInfo modified_query_info = query_info;
     modified_query_info.query = query_info.query->clone();
@@ -191,8 +192,11 @@ SelectQueryInfo StorageMerge::getModifiedQueryInfo(const SelectQueryInfo & query
     removeJoin(modified_select, new_analyzer_res, modified_context);
     modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
 
-    VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", storage_id.table_name);
-    VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_database", storage_id.database_name);
+    if (!is_merge_engine)
+    {
+        VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", storage_id.table_name);
+        VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_database", storage_id.database_name);
+    }
 
     return modified_query_info;
 }
@@ -241,7 +245,7 @@ Pipe StorageMerge::read(
 
     if (selected_tables.empty())
     {
-        auto modified_query_info = getModifiedQueryInfo(query_info, modified_context, getStorageID());
+        auto modified_query_info = getModifiedQueryInfo(query_info, modified_context, getStorageID(), false);
         /// FIXME: do we support sampling in this case?
         return createSources(
             {},
@@ -303,7 +307,7 @@ Pipe StorageMerge::read(
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
         auto storage_columns = storage_metadata_snapshot->getColumns();
 
-        auto modified_query_info = getModifiedQueryInfo(query_info, modified_context, storage->getStorageID());
+        auto modified_query_info = getModifiedQueryInfo(query_info, modified_context, storage->getStorageID(), storage->as<StorageMerge>());
         auto syntax_result = TreeRewriter(local_context).analyzeSelect(modified_query_info.query, TreeRewriterResult({}, storage, storage_metadata_snapshot));
 
         Names column_names_as_aliases;

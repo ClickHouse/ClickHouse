@@ -131,7 +131,7 @@ protected:
         Pipe & pipe, QueryProcessingStage::Enum processed_stage);
 
     SelectQueryInfo getModifiedQueryInfo(
-        const SelectQueryInfo & query_info, ContextPtr modified_context, const StorageID & storage_id) const;
+        const SelectQueryInfo & query_info, ContextPtr modified_context, const StorageID & storage_id, bool is_merge_engine) const;
 };
 
 }
