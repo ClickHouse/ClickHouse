@@ -136,7 +136,7 @@ int mainImpl(int argc, char ** argv)
 
     for (size_t i = 0; i < descriptors; ++i)
     {
-        if (fsync(fds[i]))
+        if (fdatasync(fds[i]))
             throwFromErrno("Cannot fsync", ErrorCodes::CANNOT_FSYNC);
     }
 

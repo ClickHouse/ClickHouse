@@ -691,7 +691,7 @@ struct StorageDistributedDirectoryMonitor::Batch
         : parent(parent_)
         , file_index_to_path(file_index_to_path_)
         , split_batch_on_failure(parent.split_batch_on_failure)
-        , fsync(parent.storage.getDistributedSettingsRef().fsync_after_insert)
+        , fdatasync(parent.storage.getDistributedSettingsRef().fsync_after_insert)
         , dir_fsync(parent.dir_fsync)
     {}
 

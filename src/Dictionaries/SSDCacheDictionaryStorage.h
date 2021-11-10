@@ -542,7 +542,7 @@ public:
                 file_path,
                 std::to_string(bytes_written));
 
-        if (::fsync(file.fd) < 0)
+        if (::fdatasync(file.fd) < 0)
             throwFromErrnoWithPath("Cannot fsync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
 
         current_block_index += buffer_size_in_blocks;
