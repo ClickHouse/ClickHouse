@@ -1537,12 +1537,12 @@ namespace recurrent_detail
         return 0;
     }
 
-    template<typename T> T getLastValueFromOutputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/)
+    template<typename T> T getLastValueFromState(const WindowTransform * /*transform*/, size_t /*function_index*/, size_t /*data_index*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getLastValueFromInputColumn() is not implemented");
     }
 
-    template<> Float64 getLastValueFromOutputColumn<Float64>(const WindowTransform * transform, size_t function_index)
+    template<> Float64 getLastValueFromState<Float64>(const WindowTransform * transform, size_t function_index, size_t data_index)
     {
         const auto & workspace = transform->workspaces[function_index];
         if (workspace.aggregate_function_state.data() == nullptr)
@@ -1551,23 +1551,32 @@ namespace recurrent_detail
         }
         else
         {
-            return *static_cast<const Float64 *>(static_cast<const void *>(workspace.aggregate_function_state.data()));
+            return static_cast<const Float64 *>(static_cast<const void *>(workspace.aggregate_function_state.data()))[data_index];
         }
     }
 
-    template<typename T> void setValueToOutputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/, T /*value*/, T /*state_value*/)
+    template<typename T> void setValueToState(const WindowTransform * /*transform*/, size_t /*function_index*/, T /*value*/, size_t /*data_index*/)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setValueToState() is not implemented");
+    }
+
+    template<> void setValueToState<Float64>(const WindowTransform * transform, size_t function_index, Float64 value, size_t data_index)
+    {
+        const auto & workspace = transform->workspaces[function_index];
+        static_cast<Float64 *>(static_cast<void *>(workspace.aggregate_function_state.data()))[data_index] = value;
+    }
+
+    template<typename T> void setValueToOutputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/, T /*value*/)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setValueToOutputColumn() is not implemented");
     }
 
-    template<> void setValueToOutputColumn<Float64>(const WindowTransform * transform, size_t function_index, Float64 value, Float64 state_value)
+    template<> void setValueToOutputColumn<Float64>(const WindowTransform * transform, size_t function_index, Float64 value)
     {
-        const auto & workspace = transform->workspaces[function_index];
         auto current_row = transform->current_row;
         const auto & current_block = transform->blockAt(current_row);
         IColumn & to = *current_block.output_columns[function_index];
 
-        *static_cast<Float64 *>(static_cast<void *>(workspace.aggregate_function_state.data())) = state_value;
         assert_cast<ColumnFloat64 &>(to).getData().push_back(value);
     }
 
@@ -1586,6 +1595,7 @@ namespace recurrent_detail
     }
 }
 
+template<size_t state_size>
 struct RecurrentWindowFunction : public WindowFunction
 {
     RecurrentWindowFunction(const std::string & name_,
@@ -1594,12 +1604,14 @@ struct RecurrentWindowFunction : public WindowFunction
     {
     }
 
-    size_t sizeOfData() const override { return sizeof(Float64); }
+    size_t sizeOfData() const override { return sizeof(Float64)*state_size; }
     size_t alignOfData() const override { return 1; }
 
     void create(AggregateDataPtr __restrict place) const override
     {
-        *static_cast<Float64 *>(static_cast<void *>(place)) = 0.0;
+        const auto state = static_cast<Float64 *>(static_cast<void *>(place));
+        for (size_t i = 0; i < state_size; ++i)
+            state[i] = 0.0;
     }
 
     template<typename T>
@@ -1609,21 +1621,21 @@ struct RecurrentWindowFunction : public WindowFunction
     }
 
     template<typename T>
-    static T getLastValueFromOutputColumn(const WindowTransform * transform, size_t function_index)
+    static T getLastValueFromState(const WindowTransform * transform, size_t function_index, size_t data_index)
     {
-        return recurrent_detail::getLastValueFromOutputColumn<T>(transform, function_index);
+        return recurrent_detail::getLastValueFromState<T>(transform, function_index, data_index);
+    }
+
+    template<typename T>
+    static void setValueToState(const WindowTransform * transform, size_t function_index, T value, size_t data_index)
+    {
+        recurrent_detail::setValueToState<T>(transform, function_index, value, data_index);
     }
 
     template<typename T>
     static void setValueToOutputColumn(const WindowTransform * transform, size_t function_index, T value)
     {
-        recurrent_detail::setValueToOutputColumn<T>(transform, function_index, value, value);
-    }
-
-    template<typename T>
-    static void setValueToOutputColumn(const WindowTransform * transform, size_t function_index, T value, T state_value)
-    {
-        recurrent_detail::setValueToOutputColumn<T>(transform, function_index, value, state_value);
+        recurrent_detail::setValueToOutputColumn<T>(transform, function_index, value);
     }
 
     template<typename T>
@@ -1633,10 +1645,12 @@ struct RecurrentWindowFunction : public WindowFunction
     }
 };
 
-struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFunction
+struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFunction<1>
 {
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
+
+    static constexpr size_t STATE_SUM = 0;
 
     WindowFunctionExponentialTimeDecayedSum(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
@@ -1682,26 +1696,29 @@ struct WindowFunctionExponentialTimeDecayedSum final : public RecurrentWindowFun
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
-        Float64 last_val = getLastValueFromOutputColumn<Float64>(transform, function_index);
+        Float64 last_sum = getLastValueFromState<Float64>(transform, function_index, STATE_SUM);
         Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         Float64 x = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_VALUE);
         Float64 t = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         Float64 c = exp((last_t - t) / decay_length);
-        Float64 result = x + c * last_val;
+        Float64 result = x + c * last_sum;
 
         setValueToOutputColumn(transform, function_index, result);
+        setValueToState(transform, function_index, result, STATE_SUM);
     }
 
     private:
         Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFunction
+struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFunction<1>
 {
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
+
+    static constexpr size_t STATE_MAX = 0;
 
     WindowFunctionExponentialTimeDecayedMax(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
@@ -1747,25 +1764,28 @@ struct WindowFunctionExponentialTimeDecayedMax final : public RecurrentWindowFun
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
-        Float64 last_val = getLastValueFromOutputColumn<Float64>(transform, function_index);
+        Float64 last_max = getLastValueFromState<Float64>(transform, function_index, STATE_MAX);
         Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         Float64 x = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_VALUE);
         Float64 t = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         Float64 c = exp((last_t - t) / decay_length);
-        Float64 result = std::max(x, c * last_val);
+        Float64 result = std::max(x, c * last_max);
 
         setValueToOutputColumn(transform, function_index, result);
+        setValueToState(transform, function_index, result, STATE_MAX);
     }
 
     private:
         Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowFunction
+struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowFunction<1>
 {
     static constexpr size_t ARGUMENT_TIME = 0;
+
+    static constexpr size_t STATE_COUNT = 0;
 
     WindowFunctionExponentialTimeDecayedCount(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
@@ -1803,23 +1823,29 @@ struct WindowFunctionExponentialTimeDecayedCount final : public RecurrentWindowF
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
+        Float64 last_count = getLastValueFromState<Float64>(transform, function_index, STATE_COUNT);
         Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         Float64 t = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
-        Float64 result = exp((last_t - t) / decay_length) + 1.0;
+        Float64 c = exp((last_t - t) / decay_length);
+        Float64 result = c * last_count + 1.0;
 
         setValueToOutputColumn(transform, function_index, result);
+        setValueToState(transform, function_index, result, STATE_COUNT);
     }
 
     private:
         Float64 decay_length;
 };
 
-struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFunction
+struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFunction<2>
 {
     static constexpr size_t ARGUMENT_VALUE = 0;
     static constexpr size_t ARGUMENT_TIME = 1;
+
+    static constexpr size_t STATE_SUM = 0;
+    static constexpr size_t STATE_COUNT = 1;
 
     WindowFunctionExponentialTimeDecayedAvg(const std::string & name_,
             const DataTypes & argument_types_, const Array & parameters_)
@@ -1865,17 +1891,21 @@ struct WindowFunctionExponentialTimeDecayedAvg final : public RecurrentWindowFun
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) override
     {
-        Float64 last_sum = getLastValueFromOutputColumn<Float64>(transform, function_index);
+        Float64 last_sum = getLastValueFromState<Float64>(transform, function_index, STATE_SUM);
+        Float64 last_count = getLastValueFromState<Float64>(transform, function_index, STATE_COUNT);
         Float64 last_t = getLastValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         Float64 x = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_VALUE);
         Float64 t = getCurrentValueFromInputColumn<Float64>(transform, function_index, ARGUMENT_TIME);
 
         Float64 c = exp((last_t - t) / decay_length);
-        Float64 new_sum = x + c * last_sum;
-        Float64 result = new_sum / (c + 1.0);
+        Float64 new_sum = c * last_sum + x;
+        Float64 new_count = c * last_count + 1.0;
+        Float64 result = new_sum / new_count;
 
-        setValueToOutputColumn(transform, function_index, result, new_sum);
+        setValueToOutputColumn(transform, function_index, result);
+        setValueToState(transform, function_index, new_sum, STATE_SUM);
+        setValueToState(transform, function_index, new_count, STATE_COUNT);
     }
 
     private:
