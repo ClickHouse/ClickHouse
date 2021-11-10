@@ -597,12 +597,12 @@ private:
 
         cache_disk->moveFile(cache_path + ".tmp", cache_path);
         LOG_TRACE(log, "Add key {}: {}+{} of {}", cache_key, part_offset, cache_part_size, cache_file_size);
-        auto to_remove = cache_policy->add(cache_key, cache_file_size, part_offset, cache_part_size);
+        auto to_remove = cache_policy->add(cache_key, cache_file_size, part_offset, cache_part_size, false);
         for (auto & entry_to_remove : to_remove)
         {
-            String cache_path_ = DiskCache::getCacheBasePath(entry_to_remove.first) + "_" + std::to_string(entry_to_remove.second);
-            LOG_TRACE(log, "Remove cached file {}", cache_path_);
-            cache_disk->removeFileIfExists(cache_path_);
+            String remove_cache_path = DiskCache::getCacheBasePath(entry_to_remove.first) + "_" + std::to_string(entry_to_remove.second);
+            LOG_TRACE(log, "Remove cached file {}", remove_cache_path);
+            cache_disk->removeFileIfExists(remove_cache_path);
         }
     }
 
@@ -851,9 +851,9 @@ private:
                 auto to_remove = cache_policy->reserve(part.size);
                 for (auto & entry_to_remove : to_remove)
                 {
-                    String cache_path = DiskCache::getCacheBasePath(entry_to_remove.first) + "_" + std::to_string(entry_to_remove.second);
-                    LOG_TRACE(log, "Remove cached file {}", cache_path);
-                    cache_disk->removeFileIfExists(cache_path);
+                    String remove_cache_path = DiskCache::getCacheBasePath(entry_to_remove.first) + "_" + std::to_string(entry_to_remove.second);
+                    LOG_TRACE(log, "Remove cached file {}", remove_cache_path);
+                    cache_disk->removeFileIfExists(remove_cache_path);
                 }
 
                 ProfileEvents::increment(ProfileEvents::DiskCacheRequestsOut, 1);
@@ -921,9 +921,9 @@ void DiskCache::remove(const String & path)
     String cache_base_path = getCacheBasePath(cache_key);
     for (auto & entry_to_remove : to_remove)
     {
-        String cache_path = cache_base_path + "_" + std::to_string(entry_to_remove.offset);
-        LOG_TRACE(&Poco::Logger::get("DiskCache"), "Remove cached file {}", cache_path);
-        cache_disk->removeFileIfExists(cache_path);
+        String remove_cache_path = cache_base_path + "_" + std::to_string(entry_to_remove.offset);
+        LOG_TRACE(&Poco::Logger::get("DiskCache"), "Remove cached file {}", remove_cache_path);
+        cache_disk->removeFileIfExists(remove_cache_path);
     }
 }
 
@@ -1000,12 +1000,12 @@ void DiskCache::reload()
                 auto to_remove = cache_policy->add(key, cache_file_size, offset, size, true);
                 for (auto & entry_to_remove : to_remove)
                 {
-                    String cache_path_ = DiskCache::getCacheBasePath(entry_to_remove.first) + "_" + std::to_string(entry_to_remove.second);
-                    files_to_remove.insert(cache_path_);
+                    String remove_cache_path = DiskCache::getCacheBasePath(entry_to_remove.first) + "_" + std::to_string(entry_to_remove.second);
+                    files_to_remove.insert(remove_cache_path);
                 }
             }
 
-            for (auto & file_to_remove : files_to_remove)
+            for (const auto & file_to_remove : files_to_remove)
             {
                 LOG_TRACE(&log, "Remove cached file {}", file_to_remove);
                 cache_disk->removeFileIfExists(file_to_remove);

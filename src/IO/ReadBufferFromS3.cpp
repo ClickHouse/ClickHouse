@@ -15,7 +15,6 @@
 #include <base/sleep.h>
 
 #include <utility>
-#include <regex>
 
 
 namespace ProfileEvents
@@ -180,22 +179,27 @@ struct Range
         // unsuppotred '<unit> <start>-<end>/*'
         // unsuppurted '<unit> */<size>'
         // unsupported unit except 'bytes'
-        std::regex pattern("bytes\\W+(\\d+)-(\\d+)/(\\d+)");
-        std::smatch match;
-        if (!std::regex_match(content_range, match, pattern) || match.size() != 4)
+
+        if (content_range.size() < 11) /// 'bytes 1-2/3'
+            return false;
+        if (content_range.substr(0, 5) != "bytes")
+            return false;
+        auto pos = content_range.find_first_not_of(" \t", 5);
+        if (pos == std::string::npos || pos <= 5)
+            return false;
+        auto str = content_range.c_str();
+        char * str_end;
+        start = std::strtoull(str + pos, &str_end, 10);
+        if (*str_end != '-')
+            return false;
+        end = std::strtoull(str_end + 1, &str_end, 10);
+        if (*str_end != '/')
+            return false;
+        size = std::strtoull(str_end + 1, &str_end, 10);
+        if (content_range.find_first_not_of(" \t", str_end - str) != std::string::npos)
             return false;
 
-        start = strtoull(match[1]);
-        end = strtoull(match[2]);
-        size = strtoull(match[3]);
-
         return (end >= start && size > end);
-    }
-
-    size_t strtoull(const String & str)
-    {
-        char * strend;
-        return std::strtoull(str.data(), &strend, 10);
     }
 };
 
@@ -209,7 +213,7 @@ public:
         log = &Poco::Logger::get("DiskCacheDownloaderS3");
     }
 
-    ~DiskCacheDownloaderS3() override {}
+    ~DiskCacheDownloaderS3() override = default;
 
     RemoteFSStream get(size_t offset, size_t size) override
     {

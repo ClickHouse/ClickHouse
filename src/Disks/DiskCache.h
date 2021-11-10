@@ -44,7 +44,7 @@ public:
     /// insert file in cache index
     /// returns list of keys to remove from cache (as reserve)
     virtual std::list<std::pair<String, size_t>> add(const String & key, size_t file_size,
-        size_t offset, size_t size, bool restore = false) = 0;
+        size_t offset, size_t size, bool restore) = 0;
 
     /// call on download error
     virtual void error(const String & key, size_t offset) = 0;
@@ -68,7 +68,7 @@ public:
     CachePart find(const String & key, size_t offset, size_t size) override;
     std::list<std::pair<String, size_t>> reserve(size_t size) override;
     std::list<std::pair<String, size_t>> add(const String & key, size_t file_size,
-        size_t offset, size_t size, bool restore = false) override;
+        size_t offset, size_t size, bool restore) override;
     void error(const String & key, size_t offset) override;
     CachePartList remove(const String & key) override;
     void remove(const String & key, size_t offset, size_t size) override;
@@ -132,8 +132,8 @@ public:
     struct RemoteFSStream
     {
         std::unique_ptr<ReadBuffer> stream;
-        size_t file_size;
-        size_t expected_size;
+        size_t file_size = 0;
+        size_t expected_size = 0;
     };
 
     virtual RemoteFSStream get(size_t offset, size_t size) = 0;
@@ -155,7 +155,7 @@ public:
     static String getCacheBasePath(const String & key);
 
 private:
-    String getKey(const String & path);
+    static String getKey(const String & path);
 
     // reload cache from disk after restart
     void reload();
