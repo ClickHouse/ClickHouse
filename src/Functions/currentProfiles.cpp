@@ -1,7 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/User.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -35,7 +35,7 @@ namespace
 
         explicit FunctionCurrentProfiles(const ContextPtr & context)
         {
-            const auto & manager = context->getAccessControlManager();
+            const auto & manager = context->getAccessControl();
 
             std::vector<UUID> profile_ids;
             if constexpr (kind == Kind::CURRENT_PROFILES)
