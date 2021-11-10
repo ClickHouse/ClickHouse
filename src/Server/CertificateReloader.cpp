@@ -2,8 +2,8 @@
 
 #if USE_SSL
 
-#include <common/logger_useful.h>
-#include <common/errnoToString.h>
+#include <base/logger_useful.h>
+#include <base/errnoToString.h>
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/Utility.h>
@@ -11,6 +11,12 @@
 
 namespace DB
 {
+
+int cert_reloader_dispatch_set_cert(SSL * ssl, [[maybe_unused]] void * arg)
+{
+    return CertificateReloader::instance().setCertificate(ssl);
+}
+
 
 namespace ErrorCodes
 {
@@ -48,10 +54,15 @@ void CertificateReloader::init(const Poco::Util::AbstractConfiguration & config)
 
     /// Set a callback for OpenSSL to allow get the updated cert and key.
 
-    SSL_CTX_set_cert_cb(
-        Poco::Net::SSLManager::instance().defaultClientContext()->sslContext(),
-        [](SSL * ssl, void * arg) { return reinterpret_cast<CertificateReloader *>(arg)->setCertificate(ssl); },
-        static_cast<void *>(this));
+    // SSL_CTX_set_cert_cb(
+    //     Poco::Net::SSLManager::instance().defaultClientContext()->sslContext(),
+    //     [](SSL * ssl, void * arg) { return reinterpret_cast<CertificateReloader *>(arg)->setCertificate(ssl); },
+    //     static_cast<void *>(this));
+
+    auto & ssl_manager = Poco::Net::SSLManager::instance();
+    const auto ssl_ctx_ptr = ssl_manager.defaultServerContext();
+    auto ctx = ssl_ctx_ptr->sslContext();
+    SSL_CTX_set_cert_cb(ctx, cert_reloader_dispatch_set_cert, nullptr);
 }
 
 
@@ -62,8 +73,10 @@ void CertificateReloader::reload(const Poco::Util::AbstractConfiguration & confi
     std::string new_cert_path = config.getString("openSSL.server.certificateFile", "");
     std::string new_key_path = config.getString("openSSL.server.privateKeyFile", "");
 
-    if (cert_file.changeIfModified(std::move(new_cert_path), log)
-        || key_file.changeIfModified(std::move(new_key_path), log))
+    bool cert_file_changed = cert_file.changeIfModified(std::move(new_cert_path), log);
+    bool key_file_changed = key_file.changeIfModified(std::move(new_key_path), log);
+
+    if (cert_file_changed || key_file_changed)
     {
         LOG_DEBUG(log, "Reloading certificate ({}) and key ({}).", cert_file.path, key_file.path);
         data.set(std::make_unique<const Data>(cert_file.path, key_file.path));
