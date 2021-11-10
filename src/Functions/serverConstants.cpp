@@ -11,9 +11,7 @@
 #    include <Poco/Environment.h>
 #endif
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 
 namespace DB

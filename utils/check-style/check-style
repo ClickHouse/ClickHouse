@@ -70,7 +70,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
     xargs xmllint --noout --nonet
 
 # FIXME: for now only clickhouse-test
-pylint --rcfile=$ROOT_PATH/.pylintrc --persistent=no --score=n $ROOT_PATH/tests/clickhouse-test
+pylint --rcfile=$ROOT_PATH/.pylintrc --persistent=no --score=n $ROOT_PATH/tests/clickhouse-test $ROOT_PATH/tests/ci/*.py
 
 find $ROOT_PATH -not -path $ROOT_PATH'/contrib*' \( -name '*.yaml' -or -name '*.yml' \) -type f |
     grep -vP $EXCLUDE_DIRS |

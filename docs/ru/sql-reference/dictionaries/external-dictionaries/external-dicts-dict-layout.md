@@ -26,7 +26,7 @@ toc_title: "Хранение словарей в памяти"
 Общий вид конфигурации:
 
 ``` xml
-<yandex>
+<clickhouse>
     <dictionary>
         ...
         <layout>
@@ -36,7 +36,7 @@ toc_title: "Хранение словарей в памяти"
         </layout>
         ...
     </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 Соответствущий [DDL-запрос](../../statements/create/dictionary.md#create-dictionary-query):
@@ -53,14 +53,17 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 -   [flat](#flat)
 -   [hashed](#dicts-external_dicts_dict_layout-hashed)
 -   [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
--   [cache](#cache)
--   [ssd_cache](#ssd-cache)
--   [ssd_complex_key_cache](#complex-key-ssd-cache)
--   [direct](#direct)
--   [range_hashed](#range-hashed)
 -   [complex_key_hashed](#complex-key-hashed)
+-   [complex_key_sparse_hashed](#complex-key-sparse-hashed)
+-   [hashed_array](#dicts-external_dicts_dict_layout-hashed-array)
+-   [complex_key_hashed_array](#complex-key-hashed-array)
+-   [range_hashed](#range-hashed)
 -   [complex_key_range_hashed](#complex-key-range-hashed)
+-   [cache](#cache)
 -   [complex_key_cache](#complex-key-cache)
+-   [ssd_cache](#ssd-cache)
+-   [complex_key_ssd_cache](#complex-key-ssd-cache)
+-   [direct](#direct)
 -   [complex_key_direct](#complex-key-direct)
 -   [ip_trie](#ip-trie)
 
@@ -140,7 +143,7 @@ LAYOUT(SPARSE_HASHED([PREALLOCATE 0]))
 
 ### complex_key_hashed {#complex-key-hashed}
 
-Тип размещения предназначен для использования с составными [ключами](external-dicts-dict-structure.md). Аналогичен `hashed`.
+Тип размещения предназначен для использования с составными [ключами](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Аналогичен `hashed`.
 
 Пример конфигурации:
 
@@ -154,6 +157,63 @@ LAYOUT(SPARSE_HASHED([PREALLOCATE 0]))
 
 ``` sql
 LAYOUT(COMPLEX_KEY_HASHED())
+```
+
+### complex_key_sparse_hashed {#complex-key-sparse-hashed}
+
+Тип размещения предназначен для использования с составными [ключами](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Аналогичен [sparse_hashed](#dicts-external_dicts_dict_layout-sparse_hashed).
+
+Пример конфигурации:
+
+``` xml
+<layout>
+  <complex_key_sparse_hashed />
+</layout>
+```
+
+или
+
+``` sql
+LAYOUT(COMPLEX_KEY_SPARSE_HASHED())
+```
+
+### hashed_array {#dicts-external_dicts_dict_layout-hashed-array}
+
+Словарь полностью хранится в оперативной памяти. Каждый атрибут хранится в массиве. Ключевой атрибут хранится в виде хеш-таблицы, где его значение является индексом в массиве атрибутов. Словарь может содержать произвольное количество элементов с произвольными идентификаторами. На практике количество ключей может достигать десятков миллионов элементов.
+
+Поддерживаются все виды источников. При обновлении данные (из файла, из таблицы) считываются целиком.
+
+Пример конфигурации:
+
+``` xml
+<layout>
+  <hashed_array>
+  </hashed_array>
+</layout>
+```
+
+или
+
+``` sql
+LAYOUT(HASHED_ARRAY())
+```
+
+### complex_key_hashed_array {#complex-key-hashed-array}
+
+Тип размещения предназначен для использования с составными [ключами](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-structure.md). Аналогичен [hashed_array](#dicts-external_dicts_dict_layout-hashed-array).
+
+Пример конфигурации:
+
+``` xml
+<layout>
+  <complex_key_hashed_array />
+</layout>
+```
+
+или
+
+``` sql
+LAYOUT(COMPLEX_KEY_HASHED_ARRAY())
 ```
 
 ### range_hashed {#range-hashed}
@@ -224,7 +284,7 @@ RANGE(MIN first MAX last)
 Пример конфигурации:
 
 ``` xml
-<yandex>
+<clickhouse>
         <dictionary>
 
                 ...
@@ -253,7 +313,7 @@ RANGE(MIN first MAX last)
                 </structure>
 
         </dictionary>
-</yandex>
+</clickhouse>
 ```
 
 или

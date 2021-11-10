@@ -136,37 +136,10 @@ void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns
     if (seen_columns[index])
         throw Exception("Duplicate field found while parsing JSONEachRow format: " + columnName(index), ErrorCodes::INCORRECT_DATA);
 
-    try
-    {
-        seen_columns[index] = read_columns[index] = true;
-        const auto & type = getPort().getHeader().getByPosition(index).type;
-        const auto & serialization = serializations[index];
-
-        if (yield_strings)
-        {
-            String str;
-            readJSONString(str, *in);
-
-            ReadBufferFromString buf(str);
-
-            if (format_settings.null_as_default && !type->isNullable())
-                read_columns[index] = SerializationNullable::deserializeWholeTextImpl(*columns[index], buf, format_settings, serialization);
-            else
-                serialization->deserializeWholeText(*columns[index], buf, format_settings);
-        }
-        else
-        {
-            if (format_settings.null_as_default && !type->isNullable())
-                read_columns[index] = SerializationNullable::deserializeTextJSONImpl(*columns[index], *in, format_settings, serialization);
-            else
-                serialization->deserializeTextJSON(*columns[index], *in, format_settings);
-        }
-    }
-    catch (Exception & e)
-    {
-        e.addMessage("(while reading the value of key " + columnName(index) + ")");
-        throw;
-    }
+    seen_columns[index] = true;
+    const auto & type = getPort().getHeader().getByPosition(index).type;
+    const auto & serialization = serializations[index];
+    read_columns[index] = readFieldImpl(*in, *columns[index], type, serialization, columnName(index), format_settings, yield_strings);
 }
 
 inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
@@ -282,8 +255,13 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         if (!seen_columns[i])
             header.getByPosition(i).type->insertDefaultInto(*columns[i]);
 
-    /// return info about defaults set
-    ext.read_columns = read_columns;
+    /// Return info about defaults set.
+    /// If defaults_for_omitted_fields is set to 0, we should just leave already inserted defaults.
+    if (format_settings.defaults_for_omitted_fields)
+        ext.read_columns = read_columns;
+    else
+        ext.read_columns.assign(read_columns.size(), true);
+
     return true;
 }
 
@@ -355,8 +333,8 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
 
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory)
 {
-    factory.registerFileSegmentationEngine("JSONEachRow", &fileSegmentationEngineJSONEachRowImpl);
-    factory.registerFileSegmentationEngine("JSONStringsEachRow", &fileSegmentationEngineJSONEachRowImpl);
+    factory.registerFileSegmentationEngine("JSONEachRow", &fileSegmentationEngineJSONEachRow);
+    factory.registerFileSegmentationEngine("JSONStringsEachRow", &fileSegmentationEngineJSONEachRow);
 }
 
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory)

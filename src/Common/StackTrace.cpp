@@ -13,9 +13,7 @@
 #include <sstream>
 #include <unordered_map>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_UNWIND
 #    include <libunwind.h>
@@ -201,7 +199,7 @@ void StackTrace::symbolize(
     const StackTrace::FramePointers & frame_pointers, [[maybe_unused]] size_t offset,
     size_t size, StackTrace::Frames & frames)
 {
-#if defined(__ELF__) && !defined(__FreeBSD__) && !defined(ARCADIA_BUILD)
+#if defined(__ELF__) && !defined(__FreeBSD__)
 
     auto symbol_index_ptr = DB::SymbolIndex::instance();
     const DB::SymbolIndex & symbol_index = *symbol_index_ptr;
