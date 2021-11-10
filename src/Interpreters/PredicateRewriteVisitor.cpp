@@ -41,18 +41,41 @@ void PredicateRewriteVisitorData::visit(ASTSelectWithUnionQuery & union_select_q
         {
             visit(*child_union, internal_select_list[index]);
         }
-        else if (auto * child_intersect_except = internal_select_list[index]->as<ASTSelectIntersectExceptQuery>())
-        {
-            /// ASTSelectIntersectExceptQuery can have any depth and can contain
-            /// select, union and insertsect_except nodes.
-            /// TODO: add visitor?
-        }
         else if (auto * child_select = internal_select_list[index]->as<ASTSelectQuery>())
         {
-            if (index == 0)
-                visitFirstInternalSelect(*child_select, internal_select_list[0]);
-            else
-                visitOtherInternalSelect(*child_select, internal_select_list[index]);
+            visitInternalSelect(index, *child_select, internal_select_list[index]);
+        }
+        else if (auto * child_intersect_except = internal_select_list[index]->as<ASTSelectIntersectExceptQuery>())
+        {
+            visit(*child_intersect_except, internal_select_list[index]);
+        }
+    }
+}
+
+void PredicateRewriteVisitorData::visitInternalSelect(size_t index, ASTSelectQuery & select_node, ASTPtr & node)
+{
+    if (index == 0)
+        visitFirstInternalSelect(select_node, node);
+    else
+        visitOtherInternalSelect(select_node, node);
+}
+
+void PredicateRewriteVisitorData::visit(ASTSelectIntersectExceptQuery & intersect_except_query, ASTPtr &)
+{
+    auto internal_select_list = intersect_except_query.getListOfSelects();
+    for (size_t index = 0; index < internal_select_list.size(); ++index)
+    {
+        if (auto * union_node = internal_select_list[index]->as<ASTSelectWithUnionQuery>())
+        {
+            visit(*union_node, internal_select_list[index]);
+        }
+        else if (auto * select_node = internal_select_list[index]->as<ASTSelectQuery>())
+        {
+            visitInternalSelect(index, *select_node, internal_select_list[index]);
+        }
+        else if (auto * intersect_node = internal_select_list[index]->as<ASTSelectIntersectExceptQuery>())
+        {
+            visit(*intersect_node, internal_select_list[index]);
         }
     }
 }

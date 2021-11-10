@@ -448,7 +448,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     {
         fuzz(with_union->list_of_selects);
     }
-    if (auto * with_intersect_except = typeid_cast<ASTSelectIntersectExceptQuery *>(ast.get()))
+    else if (auto * with_intersect_except = typeid_cast<ASTSelectIntersectExceptQuery *>(ast.get()))
     {
         auto selects = with_intersect_except->getListOfSelects();
         fuzz(selects);
