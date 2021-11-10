@@ -69,6 +69,18 @@ struct FormatSettings
         UInt64 output_rows_in_file = 1;
     } avro;
 
+    enum class BoolFormat
+    {
+        true_false_lower_case, //true or false
+        true_false_camel_case, //True or False
+        T_F, //T or F
+        Yes_No, //Yes or No
+        Y_N, //Y or N
+        On_Off, //On or Off
+    };
+
+    BoolFormat bool_format = BoolFormat::true_false_lower_case;
+
     struct CSV
     {
         char delimiter = ',';
