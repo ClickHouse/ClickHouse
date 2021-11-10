@@ -33,5 +33,4 @@ public:
     virtual off_t getPosition() = 0;
 };
 
-using SeekableReadBufferPtr = std::shared_ptr<SeekableReadBuffer>;
 }

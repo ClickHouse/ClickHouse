@@ -7,7 +7,9 @@
 
 #include <variant>
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 
 namespace DB

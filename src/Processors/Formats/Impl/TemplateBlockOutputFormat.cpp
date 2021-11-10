@@ -130,7 +130,7 @@ void TemplateBlockOutputFormat::serializeField(const IColumn & column, const ISe
             serialization.serializeTextXML(column, row_num, out, settings);
             break;
         case ColumnFormat::Raw:
-            serialization.serializeTextRaw(column, row_num, out, settings);
+            serialization.serializeText(column, row_num, out, settings);
             break;
         default:
             __builtin_unreachable();
@@ -227,9 +227,9 @@ void TemplateBlockOutputFormat::finalize()
 }
 
 
-void registerOutputFormatTemplate(FormatFactory & factory)
+void registerOutputFormatProcessorTemplate(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Template", [](
+    factory.registerOutputFormatProcessor("Template", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams &,
@@ -267,7 +267,7 @@ void registerOutputFormatTemplate(FormatFactory & factory)
         return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format, settings.template_settings.row_between_delimiter);
     });
 
-    factory.registerOutputFormat("CustomSeparated", [](
+    factory.registerOutputFormatProcessor("CustomSeparated", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams &,

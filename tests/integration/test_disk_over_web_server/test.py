@@ -11,7 +11,6 @@ def cluster():
         cluster.add_instance("node1", main_configs=["configs/storage_conf.xml"], with_nginx=True)
         cluster.add_instance("node2", main_configs=["configs/storage_conf_web.xml"], with_nginx=True)
         cluster.add_instance("node3", main_configs=["configs/storage_conf_web.xml"], with_nginx=True)
-        cluster.add_instance("node_async_read", main_configs=["configs/storage_conf_web.xml"], user_configs=["configs/async_read.xml"], with_nginx=True)
         cluster.start()
 
         node1 = cluster.instances["node1"]
@@ -27,7 +26,7 @@ def cluster():
             print(f'Metadata: {metadata_path}')
 
             node1.exec_in_container(['bash', '-c',
-                                    '/usr/bin/clickhouse static-files-disk-uploader --test-mode --url http://nginx:80/test1 --metadata-path {}'.format(metadata_path)], user='root')
+                                    '/usr/bin/clickhouse static-files-disk-uploader --test-mode --files-prefix data --url http://nginx:80/test1 --metadata-path {}'.format(metadata_path)], user='root')
             parts = metadata_path.split('/')
             uuids.append(parts[3])
             print(f'UUID: {parts[3]}')
@@ -38,10 +37,9 @@ def cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("node_name", ["node2", "node_async_read"])
-def test_usage(cluster, node_name):
+def test_usage(cluster):
     node1 = cluster.instances["node1"]
-    node2 = cluster.instances[node_name]
+    node2 = cluster.instances["node2"]
     global uuids
     assert(len(uuids) == 3)
     for i in range(3):
@@ -50,8 +48,6 @@ def test_usage(cluster, node_name):
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
         """.format(i, uuids[i], i, i))
-
-        result = node2.query("SELECT * FROM test{} settings max_threads=20".format(i))
 
         result = node2.query("SELECT count() FROM test{}".format(i))
         assert(int(result) == 500000 * (i+1))
@@ -86,3 +82,4 @@ def test_incorrect_usage(cluster):
     assert("Table is read-only" in result)
 
     node2.query("DROP TABLE test0")
+

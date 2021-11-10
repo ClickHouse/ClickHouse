@@ -8,7 +8,7 @@
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
 
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 namespace DB
@@ -68,7 +68,8 @@ Columns DirectDictionary<dictionary_key_type>::getColumns(
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    QueryPipeline pipeline(getSourceBlockInputStream(key_columns, requested_keys));
+    QueryPipeline pipeline;
+    pipeline.init(getSourceBlockInputStream(key_columns, requested_keys));
 
     PullingPipelineExecutor executor(pipeline);
 
@@ -184,7 +185,9 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::hasKeys(
     size_t dictionary_keys_size = dict_struct.getKeysNames().size();
     block_key_columns.reserve(dictionary_keys_size);
 
-    QueryPipeline pipeline(getSourceBlockInputStream(key_columns, requested_keys));
+    QueryPipeline pipeline;
+    pipeline.init(getSourceBlockInputStream(key_columns, requested_keys));
+
     PullingPipelineExecutor executor(pipeline);
 
     size_t keys_found = 0;
@@ -290,7 +293,7 @@ Pipe DirectDictionary<dictionary_key_type>::getSourceBlockInputStream(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */, size_t /* num_streams */) const
+Pipe DirectDictionary<dictionary_key_type>::read(const Names & /* column_names */, size_t /* max_block_size */) const
 {
     return source_ptr->loadAll();
 }

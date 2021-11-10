@@ -30,7 +30,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     [rabbitmq_skip_broken_messages = N,]
     [rabbitmq_max_block_size = N,]
     [rabbitmq_flush_interval_ms = N]
-    [rabbitmq_queue_settings_list = 'x-dead-letter-exchange=my-dlx,x-max-length=10,x-overflow=reject-publish']
 ```
 
 Обязательные параметры:
@@ -52,7 +51,6 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 -   `rabbitmq_skip_broken_messages` – максимальное количество некорректных сообщений в блоке. Если `rabbitmq_skip_broken_messages = N`, то движок отбрасывает `N` сообщений, которые не получилось обработать. Одно сообщение в точности соответствует одной записи (строке). Значение по умолчанию – 0.
 -   `rabbitmq_max_block_size`
 -   `rabbitmq_flush_interval_ms`
--   `rabbitmq_queue_settings_list` - позволяет самостоятельно установить настройки RabbitMQ при создании очереди. Доступные настройки: `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. Настрока `durable` для очереди ставится автоматически.
 
 Настройки форматов данных также могут быть добавлены в списке RabbitMQ настроек.
 

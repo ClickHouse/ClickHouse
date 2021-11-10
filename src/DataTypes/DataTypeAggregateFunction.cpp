@@ -3,6 +3,8 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 
+#include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/FieldVisitorToString.h>
 

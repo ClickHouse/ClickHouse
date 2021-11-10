@@ -6,11 +6,9 @@ cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance')
 
 
-def create_and_fill_table(engine="MergeTree"):
-    if engine == "MergeTree":
-        engine = "MergeTree ORDER BY y PARTITION BY x%10"
+def create_and_fill_table():
     instance.query("CREATE DATABASE test")
-    instance.query(f"CREATE TABLE test.table(x UInt32, y String) ENGINE={engine}")
+    instance.query("CREATE TABLE test.table(x UInt32, y String) ENGINE=MergeTree ORDER BY y PARTITION BY x%10")
     instance.query("INSERT INTO test.table SELECT number, toString(number) FROM numbers(100)")
 
 
@@ -38,11 +36,9 @@ def new_backup_name():
     return f"test-backup-{backup_id_counter}"
 
 
-
-@pytest.mark.parametrize("engine", ["MergeTree", "Log", "TinyLog", "StripeLog"])
-def test_restore_table(engine):
+def test_restore_table():
     backup_name = new_backup_name()
-    create_and_fill_table(engine=engine)
+    create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO '{backup_name}'")
@@ -54,10 +50,9 @@ def test_restore_table(engine):
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
 
 
-@pytest.mark.parametrize("engine", ["MergeTree", "Log", "TinyLog", "StripeLog"])
-def test_restore_table_into_existing_table(engine):
+def test_restore_table_into_existing_table():
     backup_name = new_backup_name()
-    create_and_fill_table(engine=engine)
+    create_and_fill_table()
 
     assert instance.query("SELECT count(), sum(x) FROM test.table") == "100\t4950\n"
     instance.query(f"BACKUP TABLE test.table TO '{backup_name}'")
