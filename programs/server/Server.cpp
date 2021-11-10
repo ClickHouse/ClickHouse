@@ -878,7 +878,7 @@ if (ThreadFuzzer::instance().isEffective())
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
-            CertificateReloader::instance().reload(*config);
+            CertificateReloader::instance().tryLoad(*config);
 #endif
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
@@ -1468,7 +1468,7 @@ if (ThreadFuzzer::instance().isEffective())
                 ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
 #if USE_SSL
-        CertificateReloader::instance().init(config());
+        CertificateReloader::instance().tryLoad(config());
 #endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
