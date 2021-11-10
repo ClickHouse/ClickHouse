@@ -130,12 +130,16 @@ Only a small set of symbols are escaped. You can easily stumble onto a string va
 
 Arrays are written as a list of comma-separated values in square brackets. Number items in the array are formatted as normally. `Date` and `DateTime` types are written in single quotes. Strings are written in single quotes with the same escaping rules as above.
 
-[NULL](../sql-reference/syntax.md) is formatted as `\N`.
+[NULL](../sql-reference/syntax.md) is formatted according to setting [format_tsv_null_representation](../operations/settings/settings.md#settings-format_tsv_null_representation) (default value is `\N`).
+
 
 If setting [input_format_tsv_empty_as_default](../operations/settings/settings.md#settings-input_format_tsv_empty_as_default) is enabled,
 empty input fields are replaced with default values. For complex default expressions [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#settings-input_format_defaults_for_omitted_fields) must be enabled too.
 
 Each element of [Nested](../sql-reference/data-types/nested-data-structures/nested.md) structures is represented as array.
+
+In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to ENUM id.
+If input data contains only ENUM ids, it's recommended to enable the setting [input_format_tsv_enum_as_number](../operations/settings/settings.md#settings-input_format_tsv_enum_as_number) to optimize ENUM parsing.
 
 For example:
 
@@ -405,7 +409,10 @@ When parsing, all values can be parsed either with or without quotes. Both doubl
 If setting [input_format_csv_empty_as_default](../operations/settings/settings.md#settings-input_format_csv_empty_as_default) is enabled,
 empty unquoted input values are replaced with default values. For complex default expressions [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#settings-input_format_defaults_for_omitted_fields) must be enabled too.
 
-`NULL` is formatted as `\N` or `NULL` or an empty unquoted string (see settings [input_format_csv_unquoted_null_literal_as_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) and [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
+`NULL` is formatted according to setting [format_csv_null_representation](../operations/settings/settings.md#settings-format_csv_null_representation) (default value is `\N`).
+
+In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to ENUM id.
+If input data contains only ENUM ids, it's recommended to enable the setting [input_format_csv_enum_as_number](../operations/settings/settings.md#settings-input_format_csv_enum_as_number) to optimize ENUM parsing.
 
 The CSV format supports the output of totals and extremes the same way as `TabSeparated`.
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/Common/AccessFlags.h>
+#include <tuple>
 
 
 namespace DB
@@ -27,51 +28,19 @@ struct AccessRightsElement
 
     AccessRightsElement(AccessFlags access_flags_) : access_flags(access_flags_) {}
 
-    AccessRightsElement(AccessFlags access_flags_, const std::string_view & database_)
-        : access_flags(access_flags_), database(database_), any_database(false)
-    {
-    }
-
-    AccessRightsElement(AccessFlags access_flags_, const std::string_view & database_, const std::string_view & table_)
-        : access_flags(access_flags_), database(database_), table(table_), any_database(false), any_table(false)
-    {
-    }
-
+    AccessRightsElement(AccessFlags access_flags_, const std::string_view & database_);
+    AccessRightsElement(AccessFlags access_flags_, const std::string_view & database_, const std::string_view & table_);
     AccessRightsElement(
-        AccessFlags access_flags_, const std::string_view & database_, const std::string_view & table_, const std::string_view & column_)
-        : access_flags(access_flags_)
-        , database(database_)
-        , table(table_)
-        , columns({String{column_}})
-        , any_database(false)
-        , any_table(false)
-        , any_column(false)
-    {
-    }
+        AccessFlags access_flags_, const std::string_view & database_, const std::string_view & table_, const std::string_view & column_);
 
     AccessRightsElement(
         AccessFlags access_flags_,
         const std::string_view & database_,
         const std::string_view & table_,
-        const std::vector<std::string_view> & columns_)
-        : access_flags(access_flags_), database(database_), table(table_), any_database(false), any_table(false), any_column(false)
-    {
-        columns.resize(columns_.size());
-        for (size_t i = 0; i != columns_.size(); ++i)
-            columns[i] = String{columns_[i]};
-    }
+        const std::vector<std::string_view> & columns_);
 
     AccessRightsElement(
-        AccessFlags access_flags_, const std::string_view & database_, const std::string_view & table_, const Strings & columns_)
-        : access_flags(access_flags_)
-        , database(database_)
-        , table(table_)
-        , columns(columns_)
-        , any_database(false)
-        , any_table(false)
-        , any_column(false)
-    {
-    }
+        AccessFlags access_flags_, const std::string_view & database_, const std::string_view & table_, const Strings & columns_);
 
     bool empty() const { return !access_flags || (!any_column && columns.empty()); }
 
@@ -91,26 +60,12 @@ struct AccessRightsElement
     }
 
     /// Resets flags which cannot be granted.
-    void eraseNonGrantable()
-    {
-        if (!any_column)
-            access_flags &= AccessFlags::allFlagsGrantableOnColumnLevel();
-        else if (!any_table)
-            access_flags &= AccessFlags::allFlagsGrantableOnTableLevel();
-        else if (!any_database)
-            access_flags &= AccessFlags::allFlagsGrantableOnDatabaseLevel();
-        else
-            access_flags &= AccessFlags::allFlagsGrantableOnGlobalLevel();
-    }
+    void eraseNonGrantable();
 
     bool isEmptyDatabase() const { return !any_database && database.empty(); }
 
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
-    void replaceEmptyDatabase(const String & current_database)
-    {
-        if (isEmptyDatabase())
-            database = current_database;
-    }
+    void replaceEmptyDatabase(const String & current_database);
 
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
@@ -125,27 +80,15 @@ public:
     using Base = std::vector<AccessRightsElement>;
     using Base::Base;
 
-    bool empty() const { return std::all_of(begin(), end(), [](const AccessRightsElement & e) { return e.empty(); }); }
-
-    bool sameDatabaseAndTable() const
-    {
-        return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameDatabaseAndTable(front()); });
-    }
-
-    bool sameOptions() const
-    {
-        return (size() < 2) || std::all_of(std::next(begin()), end(), [this](const AccessRightsElement & e) { return e.sameOptions(front()); });
-    }
+    bool empty() const;
+    bool sameDatabaseAndTable() const;
+    bool sameOptions() const;
 
     /// Resets flags which cannot be granted.
     void eraseNonGrantable();
 
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
-    void replaceEmptyDatabase(const String & current_database)
-    {
-        for (auto & element : *this)
-            element.replaceEmptyDatabase(current_database);
-    }
+    void replaceEmptyDatabase(const String & current_database);
 
     /// Returns a human-readable representation like "GRANT SELECT, UPDATE(x, y) ON db.table".
     String toString() const;
