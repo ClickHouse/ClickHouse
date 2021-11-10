@@ -135,6 +135,11 @@ namespace detail
             return read_range.begin || read_range.end || retry_with_range_header;
         }
 
+        size_t getOffset() const
+        {
+            return read_range.begin + bytes_read;
+        }
+
         std::istream * call(Poco::URI uri_, Poco::Net::HTTPResponse & response)
         {
             // With empty path poco will send "POST  HTTP/1.1" its bug.
@@ -154,10 +159,10 @@ namespace detail
             {
                 String range_header_value;
                 if (read_range.end)
-                    range_header_value = fmt::format("bytes={}-{}", read_range.begin + bytes_read, *read_range.end);
+                    range_header_value = fmt::format("bytes={}-{}", getOffset(), *read_range.end);
                 else
-                    range_header_value = fmt::format("bytes={}-", read_range.begin + bytes_read);
-                LOG_TRACE(log, "Adding header: Range: {}", range_header_value);
+                    range_header_value = fmt::format("bytes={}-", getOffset());
+                LOG_TEST(log, "Adding header: Range: {}", range_header_value);
                 request.set("Range", range_header_value);
             }
 
@@ -273,7 +278,7 @@ namespace detail
             }
 
             if (!bytes_read && !read_range.end && response.hasContentLength())
-                read_range.end = response.getContentLength();
+                read_range.end = read_range.begin + response.getContentLength();
 
             try
             {
@@ -306,7 +311,7 @@ namespace detail
             if (next_callback)
                 next_callback(count());
 
-            if (read_range.end && bytes_read == read_range.end.value())
+            if (read_range.end && getOffset() == read_range.end.value())
                 return false;
 
             if (impl)
@@ -347,8 +352,11 @@ namespace detail
                         /// If error is not retriable -- false is returned and exception is set.
                         /// Otherwise the error is thrown and retries continue.
                         bool initialized = initialize();
-                        if (!initialized && exception)
+                        if (!initialized)
+                        {
+                            assert(exception);
                             break;
+                        }
 
                         if (use_external_buffer)
                         {
@@ -377,7 +385,7 @@ namespace detail
                               "HTTP request to `{}` failed at try {}/{} with bytes read: {}/{}. "
                               "Error: {}. (Current backoff wait is {}/{} ms)",
                               uri.toString(), i, settings.http_max_tries,
-                              bytes_read, read_range.end ? toString(*read_range.end) : "unknown",
+                              getOffset(), read_range.end ? toString(*read_range.end) : "unknown",
                               e.displayText(),
                               milliseconds_to_wait, settings.http_retry_max_backoff_ms);
 
