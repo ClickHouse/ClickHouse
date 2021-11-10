@@ -10,6 +10,8 @@
 namespace DB
 {
 
+class ASTSelectIntersectExceptQuery;
+
 class PredicateRewriteVisitorData : WithContext
 {
 public:
@@ -40,7 +42,11 @@ private:
 
     void visitOtherInternalSelect(ASTSelectQuery & select_query, ASTPtr &);
 
+    void visit(ASTSelectIntersectExceptQuery & intersect_query, ASTPtr &);
+
     bool rewriteSubquery(ASTSelectQuery & subquery, const Names & inner_columns);
+
+    void visitInternalSelect(size_t index, ASTSelectQuery & select_query, ASTPtr & node);
 };
 
 using PredicateRewriteMatcher = OneTypeMatcher<PredicateRewriteVisitorData, PredicateRewriteVisitorData::needChild>;

@@ -73,8 +73,7 @@ void ApplyWithGlobalVisitor::visit(ASTPtr & ast)
 {
     if (ASTSelectWithUnionQuery * node_union = ast->as<ASTSelectWithUnionQuery>())
     {
-        auto * first_select = typeid_cast<ASTSelectQuery *>(node_union->list_of_selects->children[0].get());
-        if (first_select)
+        if (auto * first_select = typeid_cast<ASTSelectQuery *>(node_union->list_of_selects->children[0].get()))
         {
             ASTPtr with_expression_list = first_select->with();
             if (with_expression_list)
