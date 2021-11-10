@@ -4,7 +4,7 @@ import logging
 import time
 import sys
 import os
-
+import shutil
 import requests
 
 from compress_files import decompress_fast, compress_fast
@@ -52,8 +52,8 @@ def dowload_file_with_progress(url, path):
 
 def get_ccache_if_not_exists(path_to_ccache_dir, s3_helper, current_pr_number, temp_path):
     if os.path.exists(path_to_ccache_dir):
-        logging.info("Ccache already exists, don't download anything")
-        return
+        shutil.rmtree(path_to_ccache_dir)
+        logging.info("Ccache already exists, removing it")
 
     ccache_name = os.path.basename(path_to_ccache_dir)
     cache_found = False
