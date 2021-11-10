@@ -49,6 +49,7 @@ Internal coordination settings are located in `<keeper_server>.<coordination_set
 -    `auto_forwarding` — Allow to forward write requests from followers to the leader (default: true).
 -    `shutdown_timeout` — Wait to finish internal connections and shutdown (ms) (default: 5000).
 -    `startup_timeout` — If the server doesn't connect to other quorum participants in the specified timeout it will terminate (ms) (default: 30000).
+-    `four_letter_word_white_list` — White list of 4lw commands (default: "conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro").
 
 Quorum configuration is located in `<keeper_server>.<raft_configuration>` section and contain servers description. The only parameter for the whole quorum is `secure`, which enables encrypted connection for communication between quorum participants. The main parameters for each `<server>` are:
 
@@ -102,16 +103,16 @@ clickhouse-keeper --config /etc/your_path_to_config/config.xml --daemon
 
 ## Four Latter Word Commands
 
-ClickHouse Keeper also provides 4lw commands which are almost the same with Zookeeper. Each command is composed of four letters such as 'mntr', 'stat' etc. There are some more interesting commands: "stat" "stat" gives some general information about the server and connected clients, while "srvr" and "cons" give extended details on server and connections respectively.  
+ClickHouse Keeper also provides 4lw commands which are almost the same with Zookeeper. Each command is composed of four letters such as `mntr`, `stat` etc. There are some more interesting commands: `stat` gives some general information about the server and connected clients, while `srvr` and `cons` give extended details on server and connections respectively.  
 
-Four Letter Words has a white list configuration `four_letter_word_white_list` which has default value "conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro".
+The 4lw commands has a white list configuration `four_letter_word_white_list` which has default value "conf,cons,crst,envi,ruok,srst,srvr,stat,wchc,wchs,dirs,mntr,isro".
 
 You can issue the commands to ClickHouse Keeper via telnet or nc, at the client port.
 ```
 echo mntr | nc localhost 9181
 ```
 
-Bellow are the detailed 4lw commands:
+Bellow is the detailed 4lw commands:
 
 - ruok : Tests if server is running in a non-error state. The server will respond with imok if it is running. Otherwise it will not respond at all. A response of "imok" does not necessarily indicate that the server has joined the quorum, just that the server process is active and bound to the specified client port. Use "stat" for details on state wrt quorum and client connection information.
 
@@ -176,6 +177,12 @@ Node count: 4
 
 ```
 
+- srst : Reset server statistics. The command will affect the result of `srvr`, `mntr` and `stat`.
+
+```
+Server stats reset.
+```
+
 - conf : Print details about serving configuration.
 
 ```
@@ -233,16 +240,11 @@ os.arch=x86_64
 os.version=19.6.0
 cpu.count=12
 user.name=root
-user.home=/Users/wujianchao5/
-user.dir=/Users/wujianchao5/project/jd/clickhouse/cmake-build-debug/programs/
+user.home=/Users/JackyWoo/
+user.dir=/Users/JackyWoo/project/jd/clickhouse/cmake-build-debug/programs/
 user.tmp=/var/folders/b4/smbq5mfj7578f2jzwn602tt40000gn/T/
 ```
 
-- srst : Reset server statistics.
-
-```
-Server stats reset.
-```
 
 - dirs : Shows the total size of snapshot and log files in bytes
 
@@ -267,15 +269,15 @@ Total watches:1
 - wchc : Lists detailed information on watches for the server, by session. This outputs a list of sessions(connections) with associated watches (paths). Note, depending on the number of watches this operation may be expensive (ie impact server performance), use it carefully.
 
 ```
-/clickhouse/task_queue/ddl
-        0x0000000000000001
+0x0000000000000001
+    /clickhouse/task_queue/ddl
 ```
 
 - wchp : Lists detailed information on watches for the server, by path. This outputs a list of paths (znodes) with associated sessions. Note, depending on the number of watches this operation may be expensive (ie impact server performance), use it carefully.
 
 ```
-0x0000000000000001
-        /clickhouse/task_queue/ddl
+/clickhouse/task_queue/ddl
+    0x0000000000000001
 ```
 
 - dump : Lists the outstanding sessions and ephemeral nodes. This only works on the leader.
@@ -286,7 +288,7 @@ Sessions dump (2):
 0x0000000000000002
 Sessions with Ephemerals (1):
 0x0000000000000001
- /watch_path
+ /clickhouse/task_queue/ddl
 ```
 
 ## [experimental] Migration from ZooKeeper
