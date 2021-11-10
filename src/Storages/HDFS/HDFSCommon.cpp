@@ -213,7 +213,7 @@ String getNameNodeCluster(const String &hdfs_url)
 
     return hdfs_url.substr(pos1, pos2 - pos1);
 }
-  
+
 void checkHDFSURL(const String & url)
 {
     if (!re2::RE2::FullMatch(url, HDFS_URL_REGEXP))
