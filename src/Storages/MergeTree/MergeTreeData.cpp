@@ -1369,19 +1369,22 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const MergeTreeDataMergerMuta
                 continue;
             }
             const std::string & full_path = fullPath(disk, it->path());
-            if (merger_mutator.hasTemporaryPart(basename))
-            {
-                LOG_WARNING(log, "{} is an active destination for one of merge/mutation (consider increasing temporary_directories_lifetime setting)", full_path);
-                continue;
-            }
 
             try
             {
                 if (disk->isDirectory(it->path()) && isOldPartDirectory(disk, it->path(), deadline))
                 {
-                    LOG_WARNING(log, "Removing temporary directory {}", full_path);
-                    disk->removeRecursive(it->path());
-                    ++cleared_count;
+                    if (merger_mutator.hasTemporaryPart(basename))
+                    {
+                        LOG_WARNING(log, "{} is an active destination for one of merge/mutation (consider increasing temporary_directories_lifetime setting)", full_path);
+                        continue;
+                    }
+                    else
+                    {
+                        LOG_WARNING(log, "Removing temporary directory {}", full_path);
+                        disk->removeRecursive(it->path());
+                        ++cleared_count;
+                    }
                 }
             }
             /// see getModificationTime()
