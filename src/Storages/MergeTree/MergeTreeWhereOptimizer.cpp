@@ -14,6 +14,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <base/map.h>
 
+#include <Poco/Logger.h>
 
 namespace DB
 {

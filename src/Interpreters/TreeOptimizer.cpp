@@ -4,6 +4,9 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
+#include <Interpreters/WhereConstraintsOptimizer.h>
+#include <Storages/MergeTree/SubstituteColumnOptimizer.h>
+#include <Interpreters/TreeCNFConverter.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
@@ -539,6 +542,37 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
         elems = std::move(unique_elems);
 }
 
+/// Use constraints to get rid of useless parts of query
+void optimizeWithConstraints(ASTSelectQuery * select_query,
+                             Aliases & /*aliases*/,
+                             const NameSet & /*source_columns_set*/,
+                             const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
+                             const StorageMetadataPtr & metadata_snapshot,
+                             const bool optimize_append_index)
+{
+    WhereConstraintsOptimizer(select_query, metadata_snapshot, optimize_append_index).perform();
+}
+
+void optimizeSubstituteColumn(ASTSelectQuery * select_query,
+                              Aliases & /*aliases*/,
+                              const NameSet & /*source_columns_set*/,
+                              const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
+                              const StorageMetadataPtr & metadata_snapshot,
+                              const ConstStoragePtr & storage)
+{
+    SubstituteColumnOptimizer(select_query, metadata_snapshot, storage).perform();
+}
+
+/// transform where to CNF for more convenient optimization
+void convertQueryToCNF(ASTSelectQuery * select_query)
+{
+    if (select_query->where())
+    {
+        auto cnf_form = TreeCNFConverter::toCNF(select_query->where()).pushNotInFuntions();
+        select_query->refWhere() = TreeCNFConverter::fromCNF(cnf_form);
+    }
+}
+
 /// Remove duplicated columns from USING(...).
 void optimizeUsing(const ASTSelectQuery * select_query)
 {
@@ -699,6 +733,19 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// Move arithmetic operations out of aggregation functions
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
         optimizeAggregationFunctions(query);
+
+    if (settings.convert_query_to_cnf)
+        convertQueryToCNF(select_query);
+
+    if (settings.convert_query_to_cnf && settings.optimize_using_constraints)
+    {
+        optimizeWithConstraints(select_query, result.aliases, result.source_columns_set,
+            tables_with_columns, result.metadata_snapshot, settings.optimize_append_index);
+
+        if (settings.optimize_substitute_columns)
+            optimizeSubstituteColumn(select_query, result.aliases, result.source_columns_set,
+                tables_with_columns, result.metadata_snapshot, result.storage);
+    }
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, context);
