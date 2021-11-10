@@ -30,3 +30,13 @@ EXPLAIN SYNTAX SELECT substring(reverse(b), 1, 1) AS t1, a AS t2 FROM column_swa
 EXPLAIN SYNTAX SELECT substring(reverse(b), 1, 1) FROM column_swap_test_test WHERE substring(reverse(b), 1, 1) = 'c';
 
 DROP TABLE column_swap_test_test;
+
+DROP TABLE IF EXISTS t_bad_constraint;
+
+CREATE TABLE t_bad_constraint(a UInt32, s String, CONSTRAINT c1 ASSUME a = toUInt32(s)) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_bad_constraint SELECT number, randomPrintableASCII(100) FROM numbers(10000);
+
+EXPLAIN SYNTAX SELECT a FROM t_bad_constraint;
+
+DROP TABLE t_bad_constraint;

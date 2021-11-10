@@ -565,9 +565,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
         auto insert_it = constraints.end();
-
-        constraints.emplace(insert_it, std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint_decl));
-        metadata.constraints.updateConstraints(constraints);
+        constraints.emplace(insert_it, constraint_decl);
+        metadata.constraints = ConstraintsDescription(constraints);
     }
     else if (type == DROP_CONSTRAINT)
     {
@@ -588,7 +587,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                     ErrorCodes::BAD_ARGUMENTS);
         }
         constraints.erase(erase_it);
-        metadata.constraints.updateConstraints(constraints);
+        metadata.constraints = ConstraintsDescription(constraints);
     }
     else if (type == ADD_PROJECTION)
     {
@@ -661,7 +660,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         auto constraints_data = metadata.constraints.getConstraints();
         for (auto & constraint : constraints_data)
             rename_visitor.visit(constraint);
-        metadata.constraints.updateConstraints(constraints_data);
+        metadata.constraints = ConstraintsDescription(constraints_data);
 
         if (metadata.isSortingKeyDefined())
             rename_visitor.visit(metadata.sorting_key.definition_ast);

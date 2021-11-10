@@ -14,7 +14,7 @@ struct ConstraintsDescription
 {
 public:
     ConstraintsDescription() { update(); }
-
+    ConstraintsDescription(const ASTs & constraints_);
     ConstraintsDescription(const ConstraintsDescription & other);
     ConstraintsDescription & operator=(const ConstraintsDescription & other);
 
@@ -23,7 +23,7 @@ public:
 
     static ConstraintsDescription parse(const String & str);
 
-    enum class ConstraintType
+    enum class ConstraintType : UInt8
     {
         CHECK = 1,
         ASSUME = 2,
@@ -33,8 +33,7 @@ public:
 
     ASTs filterConstraints(ConstraintType selection) const;
 
-    const std::vector<ASTPtr> & getConstraints() const;
-    void updateConstraints(const std::vector<ASTPtr> & constraints);
+    const ASTs & getConstraints() const;
 
     const std::vector<std::vector<CNFQuery::AtomicFormula>> & getConstraintData() const;
     std::vector<CNFQuery::AtomicFormula> getAtomicConstraintData() const;
@@ -45,8 +44,8 @@ public:
 
     struct AtomId
     {
-        size_t and_group;
-        size_t atom;
+        size_t group_id;
+        size_t atom_id;
     };
 
     using AtomIds = std::vector<AtomId>;
@@ -59,7 +58,7 @@ private:
     std::unique_ptr<ComparisonGraph> buildGraph() const;
     void update();
 
-    std::vector<ASTPtr> constraints;
+    ASTs constraints;
     std::vector<std::vector<CNFQuery::AtomicFormula>> cnf_constraints;
     std::map<IAST::Hash, AtomIds> ast_to_atom_ids;
     std::unique_ptr<ComparisonGraph> graph;

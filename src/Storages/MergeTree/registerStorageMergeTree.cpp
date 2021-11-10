@@ -711,7 +711,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.query.columns_list && args.query.columns_list->constraints)
             for (auto & constraint : args.query.columns_list->constraints->children)
                 constraints.push_back(constraint);
-        metadata.constraints.updateConstraints(constraints);
+        metadata.constraints = ConstraintsDescription(constraints);
 
         auto column_ttl_asts = args.columns.getColumnTTLs();
         for (const auto & [name, ast] : column_ttl_asts)

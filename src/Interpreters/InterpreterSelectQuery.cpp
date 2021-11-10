@@ -411,8 +411,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 current_info.query = query_ptr;
                 current_info.syntax_analyzer_result = syntax_analyzer_result;
 
-                log->information("TRY MOVE TO PREWHERE ---------------------");
-                log->information(query.where()->dumpTree());
                 MergeTreeWhereOptimizer{
                     current_info,
                     context,

@@ -16,6 +16,10 @@ namespace DB
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
+/// Optimizer that extracts constraints that
+/// depends only on columns of primary key
+/// and tries to add function 'indexHint' to
+/// WHERE clause, which reduces amount of read data.
 class AddIndexConstraintsOptimizer final
 {
 public:

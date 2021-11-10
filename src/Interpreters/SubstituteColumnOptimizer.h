@@ -14,6 +14,8 @@ namespace DB
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
+/// Optimizer that tries to replace columns to equal columns (according to constraints)
+/// with lower size (accorsing to compressed and uncomressed size).
 class SubstituteColumnOptimizer
 {
 public:

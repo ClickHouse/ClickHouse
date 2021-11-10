@@ -5,7 +5,7 @@
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 #include <Interpreters/WhereConstraintsOptimizer.h>
-#include <Storages/MergeTree/SubstituteColumnOptimizer.h>
+#include <Interpreters/SubstituteColumnOptimizer.h>
 #include <Interpreters/TreeCNFConverter.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
@@ -563,7 +563,7 @@ void optimizeSubstituteColumn(ASTSelectQuery * select_query,
     SubstituteColumnOptimizer(select_query, metadata_snapshot, storage).perform();
 }
 
-/// transform where to CNF for more convenient optimization
+/// Transform WHERE to CNF for more convenient optimization.
 void convertQueryToCNF(ASTSelectQuery * select_query)
 {
     if (select_query->where())

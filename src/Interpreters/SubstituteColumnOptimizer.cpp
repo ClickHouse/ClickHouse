@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/SubstituteColumnOptimizer.h>
+#include <Interpreters/SubstituteColumnOptimizer.h>
 #include <Interpreters/TreeCNFConverter.h>
 #include <Interpreters/ComparisonGraph.h>
 #include <Parsers/IAST_fwd.h>
@@ -21,8 +21,7 @@ namespace ErrorCodes
 namespace
 {
 
-const String COMPONENT = "__aorLwT30aH_comp";
-const String COMPONENT_SEPARATOR = "_";
+constexpr auto COMPONENT_PART = "__component_";
 constexpr UInt64 COLUMN_PENALTY = 10 * 1024 * 1024;
 constexpr Int64 INDEX_PRICE = -1'000'000'000'000'000'000;
 
@@ -55,14 +54,13 @@ public:
 
     static void visit(ASTPtr & ast, Data & data)
     {
-        const auto id = data.graph.getComponentId(ast);
-        if (id)
+        if (auto id = data.graph.getComponentId(ast))
         {
-            const String name = COMPONENT + std::to_string(id.value()) + COMPONENT_SEPARATOR + std::to_string(++data.current_id);
+            const String name = COMPONENT_PART + std::to_string(*id) + "_" + std::to_string(++data.current_id);
             data.old_name[name] = ast->getAliasOrColumnName();
-            data.component[name] = id.value();
+            data.component[name] = *id;
+            data.components.insert(*id);
             ast = std::make_shared<ASTIdentifier>(name);
-            data.components.insert(id.value());
         }
     }
 
@@ -74,19 +72,6 @@ public:
 
 using ComponentVisitor = ComponentMatcher::Visitor;
 
-
-void collectIdentifiers(const ASTPtr & ast, std::unordered_set<String> & identifiers)
-{
-    const auto * identifier = ast->as<ASTIdentifier>();
-    if (identifier)
-        identifiers.insert(identifier->name());
-    else
-    {
-        for (const auto & child : ast->children)
-            collectIdentifiers(child, identifiers);
-    }
-}
-
 struct ColumnPrice
 {
     Int64 compressed_size;
@@ -95,11 +80,10 @@ struct ColumnPrice
     ColumnPrice(const Int64 compressed_size_, const Int64 uncompressed_size_)
         : compressed_size(compressed_size_)
         , uncompressed_size(uncompressed_size_)
-    {}
+    {
+    }
 
-    ColumnPrice()
-        : ColumnPrice(0, 0)
-    {}
+    ColumnPrice() : ColumnPrice(0, 0) {}
 
     bool operator<(const ColumnPrice & that) const
     {
@@ -127,6 +111,8 @@ struct ColumnPrice
     }
 };
 
+using ColumnPriceByName = std::unordered_map<String, ColumnPrice>;
+
 class SubstituteColumnMatcher
 {
 public:
@@ -148,10 +134,10 @@ public:
             const String & name = identifier->name();
             const auto component_id = data.name_to_component_id.at(name);
             auto new_ast = data.id_to_expression_map.at(component_id)->clone();
+
             if (data.is_select)
-            {
                 new_ast->setAlias(data.old_name.at(name));
-            }
+
             ast = new_ast;
         }
     }
@@ -165,8 +151,8 @@ public:
 using SubstituteColumnVisitor = SubstituteColumnMatcher::Visitor;
 
 ColumnPrice calculatePrice(
-    const std::unordered_map<std::string, ColumnPrice> & column_prices,
-    std::unordered_set<String> identifiers)
+    const ColumnPriceByName & column_prices,
+    const IdentifierNameSet & identifiers)
 {
     ColumnPrice result(0, 0);
     for (const auto & ident : identifiers)
@@ -174,12 +160,16 @@ ColumnPrice calculatePrice(
     return result;
 }
 
-// TODO: branch-and-bound
+/// We need to choose one expression in each component,
+/// so that total price of all read columns will be minimal.
+/// Bruteforce equal ASTs in each component and calculate
+/// price of all columns on which ast depends.
+/// TODO: branch-and-bound
 void bruteforce(
     const ComparisonGraph & graph,
     const std::vector<UInt64> & components,
     size_t current_component,
-    const std::unordered_map<std::string, ColumnPrice> & column_prices,
+    const ColumnPriceByName & column_prices,
     ColumnPrice current_price,
     std::vector<ASTPtr> & expressions_stack,
     ColumnPrice & min_price,
@@ -197,14 +187,15 @@ void bruteforce(
     {
         for (const auto & ast : graph.getComponent(components[current_component]))
         {
-            std::unordered_set<String> identifiers;
-            collectIdentifiers(ast, identifiers);
+            IdentifierNameSet identifiers;
+            ast->collectIdentifierNames(identifiers);
             ColumnPrice expression_price = calculatePrice(column_prices, identifiers);
 
             expressions_stack.push_back(ast);
             current_price += expression_price;
 
-            std::unordered_map<std::string, ColumnPrice> new_prices(column_prices);
+            ColumnPriceByName new_prices(column_prices);
+            /// Update prices of already counted columns.
             for (const auto & identifier : identifiers)
                 new_prices[identifier] = ColumnPrice(0, 0);
 
@@ -240,12 +231,10 @@ void SubstituteColumnOptimizer::perform()
 {
     if (!storage)
         return;
+
     const auto column_sizes = storage->getColumnSizes();
     if (column_sizes.empty())
-    {
-        Poco::Logger::get("SubstituteColumnOptimizer").information("skip: column sizes not available");
         return;
-    }
 
     const auto & compare_graph = metadata_snapshot->getConstraints().getGraph();
 
@@ -254,7 +243,8 @@ void SubstituteColumnOptimizer::perform()
     {
         auto * list = select_query->refSelect()->as<ASTExpressionList>();
         if (!list)
-            throw Exception("Bad select list.", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("List of selected columns must be ASTExpressionList", ErrorCodes::LOGICAL_ERROR);
+
         for (ASTPtr & ast : list->children)
             ast->setAlias(ast->getAliasOrColumnName());
     }
@@ -274,40 +264,50 @@ void SubstituteColumnOptimizer::perform()
     std::set<UInt64> components;
     std::unordered_map<String, String> old_name;
     std::unordered_map<String, UInt64> name_to_component;
+
     UInt64 counter_id = 0;
+
     ComponentVisitor::Data component_data(
         compare_graph, components, old_name, name_to_component, counter_id);
-    std::unordered_set<String> identifiers;
+
+    IdentifierNameSet identifiers;
     auto preprocess = [&](ASTPtr & ast, bool)
     {
         ComponentVisitor(component_data).visit(ast);
-        collectIdentifiers(ast, identifiers);
+        ast->collectIdentifierNames(identifiers);
     };
 
     run_for_all(preprocess);
 
     const auto primary_key = metadata_snapshot->getColumnsRequiredForPrimaryKey();
     const std::unordered_set<std::string_view> primary_key_set(std::begin(primary_key), std::end(primary_key));
-    std::unordered_map<std::string, ColumnPrice> column_prices;
+    ColumnPriceByName column_prices;
+
     for (const auto & [column_name, column_size] : column_sizes)
-        column_prices[column_name] = ColumnPrice(
-            column_size.data_compressed + COLUMN_PENALTY, column_size.data_uncompressed);
+        column_prices[column_name] = ColumnPrice(column_size.data_compressed + COLUMN_PENALTY, column_size.data_uncompressed);
+
     for (const auto & column_name : primary_key)
         column_prices[column_name] = ColumnPrice(INDEX_PRICE, INDEX_PRICE);
+
     for (const auto & column_name : identifiers)
         column_prices[column_name] = ColumnPrice(0, 0);
 
     std::unordered_map<UInt64, ASTPtr> id_to_expression_map;
     std::vector<UInt64> components_list;
-    for (const UInt64 component : components)
-        if (compare_graph.getComponent(component).size() == 1)
-            id_to_expression_map[component] = compare_graph.getComponent(component).front();
+
+    for (const UInt64 component_id : components)
+    {
+        auto component = compare_graph.getComponent(component_id);
+        if (component.size() == 1)
+            id_to_expression_map[component_id] = component.front();
         else
-            components_list.push_back(component);
+            components_list.push_back(component_id);
+    }
 
     std::vector<ASTPtr> expressions_stack;
     ColumnPrice min_price(std::numeric_limits<Int64>::max(), std::numeric_limits<Int64>::max());
     std::vector<ASTPtr> min_expressions;
+
     bruteforce(compare_graph,
                components_list,
                0,
