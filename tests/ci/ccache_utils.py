@@ -6,6 +6,7 @@ import sys
 import os
 import shutil
 import requests
+from pathlib import Path
 
 from compress_files import decompress_fast, compress_fast
 
@@ -72,9 +73,10 @@ def get_ccache_if_not_exists(path_to_ccache_dir, s3_helper, current_pr_number, t
                 compressed_cache = os.path.join(temp_path, os.path.basename(obj))
                 dowload_file_with_progress(url, compressed_cache)
 
-                logging.info("Decompressing cache to path %s", os.path.join(path_to_ccache_dir, ".."))
-                decompress_fast(compressed_cache, os.path.join(path_to_ccache_dir, ".."))
-                logging.info("Files on path %s", os.listdir(os.path.join(path_to_ccache_dir, "..")))
+                path_to_decompress = str(Path(path_to_ccache_dir).parent)
+                logging.info("Decompressing cache to path %s", path_to_decompress)
+                decompress_fast(compressed_cache, path_to_decompress)
+                logging.info("Files on path %s", os.listdir(path_to_decompress))
                 cache_found = True
                 break
         if cache_found:
