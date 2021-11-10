@@ -60,10 +60,7 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric Revision;
-    extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
-    extern const Metric MaxDDLEntryID;
 }
 
 namespace fs = std::filesystem;
