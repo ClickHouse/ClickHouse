@@ -35,7 +35,7 @@ LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
         if (fcntl(fd, F_FULLFSYNC, 0))
             throwFromErrno("Cannot fcntl(F_FULLFSYNC)", ErrorCodes::CANNOT_FSYNC);
 #endif
-        if (-1 == ::fsync(fd))
+        if (-1 == ::fdatasync(fd))
             throw Exception("Cannot fsync", ErrorCodes::CANNOT_FSYNC);
 
         if (-1 == ::close(fd))
