@@ -30,6 +30,8 @@
     M(UncompressedCacheWeightLost, "") \
     M(MMappedFileCacheHits, "") \
     M(MMappedFileCacheMisses, "") \
+    M(OpenedFileCacheHits, "") \
+    M(OpenedFileCacheMisses, "") \
     M(AIOWrite, "Number of writes with Linux or FreeBSD AIO interface") \
     M(AIOWriteBytes, "Number of bytes written with Linux or FreeBSD AIO interface") \
     M(AIORead, "Number of reads with Linux or FreeBSD AIO interface") \
