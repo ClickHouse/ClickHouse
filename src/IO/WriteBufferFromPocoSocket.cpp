@@ -83,9 +83,10 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
 
 WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
 {
-    /// FIXME move final flush into the caller
+    if (finalized)
+        return;
     MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    next();
+    finalizeImpl();
 }
 
 }

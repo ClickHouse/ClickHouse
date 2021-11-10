@@ -10,7 +10,7 @@ namespace ErrorCodes
 
 LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
     std::unique_ptr<WriteBuffer> out_, int compression_level, size_t buf_size, char * existing_memory, size_t alignment)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment), out(std::move(out_))
+    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
 {
 
     lstr = LZMA_STREAM_INIT;
@@ -47,11 +47,10 @@ LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
 
 LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
 {
-    /// FIXME move final flush into the caller
+    if (finalized)
+        return;
     MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-
-    finish();
-    lzma_end(&lstr);
+    finalizeImpl();
 }
 
 void LZMADeflatingWriteBuffer::nextImpl()
@@ -94,28 +93,7 @@ void LZMADeflatingWriteBuffer::nextImpl()
     }
 }
 
-
-void LZMADeflatingWriteBuffer::finish()
-{
-    if (finished)
-        return;
-
-    try
-    {
-        finishImpl();
-        out->finalize();
-        finished = true;
-    }
-    catch (...)
-    {
-        /// Do not try to flush next time after exception.
-        out->position() = out->buffer().begin();
-        finished = true;
-        throw;
-    }
-}
-
-void LZMADeflatingWriteBuffer::finishImpl()
+void LZMADeflatingWriteBuffer::finalizeBeforeNestedFinalize()
 {
     next();
 
@@ -142,5 +120,11 @@ void LZMADeflatingWriteBuffer::finishImpl()
 
     } while (lstr.avail_out == 0);
 }
+
+void LZMADeflatingWriteBuffer::finalizeAfterNestedFinalize()
+{
+    lzma_end(&lstr);
+}
+
 }
 
