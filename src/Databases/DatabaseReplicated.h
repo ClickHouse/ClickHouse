@@ -2,6 +2,7 @@
 
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseReplicatedSettings.h>
+#include <Databases/IDatabaseReplicating.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <QueryPipeline/BlockIO.h>
@@ -17,7 +18,7 @@ using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
-class DatabaseReplicated : public DatabaseAtomic
+class DatabaseReplicated : public DatabaseAtomic, IDatabaseReplicating
 {
 public:
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
@@ -46,7 +47,7 @@ public:
     /// then it will be executed on all replicas.
     BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context);
 
-    void stopReplication();
+    void stopReplication() override;
 
     String getFullReplicaName() const;
     static std::pair<String, String> parseFullReplicaName(const String & name);

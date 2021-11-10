@@ -6,7 +6,10 @@
 
 #include <mysqlxx/Pool.h>
 #include <Core/MySQL/MySQLClient.h>
+#include <base/UUID.h>
 #include <Databases/IDatabase.h>
+#include <Databases/IDatabaseReplicating.h>
+#include <Databases/DatabaseAtomic.h>
 #include <Databases/MySQL/MaterializedMySQLSettings.h>
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
 
@@ -17,17 +20,20 @@ namespace DB
  *
  *  All table structure and data will be written to the local file system
  */
-template<typename Base>
-class DatabaseMaterializedMySQL : public Base
+class DatabaseMaterializedMySQL : public DatabaseAtomic, IDatabaseReplicating
 {
 public:
-
     DatabaseMaterializedMySQL(
-        ContextPtr context, const String & database_name_, const String & metadata_path_, UUID uuid,
-        const String & mysql_database_name_, mysqlxx::Pool && pool_,
-        MySQLClient && client_, std::unique_ptr<MaterializedMySQLSettings> settings_);
+        ContextPtr context,
+        const String & database_name_,
+        const String & metadata_path_,
+        UUID uuid,
+        const String & mysql_database_name_,
+        mysqlxx::Pool && pool_,
+        MySQLClient && client_,
+        std::unique_ptr<MaterializedMySQLSettings> settings_);
 
-    void rethrowExceptionIfNeed() const;
+    void rethrowExceptionIfNeeded() const;
 
     void setException(const std::exception_ptr & exception);
 protected:
@@ -49,9 +55,9 @@ public:
 
     void dropTable(ContextPtr context_, const String & name, bool no_delay) override;
 
-    void attachTable(const String & name, const StoragePtr & table, const String & relative_table_path) override;
+    void attachTable(ContextPtr context_, const String & name, const StoragePtr & table, const String & relative_table_path) override;
 
-    StoragePtr detachTable(const String & name) override;
+    StoragePtr detachTable(ContextPtr context_, const String & name) override;
 
     void renameTable(ContextPtr context_, const String & name, IDatabase & to_database, const String & to_name, bool exchange, bool dictionary) override;
 
@@ -63,17 +69,12 @@ public:
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
 
-    void assertCalledFromSyncThreadOrDrop(const char * method) const;
+    void checkIsInternalQuery(ContextPtr context_, const char * method) const;
 
-    void shutdownSynchronizationThread();
+    void stopReplication() override;
 
     friend class DatabaseMaterializedTablesIterator;
 };
-
-
-void setSynchronizationThreadException(const DatabasePtr & materialized_mysql_db, const std::exception_ptr & exception);
-void stopDatabaseSynchronization(const DatabasePtr & materialized_mysql_db);
-void rethrowSyncExceptionIfNeed(const IDatabase * materialized_mysql_db);
 
 }
 

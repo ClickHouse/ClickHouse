@@ -11,6 +11,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Databases/IDatabase.h>
+#include <Databases/IDatabaseReplicating.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseAtomic.h>
 
@@ -22,7 +23,7 @@ class PostgreSQLConnection;
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
 
-class DatabaseMaterializedPostgreSQL : public DatabaseAtomic
+class DatabaseMaterializedPostgreSQL : public DatabaseAtomic, IDatabaseReplicating
 {
 
 public:
@@ -49,15 +50,15 @@ public:
 
     void createTable(ContextPtr context, const String & table_name, const StoragePtr & table, const ASTPtr & query) override;
 
-    void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
+    void attachTable(ContextPtr context, const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
-    StoragePtr detachTable(const String & table_name) override;
+    StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
     void dropTable(ContextPtr local_context, const String & name, bool no_delay) override;
 
     void drop(ContextPtr local_context) override;
 
-    void stopReplication();
+    void stopReplication() override;
 
     void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 
