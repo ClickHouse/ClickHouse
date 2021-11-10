@@ -37,7 +37,7 @@
 #include <Poco/Condition.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/DirectoryIterator.h>
-#include <Poco/LogFile.h>
+#include <Poco/Logger.h>
 
 #include <base/logger_useful.h>
 #include <base/ErrorHandlers.h>
@@ -63,6 +63,9 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Elf.h>
 #include <filesystem>
+
+#include <loggers/OwnFormattingChannel.h>
+#include <loggers/OwnPatternFormatter.h>
 
 #include <Common/config_version.h>
 
@@ -1002,6 +1005,14 @@ void BaseDaemon::setupWatchdog()
             memcpy(argv0, new_process_name, std::min(strlen(new_process_name), original_process_name.size()));
         }
 
+        /// If streaming compression of logs is used then we write watchdog logs to cerr
+        if (config().getRawString("logger.stream_compress", "false") == "true")
+        {
+            Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+            Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
+            logger().setChannel(log);
+        }
+
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
 
         /// Forward signals to the child process.
@@ -1038,8 +1049,6 @@ void BaseDaemon::setupWatchdog()
             else if (errno != EINTR)
                 throw Poco::Exception("Cannot waitpid, errno: " + std::string(strerror(errno)));
         } while (true);
-
-        Poco::LogFile::INDEPENDENT_STREAM_COMPRESS = true;
 
         if (errno == ECHILD)
         {
