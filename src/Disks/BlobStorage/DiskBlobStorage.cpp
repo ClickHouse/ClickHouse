@@ -182,6 +182,7 @@ void DiskBlobStorage::applyNewSettings(const Poco::Util::AbstractConfiguration &
 }
 
 
+// TODO: remove this function or make it a unit test accessing a public url
 void blob_storage_demo()
 {
     // to not repeat it for every storage function
