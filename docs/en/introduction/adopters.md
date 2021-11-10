@@ -50,7 +50,6 @@ toc_title: Adopters
 | <a href="https://cryptology.com/" class="favicon">Cryptology</a> | Digital Assets Trading Platform | — | — | — | [Job advertisement, March 2021](https://career.habr.com/companies/cryptology/vacancies) |
 | <a href="https://www.chinatelecomglobal.com/" class="favicon">Dataliance for China Telecom</a> | Telecom | Analytics | — | — | [Slides in Chinese, January 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup12/telecom.pdf) |
 | <a href="https://db.com" class="favicon">Deutsche Bank</a> | Finance | BI Analytics | — | — | [Slides in English, October 2019](https://bigdatadays.ru/wp-content/uploads/2019/10/D2-H3-3_Yakunin-Goihburg.pdf) |
-| <a href="https://www.deepl.com/" class="favicon">Deepl</a> | Machine Learning | — | — | — | [Video, October 2021](https://www.youtube.com/watch?v=WIYJiPwxXdM&t=1182s) |
 | <a href="https://deeplay.io/eng/" class="favicon">Deeplay</a> | Gaming Analytics | — | — | — | [Job advertisement, 2020](https://career.habr.com/vacancies/1000062568) |
 | <a href="https://www.diva-e.com" class="favicon">Diva-e</a> | Digital consulting | Main Product | — | — | [Slides in English, September 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup29/ClickHouse-MeetUp-Unusual-Applications-sd-2019-09-17.pdf) |
 | <a href="https://ecommpay.com/" class="favicon">Ecommpay</a> | Payment Processing | Logs | — | — | [Video, Nov 2019](https://www.youtube.com/watch?v=d3GdZTOWGLk) |
@@ -152,7 +151,6 @@ toc_title: Adopters
 | <a href="https://trafficstars.com/" class="favicon">Traffic Stars</a> | AD network | — | 300 servers in Europe/US | 1.8 PiB, 700 000 insert rps (as of 2021) | [Slides in Russian, May 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup15/lightning/ninja.pdf) |
 | <a href="https://www.uber.com" class="favicon">Uber</a> | Taxi | Logging | — | — | [Slides, February 2020](https://presentations.clickhouse.com/meetup40/uber.pdf) |
 | <a href="https://hello.utmstat.com/" class="favicon">UTMSTAT</a> | Analytics | Main product | — | — | [Blog post, June 2020](https://vc.ru/tribuna/133956-striming-dannyh-iz-servisa-skvoznoy-analitiki-v-clickhouse) |
-| <a href="https://vercel.com/" class="favicon">Vercel</a> | Traffic and Performance Analytics | — | — | — | Direct reference, October 2021 |
 | <a href="https://vk.com" class="favicon">VKontakte</a> | Social Network | Statistics, Logging | — | — | [Slides in Russian, August 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup17/3_vk.pdf) |
 | <a href="https://www.vmware.com/" class="favicon">VMware</a> | Cloud | VeloCloud, SDN | — | — | [Product documentation](https://docs.vmware.com/en/vRealize-Operations-Manager/8.3/com.vmware.vcom.metrics.doc/GUID-A9AD72E1-C948-4CA2-971B-919385AB3CA8.html) |
 | <a href="https://www.walmartlabs.com/" class="favicon">Walmart Labs</a> | Internet, Retail | — | — | — | [Talk in English, July 2020](https://youtu.be/GMiXCMFDMow?t=144) |
@@ -175,5 +173,7 @@ toc_title: Adopters
 | <a href="https://promo.croc.ru/digitalworker" class="favicon">Цифровой Рабочий</a> | Industrial IoT, Analytics | — | — | — | [Blog post in Russian, March 2021](https://habr.com/en/company/croc/blog/548018/) |
 | <a href="https://shop.okraina.ru/" class="favicon">ООО «МПЗ Богородский»</a> | Agriculture | — | — | — | [Article in Russian, November 2020](https://cloud.yandex.ru/cases/okraina) |
 | <a href="https://domclick.ru/" class="favicon">ДомКлик</a> | Real Estate | — | — | — | [Article in Russian, October 2021](https://habr.com/ru/company/domclick/blog/585936/) |
+| <a href="https://www.deepl.com/" class="favicon">Deepl</a> | Machine Learning | — | — | — | [Video, October 2021](https://www.youtube.com/watch?v=WIYJiPwxXdM&t=1182s) |
+| <a href="https://vercel.com/" class="favicon">Vercel</a> | Traffic and Performance Analytics | — | — | — | Direct reference, October 2021 |
 
 [Original article](https://clickhouse.com/docs/en/introduction/adopters/) <!--hide-->
