@@ -21,6 +21,7 @@ IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
 IMAGE_CENTOS = "clickhouse/test-old-centos"
 MAX_GLIBC_VERSION = '2.4'
 DOWNLOAD_RETRIES_COUNT = 5
+CHECK_NAME = "Compatibility check (actions)"
 
 def process_os_check(log_path):
     name = os.path.basename(log_path)
@@ -216,8 +217,7 @@ if __name__ == "__main__":
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
     reports_path = os.getenv("REPORTS_PATH", "./reports")
 
-    check_name = sys.argv[1]
-    build_number = int(sys.argv[2])
+    build_number = int(sys.argv[1])
 
     with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
         event = json.load(event_file)
@@ -294,9 +294,12 @@ if __name__ == "__main__":
             logging.info("Exception calling command %s", ex)
             state = "failure"
 
+
+    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+
     s3_helper = S3Helper('https://s3.amazonaws.com')
     state, description, test_results, additional_logs = process_result(result_path, server_log_path)
-    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_logs, check_name)
+    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_logs, CHECK_NAME)
     print(f"::notice ::Report url: {report_url}")
     commit = get_commit(gh, pr_info.sha)
-    commit.create_status(context=check_name, description=description, state=state, target_url=report_url)
+    commit.create_status(context=CHECK_NAME, description=description, state=state, target_url=report_url)
