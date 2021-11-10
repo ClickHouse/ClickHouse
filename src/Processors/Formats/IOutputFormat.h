@@ -72,15 +72,12 @@ public:
 
     InputPort & getPort(PortKind kind) { return *std::next(inputs.begin(), kind); }
 
-    /// Compatibility with old interface.
-    /// TODO: separate formats and processors.
+    /// Compatible to IBlockOutputStream interface
 
     void write(const Block & block);
 
     virtual void doWritePrefix() {}
     virtual void doWriteSuffix() { finalize(); }
-
-    virtual bool expectMaterializedColumns() const { return true; }
 
     void setTotals(const Block & totals) { consumeTotals(Chunk(totals.getColumns(), totals.rows())); }
     void setExtremes(const Block & extremes) { consumeExtremes(Chunk(extremes.getColumns(), extremes.rows())); }
@@ -96,3 +93,4 @@ private:
     bool prefix_written = false;
 };
 }
+

@@ -107,7 +107,7 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 The subset.
 
-Type: [Bitmap object](#bitmap_functions-bitmapbuild).
+Type: `Bitmap object`.
 
 **Example**
 
@@ -123,44 +123,6 @@ Result:
 ┌─res───────────────────────┐
 │ [30,31,32,33,100,200,500] │
 └───────────────────────────┘
-```
-
-## subBitmap {#subbitmap}
-
-Returns the bitmap elements, starting from the `offset` position. The number of returned elements is limited by the `cardinality_limit` parameter. Analog of the [substring](string-functions.md#substring)) string function, but for bitmap.
-
-**Syntax**
-
-``` sql
-subBitmap(bitmap, offset, cardinality_limit)
-```
-
-**Arguments**
-
--   `bitmap` – The bitmap. Type: [Bitmap object](#bitmap_functions-bitmapbuild).
--   `offset` – The position of the first element of the subset. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
--   `cardinality_limit` – The maximum number of elements in the subset. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
-
-**Returned value**
-
-The subset.
-
-Type: [Bitmap object](#bitmap_functions-bitmapbuild).
-
-**Example**
-
-Query:
-
-``` sql
-SELECT bitmapToArray(subBitmap(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,100,200,500]), toUInt32(10), toUInt32(10))) AS res;
-```
-
-Result:
-
-``` text
-┌─res─────────────────────────────┐
-│ [10,11,12,13,14,15,16,17,18,19] │
-└─────────────────────────────────┘
 ```
 
 ## bitmapContains {#bitmap_functions-bitmapcontains}

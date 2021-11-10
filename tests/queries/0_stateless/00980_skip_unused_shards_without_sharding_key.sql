@@ -1,5 +1,3 @@
--- Tags: shard
-
 DROP TABLE IF EXISTS t_local;
 DROP TABLE IF EXISTS t_distr;
 

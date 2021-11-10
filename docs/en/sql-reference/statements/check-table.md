@@ -32,7 +32,7 @@ Engines from the `*Log` family do not provide automatic data recovery on failure
 
 ## Checking the MergeTree Family Tables {#checking-mergetree-tables}
 
-For `MergeTree` family engines, if [check_query_single_value_result](../../operations/settings/settings.md#check_query_single_value_result) = 0, the `CHECK TABLE` query shows a check status for every individual data part of a table on the local server.
+For `MergeTree` family engines, if [check_query_single_value_result](../../operations/settings/settings.md#check_query_single_value_result) = 0, the `CHECK TABLE` query shows a check status for every individual data part of a table on the local server. 
 
 ```sql
 SET check_query_single_value_result = 0;

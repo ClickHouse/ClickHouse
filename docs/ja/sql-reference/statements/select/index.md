@@ -170,7 +170,7 @@ You can use the following modifiers in `SELECT` queries.
 
 ### APPLY {#apply-modifier}
 
-Allows you to invoke some function for each row returned by an outer table expression of a query.
+Allows you to invoke some function for each row returned by an outer table expression of a query. 
 
 **Syntax:**
 
@@ -178,7 +178,7 @@ Allows you to invoke some function for each row returned by an outer table expre
 SELECT <expr> APPLY( <func> ) FROM [db.]table_name
 ```
 
-**Example:**
+**Example:** 
 
 ``` sql
 CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
@@ -272,9 +272,9 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 
 ## SETTINGS in SELECT Query {#settings-in-select}
 
-You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed.
+You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed. 
 
-Other ways to make settings see [here](../../../operations/settings/index.md).
+Other ways to make settings see [here](../../../operations/settings/index.md). 
 
 **Example**
 

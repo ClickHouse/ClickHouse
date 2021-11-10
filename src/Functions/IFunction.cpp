@@ -16,7 +16,9 @@
 #include <cstdlib>
 #include <memory>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_EMBEDDED_COMPILER
 #    pragma GCC diagnostic push
@@ -376,7 +378,6 @@ static std::optional<DataTypes> removeNullables(const DataTypes & types)
 
 bool IFunction::isCompilable(const DataTypes & arguments) const
 {
-
     if (useDefaultImplementationForNulls())
         if (auto denulled = removeNullables(arguments))
             return isCompilableImpl(*denulled);
