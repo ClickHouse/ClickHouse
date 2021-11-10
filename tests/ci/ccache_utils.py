@@ -5,8 +5,9 @@ import time
 import sys
 import os
 import shutil
-import requests
 from pathlib import Path
+
+import requests
 
 from compress_files import decompress_fast, compress_fast
 
