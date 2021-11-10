@@ -11,6 +11,7 @@ from s3_helper import S3Helper
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from version_helper import get_version_from_repo, update_version_local
+from ccache_utils import get_ccache_if_not_exists, upload_ccache
 
 
 def get_build_config(build_check_name, build_number, repo_path):
@@ -163,7 +164,13 @@ if __name__ == "__main__":
         os.makedirs(build_output_path)
 
     ccache_path = os.path.join(caches_path, build_name + '_ccache')
+    s3_helper = S3Helper('https://s3.amazonaws.com')
+
+    logging.info("Will try to fetch cache for our build")
+    get_ccache_if_not_exists(ccache_path, s3_helper, pr_info.number, temp_path)
+
     if not os.path.exists(ccache_path):
+        logging.info("cache was not fetched, will create empty dir")
         os.makedirs(ccache_path)
 
     packager_cmd = get_packager_cmd(build_config, os.path.join(repo_path, "docker/packager"), build_output_path, version.get_version_string(), image_version, ccache_path)
@@ -180,7 +187,10 @@ if __name__ == "__main__":
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {ccache_path}", shell=True)
     logging.info("Build finished with %s, log path %s", success, log_path)
 
-    s3_helper = S3Helper('https://s3.amazonaws.com')
+
+    logging.info("Will upload cache")
+    upload_ccache(ccache_path, s3_helper, pr_info.number, temp_path)
+
     s3_path_prefix = str(pr_info.number) + "/" + pr_info.sha + "/" + build_check_name.lower().replace(' ', '_') + "/" + build_name
     if os.path.exists(log_path):
         log_url = s3_helper.upload_build_file_to_s3(log_path, s3_path_prefix + "/" + os.path.basename(log_path))
