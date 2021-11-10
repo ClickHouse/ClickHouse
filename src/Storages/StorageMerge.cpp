@@ -284,6 +284,16 @@ Pipe StorageMerge::read(
 
         SelectQueryInfo modified_query_info = query_info;
         modified_query_info.query = query_info.query->clone();
+
+        /// Original query could contain JOIN but we need only the first joined table and its columns.
+        auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
+        TreeRewriterResult new_analyzer_res = *modified_query_info.syntax_analyzer_result;
+        removeJoin(modified_select, new_analyzer_res, modified_context);
+        modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
+
+        auto storage_id = storage->getStorageID();
+        VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", storage_id.table_name);
+        VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_database", storage_id.database_name);
         auto syntax_result = TreeRewriter(local_context).analyzeSelect(modified_query_info.query, TreeRewriterResult({}, storage, storage_metadata_snapshot));
 
         Names column_names_as_aliases;
@@ -335,7 +345,7 @@ Pipe StorageMerge::read(
             header,
             aliases,
             table,
-            with_aliases ? column_names_as_aliases : real_column_names,
+            column_names_as_aliases.empty() ? real_column_names : column_names_as_aliases,
             modified_context,
             current_streams,
             has_database_virtual_column,
@@ -357,7 +367,7 @@ Pipe StorageMerge::read(
 
 Pipe StorageMerge::createSources(
     const StorageMetadataPtr & metadata_snapshot,
-    SelectQueryInfo & query_info,
+    SelectQueryInfo & modified_query_info,
     const QueryProcessingStage::Enum & processed_stage,
     const UInt64 max_block_size,
     const Block & header,
@@ -371,18 +381,12 @@ Pipe StorageMerge::createSources(
     bool concat_streams)
 {
     const auto & [database_name, storage, struct_lock, table_name] = storage_with_lock;
-    SelectQueryInfo modified_query_info = query_info;
-    modified_query_info.query = query_info.query->clone();
-
     /// Original query could contain JOIN but we need only the first joined table and its columns.
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
 
-    TreeRewriterResult new_analyzer_res = *query_info.syntax_analyzer_result;
+    TreeRewriterResult new_analyzer_res = *modified_query_info.syntax_analyzer_result;
     removeJoin(modified_select, new_analyzer_res, modified_context);
     modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
-
-    VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", table_name);
-    VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_database", database_name);
 
     Pipe pipe;
 
