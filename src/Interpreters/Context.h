@@ -174,7 +174,7 @@ private:
     std::unique_ptr<ContextSharedPart> shared;
 };
 
-#if USE_HDFS
+#if USE_HDFS && USE_ORC && USE_PARQUET
 class HMSClient;
 using HMSClientPtr = std::shared_ptr<HMSClient>;
 #endif
@@ -693,7 +693,7 @@ public:
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 
-#if USE_HDFS
+#if USE_HDFS && USE_ORC && USE_PARQUET
     HMSClientPtr getHMSClient(const String & name) const;
 #endif
 
