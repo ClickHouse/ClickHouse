@@ -181,7 +181,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
 
 
 SelectQueryInfo StorageMerge::getModifiedQueryInfo(
-    const SelectQueryInfo & query_info, ContextPtr modified_context, const StorageID & storage_id, bool is_merge_engine) const
+    const SelectQueryInfo & query_info, ContextPtr modified_context, const StorageID & current_storage_id, bool is_merge_engine)
 {
     SelectQueryInfo modified_query_info = query_info;
     modified_query_info.query = query_info.query->clone();
@@ -194,8 +194,8 @@ SelectQueryInfo StorageMerge::getModifiedQueryInfo(
 
     if (!is_merge_engine)
     {
-        VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", storage_id.table_name);
-        VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_database", storage_id.database_name);
+        VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", current_storage_id.table_name);
+        VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_database", current_storage_id.database_name);
     }
 
     return modified_query_info;
