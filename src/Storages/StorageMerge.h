@@ -129,6 +129,9 @@ protected:
         const Block & header, const StorageMetadataPtr & metadata_snapshot, const Aliases & aliases,
         ContextPtr context, ASTPtr & query,
         Pipe & pipe, QueryProcessingStage::Enum processed_stage);
+
+    SelectQueryInfo getModifiedQueryInfo(
+        const SelectQueryInfo & query_info, ContextPtr modified_context, const StorageID & storage_id) const;
 };
 
 }

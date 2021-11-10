@@ -180,6 +180,24 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(
 }
 
 
+SelectQueryInfo StorageMerge::getModifiedQueryInfo(const SelectQueryInfo & query_info, ContextPtr modified_context, const StorageID & storage_id) const
+{
+    SelectQueryInfo modified_query_info = query_info;
+    modified_query_info.query = query_info.query->clone();
+
+    /// Original query could contain JOIN but we need only the first joined table and its columns.
+    auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
+    TreeRewriterResult new_analyzer_res = *modified_query_info.syntax_analyzer_result;
+    removeJoin(modified_select, new_analyzer_res, modified_context);
+    modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
+
+    VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", storage_id.table_name);
+    VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_database", storage_id.database_name);
+
+    return modified_query_info;
+}
+
+
 Pipe StorageMerge::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
@@ -222,10 +240,12 @@ Pipe StorageMerge::read(
         = getSelectedTables(local_context, query_info.query, has_database_virtual_column, has_table_virtual_column);
 
     if (selected_tables.empty())
+    {
+        auto modified_query_info = getModifiedQueryInfo(query_info, modified_context, getStorageID());
         /// FIXME: do we support sampling in this case?
         return createSources(
             {},
-            query_info,
+            modified_query_info,
             processed_stage,
             max_block_size,
             header,
@@ -236,6 +256,7 @@ Pipe StorageMerge::read(
             0,
             has_database_virtual_column,
             has_table_virtual_column);
+    }
 
     size_t tables_count = selected_tables.size();
     Float64 num_streams_multiplier
@@ -282,18 +303,7 @@ Pipe StorageMerge::read(
         auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr();
         auto storage_columns = storage_metadata_snapshot->getColumns();
 
-        SelectQueryInfo modified_query_info = query_info;
-        modified_query_info.query = query_info.query->clone();
-
-        /// Original query could contain JOIN but we need only the first joined table and its columns.
-        auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
-        TreeRewriterResult new_analyzer_res = *modified_query_info.syntax_analyzer_result;
-        removeJoin(modified_select, new_analyzer_res, modified_context);
-        modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
-
-        auto storage_id = storage->getStorageID();
-        VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_table", storage_id.table_name);
-        VirtualColumnUtils::rewriteEntityInAst(modified_query_info.query, "_database", storage_id.database_name);
+        auto modified_query_info = getModifiedQueryInfo(query_info, modified_context, storage->getStorageID());
         auto syntax_result = TreeRewriter(local_context).analyzeSelect(modified_query_info.query, TreeRewriterResult({}, storage, storage_metadata_snapshot));
 
         Names column_names_as_aliases;
