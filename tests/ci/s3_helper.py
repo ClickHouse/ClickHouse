@@ -40,6 +40,12 @@ class S3Helper():
             elif s3_path.endswith("html"):
                 metadata['ContentType'] = "text/html; charset=utf-8"
                 logging.info("Content type %s for file path %s", "text/html; charset=utf-8", file_path)
+            elif s3_path.endswith("css"):
+                metadata['ContentType'] = "text/css; charset=utf-8"
+                logging.info("Content type %s for file path %s", "text/css; charset=utf-8", file_path)
+            elif s3_path.endswith("js"):
+                metadata['ContentType'] = "text/javascript; charset=utf-8"
+                logging.info("Content type %s for file path %s", "text/css; charset=utf-8", file_path)
             else:
                 logging.info("No content type provied for %s", file_path)
         else:
