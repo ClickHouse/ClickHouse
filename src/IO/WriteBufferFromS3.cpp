@@ -84,18 +84,16 @@ void WriteBufferFromS3::allocateBuffer()
     last_part_size = 0;
 }
 
-void WriteBufferFromS3::finalize()
+WriteBufferFromS3::~WriteBufferFromS3()
 {
-    /// FIXME move final flush into the caller
+    if (finalized)
+        return;
     MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
     finalizeImpl();
 }
 
 void WriteBufferFromS3::finalizeImpl()
 {
-    if (finalized)
-        return;
-
     next();
 
     if (multipart_upload_id.empty())
@@ -108,8 +106,6 @@ void WriteBufferFromS3::finalizeImpl()
         writePart();
         completeMultipartUpload();
     }
-
-    finalized = true;
 }
 
 void WriteBufferFromS3::createMultipartUpload()
@@ -167,7 +163,7 @@ void WriteBufferFromS3::writePart()
     {
         auto etag = outcome.GetResult().GetETag();
         part_tags.push_back(etag);
-        LOG_DEBUG(log, "Writing part finished. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Parts: {}", bucket, key, multipart_upload_id, etag, part_tags.size());
+        LOG_DEBUG(log, "Writing part finalizeImpl()ed. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Parts: {}", bucket, key, multipart_upload_id, etag, part_tags.size());
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);

@@ -70,14 +70,18 @@ WriteBufferFromFile::WriteBufferFromFile(
     fd_ = -1;
 }
 
-
 WriteBufferFromFile::~WriteBufferFromFile()
+{
+    if (finalized || fd < 0)
+        return;
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    finalizeImpl();
+}
+
+void WriteBufferFromFile::finalizeImpl()
 {
     if (fd < 0)
         return;
-
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
 
     next();
 

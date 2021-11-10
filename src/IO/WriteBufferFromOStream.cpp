@@ -42,9 +42,10 @@ WriteBufferFromOStream::WriteBufferFromOStream(
 
 WriteBufferFromOStream::~WriteBufferFromOStream()
 {
-    /// FIXME move final flush into the caller
+    if (finalized)
+        return;
     MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    next();
+    finalizeImpl();
 }
 
 }

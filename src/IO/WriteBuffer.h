@@ -58,8 +58,8 @@ public:
         pos = working_buffer.begin();
     }
 
-    /** it is desirable in the derived classes to place the next() call in the destructor,
-      * so that the last data is written
+    /** it is desirable in the derived classes to place the finalize() call in the destructor,
+      * so that the last data is written (if finalize() wasn't called explicitly)
       */
     virtual ~WriteBuffer() = default;
 
@@ -100,10 +100,23 @@ public:
         next();
     }
 
-    virtual void finalize()
+    /// Write the last data.
+    void finalize()
+    {
+        if (finalized)
+            return;
+
+        finalizeImpl();
+        finalized = true;
+    }
+
+protected:
+    virtual void finalizeImpl()
     {
         next();
     }
+    
+    bool finalized = false;
 
 private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).

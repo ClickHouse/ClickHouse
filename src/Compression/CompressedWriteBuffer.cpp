@@ -6,8 +6,6 @@
 
 #include "CompressedWriteBuffer.h"
 #include <Compression/CompressionFactory.h>
-
-#include <Common/MemorySanitizer.h>
 #include <Common/MemoryTracker.h>
 
 
@@ -35,12 +33,13 @@ void CompressedWriteBuffer::nextImpl()
     out.write(compressed_buffer.data(), compressed_size);
 }
 
-
-void CompressedWriteBuffer::finalize()
+CompressedWriteBuffer::~CompressedWriteBuffer()
 {
-    next();
+    if (finalized)
+        return;
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    finalizeImpl();
 }
-
 
 CompressedWriteBuffer::CompressedWriteBuffer(
     WriteBuffer & out_,
@@ -48,14 +47,6 @@ CompressedWriteBuffer::CompressedWriteBuffer(
     size_t buf_size)
     : BufferWithOwnMemory<WriteBuffer>(buf_size), out(out_), codec(std::move(codec_))
 {
-}
-
-
-CompressedWriteBuffer::~CompressedWriteBuffer()
-{
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock;
-    next();
 }
 
 }

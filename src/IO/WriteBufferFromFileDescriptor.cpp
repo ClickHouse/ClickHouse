@@ -96,17 +96,22 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
 
 WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
 {
+    if (finalized)
+        return;
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    finalizeImpl();
+}
+
+void WriteBufferFromFileDescriptor::finalizeImpl()
+{
     if (fd < 0)
     {
         assert(!offset() && "attempt to write after close");
         return;
     }
 
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
     next();
 }
-
 
 void WriteBufferFromFileDescriptor::sync()
 {

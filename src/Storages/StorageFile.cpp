@@ -649,6 +649,9 @@ public:
     void onFinish() override
     {
         writer->doWriteSuffix();
+        writer->flush();
+        write_buf->sync();
+        write_buf->finalize();
     }
 
     // void flush() override
