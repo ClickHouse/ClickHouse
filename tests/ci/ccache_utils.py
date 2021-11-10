@@ -75,6 +75,9 @@ def get_ccache_if_not_exists(path_to_ccache_dir, s3_helper, current_pr_number, t
                 dowload_file_with_progress(url, compressed_cache)
 
                 path_to_decompress = str(Path(path_to_ccache_dir).parent)
+                if not os.path.exists(path_to_decompress):
+                    os.makedirs(path_to_decompress)
+
                 logging.info("Decompressing cache to path %s", path_to_decompress)
                 decompress_fast(compressed_cache, path_to_decompress)
                 logging.info("Files on path %s", os.listdir(path_to_decompress))
