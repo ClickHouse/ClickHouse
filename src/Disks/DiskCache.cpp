@@ -122,9 +122,16 @@ std::list<std::pair<String, size_t>> DiskCacheLRUPolicy::add(const String & key,
         {
             LOG_ERROR(log, "Key {} ({}+{}) collision with ({}+{})",
                 key, offset, size, entry_before->second->offset, entry_before->second->size);
-            if (!restore)
+            if (restore)
+            { /// incorrect cache on disk
+                res.push_back(std::make_pair(key, offset));
+                return res;
+            }
+            else
+            {
                 complete(key, offset, FileDownloadStatus::ERROR);
-            throw Exception("Could not insert already existing data, remove it first", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Could not insert already existing data, remove it first", ErrorCodes::LOGICAL_ERROR);
+            }
         }
 
         auto entry_after = parts.upper_bound(offset + size);
@@ -132,9 +139,16 @@ std::list<std::pair<String, size_t>> DiskCacheLRUPolicy::add(const String & key,
         {
             LOG_ERROR(log, "Key {} ({}+{}) collision with ({}+{})",
                 key, offset, size, entry_after->second->offset, entry_after->second->size);
-            if (!restore)
+            if (restore)
+            { /// incorrect cache on disk
+                res.push_back(std::make_pair(key, offset));
+                return res;
+            }
+            else
+            {
                 complete(key, offset, FileDownloadStatus::ERROR);
-            throw Exception("Could not insert already existing data, remove it first", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Could not insert already existing data, remove it first", ErrorCodes::LOGICAL_ERROR);
+            }
         }
     }
 
