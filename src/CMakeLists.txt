@@ -450,6 +450,7 @@ if (USE_HDFS)
 
     if (USE_ORC AND USE_PARQUET)
         dbms_target_link_libraries(PRIVATE hivemetastore)
+        dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/hive-metastore)
     endif()
 endif()
 
