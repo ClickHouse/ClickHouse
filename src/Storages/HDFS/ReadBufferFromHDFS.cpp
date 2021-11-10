@@ -15,7 +15,6 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
-    extern const int LOGICAL_ERROR;
 }
 
 ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
@@ -34,18 +33,16 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
     off_t offset = 0;
     bool initialized = false;
-    off_t read_until_position = 0;
 
     explicit ReadBufferFromHDFSImpl(
         const std::string & hdfs_uri_,
         const std::string & hdfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
-        size_t buf_size_, size_t read_until_position_)
+        size_t buf_size_)
         : BufferWithOwnMemory<SeekableReadBuffer>(buf_size_)
         , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
         , builder(createHDFSBuilder(hdfs_uri_, config_))
-        , read_until_position(read_until_position_)
     {
         std::lock_guard lock(hdfs_init_mutex);
 
@@ -82,23 +79,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
             initialized = true;
         }
 
-        size_t num_bytes_to_read;
-        if (read_until_position)
-        {
-            if (read_until_position == offset)
-                return false;
-
-            if (read_until_position < offset)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
-
-            num_bytes_to_read = read_until_position - offset;
-        }
-        else
-        {
-            num_bytes_to_read = internal_buffer.size();
-        }
-
-        int bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), num_bytes_to_read);
+        int bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), internal_buffer.size());
         if (bytes_read < 0)
             throw Exception(ErrorCodes::NETWORK_ERROR,
                 "Fail to read from HDFS: {}, file path: {}. Error: {}",
@@ -144,9 +125,9 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
         const String & hdfs_uri_,
         const String & hdfs_file_path_,
         const Poco::Util::AbstractConfiguration & config_,
-        size_t buf_size_, size_t read_until_position_)
+        size_t buf_size_)
     : SeekableReadBuffer(nullptr, 0)
-    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, buf_size_, read_until_position_))
+    , impl(std::make_unique<ReadBufferFromHDFSImpl>(hdfs_uri_, hdfs_file_path_, config_, buf_size_))
 {
 }
 

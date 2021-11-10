@@ -184,10 +184,9 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 |hadoop\_kerberos\_keytab                               | ""                      |
 |hadoop\_kerberos\_principal                            | ""                      |
 |hadoop\_kerberos\_kinit\_command                       | kinit                   |
-|libhdfs3\_conf                                         | ""                      |
 
 ### Limitations {#limitations}
-  * hadoop\_security\_kerberos\_ticket\_cache\_path and libhdfs3\_conf can be global only, not user specific
+  * hadoop\_security\_kerberos\_ticket\_cache\_path can be global only, not user specific
 
 ## Kerberos support {#kerberos-support}
 
@@ -199,22 +198,6 @@ security approach). Use tests/integration/test\_storage\_kerberized\_hdfs/hdfs_c
 
 If hadoop\_kerberos\_keytab, hadoop\_kerberos\_principal or hadoop\_kerberos\_kinit\_command is specified, kinit will be invoked. hadoop\_kerberos\_keytab and hadoop\_kerberos\_principal are mandatory in this case. kinit tool and krb5 configuration files are required.
 
-## HDFS Namenode HA support{#namenode-ha}
-
-libhdfs3 support HDFS namenode HA.
-
-- Copy `hdfs-site.xml` from an HDFS node to `/etc/clickhouse-server/`.
-- Add following piece to ClickHouse config file:
-
-``` xml
-  <hdfs>
-    <libhdfs3_conf>/etc/clickhouse-server/hdfs-site.xml</libhdfs3_conf>
-  </hdfs>
-```
-
-- Then use `dfs.nameservices` tag value of `hdfs-site.xml` as the namenode address in the HDFS URI. For example, replace `hdfs://appadmin@192.168.101.11:8020/abc/` with `hdfs://appadmin@my_nameservice/abc/`.
-
-
 ## Virtual Columns {#virtual-columns}
 
 -   `_path` — Path to the file.
@@ -224,4 +207,4 @@ libhdfs3 support HDFS namenode HA.
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/hdfs/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/hdfs/) <!--hide-->

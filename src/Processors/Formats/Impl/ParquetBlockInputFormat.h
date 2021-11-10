@@ -1,4 +1,5 @@
 #pragma once
+
 #include "config_formats.h"
 #if USE_PARQUET
 

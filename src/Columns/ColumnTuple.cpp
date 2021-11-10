@@ -3,15 +3,15 @@
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnCompressed.h>
 #include <Core/Field.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <base/sort.h>
-#include <base/map.h>
-#include <base/range.h>
+#include <common/sort.h>
+#include <common/map.h>
+#include <common/range.h>
 
 
 namespace DB

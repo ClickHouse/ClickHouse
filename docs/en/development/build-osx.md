@@ -3,15 +3,9 @@ toc_priority: 65
 toc_title: Build on Mac OS X
 ---
 
-# You don't have to build ClickHouse
-
-You can install ClickHouse as follows: https://clickhouse.com/#quick-start
-Choose Mac x86 or M1.
-
 # How to Build ClickHouse on Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
-Build should work on x86_64 (Intel) and arm64 (Apple Silicon) based macOS 10.15 (Catalina) and higher with Homebrew's vanilla Clang.
-It is always recommended to use `clang` compiler. It is possible to use XCode's `AppleClang` or `gcc` but it's strongly discouraged.
+Build should work on x86_64 (Intel) and arm64 (Apple Silicon) based macOS 10.15 (Catalina) and higher with recent Xcode's native AppleClang, or Homebrew's vanilla Clang or GCC compilers.
 
 ## Install Homebrew {#install-homebrew}
 
@@ -51,6 +45,18 @@ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 
 ## Build ClickHouse {#build-clickhouse}
 
+To build using Xcode's native AppleClang compiler:
+
+``` bash
+cd ClickHouse
+rm -rf build
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+cmake --build . --config RelWithDebInfo
+cd ..
+```
+
 To build using Homebrew's vanilla Clang compiler:
 
 ``` bash
@@ -63,26 +69,14 @@ cmake --build . --config RelWithDebInfo
 cd ..
 ```
 
-To build using Xcode's native AppleClang compiler (this option is strongly not recommended; use the option above):
+To build using Homebrew's vanilla GCC compiler:
 
 ``` bash
 cd ClickHouse
 rm -rf build
 mkdir build
 cd build
-cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
-cmake --build . --config RelWithDebInfo
-cd ..
-```
-
-To build using Homebrew's vanilla GCC compiler (this option is absolutely not recommended, I'm wondering why do we ever have it):
-
-``` bash
-cd ClickHouse
-rm -rf build
-mkdir build
-cd build
-cmake -DCMAKE_C_COMPILER=$(brew --prefix gcc)/bin/gcc-11 -DCMAKE_CXX_COMPILER=$(brew --prefix gcc)/bin/g++-11 -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
+cmake -DCMAKE_C_COMPILER=$(brew --prefix gcc)/bin/gcc-10 -DCMAKE_CXX_COMPILER=$(brew --prefix gcc)/bin/g++-10 -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
 cmake --build . --config RelWithDebInfo
 cd ..
 ```
@@ -120,25 +114,15 @@ To do so, create the `/Library/LaunchDaemons/limit.maxfiles.plist` file with the
 </plist>
 ```
 
-Give the file correct permissions:
+Execute the following command:
 
 ``` bash
 sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 ```
 
-Validate that the file is correct:
+Reboot.
 
-``` bash
-plutil /Library/LaunchDaemons/limit.maxfiles.plist
-```
-
-Load the file (or reboot):
-
-``` bash
-sudo launchctl load -w /Library/LaunchDaemons/limit.maxfiles.plist
-```
-
-To check if it’s working, use the `ulimit -n` or `launchctl limit maxfiles` commands.
+To check if it’s working, you can use `ulimit -n` command.
 
 ## Run ClickHouse server:
 
@@ -147,4 +131,4 @@ cd ClickHouse
 ./build/programs/clickhouse-server --config-file ./programs/server/config.xml
 ```
 
-[Original article](https://clickhouse.com/docs/en/development/build_osx/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->

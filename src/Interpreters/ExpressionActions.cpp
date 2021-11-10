@@ -792,7 +792,7 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
     for (const auto & column : columns)
     {
         /// Skip .sizeX and similar meta information
-        if (column.isSubcolumn())
+        if (!column.getSubcolumnName().empty())
             continue;
 
         /// @todo resolve evil constant
@@ -1042,7 +1042,7 @@ ExpressionActionsChain::JoinStep::JoinStep(
         required_columns.emplace_back(column.name, column.type);
 
     NamesAndTypesList result_names_and_types = required_columns;
-    analyzed_join->addJoinedColumnsAndCorrectTypes(result_names_and_types, true);
+    analyzed_join->addJoinedColumnsAndCorrectTypes(result_names_and_types);
     for (const auto & [name, type] : result_names_and_types)
         /// `column` is `nullptr` because we don't care on constness here, it may be changed in join
         result_columns.emplace_back(nullptr, type, name);
@@ -1056,12 +1056,11 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
 
     /// That's an input columns we need.
     NameSet required_names = required_output_;
-    for (const auto & name : analyzed_join->getAllNames(JoinTableSide::Left))
+    for (const auto & name : analyzed_join->keyNamesLeft())
         required_names.emplace(name);
 
-    for (const auto & onexpr : analyzed_join->getClauses())
-        if (const auto & cond_name = onexpr.condColumnNames().first; !cond_name.empty())
-            required_names.emplace(cond_name);
+    if (ASTPtr extra_condition_column = analyzed_join->joinConditionColumn(JoinTableSide::Left))
+        required_names.emplace(extra_condition_column->getColumnName());
 
     for (const auto & column : required_columns)
     {

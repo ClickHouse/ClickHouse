@@ -1,5 +1,3 @@
--- Tags: shard
-
 DROP TABLE IF EXISTS remote_test;
 CREATE TABLE remote_test(uid String, its UInt32,  action_code String, day Date) ENGINE = MergeTree(day, (uid, its), 8192);
 INSERT INTO remote_test SELECT toString(number) AS uid, number % 3 AS its, toString(number % 3) AS action_code, '2000-01-01' FROM system.numbers LIMIT 10000;

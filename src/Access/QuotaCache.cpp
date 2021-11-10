@@ -1,10 +1,10 @@
 #include <Access/EnabledQuota.h>
 #include <Access/QuotaCache.h>
 #include <Access/QuotaUsage.h>
-#include <Access/AccessControl.h>
+#include <Access/AccessControlManager.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
-#include <base/range.h>
+#include <common/range.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/lower_bound.hpp>
@@ -172,8 +172,8 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
 }
 
 
-QuotaCache::QuotaCache(const AccessControl & access_control_)
-    : access_control(access_control_)
+QuotaCache::QuotaCache(const AccessControlManager & access_control_manager_)
+    : access_control_manager(access_control_manager_)
 {
 }
 
@@ -215,7 +215,7 @@ void QuotaCache::ensureAllQuotasRead()
         return;
     all_quotas_read = true;
 
-    subscription = access_control.subscribeForChanges<Quota>(
+    subscription = access_control_manager.subscribeForChanges<Quota>(
         [&](const UUID & id, const AccessEntityPtr & entity)
         {
             if (entity)
@@ -224,9 +224,9 @@ void QuotaCache::ensureAllQuotasRead()
                 quotaRemoved(id);
         });
 
-    for (const UUID & quota_id : access_control.findAll<Quota>())
+    for (const UUID & quota_id : access_control_manager.findAll<Quota>())
     {
-        auto quota = access_control.tryRead<Quota>(quota_id);
+        auto quota = access_control_manager.tryRead<Quota>(quota_id);
         if (quota)
             all_quotas.emplace(quota_id, QuotaInfo(quota, quota_id));
     }

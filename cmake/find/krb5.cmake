@@ -1,7 +1,7 @@
 OPTION(ENABLE_KRB5 "Enable krb5" ${ENABLE_LIBRARIES})
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/krb5/README")
-    message (WARNING "submodule contrib/krb5 is missing. to fix try run: \n git submodule update --init")
+    message (WARNING "submodule contrib/krb5 is missing. to fix try run: \n git submodule update --init --recursive")
     set (ENABLE_KRB5 0)
 endif ()
 
