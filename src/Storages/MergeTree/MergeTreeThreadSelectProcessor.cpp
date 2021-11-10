@@ -49,7 +49,7 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
 /// Requests read task from MergeTreeReadPool and signals whether it got one
 bool MergeTreeThreadSelectProcessor::getNewTaskImpl()
 {
-    task = pool->getTask(min_marks_to_read, thread, ordered_names);
+    task = pool->getTask(std::max(150UL, min_marks_to_read), thread, ordered_names);
 
     if (!task)
     {

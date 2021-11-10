@@ -681,10 +681,15 @@ void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * curren
         }
     }
 
+    (void)sum_average_marks_size;
 
-    const size_t max_batch_size = (8UL * 1024 * 1024 * 1024) / (sum_average_marks_size == 0 ? 8UL * 1024 * 1024 * 10 : sum_average_marks_size);
+    std::cout << "sum_average_marks_size " << sum_average_marks_size << std::endl;
 
-    assert(max_batch_size > 0);
+    // const size_t max_batch_size = (8UL * 1024 * 1024 * 1024) / (sum_average_marks_size == 0 ? 8UL * 1024 * 1024 * 10 : sum_average_marks_size);
+
+    const size_t max_batch_size = 100;
+
+    // assert(max_batch_size > 0);
 
     LOG_TRACE(&Poco::Logger::get("MTBSP"), "Using max batch size equal to {}", max_batch_size);
 

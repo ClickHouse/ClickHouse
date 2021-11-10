@@ -318,10 +318,6 @@ void TCPHandler::runImpl()
             {
                 std::lock_guard lock(task_callback_mutex);
 
-                if (state.is_cancelled) {
-                    throw std::runtime_error("Cancelled!");
-                }
-
                 sendMergeTreeReadTaskRequstAssumeLocked(std::move(request));
                 return receivePartitionMergeTreeReadTaskResponseAssumeLocked();
             });
