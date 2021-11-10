@@ -87,6 +87,7 @@ public:
 };
 
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
+using MergeTreeIndexConditions = std::vector<MergeTreeIndexConditionPtr>;
 
 
 struct IMergeTreeIndex
@@ -100,6 +101,9 @@ struct IMergeTreeIndex
 
     /// Returns filename without extension.
     String getFileName() const { return INDEX_FILE_PREFIX + index.name; }
+    size_t getGranularity() const { return index.granularity; }
+
+    virtual bool isMergeable() const { return false; }
 
     /// Returns extension for serialization.
     /// Reimplement if you want new index format.
@@ -176,5 +180,8 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 
 MergeTreeIndexPtr bloomFilterIndexCreatorNew(const IndexDescription & index);
 void bloomFilterIndexValidatorNew(const IndexDescription & index, bool attach);
+
+MergeTreeIndexPtr hypothesisIndexCreator(const IndexDescription & index);
+void hypothesisIndexValidator(const IndexDescription & index, bool attach);
 
 }
