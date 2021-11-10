@@ -18,6 +18,7 @@
 #include <base/types.h>
 
 #include "config_core.h"
+#include "config_formats.h"
 
 #include <functional>
 #include <memory>
