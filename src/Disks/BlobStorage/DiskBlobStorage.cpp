@@ -81,9 +81,9 @@ DiskBlobStorage::DiskBlobStorage(
 std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
     const String & path,
     size_t buf_size,
-    size_t,
-    size_t,
-    size_t,
+    size_t /*estimated_size*/,
+    size_t /*direct_io_threshold*/,
+    size_t /*mmap_threshold*/,
     MMappedFileCache *) const
 {
     auto metadata = readMeta(path);
@@ -134,6 +134,7 @@ bool DiskBlobStorage::checkUniqueId(const String & id) const
 {
     Azure::Storage::Blobs::ListBlobsOptions blobs_list_options;
     blobs_list_options.Prefix = id;
+    blobs_list_options.PageSizeHint = 1;
 
     // TODO: does it return at most 5k blobs? Do we ever need the continuation token?
     auto blobs_list_response = blob_container_client->ListBlobs(blobs_list_options);

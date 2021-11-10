@@ -119,7 +119,7 @@ void ReadBufferFromBlobStorage::initialize()
     if (data_stream == nullptr)
         throw Exception("Null data stream obtained while downloading a file from Blob Storage", ErrorCodes::RECEIVED_EMPTY_DATA);
 
-    total_size = data_stream->Length();
+    total_size = data_stream->Length() + offset;
 
     initialized = true;
 }
