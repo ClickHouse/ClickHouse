@@ -86,24 +86,6 @@ void MergeTreeIndexMergedCondition::addConstraints(const ConstraintsDescription 
     }
 }
 
-namespace
-{
-
-ComparisonGraph::CompareResult getExpectedCompare(const CNFQuery::AtomicFormula & atom)
-{
-    const auto * func = atom.ast->as<ASTFunction>();
-    if (func)
-    {
-        auto expected = ComparisonGraph::getCompareResult(func->name);
-        if (atom.negative)
-            expected = ComparisonGraph::inverseCompareResult(expected);
-        return expected;
-    }
-    return ComparisonGraph::CompareResult::UNKNOWN;
-}
-
-}
-
 /// Replaces < -> <=, > -> >= and assumes that all hypotheses are true then checks if path exists
 bool MergeTreeIndexMergedCondition::alwaysUnknownOrTrue() const
 {
@@ -183,7 +165,7 @@ bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranu
                 const auto * func = atom.ast->as<ASTFunction>();
                 if (func && func->arguments->children.size() == 2)
                 {
-                    const auto expected = getExpectedCompare(atom);
+                    const auto expected = ComparisonGraph::atomToCompareResult(atom);
                     if (graph.isPossibleCompare(expected, func->arguments->children[0], func->arguments->children[1]))
                     {
                         /// If graph failed use matching.
@@ -194,6 +176,7 @@ bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranu
             }
             always_false = true;
        });
+
     answerCache[values] = !always_false;
     return !always_false;
 }

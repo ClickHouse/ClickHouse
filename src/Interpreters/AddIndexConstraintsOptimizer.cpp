@@ -1,14 +1,12 @@
 #include <Interpreters/AddIndexConstraintsOptimizer.h>
 
 #include <Interpreters/TreeCNFConverter.h>
-#include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Poco/Logger.h>
 
 namespace DB
 {
@@ -21,18 +19,6 @@ AddIndexConstraintsOptimizer::AddIndexConstraintsOptimizer(
 
 namespace
 {
-
-    bool hasIndexColumns(const ASTPtr & ast, const std::unordered_set<std::string_view> & primary_key_set)
-    {
-        const auto * identifier = ast->as<ASTIdentifier>();
-        if (identifier && primary_key_set.contains(identifier->name()))
-            return true;
-        for (auto & child : ast->children)
-            if (hasIndexColumns(child, primary_key_set))
-                return true;
-        return false;
-    }
-
     bool onlyIndexColumns(const ASTPtr & ast, const std::unordered_set<std::string_view> & primary_key_set)
     {
         const auto * identifier = ast->as<ASTIdentifier>();
@@ -57,7 +43,8 @@ namespace
 
     const std::unordered_map<std::string, ComparisonGraph::CompareResult> & getRelationMap()
     {
-        const static std::unordered_map<std::string, ComparisonGraph::CompareResult> relations = {
+        const static std::unordered_map<std::string, ComparisonGraph::CompareResult> relations =
+        {
             {"equals", ComparisonGraph::CompareResult::EQUAL},
             {"less", ComparisonGraph::CompareResult::LESS},
             {"lessOrEquals", ComparisonGraph::CompareResult::LESS_OR_EQUAL},
@@ -69,7 +56,8 @@ namespace
 
     const std::unordered_map<ComparisonGraph::CompareResult, std::string> & getReverseRelationMap()
     {
-        const static std::unordered_map<ComparisonGraph::CompareResult, std::string> relations = {
+        const static std::unordered_map<ComparisonGraph::CompareResult, std::string> relations =
+        {
             {ComparisonGraph::CompareResult::EQUAL, "equals"},
             {ComparisonGraph::CompareResult::LESS, "less"},
             {ComparisonGraph::CompareResult::LESS_OR_EQUAL, "lessOrEquals"},
@@ -109,7 +97,11 @@ namespace
         return CR::UNKNOWN;
     }
 
-    /// Create OR-group for index_hint
+    /// Create OR-group for 'indexHint'.
+    /// Consider we have expression like A <op1> C, where C is constant.
+    /// Consider we have a constraint I <op2> A, where I depends only on columns from primary key.
+    /// Then if op1 and op2 forms a sequence of comparisons (e.g. A < C and I < A),
+    /// we can add to expression 'indexHint(I < A)' condition.
     CNFQuery::OrGroup createIndexHintGroup(
         const CNFQuery::OrGroup & group,
         const ComparisonGraph & graph,
@@ -121,7 +113,7 @@ namespace
             const auto * func = atom.ast->as<ASTFunction>();
             if (func && func->arguments->children.size() == 2 && getRelationMap().contains(func->name))
             {
-                auto check_and_insert = [&](const size_t index, const ComparisonGraph::CompareResult need_result) -> bool
+                auto check_and_insert = [&](const size_t index, const ComparisonGraph::CompareResult need_result)
                 {
                     if (!onlyConstants(func->arguments->children[1 - index]))
                         return false;
@@ -144,10 +136,12 @@ namespace
                             return true;
                         }
                     }
+
                     return false;
                 };
 
-                if (!check_and_insert(1, getRelationMap().at(func->name)) && !check_and_insert(0, getRelationMap().at(func->name)))
+                auto expected = getRelationMap().at(func->name);
+                if (!check_and_insert(0, expected) && !check_and_insert(1, expected))
                     return {};
             }
         }
@@ -165,16 +159,17 @@ void AddIndexConstraintsOptimizer::perform(CNFQuery & cnf_query)
     ASTs primary_key_only_asts;
     for (const auto & vertex : graph.getVertices())
         for (const auto & ast : vertex)
-            if (hasIndexColumns(ast, primary_key_set) && onlyIndexColumns(ast, primary_key_set))
+            if (onlyIndexColumns(ast, primary_key_set))
                 primary_key_only_asts.push_back(ast);
 
     CNFQuery::AndGroup and_group;
-    cnf_query.iterateGroups([&and_group, &graph, &primary_key_only_asts](const auto & or_group)
+    cnf_query.iterateGroups([&](const auto & or_group)
     {
         auto add_group = createIndexHintGroup(or_group, graph, primary_key_only_asts);
         if (!add_group.empty())
             and_group.emplace(std::move(add_group));
     });
+
     if (!and_group.empty())
     {
         CNFQuery::OrGroup new_or_group;

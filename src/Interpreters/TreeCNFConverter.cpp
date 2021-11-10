@@ -5,11 +5,15 @@
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
 }
+
+namespace
+{
 
 /// Splits AND(a, b, c) to AND(a, AND(b, c)) for AND/OR
 void splitMultiLogic(ASTPtr & node)
@@ -19,7 +23,7 @@ void splitMultiLogic(ASTPtr & node)
     if (func && (func->name == "and" || func->name == "or"))
     {
         if (func->arguments->children.size() < 2)
-            throw Exception("Bad logical function", ErrorCodes::INCORRECT_QUERY);
+            throw Exception("Bad AND or OR function. Expected at least 2 arguments", ErrorCodes::INCORRECT_QUERY);
 
         if (func->arguments->children.size() > 2)
         {
@@ -52,7 +56,8 @@ void traversePushNot(ASTPtr & node, bool add_negation)
         if (add_negation)
         {
             if (func->arguments->children.size() != 2)
-                throw Exception("Bad AND or OR function.", ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Bad AND or OR function. Expected at least 2 arguments", ErrorCodes::LOGICAL_ERROR);
+
             /// apply De Morgan's Law
             node = makeASTFunction(
                 (func->name == "and" ? "or" : "and"),
@@ -67,7 +72,7 @@ void traversePushNot(ASTPtr & node, bool add_negation)
     else if (func && func->name == "not")
     {
         if (func->arguments->children.size() != 1)
-            throw Exception("Bad NOT function.", ErrorCodes::INCORRECT_QUERY);
+            throw Exception("Bad NOT function. Expected 1 argument", ErrorCodes::INCORRECT_QUERY);
         /// delete NOT
         node = func->arguments->children[0]->clone();
 
@@ -93,6 +98,7 @@ void traversePushOr(ASTPtr & node)
 
     if (func && func->name == "or")
     {
+        assert(func->arguments->children.size() == 2);
         size_t and_node_id = func->arguments->children.size();
         for (size_t i = 0; i < func->arguments->children.size(); ++i)
         {
@@ -146,7 +152,7 @@ void traverseCNF(const ASTPtr & node, CNFQuery::AndGroup & and_group, CNFQuery::
     else if (func && func->name == "not")
     {
         if (func->arguments->children.size() != 1)
-            throw Exception("Bad NOT function", ErrorCodes::INCORRECT_QUERY);
+            throw Exception("Bad NOT function. Expected 1 argument", ErrorCodes::INCORRECT_QUERY);
         or_group.insert(CNFQuery::AtomicFormula{true, func->arguments->children.front()});
     }
     else
@@ -163,6 +169,8 @@ void traverseCNF(const ASTPtr & node, CNFQuery::AndGroup & result)
         result.insert(or_group);
 }
 
+}
+
 CNFQuery TreeCNFConverter::toCNF(const ASTPtr & query)
 {
     auto cnf = query->clone();
@@ -175,7 +183,6 @@ CNFQuery TreeCNFConverter::toCNF(const ASTPtr & query)
 
     CNFQuery result{std::move(and_group)};
 
-    Poco::Logger::get("TreeCNFConverter").information("Converted to CNF: " + result.dump());
     return result;
 }
 
@@ -220,7 +227,7 @@ ASTPtr TreeCNFConverter::fromCNF(const CNFQuery & cnf)
     return res;
 }
 
-void pushPullNotInAtom(CNFQuery::AtomicFormula & atom, const std::map<std::string, std::string> & inverse_relations)
+static void pushPullNotInAtom(CNFQuery::AtomicFormula & atom, const std::unordered_map<std::string, std::string> & inverse_relations)
 {
     auto * func = atom.ast->as<ASTFunction>();
     if (!func)
@@ -236,9 +243,9 @@ void pushPullNotInAtom(CNFQuery::AtomicFormula & atom, const std::map<std::strin
     }
 }
 
-void pullNotOut(CNFQuery::AtomicFormula & atom)
+static void pullNotOut(CNFQuery::AtomicFormula & atom)
 {
-    static const std::map<std::string, std::string> inverse_relations = {
+    static const std::unordered_map<std::string, std::string> inverse_relations = {
         {"notEquals", "equals"},
         {"greaterOrEquals", "less"},
         {"greater", "lessOrEquals"},
@@ -255,7 +262,7 @@ void pushNotIn(CNFQuery::AtomicFormula & atom)
     if (!atom.negative)
         return;
 
-    static const std::map<std::string, std::string> inverse_relations = {
+    static const std::unordered_map<std::string, std::string> inverse_relations = {
         {"equals", "notEquals"},
         {"less", "greaterOrEquals"},
         {"lessOrEquals", "greater"},

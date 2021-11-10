@@ -2,56 +2,70 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-
-#include <Poco/Logger.h>
-#include <Poco/LogStream.h>
-#include <algorithm>
-#include <deque>
+#include <Parsers/queryToString.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 
 namespace DB
 {
 
-/// make function a < b or a <= b
-ASTPtr ComparisonGraph::normalizeAtom(const ASTPtr & atom)
+namespace ErrorCodes
 {
-    static const std::map<std::string, std::string> inverse_relations = {
-        {"greaterOrEquals", "lessOrEquals"},
-        {"greater", "less"},
+    extern const int VIOLATED_CONSTRAINT;
+}
+
+namespace
+{
+
+/// Make function a > b or a >= b
+ASTPtr normalizeAtom(const ASTPtr & atom)
+{
+    static const std::map<std::string, std::string> inverse_relations =
+    {
+        {"lessOrEquals", "greaterOrEquals"},
+        {"less", "greater"},
     };
 
     ASTPtr res = atom->clone();
+    if (const auto * func = res->as<ASTFunction>())
     {
-        auto * func = res->as<ASTFunction>();
-        if (func)
+        if (const auto it = inverse_relations.find(func->name); it != std::end(inverse_relations))
         {
-            if (const auto it = inverse_relations.find(func->name); it != std::end(inverse_relations))
-            {
-                res = makeASTFunction(it->second, func->arguments->children[1]->clone(), func->arguments->children[0]->clone());
-            }
+            res = makeASTFunction(it->second, func->arguments->children[1]->clone(), func->arguments->children[0]->clone());
         }
     }
 
     return res;
 }
 
-ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
+bool less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess{}, lhs, rhs); }
+bool greater(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess{}, rhs, lhs); }
+bool equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals{}, lhs, rhs); }
+
+}
+
+ComparisonGraph::ComparisonGraph(const ASTs & atomic_formulas)
 {
     if (atomic_formulas.empty())
         return;
+
     static const std::unordered_map<std::string, Edge::Type> relation_to_enum =
     {
-        {"equals", Edge::Type::EQUAL},
-        {"less", Edge::Type::LESS},
-        {"lessOrEquals", Edge::Type::LESS_OR_EQUAL},
+        {"equals", Edge::EQUAL},
+        {"greater", Edge::GREATER},
+        {"greaterOrEquals", Edge::GREATER_OR_EQUAL},
     };
+
+    /// Firstly build an intermediate graph,
+    /// in which each vertex corresponds to one expression.
+    /// That means that if we have edge (A, B) with type GREATER, then always A > B.
+    /// If we have EQUAL relation, then we add both edges (A, B) and (B, A).
 
     Graph g;
     for (const auto & atom_raw : atomic_formulas)
     {
-        const auto atom = ComparisonGraph::normalizeAtom(atom_raw);
+        const auto atom = normalizeAtom(atom_raw);
 
-        const auto bad_term = std::numeric_limits<std::size_t>::max();
-        auto get_index = [](const ASTPtr & ast, Graph & asts_graph) -> std::size_t
+        auto get_index = [](const ASTPtr & ast, Graph & asts_graph) -> std::optional<size_t>
         {
             const auto it = asts_graph.ast_hash_to_component.find(ast->getTreeHash());
             if (it != std::end(asts_graph.ast_hash_to_component))
@@ -65,7 +79,7 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
                                 && constraint_ast->getColumnName() == ast->getColumnName();
                         }))
                 {
-                    return bad_term;
+                    return {};
                 }
 
                 return it->second;
@@ -73,7 +87,7 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
             else
             {
                 asts_graph.ast_hash_to_component[ast->getTreeHash()] = asts_graph.vertices.size();
-                asts_graph.vertices.push_back(EqualComponent{{ast}});
+                asts_graph.vertices.push_back(EqualComponent{{ast}, std::nullopt});
                 asts_graph.edges.emplace_back();
                 return asts_graph.vertices.size() - 1;
             }
@@ -82,118 +96,135 @@ ComparisonGraph::ComparisonGraph(const std::vector<ASTPtr> & atomic_formulas)
         const auto * func = atom->as<ASTFunction>();
         if (func && func->arguments->children.size() == 2)
         {
-            const size_t index_left = get_index(func->arguments->children[0], g);
-            const size_t index_right = get_index(func->arguments->children[1], g);
+            auto index_left = get_index(func->arguments->children[0], g);
+            auto index_right = get_index(func->arguments->children[1], g);
 
-            if (index_left != bad_term && index_right != bad_term)
+            if (index_left && index_right)
             {
-                if (const auto it = relation_to_enum.find(func->name);
-                    it != std::end(relation_to_enum) && func->arguments->children.size() == 2)
+                if (const auto it = relation_to_enum.find(func->name); it != std::end(relation_to_enum))
                 {
-                    g.edges[index_right].push_back(Edge{it->second, index_left});
-                    if (func->name == "equals")
-                    {
-                        g.edges[index_left].push_back(Edge{it->second, index_right});
-                    }
-                }
-                else if (func->name == "notEquals")
-                {
-                    /// Do nothing.
+                    g.edges[*index_left].push_back(Edge{it->second, *index_right});
+                    if (it->second == Edge::EQUAL)
+                        g.edges[*index_right].push_back(Edge{it->second, *index_left});
                 }
             }
         }
     }
 
-    graph = ComparisonGraph::BuildGraphFromAstsGraph(g);
-    dists = ComparisonGraph::BuildDistsFromGraph(graph);
+    /// Now expressions A and B are equal, if and only if
+    /// we have both paths from A to B and from B to A in graph.
+    /// That means that equivalence classes of expressions
+    /// are the same as strongly connected components in graph.
+    /// So, we find such components and build graph on them.
+    /// All expressions from one equivalence class will be stored
+    /// in the corresponding vertex of new graph.
+
+    graph = buildGraphFromAstsGraph(g);
+    dists = buildDistsFromGraph(graph);
     std::tie(ast_const_lower_bound, ast_const_upper_bound) = buildConstBounds();
 
+    /// Find expressions that are known to be unequal.
+    static const std::unordered_set<String> not_equals_functions = {"notEquals", "greater"};
+
+    /// Explicitly save unequal components.
+    /// TODO: Build a graph for unequal components.
     for (const auto & atom_raw : atomic_formulas)
     {
-        const auto atom = ComparisonGraph::normalizeAtom(atom_raw);
-        if (const auto * func = atom->as<ASTFunction>(); func)
+        const auto atom = normalizeAtom(atom_raw);
+        const auto * func = atom->as<ASTFunction>();
+
+        if (func && not_equals_functions.contains(func->name))
         {
             auto index_left = graph.ast_hash_to_component.at(func->arguments->children[0]->getTreeHash());
             auto index_right = graph.ast_hash_to_component.at(func->arguments->children[1]->getTreeHash());
+
+            if (index_left == index_right)
+                throw Exception(ErrorCodes::VIOLATED_CONSTRAINT,
+                    "Found expression '{}', but its arguments considered equal according to constraints",
+                    queryToString(atom));
+
             not_equal.emplace(index_left, index_right);
             not_equal.emplace(index_right, index_left);
         }
     }
 }
-/// returns {is less, is strict}
-/// {true, true} = <
-/// {true, false} = =<
-/// {false, ...} = ?
-std::pair<bool, bool> ComparisonGraph::findPath(const size_t start, const size_t finish) const
+
+ComparisonGraph::CompareResult ComparisonGraph::pathToCompareResult(Path path, bool inverse)
+{
+    switch (path)
+    {
+        case Path::GREATER: return inverse ? CompareResult::LESS : CompareResult::GREATER;
+        case Path::GREATER_OR_EQUAL: return inverse ? CompareResult::LESS_OR_EQUAL : CompareResult::GREATER_OR_EQUAL;
+    }
+    __builtin_unreachable();
+}
+
+std::optional<ComparisonGraph::Path> ComparisonGraph::findPath(const size_t start, const size_t finish) const
 {
     const auto it = dists.find(std::make_pair(start, finish));
     if (it == std::end(dists))
-        return {false, false};
-    else
-    {
-        return {true, it->second == Path::LESS || not_equal.contains({start, finish})};
-    }
+        return {};
+
+    /// Since path can be only GREATER or GREATER_OR_EQUALS,
+    /// we can strengthen the condition.
+    return not_equal.contains({start, finish}) ? Path::GREATER : it->second;
 }
 
 ComparisonGraph::CompareResult ComparisonGraph::compare(const ASTPtr & left, const ASTPtr & right) const
 {
     size_t start = 0;
     size_t finish = 0;
+
+    /// TODO: check full ast
+    const auto it_left = graph.ast_hash_to_component.find(left->getTreeHash());
+    const auto it_right = graph.ast_hash_to_component.find(right->getTreeHash());
+
+    if (it_left == std::end(graph.ast_hash_to_component) || it_right == std::end(graph.ast_hash_to_component))
     {
-        /// TODO: check full ast
-        const auto it_left = graph.ast_hash_to_component.find(left->getTreeHash());
-        const auto it_right = graph.ast_hash_to_component.find(right->getTreeHash());
-        if (it_left == std::end(graph.ast_hash_to_component) || it_right == std::end(graph.ast_hash_to_component))
+        CompareResult result = CompareResult::UNKNOWN;
         {
+            const auto left_bound = getConstLowerBound(left);
+            const auto right_bound = getConstUpperBound(right);
+
+            if (left_bound && right_bound)
             {
-                const auto left_bound = getConstLowerBound(left);
-                const auto right_bound = getConstUpperBound(right);
-                if (left_bound && right_bound)
-                {
-                    if (left_bound->first < right_bound->first)
-                        return CompareResult::UNKNOWN;
-                    else if (left_bound->first > right_bound->first)
-                        return CompareResult::GREATER;
-                    else if (left_bound->second || right_bound->second)
-                        return CompareResult::GREATER;
-                    else
-                        return CompareResult::GREATER_OR_EQUAL;
-                }
+                if (greater(left_bound->first, right_bound->first))
+                    result = CompareResult::GREATER;
+                else if (equals(left_bound->first, right_bound->first))
+                    result = left_bound->second || right_bound->second
+                        ? CompareResult::GREATER : CompareResult::GREATER_OR_EQUAL;
             }
-            {
-                const auto left_bound = getConstUpperBound(left);
-                const auto right_bound = getConstLowerBound(right);
-                if (left_bound && right_bound)
-                {
-                    if (left_bound->first > right_bound->first)
-                        return CompareResult::UNKNOWN;
-                    else if (left_bound->first < right_bound->first)
-                        return CompareResult::LESS;
-                    else if (left_bound->second || right_bound->second)
-                        return CompareResult::LESS;
-                    else
-                        return CompareResult::LESS_OR_EQUAL;
-                }
-            }
-            return CompareResult::UNKNOWN;
         }
-        else
         {
-            start = it_left->second;
-            finish = it_right->second;
+            const auto left_bound = getConstUpperBound(left);
+            const auto right_bound = getConstLowerBound(right);
+
+            if (left_bound && right_bound)
+            {
+                if (less(left_bound->first, right_bound->first))
+                    result = CompareResult::LESS;
+                else if (equals(left_bound->first, right_bound->first))
+                    result = left_bound->second || right_bound->second
+                        ? CompareResult::LESS : CompareResult::LESS_OR_EQUAL;
+            }
         }
+
+        return result;
+    }
+    else
+    {
+        start = it_left->second;
+        finish = it_right->second;
     }
 
     if (start == finish)
         return CompareResult::EQUAL;
 
-    const auto [has_path, is_strict] = findPath(start, finish);
-    if (has_path)
-        return is_strict ? CompareResult::GREATER : CompareResult::GREATER_OR_EQUAL;
+    if (auto path = findPath(start, finish))
+        return pathToCompareResult(*path, /*inverse=*/ false);
 
-    const auto [has_path_reverse, is_strict_reverse] = findPath(finish, start);
-    if (has_path_reverse)
-        return is_strict_reverse ? CompareResult::LESS : CompareResult::LESS_OR_EQUAL;
+    if (auto path = findPath(finish, start))
+        return pathToCompareResult(*path, /*inverse=*/ true);
 
     if (not_equal.contains({start, finish}))
         return CompareResult::NOT_EQUAL;
@@ -206,13 +237,13 @@ bool ComparisonGraph::isPossibleCompare(const CompareResult expected, const ASTP
     const auto result = compare(left, right);
 
     if (expected == CompareResult::UNKNOWN || result == CompareResult::UNKNOWN)
-    {
         return true;
-    }
+
     if (expected == result)
         return true;
 
-    static const std::set<std::pair<CompareResult, CompareResult>> possible_pairs = {
+    static const std::set<std::pair<CompareResult, CompareResult>> possible_pairs =
+    {
         {CompareResult::EQUAL, CompareResult::LESS_OR_EQUAL},
         {CompareResult::EQUAL, CompareResult::GREATER_OR_EQUAL},
         {CompareResult::LESS_OR_EQUAL, CompareResult::LESS},
@@ -242,10 +273,12 @@ bool ComparisonGraph::isAlwaysCompare(const CompareResult expected, const ASTPtr
 
     if (expected == CompareResult::UNKNOWN || result == CompareResult::UNKNOWN)
         return false;
+
     if (expected == result)
         return true;
 
-    static const std::set<std::pair<CompareResult, CompareResult>> possible_pairs = {
+    static const std::set<std::pair<CompareResult, CompareResult>> possible_pairs =
+    {
         {CompareResult::LESS_OR_EQUAL, CompareResult::LESS},
         {CompareResult::LESS_OR_EQUAL, CompareResult::EQUAL},
         {CompareResult::GREATER_OR_EQUAL, CompareResult::GREATER},
@@ -258,7 +291,7 @@ bool ComparisonGraph::isAlwaysCompare(const CompareResult expected, const ASTPtr
 }
 
 
-std::vector<ASTPtr> ComparisonGraph::getEqual(const ASTPtr & ast) const
+ASTs ComparisonGraph::getEqual(const ASTPtr & ast) const
 {
     const auto res = getComponentId(ast);
     if (!res)
@@ -267,11 +300,12 @@ std::vector<ASTPtr> ComparisonGraph::getEqual(const ASTPtr & ast) const
         return getComponent(res.value());
 }
 
-std::optional<std::size_t> ComparisonGraph::getComponentId(const ASTPtr & ast) const
+std::optional<size_t> ComparisonGraph::getComponentId(const ASTPtr & ast) const
 {
     const auto hash_it = graph.ast_hash_to_component.find(ast->getTreeHash());
     if (hash_it == std::end(graph.ast_hash_to_component))
         return {};
+
     const size_t index = hash_it->second;
     if (std::any_of(
         std::cbegin(graph.vertices[index].asts),
@@ -292,27 +326,28 @@ std::optional<std::size_t> ComparisonGraph::getComponentId(const ASTPtr & ast) c
 
 bool ComparisonGraph::hasPath(const size_t left, const size_t right) const
 {
-    return findPath(left, right).first || findPath(right, left).first;
+    return findPath(left, right) || findPath(right, left);
 }
 
-std::vector<ASTPtr> ComparisonGraph::getComponent(const std::size_t id) const
+ASTs ComparisonGraph::getComponent(const size_t id) const
 {
     return graph.vertices[id].asts;
 }
 
 bool ComparisonGraph::EqualComponent::hasConstant() const
 {
-    return constant_index != -1;
+    return constant_index.has_value();
 }
 
 ASTPtr ComparisonGraph::EqualComponent::getConstant() const
 {
-    return asts[constant_index];
+    assert(constant_index);
+    return asts[*constant_index];
 }
 
 void ComparisonGraph::EqualComponent::buildConstants()
 {
-    constant_index = -1;
+    constant_index.reset();
     for (size_t i = 0; i < asts.size(); ++i)
     {
         if (asts[i]->as<ASTLiteral>())
@@ -323,7 +358,20 @@ void ComparisonGraph::EqualComponent::buildConstants()
     }
 }
 
-ComparisonGraph::CompareResult ComparisonGraph::getCompareResult(const std::string & name)
+ComparisonGraph::CompareResult ComparisonGraph::atomToCompareResult(const CNFQuery::AtomicFormula & atom)
+{
+    if (const auto * func = atom.ast->as<ASTFunction>())
+    {
+        auto expected = functionNameToCompareResult(func->name);
+        if (atom.negative)
+            expected = inverseCompareResult(expected);
+        return expected;
+    }
+
+    return ComparisonGraph::CompareResult::UNKNOWN;
+}
+
+ComparisonGraph::CompareResult ComparisonGraph::functionNameToCompareResult(const std::string & name)
 {
     static const std::unordered_map<std::string, CompareResult> relation_to_compare =
     {
@@ -359,6 +407,7 @@ std::optional<ASTPtr> ComparisonGraph::getEqualConst(const ASTPtr & ast) const
     const auto hash_it = graph.ast_hash_to_component.find(ast->getTreeHash());
     if (hash_it == std::end(graph.ast_hash_to_component))
         return std::nullopt;
+
     const size_t index = hash_it->second;
     return graph.vertices[index].hasConstant()
         ? std::optional<ASTPtr>{graph.vertices[index].getConstant()}
@@ -367,48 +416,45 @@ std::optional<ASTPtr> ComparisonGraph::getEqualConst(const ASTPtr & ast) const
 
 std::optional<std::pair<Field, bool>> ComparisonGraph::getConstUpperBound(const ASTPtr & ast) const
 {
-    {
-        const auto * literal = ast->as<ASTLiteral>();
-        if (literal)
-            return std::make_pair(literal->value, false);
-    }
+    if (const auto * literal = ast->as<ASTLiteral>())
+        return std::make_pair(literal->value, false);
+
     const auto it = graph.ast_hash_to_component.find(ast->getTreeHash());
     if (it == std::end(graph.ast_hash_to_component))
         return std::nullopt;
+
     const size_t to = it->second;
     const ssize_t from = ast_const_upper_bound[to];
     if (from == -1)
         return  std::nullopt;
-    return std::make_pair(graph.vertices[from].getConstant()->as<ASTLiteral>()->value, dists.at({from, to}) == Path::LESS);
+
+    return std::make_pair(graph.vertices[from].getConstant()->as<ASTLiteral>()->value, dists.at({from, to}) == Path::GREATER);
 }
 
 std::optional<std::pair<Field, bool>> ComparisonGraph::getConstLowerBound(const ASTPtr & ast) const
 {
-    {
-        const auto * literal = ast->as<ASTLiteral>();
-        if (literal)
-            return std::make_pair(literal->value, false);
-    }
+    if (const auto * literal = ast->as<ASTLiteral>())
+        return std::make_pair(literal->value, false);
+
     const auto it = graph.ast_hash_to_component.find(ast->getTreeHash());
     if (it == std::end(graph.ast_hash_to_component))
         return std::nullopt;
+
     const size_t from = it->second;
     const ssize_t to = ast_const_lower_bound[from];
     if (to == -1)
-        return  std::nullopt;
-    return std::make_pair(graph.vertices[to].getConstant()->as<ASTLiteral>()->value, dists.at({from, to}) == Path::LESS);
+        return std::nullopt;
+
+    return std::make_pair(graph.vertices[to].getConstant()->as<ASTLiteral>()->value, dists.at({from, to}) == Path::GREATER);
 }
 
 void ComparisonGraph::dfsOrder(const Graph & asts_graph, size_t v, std::vector<bool> & visited, std::vector<size_t> & order)
 {
     visited[v] = true;
     for (const auto & edge : asts_graph.edges[v])
-    {
         if (!visited[edge.to])
-        {
             dfsOrder(asts_graph, edge.to, visited, order);
-        }
-    }
+
     order.push_back(v);
 }
 
@@ -418,14 +464,12 @@ ComparisonGraph::Graph ComparisonGraph::reverseGraph(const Graph & asts_graph)
     g.ast_hash_to_component = asts_graph.ast_hash_to_component;
     g.vertices = asts_graph.vertices;
     g.edges.resize(g.vertices.size());
+
     for (size_t v = 0; v < asts_graph.vertices.size(); ++v)
-    {
         for (const auto & edge : asts_graph.edges[v])
-        {
             g.edges[edge.to].push_back(Edge{edge.type, v});
-        }
-    }
-    return asts_graph;
+
+    return g;
 }
 
 std::vector<ASTs> ComparisonGraph::getVertices() const
@@ -441,21 +485,19 @@ std::vector<ASTs> ComparisonGraph::getVertices() const
 }
 
 void ComparisonGraph::dfsComponents(
-    const Graph & reversed_graph, size_t v, std::vector<size_t> & components, const size_t not_visited, const size_t component)
+    const Graph & reversed_graph, size_t v,
+    OptionalIndices & components, const size_t component)
 {
     components[v] = component;
     for (const auto & edge : reversed_graph.edges[v])
-    {
-        if (components[edge.to] == not_visited)
-        {
-            dfsComponents(reversed_graph, edge.to, components, not_visited, component);
-        }
-    }
+        if (!components[edge.to])
+            dfsComponents(reversed_graph, edge.to, components, component);
 }
 
-ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & asts_graph)
+ComparisonGraph::Graph ComparisonGraph::buildGraphFromAstsGraph(const Graph & asts_graph)
 {
-    /// Find strongly connected component
+    /// Find strongly connected component by using 2 dfs traversals.
+    /// https://en.wikipedia.org/wiki/Kosaraju%27s_algorithm
     const auto n = asts_graph.vertices.size();
 
     std::vector<size_t> order;
@@ -464,20 +506,19 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
         for (size_t v = 0; v < n; ++v)
         {
             if (!visited[v])
-                ComparisonGraph::dfsOrder(asts_graph, v, visited, order);
+                dfsOrder(asts_graph, v, visited, order);
         }
     }
 
-    const auto not_visited = std::numeric_limits<size_t>::max();
-    std::vector<size_t> components(n, not_visited);
+    OptionalIndices components(n);
     size_t component = 0;
     {
         const Graph reversed_graph = reverseGraph(asts_graph);
-        for (const size_t v : order)
+        for (auto it = order.rbegin(); it != order.rend(); ++it)
         {
-            if (components[v] == not_visited)
+            if (!components[*it])
             {
-                ComparisonGraph::dfsComponents(reversed_graph, v, components, not_visited, component);
+                dfsComponents(reversed_graph, *it, components, component);
                 ++component;
             }
         }
@@ -488,46 +529,40 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
     result.edges.resize(component);
     for (const auto & [hash, index] : asts_graph.ast_hash_to_component)
     {
-        result.ast_hash_to_component[hash] = components[index];
-        result.vertices[components[index]].asts.insert(
-            std::end(result.vertices[components[index]].asts),
+        assert(components[index]);
+        result.ast_hash_to_component[hash] = *components[index];
+        result.vertices[*components[index]].asts.insert(
+            std::end(result.vertices[*components[index]].asts),
             std::begin(asts_graph.vertices[index].asts),
             std::end(asts_graph.vertices[index].asts)); // asts_graph has only one ast per vertex
     }
 
     /// Calculate constants
     for (auto & vertex : result.vertices)
-    {
         vertex.buildConstants();
-    }
 
-    Poco::Logger::get("ComparisonGraph").information("components: " + std::to_string(component));
-
+    /// For each edge in initial graph, we add an edge between components in condensation graph.
     for (size_t v = 0; v < n; ++v)
     {
         for (const auto & edge : asts_graph.edges[v])
-        {
-            result.edges[components[v]].push_back(Edge{edge.type, components[edge.to]});
-        }
-        // TODO: make edges unique (left most strict)
+            result.edges[*components[v]].push_back(Edge{edge.type, *components[edge.to]});
+
+        /// TODO: make edges unique (left most strict)
     }
 
+    /// If we have constansts in two components, we can compare them and add and extra edge.
     for (size_t v = 0; v < result.vertices.size(); ++v)
     {
         for (size_t u = 0; u < result.vertices.size(); ++u)
         {
-            if (v == u)
-                continue;
-            if (result.vertices[v].hasConstant() && result.vertices[u].hasConstant())
+            if (v != u && result.vertices[v].hasConstant() && result.vertices[u].hasConstant())
             {
                 const auto * left = result.vertices[v].getConstant()->as<ASTLiteral>();
                 const auto * right = result.vertices[u].getConstant()->as<ASTLiteral>();
 
-                /// Only less. Equal constant fields = equal literals so it was already considered above.
-                if (left->value > right->value)
-                {
-                    result.edges[v].push_back(Edge{Edge::LESS, u});
-                }
+                /// Only GREATER. Equal constant fields = equal literals so it was already considered above.
+                if (greater(left->value, right->value))
+                    result.edges[v].push_back(Edge{Edge::GREATER, u});
             }
         }
     }
@@ -535,17 +570,21 @@ ComparisonGraph::Graph ComparisonGraph::BuildGraphFromAstsGraph(const Graph & as
     return result;
 }
 
-std::map<std::pair<size_t, size_t>, ComparisonGraph::Path> ComparisonGraph::BuildDistsFromGraph(const Graph & g)
+std::map<std::pair<size_t, size_t>, ComparisonGraph::Path> ComparisonGraph::buildDistsFromGraph(const Graph & g)
 {
-    // min path : < = -1, =< = 0
-    const auto inf = std::numeric_limits<int8_t>::max();
+    /// Min path : -1 means GREATER, 0 means GREATER_OR_EQUALS.
+    /// We use Floyd–Warshall algorithm to find distances between all pairs of vertices.
+    /// https://en.wikipedia.org/wiki/Floyd–Warshall_algorithm
+
+    constexpr auto inf = std::numeric_limits<Int8>::max();
     const size_t n = g.vertices.size();
-    std::vector<std::vector<int8_t>> results(n, std::vector<int8_t>(n, inf));
+    std::vector<std::vector<Int8>> results(n, std::vector<Int8>(n, inf));
+
     for (size_t v = 0; v < n; ++v)
     {
         results[v][v] = 0;
         for (const auto & edge : g.edges[v])
-            results[v][edge.to] = std::min(results[v][edge.to], static_cast<int8_t>(edge.type == Edge::LESS ? -1 : 0));
+            results[v][edge.to] = std::min(results[v][edge.to], static_cast<Int8>(edge.type == Edge::GREATER ? -1 : 0));
     }
 
     for (size_t k = 0; k < n; ++k)
@@ -558,7 +597,7 @@ std::map<std::pair<size_t, size_t>, ComparisonGraph::Path> ComparisonGraph::Buil
     for (size_t v = 0; v < n; ++v)
         for (size_t u = 0; u < n; ++u)
             if (results[v][u] != inf)
-                path[std::make_pair(v, u)] = (results[v][u] == -1 ? Path::LESS : Path::LESS_OR_EQUAL);
+                path[std::make_pair(v, u)] = (results[v][u] == -1 ? Path::GREATER : Path::GREATER_OR_EQUAL);
 
     return path;
 }
@@ -577,24 +616,25 @@ std::pair<std::vector<ssize_t>, std::vector<ssize_t>> ComparisonGraph::buildCons
     for (const auto & [edge, path] : dists)
     {
         const auto [from, to] = edge;
+
         if (graph.vertices[to].hasConstant())
         {
             if (lower[from] == -1
-                || get_value(lower[from]) > get_value(to)
-                || (get_value(lower[from]) >= get_value(to) && dists.at({from, to}) == Path::LESS))
+                || greater(get_value(to), get_value(lower[from]))
+                || (equals(get_value(to), get_value(lower[from])) && path == Path::GREATER))
                 lower[from] = to;
         }
+
         if (graph.vertices[from].hasConstant())
         {
             if (upper[to] == -1
-                || get_value(upper[to]) < get_value(from)
-                || (get_value(upper[to]) <= get_value(from) && dists.at({from, to}) == Path::LESS))
+                || less(get_value(from), get_value(upper[to]))
+                || (equals(get_value(from), get_value(upper[to])) && path == Path::GREATER))
                 upper[to] = from;
         }
     }
 
     return {lower, upper};
 }
-
 
 }

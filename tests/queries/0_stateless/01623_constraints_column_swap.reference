@@ -49,3 +49,5 @@ WHERE a = \'c\'
 SELECT a AS `substring(reverse(b), 1, 1)`
 FROM column_swap_test_test
 WHERE a = \'c\'
+SELECT toUInt32(s) AS a
+FROM t_bad_constraint

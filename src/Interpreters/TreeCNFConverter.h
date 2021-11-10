@@ -67,7 +67,7 @@ public:
                 filtered.insert(filtered_group);
             else
             {
-                /// all atoms false -> group false -> CNF   false
+                /// all atoms false -> group false -> CNF false
                 filtered.clear();
                 filtered_group.clear();
                 filtered_group.insert(AtomicFormula{false, std::make_shared<ASTLiteral>(static_cast<UInt8>(0))});

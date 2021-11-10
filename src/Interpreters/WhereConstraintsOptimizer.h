@@ -1,12 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
-#include <Core/Block.h>
-#include <Core/NamesAndTypes.h>
-#include <Interpreters/Aliases.h>
-#include <Interpreters/SelectQueryOptions.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Storages/IStorage_fwd.h>
+#include <Parsers/ASTSelectQuery.h>
 
 namespace DB
 {
@@ -14,13 +9,15 @@ namespace DB
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
+/// Optimizer that can remove useless parts of conditions
+/// in WHERE clause according to table constraints.
 class WhereConstraintsOptimizer final
 {
 public:
     WhereConstraintsOptimizer(
         ASTSelectQuery * select_query,
         const StorageMetadataPtr & metadata_snapshot,
-        const bool optimize_append_index_);
+        bool optimize_append_index_);
 
     void perform();
 
