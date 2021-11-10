@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSelectQuery.h>
 
 
