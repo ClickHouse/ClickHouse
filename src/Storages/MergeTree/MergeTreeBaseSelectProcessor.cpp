@@ -664,19 +664,26 @@ void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * curren
     // buffered_ranges.emplace_back(std::move(current_task->mark_ranges));
 
 
+    /// This won't work for compact parts
     size_t sum_average_marks_size = 0;
     if (extension.has_value())
     {
         for (const auto & name : extension->colums_to_read)
         {
             auto size = task->data_part->getColumnSize(name);
+
+            if (size == ColumnSize{}) {
+                continue;
+            }
             assert(size.marks != 0);
             average_mark_size_bytes.emplace_back(size.data_compressed / size.marks);
             sum_average_marks_size += average_mark_size_bytes.back();
         }
     }
 
-    const size_t max_batch_size = (8UL * 1024 * 1024 * 1024) / sum_average_marks_size;
+
+    const size_t max_batch_size = (8UL * 1024 * 1024 * 1024) / (sum_average_marks_size == 0 ? 8UL * 1024 * 1024 * 10 : sum_average_marks_size);
+
     assert(max_batch_size > 0);
 
     LOG_TRACE(&Poco::Logger::get("MTBSP"), "Using max batch size equal to {}", max_batch_size);
