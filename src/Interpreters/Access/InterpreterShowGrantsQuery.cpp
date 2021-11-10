@@ -3,7 +3,7 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTShowGrantsQuery.h>
 #include <Parsers/formatAST.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/Role.h>
 #include <Access/RolesOrUsersSet.h>
 #include <Access/User.h>
@@ -27,7 +27,7 @@ namespace
     template <typename T>
     ASTs getGrantQueriesImpl(
         const T & grantee,
-        const AccessControlManager * manager /* not used if attach_mode == true */,
+        const AccessControl * access_control /* not used if attach_mode == true */,
         bool attach_mode = false)
     {
         ASTs res;
@@ -75,7 +75,7 @@ namespace
             if (attach_mode)
                 grant_query->roles = RolesOrUsersSet{element.ids}.toAST();
             else
-                grant_query->roles = RolesOrUsersSet{element.ids}.toASTWithNames(*manager);
+                grant_query->roles = RolesOrUsersSet{element.ids}.toASTWithNames(*access_control);
             res.push_back(std::move(grant_query));
         }
 
@@ -84,13 +84,13 @@ namespace
 
     ASTs getGrantQueriesImpl(
         const IAccessEntity & entity,
-        const AccessControlManager * manager /* not used if attach_mode == true */,
+        const AccessControl * access_control /* not used if attach_mode == true */,
         bool attach_mode = false)
     {
         if (const User * user = typeid_cast<const User *>(&entity))
-            return getGrantQueriesImpl(*user, manager, attach_mode);
+            return getGrantQueriesImpl(*user, access_control, attach_mode);
         if (const Role * role = typeid_cast<const Role *>(&entity))
-            return getGrantQueriesImpl(*role, manager, attach_mode);
+            return getGrantQueriesImpl(*role, access_control, attach_mode);
         throw Exception(entity.outputTypeAndName() + " is expected to be user or role", ErrorCodes::LOGICAL_ERROR);
     }
 
@@ -136,7 +136,7 @@ QueryPipeline InterpreterShowGrantsQuery::executeImpl()
 std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
 {
     const auto & show_query = query_ptr->as<ASTShowGrantsQuery &>();
-    const auto & access_control = getContext()->getAccessControlManager();
+    const auto & access_control = getContext()->getAccessControl();
     auto ids = RolesOrUsersSet{*show_query.for_roles, access_control, getContext()->getUserID()}.getMatchingIDs(access_control);
 
     std::vector<AccessEntityPtr> entities;
@@ -155,7 +155,7 @@ std::vector<AccessEntityPtr> InterpreterShowGrantsQuery::getEntities() const
 ASTs InterpreterShowGrantsQuery::getGrantQueries() const
 {
     auto entities = getEntities();
-    const auto & access_control = getContext()->getAccessControlManager();
+    const auto & access_control = getContext()->getAccessControl();
 
     ASTs grant_queries;
     for (const auto & entity : entities)
@@ -165,7 +165,7 @@ ASTs InterpreterShowGrantsQuery::getGrantQueries() const
 }
 
 
-ASTs InterpreterShowGrantsQuery::getGrantQueries(const IAccessEntity & user_or_role, const AccessControlManager & access_control)
+ASTs InterpreterShowGrantsQuery::getGrantQueries(const IAccessEntity & user_or_role, const AccessControl & access_control)
 {
     return getGrantQueriesImpl(user_or_role, &access_control, false);
 }

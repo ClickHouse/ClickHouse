@@ -3,7 +3,7 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
 #include <Parsers/ASTDatabaseOrNone.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Interpreters/Access/InterpreterSetRoleQuery.h>
@@ -79,7 +79,7 @@ namespace
 BlockIO InterpreterCreateUserQuery::execute()
 {
     const auto & query = query_ptr->as<const ASTCreateUserQuery &>();
-    auto & access_control = getContext()->getAccessControlManager();
+    auto & access_control = getContext()->getAccessControl();
     auto access = getContext()->getAccess();
     access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
 
