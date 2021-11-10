@@ -16,14 +16,11 @@ insert into t1_local values(1), (2), (3);
 insert into t2_local values(1), (2), (3);
 
 set distributed_product_mode = 'local';
-
-explain syntax select * from t1_all t1 where t1.a in (select t2.a from t2_all t2);
 select * from t1_all t1 where t1.a in (select t2.a from t2_all t2);
 explain syntax select t1.* from t1_all t1 join t2_all t2 on t1.a = t2.a;
 select t1.* from t1_all t1 join t2_all t2 on t1.a = t2.a;
 
 set distributed_product_mode = 'global';
-explain syntax select * from t1_all t1 where t1.a in (select t2.a from t2_all t2);
 select * from t1_all t1 where t1.a in (select t2.a from t2_all t2);
 explain syntax select t1.* from t1_all t1 join t2_all t2 on t1.a = t2.a;
 select t1.* from t1_all t1 join t2_all t2 on t1.a = t2.a;
