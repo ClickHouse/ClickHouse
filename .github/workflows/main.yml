@@ -345,10 +345,10 @@ jobs:
         uses: actions/checkout@v2
       - name: Integration test
         env:
-          TEMP_PATH: ${{runner.temp}}/integration_tests_debug
+          TEMP_PATH: ${{runner.temp}}/integration_tests_asan
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Integration tests (asan, actions)'
-          REPO_COPY: ${{runner.temp}}/integration_tests_debug/ClickHouse
+          REPO_COPY: ${{runner.temp}}/integration_tests_asan/ClickHouse
           REQUIRED_BUILD_NUMBER: 3
         run: |
           sudo rm -fr $TEMP_PATH
