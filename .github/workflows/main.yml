@@ -263,6 +263,7 @@ jobs:
           CHECK_NAME: 'Stateless tests flaky check (address, actions)'
           REPO_COPY: ${{runner.temp}}/stateless_flaky_asan/ClickHouse
           REQUIRED_BUILD_NUMBER: 3
+          KILL_TIMEOUT: 3600
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
