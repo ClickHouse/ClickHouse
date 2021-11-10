@@ -1,4 +1,5 @@
 import pytest
+import time
 
 from helpers.cluster import ClickHouseCluster
 
@@ -13,18 +14,35 @@ def started_cluster():
         yield cluster
 
     finally:
-        cluster.shutdown()
+        # It will print Fatal message after pkill -SEGV, suppress it
+        try:
+            cluster.shutdown()
+        except:
+            pass
 
 
-def test_log_lz4_streaming(started_cluster):
+def check_log_file():
+    assert node.file_exists("/var/log/clickhouse-server/clickhouse-server.log.lz4")
 
+    lz4_output = node.exec_in_container(["bash", "-c", "lz4 -t /var/log/clickhouse-server/clickhouse-server.log.lz4 2>&1"], user='root')
+    assert lz4_output.count('Error') == 0, lz4_output
+
+    compressed_size = int(node.exec_in_container(["bash", "-c", "du -b /var/log/clickhouse-server/clickhouse-server.log.lz4 | awk {' print $1 '}"], user='root'))
+    uncompressed_size = int(lz4_output.split()[3])
+    assert 0 < compressed_size < uncompressed_size, lz4_output
+
+
+def test_concatenation(started_cluster):
     node.stop_clickhouse()
     node.start_clickhouse()
     node.stop_clickhouse()
 
-    lz4_output = node.exec_in_container(["bash", "-c", "lz4 -t /var/log/clickhouse-server/clickhouse-server.log.lz4 2>&1"])
-    assert lz4_output.find('Error') == -1, lz4_output
+    check_log_file()
 
-    compressed_size = int(node.exec_in_container(["bash", "-c", "du -b /var/log/clickhouse-server/clickhouse-server.log.lz4 | awk {' print $1 '}"]))
-    uncompressed_size = int(lz4_output.split()[3])
-    assert 0 < compressed_size < uncompressed_size, lz4_output
+
+def test_incomplete_rotation(started_cluster):
+    node.stop_clickhouse(kill=True)
+    node.start_clickhouse()
+    node.stop_clickhouse()
+
+    check_log_file()
