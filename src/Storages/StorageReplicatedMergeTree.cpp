@@ -81,14 +81,10 @@ namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
-    extern const Event ReplicatedPartMerges;
-    extern const Event ReplicatedPartMutations;
     extern const Event ReplicatedPartFailedFetches;
     extern const Event ReplicatedPartFetchesOfMerged;
     extern const Event ObsoleteReplicatedParts;
     extern const Event ReplicatedPartFetches;
-    extern const Event DataAfterMergeDiffersFromReplica;
-    extern const Event DataAfterMutationDiffersFromReplica;
     extern const Event CreatedLogEntryForMerge;
     extern const Event NotCreatedLogEntryForMerge;
     extern const Event CreatedLogEntryForMutation;
