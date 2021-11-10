@@ -15,6 +15,7 @@
 namespace ProfileEvents
 {
     extern const Event QueryProfilerSignalOverruns;
+    extern const Event QueryProfilerRuns;
 }
 
 namespace DB
@@ -60,6 +61,7 @@ namespace
         const StackTrace stack_trace(signal_context);
 
         TraceCollector::collect(trace_type, stack_trace, 0);
+        ProfileEvents::increment(ProfileEvents::QueryProfilerRuns);
 
         errno = saved_errno;
     }

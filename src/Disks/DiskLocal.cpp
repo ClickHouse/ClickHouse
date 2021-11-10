@@ -172,7 +172,7 @@ UInt64 DiskLocal::getTotalSpace() const
         fs = getStatVFS((fs::path(disk_path) / "data/").string());
     else
         fs = getStatVFS(disk_path);
-    UInt64 total_size = fs.f_blocks * fs.f_bsize;
+    UInt64 total_size = fs.f_blocks * fs.f_frsize;
     if (total_size < keep_free_space_bytes)
         return 0;
     return total_size - keep_free_space_bytes;
@@ -187,7 +187,7 @@ UInt64 DiskLocal::getAvailableSpace() const
         fs = getStatVFS((fs::path(disk_path) / "data/").string());
     else
         fs = getStatVFS(disk_path);
-    UInt64 total_size = fs.f_bavail * fs.f_bsize;
+    UInt64 total_size = fs.f_bavail * fs.f_frsize;
     if (total_size < keep_free_space_bytes)
         return 0;
     return total_size - keep_free_space_bytes;
@@ -259,9 +259,9 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
     fs::rename(from_file, to_file);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, size_t estimated_size) const
+std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> size) const
 {
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, estimated_size);
+    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

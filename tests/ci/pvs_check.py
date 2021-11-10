@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
+
+# pylint: disable=line-too-long
+
 import subprocess
 import os
 import json
 import logging
+import sys
 from github import Github
 from report import create_test_html_report
 from s3_helper import S3Helper
 from pr_info import PRInfo
-import shutil
-import sys
-from get_robot_token import get_best_robot_token
+from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 
 NAME = 'PVS Studio (actions)'
 LICENCE_NAME = 'Free license: ClickHouse, Yandex'
@@ -34,10 +36,12 @@ def _process_txt_report(path):
         for line in report_file:
             if 'viva64' in line:
                 continue
-            elif 'warn' in line:
+
+            if 'warn' in line:
                 warnings.append(':'.join(line.split('\t')[0:2]))
             elif 'err' in line:
                 errors.append(':'.join(line.split('\t')[0:2]))
+
     return warnings, errors
 
 def get_commit(gh, commit_sha):
@@ -46,7 +50,7 @@ def get_commit(gh, commit_sha):
     return commit
 
 def upload_results(s3_client, pr_number, commit_sha, test_results, additional_files):
-    s3_path_prefix = str(pr_number) + "/" + commit_sha + "/" + NAME.lower().replace(' ', '_')
+    s3_path_prefix = str(pr_number) + "/" + commit_sha + "/" + NAME.lower().replace(' ', '_').replace('(', '_').replace(')', '_')
     additional_urls = process_logs(s3_client, additional_files, s3_path_prefix)
 
     branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
@@ -61,7 +65,7 @@ def upload_results(s3_client, pr_number, commit_sha, test_results, additional_fi
     raw_log_url = additional_urls[0]
     additional_urls.pop(0)
 
-    html_report = create_test_html_report(NAME, test_results, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls)
+    html_report = create_test_html_report(NAME, test_results, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls, False)
     with open('report.html', 'w') as f:
         f.write(html_report)
 
@@ -73,7 +77,7 @@ def upload_results(s3_client, pr_number, commit_sha, test_results, additional_fi
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     repo_path = os.path.join(os.getenv("REPO_COPY", os.path.abspath("../../")))
-    temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'pvs_check')
+    temp_path = os.path.join(os.getenv("TEMP_PATH"))
 
     with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
         event = json.load(event_file)
@@ -97,7 +101,7 @@ if __name__ == "__main__":
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
 
-    licence_key = os.getenv('PVS_STUDIO_KEY')
+    licence_key = get_parameter_from_ssm('pvs_studio_key')
     cmd = f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --volume={repo_path}:/repo_folder --volume={temp_path}:/test_output -e LICENCE_NAME='{LICENCE_NAME}' -e LICENCE_KEY='{licence_key}' {docker_image}"
     commit = get_commit(gh, pr_info.sha)
 

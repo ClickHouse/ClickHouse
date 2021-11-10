@@ -40,7 +40,7 @@ void LimitStep::updateInputStream(DataStream input_stream)
 {
     input_streams.clear();
     input_streams.emplace_back(std::move(input_stream));
-    output_stream = createOutputStream(input_streams.front(), output_stream->header, getDataStreamTraits());
+    output_stream = createOutputStream(input_streams.front(), input_streams.front().header, getDataStreamTraits());
 }
 
 void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

@@ -4,6 +4,7 @@
 #include <memory>
 #include <mutex>
 #include <vector>
+#include <string_view>
 #include <string.h>
 #include <base/types.h>
 #include <base/scope_guard.h>
@@ -53,9 +54,10 @@
 #include "Core/Protocol.h"
 #include "TCPHandler.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
+
+using namespace std::literals;
+
 
 namespace CurrentMetrics
 {
@@ -1126,6 +1128,11 @@ void TCPHandler::receiveHello()
     client_info.client_version_patch = client_version_patch;
     client_info.client_tcp_protocol_version = client_tcp_protocol_version;
 
+    client_info.connection_client_version_major = client_version_major;
+    client_info.connection_client_version_minor = client_version_minor;
+    client_info.connection_client_version_patch = client_version_patch;
+    client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
+
     is_interserver_mode = (user == USER_INTERSERVER_MARKER);
     if (is_interserver_mode)
     {
@@ -1841,7 +1848,7 @@ void TCPHandler::run()
     catch (Poco::Exception & e)
     {
         /// Timeout - not an error.
-        if (!strcmp(e.what(), "Timeout"))
+        if (e.what() == "Timeout"sv)
         {
             LOG_DEBUG(log, "Poco::Exception. Code: {}, e.code() = {}, e.displayText() = {}, e.what() = {}", ErrorCodes::POCO_EXCEPTION, e.code(), e.displayText(), e.what());
         }

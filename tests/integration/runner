@@ -150,8 +150,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--network",
-        default='host',
-        help="Set network driver for runnner container")
+        help="Set network driver for runnner container (defaults to `host`)")
 
     parser.add_argument(
         "--docker-image-version",
@@ -276,8 +275,9 @@ if __name__ == "__main__":
         --volume={library_bridge_bin}:/clickhouse-library-bridge --volume={bin}:/clickhouse \
         --volume={base_cfg}:/clickhouse-config --volume={cases_dir}:/ClickHouse/tests/integration \
         --volume={src_dir}/Server/grpc_protos:/ClickHouse/src/Server/grpc_protos \
-        --volume=/run/xtables.lock:/run/xtables.lock:ro \
+        --volume=/run:/run/host:ro \
         {dockerd_internal_volume} -e DOCKER_CLIENT_TIMEOUT=300 -e COMPOSE_HTTP_TIMEOUT=600 \
+        -e XTABLES_LOCKFILE=/run/host/xtables.lock \
         {env_tags} {env_cleanup} -e PYTEST_OPTS='{parallel} {opts} {tests_list} -vvv' {img} {command}".format(
         net=net,
         tty=tty,
