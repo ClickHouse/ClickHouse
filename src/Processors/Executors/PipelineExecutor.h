@@ -27,7 +27,7 @@ public:
     /// During pipeline execution new processors can appear. They will be added to existing set.
     ///
     /// Explicit graph representation is built in constructor. Throws if graph is not correct.
-    explicit PipelineExecutor(Processors & processors_, QueryStatus * elem = nullptr);
+    explicit PipelineExecutor(Processors & processors, QueryStatus * elem = nullptr);
     ~PipelineExecutor();
 
     /// Execute pipeline in multiple threads. Must be called once.
@@ -39,15 +39,12 @@ public:
     /// Return true if execution should be continued.
     bool executeStep(std::atomic_bool * yield_flag = nullptr);
 
-    const Processors & getProcessors() const { return processors; }
+    const Processors & getProcessors() const;
 
     /// Cancel execution. May be called from another thread.
     void cancel();
 
 private:
-    Processors & processors;
-    std::mutex processors_mutex;
-
     ExecutingGraphPtr graph;
 
     ExecutorTasks tasks;
@@ -63,18 +60,7 @@ private:
     /// Now it's used to check if query was killed.
     QueryStatus * const process_list_element = nullptr;
 
-    /// Graph related methods.
-    bool expandPipeline(Stack & stack, UInt64 pid);
-
     using Queue = std::queue<ExecutingGraph::Node *>;
-
-    /// Pipeline execution related methods.
-    void addChildlessProcessorsToStack(Stack & stack);
-
-    /// Prepare processor with pid number.
-    /// Check parents and children of current processor and push them to stacks if they also need to be prepared.
-    /// If processor wants to be expanded, ExpandPipelineTask from thread_number's execution context will be used.
-    bool prepareProcessor(UInt64 pid, Queue & queue, Queue & async_queue, UpgradableMutex::ReadGuard & pipeline_lock);
 
     void initializeExecution(size_t num_threads); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
