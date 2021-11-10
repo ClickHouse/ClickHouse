@@ -42,10 +42,10 @@ public:
     }
 
     /// Initialize the callback and perform the initial cert loading
-    void init(const Poco::Util::AbstractConfiguration & config);
+    void init();
 
     /// Handle configuration reload
-    void reload(const Poco::Util::AbstractConfiguration & config);
+    void tryLoad(const Poco::Util::AbstractConfiguration & config);
 
     /// A callback for OpenSSL
     int setCertificate(SSL * ssl);
@@ -80,6 +80,7 @@ private:
     };
 
     MultiVersion<Data> data;
+    bool first_load = true;
 };
 
 }

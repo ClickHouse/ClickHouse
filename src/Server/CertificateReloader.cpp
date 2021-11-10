@@ -51,25 +51,27 @@ int CertificateReloader::setCertificate(SSL * ssl)
 }
 
 
-void CertificateReloader::init(const Poco::Util::AbstractConfiguration & config)
+void CertificateReloader::init()
 {
     LOG_DEBUG(log, "Initializing certificate reloader.");
 
-    reload(config);
-
     /// Set a callback for OpenSSL to allow get the updated cert and key.
 
-    auto* ctx =  Poco::Net::SSLManager::instance().defaultServerContext()->sslContext();
+    auto* ctx = Poco::Net::SSLManager::instance().defaultServerContext()->sslContext();
     SSL_CTX_set_cert_cb(ctx, callSetCertificate, nullptr);
+    first_load = false;
 }
 
 
-void CertificateReloader::reload(const Poco::Util::AbstractConfiguration & config)
+void CertificateReloader::tryLoad(const Poco::Util::AbstractConfiguration & config)
 {
     /// If at least one of the files is modified - recreate
 
     std::string new_cert_path = config.getString("openSSL.server.certificateFile", "");
     std::string new_key_path = config.getString("openSSL.server.privateKeyFile", "");
+
+    /// For empty paths (that means, that user doesn't want to use certificates)
+    /// no processing required
 
     if (new_cert_path.empty() || new_key_path.empty())
     {
@@ -86,6 +88,11 @@ void CertificateReloader::reload(const Poco::Util::AbstractConfiguration & confi
             data.set(std::make_unique<const Data>(cert_file.path, key_file.path));
             LOG_INFO(log, "Reloaded certificate ({}) and key ({}).", cert_file.path, key_file.path);
         }
+
+        /// If callback is not set yet
+    
+        if (first_load)
+            init();
     }
 }
 
