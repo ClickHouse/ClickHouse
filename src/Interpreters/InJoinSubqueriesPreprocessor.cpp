@@ -191,7 +191,7 @@ private:
         ASTTableJoin * table_join = node.table_join->as<ASTTableJoin>();
         if (table_join->locality != ASTTableJoin::Locality::Global)
         {
-            if (auto table = node.table_expression->as<ASTTableExpression>())
+            if (auto * table = node.table_expression->as<ASTTableExpression>())
             {
                 if (auto & subquery = table->subquery)
                 {
@@ -207,7 +207,7 @@ private:
                     std::vector<ASTPtr> renamed;
                     NonGlobalTableVisitor::Data table_data{data.getContext(), data.checker, renamed, nullptr, table_join};
                     NonGlobalTableVisitor(table_data).visit(tb);
-                    if (!renamed.empty())
+                    if (!renamed.empty()) //-V547
                         data.renamed_tables.emplace_back(tb, std::move(renamed));
                 }
             }
