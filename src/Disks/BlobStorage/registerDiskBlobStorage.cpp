@@ -46,6 +46,20 @@ void checkReadAccess(IDisk & disk)
 }
 
 
+// TODO: make it a unit test ?
+void checkReadWithOffset(IDisk & disk)
+{
+    auto file = disk.readFile(test_file, DBMS_DEFAULT_BUFFER_SIZE);
+    auto offset = 2;
+    auto test_size = test_str_size - offset;
+    String buf(test_size, '0');
+    file->seek(offset, 0);
+    file->readStrict(buf.data(), test_size);
+    if (buf != test_str + offset)
+        throw Exception("Failed to read file with offset", ErrorCodes::PATH_ACCESS_DENIED);
+}
+
+
 void checkRemoveAccess(IDisk & disk)
 {
     // TODO: remove these checks if the names of blobs will be changed
@@ -115,6 +129,7 @@ void registerDiskBlobStorage(DiskFactory & factory)
         {
             checkWriteAccess(*blob_storage_disk);
             checkReadAccess(*blob_storage_disk);
+            checkReadWithOffset(*blob_storage_disk);
             checkRemoveAccess(*blob_storage_disk);
         }
 
