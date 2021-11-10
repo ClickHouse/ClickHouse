@@ -348,7 +348,6 @@ dbms_target_link_libraries (
     PRIVATE
         boost::filesystem
         boost::program_options
-        boost::thread
         clickhouse_common_config
         clickhouse_common_zookeeper
         clickhouse_dictionaries_embedded
