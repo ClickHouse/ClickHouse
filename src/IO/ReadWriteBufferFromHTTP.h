@@ -120,6 +120,8 @@ namespace detail
         /// Delayed exception in case retries with partial content are not satisfiable.
         std::exception_ptr exception;
         bool retry_with_range_header = false;
+        /// In case of redirects, save result uri to use it if we retry the request.
+        std::optional<Poco::URI> saved_uri_redirect;
 
         ReadSettings settings;
         Poco::Logger * log;
@@ -237,7 +239,8 @@ namespace detail
         bool initialize()
         {
             Poco::Net::HTTPResponse response;
-            istr = call(uri, response);
+
+            istr = call(saved_uri_redirect ? *saved_uri_redirect : uri, response);
 
             while (isRedirect(response.getStatus()))
             {
@@ -245,8 +248,8 @@ namespace detail
                 remote_host_filter.checkURL(uri_redirect);
 
                 session->updateSession(uri_redirect);
-
                 istr = call(uri_redirect, response);
+                saved_uri_redirect = uri_redirect;
             }
 
             if (withPartialContent() && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
