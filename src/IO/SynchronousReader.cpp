@@ -17,7 +17,6 @@ namespace ProfileEvents
     extern const Event ReadBufferFromFileDescriptorReadFailed;
     extern const Event ReadBufferFromFileDescriptorReadBytes;
     extern const Event DiskReadElapsedMicroseconds;
-    extern const Event Seek;
 }
 
 namespace CurrentMetrics
