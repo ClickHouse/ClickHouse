@@ -38,11 +38,16 @@ class PRInfo:
             self.labels = {}
             if need_changed_files:
                 commit_before = github_event['before']
-                diff = requests.get(f'https://api.github.com/repos/ClickHouse/ClickHouse/compare/{commit_before}...{self.sha}')
+                response = requests.get(f'https://api.github.com/repos/ClickHouse/ClickHouse/compare/{commit_before}...{self.sha}')
+                response.raise_for_status()
+                diff = response.json()
+
                 if 'files' in diff:
                     self.changed_files = [f['filename'] for f in diff['files']]
                 else:
                     self.changed_files = set([])
+            else:
+                self.changed_files = set([])
         else:
             raise Exception("Cannot detect type of event")
 

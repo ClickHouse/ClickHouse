@@ -2,12 +2,12 @@
 
 #include <IO/SeekAvoidingReadBuffer.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
+#include <Storages/HDFS/HDFSCommon.h>
 
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
-#include <Disks/IO/ThreadPoolRemoteFSReader.h>
 
 #include <base/logger_useful.h>
 #include <base/FnTraits.h>
@@ -77,7 +77,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskHDFS::readFile(const String & path, 
 
     auto hdfs_impl = std::make_unique<ReadBufferFromHDFSGather>(path, config, remote_fs_root_path, metadata, read_settings.remote_fs_buffer_size);
 
-    if (read_settings.remote_fs_method == RemoteFSReadMethod::read_threadpool)
+    if (read_settings.remote_fs_method == RemoteFSReadMethod::threadpool)
     {
         auto reader = getThreadPoolReader();
         return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(hdfs_impl));
@@ -169,6 +169,7 @@ void registerDiskHDFS(DiskFactory & factory)
         fs::create_directories(disk);
 
         String uri{config.getString(config_prefix + ".endpoint")};
+        checkHDFSURL(uri);
 
         if (uri.back() != '/')
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HDFS path must ends with '/', but '{}' doesn't.", uri);

@@ -121,8 +121,86 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
+  BuilderDebAsan:
+    needs: DockerHubPush
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
+    runs-on: [self-hosted, builder]
+    steps:
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/images_path
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0 # otherwise we will have no info about contributors
+      - name: Build
+        env:
+          TEMP_PATH: ${{runner.temp}}/build_check
+          IMAGES_PATH: ${{runner.temp}}/images_path
+          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH: ${{runner.temp}}/../ccaches
+          CHECK_NAME: 'ClickHouse build check (actions)'
+          BUILD_NUMBER: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NUMBER
+      - name: Upload build URLs to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.BUILD_NAME }}
+          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  BuilderDebRelease:
+    needs: DockerHubPush
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
+    runs-on: [self-hosted, builder]
+    steps:
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/images_path
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0 # otherwise we will have no info about contributors
+      - name: Build
+        env:
+          TEMP_PATH: ${{runner.temp}}/build_check
+          IMAGES_PATH: ${{runner.temp}}/images_path
+          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH: ${{runner.temp}}/../ccaches
+          CHECK_NAME: 'ClickHouse build check (actions)'
+          BUILD_NUMBER: 0
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NUMBER
+      - name: Upload build URLs to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.BUILD_NAME }}
+          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
   BuilderReport:
-    needs: [BuilderDebDebug]
+    needs: [BuilderDebDebug, BuilderDebAsan, BuilderDebRelease]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Download json reports
@@ -207,6 +285,152 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestFlakyCheck:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_flaky_asan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests flaky check (address, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_flaky_asan/ClickHouse
+          REQUIRED_BUILD_NUMBER: 3
+          KILL_TIMEOUT: 3600
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  StressTestDebug:
+    needs: [BuilderDebDebug]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Stress test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stress_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stress tests (debug, actions)'
+          REPO_COPY: ${{runner.temp}}/stress_debug/ClickHouse
+          REQUIRED_BUILD_NUMBER: 7
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 stress_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  ASTFuzzerTestDebug:
+    needs: [BuilderDebDebug]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Fuzzer
+        env:
+          TEMP_PATH: ${{runner.temp}}/ast_fuzzer_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'AST fuzzer (debug, actions)'
+          REPO_COPY: ${{runner.temp}}/ast_fuzzer_debug/ClickHouse
+          REQUIRED_BUILD_NUMBER: 7
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 ast_fuzzer_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsAsan:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_asan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (asan, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_asan/ClickHouse
+          REQUIRED_BUILD_NUMBER: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  UnitTestsAsan:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Unit test
+        env:
+          TEMP_PATH: ${{runner.temp}}/unit_tests_asan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Unit tests (asan, actions)'
+          REPO_COPY: ${{runner.temp}}/unit_tests_asan/ClickHouse
+          REQUIRED_BUILD_NUMBER: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 unit_tests_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
   FastTest:
     needs: DockerHubPush
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
@@ -230,8 +454,32 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
+  PVSCheck:
+    needs: DockerHubPush
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+      - name: PVS Check
+        env:
+          TEMP_PATH: ${{runner.temp}}/pvs_check
+          REPO_COPY: ${{runner.temp}}/pvs_check/ClickHouse
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci && python3 pvs_check.py
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
   FinishCheck:
-    needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport, FastTest, FunctionalStatelessTestDebug, FunctionalStatefulTestDebug]
+    needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport, FastTest, FunctionalStatelessTestDebug, FunctionalStatefulTestDebug, DocsCheck, StressTestDebug, ASTFuzzerTestDebug, IntegrationTestsAsan, PVSCheck, UnitTestsAsan]
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code

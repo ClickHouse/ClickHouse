@@ -53,7 +53,7 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
@@ -86,7 +86,7 @@
 #   include "config_core.h"
 #   include "Common/config_version.h"
 #   if USE_OPENCL
-#       include "Common/BitonicSort.h" // Y_IGNORE
+#       include "Common/BitonicSort.h"
 #   endif
 #endif
 
@@ -595,8 +595,8 @@ if (ThreadFuzzer::instance().isEffective())
         if (config().getBool("remap_executable", false))
         {
             LOG_DEBUG(log, "Will remap executable in memory.");
-            remapExecutable();
-            LOG_DEBUG(log, "The code in memory has been successfully remapped.");
+            size_t size = remapExecutable();
+            LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
         }
 
         if (config().getBool("mlock_executable", false))
@@ -702,10 +702,6 @@ if (ThreadFuzzer::instance().isEffective())
         for (const DiskPtr & disk : volume->getDisks())
             setupTmpPath(log, disk->getPath());
     }
-
-    /// Storage keeping all the backups.
-    fs::create_directories(path / "backups");
-    global_context->setBackupsVolume(config().getString("backups_path", path / "backups"), config().getString("backups_policy", ""));
 
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
       * Flags may be cleared automatically after being applied by the server.
@@ -883,7 +879,7 @@ if (ThreadFuzzer::instance().isEffective())
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
-    auto & access_control = global_context->getAccessControlManager();
+    auto & access_control = global_context->getAccessControl();
     if (config().has("custom_settings_prefixes"))
         access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
 

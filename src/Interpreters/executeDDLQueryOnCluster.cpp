@@ -7,7 +7,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/queryToString.h>
-#include <Access/AccessRightsElement.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
 #include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>

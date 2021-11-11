@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeInterval.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -10,7 +11,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
@@ -715,12 +716,25 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
 static Field getWithFillFieldValue(const ASTPtr & node, ContextPtr context)
 {
-    const auto & [field, type] = evaluateConstantExpression(node, context);
+    auto [field, type] = evaluateConstantExpression(node, context);
 
     if (!isColumnedAsNumber(type))
         throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 
     return field;
+}
+
+static std::pair<Field, std::optional<IntervalKind>> getWithFillStep(const ASTPtr & node, ContextPtr context)
+{
+    auto [field, type] = evaluateConstantExpression(node, context);
+
+    if (const auto * type_interval = typeid_cast<const DataTypeInterval *>(type.get()))
+        return std::make_pair(std::move(field), type_interval->getKind());
+
+    if (isColumnedAsNumber(type))
+        return std::make_pair(std::move(field), std::nullopt);
+
+    throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 }
 
 static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, ContextPtr context)
@@ -730,8 +744,9 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
         descr.fill_from = getWithFillFieldValue(order_by_elem.fill_from, context);
     if (order_by_elem.fill_to)
         descr.fill_to = getWithFillFieldValue(order_by_elem.fill_to, context);
+
     if (order_by_elem.fill_step)
-        descr.fill_step = getWithFillFieldValue(order_by_elem.fill_step, context);
+        std::tie(descr.fill_step, descr.step_kind) = getWithFillStep(order_by_elem.fill_step, context);
     else
         descr.fill_step = order_by_elem.direction;
 
@@ -863,52 +878,44 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
         return true;
 
     /** NOTE You can also check that the table in the subquery is distributed, and that it only looks at one shard.
-      * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
-      */
-
+     * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
+     */
     if (auto query_table = extractTableExpression(query, 0))
     {
         if (const auto * ast_union = query_table->as<ASTSelectWithUnionQuery>())
         {
-            for (const auto & elem : ast_union->list_of_selects->children)
+            /** NOTE
+            * 1. For ASTSelectWithUnionQuery after normalization for union child node the height of the AST tree is at most 2.
+            * 2. For ASTSelectIntersectExceptQuery after normalization in case there are intersect or except nodes,
+            * the height of the AST tree can have any depth (each intersect/except adds a level), but the
+            * number of children in those nodes is always 2.
+            */
+            std::function<bool(ASTPtr)> traverse_recursively = [&](ASTPtr child_ast) -> bool
             {
-                /// After normalization for union child node the height of the AST tree is at most 2.
-                if (const auto * child_union = elem->as<ASTSelectWithUnionQuery>())
+                if (const auto * select_child = child_ast->as <ASTSelectQuery>())
                 {
-                    for (const auto & child_elem : child_union->list_of_selects->children)
-                        if (hasWithTotalsInAnySubqueryInFromClause(child_elem->as<ASTSelectQuery &>()))
+                    if (hasWithTotalsInAnySubqueryInFromClause(select_child->as<ASTSelectQuery &>()))
+                        return true;
+                }
+                else if (const auto * union_child = child_ast->as<ASTSelectWithUnionQuery>())
+                {
+                    for (const auto & subchild : union_child->list_of_selects->children)
+                        if (traverse_recursively(subchild))
                             return true;
                 }
-                /// After normalization in case there are intersect or except nodes, the height of
-                /// the AST tree can have any depth (each intersect/except adds a level), but the
-                /// number of children in those nodes is always 2.
-                else if (elem->as<ASTSelectIntersectExceptQuery>())
+                else if (const auto * intersect_child = child_ast->as<ASTSelectIntersectExceptQuery>())
                 {
-                    std::function<bool(ASTPtr)> traverse_recursively = [&](ASTPtr child_ast) -> bool
-                    {
-                        if (const auto * child = child_ast->as <ASTSelectQuery>())
-                            return hasWithTotalsInAnySubqueryInFromClause(child->as<ASTSelectQuery &>());
-
-                        if (const auto * child = child_ast->as<ASTSelectWithUnionQuery>())
-                            for (const auto & subchild : child->list_of_selects->children)
-                                if (traverse_recursively(subchild))
-                                    return true;
-
-                        if (const auto * child = child_ast->as<ASTSelectIntersectExceptQuery>())
-                            for (const auto & subchild : child->children)
-                                if (traverse_recursively(subchild))
-                                    return true;
-                        return false;
-                    };
-                    if (traverse_recursively(elem))
-                        return true;
+                    auto selects = intersect_child->getListOfSelects();
+                    for (const auto & subchild : selects)
+                        if (traverse_recursively(subchild))
+                            return true;
                 }
-                else
-                {
-                    if (hasWithTotalsInAnySubqueryInFromClause(elem->as<ASTSelectQuery &>()))
-                        return true;
-                }
-            }
+                return false;
+            };
+
+            for (const auto & elem : ast_union->list_of_selects->children)
+                if (traverse_recursively(elem))
+                    return true;
         }
     }
 
