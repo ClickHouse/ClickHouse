@@ -1778,7 +1778,7 @@ CLICKHOUSE_START_COMMAND = "clickhouse server --config-file=/etc/clickhouse-serv
                            " --log-file=/var/log/clickhouse-server/clickhouse-server.log " \
                            " --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log"
 
-CLICKHOUSE_STAY_ALIVE_COMMAND = 'bash -c "trap \'killall tail\' INT TERM; {} --daemon; coproc tail -f /dev/null; wait $$!"'.format(CLICKHOUSE_START_COMMAND)
+CLICKHOUSE_STAY_ALIVE_COMMAND = 'bash -c "trap \'pkill tail\' INT TERM; {} --daemon; coproc tail -f /dev/null; wait $$!"'.format(CLICKHOUSE_START_COMMAND)
 
 # /run/xtables.lock passed inside for correct iptables --wait
 DOCKER_COMPOSE_TEMPLATE = '''
@@ -2096,7 +2096,7 @@ class ClickHouseInstance:
                     return
                 except Exception as e:
                     logging.warning(f"Current start attempt failed. Will kill {pid} just in case.")
-                    self.exec_in_container(["bash", "-c", f"kill -9 {pid}"], user='root')
+                    self.exec_in_container(["bash", "-c", f"kill -9 {pid}"], user='root', nothrow=True)
                     time.sleep(time_to_sleep)        
 
         raise Exception("Cannot start ClickHouse, see additional info in logs")
