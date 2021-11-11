@@ -478,6 +478,33 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
+  CompatibilityCheck:
+    needs: [BuilderDebRelease]
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: CompatibilityCheck
+        env:
+          TEMP_PATH: ${{runner.temp}}/compatibility_check
+          REPO_COPY: ${{runner.temp}}/compatibility_check/ClickHouse
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci && python3 compatibility_check.py 0
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
   FinishCheck:
     needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport, FastTest, FunctionalStatelessTestDebug, FunctionalStatefulTestDebug, DocsCheck, StressTestDebug, ASTFuzzerTestDebug, IntegrationTestsAsan, PVSCheck, UnitTestsAsan]
     runs-on: [self-hosted, style-checker]
