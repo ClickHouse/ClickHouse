@@ -168,4 +168,6 @@ enum class ShortCircuitFunctionEvaluation
 
 DECLARE_SETTING_ENUM(ShortCircuitFunctionEvaluation)
 
+DECLARE_SETTING_ENUM_WITH_RENAME(EnumComparingMode, FormatSettings::EnumComparingMode)
+
 }

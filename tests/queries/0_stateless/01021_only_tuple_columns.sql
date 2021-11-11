@@ -1,5 +1,4 @@
--- Tags: no-replicated-database, no-parallel
--- Tag no-replicated-database: Unsupported type of ALTER query
+-- Tags: no-parallel
 
 CREATE TABLE test
 (

@@ -10,7 +10,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
@@ -274,7 +274,7 @@ bool StorageMaterializedView::optimize(
 void StorageMaterializedView::alter(
     const AlterCommands & params,
     ContextPtr local_context,
-    TableLockHolder &)
+    AlterLockHolder &)
 {
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();

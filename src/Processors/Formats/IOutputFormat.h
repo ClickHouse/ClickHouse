@@ -72,7 +72,8 @@ public:
 
     InputPort & getPort(PortKind kind) { return *std::next(inputs.begin(), kind); }
 
-    /// Compatible to IBlockOutputStream interface
+    /// Compatibility with old interface.
+    /// TODO: separate formats and processors.
 
     void write(const Block & block);
 

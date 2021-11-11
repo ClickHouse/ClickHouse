@@ -129,7 +129,6 @@ public:
     void setLeafLimits(const SizeLimits & limits) { pipe.setLeafLimits(limits); }
     void setQuota(const std::shared_ptr<const EnabledQuota> & quota) { pipe.setQuota(quota); }
 
-    /// For compatibility with IBlockInputStream.
     void setProgressCallback(const ProgressCallback & callback);
     void setProcessListElement(QueryStatus * elem);
 

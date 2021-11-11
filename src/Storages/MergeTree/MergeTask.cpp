@@ -255,9 +255,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     ctx->is_cancelled = [merges_blocker = global_ctx->merges_blocker,
         ttl_merges_blocker = global_ctx->ttl_merges_blocker,
-        need_remove = ctx->need_remove_expired_values]() -> bool
+        need_remove = ctx->need_remove_expired_values,
+        merge_list_element = global_ctx->merge_list_element_ptr]() -> bool
     {
-        return merges_blocker->isCancelled() || (need_remove && ttl_merges_blocker->isCancelled());
+        return merges_blocker->isCancelled()
+            || (need_remove && ttl_merges_blocker->isCancelled())
+            || merge_list_element->is_cancelled.load(std::memory_order_relaxed);
     };
 
     /// This is the end of preparation. Execution will be per block.
@@ -778,7 +781,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_transform = std::make_shared<MergingSortedTransform>(
-                header, pipes.size(), sort_description, merge_block_size, 0, false, ctx->rows_sources_write_buf.get(), true, ctx->blocks_are_granules_size);
+                header, pipes.size(), sort_description, merge_block_size, 0, ctx->rows_sources_write_buf.get(), true, ctx->blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:

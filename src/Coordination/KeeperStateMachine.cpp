@@ -74,7 +74,10 @@ void KeeperStateMachine::init()
         try
         {
             latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
-            std::tie(latest_snapshot_meta, storage) = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
+            auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
+            storage = std::move(snapshot_deserialization_result.storage);
+            latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
+            cluster_config = snapshot_deserialization_result.cluster_config;
             last_committed_idx = latest_snapshot_meta->get_last_log_idx();
             loaded = true;
             break;
@@ -152,11 +155,22 @@ bool KeeperStateMachine::apply_snapshot(nuraft::snapshot & s)
 
     { /// deserialize and apply snapshot to storage
         std::lock_guard lock(storage_and_responses_lock);
-        std::tie(latest_snapshot_meta, storage) = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_ptr);
+        auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
+        storage = std::move(snapshot_deserialization_result.storage);
+        latest_snapshot_meta = snapshot_deserialization_result.snapshot_meta;
+        cluster_config = snapshot_deserialization_result.cluster_config;
     }
 
     last_committed_idx = s.get_last_log_idx();
     return true;
+}
+
+
+void KeeperStateMachine::commit_config(const uint64_t /*log_idx*/, nuraft::ptr<nuraft::cluster_config> & new_conf)
+{
+    std::lock_guard lock(cluster_config_lock);
+    auto tmp = new_conf->serialize();
+    cluster_config = ClusterConfig::deserialize(*tmp);
 }
 
 nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()
@@ -177,7 +191,7 @@ void KeeperStateMachine::create_snapshot(
     CreateSnapshotTask snapshot_task;
     { /// lock storage for a short period time to turn on "snapshot mode". After that we can read consistent storage state without locking.
         std::lock_guard lock(storage_and_responses_lock);
-        snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot>(storage.get(), snapshot_meta_copy);
+        snapshot_task.snapshot = std::make_shared<KeeperStorageSnapshot>(storage.get(), snapshot_meta_copy, getClusterConfig());
     }
 
     /// create snapshot task for background execution (in snapshot thread)
@@ -239,7 +253,7 @@ void KeeperStateMachine::save_logical_snp_obj(
     if (obj_id == 0) /// Fake snapshot required by NuRaft at startup
     {
         std::lock_guard lock(storage_and_responses_lock);
-        KeeperStorageSnapshot snapshot(storage.get(), s.get_last_log_idx());
+        KeeperStorageSnapshot snapshot(storage.get(), s.get_last_log_idx(), getClusterConfig());
         cloned_buffer = snapshot_manager.serializeSnapshotToBuffer(snapshot);
     }
     else
@@ -322,6 +336,18 @@ void KeeperStateMachine::shutdownStorage()
 {
     std::lock_guard lock(storage_and_responses_lock);
     storage->finalize();
+}
+
+ClusterConfigPtr KeeperStateMachine::getClusterConfig() const
+{
+    std::lock_guard lock(cluster_config_lock);
+    if (cluster_config)
+    {
+        /// dumb way to return copy...
+        auto tmp = cluster_config->serialize();
+        return ClusterConfig::deserialize(*tmp);
+    }
+    return nullptr;
 }
 
 }

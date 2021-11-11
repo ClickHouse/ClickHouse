@@ -1,6 +1,6 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnNullable.h>
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/DataTypeNullable.h>

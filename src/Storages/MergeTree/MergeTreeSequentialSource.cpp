@@ -78,7 +78,8 @@ try
 
         const auto & sample = reader->getColumns();
         Columns columns(sample.size());
-        size_t rows_read = reader->readRows(current_mark, continue_reading, rows_to_read, columns);
+        /// TODO: pass stream size instead of zero?
+        size_t rows_read = reader->readRows(current_mark, 0, continue_reading, rows_to_read, columns);
 
         if (rows_read)
         {

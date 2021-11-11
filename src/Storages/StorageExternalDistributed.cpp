@@ -159,9 +159,8 @@ StorageExternalDistributed::StorageExternalDistributed(
         }
         else
         {
-            Poco::URI uri(url_description);
             shard = std::make_shared<StorageURL>(
-                uri, table_id, format_name, format_settings, columns, constraints, String{}, context, compression_method);
+                url_description, table_id, format_name, format_settings, columns, constraints, String{}, context, compression_method);
 
             LOG_DEBUG(&Poco::Logger::get("StorageURLDistributed"), "Adding URL: {}", url_description);
         }
@@ -233,7 +232,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                 for (const auto & [name, value] : storage_specific_args)
                 {
                     if (name == "description")
-                        cluster_description = value.safeGet<String>();
+                        cluster_description = value->as<ASTLiteral>()->value.safeGet<String>();
                     else
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                         "Unknown key-value argument {} for table engine URL", name);
@@ -279,7 +278,7 @@ void registerStorageExternalDistributed(StorageFactory & factory)
                 for (const auto & [name, value] : storage_specific_args)
                 {
                     if (name == "description")
-                        cluster_description = value.safeGet<String>();
+                        cluster_description = value->as<ASTLiteral>()->value.safeGet<String>();
                     else
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                         "Unknown key-value argument {} for table function URL", name);
