@@ -510,10 +510,23 @@ String Context::getUserScriptsPath() const
     return shared->user_scripts_path;
 }
 
-std::vector<String> Context::getWarnings() const
+Strings Context::getWarnings() const
 {
-    auto lock = getLock();
-    return shared->warnings;
+    Strings common_warnings;
+    {
+        auto lock = getLock();
+        common_warnings = shared->warnings;
+    }
+    for (const auto & setting : settings)
+    {
+        if (setting.isValueChanged() && setting.isObsolete())
+        {
+            common_warnings.emplace_back("Some obsolete setting is changed. "
+                                         "Check 'select * from system.settings where changed' and read the changelog.");
+            break;
+        }
+    }
+    return common_warnings;
 }
 
 VolumePtr Context::getTemporaryVolume() const
