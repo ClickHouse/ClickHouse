@@ -3558,7 +3558,7 @@ RestoreDataTasks MergeTreeData::restoreDataPartsFromBackup(const BackupPtr & bac
 {
     RestoreDataTasks restore_tasks;
 
-    Strings part_names = backup->list(data_path_in_backup);
+    Strings part_names = backup->listFiles(data_path_in_backup);
     for (const String & part_name : part_names)
     {
         const auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
@@ -3570,9 +3570,9 @@ RestoreDataTasks MergeTreeData::restoreDataPartsFromBackup(const BackupPtr & bac
             continue;
 
         UInt64 total_size_of_part = 0;
-        Strings filenames = backup->list(data_path_in_backup + part_name + "/", "");
+        Strings filenames = backup->listFiles(data_path_in_backup + part_name + "/", "");
         for (const String & filename : filenames)
-            total_size_of_part += backup->getSize(data_path_in_backup + part_name + "/" + filename);
+            total_size_of_part += backup->getFileSize(data_path_in_backup + part_name + "/" + filename);
 
         std::shared_ptr<IReservation> reservation = getStoragePolicy()->reserveAndCheck(total_size_of_part);
 
@@ -3596,7 +3596,7 @@ RestoreDataTasks MergeTreeData::restoreDataPartsFromBackup(const BackupPtr & bac
 
             for (const String & filename : filenames)
             {
-                auto backup_entry = backup->read(data_path_in_backup + part_name + "/" + filename);
+                auto backup_entry = backup->readFile(data_path_in_backup + part_name + "/" + filename);
                 auto read_buffer = backup_entry->getReadBuffer();
                 auto write_buffer = disk->writeFile(temp_part_dir + "/" + filename);
                 copyData(*read_buffer, *write_buffer);
