@@ -489,6 +489,10 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 internal_replication
             });
         }
+        else if (startsWith(key, "discovery"))
+        {
+            continue;
+        }
         else
             throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 

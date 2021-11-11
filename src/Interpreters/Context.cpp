@@ -86,6 +86,7 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Interpreters/SynonymsExtensions.h>
 #include <Interpreters/Lemmatizers.h>
+#include <Interpreters/ClusterDiscovery.h>
 #include <filesystem>
 
 
@@ -254,6 +255,7 @@ struct ContextSharedPart
     std::shared_ptr<Clusters> clusters;
     ConfigurationPtr clusters_config;                        /// Stores updated configs
     mutable std::mutex clusters_mutex;                       /// Guards clusters and clusters_config
+    std::unique_ptr<ClusterDiscovery> cluster_discovery;
 
     std::shared_ptr<AsynchronousInsertQueue> async_insert_queue;
     std::map<String, UInt16> server_ports;
@@ -2195,11 +2197,23 @@ std::shared_ptr<Clusters> Context::getClusters() const
     return shared->clusters;
 }
 
+void Context::registerNodeForClusterDiscovery()
+{
+    if (!shared->cluster_discovery)
+        return;
+    shared->cluster_discovery->start();
+}
+
 
 /// On repeating calls updates existing clusters and adds new clusters, doesn't delete old clusters
 void Context::setClustersConfig(const ConfigurationPtr & config, const String & config_name)
 {
     std::lock_guard lock(shared->clusters_mutex);
+
+    if (!shared->cluster_discovery)
+    {
+        shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, shared_from_this());
+    }
 
     /// Do not update clusters if this part of config wasn't changed.
     if (shared->clusters && isSameConfiguration(*config, *shared->clusters_config, config_name))

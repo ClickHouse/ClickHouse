@@ -295,7 +295,6 @@ public:
 
     void updateClusters(const Poco::Util::AbstractConfiguration & new_config, const Settings & settings, const String & config_prefix, Poco::Util::AbstractConfiguration * old_config = nullptr);
 
-public:
     using Impl = std::map<String, ClusterPtr>;
 
     Impl getContainer() const;
