@@ -16,9 +16,7 @@
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <filesystem>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_MYSQL
 #    include <Core/MySQL/MySQLClient.h>
@@ -36,7 +34,7 @@
 #endif
 
 #if USE_LIBPQXX
-#include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
+#include <Databases/PostgreSQL/DatabasePostgreSQL.h>
 #include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 #include <Storages/StoragePostgreSQL.h>

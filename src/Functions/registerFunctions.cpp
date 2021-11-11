@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include "config_core.h"
 
 #include <Functions/FunctionFactory.h>
 
@@ -73,9 +71,7 @@ void registerFunctions()
     registerFunctionsArray(factory);
     registerFunctionsTuple(factory);
     registerFunctionsMap(factory);
-#if !defined(ARCADIA_BUILD)
     registerFunctionsBitmap(factory);
-#endif
     registerFunctionsBinaryRepr(factory);
     registerFunctionsCoding(factory);
     registerFunctionsCodingUUID(factory);

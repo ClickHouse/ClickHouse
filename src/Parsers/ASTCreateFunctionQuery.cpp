@@ -1,6 +1,9 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+
 
 namespace DB
 {
@@ -25,6 +28,9 @@ void ASTCreateFunctionQuery::formatImpl(const IAST::FormatSettings & settings, I
     settings.ostr << (settings.hilite ? hilite_none : "");
 
     settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(function_name) << (settings.hilite ? hilite_none : "");
+
+    formatOnCluster(settings);
+
     settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "");
     function_core->formatImpl(settings, state, frame);
 }

@@ -38,7 +38,13 @@ ASTPtr transformCountNullableToSubcolumn(const String & name_in_storage, const S
     return makeASTFunction("sum", makeASTFunction("not", ast));
 }
 
-const std::unordered_map<String, std::tuple<TypeIndex, String, decltype(&transformToSubcolumn)>> function_to_subcolumn =
+ASTPtr transformMapContainsToSubcolumn(const String & name_in_storage, const String & subcolumn_name, const ASTPtr & arg)
+{
+    auto ast = transformToSubcolumn(name_in_storage, subcolumn_name);
+    return makeASTFunction("has", ast, arg);
+}
+
+const std::unordered_map<String, std::tuple<TypeIndex, String, decltype(&transformToSubcolumn)>> unary_function_to_subcolumn =
 {
     {"length",    {TypeIndex::Array, "size0", transformToSubcolumn}},
     {"empty",     {TypeIndex::Array, "size0", transformEmptyToSubcolumn}},
@@ -50,30 +56,50 @@ const std::unordered_map<String, std::tuple<TypeIndex, String, decltype(&transfo
     {"mapValues", {TypeIndex::Map, "values", transformToSubcolumn}},
 };
 
+const std::unordered_map<String, std::tuple<TypeIndex, String, decltype(&transformMapContainsToSubcolumn)>> binary_function_to_subcolumn
+{
+    {"mapContains", {TypeIndex::Map, "keys", transformMapContainsToSubcolumn}},
+};
+
 }
 
 void RewriteFunctionToSubcolumnData::visit(ASTFunction & function, ASTPtr & ast) const
 {
     const auto & arguments = function.arguments->children;
-    if (arguments.size() != 1)
+    if (arguments.empty() || arguments.size() > 2)
         return;
 
     const auto * identifier = arguments[0]->as<ASTIdentifier>();
     if (!identifier)
         return;
 
-    auto it = function_to_subcolumn.find(function.name);
-    if (it == function_to_subcolumn.end())
-        return;
-
-    const auto & [type_id, subcolumn_name, transformer] = it->second;
     const auto & columns = metadata_snapshot->getColumns();
     const auto & name_in_storage = identifier->name();
 
-    if (columns.has(name_in_storage)
-        && columns.get(name_in_storage).type->getTypeId() == type_id)
+    if (!columns.has(name_in_storage))
+        return;
+
+    TypeIndex column_type_id = columns.get(name_in_storage).type->getTypeId();
+
+    if (arguments.size() == 1)
     {
-        ast = transformer(name_in_storage, subcolumn_name);
+        auto it = unary_function_to_subcolumn.find(function.name);
+        if (it != unary_function_to_subcolumn.end())
+        {
+            const auto & [type_id, subcolumn_name, transformer] = it->second;
+            if (column_type_id == type_id)
+                ast = transformer(name_in_storage, subcolumn_name);
+        }
+    }
+    else
+    {
+        auto it = binary_function_to_subcolumn.find(function.name);
+        if (it != binary_function_to_subcolumn.end())
+        {
+            const auto & [type_id, subcolumn_name, transformer] = it->second;
+            if (column_type_id == type_id)
+                ast = transformer(name_in_storage, subcolumn_name, arguments[1]);
+        }
     }
 }
 

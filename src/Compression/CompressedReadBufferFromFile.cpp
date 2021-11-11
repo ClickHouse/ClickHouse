@@ -44,17 +44,17 @@ bool CompressedReadBufferFromFile::nextImpl()
 }
 
 
-void CompressedReadBufferFromFile::prefetch()
-{
-    file_in.prefetch();
-}
-
-
 CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf, bool allow_different_codecs_)
     : BufferWithOwnMemory<ReadBuffer>(0), p_file_in(std::move(buf)), file_in(*p_file_in)
 {
     compressed_in = &file_in;
     allow_different_codecs = allow_different_codecs_;
+}
+
+
+void CompressedReadBufferFromFile::prefetch()
+{
+    file_in.prefetch();
 }
 
 

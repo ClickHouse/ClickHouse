@@ -103,7 +103,6 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
                 continue;
         }
 
-#if !defined(ARCADIA_BUILD) /// C++20
         const char * has_extender = nullptr;
         for (const auto * extender : extenders)
         {
@@ -133,7 +132,6 @@ String LineReader::readLine(const String & first_prompt, const String & second_p
             if (input.empty())
                 continue;
         }
-#endif
 
         line += (line.empty() ? "" : "\n") + input;
 
