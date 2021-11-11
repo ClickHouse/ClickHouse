@@ -172,5 +172,6 @@ toc_title: Adopters
 | <a href="https://shop.okraina.ru/" class="favicon">ООО «МПЗ Богородский»</a> | Agriculture | — | — | — | [Article in Russian, November 2020](https://cloud.yandex.ru/cases/okraina) |
 | <a href="https://domclick.ru/" class="favicon">ДомКлик</a> | Real Estate | — | — | — | [Article in Russian, October 2021](https://habr.com/ru/company/domclick/blog/585936/) |
 | <a href="https://www.deepl.com/" class="favicon">Deepl</a> | Machine Learning | — | — | — | [Video, October 2021](https://www.youtube.com/watch?v=WIYJiPwxXdM&t=1182s) |
+| <a href="https://vercel.com/" class="favicon">Vercel</a> | Traffic and Performance Analytics | — | — | — | Direct reference, October 2021 |
 
 [Original article](https://clickhouse.com/docs/en/introduction/adopters/) <!--hide-->

@@ -75,6 +75,9 @@ Ext4 is the most reliable option. Set the mount options `noatime`.
 XFS should be avoided. It works mostly fine but there are some reports about lower performance.
 Most other file systems should also work fine.
 
+Do not use compressed filesystems, because ClickHouse does compression on its own and better.
+It's not recommended to use encrypted filesystems, because you can use builtin encryption in ClickHouse, which is better.
+
 ## Linux Kernel {#linux-kernel}
 
 Don’t use an outdated Linux kernel.
