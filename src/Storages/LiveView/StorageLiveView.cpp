@@ -18,7 +18,6 @@ limitations under the License. */
 #include <Processors/Sources/BlocksSource.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -26,6 +25,7 @@ limitations under the License. */
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
 #include <Common/hex.h>
+#include "QueryPipeline/printPipeline.h"
 
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/LiveView/LiveViewSource.h>
@@ -224,7 +224,7 @@ void StorageLiveView::writeIntoLiveView(
             mergeable_query = live_view.getInnerSubQuery();
 
         Pipes pipes;
-        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), Chunk(block.getColumns(), block.rows())));
+        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block));
 
         auto creator = [&](const StorageID & blocks_id_global)
         {
@@ -386,10 +386,13 @@ bool StorageLiveView::getNewBlocks()
     auto builder = completeQuery(std::move(from));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
 
-    PullingPipelineExecutor executor(pipeline);
+    PullingAsyncPipelineExecutor executor(pipeline);
     Block block;
     while (executor.pull(block))
     {
+        if (block.rows() == 0)
+            continue;
+
         /// calculate hash before virtual column is added
         block.updateHash(hash);
         /// add result version meta column
