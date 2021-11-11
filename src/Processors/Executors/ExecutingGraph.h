@@ -127,10 +127,13 @@ public:
 
     const Processors & getProcessors() const { return processors; }
 
+    /// Traverse graph the first time to update all the childless nodes.
+    void initializeExecution(Queue & queue);
+
     /// Update processor with pid number (call IProcessor::prepare).
     /// Check parents and children of current processor and push them to stacks if they also need to be updated.
     /// If processor wants to be expanded, lock will be upgraded to get write access to pipeline.
-    bool updateNode(uint64_t pid, Queue & queue, Queue & async_queue, UpgradableMutex::ReadGuard & read_lock);
+    bool updateNode(uint64_t pid, Queue & queue, Queue & async_queue);
 
     void cancel();
 
@@ -148,6 +151,8 @@ private:
 
     Processors & processors;
     std::mutex processors_mutex;
+
+    UpgradableMutex nodes_mutex;
 };
 
 }

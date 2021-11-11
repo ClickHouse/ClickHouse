@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
-#include <Processors/Executors/ExecutingGraph.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
 #include <base/logger_useful.h>

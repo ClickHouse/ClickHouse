@@ -5,6 +5,7 @@
 #include <Common/setThreadName.h>
 #include <Common/MemoryTracker.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/ExecutingGraph.h>
 #include <QueryPipeline/printPipeline.h>
 #include <Processors/ISource.h>
 #include <Interpreters/ProcessList.h>
@@ -198,17 +199,12 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
                 Queue queue;
                 Queue async_queue;
 
-                {
-                    UpgradableMutex::ReadGuard pipeline_read_lock(tasks.stopping_pipeline_mutex);
-
-                    /// Prepare processor after execution.
-                    if (!graph->updateNode(context.getProcessorID(), queue, async_queue, pipeline_read_lock))
-                        finish();
-                }
+                /// Prepare processor after execution.
+                if (!graph->updateNode(context.getProcessorID(), queue, async_queue))
+                    finish();
 
                 /// Push other tasks to global queue.
                 tasks.pushTasks(queue, async_queue, context);
-
             }
 
 #ifndef NDEBUG
@@ -231,38 +227,10 @@ void PipelineExecutor::initializeExecution(size_t num_threads)
 {
     is_execution_initialized = true;
 
-    std::stack<uint64_t> stack;
-
-    /// Add childless processors to stack.
-    uint64_t num_processors = graph->nodes.size();
-    for (uint64_t proc = 0; proc < num_processors; ++proc)
-    {
-        if (graph->nodes[proc]->direct_edges.empty())
-        {
-            stack.push(proc);
-            /// do not lock mutex, as this function is executed in single thread
-            graph->nodes[proc]->status = ExecutingGraph::ExecStatus::Preparing;
-        }
-    }
+    Queue queue;
+    graph->initializeExecution(queue);
 
     tasks.init(num_threads);
-
-    Queue queue;
-    Queue async_queue;
-    UpgradableMutex::ReadGuard pipeline_read_lock(tasks.stopping_pipeline_mutex);
-
-    while (!stack.empty())
-    {
-        uint64_t proc = stack.top();
-        stack.pop();
-
-        graph->updateNode(proc, queue, async_queue, pipeline_read_lock);
-
-        if (!async_queue.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Async is only possible after work() call. Processor {}",
-                            async_queue.front()->processor->getName());
-    }
-
     tasks.fill(queue);
 }
 
