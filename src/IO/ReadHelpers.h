@@ -1037,8 +1037,9 @@ inline void readDoubleQuoted(LocalDateTime & x, ReadBuffer & buf)
 
 
 /// CSV, for numbers, dates: quotes are optional, no special escaping rules.
+/// read_bool_as_uint8 enable read "t" and "f" as UInt8 value in Hive TEXT File.
 template <typename T>
-inline void readCSVSimple(T & x, ReadBuffer & buf)
+inline void readCSVSimple(T & x, ReadBuffer & buf, bool read_bool_as_uint8 = false)
 {
     if (buf.eof())
         throwReadAfterEOF();
@@ -1048,13 +1049,29 @@ inline void readCSVSimple(T & x, ReadBuffer & buf)
     if (maybe_quote == '\'' || maybe_quote == '\"')
         ++buf.position();
 
-    readText(x, buf);
+    if constexpr (std::is_same_v<T, UInt8>)
+    {
+        if (read_bool_as_uint8 && (*buf.position() == 't' || *buf.position() == 'f'))
+        {
+            bool v = false;
+            readBoolTextWord(v, buf);
+            x = v ? 1 : 0;
+        }
+        else
+        {
+            readText(x, buf);
+        }
+    }
+    else
+    {
+        readText(x, buf);
+    }
 
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, buf);
 }
 
-// Enable read "t" and "f" as UInt8 value in Hive TEXT File.
+/*
 inline void readCSVSimple(UInt8 & x, ReadBuffer & buf)
 {
     if (buf.eof())
@@ -1069,7 +1086,7 @@ inline void readCSVSimple(UInt8 & x, ReadBuffer & buf)
     {
         bool tmp = false;
         readBoolTextWord(tmp, buf);
-        x = tmp;
+        x = tmp ? 1 : 0;
     }
     else
     {
@@ -1079,10 +1096,11 @@ inline void readCSVSimple(UInt8 & x, ReadBuffer & buf)
     if (maybe_quote == '\'' || maybe_quote == '\"')
         assertChar(maybe_quote, buf);
 }
+*/
 
 template <typename T>
 inline std::enable_if_t<is_arithmetic_v<T>, void>
-readCSV(T & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+readCSV(T & x, ReadBuffer & buf, bool read_bool_as_uint8 = false) { readCSVSimple(x, buf, read_bool_as_uint8); }
 
 inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & settings) { readCSVString(x, buf, settings); }
 inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }

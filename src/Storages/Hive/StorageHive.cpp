@@ -115,8 +115,11 @@ public:
         {
             to_read_block.erase(name_type.name);
         }
+
+        /// initialize format settings of CSV
         format_settings.csv.delimiter = '\x01';
         format_settings.csv.input_field_names = text_input_field_names;
+        format_settings.csv.read_bool_as_uint8 = true;
     }
 
     String getName() const override { return "Hive"; }

@@ -92,10 +92,10 @@ void SerializationNumber<T>::deserializeTextJSON(IColumn & column, ReadBuffer & 
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationNumber<T>::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     FieldType x;
-    readCSV(x, istr);
+    readCSV(x, istr, settings.csv.read_bool_as_uint8);
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
 }
 
