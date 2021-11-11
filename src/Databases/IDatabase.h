@@ -323,6 +323,13 @@ public:
                         getEngineName());
     }
 
+    virtual bool hasReplicationThread() const { return false; }
+
+    virtual void stopReplication()
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
+    }
+
     virtual ~IDatabase() = default;
 
 protected:

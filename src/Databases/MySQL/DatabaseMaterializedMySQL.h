@@ -8,7 +8,6 @@
 #include <Core/MySQL/MySQLClient.h>
 #include <base/UUID.h>
 #include <Databases/IDatabase.h>
-#include <Databases/IDatabaseReplicating.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/MySQL/MaterializedMySQLSettings.h>
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
@@ -20,7 +19,7 @@ namespace DB
  *
  *  All table structure and data will be written to the local file system
  */
-class DatabaseMaterializedMySQL : public DatabaseAtomic, IDatabaseReplicating
+class DatabaseMaterializedMySQL : public DatabaseAtomic
 {
 public:
     DatabaseMaterializedMySQL(
@@ -70,6 +69,8 @@ public:
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context_, const DatabaseOnDisk::FilterByNameFunction & filter_by_table_name) const override;
 
     void checkIsInternalQuery(ContextPtr context_, const char * method) const;
+
+    bool hasReplicationThread() const override { return true; }
 
     void stopReplication() override;
 
