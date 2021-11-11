@@ -1,7 +1,6 @@
 if (USE_INCLUDE_WHAT_YOU_USE)
     set (CMAKE_CXX_INCLUDE_WHAT_YOU_USE ${IWYU_PATH})
 endif ()
-
 if (USE_CLANG_TIDY)
     set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
@@ -340,6 +339,8 @@ endif()
 
 if (USE_NURAFT)
     dbms_target_link_libraries(PUBLIC ${NURAFT_LIBRARY})
+    dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${ONETBB_INCLUDE_DIR})
+    dbms_target_link_libraries(PUBLIC ${ONETBB_LIBRARY})
 endif()
 
 if(RE2_INCLUDE_DIR)

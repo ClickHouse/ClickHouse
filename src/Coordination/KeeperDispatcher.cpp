@@ -37,6 +37,7 @@ void KeeperDispatcher::requestThread()
         KeeperStorage::RequestForSession request;
 
         UInt64 max_wait = UInt64(coordination_settings->operation_timeout_ms.totalMilliseconds());
+        requests_queue->set_capacity(max_wait * 2);
         uint64_t max_batch_size = coordination_settings->max_requests_batch_size;
 
         /// The code below do a very simple thing: batch all write (quorum) requests into vector until
@@ -47,7 +48,8 @@ void KeeperDispatcher::requestThread()
         /// read request. So reads are some kind of "separator" for writes.
         try
         {
-            if (requests_queue->tryPop(request, max_wait))
+            //if (requests_queue->tryPop(request, max_wait))
+            if (requests_queue->try_pop(request))
             {
                 if (shutdown_called)
                     break;
@@ -68,7 +70,8 @@ void KeeperDispatcher::requestThread()
                     while (prev_result && (!prev_result->has_result() && prev_result->get_result_code() == nuraft::cmd_result_code::OK) && current_batch.size() <= max_batch_size)
                     {
                         /// Trying to get batch requests as fast as possible
-                        if (requests_queue->tryPop(request, 1))
+                        //if (requests_queue->tryPop(request, 1))
+                        if (requests_queue->try_pop(request))
                         {
                             /// Don't append read request into batch, we have to process them separately
                             if (!coordination_settings->quorum_reads && request.request->isReadRequest())
@@ -239,10 +242,12 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
     /// Put close requests without timeouts
     if (request->getOpNum() == Coordination::OpNum::Close)
     {
-        if (!requests_queue->push(std::move(request_info)))
-            throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
+        //if (!requests_queue->push(std::move(request_info)))
+            //throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
+        requests_queue->push(std::move(request_info));
     }
-    else if (!requests_queue->tryPush(std::move(request_info), coordination_settings->operation_timeout_ms.totalMilliseconds()))
+    //else if (!requests_queue->tryPush(std::move(request_info), coordination_settings->operation_timeout_ms.totalMilliseconds()))
+    else if (!requests_queue->try_push(std::move(request_info)))
     {
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
     }
@@ -256,7 +261,8 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
     int myid = config.getInt("keeper_server.server_id");
 
     coordination_settings->loadFromConfig("keeper_server.coordination_settings", config);
-    requests_queue = std::make_unique<RequestsQueue>(coordination_settings->max_requests_batch_size);
+    //requests_queue = std::make_unique<RequestsQueue>(coordination_settings->max_requests_batch_size);
+    requests_queue = std::make_unique<RequestsQueue>();
 
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
@@ -313,7 +319,7 @@ void KeeperDispatcher::shutdown()
 
             if (requests_queue)
             {
-                requests_queue->finish();
+                //requests_queue->finish();
 
                 if (request_thread.joinable())
                     request_thread.join();
@@ -338,7 +344,8 @@ void KeeperDispatcher::shutdown()
         KeeperStorage::RequestForSession request_for_session;
 
         /// Set session expired for all pending requests
-        while (requests_queue && requests_queue->tryPop(request_for_session))
+        //while (requests_queue && requests_queue->tryPop(request_for_session))
+        while (requests_queue && requests_queue->try_pop(request_for_session))
         {
             auto response = request_for_session.request->makeResponse();
             response->error = Coordination::Error::ZSESSIONEXPIRED;
@@ -395,8 +402,9 @@ void KeeperDispatcher::sessionCleanerTask()
                     request_info.session_id = dead_session;
                     {
                         std::lock_guard lock(push_request_mutex);
-                        if (!requests_queue->push(std::move(request_info)))
-                            LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
+                        //if (!requests_queue->push(std::move(request_info)))
+                         //   LOG_INFO(log, "Cannot push close request to queue while cleaning outdated sessions");
+                        requests_queue->push(std::move(request_info));
                     }
 
                     /// Remove session from registered sessions
@@ -498,8 +506,9 @@ int64_t KeeperDispatcher::getSessionID(int64_t session_timeout_ms)
     /// Push new session request to queue
     {
         std::lock_guard lock(push_request_mutex);
-        if (!requests_queue->tryPush(std::move(request_info), session_timeout_ms))
-            throw Exception("Cannot push session id request to queue within session timeout", ErrorCodes::TIMEOUT_EXCEEDED);
+        //if (!requests_queue->tryPush(std::move(request_info), session_timeout_ms))
+        //    throw Exception("Cannot push session id request to queue within session timeout", ErrorCodes::TIMEOUT_EXCEEDED);
+        requests_queue->try_push(std::move(request_info));
     }
 
     if (future.wait_for(std::chrono::milliseconds(session_timeout_ms)) != std::future_status::ready)

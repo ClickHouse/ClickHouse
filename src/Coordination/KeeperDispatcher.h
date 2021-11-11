@@ -1,5 +1,13 @@
 #pragma once
 
+#if defined(__clang__)
+#   pragma clang diagnostic ignored "-Wreserved-id-macro"
+#   pragma clang diagnostic ignored "-Wunused-macros"
+#   pragma clang diagnostic ignored "-Wundef"
+#   pragma clang diagnostic ignored "-Wextra-semi"
+#   pragma clang diagnostic ignored "-Wold-style-cast"
+#endif
+
 #include <Common/config.h>
 #include "config_core.h"
 
@@ -13,7 +21,7 @@
 #include <functional>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/CoordinationSettings.h>
-
+#include "oneapi/tbb/concurrent_queue.h"
 
 namespace DB
 {
@@ -29,7 +37,8 @@ private:
     std::mutex push_request_mutex;
 
     CoordinationSettingsPtr coordination_settings;
-    using RequestsQueue = ConcurrentBoundedQueue<KeeperStorage::RequestForSession>;
+//    using RequestsQueue = ConcurrentBoundedQueue<KeeperStorage::RequestForSession>;
+    using RequestsQueue = tbb::detail::d2::concurrent_bounded_queue<KeeperStorage::RequestForSession>;
     using SessionToResponseCallback = std::unordered_map<int64_t, ZooKeeperResponseCallback>;
     using UpdateConfigurationQueue = ConcurrentBoundedQueue<ConfigUpdateAction>;
 
