@@ -56,9 +56,9 @@ BlockIO InterpreterDropQuery::execute()
     if (getContext()->getSettingsRef().database_atomic_wait_for_drop_and_detach_synchronously)
         drop.no_delay = true;
 
-    if (!drop.getTable().empty())
+    if (drop.table)
         return executeToTable(drop);
-    else if (!drop.getDatabase().empty())
+    else if (drop.database)
         return executeToDatabase(drop);
     else
         throw Exception("Nothing to drop, both names are empty", ErrorCodes::LOGICAL_ERROR);
@@ -130,7 +130,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ASTDropQuery & query, DatabaseP
         table_id.uuid = database->tryGetTableUUID(table_id.table_name);
 
         /// Prevents recursive drop from drop database query. The original query must specify a table.
-        bool is_drop_or_detach_database = query_ptr->as<ASTDropQuery>()->getTable().empty();
+        bool is_drop_or_detach_database = !query_ptr->as<ASTDropQuery>()->table;
         bool is_replicated_ddl_query = typeid_cast<DatabaseReplicated *>(database.get()) &&
                                        !getContext()->getClientInfo().is_replicated_database_internal &&
                                        !is_drop_or_detach_database;
@@ -380,7 +380,7 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
     AccessRightsElements required_access;
     const auto & drop = query_ptr->as<const ASTDropQuery &>();
 
-    if (drop.getTable().empty())
+    if (!drop.table)
     {
         if (drop.kind == ASTDropQuery::Kind::Detach)
             required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());

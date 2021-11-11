@@ -48,19 +48,19 @@ namespace
         {
             if (create.temporary)
             {
-                if (create.getTable().empty())
+                if (!create.table)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Table name specified in the CREATE TEMPORARY TABLE query must not be empty");
                 create.setTable(data.renaming_config->getNewTemporaryTableName(create.getTable()));
             }
-            else if (create.getTable().empty())
+            else if (!create.table)
             {
-                if (create.getDatabase().empty())
+                if (!create.database)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name specified in the CREATE DATABASE query must not be empty");
                 create.setDatabase(data.renaming_config->getNewDatabaseName(create.getDatabase()));
             }
             else
             {
-                if (create.getDatabase().empty())
+                if (!create.database)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name specified in the CREATE TABLE query must not be empty");
                 auto table_name = data.renaming_config->getNewTableName({create.getDatabase(), create.getTable()});
                 create.setDatabase(table_name.first);

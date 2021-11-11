@@ -221,7 +221,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 {
     frame.need_parens = false;
 
-    if (!getDatabase().empty() && getTable().empty())
+    if (database && table)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "")
             << (attach ? "ATTACH DATABASE " : "CREATE DATABASE ")
@@ -276,7 +276,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
                 << what << " "
                 << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
-            << (!getDatabase().empty() ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+            << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
 
         if (uuid != UUIDHelpers::Nil)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
@@ -317,7 +317,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         /// Always DICTIONARY
         settings.ostr << (settings.hilite ? hilite_keyword : "") << action << " DICTIONARY "
                       << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "")
-                      << (!getDatabase().empty() ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+                      << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
         if (uuid != UUIDHelpers::Nil)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
                           << quoteString(toString(uuid));

@@ -642,7 +642,7 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
         return nullptr;
 
     auto & create = ast->as<ASTCreateQuery &>();
-    if (!create.getTable().empty() && create.uuid != UUIDHelpers::Nil)
+    if (create.table && create.uuid != UUIDHelpers::Nil)
     {
         String table_name = unescapeForFileName(fs::path(metadata_file_path).stem());
 

@@ -23,17 +23,13 @@ String ASTQueryWithTableAndOutput::getTable() const
 
 void ASTQueryWithTableAndOutput::setDatabase(const String & name)
 {
-    if (name.empty() && !database)
-        return;
-
-    assert(!name.empty());
-
     if (database)
     {
-        if (auto * database_ptr = database->as<ASTIdentifier>())
-            database_ptr->setShortName(name);
+        std::erase(children, database);
+        database.reset();
     }
-    else
+
+    if (!name.empty())
     {
         database = std::make_shared<ASTIdentifier>(name);
         children.push_back(database);
@@ -42,17 +38,13 @@ void ASTQueryWithTableAndOutput::setDatabase(const String & name)
 
 void ASTQueryWithTableAndOutput::setTable(const String & name)
 {
-    if (name.empty() && !table)
-        return;
-
-    assert(!name.empty());
-
     if (table)
     {
-        if (auto * table_ptr = table->as<ASTIdentifier>())
-            table_ptr->setShortName(name);
+        std::erase(children, table);
+        table.reset();
     }
-    else
+
+    if (!name.empty())
     {
         table = std::make_shared<ASTIdentifier>(name);
         children.push_back(table);
@@ -75,7 +67,7 @@ void ASTQueryWithTableAndOutput::cloneTableOptions(ASTQueryWithTableAndOutput & 
 void ASTQueryWithTableAndOutput::formatHelper(const FormatSettings & settings, const char * name) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "") << name << " " << (settings.hilite ? hilite_none : "");
-    settings.ostr << (!getDatabase().empty() ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+    settings.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
 }
 
 }

@@ -68,6 +68,8 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
     }
     else
     {
+        /// Insert query parser do not fill table_id because table and
+        /// database can be parameters and be filled after parsing.
         StorageID local_table_id(query.getDatabase(), query.getTable());
         query.table_id = getContext()->resolveStorageID(local_table_id);
     }

@@ -217,10 +217,10 @@ BlockIO InterpreterSystemQuery::execute()
     /// Make canonical query for simpler processing
     if (query.type == Type::RELOAD_DICTIONARY)
     {
-        if (!query.getDatabase().empty())
+        if (query.database)
             query.setTable(query.getDatabase() + "." + query.getTable());
     }
-    else if (!query.getTable().empty())
+    else if (query.table)
     {
         table_id = getContext()->resolveStorageID(StorageID(query.getDatabase(), query.getTable()), Context::ResolveOrdinary);
     }
@@ -594,7 +594,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         if (!dropReplicaImpl(query, table))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
     }
-    else if (!query.getDatabase().empty())
+    else if (query.database)
     {
         getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase());
         DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
@@ -790,7 +790,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::STOP_MERGES: [[fallthrough]];
         case Type::START_MERGES:
         {
-            if (query.getTable().empty())
+            if (!query.table)
                 required_access.emplace_back(AccessType::SYSTEM_MERGES);
             else
                 required_access.emplace_back(AccessType::SYSTEM_MERGES, query.getDatabase(), query.getTable());
@@ -799,7 +799,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::STOP_TTL_MERGES: [[fallthrough]];
         case Type::START_TTL_MERGES:
         {
-            if (query.getTable().empty())
+            if (!query.table)
                 required_access.emplace_back(AccessType::SYSTEM_TTL_MERGES);
             else
                 required_access.emplace_back(AccessType::SYSTEM_TTL_MERGES, query.getDatabase(), query.getTable());
@@ -808,7 +808,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::STOP_MOVES: [[fallthrough]];
         case Type::START_MOVES:
         {
-            if (query.getTable().empty())
+            if (!query.table)
                 required_access.emplace_back(AccessType::SYSTEM_MOVES);
             else
                 required_access.emplace_back(AccessType::SYSTEM_MOVES, query.getDatabase(), query.getTable());
@@ -817,7 +817,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::STOP_FETCHES: [[fallthrough]];
         case Type::START_FETCHES:
         {
-            if (query.getTable().empty())
+            if (!query.table)
                 required_access.emplace_back(AccessType::SYSTEM_FETCHES);
             else
                 required_access.emplace_back(AccessType::SYSTEM_FETCHES, query.getDatabase(), query.getTable());
@@ -826,7 +826,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::STOP_DISTRIBUTED_SENDS: [[fallthrough]];
         case Type::START_DISTRIBUTED_SENDS:
         {
-            if (query.getTable().empty())
+            if (!query.table)
                 required_access.emplace_back(AccessType::SYSTEM_DISTRIBUTED_SENDS);
             else
                 required_access.emplace_back(AccessType::SYSTEM_DISTRIBUTED_SENDS, query.getDatabase(), query.getTable());
@@ -835,7 +835,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::STOP_REPLICATED_SENDS: [[fallthrough]];
         case Type::START_REPLICATED_SENDS:
         {
-            if (query.getTable().empty())
+            if (!query.table)
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATED_SENDS);
             else
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATED_SENDS, query.getDatabase(), query.getTable());
@@ -844,7 +844,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::STOP_REPLICATION_QUEUES: [[fallthrough]];
         case Type::START_REPLICATION_QUEUES:
         {
-            if (query.getTable().empty())
+            if (!query.table)
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES);
             else
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES, query.getDatabase(), query.getTable());

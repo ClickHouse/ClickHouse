@@ -310,7 +310,7 @@ namespace
     String getDataPathInBackup(const IAST & create_query)
     {
         const auto & create = create_query.as<const ASTCreateQuery &>();
-        if (create.getTable().empty())
+        if (!create.table)
             return {};
         if (create.temporary)
             return getDataPathInBackup({DatabaseCatalog::TEMPORARY_DATABASE, create.getTable()});
@@ -334,7 +334,7 @@ namespace
     String getMetadataPathInBackup(const IAST & create_query)
     {
         const auto & create = create_query.as<const ASTCreateQuery &>();
-        if (create.getTable().empty())
+        if (!create.table)
             return getMetadataPathInBackup(create.getDatabase());
         if (create.temporary)
             return getMetadataPathInBackup({DatabaseCatalog::TEMPORARY_DATABASE, create.getTable()});

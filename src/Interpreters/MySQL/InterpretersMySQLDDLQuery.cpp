@@ -513,7 +513,7 @@ ASTs InterpreterDropImpl::getRewrittenQueries(
     const auto & database_name = resolveDatabase(drop_query.getDatabase(), mysql_database, mapped_to_database, context);
 
     /// Skip drop database|view|dictionary
-    if (database_name != mapped_to_database || drop_query.getTable().empty() || drop_query.is_view || drop_query.is_dictionary)
+    if (database_name != mapped_to_database || !drop_query.table || drop_query.is_view || drop_query.is_dictionary)
         return {};
 
     ASTPtr rewritten_query = drop_query.clone();

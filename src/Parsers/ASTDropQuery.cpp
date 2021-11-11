@@ -48,7 +48,7 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
         settings.ostr << "TEMPORARY ";
 
 
-    if (getTable().empty() && !getDatabase().empty())
+    if (!table && database)
         settings.ostr << "DATABASE ";
     else if (is_dictionary)
         settings.ostr << "DICTIONARY ";
@@ -62,10 +62,10 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
 
     settings.ostr << (settings.hilite ? hilite_none : "");
 
-    if (getTable().empty() && !getDatabase().empty())
+    if (!table && database)
         settings.ostr << backQuoteIfNeed(getDatabase());
     else
-        settings.ostr << (!getDatabase().empty() ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
+        settings.ostr << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
 
     formatOnCluster(settings);
 
