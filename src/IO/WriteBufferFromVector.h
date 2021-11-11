@@ -3,7 +3,6 @@
 #include <vector>
 
 #include <IO/WriteBuffer.h>
-#include <Common/MemoryTracker.h>
 
 
 namespace DB
@@ -60,10 +59,7 @@ public:
 
     ~WriteBufferFromVector() override
     {
-        if (finalized)
-            return;
-        MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-        finalizeImpl();
+        finalize();
     }
 
 private:

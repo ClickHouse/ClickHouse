@@ -1,5 +1,4 @@
 #include <IO/WriteBufferFromOStream.h>
-#include <Common/MemoryTracker.h>
 
 
 namespace DB
@@ -42,10 +41,7 @@ WriteBufferFromOStream::WriteBufferFromOStream(
 
 WriteBufferFromOStream::~WriteBufferFromOStream()
 {
-    if (finalized)
-        return;
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finalizeImpl();
+    finalize();
 }
 
 }

@@ -6,7 +6,6 @@
 
 #include "CompressedWriteBuffer.h"
 #include <Compression/CompressionFactory.h>
-#include <Common/MemoryTracker.h>
 
 
 namespace DB
@@ -35,10 +34,7 @@ void CompressedWriteBuffer::nextImpl()
 
 CompressedWriteBuffer::~CompressedWriteBuffer()
 {
-    if (finalized)
-        return;
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finalizeImpl();
+    finalize();
 }
 
 CompressedWriteBuffer::CompressedWriteBuffer(

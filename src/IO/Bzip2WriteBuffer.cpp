@@ -47,10 +47,7 @@ Bzip2WriteBuffer::Bzip2WriteBuffer(std::unique_ptr<WriteBuffer> out_, int compre
 
 Bzip2WriteBuffer::~Bzip2WriteBuffer()
 {
-    if (finalized)
-        return;
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finalizeImpl();
+    finalize();
 }
 
 void Bzip2WriteBuffer::nextImpl()

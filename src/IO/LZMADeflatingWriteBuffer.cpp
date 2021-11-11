@@ -1,5 +1,4 @@
 #include <IO/LZMADeflatingWriteBuffer.h>
-#include <Common/MemoryTracker.h>
 
 namespace DB
 {
@@ -47,10 +46,7 @@ LZMADeflatingWriteBuffer::LZMADeflatingWriteBuffer(
 
 LZMADeflatingWriteBuffer::~LZMADeflatingWriteBuffer()
 {
-    if (finalized)
-        return;
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finalizeImpl();
+    finalize();
 }
 
 void LZMADeflatingWriteBuffer::nextImpl()

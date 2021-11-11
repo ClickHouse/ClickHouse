@@ -1,6 +1,5 @@
 #include <Poco/UTF8Encoding.h>
 #include <IO/WriteBufferValidUTF8.h>
-#include <Common/MemoryTracker.h>
 #include <base/types.h>
 
 #ifdef __SSE2__
@@ -125,10 +124,7 @@ void WriteBufferValidUTF8::nextImpl()
 
 WriteBufferValidUTF8::~WriteBufferValidUTF8()
 {
-    if (finalized)
-        return;
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finalizeImpl();
+    finalize();
 }
 
 void WriteBufferValidUTF8::finalizeImpl()

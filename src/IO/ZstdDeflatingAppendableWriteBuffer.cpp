@@ -1,5 +1,4 @@
 #include <IO/ZstdDeflatingAppendableWriteBuffer.h>
-#include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -78,10 +77,7 @@ void ZstdDeflatingAppendableWriteBuffer::nextImpl()
 
 ZstdDeflatingAppendableWriteBuffer::~ZstdDeflatingAppendableWriteBuffer()
 {
-    if (finalized || first_write)
-        return;
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finalizeImpl();
+    finalize();
 }
 
 void ZstdDeflatingAppendableWriteBuffer::finalizeImpl()
