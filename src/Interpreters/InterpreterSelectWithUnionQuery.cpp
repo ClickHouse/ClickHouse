@@ -86,7 +86,9 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     if (num_children == 1 && settings_limit_offset_needed)
     {
         const ASTPtr first_select_ast = ast->list_of_selects->children.at(0);
-        ASTSelectQuery * select_query = first_select_ast->as<ASTSelectQuery>();
+        ASTSelectQuery * select_query = dynamic_cast<ASTSelectQuery *>(first_select_ast.get());
+        if (!select_query)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid type in list_of_selects: {}", first_select_ast->getID());
 
         if (!select_query->withFill() && !select_query->limit_with_ties)
         {
