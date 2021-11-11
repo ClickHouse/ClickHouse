@@ -1675,6 +1675,8 @@ void ClientBase::init(int argc, char ** argv)
         ("hardware-utilization", "print hardware utilization information in progress bar")
         ("print-profile-events", po::value(&profile_events.print)->zero_tokens(), "Printing ProfileEvents packets")
         ("profile-events-delay-ms", po::value<UInt64>()->default_value(profile_events.delay_ms), "Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet)")
+
+        ("interactive", "Process queries-file or --query query and start interactive mode")
     ;
 
     addOptions(options_description);
@@ -1744,6 +1746,9 @@ void ClientBase::init(int argc, char ** argv)
         config().setString("history_file", options["history_file"].as<std::string>());
     if (options.count("verbose"))
         config().setBool("verbose", true);
+    if (options.count("interactive"))
+        config().setBool("interactive", true);
+
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.count("server_logs_file"))
