@@ -7,6 +7,7 @@
 #include <cassert>
 
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
 #include <IO/BufferBase.h>
 
 
@@ -16,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -106,6 +108,8 @@ public:
         if (finalized)
             return;
 
+        /// finalize() is often called from destructors.
+        MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
         finalizeImpl();
         finalized = true;
     }

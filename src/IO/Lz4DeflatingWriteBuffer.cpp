@@ -1,6 +1,5 @@
 #include <IO/Lz4DeflatingWriteBuffer.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTracker.h>
 
 
 namespace DB
@@ -44,10 +43,7 @@ Lz4DeflatingWriteBuffer::Lz4DeflatingWriteBuffer(
 
 Lz4DeflatingWriteBuffer::~Lz4DeflatingWriteBuffer()
 {
-    if (finalized)
-        return;
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finalizeImpl();
+    finalize();
 }
 
 void Lz4DeflatingWriteBuffer::nextImpl()

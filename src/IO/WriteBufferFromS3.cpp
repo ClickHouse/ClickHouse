@@ -4,7 +4,6 @@
 
 #    include <IO/WriteBufferFromS3.h>
 #    include <IO/WriteHelpers.h>
-#    include <Common/MemoryTracker.h>
 
 #    include <aws/s3/S3Client.h>
 #    include <aws/s3/model/CreateMultipartUploadRequest.h>
@@ -86,10 +85,7 @@ void WriteBufferFromS3::allocateBuffer()
 
 WriteBufferFromS3::~WriteBufferFromS3()
 {
-    if (finalized)
-        return;
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finalizeImpl();
+    finalize();
 }
 
 void WriteBufferFromS3::finalizeImpl()
@@ -163,7 +159,7 @@ void WriteBufferFromS3::writePart()
     {
         auto etag = outcome.GetResult().GetETag();
         part_tags.push_back(etag);
-        LOG_DEBUG(log, "Writing part finalizeImpl()ed. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Parts: {}", bucket, key, multipart_upload_id, etag, part_tags.size());
+        LOG_DEBUG(log, "Writing part finished. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Parts: {}", bucket, key, multipart_upload_id, etag, part_tags.size());
     }
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);

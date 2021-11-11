@@ -1,5 +1,4 @@
 #include <IO/ZlibDeflatingWriteBuffer.h>
-#include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
 
 
@@ -78,10 +77,7 @@ void ZlibDeflatingWriteBuffer::nextImpl()
 
 ZlibDeflatingWriteBuffer::~ZlibDeflatingWriteBuffer()
 {
-    if (finalized)
-        return;
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finalizeImpl();
+    finalize();
 }
 
 void ZlibDeflatingWriteBuffer::finalizeBeforeNestedFinalize()

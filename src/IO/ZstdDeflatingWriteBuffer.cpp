@@ -1,5 +1,4 @@
 #include <IO/ZstdDeflatingWriteBuffer.h>
-#include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -30,10 +29,7 @@ ZstdDeflatingWriteBuffer::ZstdDeflatingWriteBuffer(
 
 ZstdDeflatingWriteBuffer::~ZstdDeflatingWriteBuffer()
 {
-    if (finalized)
-        return;
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finalizeImpl();
+    finalize();
 }
 
 void ZstdDeflatingWriteBuffer::nextImpl()

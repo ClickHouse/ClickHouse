@@ -1,14 +1,12 @@
 #include <unistd.h>
 #include <errno.h>
 #include <cassert>
-#include <sys/types.h>
 #include <sys/stat.h>
 
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
-#include <Common/MemoryTracker.h>
 
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
@@ -96,10 +94,7 @@ WriteBufferFromFileDescriptor::WriteBufferFromFileDescriptor(
 
 WriteBufferFromFileDescriptor::~WriteBufferFromFileDescriptor()
 {
-    if (finalized)
-        return;
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finalizeImpl();
+    finalize();
 }
 
 void WriteBufferFromFileDescriptor::finalizeImpl()

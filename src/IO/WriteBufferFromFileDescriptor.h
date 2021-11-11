@@ -52,7 +52,7 @@ protected:
 
     /// If file has name contains filename, otherwise contains string "(fd=...)"
     std::string file_name;
-private:
+
     void finalizeImpl() override;
 };
 

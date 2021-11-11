@@ -1,7 +1,6 @@
 #include <IO/WriteBufferFromEncryptedFile.h>
 
 #if USE_SSL
-#include <Common/MemoryTracker.h>
 
 namespace DB
 {
@@ -22,10 +21,7 @@ WriteBufferFromEncryptedFile::WriteBufferFromEncryptedFile(
 
 WriteBufferFromEncryptedFile::~WriteBufferFromEncryptedFile()
 {
-    if (finalized)
-        return;
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finalizeImpl();
+    finalize();
 }
 
 void WriteBufferFromEncryptedFile::finalizeBeforeNestedFinalize()

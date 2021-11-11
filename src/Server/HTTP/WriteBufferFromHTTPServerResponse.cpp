@@ -3,14 +3,6 @@
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/Exception.h>
-#include <Common/NetException.h>
-#include <Common/Stopwatch.h>
-#include <Common/MemoryTracker.h>
-
-#include <Common/config.h>
-
-#include <Poco/Version.h>
 
 
 namespace DB
@@ -170,10 +162,7 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
 
 WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
 {
-    if (finalized)
-        return;
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finalizeImpl();
+    finalize();
 }
 
 void WriteBufferFromHTTPServerResponse::finalizeImpl()

@@ -5,7 +5,6 @@
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
-#include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 
@@ -83,10 +82,7 @@ WriteBufferFromPocoSocket::WriteBufferFromPocoSocket(Poco::Net::Socket & socket_
 
 WriteBufferFromPocoSocket::~WriteBufferFromPocoSocket()
 {
-    if (finalized)
-        return;
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finalizeImpl();
+    finalize();
 }
 
 }
