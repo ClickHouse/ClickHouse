@@ -395,12 +395,7 @@ Pipe StorageMerge::createSources(
     bool concat_streams)
 {
     const auto & [database_name, storage, struct_lock, table_name] = storage_with_lock;
-    /// Original query could contain JOIN but we need only the first joined table and its columns.
     auto & modified_select = modified_query_info.query->as<ASTSelectQuery &>();
-
-    TreeRewriterResult new_analyzer_res = *modified_query_info.syntax_analyzer_result;
-    removeJoin(modified_select, new_analyzer_res, modified_context);
-    modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
 
     Pipe pipe;
 
