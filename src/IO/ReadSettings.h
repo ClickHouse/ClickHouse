@@ -46,7 +46,7 @@ enum class LocalFSReadMethod
 enum class RemoteFSReadMethod
 {
     read,
-    read_threadpool,
+    threadpool,
 };
 
 class MMappedFileCache;
