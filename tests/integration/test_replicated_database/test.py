@@ -29,8 +29,6 @@ def assert_create_query(nodes, table_name, expected):
 def started_cluster():
     try:
         cluster.start()
-        main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');")
-        dummy_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');")
         yield cluster
 
     finally:
@@ -431,7 +429,7 @@ def test_startup_without_zk(started_cluster):
 
     main_node.query("EXCHANGE TABLES startup.rmt AND startup.m")
     assert main_node.query("SELECT (*,).1 FROM startup.m") == "42\n"
-    main_node.query("DROP DATABASE startup")
+    main_node.query("DROP DATABASE startup SYNC")
 
 def test_server_uuid(started_cluster):
     uuid1 = main_node.query("select serverUUID()")
