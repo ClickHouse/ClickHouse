@@ -507,7 +507,7 @@ if (ThreadFuzzer::instance().isEffective())
     global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
 
 if (config().has("local_cache_dir") && config().has("local_cache_quota"))
-    RemoteReadBufferCache::instance().initOnce(config().getString("local_cache_dir"), config().getUInt64("local_cache_quota"));
+    RemoteReadBufferCache::instance().initOnce(config().getString("local_cache_dir"), config().getUInt64("local_cache_quota"), config().getUInt64("local_cache_bytes_read_before_flush",DBMS_DEFAULT_BUFFER_SIZE));
 
 #if defined(SANITIZER)
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
