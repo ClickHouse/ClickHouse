@@ -466,7 +466,6 @@ class IColumn;
     M(Bool, asterisk_include_alias_columns, false, "Include ALIAS columns for wildcard query", 0) \
     M(Bool, optimize_skip_merged_partitions, false, "Skip partitions with one part with level > 0 in optimize final", 0) \
     M(Bool, optimize_on_insert, true, "Do the same transformation for inserted block of data as if merge was done on this block.", 0) \
-    M(Bool, allow_experimental_map_type, true, "Obsolete setting, does nothing.", 0) \
     M(Bool, allow_experimental_projection_optimization, false, "Enable projection optimization when processing SELECT queries", 0) \
     M(Bool, force_optimize_projection, false, "If projection optimization is enabled, SELECT queries need to use projection", 0) \
     M(Bool, async_socket_for_remote, true, "Asynchronously read from socket executing remote query", 0) \
@@ -508,7 +507,7 @@ class IColumn;
     M(ShortCircuitFunctionEvaluation, short_circuit_function_evaluation, ShortCircuitFunctionEvaluation::ENABLE, "Setting for short-circuit function evaluation configuration. Possible values: 'enable' - use short-circuit function evaluation for functions that are suitable for it, 'disable' - disable short-circuit function evaluation, 'force_enable' - use short-circuit function evaluation for all functions.", 0) \
     \
     M(String, local_filesystem_read_method, "pread", "Method of reading data from local filesystem, one of: read, pread, mmap, pread_threadpool.", 0) \
-    M(String, remote_filesystem_read_method, "read", "Method of reading data from remote filesystem, one of: read, read_threadpool.", 0) \
+    M(String, remote_filesystem_read_method, "read", "Method of reading data from remote filesystem, one of: read, threadpool.", 0) \
     M(Bool, local_filesystem_read_prefetch, false, "Should use prefetching when reading data from local filesystem.", 0) \
     M(Bool, remote_filesystem_read_prefetch, true, "Should use prefetching when reading data from remote filesystem.", 0) \
     M(Int64, read_priority, 0, "Priority to read data from local filesystem. Only supported for 'pread_threadpool' method.", 0) \
@@ -531,24 +530,28 @@ class IColumn;
     /** Experimental functions */ \
     M(Bool, allow_experimental_funnel_functions, false, "Enable experimental functions for funnel analysis.", 0) \
     M(Bool, allow_experimental_nlp_functions, false, "Enable experimental functions for natural language processing.", 0) \
-    \
-    \
-    /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
-    M(UInt64, max_memory_usage_for_all_queries, 0, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, multiple_joins_rewriter_version, 0, "Obsolete setting, does nothing.", 0) \
-    M(Bool, enable_debug_queries, false, "Obsolete setting, does nothing.", 0) \
-    M(Bool, allow_experimental_database_atomic, true, "Obsolete setting, does nothing.", 0) \
-    M(Bool, allow_experimental_bigint_types, true, "Obsolete setting, does nothing.", 0) \
-    M(Bool, allow_experimental_window_functions, true, "Obsolete setting, does nothing.", 0) \
-    M(HandleKafkaErrorMode, handle_kafka_error_mode, HandleKafkaErrorMode::DEFAULT, "Obsolete setting, does nothing.", 0) \
-    M(Bool, database_replicated_ddl_output, true, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, replication_alter_columns_timeout, 60, "Obsolete setting, does nothing.", 0) \
-    M(UInt64, odbc_max_field_size, 0, "Obsolete setting, does nothing.", 0) \
-    /** The section above is for obsolete settings. Do not add anything there. */
-
 
 // End of COMMON_SETTINGS
-// Please add settings related to formats into the FORMAT_FACTORY_SETTINGS below.
+// Please add settings related to formats into the FORMAT_FACTORY_SETTINGS and move obsolete settings to OBSOLETE_SETTINGS.
+
+#define MAKE_OBSOLETE(M, TYPE, NAME, DEFAULT) \
+    M(TYPE, NAME, DEFAULT, "Obsolete setting, does nothing.", BaseSettingsHelpers::Flags::OBSOLETE)
+
+#define OBSOLETE_SETTINGS(M) \
+    /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
+    MAKE_OBSOLETE(M, UInt64, max_memory_usage_for_all_queries, 0) \
+    MAKE_OBSOLETE(M, UInt64, multiple_joins_rewriter_version, 0) \
+    MAKE_OBSOLETE(M, Bool, enable_debug_queries, false) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_database_atomic, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_bigint_types, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_window_functions, true) \
+    MAKE_OBSOLETE(M, HandleKafkaErrorMode, handle_kafka_error_mode, HandleKafkaErrorMode::DEFAULT) \
+    MAKE_OBSOLETE(M, Bool, database_replicated_ddl_output, true) \
+    MAKE_OBSOLETE(M, UInt64, replication_alter_columns_timeout, 60) \
+    MAKE_OBSOLETE(M, UInt64, odbc_max_field_size, 0) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_map_type, true) \
+    /** The section above is for obsolete settings. Do not add anything there. */
+
 
 #define FORMAT_FACTORY_SETTINGS(M) \
     M(Char, format_csv_delimiter, ',', "The character to be considered as a delimiter in CSV data. If setting with a string, a string has to have a length of 1.", 0) \
@@ -636,6 +639,7 @@ class IColumn;
 
 #define LIST_OF_SETTINGS(M)    \
     COMMON_SETTINGS(M)         \
+    OBSOLETE_SETTINGS(M)       \
     FORMAT_FACTORY_SETTINGS(M)
 
 DECLARE_SETTINGS_TRAITS_ALLOW_CUSTOM_SETTINGS(SettingsTraits, LIST_OF_SETTINGS)
