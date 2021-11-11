@@ -1036,30 +1036,31 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     bool scheduled = false;
     if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
-            getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
+            getSettings()->merge_tree_clear_old_temporary_directories_interval_seconds))
     {
         assignee.scheduleCommonTask(ExecutableLambdaAdapter::create(
             [this, share_lock] ()
             {
-                clearOldTemporaryDirectories(merger_mutator, getSettings()->temporary_directories_lifetime.totalSeconds());
-                return true;
-            }, common_assignee_trigger, getStorageID()));
+                return clearOldTemporaryDirectories(merger_mutator, getSettings()->temporary_directories_lifetime.totalSeconds());
+            }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
         scheduled = true;
     }
     if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
-            getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
+            getSettings()->merge_tree_clear_old_parts_interval_seconds))
     {
         assignee.scheduleCommonTask(ExecutableLambdaAdapter::create(
             [this, share_lock] ()
             {
                 /// All use relative_data_path which changes during rename
                 /// so execute under share lock.
-                clearOldPartsFromFilesystem();
-                clearOldWriteAheadLogs();
-                clearOldMutations();
-                clearEmptyParts();
-                return true;
-            }, common_assignee_trigger, getStorageID()));
+                size_t cleared_count = 0;
+                cleared_count += clearOldPartsFromFilesystem();
+                cleared_count += clearOldWriteAheadLogs();
+                cleared_count += clearOldMutations();
+                cleared_count += clearEmptyParts();
+                return cleared_count;
+                /// TODO maybe take into account number of cleared objects when calculating backoff
+            }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
         scheduled = true;
     }
 
@@ -1077,18 +1078,18 @@ Int64 StorageMergeTree::getCurrentMutationVersion(
     return it->first;
 }
 
-void StorageMergeTree::clearOldMutations(bool truncate)
+size_t StorageMergeTree::clearOldMutations(bool truncate)
 {
     const auto settings = getSettings();
     if (!truncate && !settings->finished_mutations_to_keep)
-        return;
+        return 0;
 
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
         if (!truncate && current_mutations_by_version.size() <= settings->finished_mutations_to_keep)
-            return;
+            return 0;
 
         auto end_it = current_mutations_by_version.end();
         auto begin_it = current_mutations_by_version.begin();
@@ -1101,7 +1102,7 @@ void StorageMergeTree::clearOldMutations(bool truncate)
 
             size_t done_count = std::distance(begin_it, end_it);
             if (done_count <= settings->finished_mutations_to_keep)
-                return;
+                return 0;
 
             to_delete_count = done_count - settings->finished_mutations_to_keep;
         }
@@ -1120,6 +1121,8 @@ void StorageMergeTree::clearOldMutations(bool truncate)
         LOG_TRACE(log, "Removing mutation: {}", mutation.file_name);
         mutation.removeFile();
     }
+
+    return mutations_to_delete.size();
 }
 
 bool StorageMergeTree::optimize(
