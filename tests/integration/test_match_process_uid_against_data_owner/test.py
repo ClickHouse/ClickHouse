@@ -1,7 +1,6 @@
 import os
 import pwd
 import re
-import logging
 import pytest
 from helpers.cluster import ClickHouseCluster, CLICKHOUSE_START_COMMAND
 
