@@ -11,7 +11,6 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Databases/IDatabase.h>
-#include <Databases/IDatabaseReplicating.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseAtomic.h>
 
@@ -23,7 +22,7 @@ class PostgreSQLConnection;
 using PostgreSQLConnectionPtr = std::shared_ptr<PostgreSQLConnection>;
 
 
-class DatabaseMaterializedPostgreSQL : public DatabaseAtomic, IDatabaseReplicating
+class DatabaseMaterializedPostgreSQL : public DatabaseAtomic
 {
 
 public:
@@ -57,6 +56,8 @@ public:
     void dropTable(ContextPtr local_context, const String & name, bool no_delay) override;
 
     void drop(ContextPtr local_context) override;
+
+    bool hasReplicationThread() const override { return true; }
 
     void stopReplication() override;
 

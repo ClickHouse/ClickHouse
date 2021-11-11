@@ -2,7 +2,6 @@
 
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseReplicatedSettings.h>
-#include <Databases/IDatabaseReplicating.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <QueryPipeline/BlockIO.h>
@@ -18,7 +17,7 @@ using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
-class DatabaseReplicated : public DatabaseAtomic, IDatabaseReplicating
+class DatabaseReplicated : public DatabaseAtomic
 {
 public:
     DatabaseReplicated(const String & name_, const String & metadata_path_, UUID uuid,
@@ -46,6 +45,8 @@ public:
     /// Try to execute DLL query on current host as initial query. If query is succeed,
     /// then it will be executed on all replicas.
     BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context);
+
+    bool hasReplicationThread() const override { return true; }
 
     void stopReplication() override;
 
