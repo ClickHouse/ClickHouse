@@ -523,16 +523,16 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 
     settings.ostr << (settings.hilite ? hilite_none : "");
 
-    if (!getTable().empty())
+    if (table)
     {
-        if (!getDatabase().empty())
+        if (database)
         {
             settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
             settings.ostr << ".";
         }
         settings.ostr << indent_str << backQuoteIfNeed(getTable());
     }
-    else if (alter_object == AlterObjectType::DATABASE && !getDatabase().empty())
+    else if (alter_object == AlterObjectType::DATABASE && database)
     {
         settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
     }

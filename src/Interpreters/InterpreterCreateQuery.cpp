@@ -126,7 +126,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         /// Short syntax: try read database definition from file
         auto ast = DatabaseOnDisk::parseQueryFromMetadata(nullptr, getContext(), metadata_file_path);
         create = ast->as<ASTCreateQuery &>();
-        if (!create.getTable().empty() || !create.storage)
+        if (create.table || !create.storage)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Metadata file {} contains incorrect CREATE DATABASE query", metadata_file_path.string());
         create.attach = true;
         create.attach_short_syntax = true;
@@ -826,12 +826,12 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
     /// Temporary tables are created out of databases.
-    if (create.temporary && !create.getDatabase().empty())
+    if (create.temporary && create.database)
         throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
             ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 
     String current_database = getContext()->getCurrentDatabase();
-    auto database_name = create.getDatabase().empty() ? current_database : create.getDatabase();
+    auto database_name = !create.database ? current_database : create.getDatabase();
 
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
@@ -911,7 +911,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                          create.getTable(), create.getTable(), create.getTable());
     }
 
-    if (!create.temporary && create.getDatabase().empty())
+    if (!create.temporary && !create.database)
         create.setDatabase(current_database);
     if (create.to_table_id && create.to_table_id.database_name.empty())
         create.to_table_id.database_name = current_database;
@@ -1302,7 +1302,7 @@ BlockIO InterpreterCreateQuery::execute()
     ASTQueryWithOutput::resetOutputASTIfExist(create);
 
     /// CREATE|ATTACH DATABASE
-    if (!create.getDatabase().empty() && create.getTable().empty())
+    if (create.database && !create.table)
         return createDatabase(create);
     else
         return createTable(create);
@@ -1318,7 +1318,7 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     AccessRightsElements required_access;
     const auto & create = query_ptr->as<const ASTCreateQuery &>();
 
-    if (create.getTable().empty())
+    if (!create.table)
     {
         required_access.emplace_back(AccessType::CREATE_DATABASE, create.getDatabase());
     }

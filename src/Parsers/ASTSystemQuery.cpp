@@ -56,17 +56,13 @@ String ASTSystemQuery::getTable() const
 
 void ASTSystemQuery::setDatabase(const String & name)
 {
-    if (name.empty() && !database)
-        return;
-
-    assert(!name.empty());
-
     if (database)
     {
-        if (auto * database_ptr = database->as<ASTIdentifier>())
-            database_ptr->setShortName(name);
+        std::erase(children, database);
+        database.reset();
     }
-    else
+
+    if (!name.empty())
     {
         database = std::make_shared<ASTIdentifier>(name);
         children.push_back(database);
@@ -75,17 +71,13 @@ void ASTSystemQuery::setDatabase(const String & name)
 
 void ASTSystemQuery::setTable(const String & name)
 {
-    if (name.empty() && !table)
-        return;
-
-    assert(!name.empty());
-
     if (table)
     {
-        if (auto * table_ptr = table->as<ASTIdentifier>())
-            table_ptr->setShortName(name);
+        std::erase(children, table);
+        table.reset();
     }
-    else
+
+    if (!name.empty())
     {
         table = std::make_shared<ASTIdentifier>(name);
         children.push_back(table);
@@ -100,7 +92,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     auto print_database_table = [&]
     {
         settings.ostr << " ";
-        if (!getDatabase().empty())
+        if (database)
         {
             settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(getDatabase())
                           << (settings.hilite ? hilite_none : "") << ".";
@@ -112,7 +104,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     auto print_drop_replica = [&]
     {
         settings.ostr << " " << quoteString(replica);
-        if (!getTable().empty())
+        if (table)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM TABLE"
                           << (settings.hilite ? hilite_none : "");
@@ -123,7 +115,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM ZKPATH "
                           << (settings.hilite ? hilite_none : "") << quoteString(replica_zk_path);
         }
-        else if (!getDatabase().empty())
+        else if (database)
         {
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " FROM DATABASE "
                           << (settings.hilite ? hilite_none : "");
@@ -160,7 +152,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         || type == Type::STOP_DISTRIBUTED_SENDS
         || type == Type::START_DISTRIBUTED_SENDS)
     {
-        if (!getTable().empty())
+        if (table)
             print_database_table();
         else if (!volume.empty())
             print_on_volume();

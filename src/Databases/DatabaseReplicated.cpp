@@ -715,7 +715,7 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
     auto ast = parseQuery(parser, query, description, 0, getContext()->getSettingsRef().max_parser_depth);
 
     auto & create = ast->as<ASTCreateQuery &>();
-    if (create.uuid == UUIDHelpers::Nil || create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || !create.getDatabase().empty())
+    if (create.uuid == UUIDHelpers::Nil || create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create.database)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", node_name, query);
 
     bool is_materialized_view_with_inner_table = create.is_materialized_view && create.to_table_id.empty();

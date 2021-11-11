@@ -33,9 +33,9 @@ protected:
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "CHECK TABLE " << (settings.hilite ? hilite_none : "");
 
-        if (!getTable().empty())
+        if (table)
         {
-            if (!getDatabase().empty())
+            if (database)
             {
                 settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << backQuoteIfNeed(getDatabase()) << (settings.hilite ? hilite_none : "");
                 settings.ostr << ".";
