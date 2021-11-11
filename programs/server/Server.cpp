@@ -595,8 +595,8 @@ if (ThreadFuzzer::instance().isEffective())
         if (config().getBool("remap_executable", false))
         {
             LOG_DEBUG(log, "Will remap executable in memory.");
-            remapExecutable();
-            LOG_DEBUG(log, "The code in memory has been successfully remapped.");
+            size_t size = remapExecutable();
+            LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
         }
 
         if (config().getBool("mlock_executable", false))
@@ -702,10 +702,6 @@ if (ThreadFuzzer::instance().isEffective())
         for (const DiskPtr & disk : volume->getDisks())
             setupTmpPath(log, disk->getPath());
     }
-
-    /// Storage keeping all the backups.
-    fs::create_directories(path / "backups");
-    global_context->setBackupsVolume(config().getString("backups_path", path / "backups"), config().getString("backups_policy", ""));
 
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
       * Flags may be cleared automatically after being applied by the server.

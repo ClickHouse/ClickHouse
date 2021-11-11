@@ -510,10 +510,23 @@ String Context::getUserScriptsPath() const
     return shared->user_scripts_path;
 }
 
-std::vector<String> Context::getWarnings() const
+Strings Context::getWarnings() const
 {
-    auto lock = getLock();
-    return shared->warnings;
+    Strings common_warnings;
+    {
+        auto lock = getLock();
+        common_warnings = shared->warnings;
+    }
+    for (const auto & setting : settings)
+    {
+        if (setting.isValueChanged() && setting.isObsolete())
+        {
+            common_warnings.emplace_back("Some obsolete setting is changed. "
+                                         "Check 'select * from system.settings where changed' and read the changelog.");
+            break;
+        }
+    }
+    return common_warnings;
 }
 
 VolumePtr Context::getTemporaryVolume() const
@@ -570,35 +583,6 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
          throw Exception("No disks volume for temporary files", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     return shared->tmp_volume;
-}
-
-void Context::setBackupsVolume(const String & path, const String & policy_name)
-{
-    std::lock_guard lock(shared->storage_policies_mutex);
-    if (policy_name.empty())
-    {
-        String path_with_separator = path;
-        if (!path_with_separator.ends_with('/'))
-            path_with_separator += '/';
-        auto disk = std::make_shared<DiskLocal>("_backups_default", path_with_separator, 0);
-        shared->backups_volume = std::make_shared<SingleDiskVolume>("_backups_default", disk, 0);
-    }
-    else
-    {
-        StoragePolicyPtr policy = getStoragePolicySelector(lock)->get(policy_name);
-        if (policy->getVolumes().size() != 1)
-             throw Exception("Policy " + policy_name + " is used for backups, such policy should have exactly one volume",
-                             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
-        shared->backups_volume = policy->getVolume(0);
-    }
-
-    BackupFactory::instance().setBackupsVolume(shared->backups_volume);
-}
-
-VolumePtr Context::getBackupsVolume() const
-{
-    std::lock_guard lock(shared->storage_policies_mutex);
-    return shared->backups_volume;
 }
 
 void Context::setFlagsPath(const String & path)
