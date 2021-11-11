@@ -17,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
-    extern const int LOGICAL_ERROR;
 }
 
 
