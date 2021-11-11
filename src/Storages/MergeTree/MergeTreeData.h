@@ -406,6 +406,7 @@ public:
             || merging_params.mode == MergingParams::Summing
             || merging_params.mode == MergingParams::Aggregating
             || merging_params.mode == MergingParams::Replacing
+            || merging_params.mode == MergingParams::Graphite
             || merging_params.mode == MergingParams::VersionedCollapsing;
     }
 
@@ -582,7 +583,7 @@ public:
     /// Change MergeTreeSettings
     void changeSettings(
         const ASTPtr & new_settings,
-        TableLockHolder & table_lock_holder);
+        AlterLockHolder & table_lock_holder);
 
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
@@ -629,7 +630,7 @@ public:
         TableLockHolder & table_lock_holder);
 
     /// Prepares entries to backup data of the storage.
-    BackupEntries backup(const ASTs & partitions, ContextPtr context) const override;
+    BackupEntries backup(const ASTs & partitions, ContextPtr context) override;
     static BackupEntries backupDataParts(const DataPartsVector & data_parts);
 
     /// Extract data from the backup and put it to the storage.

@@ -1,6 +1,7 @@
 #include <Client/InternalTextLogs.h>
 #include <Core/Block.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/ProfileEventsExt.h>
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/Hash.h>
 #include <DataTypes/IDataType.h>
@@ -13,7 +14,7 @@
 namespace DB
 {
 
-void InternalTextLogs::write(const Block & block)
+void InternalTextLogs::writeLogs(const Block & block)
 {
     const auto & array_event_time = typeid_cast<const ColumnUInt32 &>(*block.getByName("event_time").column).getData();
     const auto & array_microseconds = typeid_cast<const ColumnUInt32 &>(*block.getByName("event_time_microseconds").column).getData();
@@ -92,6 +93,71 @@ void InternalTextLogs::write(const Block & block)
 
         auto text = column_text.getDataAt(row_num);
         writeString(text, wb);
+
+        writeChar('\n', wb);
+    }
+}
+
+void InternalTextLogs::writeProfileEvents(const Block & block)
+{
+    const auto & column_host_name = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
+    const auto & array_current_time = typeid_cast<const ColumnUInt32 &>(*block.getByName("current_time").column).getData();
+    const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
+    const auto & array_type = typeid_cast<const ColumnInt8 &>(*block.getByName("type").column).getData();
+    const auto & column_name = typeid_cast<const ColumnString &>(*block.getByName("name").column);
+    const auto & array_value = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
+
+    for (size_t row_num = 0; row_num < block.rows(); ++row_num)
+    {
+        /// host_name
+        auto host_name = column_host_name.getDataAt(row_num);
+        if (host_name.size)
+        {
+            writeCString("[", wb);
+            if (color)
+                writeString(setColor(StringRefHash()(host_name)), wb);
+            writeString(host_name, wb);
+            if (color)
+                writeCString(resetColor(), wb);
+            writeCString("] ", wb);
+        }
+
+        /// current_time
+        auto current_time = array_current_time[row_num];
+        writeDateTimeText<'.', ':'>(current_time, wb);
+
+        /// thread_id
+        UInt64 thread_id = array_thread_id[row_num];
+        writeCString(" [ ", wb);
+        if (color)
+            writeString(setColor(intHash64(thread_id)), wb);
+        writeIntText(thread_id, wb);
+        if (color)
+            writeCString(resetColor(), wb);
+        writeCString(" ] ", wb);
+
+        /// name
+        auto name = column_name.getDataAt(row_num);
+        if (color)
+            writeString(setColor(StringRefHash()(name)), wb);
+        DB::writeString(name, wb);
+        if (color)
+            writeCString(resetColor(), wb);
+        writeCString(": ", wb);
+
+        /// value
+        UInt64 value = array_value[row_num];
+        writeIntText(value, wb);
+
+        //// type
+        Int8 type = array_type[row_num];
+        writeCString(" (", wb);
+        if (color)
+            writeString(setColor(intHash64(type)), wb);
+        writeString(toString(ProfileEvents::TypeEnum->castToName(type)), wb);
+        if (color)
+            writeCString(resetColor(), wb);
+        writeCString(")", wb);
 
         writeChar('\n', wb);
     }

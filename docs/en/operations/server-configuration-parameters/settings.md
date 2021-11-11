@@ -69,6 +69,8 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 </compression>
 ```
 
+<!--
+
 ## encryption {#server-settings-encryption}
 
 Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
@@ -131,7 +133,7 @@ Also, users can add nonce that must be 12 bytes long (by default encryption and 
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <nonce>0123456789101</nonce>
+        <nonce>012345678910</nonce>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
@@ -147,6 +149,8 @@ Or it can be set in hex:
 ```
 
 Everything mentioned above can be applied for `aes_256_gcm_siv` (but the key must be 32 bytes long).
+
+-->
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
@@ -482,16 +486,12 @@ Backlog (queue size of pending connections) of the listen socket.
 Default value: `4096` (as in linux [5.4+](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=19f92a030ca6d772ab44b22ee6a01378a8cb32d4)).
 
 Usually this value does not need to be changed, since:
-- default value is large enough,
-- and for accepting client's connections server has separate thread.
+-  default value is large enough,
+-  and for accepting client's connections server has separate thread.
 
-So even if you have `TcpExtListenOverflows` (from `nstat`) non zero and this
-counter grows for ClickHouse server it does not mean that this value need to be
-increased, since:
-- usually if 4096 is not enough it shows some internal ClickHouse scaling
-  issue, so it is better to report an issue.
-- and it does not mean that the server can handle more connections later (and
-  even if it can, clients can already goes away / disconnect).
+So even if you have `TcpExtListenOverflows` (from `nstat`) non zero and this counter grows for ClickHouse server it does not mean that this value need to be increased, since:
+-  usually if 4096 is not enough it shows some internal ClickHouse scaling issue, so it is better to report an issue.
+-  and it does not mean that the server can handle more connections later (and even if it could, by that moment clients may be gone or disconnected).
 
 Examples:
 
@@ -643,7 +643,7 @@ On hosts with low RAM and swap, you possibly need setting `max_server_memory_usa
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-The maximum number of simultaneously processed queries related to MergeTree table. Queries may be limited by other settings: [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+The maximum number of simultaneously processed queries related to MergeTree table. Queries may be limited by other settings: [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
 
 !!! info "Note"
 	These settings can be modified at runtime and will take effect immediately. Queries that are already running will remain unchanged.
@@ -657,6 +657,21 @@ Possible values:
 
 ``` xml
 <max_concurrent_queries>100</max_concurrent_queries>
+```
+
+## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
+
+The maximum number of simultaneously processed queries related to MergeTree table per user.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Disabled.
+
+**Example**
+
+``` xml
+<max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
 ```
 
 ## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
@@ -771,14 +786,14 @@ It is enabled by default. If it`s not, you can do this manually.
 To manually turn on metrics history collection [`system.metric_log`](../../operations/system-tables/metric_log.md), create `/etc/clickhouse-server/config.d/metric_log.xml` with the following content:
 
 ``` xml
-<yandex>
+<clickhouse>
     <metric_log>
         <database>system</database>
         <table>metric_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
     </metric_log>
-</yandex>
+</clickhouse>
 ```
 
 **Disabling**
@@ -786,9 +801,9 @@ To manually turn on metrics history collection [`system.metric_log`](../../opera
 To disable `metric_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_metric_log.xml` with the following content:
 
 ``` xml
-<yandex>
+<clickhouse>
 <metric_log remove="1" />
-</yandex>
+</clickhouse>
 ```
 
 ## replicated_merge_tree {#server_configuration_parameters-replicated_merge_tree}
@@ -1024,7 +1039,7 @@ Parameters:
 
 **Example**
 ```xml
-<yandex>
+<clickhouse>
     <text_log>
         <level>notice</level>
         <database>system</database>
@@ -1033,7 +1048,7 @@ Parameters:
         <!-- <partition_by>event_date</partition_by> -->
         <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
     </text_log>
-</yandex>
+</clickhouse>
 ```
 
 
@@ -1275,6 +1290,7 @@ This section contains the following parameters:
 
 -   [Replication](../../engines/table-engines/mergetree-family/replication.md)
 -   [ZooKeeper Programmer’s Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
+-   [Optional secured communication between ClickHouse and Zookeeper](../ssl-zookeeper.md#secured-communication-with-zookeeper)
 
 ## use_minimalistic_part_header_in_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 

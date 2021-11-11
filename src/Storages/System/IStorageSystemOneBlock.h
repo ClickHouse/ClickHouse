@@ -31,12 +31,7 @@ class IStorageSystemOneBlock : public IStorage
 protected:
     virtual void fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo & query_info) const = 0;
 
-
 public:
-#if defined(ARCADIA_BUILD)
-    IStorageSystemOneBlock(const String & name_) : IStorageSystemOneBlock(StorageID{"system", name_}) {}
-#endif
-
     IStorageSystemOneBlock(const StorageID & table_id_) : IStorage(table_id_)
     {
         StorageInMemoryMetadata metadata_;
