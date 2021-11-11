@@ -104,14 +104,24 @@ public:
 
     void unlock()
     {
+        if (zookeeper->expired())
+        {
+            LOG_WARNING(log, "Lock is lost, because session was expired. Path: {}, message: {}", lock_path, lock_message);
+            return;
+        }
+
         Coordination::Stat stat;
         std::string dummy;
+        /// NOTE It will throw if session expired after we checked it above
         bool result = zookeeper->tryGet(lock_path, dummy, &stat);
 
         if (result && stat.ephemeralOwner == zookeeper->getClientID())
             zookeeper->remove(lock_path, -1);
+        else if (result)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Lock is lost, it has another owner. Path: {}, message: {}, owner: {}, our id: {}",
+                            lock_path, lock_message, stat.ephemeralOwner, zookeeper->getClientID());
         else
-            LOG_WARNING(log, "Lock is lost. It is normal if session was expired. Path: {}/{}", lock_path, lock_message);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Lock is lost, node does not exist. Path: {}, message: {}", lock_path, lock_message);
     }
 
     bool tryLock()
