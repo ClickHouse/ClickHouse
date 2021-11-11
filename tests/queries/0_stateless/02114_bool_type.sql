@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+-- Tag no-parallel was added here because it will create table
 DROP TABLE IF EXISTS test.bool_test;
 
 CREATE TABLE test.bool_test (value Bool) ENGINE = Memory;
