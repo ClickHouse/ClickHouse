@@ -429,13 +429,13 @@ class ClickHouseCluster:
             filter_name = f'^/{self.project_name}_.*_1$'
             if int(run_and_check(f'docker container list --all --filter name={filter_name} | wc -l', shell=True)) > 1:
                 logging.debug(f"Trying to kill unstopped containers for project {self.project_name}:")
-                unstopped_containers = run_and_check(f'docker container list --all --filter name={filter_name}', shell=True)
-                unstopped_containers_ids = [line.split()[0] for line in unstopped_containers.splitlines()[1:]]
-                for id in unstopped_containers_ids:
+                unstopped_containers = run_and_check(f'docker container list --all --filter name={filter_name}', shell=True).splitlines()
+                logging.debug(f"Unstopped containers {unstopped_containers}")
+                for id in unstopped_containers:
                     run_and_check(f'docker kill {id}', shell=True, nothrow=True)
                     run_and_check(f'docker rm {id}', shell=True, nothrow=True)
-                logging.debug("Unstopped containers killed")
-                run_and_check(f'docker container list --all --filter name={filter_name}', shell=True)
+                left_ids = run_and_check(f'docker container list --all --filter name={filter_name}', shell=True)
+                logging.debug(f"Unstopped containers killed. Left {left_ids}")
             else:
                 logging.debug(f"No running containers for project: {self.project_name}")
         except:
@@ -968,6 +968,9 @@ class ClickHouseCluster:
         logging.info("Restart node with ip change")
         # In builds with sanitizer the server can take a long time to start
         node.wait_for_start(start_timeout=180.0, connection_timeout=600.0)  # seconds
+        res = node.client.query("SELECT 30")
+        logging.debug(f"Read '{res}'")
+        assert "30\n" == res
         logging.info("Restarted")
 
         return node
@@ -1420,7 +1423,7 @@ class ClickHouseCluster:
             # retry_exception(10, 5, subprocess_check_call, Exception, clickhouse_pull_cmd)
 
             if destroy_dirs and p.exists(self.instances_dir):
-                logging.debug(("Removing instances dir %s", self.instances_dir))
+                logging.debug(f"Removing instances dir {self.instances_dir}")
                 shutil.rmtree(self.instances_dir)
 
             for instance in list(self.instances.values()):
@@ -2071,32 +2074,32 @@ class ClickHouseInstance:
     def start_clickhouse(self, start_wait_sec=60):
         if not self.stay_alive:
             raise Exception("ClickHouse can be started again only with stay_alive=True instance")
-
+        start_time = time.time()
         time_to_sleep = 0.5
-        start_tries = 5
 
-        total_tries = int(start_wait_sec / time_to_sleep)
-        query_tries = int(total_tries / start_tries)
-
-        for i in range(start_tries):
+        while start_time + start_wait_sec >= time.time():
             # sometimes after SIGKILL (hard reset) server may refuse to start for some time
             # for different reasons.
-            self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
-            started = False
-            for _ in range(query_tries):
+            pid = self.get_process_pid("clickhouse")
+            if pid is None:
+                logging.debug("No clickhouse process running. Start new one.")
+                self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
+                time.sleep(1)
+                continue
+            else:
+                logging.debug("Clickhouse process running.")
                 try:
-                    self.query("select 1")
-                    started = True
-                    break
-                except:
-                    time.sleep(time_to_sleep)
-            if started:
-                break
-        else:
-            raise Exception("Cannot start ClickHouse, see additional info in logs")
+                    self.wait_start(start_wait_sec + start_time - time.time())
+                    return
+                except Exception as e:
+                    logging.warning(f"Current start attempt failed. Will kill {pid} just in case.")
+                    self.exec_in_container(["bash", "-c", f"kill -9 {pid}"], user='root')
+                    time.sleep(time_to_sleep)        
 
-        self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
-        # wait start
+        raise Exception("Cannot start ClickHouse, see additional info in logs")
+
+
+    def wait_start(self, start_wait_sec):
         start_time = time.time()
         last_err = None
         while time.time() <= start_time + start_wait_sec:
@@ -2104,8 +2107,8 @@ class ClickHouseInstance:
                 pid = self.get_process_pid("clickhouse")
                 if pid is None:
                     raise Exception("ClickHouse server is not running. Check logs.")
-                exec_query_with_retry(self, "select 1", retry_count = 10, silent=True)
-                time.sleep(1)
+                exec_query_with_retry(self, 'select 20', retry_count = 10, silent=True)
+                return
             except QueryRuntimeException as err:
                 last_err = err
                 pid = self.get_process_pid("clickhouse")
@@ -2114,6 +2117,8 @@ class ClickHouseInstance:
                 else:
                     raise Exception("ClickHouse server is not running. Check logs.")
         logging.error(f"No time left to start. But process is still running. Will dump threads.")
+        ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], nothrow=True, user='root')
+        logging.info(f"PS RESULT:\n{ps_clickhouse}")
         pid = self.get_process_pid("clickhouse")
         if pid is not None:
             self.exec_in_container(["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"], user='root')
@@ -2186,7 +2191,7 @@ class ClickHouseInstance:
 
     def get_process_pid(self, process_name):
         output = self.exec_in_container(["bash", "-c",
-                                         "ps ax | grep '{}' | grep -v 'grep' | grep -v 'bash -c' | awk '{{print $1}}'".format(
+                                         "ps ax | grep '{}' | grep -v 'grep' | grep -v 'coproc' | grep -v 'bash -c' | awk '{{print $1}}'".format(
                                              process_name)])
         if output:
             try:
@@ -2197,6 +2202,7 @@ class ClickHouseInstance:
         return None
 
     def restart_with_original_version(self, stop_start_wait_sec=300, callback_onstop=None, signal=15):
+        begin_time = time.time()
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
         self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(signal)], user='root')
@@ -2216,6 +2222,7 @@ class ClickHouseInstance:
 
         if callback_onstop:
             callback_onstop(self)
+        self.exec_in_container(["bash", "-c", "echo 'restart_with_original_version: From version' && /usr/bin/clickhouse server --version && echo 'To version' && /usr/share/clickhouse_original server --version"])
         self.exec_in_container(
             ["bash", "-c", "cp /usr/share/clickhouse_original /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse"],
             user='root')
@@ -2225,9 +2232,14 @@ class ClickHouseInstance:
         self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
 
         # wait start
-        assert_eq_with_retry(self, "select 1", "1", retry_count=retries)
+        time_left = begin_time + stop_start_wait_sec - time.time()
+        if time_left <= 0:
+            raise Exception(f"No time left during restart")
+        else:
+            self.wait_start(time_left)
 
     def restart_with_latest_version(self, stop_start_wait_sec=300, callback_onstop=None, signal=15):
+        begin_time = time.time()
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
         self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(signal)], user='root')
@@ -2253,13 +2265,18 @@ class ClickHouseInstance:
         self.exec_in_container(
             ["bash", "-c", "cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse"],
             user='root')
+        self.exec_in_container(["bash", "-c", "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' /usr/share/clickhouse_fresh server --version"])
         self.exec_in_container(["bash", "-c",
                                 "cp /usr/share/clickhouse-odbc-bridge_fresh /usr/bin/clickhouse-odbc-bridge && chmod 777 /usr/bin/clickhouse"],
                                user='root')
         self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
 
         # wait start
-        assert_eq_with_retry(self, "select 1", "1", retry_count=retries)
+        time_left = begin_time + stop_start_wait_sec - time.time()
+        if time_left <= 0:
+            raise Exception(f"No time left during restart")
+        else:
+            self.wait_start(time_left)
 
     def get_docker_handle(self):
         return self.cluster.get_docker_handle(self.docker_id)
