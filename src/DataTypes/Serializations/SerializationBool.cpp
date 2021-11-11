@@ -91,10 +91,10 @@ void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & is
         const char *formatted_false = text_false_arr[bool_format];
         String input;
         readString(input,istr);
-        if (strcmp(formatted_true, input.c_str()))
+        if (strcmp(formatted_true, input.c_str()) != 0)
         {
             col->insert(true);
-        } else if (strcmp(formatted_false, input.c_str()))
+        } else if (strcmp(formatted_false, input.c_str()) != 0)
         {
             col->insert(false);
         } else
