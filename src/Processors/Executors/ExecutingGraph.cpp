@@ -1,5 +1,6 @@
 #include <Processors/Executors/ExecutingGraph.h>
 #include <stack>
+#include <Common/Stopwatch.h>
 
 namespace DB
 {
@@ -165,12 +166,45 @@ bool ExecutingGraph::expandPipeline(std::stack<uint64_t> & stack, uint64_t pid)
     return true;
 }
 
+void ExecutingGraph::initializeExecution(Queue & queue)
+{
+    std::stack<uint64_t> stack;
 
-bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue, UpgradableMutex::ReadGuard & read_lock)
+    /// Add childless processors to stack.
+    uint64_t num_processors = nodes.size();
+    for (uint64_t proc = 0; proc < num_processors; ++proc)
+    {
+        if (nodes[proc]->direct_edges.empty())
+        {
+            stack.push(proc);
+            /// do not lock mutex, as this function is executed in single thread
+            nodes[proc]->status = ExecutingGraph::ExecStatus::Preparing;
+        }
+    }
+
+    Queue async_queue;
+
+    while (!stack.empty())
+    {
+        uint64_t proc = stack.top();
+        stack.pop();
+
+        updateNode(proc, queue, async_queue);
+
+        if (!async_queue.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Async is only possible after work() call. Processor {}",
+                            async_queue.front()->processor->getName());
+    }
+}
+
+
+bool ExecutingGraph::updateNode(uint64_t pid, Queue & queue, Queue & async_queue)
 {
     std::stack<Edge *> updated_edges;
     std::stack<uint64_t> updated_processors;
     updated_processors.push(pid);
+
+    UpgradableMutex::ReadGuard read_lock(nodes_mutex);
 
     while (!updated_processors.empty() || !updated_edges.empty())
     {

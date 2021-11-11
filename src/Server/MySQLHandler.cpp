@@ -20,6 +20,7 @@
 #include <regex>
 #include <Common/setThreadName.h>
 #include <Core/MySQL/Authentication.h>
+#include <base/logger_useful.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config_version.h>

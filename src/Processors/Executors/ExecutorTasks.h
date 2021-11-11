@@ -4,7 +4,6 @@
 #include <Processors/Executors/PollingQueue.h>
 #include <Processors/Executors/ThreadsQueue.h>
 #include <Processors/Executors/TasksQueue.h>
-#include <Processors/Executors/UpgradableLock.h>
 #include <stack>
 
 namespace DB
@@ -45,9 +44,6 @@ class ExecutorTasks
 public:
     using Stack = std::stack<UInt64>;
     using Queue = std::queue<ExecutingGraph::Node *>;
-
-    /// Data used by stopping pipeline task.
-    UpgradableMutex stopping_pipeline_mutex;
 
     void finish();
     bool isFinished() const { return finished; }
