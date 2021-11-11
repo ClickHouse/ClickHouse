@@ -26,10 +26,10 @@ RemoteCacheController::recover(const std::string & local_path_, std::function<vo
 {
     std::filesystem::path dir_handle(local_path_);
     std::filesystem::path data_file(local_path_ + "/data.bin");
-    std::filesystem::path meta_file(local_path_ + "meta.txt");
+    std::filesystem::path meta_file(local_path_ + "/meta.txt");
     if (!std::filesystem::exists(dir_handle) || !std::filesystem::exists(data_file) || !std::filesystem::exists(meta_file))
     {
-        LOG_ERROR(&Poco::Logger::get("RemoteCacheController"), "not exists directory" + local_path_);
+        LOG_ERROR(&Poco::Logger::get("RemoteCacheController"), "not exists directory:" + local_path_);
         return nullptr;
     }
 
@@ -43,7 +43,7 @@ RemoteCacheController::recover(const std::string & local_path_, std::function<vo
     auto mod_ts = meta_jobj->get("last_mod_ts").convert<UInt64>();
     if (downloaded == "false")
     {
-        LOG_ERROR(&Poco::Logger::get("RemoteCacheController"), "not a downloaded file " + local_path_);
+        LOG_ERROR(&Poco::Logger::get("RemoteCacheController"), "not a downloaded file: " + local_path_);
         return nullptr;
     }
     auto size = std::filesystem::file_size(data_file);
@@ -127,7 +127,6 @@ RemoteReadBufferCacheError RemoteCacheController::waitMoreData(size_t start_offs
         else
             more_data_signal.wait(lock, [this, end_offset_] { return this->download_finished || this->current_offset >= end_offset_; });
     }
-    LOG_TRACE(&Poco::Logger::get("RemoteCacheController"), "get more data to read");
     lock.unlock();
     return RemoteReadBufferCacheError::OK;
 }
@@ -206,9 +205,8 @@ RemoteCacheController::~RemoteCacheController()
 void RemoteCacheController::close()
 {
     // delete the directory
-    LOG_TRACE(&Poco::Logger::get("RemoteCacheController"), "release local resource " + remote_path + ", " + local_path);
-    
-    std::filesystem::remove(local_path);
+    LOG_TRACE(&Poco::Logger::get("RemoteCacheController"), "release local resource: " + remote_path + ", " + local_path);
+    std::filesystem::remove_all(local_path);
 }
 
 std::tuple<FILE *, std::string> RemoteCacheController::allocFile()
@@ -283,7 +281,7 @@ size_t LocalCachedFileReader::size()
         LOG_TRACE(&Poco::Logger::get("LocalCachedFileReader"), "empty local_path");
         return 0;
     }
-    
+
     auto ret = std::filesystem::file_size(local_path);
     file_size = ret;
     return ret;
@@ -423,7 +421,7 @@ void RemoteReadBufferCache::initOnce(const std::string & dir, size_t limit_size_
 
     // scan local disk dir and recover the cache metas
     std::filesystem::path root_dir(local_path_prefix);
-    if (std::filesystem::exists(root_dir))
+    if (!std::filesystem::exists(root_dir))
     {
         LOG_INFO(log, "{} not exists. this cache will be disable", local_path_prefix);
         return;
@@ -439,22 +437,19 @@ void RemoteReadBufferCache::initOnce(const std::string & dir, size_t limit_size_
             {
                 for (auto const &second_hash_dir : std::filesystem::directory_iterator{first_hash_dir.path()})
                 {
-                    for (auto const &file : std::filesystem::directory_iterator{second_hash_dir.path()})
+                    std::string path = second_hash_dir.path().string();
+                    if (caches.count(path))
                     {
-                        std::string path = file.path().string();
-                        if (caches.count(path))
-                        {
-                            LOG_ERROR(log, "duplicated file:{}", path);
-                            continue;
-                        }
-                        auto cache_cntrl = RemoteCacheController::recover(path, callback);
-                        if (cache_cntrl == nullptr)
-                            continue;
-                        CacheCell cell;
-                        cell.cache_controller = cache_cntrl;
-                        cell.key_iterator = keys.insert(keys.end(), path);
-                        caches[path] = cell;
+                        LOG_ERROR(log, "duplicated file:{}", path);
+                        continue;
                     }
+                    auto cache_cntrl = RemoteCacheController::recover(path, callback);
+                    if (cache_cntrl == nullptr)
+                        continue;
+                    CacheCell cell;
+                    cell.cache_controller = cache_cntrl;
+                    cell.key_iterator = keys.insert(keys.end(), path);
+                    caches[path] = cell;
                 }
             }
         }

@@ -23,7 +23,7 @@ enum class RemoteReadBufferCacheError :int8_t
 
     END_OF_FILE = 20,
 };
-    
+
 /**
  *
  */
@@ -66,9 +66,6 @@ public:
      * called in LocalCachedFileReader read(), the reading process would be blocked until
      * enough data be downloaded.
      * If the file has finished download, the process would be block
-     * returns
-     *  - 0: has more data to read
-     *  - -1: has reach eof
      */
     RemoteReadBufferCacheError waitMoreData(size_t start_offset_, size_t end_offset_);
 
@@ -195,7 +192,7 @@ private:
 
     std::atomic<bool> inited = false;
     std::mutex mutex;
-    size_t limit_size;
+    size_t limit_size = 0;
     std::atomic<size_t> total_size;
     Poco::Logger * log = &Poco::Logger::get("RemoteReadBufferCache");
 
