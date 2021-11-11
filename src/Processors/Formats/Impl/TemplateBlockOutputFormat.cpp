@@ -164,7 +164,7 @@ void TemplateBlockOutputFormat::writePrefix()
     writeString(format.delimiters.front(), out);
 }
 
-void TemplateBlockOutputFormat::finalize()
+void TemplateBlockOutputFormat::finalizeImpl()
 {
     if (finalized)
         return;

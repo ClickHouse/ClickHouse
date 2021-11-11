@@ -130,7 +130,7 @@ private:
         addChunk(std::move(extremes), ProcessingUnitType::EXTREMES, /*can_throw_exception*/ true);
     }
 
-    void finalize() override;
+    void finalizeImpl() override;
 
     InternalFormatterCreator internal_formatter_creator;
 

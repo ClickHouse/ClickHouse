@@ -231,7 +231,7 @@ void StorageURLSink::consume(Chunk chunk)
 
 void StorageURLSink::onFinish()
 {
-    writer->finish();
+    writer->finalize();
     writer->flush();
     write_buf->finalize();
 }

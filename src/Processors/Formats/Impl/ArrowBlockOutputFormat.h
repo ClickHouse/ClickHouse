@@ -26,7 +26,7 @@ public:
 
 private:
     void consume(Chunk) override;
-    void finalize() override;
+    void finalizeImpl() override;
 
     void prepareWriter(const std::shared_ptr<arrow::Schema> & schema);
 

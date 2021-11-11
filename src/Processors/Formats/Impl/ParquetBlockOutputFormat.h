@@ -35,7 +35,7 @@ public:
 
 private:
     void consume(Chunk) override;
-    void finalize() override;
+    void finalizeImpl() override;
 
     const FormatSettings format_settings;
 

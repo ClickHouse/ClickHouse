@@ -55,7 +55,7 @@ public:
 
     void write(const Block & block);
 
-    virtual void finish();
+    void finalize();
 
     virtual bool expectMaterializedColumns() const { return true; }
 
@@ -73,7 +73,7 @@ protected:
     virtual void consume(Chunk) = 0;
     virtual void consumeTotals(Chunk) {}
     virtual void consumeExtremes(Chunk) {}
-    virtual void finalize() {}
+    virtual void finalizeImpl() {}
     virtual void writePrefix() {}
 
     void writePrefixIfNot()

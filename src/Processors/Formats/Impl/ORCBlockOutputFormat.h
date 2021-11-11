@@ -40,7 +40,7 @@ public:
 
 private:
     void consume(Chunk chunk) override;
-    void finalize() override;
+    void finalizeImpl() override;
 
     ORC_UNIQUE_PTR<orc::Type> getORCType(const DataTypePtr & type, const std::string & column_name);
 

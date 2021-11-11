@@ -328,7 +328,7 @@ public:
     {
         try
         {
-            writer->finish();
+            writer->finalize();
             writer->flush();
             write_buf->finalize();
         }

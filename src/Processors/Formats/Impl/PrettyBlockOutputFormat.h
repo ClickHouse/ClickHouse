@@ -27,7 +27,7 @@ protected:
     void consumeTotals(Chunk) override;
     void consumeExtremes(Chunk) override;
 
-    void finalize() override;
+    void finalizeImpl() override;
 
     size_t total_rows = 0;
     size_t terminal_width = 0;

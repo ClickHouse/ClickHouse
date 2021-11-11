@@ -30,7 +30,7 @@ public:
 
 private:
     void consume(Chunk) override;
-    void finalize() override;
+    void finalizeImpl() override;
     void writePrefix() override;
 
     uint32_t client_capabilities = 0;

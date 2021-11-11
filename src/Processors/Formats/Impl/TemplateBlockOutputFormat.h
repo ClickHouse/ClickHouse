@@ -43,7 +43,7 @@ private:
     void consume(Chunk chunk) override;
     void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
     void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
-    void finalize() override;
+    void finalizeImpl() override;
 
     void writeRow(const Chunk & chunk, size_t row_num);
     void serializeField(const IColumn & column, const ISerialization & serialization, size_t row_num, ColumnFormat format);

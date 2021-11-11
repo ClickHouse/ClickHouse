@@ -643,7 +643,7 @@ public:
 
     void onFinish() override
     {
-        writer->finish();
+        writer->finalize();
     }
 
     // void flush() override
