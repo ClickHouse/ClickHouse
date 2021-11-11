@@ -412,35 +412,35 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  IntegrationTestsAsan:
-    needs: [BuilderDebAsan]
-    runs-on: [self-hosted, stress-tester]
-    steps:
-      - name: Download json reports
-        uses: actions/download-artifact@v2
-        with:
-          path: ${{runner.temp}}/reports_dir
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Integration test
-        env:
-          TEMP_PATH: ${{runner.temp}}/integration_tests_asan
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Integration tests (asan, actions)'
-          REPO_COPY: ${{runner.temp}}/integration_tests_asan/ClickHouse
-          REQUIRED_BUILD_NUMBER: 3
-        run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 integration_test_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+#  IntegrationTestsAsan:
+#    needs: [BuilderDebAsan]
+#    runs-on: [self-hosted, stress-tester]
+#    steps:
+#      - name: Download json reports
+#        uses: actions/download-artifact@v2
+#        with:
+#          path: ${{runner.temp}}/reports_dir
+#      - name: Check out repository code
+#        uses: actions/checkout@v2
+#      - name: Integration test
+#        env:
+#          TEMP_PATH: ${{runner.temp}}/integration_tests_asan
+#          REPORTS_PATH: ${{runner.temp}}/reports_dir
+#          CHECK_NAME: 'Integration tests (asan, actions)'
+#          REPO_COPY: ${{runner.temp}}/integration_tests_asan/ClickHouse
+#          REQUIRED_BUILD_NUMBER: 3
+#        run: |
+#          sudo rm -fr $TEMP_PATH
+#          mkdir -p $TEMP_PATH
+#          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+#          cd $REPO_COPY/tests/ci
+#          python3 integration_test_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER
+#      - name: Cleanup
+#        if: always()
+#        run: |
+#          docker kill $(docker ps -q) ||:
+#          docker rm -f $(docker ps -a -q) ||:
+#          sudo rm -fr $TEMP_PATH
   UnitTestsAsan:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, func-tester]
@@ -572,7 +572,8 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   FinishCheck:
-    needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport, FastTest, FunctionalStatelessTestDebug, FunctionalStatefulTestDebug, DocsCheck, StressTestDebug, ASTFuzzerTestDebug, IntegrationTestsAsan, PVSCheck, UnitTestsAsan, SplitBuildSmokeTest, CompatibilityCheck]
+    needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport, FastTest, FunctionalStatelessTestDebug, FunctionalStatefulTestDebug, DocsCheck, StressTestDebug, ASTFuzzerTestDebug, PVSCheck, UnitTestsAsan, SplitBuildSmokeTest, CompatibilityCheck]
+
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
