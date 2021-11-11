@@ -1,5 +1,6 @@
 #include <Databases/DatabaseFactory.h>
 
+#include <filesystem>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseDictionary.h>
 #include <Databases/DatabaseLazy.h>
@@ -12,9 +13,9 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/formatAST.h>
-#include <Common/Macros.h>
+#include <Parsers/queryToString.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <filesystem>
+#include <Common/Macros.h>
 
 #include "config_core.h"
 
@@ -55,6 +56,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int CANNOT_CREATE_DATABASE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
@@ -210,6 +212,15 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
 
             if (engine_define->settings)
                 materialize_mode_settings->loadFromQuery(*engine_define);
+
+            if (uuid == UUIDHelpers::Nil)
+                throw Exception(
+                    fmt::format(
+                        "The MaterializedMySQL database engine no longer supports Ordinary databases. To re-create the database, delete "
+                        "the old one by executing \"rm -rf {}{{,.sql}}\", then re-create the database with the following query: {}",
+                        metadata_path,
+                        queryToString(create)),
+                    ErrorCodes::NOT_IMPLEMENTED);
 
             return std::make_shared<DatabaseMaterializedMySQL>(
                 context, database_name, metadata_path, uuid, configuration.database, std::move(mysql_pool),
