@@ -765,7 +765,7 @@ Default value: 10000.
 
 ## max_thread_pool_free_size {#max-thread-pool-free-size}
 
-The number of threads that are free in the Global Thread pool.
+The number of threads that are always held in the Global Thread pool.
 
 Default value: 1000.
 
@@ -777,7 +777,7 @@ Default value: 1000.
 
 ## thread_pool_queue_size {#thread-pool-queue-size}
 
-The limit to the number of jobs that can be scheduled on the Global Thread pool.
+The limit to the number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to the `max_thread_pool_size`.
 
 Default value: 10000.
 
@@ -785,18 +785,6 @@ Default value: 10000.
 
 ``` xml
 <thread_pool_queue_size>12000</thread_pool_queue_size>
-```
-
-## thread_pool_shutdown_on_exception {#thread-pool-shutdown-on-exception}
-
-The flag deciding if the thread pool should shutdown on exception.
-
-Default value: false.
-
-**Example**
-
-``` xml
-<thread_pool_shutdown_on_exception>true</thread_pool_shutdown_on_exception>
 ```
 
 ## merge_tree {#server_configuration_parameters-merge_tree}

@@ -320,7 +320,7 @@ template class ThreadPoolImpl<ThreadFromGlobalPool>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
-void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size, bool shutdown_on_exception)
+void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
 {
     if (the_instance)
     {
@@ -328,7 +328,7 @@ void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, s
             "The global thread pool is initialized twice");
     }
 
-    the_instance.reset(new GlobalThreadPool(max_threads, max_free_threads, queue_size, shutdown_on_exception));
+    the_instance.reset(new GlobalThreadPool(max_threads, max_free_threads, queue_size, false /*shutdown_on_exception*/));
 }
 
 GlobalThreadPool & GlobalThreadPool::instance()

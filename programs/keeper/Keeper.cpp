@@ -337,8 +337,7 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
     GlobalThreadPool::initialize(
         config().getUInt("max_thread_pool_size", 100),
         config().getUInt("max_thread_pool_free_size", 1000),
-        config().getUInt("thread_pool_queue_size", 10000),
-        config().getBool("thread_pool_shutdown_on_exception", false)
+        config().getUInt("thread_pool_queue_size", 10000)
     );
 
     static ServerErrorHandler error_handler;
