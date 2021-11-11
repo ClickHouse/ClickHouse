@@ -26,6 +26,7 @@ public:
 
     bool executeStep() override
     {
+        ++runs;
         auto sleep_time = distribution(generator);
         std::this_thread::sleep_for(std::chrono::milliseconds(5 * sleep_time));
 
@@ -33,7 +34,7 @@ public:
         if (choice == 0)
             throw std::runtime_error("Unlucky...");
 
-        return false;
+        return runs < 15;
     }
 
     StorageID getStorageID() override
@@ -54,6 +55,8 @@ private:
     std::mt19937 generator;
     std::uniform_int_distribution<> distribution;
 
+    size_t runs = 0;
+
     String name;
     std::function<void()> on_completed;
 };
@@ -64,7 +67,7 @@ TEST(Executor, RemoveTasks)
     const size_t tasks_kinds = 25;
     const size_t batch = 100;
 
-    auto executor = DB::OrdinaryBackgroundExecutor::create
+    auto executor = DB::MergeMutateBackgroundExecutor::create
     (
         "GTest",
         tasks_kinds,
@@ -102,10 +105,10 @@ TEST(Executor, RemoveTasksStress)
 {
     const size_t tasks_kinds = 25;
     const size_t batch = 100;
-    const size_t schedulers_count = 5;
-    const size_t removers_count = 5;
+    const size_t schedulers_count = 15;
+    const size_t removers_count = 15;
 
-    auto executor = DB::OrdinaryBackgroundExecutor::create
+    auto executor = DB::MergeMutateBackgroundExecutor::create
     (
         "GTest",
         tasks_kinds,
@@ -130,24 +133,29 @@ TEST(Executor, RemoveTasksStress)
             executor->removeTasksCorrespondingToStorage({"test", std::to_string(j)});
     };
 
-    std::vector<std::thread> schedulers(schedulers_count);
-    for (auto & scheduler : schedulers)
-        scheduler = std::thread(scheduler_routine);
+    for (size_t run = 0; run < 50; ++run)
+    {
 
-    std::vector<std::thread> removers(removers_count);
-    for (auto & remover : removers)
-        remover = std::thread(remover_routine);
+        std::vector<std::thread> schedulers(schedulers_count);
+        for (auto & scheduler : schedulers)
+            scheduler = std::thread(scheduler_routine);
 
-    for (auto & scheduler : schedulers)
-        scheduler.join();
+        std::vector<std::thread> removers(removers_count);
+        for (auto & remover : removers)
+            remover = std::thread(remover_routine);
 
-    for (auto & remover : removers)
-        remover.join();
+        for (auto & scheduler : schedulers)
+            scheduler.join();
 
-    for (size_t j = 0; j < tasks_kinds; ++j)
-        executor->removeTasksCorrespondingToStorage({"test", std::to_string(j)});
+        for (auto & remover : removers)
+            remover.join();
 
-    ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask], 0);
+        for (size_t j = 0; j < tasks_kinds; ++j)
+            executor->removeTasksCorrespondingToStorage({"test", std::to_string(j)});
+
+        ASSERT_EQ(CurrentMetrics::values[CurrentMetrics::BackgroundMergesAndMutationsPoolTask], 0);
+    }
+
 
     executor->wait();
 }

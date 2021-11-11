@@ -8,7 +8,6 @@
 #include <condition_variable>
 #include <set>
 #include <iostream>
-#include <unordered_set>
 
 #include <boost/circular_buffer.hpp>
 
@@ -202,7 +201,7 @@ private:
     ThreadPool pool;
 
     std::mutex currently_deleting_storages_mutex;
-    std::unordered_set<StorageID> currently_deleting_storages;
+    std::set<StorageID> currently_deleting_storages;
 };
 
 extern template class MergeTreeBackgroundExecutor<MergeMutateRuntimeQueue>;
