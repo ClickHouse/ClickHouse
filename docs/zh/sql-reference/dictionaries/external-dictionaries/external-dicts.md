@@ -28,7 +28,7 @@ ClickHouse:
 字典配置文件具有以下格式:
 
 ``` xml
-<yandex>
+<clickhouse>
     <comment>An optional element with any content. Ignored by the ClickHouse server.</comment>
 
     <!--Optional element. File name with substitutions-->
@@ -40,7 +40,7 @@ ClickHouse:
         <!-- There can be any number of <dictionary> sections in the configuration file. -->
     </dictionary>
 
-</yandex>
+</clickhouse>
 ```
 
 你可以 [配置](external-dicts-dict.md) 同一文件中的任意数量的字典。

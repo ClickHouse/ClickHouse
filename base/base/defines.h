@@ -83,10 +83,6 @@
 #    define BOOST_USE_UCONTEXT 1
 #endif
 
-#if defined(ARCADIA_BUILD) && defined(BOOST_USE_UCONTEXT)
-#    undef BOOST_USE_UCONTEXT
-#endif
-
 /// TODO: Strange enough, there is no way to detect UB sanitizer.
 
 /// Explicitly allow undefined behaviour for certain functions. Use it as a function attribute.
