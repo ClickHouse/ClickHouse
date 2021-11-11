@@ -14,6 +14,16 @@
 
 namespace DB
 {
+enum class RemoteReadBufferCacheError :int8_t
+{
+    OK,
+    NOT_INIT = 10,
+    DISK_FULL = 11,
+    FILE_INVALID = 12,
+
+    END_OF_FILE = 20,
+};
+    
 /**
  *
  */
@@ -38,7 +48,7 @@ public:
      * called by LocalCachedFileReader, must be used in pair
      * local_path will be empty if the file has not been downloaded
      */
-    FILE * allocFile(std::string * local_path);
+    std::tuple<FILE *, std::string> allocFile();
     void deallocFile(FILE * fs_);
 
     /**
@@ -60,7 +70,7 @@ public:
      *  - 0: has more data to read
      *  - -1: has reach eof
      */
-    int waitMoreData(size_t start_offset_, size_t end_offset_);
+    RemoteReadBufferCacheError waitMoreData(size_t start_offset_, size_t end_offset_);
 
     inline size_t size() const { return current_offset; }
 
@@ -102,7 +112,7 @@ private:
     std::string cluster;
 
     std::shared_ptr<ReadBuffer> remote_readbuffer;
-    Poco::FileOutputStream * out_file;
+    std::ofstream * out_file = nullptr;
 };
 
 /**
@@ -172,14 +182,7 @@ public:
     void initOnce(const std::string & dir, size_t limit_size);
     inline bool hasInitialized() const { return inited; }
 
-    enum CreateReaderError
-    {
-        OK = 0,
-        NOT_INIT = -1,
-        DISK_FULL = -2,
-        FILE_INVALID = -3
-    };
-    std::tuple<std::shared_ptr<LocalCachedFileReader>, CreateReaderError> createReader(
+    std::tuple<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCacheError> createReader(
         const std::string & schema,
         const std::string & cluster,
         const std::string & remote_path,
