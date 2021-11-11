@@ -360,9 +360,6 @@ public:
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
-    void setBackupsVolume(const String & path, const String & policy_name = "");
-    VolumePtr getBackupsVolume() const;
-
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
     /// Global application configuration settings.

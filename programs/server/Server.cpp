@@ -707,10 +707,6 @@ if (config().has("local_cache_dir") && config().has("local_cache_quota"))
             setupTmpPath(log, disk->getPath());
     }
 
-    /// Storage keeping all the backups.
-    fs::create_directories(path / "backups");
-    global_context->setBackupsVolume(config().getString("backups_path", path / "backups"), config().getString("backups_policy", ""));
-
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
       * Flags may be cleared automatically after being applied by the server.
       * Examples: do repair of local data; clone all replicated tables from replica.
