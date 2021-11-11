@@ -111,7 +111,7 @@ def get_build_config(build_number, repo_path):
     ci_config_path = os.path.join(repo_path, "tests/ci/ci_config.json")
     with open(ci_config_path, 'r', encoding='utf-8') as ci_config:
         config_dict = json.load(ci_config)
-        return config_dict['build_config'][build_number]
+        return config_dict['special_build_config'][build_number]
 
 def get_build_urls(build_config_str, reports_path):
     for root, _, files in os.walk(reports_path):
