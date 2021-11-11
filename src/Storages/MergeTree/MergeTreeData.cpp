@@ -87,7 +87,6 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric DelayedInserts;
-    extern const Metric BackgroundMovePoolTask;
 }
 
 
