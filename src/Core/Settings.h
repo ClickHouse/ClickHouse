@@ -548,6 +548,8 @@ class IColumn;
     MAKE_OBSOLETE(M, UInt64, replication_alter_columns_timeout, 60) \
     MAKE_OBSOLETE(M, UInt64, odbc_max_field_size, 0) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_map_type, true) \
+    MAKE_OBSOLETE(M, UInt64, merge_tree_clear_old_temporary_directories_interval_seconds, 60) \
+    MAKE_OBSOLETE(M, UInt64, merge_tree_clear_old_parts_interval_seconds, 1) \
     /** The section above is for obsolete settings. Do not add anything there. */
 
 
