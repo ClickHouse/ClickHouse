@@ -29,6 +29,12 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
     if (shutdown)
         return false;
 
+    {
+        std::lock_guard deleting_lock(currently_deleting_storages_mutex);
+        if (currently_deleting_storages.contains(task->getStorageID()))
+            return false;
+    }
+
     auto & value = CurrentMetrics::values[metric];
     if (value.load() >= static_cast<int64_t>(max_tasks_count))
         return false;
@@ -43,6 +49,16 @@ bool MergeTreeBackgroundExecutor<Queue>::trySchedule(ExecutableTaskPtr task)
 template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::removeTasksCorrespondingToStorage(StorageID id)
 {
+    {
+        std::lock_guard deleting_lock(currently_deleting_storages_mutex);
+        currently_deleting_storages.insert(id);
+    }
+
+    SCOPE_EXIT({
+        std::lock_guard deleting_lock(currently_deleting_storages_mutex);
+        currently_deleting_storages.insert(id);
+    });
+
     std::vector<TaskRuntimeDataPtr> tasks_to_wait;
     {
         std::lock_guard lock(mutex);
