@@ -368,8 +368,16 @@ DiskCachePolicy::CachePart DiskCacheLRUPolicy::find(const String & key, size_t o
                 {
                     if (cq->second->status == FileDownloadStatus::DOWNLOADING)
                     {
+                        if (cq->first > res.offset)
+                        {
+                            res.size = cq->first - res.offset;
+                            LOG_TRACE(log, "Download less size for key {} ({}+{}) to aviod downloading collision", key, res.offset, res.size);
+                            break;
+                        }
+
                         if (read_thread_ids.count(thread_id))
                         { /// Workaround for avoiding deadlocks when current thread already downloading some object
+                            /// TODO: this case needs optimization
                             LOG_TRACE(log, "Skip cache usage to avoid deadlock for key {}", key);
                             res.type = DiskCachePolicy::CachePart::CachePartType::ABSENT_NO_CACHE;
                             return res;
@@ -647,9 +655,9 @@ public:
         ensureFrom();
     }
 
-    void set(BufferBase::Position, size_t, size_t) override
+    void set(BufferBase::Position ptr, size_t size, size_t offset) override
     {
-        throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
+        from->BufferBase::set(ptr, size, offset);
     }
 
     BufferBase::Buffer & internalBuffer() override
@@ -697,9 +705,9 @@ public:
         throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    void set(BufferBase::Position, size_t) override
+    void set(BufferBase::Position ptr, size_t size) override
     {
-        throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
+        from->set(ptr, size);
     }
 
     bool next() override
@@ -810,6 +818,7 @@ private:
             else
             {   // Max retry attempts reached
                 // Came here when part present in index but absent on disk, several times
+                LOG_WARNING(log, "ensureFrom attempts max retries for key {}", cache_key);
                 part.type = DiskCachePolicy::CachePart::CachePartType::ABSENT_NO_CACHE;
             }
 
@@ -847,7 +856,7 @@ private:
 
             if (part.type == DiskCachePolicy::CachePart::CachePartType::ABSENT)
             {
-                LOG_TRACE(log, "ensureFrom download from s3 {}-{}", part.offset, part.size);
+                LOG_TRACE(log, "ensureFrom download key {} from s3 {}+{}", cache_key, part.offset, part.size);
                 auto to_remove = cache_policy->reserve(part.size);
                 for (auto & entry_to_remove : to_remove)
                 {
@@ -871,7 +880,7 @@ private:
 
             if (part.type == DiskCachePolicy::CachePart::CachePartType::ABSENT_NO_CACHE)
             {
-                LOG_TRACE(log, "ensureFrom download from s3 {}-{} without caching", part.offset, part.size);
+                LOG_TRACE(log, "ensureFrom download key {} from s3 {}+{} without caching", cache_key, part.offset, part.size);
                 ProfileEvents::increment(ProfileEvents::DiskCacheRequestsOut, 1);
                 auto s3from = downloader->get(part.offset, part.size);
                 if (s3from.stream)
