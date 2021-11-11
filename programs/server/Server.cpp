@@ -1555,6 +1555,8 @@ if (ThreadFuzzer::instance().isEffective())
             server.start();
         LOG_INFO(log, "Ready for connections.");
 
+        global_context->registerNodeForClusterDiscovery();
+
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
             LOG_DEBUG(log, "Waiting for current connections to close.");
