@@ -677,7 +677,7 @@ void ClientBase::onEndOfStream()
     progress_indication.clearProgressOutput();
 
     if (output_format)
-        output_format->finish();
+        output_format->finalize();
 
     resetOutput();
 

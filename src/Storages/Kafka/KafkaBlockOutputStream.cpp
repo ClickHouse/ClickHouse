@@ -42,7 +42,7 @@ void KafkaSink::consume(Chunk chunk)
 void KafkaSink::onFinish()
 {
     if (format)
-        format->finish();
+        format->finalize();
     //flush();
 
     if (buffer)

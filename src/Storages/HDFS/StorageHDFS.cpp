@@ -217,7 +217,7 @@ public:
     {
         try
         {
-            writer->finish();
+            writer->finalize();
             writer->flush();
             write_buf->sync();
             write_buf->finalize();

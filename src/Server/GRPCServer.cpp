@@ -1168,7 +1168,7 @@ namespace
             executor->execute();
         }
 
-        output_format_processor->finish();
+        output_format_processor->finalize();
     }
 
     void Call::finishQuery()
@@ -1380,7 +1380,7 @@ namespace
         WriteBufferFromString buf{*result.mutable_totals()};
         auto format = query_context->getOutputFormat(output_format, buf, totals);
         format->write(materializeBlock(totals));
-        format->finish();
+        format->finalize();
     }
 
     void Call::addExtremesToResult(const Block & extremes)
@@ -1391,7 +1391,7 @@ namespace
         WriteBufferFromString buf{*result.mutable_extremes()};
         auto format = query_context->getOutputFormat(output_format, buf, extremes);
         format->write(materializeBlock(extremes));
-        format->finish();
+        format->finalize();
     }
 
     void Call::addProfileInfoToResult(const ProfileInfo & info)

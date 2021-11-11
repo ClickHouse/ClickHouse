@@ -70,7 +70,7 @@ void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
     writeAfterExtremes();
 }
 
-void IRowOutputFormat::finalize()
+void IRowOutputFormat::finalizeImpl()
 {
     writeSuffixIfNot();
     writeLastSuffix();

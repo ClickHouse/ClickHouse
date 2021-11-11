@@ -68,7 +68,7 @@ void MySQLOutputFormat::consume(Chunk chunk)
     }
 }
 
-void MySQLOutputFormat::finalize()
+void MySQLOutputFormat::finalizeImpl()
 {
     size_t affected_rows = 0;
     std::string human_readable_info;

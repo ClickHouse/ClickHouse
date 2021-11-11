@@ -72,7 +72,7 @@ void IOutputFormat::work()
         if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedLimit())
             setRowsBeforeLimit(rows_before_limit_counter->get());
 
-        finalize();
+        finalizeImpl();
         finalized = true;
         return;
     }
@@ -113,10 +113,10 @@ void IOutputFormat::write(const Block & block)
         flush();
 }
 
-void IOutputFormat::finish()
+void IOutputFormat::finalize()
 {
     writePrefixIfNot();
-    finalize();
+    finalizeImpl();
 }
 
 }
