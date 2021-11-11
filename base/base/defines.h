@@ -29,7 +29,7 @@
 #define MAY_ALIAS __attribute__((__may_alias__))
 
 #if !defined(__x86_64__) && !defined(__aarch64__) && !defined(__PPC__) && !(defined(__riscv) && (__riscv_xlen == 64))
-#    error "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress)"
+#    error "The only supported platforms are x86_64 and AArch64, PowerPC (work in progress) and RISC-V 64 (experimental)"
 #endif
 
 /// Check for presence of address sanitizer
