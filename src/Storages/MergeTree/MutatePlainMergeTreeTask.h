@@ -33,13 +33,16 @@ public:
         , metadata_snapshot(std::move(metadata_snapshot_))
         , merge_mutate_entry(std::move(merge_mutate_entry_))
         , table_lock_holder(std::move(table_lock_holder_))
-        , task_result_callback(std::forward<Callback>(task_result_callback_)) {}
+        , task_result_callback(std::forward<Callback>(task_result_callback_))
+    {
+        for (auto & part : merge_mutate_entry->future_part->parts)
+            priority += part->getBytesOnDisk();
+    }
 
     bool executeStep() override;
-
     void onCompleted() override;
-
     StorageID getStorageID() override;
+    UInt64 getPriority() override { return priority; }
 
 private:
 
@@ -55,17 +58,15 @@ private:
     };
 
     State state{State::NEED_PREPARE};
-
     StorageMergeTree & storage;
-
     StorageMetadataPtr metadata_snapshot;
     MergeMutateSelectedEntryPtr merge_mutate_entry{nullptr};
     TableLockHolder table_lock_holder;
-
     FutureMergedMutatedPartPtr future_part{nullptr};
     std::unique_ptr<Stopwatch> stopwatch;
-
     MergeTreeData::MutableDataPartPtr new_part;
+
+    UInt64 priority{0};
 
     using MergeListEntryPtr = std::unique_ptr<MergeListEntry>;
     MergeListEntryPtr merge_list_entry;
@@ -74,6 +75,7 @@ private:
 
     IExecutableTask::TaskResultCallback task_result_callback;
 
+    ContextMutablePtr fake_query_context;
     MutateTaskPtr mutate_task;
 };
 

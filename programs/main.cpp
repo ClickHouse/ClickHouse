@@ -21,8 +21,8 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
 
-#include <common/phdr_cache.h>
-#include <common/scope_guard.h>
+#include <base/phdr_cache.h>
+#include <base/scope_guard.h>
 
 
 /// Universal executable for various clickhouse applications

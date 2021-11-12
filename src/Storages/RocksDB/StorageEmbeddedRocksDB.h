@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <shared_mutex>
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <rocksdb/status.h>
 
@@ -23,7 +23,6 @@ class StorageEmbeddedRocksDB final : public shared_ptr_helper<StorageEmbeddedRoc
 {
     friend struct shared_ptr_helper<StorageEmbeddedRocksDB>;
     friend class EmbeddedRocksDBSink;
-    friend class EmbeddedRocksDBBlockInputStream;
 public:
     std::string getName() const override { return "EmbeddedRocksDB"; }
 

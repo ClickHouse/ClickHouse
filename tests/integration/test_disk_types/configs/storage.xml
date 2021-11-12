@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <storage_configuration>
         <disks>
             <disk_s3>
@@ -13,7 +13,7 @@
             </disk_memory>
             <disk_hdfs>
                 <type>hdfs</type>
-                <endpoint>http://hdfs1:9000/data/</endpoint>
+                <endpoint>hdfs://hdfs1:9000/data/</endpoint>
             </disk_hdfs>
             <disk_encrypted>
                 <type>encrypted</type>
@@ -22,4 +22,4 @@
             </disk_encrypted>
         </disks>
     </storage_configuration>
-</yandex>
+</clickhouse>

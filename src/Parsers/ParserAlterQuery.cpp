@@ -104,6 +104,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_ttl("TTL");
 
     ParserKeyword s_remove_ttl("REMOVE TTL");
+    ParserKeyword s_remove_sample_by("REMOVE SAMPLE BY");
 
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
@@ -668,6 +669,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 command->type = ASTAlterCommand::MODIFY_SAMPLE_BY;
+            }
+            else if (s_remove_sample_by.ignore(pos, expected))
+            {
+                command->type = ASTAlterCommand::REMOVE_SAMPLE_BY;
             }
             else if (s_delete.ignore(pos, expected))
             {

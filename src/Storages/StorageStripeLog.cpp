@@ -9,14 +9,15 @@
 #include <Common/Exception.h>
 
 #include <IO/WriteBufferFromFileBase.h>
+#include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <IO/copyData.h>
 
-#include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 
 #include <DataTypes/DataTypeFactory.h>
 
@@ -32,7 +33,14 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
+
+#include <Backups/BackupEntryFromImmutableFile.h>
+#include <Backups/BackupEntryFromSmallFile.h>
+#include <Backups/IBackup.h>
+#include <Disks/TemporaryFileOnDisk.h>
+
+#include <base/insertAtEnd.h>
 
 #include <cassert>
 
@@ -45,14 +53,17 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_FILE_NAME;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
+/// NOTE: The lock `StorageStripeLog::rwlock` is NOT kept locked while reading,
+/// because we read ranges of data that do not change.
 class StripeLogSource final : public SourceWithProgress
 {
 public:
     static Block getHeader(
-        StorageStripeLog & storage,
+        const StorageStripeLog & storage,
         const StorageMetadataPtr & metadata_snapshot,
         const Names & column_names,
         IndexForNativeFormat::Blocks::const_iterator index_begin,
@@ -75,21 +86,22 @@ public:
     }
 
     StripeLogSource(
-        StorageStripeLog & storage_,
+        const StorageStripeLog & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const Names & column_names,
         ReadSettings read_settings_,
-        std::shared_ptr<const IndexForNativeFormat> & index_,
+        std::shared_ptr<const IndexForNativeFormat> indices_,
         IndexForNativeFormat::Blocks::const_iterator index_begin_,
-        IndexForNativeFormat::Blocks::const_iterator index_end_)
-        : SourceWithProgress(
-            getHeader(storage_, metadata_snapshot_, column_names, index_begin_, index_end_))
+        IndexForNativeFormat::Blocks::const_iterator index_end_,
+        size_t file_size_)
+        : SourceWithProgress(getHeader(storage_, metadata_snapshot_, column_names, index_begin_, index_end_))
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , read_settings(std::move(read_settings_))
-        , index(index_)
+        , indices(indices_)
         , index_begin(index_begin_)
         , index_end(index_end_)
+        , file_size(file_size_)
     {
     }
 
@@ -98,9 +110,6 @@ public:
 protected:
     Chunk generate() override
     {
-        if (storage.file_checker.empty())
-            return {};
-
         Block res;
         start();
 
@@ -113,7 +122,7 @@ protected:
             {
                 block_in.reset();
                 data_in.reset();
-                index.reset();
+                indices.reset();
             }
         }
 
@@ -121,13 +130,15 @@ protected:
     }
 
 private:
-    StorageStripeLog & storage;
+    const StorageStripeLog & storage;
     StorageMetadataPtr metadata_snapshot;
     ReadSettings read_settings;
 
-    std::shared_ptr<const IndexForNativeFormat> index;
+    std::shared_ptr<const IndexForNativeFormat> indices;
     IndexForNativeFormat::Blocks::const_iterator index_begin;
     IndexForNativeFormat::Blocks::const_iterator index_end;
+    size_t file_size;
+
     Block header;
 
     /** optional - to create objects only on first reading
@@ -136,7 +147,7 @@ private:
       */
     bool started = false;
     std::optional<CompressedReadBufferFromFile> data_in;
-    std::optional<NativeBlockInputStream> block_in;
+    std::optional<NativeReader> block_in;
 
     void start()
     {
@@ -145,40 +156,40 @@ private:
             started = true;
 
             String data_file_path = storage.table_path + "data.bin";
-            data_in.emplace(storage.disk->readFile(data_file_path, read_settings.adjustBufferSize(storage.disk->getFileSize(data_file_path))));
+            data_in.emplace(storage.disk->readFile(data_file_path, read_settings.adjustBufferSize(file_size)));
             block_in.emplace(*data_in, 0, index_begin, index_end);
         }
     }
 };
 
 
+/// NOTE: The lock `StorageStripeLog::rwlock` is kept locked in exclusive mode while writing.
 class StripeLogSink final : public SinkToStorage
 {
 public:
+    using WriteLock = std::unique_lock<std::shared_timed_mutex>;
+
     explicit StripeLogSink(
-        StorageStripeLog & storage_, const StorageMetadataPtr & metadata_snapshot_, std::unique_lock<std::shared_timed_mutex> && lock_)
+        StorageStripeLog & storage_, const StorageMetadataPtr & metadata_snapshot_, WriteLock && lock_)
         : SinkToStorage(metadata_snapshot_->getSampleBlock())
         , storage(storage_)
         , metadata_snapshot(metadata_snapshot_)
         , lock(std::move(lock_))
-        , data_out_file(storage.table_path + "data.bin")
-        , data_out_compressed(storage.disk->writeFile(data_out_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append))
+        , data_out_compressed(storage.disk->writeFile(storage.data_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append))
         , data_out(std::make_unique<CompressedWriteBuffer>(
-            *data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), storage.max_compress_block_size))
-        , index_out_file(storage.table_path + "index.mrk")
-        , index_out_compressed(storage.disk->writeFile(index_out_file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append))
-        , index_out(std::make_unique<CompressedWriteBuffer>(*index_out_compressed))
-        , block_out(*data_out, 0, metadata_snapshot->getSampleBlock(), false, index_out.get(), storage.disk->getFileSize(data_out_file))
+              *data_out_compressed, CompressionCodecFactory::instance().getDefaultCodec(), storage.max_compress_block_size))
     {
         if (!lock)
             throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
-        if (storage.file_checker.empty())
-        {
-            storage.file_checker.setEmpty(storage.table_path + "data.bin");
-            storage.file_checker.setEmpty(storage.table_path + "index.mrk");
-            storage.file_checker.save();
-        }
+        /// Ensure that indices are loaded because we're going to update them.
+        storage.loadIndices(lock);
+
+        /// If there were no files, save zero file sizes to be able to rollback in case of error.
+        storage.saveFileSizes(lock);
+
+        size_t initial_data_size = storage.file_checker.getFileSize(storage.data_file_path);
+        block_out = std::make_unique<NativeWriter>(*data_out, 0, metadata_snapshot->getSampleBlock(), false, &storage.indices, initial_data_size);
     }
 
     String getName() const override { return "StripeLogSink"; }
@@ -190,12 +201,16 @@ public:
             if (!done)
             {
                 /// Rollback partial writes.
+
+                /// No more writing.
                 data_out.reset();
                 data_out_compressed.reset();
-                index_out.reset();
-                index_out_compressed.reset();
 
+                /// Truncate files to the older sizes.
                 storage.file_checker.repair();
+
+                /// Remove excessive indices.
+                storage.removeUnsavedIndices(lock);
             }
         }
         catch (...)
@@ -206,7 +221,7 @@ public:
 
     void consume(Chunk chunk) override
     {
-        block_out.write(getHeader().cloneWithColumns(chunk.detachColumns()));
+        block_out->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onFinish() override
@@ -214,17 +229,15 @@ public:
         if (done)
             return;
 
-        block_out.writeSuffix();
         data_out->next();
         data_out_compressed->next();
         data_out_compressed->finalize();
-        index_out->next();
-        index_out_compressed->next();
-        index_out_compressed->finalize();
 
-        storage.file_checker.update(data_out_file);
-        storage.file_checker.update(index_out_file);
-        storage.file_checker.save();
+        /// Save the new indices.
+        storage.saveIndices(lock);
+
+        /// Save the new file sizes.
+        storage.saveFileSizes(lock);
 
         done = true;
 
@@ -237,15 +250,11 @@ public:
 private:
     StorageStripeLog & storage;
     StorageMetadataPtr metadata_snapshot;
-    std::unique_lock<std::shared_timed_mutex> lock;
+    WriteLock lock;
 
-    String data_out_file;
     std::unique_ptr<WriteBuffer> data_out_compressed;
     std::unique_ptr<CompressedWriteBuffer> data_out;
-    String index_out_file;
-    std::unique_ptr<WriteBuffer> index_out_compressed;
-    std::unique_ptr<CompressedWriteBuffer> index_out;
-    NativeBlockOutputStream block_out;
+    std::unique_ptr<NativeWriter> block_out;
 
     bool done = false;
 };
@@ -263,8 +272,10 @@ StorageStripeLog::StorageStripeLog(
     : IStorage(table_id_)
     , disk(std::move(disk_))
     , table_path(relative_path_)
-    , max_compress_block_size(max_compress_block_size_)
+    , data_file_path(table_path + "data.bin")
+    , index_file_path(table_path + "index.mrk")
     , file_checker(disk, table_path + "sizes.json")
+    , max_compress_block_size(max_compress_block_size_)
     , log(&Poco::Logger::get("StorageStripeLog"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -275,6 +286,13 @@ StorageStripeLog::StorageStripeLog(
 
     if (relative_path_.empty())
         throw Exception("Storage " + getName() + " requires data path", ErrorCodes::INCORRECT_FILE_NAME);
+
+    /// Ensure the file checker is initialized.
+    if (file_checker.empty())
+    {
+        file_checker.setEmpty(data_file_path);
+        file_checker.setEmpty(index_file_path);
+    }
 
     if (!attach)
     {
@@ -295,6 +313,9 @@ StorageStripeLog::StorageStripeLog(
 }
 
 
+StorageStripeLog::~StorageStripeLog() = default;
+
+
 void StorageStripeLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     assert(table_path != new_path_to_table_data);
@@ -302,6 +323,8 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Stora
         disk->moveDirectory(table_path, new_path_to_table_data);
 
         table_path = new_path_to_table_data;
+        data_file_path = table_path + "data.bin";
+        index_file_path = table_path + "index.mrk";
         file_checker.setPath(table_path + "sizes.json");
     }
     renameInMemory(new_table_id);
@@ -327,41 +350,39 @@ Pipe StorageStripeLog::read(
     const size_t /*max_block_size*/,
     unsigned num_streams)
 {
-    std::shared_lock lock(rwlock, getLockTimeout(context));
+    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
+
+    auto lock_timeout = getLockTimeout(context);
+    loadIndices(lock_timeout);
+
+    ReadLock lock{rwlock, lock_timeout};
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
-    metadata_snapshot->check(column_names, getVirtuals(), getStorageID());
-
-    NameSet column_names_set(column_names.begin(), column_names.end());
-
-    Pipes pipes;
-
-    String index_file = table_path + "index.mrk";
-    if (!disk->exists(index_file))
-    {
+    size_t data_file_size = file_checker.getFileSize(data_file_path);
+    if (!data_file_size)
         return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
-    }
 
-    ReadSettings read_settings = context->getReadSettings();
+    auto indices_for_selected_columns
+        = std::make_shared<IndexForNativeFormat>(indices.extractIndexForColumns(NameSet{column_names.begin(), column_names.end()}));
 
-    CompressedReadBufferFromFile index_in(disk->readFile(index_file, read_settings.adjustBufferSize(4096)));
-    std::shared_ptr<const IndexForNativeFormat> index{std::make_shared<IndexForNativeFormat>(index_in, column_names_set)};
-
-    size_t size = index->blocks.size();
+    size_t size = indices_for_selected_columns->blocks.size();
     if (num_streams > size)
         num_streams = size;
 
+    ReadSettings read_settings = context->getReadSettings();
+    Pipes pipes;
+
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
-        IndexForNativeFormat::Blocks::const_iterator begin = index->blocks.begin();
-        IndexForNativeFormat::Blocks::const_iterator end = index->blocks.begin();
+        IndexForNativeFormat::Blocks::const_iterator begin = indices_for_selected_columns->blocks.begin();
+        IndexForNativeFormat::Blocks::const_iterator end = indices_for_selected_columns->blocks.begin();
 
         std::advance(begin, stream * size / num_streams);
         std::advance(end, (stream + 1) * size / num_streams);
 
         pipes.emplace_back(std::make_shared<StripeLogSource>(
-            *this, metadata_snapshot, column_names, read_settings, index, begin, end));
+            *this, metadata_snapshot, column_names, read_settings, indices_for_selected_columns, begin, end, data_file_size));
     }
 
     /// We do not keep read lock directly at the time of reading, because we read ranges of data that do not change.
@@ -372,7 +393,7 @@ Pipe StorageStripeLog::read(
 
 SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr context)
 {
-    std::unique_lock lock(rwlock, getLockTimeout(context));
+    WriteLock lock{rwlock, getLockTimeout(context)};
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
@@ -382,17 +403,218 @@ SinkToStoragePtr StorageStripeLog::write(const ASTPtr & /*query*/, const Storage
 
 CheckResults StorageStripeLog::checkData(const ASTPtr & /* query */, ContextPtr context)
 {
-    std::shared_lock lock(rwlock, getLockTimeout(context));
+    ReadLock lock{rwlock, getLockTimeout(context)};
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
 
     return file_checker.check();
 }
 
+
 void StorageStripeLog::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     disk->clearDirectory(table_path);
-    file_checker = FileChecker{disk, table_path + "sizes.json"};
+
+    indices.clear();
+    file_checker.setEmpty(data_file_path);
+    file_checker.setEmpty(index_file_path);
+
+    indices_loaded = true;
+    num_indices_saved = 0;
+}
+
+
+void StorageStripeLog::loadIndices(std::chrono::seconds lock_timeout)
+{
+    if (indices_loaded)
+        return;
+
+    /// We load indices with an exclusive lock (i.e. the write lock) because we don't want
+    /// a data race between two threads trying to load indices simultaneously.
+    WriteLock lock{rwlock, lock_timeout};
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+    loadIndices(lock);
+}
+
+
+void StorageStripeLog::loadIndices(const WriteLock & /* already locked exclusively */)
+{
+    if (indices_loaded)
+        return;
+
+    if (disk->exists(index_file_path))
+    {
+        CompressedReadBufferFromFile index_in(disk->readFile(index_file_path, ReadSettings{}.adjustBufferSize(4096)));
+        indices.read(index_in);
+    }
+
+    indices_loaded = true;
+    num_indices_saved = indices.blocks.size();
+}
+
+
+void StorageStripeLog::saveIndices(const WriteLock & /* already locked for writing */)
+{
+    size_t num_indices = indices.blocks.size();
+    if (num_indices_saved == num_indices)
+        return;
+
+    size_t start = num_indices_saved;
+    auto index_out_compressed = disk->writeFile(index_file_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+    auto index_out = std::make_unique<CompressedWriteBuffer>(*index_out_compressed);
+
+    for (size_t i = start; i != num_indices; ++i)
+        indices.blocks[i].write(*index_out);
+
+    index_out->next();
+    index_out_compressed->next();
+    index_out_compressed->finalize();
+
+    num_indices_saved = num_indices;
+}
+
+
+void StorageStripeLog::removeUnsavedIndices(const WriteLock & /* already locked for writing */)
+{
+    if (indices.blocks.size() > num_indices_saved)
+        indices.blocks.resize(num_indices_saved);
+}
+
+
+void StorageStripeLog::saveFileSizes(const WriteLock & /* already locked for writing */)
+{
+    file_checker.update(data_file_path);
+    file_checker.update(index_file_path);
+    file_checker.save();
+}
+
+
+BackupEntries StorageStripeLog::backup(const ASTs & partitions, ContextPtr context)
+{
+    if (!partitions.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+
+    auto lock_timeout = getLockTimeout(context);
+    loadIndices(lock_timeout);
+
+    ReadLock lock{rwlock, lock_timeout};
+    if (!lock)
+        throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+    if (!file_checker.getFileSize(data_file_path))
+        return {};
+
+    auto temp_dir_owner = std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup_");
+    auto temp_dir = temp_dir_owner->getPath();
+    disk->createDirectories(temp_dir);
+
+    BackupEntries backup_entries;
+
+    /// data.bin
+    {
+        /// We make a copy of the data file because it can be changed later in write() or in truncate().
+        String data_file_name = fileName(data_file_path);
+        String temp_file_path = temp_dir + "/" + data_file_name;
+        disk->copy(data_file_path, disk, temp_file_path);
+        backup_entries.emplace_back(
+            data_file_name,
+            std::make_unique<BackupEntryFromImmutableFile>(
+                disk, temp_file_path, file_checker.getFileSize(data_file_path), std::nullopt, temp_dir_owner));
+    }
+
+    /// index.mrk
+    {
+        /// We make a copy of the data file because it can be changed later in write() or in truncate().
+        String index_file_name = fileName(index_file_path);
+        String temp_file_path = temp_dir + "/" + index_file_name;
+        disk->copy(index_file_path, disk, temp_file_path);
+        backup_entries.emplace_back(
+            index_file_name,
+            std::make_unique<BackupEntryFromImmutableFile>(
+                disk, temp_file_path, file_checker.getFileSize(index_file_path), std::nullopt, temp_dir_owner));
+    }
+
+    /// sizes.json
+    String files_info_path = file_checker.getPath();
+    backup_entries.emplace_back(fileName(files_info_path), std::make_unique<BackupEntryFromSmallFile>(disk, files_info_path));
+
+    /// columns.txt
+    backup_entries.emplace_back(
+        "columns.txt", std::make_unique<BackupEntryFromMemory>(getInMemoryMetadata().getColumns().getAllPhysical().toString()));
+
+    /// count.txt
+    size_t num_rows = 0;
+    for (const auto & block : indices.blocks)
+        num_rows += block.num_rows;
+    backup_entries.emplace_back("count.txt", std::make_unique<BackupEntryFromMemory>(toString(num_rows)));
+
+    return backup_entries;
+}
+
+RestoreDataTasks StorageStripeLog::restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context)
+{
+    if (!partitions.empty())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support partitions", getName());
+
+    auto restore_task = [this, backup, data_path_in_backup, context]()
+    {
+        WriteLock lock{rwlock, getLockTimeout(context)};
+        if (!lock)
+            throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+        /// Load the indices if not loaded yet. We have to do that now because we're going to update these indices.
+        loadIndices(lock);
+
+        /// If there were no files, save zero file sizes to be able to rollback in case of error.
+        saveFileSizes(lock);
+
+        try
+        {
+            /// Append the data file.
+            auto old_data_size = file_checker.getFileSize(data_file_path);
+            {
+                String file_path_in_backup = data_path_in_backup + fileName(data_file_path);
+                auto backup_entry = backup->readFile(file_path_in_backup);
+                auto in = backup_entry->getReadBuffer();
+                auto out = disk->writeFile(data_file_path, max_compress_block_size, WriteMode::Append);
+                copyData(*in, *out);
+            }
+
+            /// Append the index.
+            {
+                String index_path_in_backup = data_path_in_backup + fileName(index_file_path);
+                IndexForNativeFormat extra_indices;
+                auto backup_entry = backup->readFile(index_path_in_backup);
+                auto index_in = backup_entry->getReadBuffer();
+                CompressedReadBuffer index_compressed_in{*index_in};
+                extra_indices.read(index_compressed_in);
+
+                /// Adjust the offsets.
+                for (auto & block : extra_indices.blocks)
+                {
+                    for (auto & column : block.columns)
+                        column.location.offset_in_compressed_file += old_data_size;
+                }
+
+                insertAtEnd(indices.blocks, std::move(extra_indices.blocks));
+            }
+
+            /// Finish writing.
+            saveIndices(lock);
+            saveFileSizes(lock);
+        }
+        catch (...)
+        {
+            /// Rollback partial writes.
+            file_checker.repair();
+            removeUnsavedIndices(lock);
+            throw;
+        }
+
+    };
+    return {restore_task};
 }
 
 

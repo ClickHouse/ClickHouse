@@ -9,11 +9,9 @@
 #include <IO/LimitReadBuffer.h>
 #include <IO/copyData.h>
 
-#include <DataStreams/BlockIO.h>
-#include <DataStreams/copyData.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <QueryPipeline/BlockIO.h>
+#include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
-#include <DataStreams/CountingBlockOutputStream.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -51,7 +49,6 @@
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
-#include <DataStreams/materializeBlock.h>
 #include <IO/CompressionMethod.h>
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
@@ -396,10 +393,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         client_info.initial_query_start_time_microseconds = time_in_microseconds(current_time);
     }
 
-#if !defined(ARCADIA_BUILD)
     assert(internal || CurrentThread::get().getQueryContext());
     assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
-#endif
 
     const Settings & settings = context->getSettingsRef();
 
@@ -981,9 +976,8 @@ void executeQuery(
     WriteBuffer & ostr,
     bool allow_into_outfile,
     ContextMutablePtr context,
-    std::function<void(const String &, const String &, const String &, const String &)> set_result_details,
-    const std::optional<FormatSettings> & output_format_settings,
-    std::function<void()> before_finalize_callback)
+    SetResultDetailsFunc set_result_details,
+    const std::optional<FormatSettings> & output_format_settings)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -1078,8 +1072,6 @@ void executeQuery(
                     previous_progress_callback(progress);
                 out->onProgress(progress);
             });
-
-            out->setBeforeFinalizeCallback(before_finalize_callback);
 
             if (set_result_details)
                 set_result_details(

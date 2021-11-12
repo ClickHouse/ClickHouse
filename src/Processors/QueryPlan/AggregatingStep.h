@@ -1,6 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/Aggregator.h>
 
@@ -19,6 +19,7 @@ public:
         Aggregator::Params params_,
         bool final_,
         size_t max_block_size_,
+        size_t aggregation_in_order_max_block_bytes_,
         size_t merge_threads_,
         size_t temporary_data_merge_threads_,
         bool storage_has_evenly_distributed_read_,
@@ -40,6 +41,7 @@ private:
     Aggregator::Params params;
     bool final;
     size_t max_block_size;
+    size_t aggregation_in_order_max_block_bytes;
     size_t merge_threads;
     size_t temporary_data_merge_threads;
 

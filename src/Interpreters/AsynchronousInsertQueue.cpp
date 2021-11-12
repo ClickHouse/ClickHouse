@@ -1,7 +1,7 @@
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <Core/Settings.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
@@ -9,7 +9,7 @@
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <IO/ConcatReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -19,8 +19,9 @@
 #include <Storages/IStorage.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Formats/FormatFactory.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -150,7 +151,7 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
     }
 }
 
-void AsynchronousInsertQueue::scheduleProcessDataJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context)
+void AsynchronousInsertQueue::scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context)
 {
     /// Wrap 'unique_ptr' with 'shared_ptr' to make this
     /// lambda copyable and allow to save it to the thread pool.
@@ -221,7 +222,7 @@ void AsynchronousInsertQueue::pushImpl(InsertData::EntryPtr entry, QueueIterator
         data->entries.size(), data->size, queryToString(it->first.query));
 
     if (data->size > max_data_size)
-        scheduleProcessDataJob(it->first, std::move(data), getContext());
+        scheduleDataProcessingJob(it->first, std::move(data), getContext());
 }
 
 void AsynchronousInsertQueue::waitForProcessingQuery(const String & query_id, const Milliseconds & timeout)
@@ -266,7 +267,7 @@ void AsynchronousInsertQueue::busyCheck()
 
             auto lag = std::chrono::steady_clock::now() - elem->data->first_update;
             if (lag >= busy_timeout)
-                scheduleProcessDataJob(key, std::move(elem->data), getContext());
+                scheduleDataProcessingJob(key, std::move(elem->data), getContext());
             else
                 timeout = std::min(timeout, std::chrono::ceil<std::chrono::milliseconds>(busy_timeout - lag));
         }
@@ -288,7 +289,7 @@ void AsynchronousInsertQueue::staleCheck()
 
             auto lag = std::chrono::steady_clock::now() - elem->data->last_update;
             if (lag >= stale_timeout)
-                scheduleProcessDataJob(key, std::move(elem->data), getContext());
+                scheduleDataProcessingJob(key, std::move(elem->data), getContext());
         }
     }
 }
@@ -369,6 +370,10 @@ try
     insert_context->makeQueryContext();
     insert_context->setSettings(key.settings);
 
+    /// Set initial_query_id, because it's used in InterpreterInsertQuery for table lock.
+    insert_context->getClientInfo().query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    insert_context->setCurrentQueryId("");
+
     InterpreterInsertQuery interpreter(key.query, insert_context, key.settings.insert_allow_materialized_columns, false, false, true);
     auto pipeline = interpreter.execute().pipeline;
     assert(pipeline.pushing());
@@ -403,13 +408,19 @@ try
     }
 
     StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
-    std::unique_ptr<ReadBuffer> buffer;
+    std::unique_ptr<ReadBuffer> last_buffer;
     for (const auto & entry : data->entries)
     {
-        buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
+        auto buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
         current_entry = entry;
         total_rows += executor.execute(*buffer);
+
+        /// Keep buffer, because it still can be used
+        /// in destructor, while resetting buffer at next iteration.
+        last_buffer = std::move(buffer);
     }
+
+    format->addBuffer(std::move(last_buffer));
 
     auto chunk = Chunk(executor.getResultColumns(), total_rows);
     size_t total_bytes = chunk.bytes();
@@ -428,6 +439,10 @@ try
             entry->finish();
 }
 catch (const Exception & e)
+{
+    finishWithException(key.query, data->entries, e);
+}
+catch (const Poco::Exception & e)
 {
     finishWithException(key.query, data->entries, e);
 }

@@ -1,5 +1,5 @@
 # docker build -t clickhouse/test-base .
-FROM ubuntu:20.04
+FROM clickhouse/test-util
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
 

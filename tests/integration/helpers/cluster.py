@@ -758,9 +758,9 @@ class ClickHouseCluster:
                      with_kerberized_hdfs=False, with_mongo=False, with_mongo_secure=False, with_nginx=False,
                      with_redis=False, with_minio=False, with_cassandra=False, with_jdbc_bridge=False,
                      hostname=None, env_variables=None, image="clickhouse/integration-test", tag=None,
-                     stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
+                     stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None,
                      zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True,
-                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="yandex"):
+                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="clickhouse"):
 
         """Add an instance to the cluster.
 
@@ -832,6 +832,7 @@ class ClickHouseCluster:
             main_config_name=main_config_name,
             users_config_name=users_config_name,
             copy_common_configs=copy_common_configs,
+            external_dirs=external_dirs,
             tmpfs=tmpfs or [],
             config_root_name=config_root_name)
 
@@ -1050,7 +1051,7 @@ class ClickHouseCluster:
                 errors += [str(ex)]
                 time.sleep(interval)
 
-        run_and_check(['docker-compose', 'ps', '--services', '--all'])
+        run_and_check(['docker', 'ps', '--all'])
         logging.error("Can't connect to URL:{}".format(errors))
         raise Exception("Cannot wait URL {}(interval={}, timeout={}, attempts={})".format(
             url, interval, timeout, attempts))
@@ -1434,6 +1435,7 @@ class ClickHouseCluster:
                 for dir in self.zookeeper_dirs_to_create:
                     os.makedirs(dir)
                 run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
+                self.up_called = True
 
                 self.wait_zookeeper_secure_to_start()
                 for command in self.pre_zookeeper_commands:
@@ -1459,6 +1461,7 @@ class ClickHouseCluster:
                         shutil.copy(os.path.join(HELPERS_DIR, f'keeper_config{i}.xml'), os.path.join(self.keeper_instance_dir_prefix + f"{i}", "config" ))
 
                 run_and_check(self.base_zookeeper_cmd + common_opts, env=self.env)
+                self.up_called = True
 
                 self.wait_zookeeper_to_start()
                 for command in self.pre_zookeeper_commands:
@@ -1476,6 +1479,7 @@ class ClickHouseCluster:
                 os.makedirs(self.mysql_logs_dir)
                 os.chmod(self.mysql_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_mysql_cmd + common_opts)
+                self.up_called = True
                 self.wait_mysql_to_start()
 
             if self.with_mysql8 and self.base_mysql8_cmd:
@@ -1495,6 +1499,7 @@ class ClickHouseCluster:
                 os.chmod(self.mysql_cluster_logs_dir, stat.S_IRWXO)
 
                 subprocess_check_call(self.base_mysql_cluster_cmd + common_opts)
+                self.up_called = True
                 self.wait_mysql_cluster_to_start()
 
             if self.with_postgres and self.base_postgres_cmd:
@@ -1505,6 +1510,7 @@ class ClickHouseCluster:
                 os.chmod(self.postgres_logs_dir, stat.S_IRWXO)
 
                 subprocess_check_call(self.base_postgres_cmd + common_opts)
+                self.up_called = True
                 self.wait_postgres_to_start()
 
             if self.with_postgres_cluster and self.base_postgres_cluster_cmd:
@@ -1516,17 +1522,20 @@ class ClickHouseCluster:
                 os.makedirs(self.postgres4_logs_dir)
                 os.chmod(self.postgres4_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_postgres_cluster_cmd + common_opts)
+                self.up_called = True
                 self.wait_postgres_cluster_to_start()
 
             if self.with_kafka and self.base_kafka_cmd:
                 logging.debug('Setup Kafka')
                 subprocess_check_call(self.base_kafka_cmd + common_opts + ['--renew-anon-volumes'])
+                self.up_called = True
                 self.wait_kafka_is_available(self.kafka_docker_id, self.kafka_port)
                 self.wait_schema_registry_to_start()
 
             if self.with_kerberized_kafka and self.base_kerberized_kafka_cmd:
                 logging.debug('Setup kerberized kafka')
                 run_and_check(self.base_kerberized_kafka_cmd + common_opts + ['--renew-anon-volumes'])
+                self.up_called = True
                 self.wait_kafka_is_available(self.kerberized_kafka_docker_id, self.kerberized_kafka_port, 100)
 
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
@@ -1536,6 +1545,7 @@ class ClickHouseCluster:
 
                 for i in range(5):
                     subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
+                    self.up_called = True
                     self.rabbitmq_docker_id = self.get_instance_docker_id('rabbitmq1')
                     logging.debug(f"RabbitMQ checking container try: {i}")
                     if self.wait_rabbitmq_to_start(throw=(i==4)):
@@ -1546,6 +1556,7 @@ class ClickHouseCluster:
                 os.makedirs(self.hdfs_logs_dir)
                 os.chmod(self.hdfs_logs_dir, stat.S_IRWXO)
                 subprocess_check_call(self.base_hdfs_cmd + common_opts)
+                self.up_called = True
                 self.make_hdfs_api()
                 self.wait_hdfs_to_start()
 
@@ -1554,23 +1565,27 @@ class ClickHouseCluster:
                 os.makedirs(self.hdfs_kerberized_logs_dir)
                 os.chmod(self.hdfs_kerberized_logs_dir, stat.S_IRWXO)
                 run_and_check(self.base_kerberized_hdfs_cmd + common_opts)
+                self.up_called = True
                 self.make_hdfs_api(kerberized=True)
                 self.wait_hdfs_to_start(check_marker=True)
 
             if self.with_nginx and self.base_nginx_cmd:
                 logging.debug('Setup nginx')
                 subprocess_check_call(self.base_nginx_cmd + common_opts + ['--renew-anon-volumes'])
+                self.up_called = True
                 self.nginx_docker_id = self.get_instance_docker_id('nginx')
                 self.wait_nginx_to_start()
 
             if self.with_mongo and self.base_mongo_cmd:
                 logging.debug('Setup Mongo')
                 run_and_check(self.base_mongo_cmd + common_opts)
+                self.up_called = True
                 self.wait_mongo_to_start(30, secure=self.with_mongo_secure)
 
             if self.with_redis and self.base_redis_cmd:
                 logging.debug('Setup Redis')
                 subprocess_check_call(self.base_redis_cmd + common_opts)
+                self.up_called = True
                 time.sleep(10)
 
             if self.with_minio and self.base_minio_cmd:
@@ -1585,11 +1600,13 @@ class ClickHouseCluster:
 
                 logging.info("Trying to create Minio instance by command %s", ' '.join(map(str, minio_start_cmd)))
                 run_and_check(minio_start_cmd)
+                self.up_called = True
                 logging.info("Trying to connect to Minio...")
                 self.wait_minio_to_start(secure=self.minio_certs_dir is not None)
 
             if self.with_cassandra and self.base_cassandra_cmd:
                 subprocess_check_call(self.base_cassandra_cmd + ['up', '-d'])
+                self.up_called = True
                 self.wait_cassandra_to_start()
 
             if self.with_jdbc_bridge and self.base_jdbc_bridge_cmd:
@@ -1597,6 +1614,7 @@ class ClickHouseCluster:
                 os.chmod(self.jdbc_driver_logs_dir, stat.S_IRWXO)
 
                 subprocess_check_call(self.base_jdbc_bridge_cmd + ['up', '-d'])
+                self.up_called = True
                 self.jdbc_bridge_ip = self.get_instance_ip(self.jdbc_bridge_host)
                 self.wait_for_url(f"http://{self.jdbc_bridge_ip}:{self.jdbc_bridge_port}/ping")
 
@@ -1668,6 +1686,8 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_cmd + ['down', '--volumes'])
             except Exception as e:
                 logging.debug("Down + remove orphans failed durung shutdown. {}".format(repr(e)))
+        else:
+            logging.warning("docker-compose up was not called. Trying to export docker.log for running containers")
 
         self.cleanup()
 
@@ -1750,6 +1770,7 @@ CLICKHOUSE_START_COMMAND = "clickhouse server --config-file=/etc/clickhouse-serv
 
 CLICKHOUSE_STAY_ALIVE_COMMAND = 'bash -c "trap \'killall tail\' INT TERM; {} --daemon; coproc tail -f /dev/null; wait $$!"'.format(CLICKHOUSE_START_COMMAND)
 
+# /run/xtables.lock passed inside for correct iptables --wait
 DOCKER_COMPOSE_TEMPLATE = '''
 version: '2.3'
 services:
@@ -1761,9 +1782,11 @@ services:
             - {db_dir}:/var/lib/clickhouse/
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
+            - /run/xtables.lock:/run/xtables.lock:ro
             {binary_volume}
             {odbc_bridge_volume}
             {library_bridge_volume}
+            {external_dirs_volumes}
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
@@ -1806,7 +1829,7 @@ class ClickHouseInstance:
             main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True,
             hostname=None, env_variables=None,
             image="clickhouse/integration-test", tag="latest",
-            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None, config_root_name="yandex"):
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None, config_root_name="clickhouse"):
 
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -1814,6 +1837,7 @@ class ClickHouseInstance:
         self.cluster = cluster
         self.hostname = hostname if hostname is not None else self.name
 
+        self.external_dirs = external_dirs
         self.tmpfs = tmpfs or []
         self.base_config_dir = p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
@@ -1900,11 +1924,25 @@ class ClickHouseInstance:
         return self.is_built_with_sanitizer('memory')
 
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
-    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
-              ignore_error=False):
-        logging.debug(f"Executing query {sql} on {self.name}")
-        return self.client.query(sql, stdin=stdin, timeout=timeout, settings=settings, user=user, password=password,
-                                 database=database, ignore_error=ignore_error)
+    def query(self, sql,
+              stdin=None,
+              timeout=None,
+              settings=None,
+              user=None,
+              password=None,
+              database=None,
+              ignore_error=False,
+              query_id=None):
+        logging.debug("Executing query %s on %s", sql, self.name)
+        return self.client.query(sql,
+                                 stdin=stdin,
+                                 timeout=timeout,
+                                 settings=settings,
+                                 user=user,
+                                 password=password,
+                                 database=database,
+                                 ignore_error=ignore_error,
+                                 query_id=query_id)
 
     def query_with_retry(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
                          ignore_error=False,
@@ -2001,11 +2039,12 @@ class ClickHouseInstance:
                 logging.warning("ClickHouse process already stopped")
                 return
 
+            self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
+
             sleep_time = 0.1
             num_steps = int(stop_wait_sec / sleep_time)
             stopped = False
             for step in range(num_steps):
-                self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
                 time.sleep(sleep_time)
                 ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
                 if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND":
@@ -2020,12 +2059,31 @@ class ClickHouseInstance:
 
     def start_clickhouse(self, start_wait_sec=30):
         if not self.stay_alive:
-            raise Exception("clickhouse can be started again only with stay_alive=True instance")
+            raise Exception("ClickHouse can be started again only with stay_alive=True instance")
 
-        self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
-        # wait start
-        from helpers.test_tools import assert_eq_with_retry
-        assert_eq_with_retry(self, "select 1", "1", retry_count=int(start_wait_sec / 0.5), sleep_time=0.5)
+        time_to_sleep = 0.5
+        start_tries = 5
+
+        total_tries = int(start_wait_sec / time_to_sleep)
+        query_tries = int(total_tries / start_tries)
+
+        for i in range(start_tries):
+            # sometimes after SIGKILL (hard reset) server may refuse to start for some time
+            # for different reasons.
+            self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
+            started = False
+            for _ in range(query_tries):
+                try:
+                    self.query("select 1")
+                    started = True
+                    break
+                except:
+                    time.sleep(time_to_sleep)
+            if started:
+                break
+        else:
+            raise Exception("Cannot start ClickHouse, see additional info in logs")
+
 
     def restart_clickhouse(self, stop_start_wait_sec=30, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
@@ -2037,11 +2095,11 @@ class ClickHouseInstance:
     def contains_in_log(self, substring, from_host=False):
         if from_host:
             result = subprocess_check_call(["bash", "-c",
-                f'[ -f {self.logs_dir}/clickhouse-server.log ] && grep "{substring}" {self.logs_dir}/clickhouse-server.log || true'
+                f'[ -f {self.logs_dir}/clickhouse-server.log ] && grep -a "{substring}" {self.logs_dir}/clickhouse-server.log || true'
             ])
         else:
             result = self.exec_in_container(["bash", "-c",
-                f'[ -f /var/log/clickhouse-server/clickhouse-server.log ] && grep "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
+                f'[ -f /var/log/clickhouse-server/clickhouse-server.log ] && grep -a "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
             ])
         return len(result) > 0
 
@@ -2049,18 +2107,18 @@ class ClickHouseInstance:
         logging.debug(f"grep in log called %s", substring)
         if from_host:
             result = subprocess_check_call(["bash", "-c",
-                f'grep "{substring}" {self.logs_dir}/clickhouse-server.log || true'
+                f'grep -a "{substring}" {self.logs_dir}/clickhouse-server.log || true'
             ])
         else:
             result = self.exec_in_container(["bash", "-c",
-                f'grep "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
+                f'grep -a "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
             ])
         logging.debug("grep result %s", result)
         return result
 
     def count_in_log(self, substring):
         result = self.exec_in_container(
-            ["bash", "-c", 'grep "{}" /var/log/clickhouse-server/clickhouse-server.log | wc -l'.format(substring)])
+            ["bash", "-c", 'grep -a "{}" /var/log/clickhouse-server/clickhouse-server.log | wc -l'.format(substring)])
         return result
 
     def wait_for_log_line(self, regexp, filename='/var/log/clickhouse-server/clickhouse-server.log', timeout=30, repetitions=1, look_behind_lines=100):
@@ -2284,6 +2342,9 @@ class ClickHouseInstance:
     def replace_config(self, path_to_config, replacement):
         self.exec_in_container(["bash", "-c", "echo '{}' > {}".format(replacement, path_to_config)])
 
+    def replace_in_config(self, path_to_config, replace, replacement):
+        self.exec_in_container(["bash", "-c", f"sed -i 's/{replace}/{replacement}/g' {path_to_config}"])
+
     def create_dir(self, destroy_dir=True):
         """Create the instance directory and all the needed files there."""
 
@@ -2316,17 +2377,20 @@ class ClickHouseInstance:
         dictionaries_dir = p.abspath(p.join(instance_config_dir, 'dictionaries'))
         os.mkdir(dictionaries_dir)
 
-        def write_embedded_config(name, dest_dir):
+        def write_embedded_config(name, dest_dir, fix_log_level=False):
             with open(p.join(HELPERS_DIR, name), 'r') as f:
                 data = f.read()
-                data = data.replace('yandex', self.config_root_name)
+                data = data.replace('clickhouse', self.config_root_name)
+                if fix_log_level:
+                    data = data.replace('<level>test</level>', '<level>trace</level>')
                 with open(p.join(dest_dir, name), 'w') as r:
                     r.write(data)
 
         logging.debug("Copy common configuration from helpers")
         # The file is named with 0_ prefix to be processed before other configuration overloads.
         if self.copy_common_configs:
-            write_embedded_config('0_common_instance_config.xml', self.config_d_dir)
+            need_fix_log_level = self.tag != 'latest'
+            write_embedded_config('0_common_instance_config.xml', self.config_d_dir, need_fix_log_level)
 
         write_embedded_config('0_common_instance_users.xml', users_d_dir)
 
@@ -2453,6 +2517,14 @@ class ClickHouseInstance:
             odbc_bridge_volume = "- " + self.odbc_bridge_bin_path + ":/usr/share/clickhouse-odbc-bridge_fresh"
             library_bridge_volume = "- " + self.library_bridge_bin_path + ":/usr/share/clickhouse-library-bridge_fresh"
 
+        external_dirs_volumes = ""
+        if self.external_dirs:
+            for external_dir in self.external_dirs:
+                external_dir_abs_path = p.abspath(p.join(self.path, external_dir.lstrip('/')))
+                logging.info(f'external_dir_abs_path={external_dir_abs_path}')
+                os.mkdir(external_dir_abs_path)
+                external_dirs_volumes += "- " + external_dir_abs_path + ":"  + external_dir + "\n"
+
 
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
@@ -2466,6 +2538,7 @@ class ClickHouseInstance:
                 instance_config_dir=instance_config_dir,
                 config_d_dir=self.config_d_dir,
                 db_dir=db_dir,
+                external_dirs_volumes=external_dirs_volumes,
                 tmpfs=str(self.tmpfs),
                 logs_dir=logs_dir,
                 depends_on=str(depends_on),

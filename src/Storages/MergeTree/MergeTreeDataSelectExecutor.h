@@ -90,6 +90,8 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         size_t & total_granules,
         size_t & granules_dropped,
+        MarkCache * mark_cache,
+        UncompressedCache * uncompressed_cache,
         Poco::Logger * log);
 
     struct PartFilterCounters
@@ -197,7 +199,7 @@ public:
     /// Also, return QueryIdHolder. If not null, we should keep it until query finishes.
     static std::shared_ptr<QueryIdHolder> checkLimits(
         const MergeTreeData & data,
-        const RangesInDataParts & parts_with_ranges,
+        const ReadFromMergeTree::AnalysisResult & result,
         const ContextPtr & context);
 };
 

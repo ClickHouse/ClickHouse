@@ -18,15 +18,19 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-void UserDefinedSQLFunctionMatcher::visit(ASTPtr & ast, Data &)
+void UserDefinedSQLFunctionMatcher::visit(ASTPtr & ast, Data & data)
 {
     auto * function = ast->as<ASTFunction>();
     if (!function)
         return;
 
     auto result = tryToReplaceFunction(*function);
+
     if (result)
+    {
         ast = result;
+        visit(ast, data);
+    }
 }
 
 bool UserDefinedSQLFunctionMatcher::needChildVisit(const ASTPtr &, const ASTPtr &)
@@ -83,15 +87,27 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
             if (identifier_name_opt)
             {
                 auto function_argument_it = identifier_name_to_function_argument.find(*identifier_name_opt);
-                assert(function_argument_it != identifier_name_to_function_argument.end());
 
+                if (function_argument_it == identifier_name_to_function_argument.end())
+                    continue;
+
+                auto child_alias = child->tryGetAlias();
                 child = function_argument_it->second->clone();
+
+                if (!child_alias.empty())
+                    child->setAlias(child_alias);
+
                 continue;
             }
 
             ast_nodes_to_update.push(child);
         }
     }
+
+    auto function_alias = function.tryGetAlias();
+
+    if (!function_alias.empty())
+        function_body_to_update->setAlias(function_alias);
 
     return function_body_to_update;
 }

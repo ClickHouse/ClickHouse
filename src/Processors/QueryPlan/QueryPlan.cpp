@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 #include <Interpreters/ActionsDAG.h>

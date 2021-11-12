@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <logger>
         <level>trace</level>
         <log>/var/log/clickhouse-server/log.log</log>
@@ -26,4 +26,4 @@
             <table>test_table</table>
         </postgres2>
     </named_collections>
-</yandex>
+</clickhouse>

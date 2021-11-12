@@ -7,10 +7,10 @@
 
 #include <random>
 
-#include <common/sleep.h>
+#include <base/sleep.h>
 
 #include <IO/ReadHelpers.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
@@ -31,7 +31,7 @@
         M(int, pthread_mutex_unlock, pthread_mutex_t * arg)
 #endif
 
-#if defined(__clang__) && __clang_major__ >= 13
+#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 

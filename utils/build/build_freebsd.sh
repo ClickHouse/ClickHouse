@@ -17,7 +17,7 @@
 
 
 # pkg install -y curl sudo
-# curl https://raw.githubusercontent.com/yandex/ClickHouse/master/utils/build/build_freebsd.sh | sh
+# curl https://raw.githubusercontent.com/clickhouse/ClickHouse/master/utils/build/build_freebsd.sh | sh
 
 #  install compiler and libs
 sudo pkg install devel/git devel/cmake devel/ninja shells/bash devel/icu devel/libltdl databases/unixODBC devel/google-perftools devel/libdouble-conversion archivers/zstd archivers/liblz4 devel/sparsehash devel/re2
@@ -32,7 +32,7 @@ BASE_DIR=$(dirname $0) && [ -f "$BASE_DIR/../../CMakeLists.txt" ] && ROOT_DIR=$B
 
 if [ -z $ROOT_DIR ]; then
     #  Checkout ClickHouse sources
-    git clone --recursive https://github.com/yandex/ClickHouse.git
+    git clone --recursive https://github.com/ClickHouse/ClickHouse.git
     cd ClickHouse
 fi
 

@@ -16,6 +16,8 @@ void DDLDependencyVisitor::visit(const ASTPtr & ast, Data & data)
         visit(*function, data);
     else if (const auto * dict_source = ast->as<ASTFunctionWithKeyValueArguments>())
         visit(*dict_source, data);
+    else if (const auto * storage = ast->as<ASTStorage>())
+        visit(*storage, data);
 }
 
 bool DDLDependencyVisitor::needChildVisit(const ASTPtr & node, const ASTPtr & child)
@@ -64,6 +66,16 @@ void DDLDependencyVisitor::visit(const ASTFunctionWithKeyValueArguments & dict_s
     if (info->table_name.database.empty())
         info->table_name.database = data.default_database;
     data.dependencies.emplace(std::move(info->table_name));
+}
+
+void DDLDependencyVisitor::visit(const ASTStorage & storage, Data & data)
+{
+    if (!storage.engine)
+        return;
+    if (storage.engine->name != "Dictionary")
+        return;
+
+    extractTableNameFromArgument(*storage.engine, data, 0);
 }
 
 
