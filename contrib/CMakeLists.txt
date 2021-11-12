@@ -38,6 +38,7 @@ add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
 add_subdirectory (nanodbc-cmake)
 
+option (ENABLE_HUALLOC "Enable hualloc allocator" 1)
 if (ENABLE_HUALLOC)
     add_subdirectory (hualloc-cmake)
 endif ()
