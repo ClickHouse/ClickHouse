@@ -5,7 +5,6 @@ import logging
 import json
 import sys
 import subprocess
-import time
 
 from github import Github
 
