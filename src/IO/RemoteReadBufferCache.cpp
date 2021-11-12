@@ -26,7 +26,7 @@ RemoteCacheController::recover(
         const std::filesystem::path & local_path_,
         std::function<void(RemoteCacheController *)> const & finish_callback)
 {
-    auto & dir_handle = local_path_;
+    const auto & dir_handle = local_path_;
     std::filesystem::path data_file = local_path_ / "data.bin";
     std::filesystem::path meta_file = local_path_ / "meta.txt";
     if (!std::filesystem::exists(dir_handle) || !std::filesystem::exists(data_file) || !std::filesystem::exists(meta_file))
@@ -317,7 +317,7 @@ std::unique_ptr<RemoteReadBuffer> RemoteReadBuffer::create(
     if (buff_size == 0)
         buff_size = DBMS_DEFAULT_BUFFER_SIZE;
 
-    auto & remote_path = remote_file_meta_.path;
+    const auto & remote_path = remote_file_meta_.path;
     auto rrb = std::make_unique<RemoteReadBuffer>(buff_size);
     auto * raw_rbp = readbuffer.release();
     std::shared_ptr<ReadBuffer> srb(raw_rbp);
@@ -488,8 +488,8 @@ std::tuple<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCacheError> R
         return {nullptr, RemoteReadBufferCacheError::NOT_INIT};
     }
     auto remote_path = remote_file_meta.path;
-    auto & file_size = remote_file_meta.file_size;
-    auto & last_modification_timestamp = remote_file_meta.last_modification_timestamp;
+    const auto & file_size = remote_file_meta.file_size;
+    const auto & last_modification_timestamp = remote_file_meta.last_modification_timestamp;
     auto local_path = calculateLocalPath(remote_file_meta);
     std::lock_guard lock(mutex);
     auto cache_iter = caches.find(local_path);
