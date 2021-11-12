@@ -10,6 +10,7 @@
 #include "Common/Exception.h"
 #include <fstream>
 #include <filesystem>
+#include <memory>
 #include <unistd.h>
 
 namespace DB
@@ -134,7 +135,7 @@ RemoteReadBufferCacheError RemoteCacheController::waitMoreData(size_t start_offs
 
 void RemoteCacheController::backgroupDownload(std::function<void(RemoteCacheController *)> const & finish_callback)
 {
-    download_thread.reset(new ThreadPool(1));
+    download_thread = std::make_shared<ThreadPool>(1);
     auto task = [this, finish_callback]()
     {
         size_t unflush_bytes = 0;
