@@ -1002,6 +1002,10 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
             else
                 to_path /= from_path.filename();
 
+            /// to_path may exist and non-empty in case for example abrupt restart, so remove it before rename
+            if (metadata_disk->exists(to_path))
+                metadata_disk->removeRecursive(to_path);
+
             metadata_disk->moveDirectory(from_path, to_path);
         }
     }
