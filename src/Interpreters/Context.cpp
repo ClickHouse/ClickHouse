@@ -2821,6 +2821,10 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     }
 
     bool look_for_external_table = where & StorageNamespace::ResolveExternal;
+    /// Global context should not contain temporary tables
+    if (isGlobalContext() && getApplicationType() != ApplicationType::LOCAL)
+        look_for_external_table = false;
+
     bool in_current_database = where & StorageNamespace::ResolveCurrentDatabase;
     bool in_specified_database = where & StorageNamespace::ResolveGlobal;
 
@@ -2838,9 +2842,6 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
 
     if (look_for_external_table)
     {
-        /// Global context should not contain temporary tables
-        assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
-
         auto resolved_id = StorageID::createEmpty();
         auto try_resolve = [&](ContextPtr context) -> bool
         {
