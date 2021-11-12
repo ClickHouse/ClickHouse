@@ -66,7 +66,7 @@ public:
 
     /**
      * Called by LocalCachedFileReader, must be used in pair
-     * The second value of the return tuple is the local_path to store file. 
+     * The second value of the return tuple is the local_path to store file.
      * It will be empty if the file has not been downloaded
      */
     std::tuple<FILE *, std::filesystem::path> allocFile();
