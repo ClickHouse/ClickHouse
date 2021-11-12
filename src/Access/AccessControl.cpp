@@ -6,11 +6,13 @@
 #include <Access/DiskAccessStorage.h>
 #include <Access/LDAPAccessStorage.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRolesInfo.h>
 #include <Access/RoleCache.h>
 #include <Access/RowPolicyCache.h>
 #include <Access/QuotaCache.h>
 #include <Access/QuotaUsage.h>
 #include <Access/SettingsProfilesCache.h>
+#include <Access/User.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Core/Settings.h>
 #include <base/find_symbols.h>
@@ -481,6 +483,16 @@ std::shared_ptr<const EnabledRoles> AccessControl::getEnabledRoles(
 std::shared_ptr<const EnabledRowPolicies> AccessControl::getEnabledRowPolicies(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles) const
 {
     return row_policy_cache->getEnabledRowPolicies(user_id, enabled_roles);
+}
+
+
+std::shared_ptr<const EnabledRowPolicies> AccessControl::tryGetDefaultRowPolicies(const UUID & user_id) const
+{
+    auto user = tryRead<User>(user_id);
+    if (!user)
+        return nullptr;
+    auto default_roles = getEnabledRoles(user->granted_roles.findGranted(user->default_roles), {})->getRolesInfo()->enabled_roles;
+    return getEnabledRowPolicies(user_id, default_roles);
 }
 
 
