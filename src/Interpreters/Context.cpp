@@ -871,7 +871,9 @@ const Block * Context::tryGetLocalScalar(const String & name) const
 
 Tables Context::getExternalTables() const
 {
-    assert(!isGlobalContext());
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
+
     auto lock = getLock();
 
     Tables res;
@@ -896,7 +898,9 @@ Tables Context::getExternalTables() const
 
 void Context::addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
 {
-    assert(!isGlobalContext());
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
+
     auto lock = getLock();
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
         throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
@@ -906,7 +910,9 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
 
 std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String & table_name)
 {
-    assert(!isGlobalContext());
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
+
     std::shared_ptr<TemporaryTableHolder> holder;
     {
         auto lock = getLock();
@@ -922,21 +928,27 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
 
 void Context::addScalar(const String & name, const Block & block)
 {
-    assert(!isGlobalContext());
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
+
     scalars[name] = block;
 }
 
 
 void Context::addLocalScalar(const String & name, const Block & block)
 {
-    assert(!isGlobalContext());
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have local scalars");
+
     local_scalars[name] = block;
 }
 
 
 bool Context::hasScalar(const String & name) const
 {
-    assert(!isGlobalContext());
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
+
     return scalars.count(name);
 }
 
@@ -948,7 +960,9 @@ void Context::addQueryAccessInfo(
     const String & projection_name,
     const String & view_name)
 {
-    assert(!isGlobalContext());
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
     std::lock_guard<std::mutex> lock(query_access_info.mutex);
     query_access_info.databases.emplace(quoted_database_name);
     query_access_info.tables.emplace(full_quoted_table_name);
@@ -962,7 +976,9 @@ void Context::addQueryAccessInfo(
 
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
-    assert(!isGlobalContext());
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query factories info");
+
     auto lock = getLock();
 
     switch (factory_type)
