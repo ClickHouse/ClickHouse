@@ -17,7 +17,7 @@ from pr_info import PRInfo
 
 DOCKER_IMAGE = "clickhouse/split-build-smoke-test"
 DOWNLOAD_RETRIES_COUNT = 5
-RESULT_LOG_NAME = "result.log"
+RESULT_LOG_NAME = "run.log"
 CHECK_NAME = 'Split build smoke test (actions)'
 
 
@@ -36,17 +36,21 @@ def process_result(result_folder, server_log_folder):
 
     result_logs = []
     server_log_path = os.path.join(server_log_folder, "clickhouse-server.log")
-    stderr_log_path = os.path.join(server_log_folder, "stderr.log")
-    client_stderr_log_path = os.path.join(server_log_folder, "clientstderr.log")
+    stderr_log_path = os.path.join(result_folder, "stderr.log")
+    client_stderr_log_path = os.path.join(result_folder, "clientstderr.log")
+    run_log_path = os.path.join(result_folder, RESULT_LOG_NAME)
 
-    if os.path.exists(server_log_path):
-        result_logs.append(server_log_path)
+    for path in [server_log_path, stderr_log_path, client_stderr_log_path, run_log_path]:
+        if os.path.exists(path):
+            result_logs.append(path)
 
     if os.path.exists(stderr_log_path):
         result_logs.append(stderr_log_path)
 
     if os.path.exists(client_stderr_log_path):
         result_logs.append(client_stderr_log_path)
+
+    if os.path.exists(run)
 
     return status, description, summary, result_logs
 
