@@ -4,7 +4,7 @@
 #include <set>
 #include <map>
 #include <memory>
-#include <Poco/FileStream.h>
+#include <filesystem>
 #include <Poco/Logger.h>
 #include <Common/ThreadPool.h>
 #include <IO/ReadBuffer.h>
@@ -24,6 +24,28 @@ enum class RemoteReadBufferCacheError :int8_t
     END_OF_FILE = 20,
 };
 
+struct RemoteFileMeta
+{
+    RemoteFileMeta(
+            const std::string  & schema_,
+            const std::string & cluster_,
+            const std::string & path_,
+            UInt64 last_modification_timestamp_,
+            size_t file_size_):
+        schema(schema_),
+        cluster(cluster_),
+        path(path_),
+        last_modification_timestamp(last_modification_timestamp_),
+        file_size(file_size_)
+    {}
+
+    std::string schema; // Hive, S2 etc.
+    std::string cluster;
+    std::string path;
+    UInt64 last_modification_timestamp;
+    size_t file_size;
+};
+
 /**
  *
  */
@@ -31,11 +53,8 @@ class RemoteCacheController
 {
 public:
     RemoteCacheController(
-        const std::string & schema_,
-        const std::string & cluster_,
-        const std::string & path_,
-        UInt64 ts,
-        const std::string & local_path_,
+        const RemoteFileMeta &meta,
+        const std::filesystem::path & local_path_,
         size_t cache_bytes_before_flush_,
         std::shared_ptr<ReadBuffer> readbuffer_,
         std::function<void(RemoteCacheController *)> const & finish_callback);
@@ -43,13 +62,14 @@ public:
 
     // recover from local disk
     static std::shared_ptr<RemoteCacheController>
-    recover(const std::string & local_path, std::function<void(RemoteCacheController *)> const & finish_callback);
+    recover(const std::filesystem::path & local_path, std::function<void(RemoteCacheController *)> const & finish_callback);
 
     /**
-     * called by LocalCachedFileReader, must be used in pair
-     * local_path will be empty if the file has not been downloaded
+     * Called by LocalCachedFileReader, must be used in pair
+     * The second value of the return tuple is the local_path to store file. 
+     * It will be empty if the file has not been downloaded
      */
-    std::tuple<FILE *, std::string> allocFile();
+    std::tuple<FILE *, std::filesystem::path> allocFile();
     void deallocFile(FILE * fs_);
 
     /**
@@ -72,10 +92,10 @@ public:
 
     inline size_t size() const { return current_offset; }
 
-    inline const std::string & getLocalPath() { return local_path; }
+    inline const std::filesystem::path & getLocalPath() { return local_path; }
     inline const std::string & getRemotePath() { return remote_path; }
 
-    inline UInt64 getLastModTS() const { return last_modification_timestamp; }
+    inline UInt64 getLastModificationTimestamp() const { return last_modification_timestamp; }
     inline void markInvalid()
     {
         std::lock_guard lock(mutex);
@@ -104,14 +124,14 @@ private:
     bool valid;
     size_t current_offset;
     UInt64 last_modification_timestamp;
-    std::string local_path;
+    std::filesystem::path local_path;
     std::string remote_path;
     std::string schema;
     std::string cluster;
 
     size_t local_cache_bytes_read_before_flush;
     std::shared_ptr<ReadBuffer> remote_readbuffer;
-    std::ofstream * out_file = nullptr;
+    std::unique_ptr<std::ofstream> out_file;
 };
 
 /**
@@ -135,7 +155,7 @@ private:
     size_t offset;
     size_t file_size;
     FILE * fs;
-    std::string local_path;
+    std::filesystem::path local_path;
     RemoteCacheController * controller;
 };
 
@@ -149,11 +169,7 @@ public:
     explicit RemoteReadBuffer(size_t buff_size);
     ~RemoteReadBuffer() override;
     static std::unique_ptr<RemoteReadBuffer> create(
-        const std::string & schema_,
-        const std::string & cluster_,
-        const std::string & remote_path_,
-        UInt64 mod_ts_,
-        size_t file_size_,
+        const RemoteFileMeta &remote_file_meta_,
         std::unique_ptr<ReadBuffer> readbuffer);
 
     bool nextImpl() override;
@@ -167,7 +183,6 @@ private:
     std::shared_ptr<ReadBuffer> original_readbuffer;
 };
 
-
 class RemoteReadBufferCache
 {
 protected:
@@ -178,15 +193,11 @@ public:
     // global instance
     static RemoteReadBufferCache & instance();
 
-    void initOnce(const std::string & dir, size_t limit_size, size_t bytes_read_before_flush_);
+    void initOnce(const std::filesystem::path & dir, size_t limit_size, size_t bytes_read_before_flush_);
     inline bool hasInitialized() const { return inited; }
 
     std::tuple<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCacheError> createReader(
-        const std::string & schema,
-        const std::string & cluster,
-        const std::string & remote_path,
-        UInt64 mod_ts,
-        size_t file_size,
+        const RemoteFileMeta &remote_file_meta,
         std::shared_ptr<ReadBuffer> & readbuffer);
 
 private:
@@ -207,7 +218,13 @@ private:
     std::list<std::string> keys;
     std::map<std::string, CacheCell> caches;
 
-    std::string calculateLocalPath(const std::string & schema_, const std::string & cluster_, const std::string & remote_path_);
+    std::filesystem::path calculateLocalPath(const RemoteFileMeta &meta);
+
+    void recover_cached_files_meta(
+            const std::filesystem::path & current_path_, 
+            size_t current_depth,
+            size_t max_depth,
+            std::function<void(RemoteCacheController *)> const & finish_callback);
     bool clearLocalCache();
 };
 

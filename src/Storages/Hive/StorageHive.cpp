@@ -155,11 +155,7 @@ public:
                 }
 
                 std::unique_ptr<ReadBuffer> remote_read_buf = RemoteReadBuffer::create(
-                    "Hive",
-                    getNameNodeCluster(hdfs_namenode_url),
-                    uri_with_path,
-                    curr_file->getLastModTs(),
-                    curr_file->getSize(),
+                    {"Hive", getNameNodeCluster(hdfs_namenode_url), uri_with_path, curr_file->getLastModTs(), curr_file->getSize()},
                     std::move(raw_read_buf));
                 // std::unique_ptr<ReadBuffer> remote_read_buf = std::move(raw_read_buf);
                 if (curr_file->getFormat() == StorageHive::FileFormat::TEXT)
