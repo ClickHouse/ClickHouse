@@ -12,3 +12,7 @@ If there is a `WHERE` clause, it must contain an expression with the `UInt8` typ
 
 !!! note "Note"
     There’s a filtering optimization called [prewhere](../../../sql-reference/statements/select/prewhere.md).
+
+**See Also**
+
+-   [EXISTS](../../../sql-reference/operators/exists.md) operator
