@@ -23,7 +23,7 @@ enum class RemoteReadBufferCacheError :int8_t
 
     END_OF_FILE = 20,
 };
-    
+
 /**
  *
  */
@@ -34,8 +34,9 @@ public:
         const std::string & schema_,
         const std::string & cluster_,
         const std::string & path_,
-        UInt64 mod_ts,
+        UInt64 ts,
         const std::string & local_path_,
+        size_t cache_bytes_before_flush_,
         std::shared_ptr<ReadBuffer> readbuffer_,
         std::function<void(RemoteCacheController *)> const & finish_callback);
     ~RemoteCacheController(); // the local files will be deleted in descontructor
@@ -66,9 +67,6 @@ public:
      * called in LocalCachedFileReader read(), the reading process would be blocked until
      * enough data be downloaded.
      * If the file has finished download, the process would be block
-     * returns
-     *  - 0: has more data to read
-     *  - -1: has reach eof
      */
     RemoteReadBufferCacheError waitMoreData(size_t start_offset_, size_t end_offset_);
 
@@ -77,7 +75,7 @@ public:
     inline const std::string & getLocalPath() { return local_path; }
     inline const std::string & getRemotePath() { return remote_path; }
 
-    inline UInt64 getLastModTS() const { return last_mod_ts; }
+    inline UInt64 getLastModTS() const { return last_modification_timestamp; }
     inline void markInvalid()
     {
         std::lock_guard lock(mutex);
@@ -91,13 +89,13 @@ public:
 
 private:
     // flush file and meta info into disk
-    void flush();
+    void flush(bool need_flush_meta_ = false);
 
     void backgroupDownload(std::function<void(RemoteCacheController *)> const & finish_callback);
 
     std::mutex mutex;
     std::condition_variable more_data_signal;
-    ThreadPool * download_thread;
+    std::shared_ptr<ThreadPool> download_thread;
 
     std::set<FILE *> opened_file_streams;
 
@@ -105,12 +103,13 @@ private:
     bool download_finished;
     bool valid;
     size_t current_offset;
-    UInt64 last_mod_ts;
+    UInt64 last_modification_timestamp;
     std::string local_path;
     std::string remote_path;
     std::string schema;
     std::string cluster;
 
+    size_t local_cache_bytes_read_before_flush;
     std::shared_ptr<ReadBuffer> remote_readbuffer;
     std::ofstream * out_file = nullptr;
 };
@@ -179,7 +178,7 @@ public:
     // global instance
     static RemoteReadBufferCache & instance();
 
-    void initOnce(const std::string & dir, size_t limit_size);
+    void initOnce(const std::string & dir, size_t limit_size, size_t bytes_read_before_flush_);
     inline bool hasInitialized() const { return inited; }
 
     std::tuple<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCacheError> createReader(
@@ -195,7 +194,8 @@ private:
 
     std::atomic<bool> inited = false;
     std::mutex mutex;
-    size_t limit_size;
+    size_t limit_size = 0;
+    size_t local_cache_bytes_read_before_flush = 0;
     std::atomic<size_t> total_size;
     Poco::Logger * log = &Poco::Logger::get("RemoteReadBufferCache");
 
