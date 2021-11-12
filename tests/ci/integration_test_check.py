@@ -15,6 +15,7 @@ from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from build_download_helper import download_all_deb_packages
 from upload_result_helper import upload_results
+from docker_pull_helper import get_images_with_versions
 
 DOWNLOAD_RETRIES_COUNT = 5
 
@@ -127,21 +128,8 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token())
 
-    images_path = os.path.join(temp_path, 'changed_images.json')
-    images_with_version = get_images_with_versions(images_path)
-    for image, version in images_with_version.items():
-        docker_image = image + ':' + version
-        for i in range(10):
-            try:
-                logging.info("Pulling image %s", docker_image)
-                subprocess.check_output(f"docker pull {docker_image}", stderr=subprocess.STDOUT, shell=True)
-                break
-            except Exception as ex:
-                time.sleep(i * 3)
-                logging.info("Got execption pulling docker %s", ex)
-        else:
-            raise Exception(f"Cannot pull dockerhub for image docker pull {docker_image}")
-
+    images = get_images_with_versions(temp_path, IMAGES)
+    images_with_versions = {i.name: i.version for i in images}
     result_path = os.path.join(temp_path, "output_dir")
     if not os.path.exists(result_path):
         os.makedirs(result_path)

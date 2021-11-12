@@ -14,6 +14,7 @@ from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from build_download_helper import download_shared_build
 from upload_result_helper import upload_results
+from docker_pull_helper import get_image_with_version
 
 DOCKER_IMAGE = "clickhouse/split-build-smoke-test"
 DOWNLOAD_RETRIES_COUNT = 5
@@ -77,27 +78,7 @@ if __name__ == "__main__":
                 images_path = os.path.join(root, 'changed_images.json')
                 break
 
-    docker_image = DOCKER_IMAGE
-    if images_path and os.path.exists(images_path):
-        logging.info("Images file exists")
-        with open(images_path, 'r', encoding='utf-8') as images_fd:
-            images = json.load(images_fd)
-            logging.info("Got images %s", images)
-            if docker_image in images:
-                docker_image += ':' + images[docker_image]
-    else:
-        logging.info("Images file not found")
-
-    for i in range(10):
-        try:
-            logging.info("Pulling image %s", docker_image)
-            subprocess.check_output(f"docker pull {docker_image}", stderr=subprocess.STDOUT, shell=True)
-            break
-        except Exception as ex:
-            time.sleep(i * 3)
-            logging.info("Got execption pulling docker %s", ex)
-    else:
-        raise Exception(f"Cannot pull dockerhub for image docker pull {docker_image}")
+    docker_image = get_image_with_version(reports_path, DOCKER_IMAGE)
 
     packages_path = os.path.join(temp_path, "packages")
     if not os.path.exists(packages_path):

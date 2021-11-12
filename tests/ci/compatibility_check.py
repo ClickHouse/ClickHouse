@@ -5,7 +5,6 @@ import logging
 import os
 import json
 import subprocess
-import time
 
 from github import Github
 
@@ -14,7 +13,7 @@ from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from build_download_helper import download_builds_filter
 from upload_result_helper import upload_results
-
+from docker_pull_helper import get_images_with_versions
 
 IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
 IMAGE_CENTOS = "clickhouse/test-old-centos"
@@ -112,37 +111,7 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token())
 
-    for root, _, files in os.walk(reports_path):
-        for f in files:
-            if f == 'changed_images.json':
-                images_path = os.path.join(root, 'changed_images.json')
-                break
-
-    docker_images = []
-    if images_path and os.path.exists(images_path):
-        for image_name in [IMAGE_CENTOS, IMAGE_UBUNTU]:
-            docker_image = image_name
-            logging.info("Images file exists")
-            with open(images_path, 'r', encoding='utf-8') as images_fd:
-                images = json.load(images_fd)
-                logging.info("Got images %s", images)
-                if image_name in images:
-                    docker_image += ':' + images[image_name]
-            docker_images.append(docker_image)
-    else:
-        logging.info("Images file not found")
-
-    for docker_image in docker_images:
-        for i in range(10):
-            try:
-                logging.info("Pulling image %s", docker_image)
-                subprocess.check_output(f"docker pull {docker_image}", stderr=subprocess.STDOUT, shell=True)
-                break
-            except Exception as ex:
-                time.sleep(i * 3)
-                logging.info("Got execption pulling docker %s", ex)
-        else:
-            raise Exception(f"Cannot pull dockerhub for image docker pull {docker_image}")
+    docker_images = get_images_with_versions(reports_path, [IMAGE_CENTOS, IMAGE_UBUNTU])
 
     packages_path = os.path.join(temp_path, "packages")
     if not os.path.exists(packages_path):

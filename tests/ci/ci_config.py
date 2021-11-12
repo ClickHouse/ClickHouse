@@ -4,9 +4,9 @@ CI_CONFIG = {
     "build_config": [
         {
             "compiler": "clang-13",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "deb",
+            "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "alien_pkgs": True,
@@ -15,9 +15,9 @@ CI_CONFIG = {
         },
         {
             "compiler": "clang-13",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "performance",
+            "package_type": "performance",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -25,9 +25,9 @@ CI_CONFIG = {
         },
         {
             "compiler": "gcc-11",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "binary",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -35,9 +35,9 @@ CI_CONFIG = {
         },
         {
             "compiler": "clang-13",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "address",
-            "package-type": "deb",
+            "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -45,9 +45,9 @@ CI_CONFIG = {
         },
         {
             "compiler": "clang-13",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "undefined",
-            "package-type": "deb",
+            "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -55,9 +55,9 @@ CI_CONFIG = {
         },
         {
             "compiler": "clang-13",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "thread",
-            "package-type": "deb",
+            "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -65,9 +65,9 @@ CI_CONFIG = {
         },
         {
             "compiler": "clang-13",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "memory",
-            "package-type": "deb",
+            "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -75,9 +75,9 @@ CI_CONFIG = {
         },
         {
             "compiler": "clang-13",
-            "build-type": "debug",
+            "build_type": "debug",
             "sanitizer": "",
-            "package-type": "deb",
+            "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -85,9 +85,9 @@ CI_CONFIG = {
         },
         {
             "compiler": "gcc-11",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "deb",
+            "package_type": "deb",
             "bundled": "unbundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -95,9 +95,9 @@ CI_CONFIG = {
         },
         {
             "compiler": "clang-13",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "binary",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -107,9 +107,9 @@ CI_CONFIG = {
     "special_build_config": [
         {
             "compiler": "clang-13",
-            "build-type": "debug",
+            "build_type": "debug",
             "sanitizer": "",
-            "package-type": "deb",
+            "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "enable",
@@ -117,9 +117,9 @@ CI_CONFIG = {
         },
         {
             "compiler": "clang-13",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "binary",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "splitted",
             "tidy": "disable",
@@ -127,9 +127,9 @@ CI_CONFIG = {
         },
         {
             "compiler": "clang-13-darwin",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "binary",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -137,9 +137,9 @@ CI_CONFIG = {
         },
         {
             "compiler": "clang-13-aarch64",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "binary",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -147,9 +147,9 @@ CI_CONFIG = {
         },
         {
             "compiler": "clang-13-freebsd",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "binary",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -157,9 +157,9 @@ CI_CONFIG = {
         },
         {
             "compiler": "clang-13-darwin-aarch64",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "binary",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -167,9 +167,9 @@ CI_CONFIG = {
         },
         {
             "compiler": "clang-13-ppc64le",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "binary",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
@@ -185,7 +185,7 @@ CI_CONFIG = {
                 "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -197,7 +197,7 @@ CI_CONFIG = {
                 "sanitizer": "thread",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -209,7 +209,7 @@ CI_CONFIG = {
                 "sanitizer": "memory",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -221,7 +221,7 @@ CI_CONFIG = {
                 "sanitizer": "undefined",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -233,7 +233,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -245,7 +245,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -257,7 +257,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -269,7 +269,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -281,7 +281,7 @@ CI_CONFIG = {
                 "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -293,7 +293,7 @@ CI_CONFIG = {
                 "sanitizer": "thread",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -305,7 +305,7 @@ CI_CONFIG = {
                 "sanitizer": "memory",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -317,7 +317,7 @@ CI_CONFIG = {
                 "sanitizer": "undefined",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -329,7 +329,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -341,7 +341,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -353,7 +353,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "unbundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -365,7 +365,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -377,7 +377,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -389,7 +389,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -401,7 +401,7 @@ CI_CONFIG = {
                 "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -413,7 +413,7 @@ CI_CONFIG = {
                 "sanitizer": "thread",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -425,7 +425,7 @@ CI_CONFIG = {
                 "sanitizer": "undefined",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -437,7 +437,7 @@ CI_CONFIG = {
                 "sanitizer": "memory",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -449,7 +449,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -461,7 +461,7 @@ CI_CONFIG = {
                 "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -473,7 +473,7 @@ CI_CONFIG = {
                 "sanitizer": "thread",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -485,7 +485,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -497,7 +497,7 @@ CI_CONFIG = {
                 "sanitizer": "memory",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -509,7 +509,7 @@ CI_CONFIG = {
                 "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -521,7 +521,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -533,7 +533,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "splitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -545,7 +545,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -557,7 +557,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -569,7 +569,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -581,7 +581,7 @@ CI_CONFIG = {
                 "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -593,7 +593,7 @@ CI_CONFIG = {
                 "sanitizer": "memory",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -605,7 +605,7 @@ CI_CONFIG = {
                 "sanitizer": "thread",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -617,7 +617,7 @@ CI_CONFIG = {
                 "sanitizer": "thread",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -629,7 +629,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -641,7 +641,7 @@ CI_CONFIG = {
                 "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -653,7 +653,7 @@ CI_CONFIG = {
                 "sanitizer": "memory",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -665,7 +665,7 @@ CI_CONFIG = {
                 "sanitizer": "thread",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -677,7 +677,7 @@ CI_CONFIG = {
                 "sanitizer": "undefined",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -689,7 +689,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -701,7 +701,7 @@ CI_CONFIG = {
                 "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         },
@@ -713,7 +713,7 @@ CI_CONFIG = {
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
+                "clang_tidy": "disable",
                 "with_coverage": False
             }
         }
@@ -721,16 +721,16 @@ CI_CONFIG = {
 }
 
 def build_config_to_string(build_config):
-    if build_config["package-type"] == "performance":
+    if build_config["package_type"] == "performance":
         return "performance"
 
     return "_".join([
         build_config['compiler'],
-        build_config['build-type'] if build_config['build-type'] else "relwithdebuginfo",
+        build_config['build_type'] if build_config['build_type'] else "relwithdebuginfo",
         build_config['sanitizer'] if build_config['sanitizer'] else "none",
         build_config['bundled'],
         build_config['splitted'],
         "tidy" if build_config['tidy'] == "enable" else "notidy",
         "with_coverage" if build_config['with_coverage'] else "without_coverage",
-        build_config['package-type'],
+        build_config['package_type'],
     ])

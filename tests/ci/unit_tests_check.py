@@ -3,7 +3,6 @@
 import logging
 import os
 import sys
-import time
 import subprocess
 import json
 
@@ -14,6 +13,7 @@ from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from build_download_helper import download_unit_tests
 from upload_result_helper import upload_results
+from docker_pull_helper import get_image_with_version
 
 IMAGE_NAME = 'clickhouse/unit-test'
 
@@ -107,33 +107,7 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token())
 
-    for root, _, files in os.walk(reports_path):
-        for f in files:
-            if f == 'changed_images.json':
-                images_path = os.path.join(root, 'changed_images.json')
-                break
-
-    docker_image = IMAGE_NAME
-    if images_path and os.path.exists(images_path):
-        logging.info("Images file exists")
-        with open(images_path, 'r', encoding='utf-8') as images_fd:
-            images = json.load(images_fd)
-            logging.info("Got images %s", images)
-            if IMAGE_NAME in images:
-                docker_image += ':' + images[IMAGE_NAME]
-    else:
-        logging.info("Images file not found")
-
-    for i in range(10):
-        try:
-            logging.info("Pulling image %s", docker_image)
-            subprocess.check_output(f"docker pull {docker_image}", stderr=subprocess.STDOUT, shell=True)
-            break
-        except Exception as ex:
-            time.sleep(i * 3)
-            logging.info("Got execption pulling docker %s", ex)
-    else:
-        raise Exception(f"Cannot pull dockerhub for image docker pull {docker_image}")
+    docker_image = get_image_with_version(reports_path, IMAGE_NAME)
 
     download_unit_tests(check_name, reports_path, temp_path)
     tests_binary_path = os.path.join(temp_path, "unit_tests_dbms")

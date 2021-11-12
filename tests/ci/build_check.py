@@ -12,6 +12,8 @@ from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from version_helper import get_version_from_repo, update_version_local
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
+from ci_config import build_config_to_string
+from docker_pull_helper import get_images_with_versions
 
 
 def get_build_config(build_check_name, build_number, repo_path):
@@ -92,21 +94,6 @@ def build_clickhouse(packager_cmd, logs_path):
             logging.info("Build failed")
     return build_log_path, retcode == 0
 
-def build_config_to_string(build_config):
-    if build_config["package-type"] == "performance":
-        return "performance"
-
-    return "_".join([
-        build_config['compiler'],
-        build_config['build-type'] if build_config['build-type'] else "relwithdebuginfo",
-        build_config['sanitizer'] if build_config['sanitizer'] else "none",
-        build_config['bundled'],
-        build_config['splitted'],
-        "tidy" if build_config['tidy'] == "enable" else "notidy",
-        "with_coverage" if build_config['with_coverage'] else "without_coverage",
-        build_config['package-type'],
-    ])
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
@@ -130,27 +117,9 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token())
 
-    images_path = os.path.join(os.getenv("IMAGES_PATH", temp_path), 'changed_images.json')
     image_name = get_image_name(build_config)
-    image_version = 'latest'
-    if os.path.exists(images_path):
-        logging.info("Images file exists")
-        with open(images_path, 'r') as images_fd:
-            images = json.load(images_fd)
-            logging.info("Got images %s", images)
-            if image_name in images:
-                image_version = images[image_name]
-
-    for i in range(10):
-        try:
-            logging.info("Pulling image %s:%s", image_name, image_version)
-            subprocess.check_output(f"docker pull {image_name}:{image_version}", stderr=subprocess.STDOUT, shell=True)
-            break
-        except Exception as ex:
-            time.sleep(i * 3)
-            logging.info("Got execption pulling docker %s", ex)
-    else:
-        raise Exception(f"Cannot pull dockerhub for image docker pull {image_name}:{image_version}")
+    docker_images = get_images_with_versions(reports_path=os.getenv("IMAGES_PATH"), [image_name])
+    image_version = docker_images[0].version
 
     version = get_version_from_repo(repo_path)
     version.tweak_update()
