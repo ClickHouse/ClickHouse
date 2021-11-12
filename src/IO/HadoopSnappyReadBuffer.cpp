@@ -48,7 +48,7 @@ inline uint32_t HadoopSnappyDecoder::readLength(const char * in)
     uint32_t b2 = *(reinterpret_cast<const uint8_t *>(in + 1));
     uint32_t b3 = *(reinterpret_cast<const uint8_t *>(in + 2));
     uint32_t b4 = *(reinterpret_cast<const uint8_t *>(in + 3));
-    uint32_t res = ((b1 << 24) + (b2 << 16) + (b3 << 8) + (b4 << 0));
+    uint32_t res = ((b1 << 24) + (b2 << 16) + (b3 << 8) + b4);
     return res;
 }
 
