@@ -15,6 +15,7 @@ from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
 from build_download_helper import download_all_deb_packages
 from upload_result_helper import upload_results
+from docker_pull_helper import get_image_with_version
 
 
 def get_commit(gh, commit_sha):
@@ -124,41 +125,15 @@ if __name__ == "__main__":
             commit.create_status(context=check_name, description='Not found changed stateless tests', state='success')
             sys.exit(0)
 
-    for root, _, files in os.walk(reports_path):
-        for f in files:
-            if f == 'changed_images.json':
-                images_path = os.path.join(root, 'changed_images.json')
-                break
 
     image_name = get_image_name(check_name)
-
-    docker_image = image_name
-    if images_path and os.path.exists(images_path):
-        logging.info("Images file exists")
-        with open(images_path, 'r', encoding='utf-8') as images_fd:
-            images = json.load(images_fd)
-            logging.info("Got images %s", images)
-            if image_name in images:
-                docker_image += ':' + images[image_name]
-    else:
-        logging.info("Images file not found")
-
-    for i in range(10):
-        try:
-            logging.info("Pulling image %s", docker_image)
-            subprocess.check_output(f"docker pull {docker_image}", stderr=subprocess.STDOUT, shell=True)
-            break
-        except Exception as ex:
-            time.sleep(i * 3)
-            logging.info("Got execption pulling docker %s", ex)
-    else:
-        raise Exception(f"Cannot pull dockerhub for image docker pull {docker_image}")
+    docker_image = get_image_with_version(reports_path, image_name)
 
     packages_path = os.path.join(temp_path, "packages")
     if not os.path.exists(packages_path):
         os.makedirs(packages_path)
 
-    download_all_deb_packages(check_name, reports_path, result_path)
+    download_all_deb_packages(check_name, reports_path, packages_path)
 
     server_log_path = os.path.join(temp_path, "server_log")
     if not os.path.exists(server_log_path):

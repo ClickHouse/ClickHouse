@@ -10,6 +10,7 @@ from s3_helper import S3Helper
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
+from docker_pull_helper import get_image_with_version
 
 NAME = "Style Check (actions)"
 
@@ -61,27 +62,7 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token())
 
-    images_path = os.path.join(temp_path, 'changed_images.json')
-    docker_image = 'clickhouse/style-test'
-    if os.path.exists(images_path):
-        logging.info("Images file exists")
-        with open(images_path, 'r') as images_fd:
-            images = json.load(images_fd)
-            logging.info("Got images %s", images)
-            if 'clickhouse/style-test' in images:
-                docker_image += ':' + images['clickhouse/style-test']
-
-    logging.info("Got docker image %s", docker_image)
-    for i in range(10):
-        try:
-            subprocess.check_output(f"docker pull {docker_image}", shell=True)
-            break
-        except Exception as ex:
-            time.sleep(i * 3)
-            logging.info("Got execption pulling docker %s", ex)
-    else:
-        raise Exception(f"Cannot pull dockerhub for image {docker_image}")
-
+    docker_image = get_image_with_version(temp_path, 'clickhouse/style-test')
     s3_helper = S3Helper('https://s3.amazonaws.com')
 
     subprocess.check_output(f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --cap-add=SYS_PTRACE --volume={repo_path}:/ClickHouse --volume={temp_path}:/test_output {docker_image}", shell=True)

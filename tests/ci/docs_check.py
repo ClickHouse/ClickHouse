@@ -2,7 +2,6 @@
 import logging
 import subprocess
 import os
-import time
 import json
 import sys
 from github import Github
@@ -10,6 +9,7 @@ from s3_helper import S3Helper
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
+from docker_pull_helper import get_image_with_version
 
 NAME = "Docs Check (actions)"
 
@@ -41,27 +41,7 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    images_path = os.path.join(temp_path, 'changed_images.json')
-
-    docker_image = 'clickhouse/docs-check'
-    if os.path.exists(images_path):
-        logging.info("Images file exists")
-        with open(images_path, 'r', encoding='utf-8') as images_fd:
-            images = json.load(images_fd)
-            logging.info("Got images %s", images)
-            if 'clickhouse/docs-check' in images:
-                docker_image += ':' + images['clickhouse/docs-check']
-
-    logging.info("Got docker image %s", docker_image)
-    for i in range(10):
-        try:
-            subprocess.check_output(f"docker pull {docker_image}", shell=True)
-            break
-        except Exception as ex:
-            time.sleep(i * 3)
-            logging.info("Got execption pulling docker %s", ex)
-    else:
-        raise Exception(f"Cannot pull dockerhub for image {docker_image}")
+    docker_image = get_image_with_version(temp_path, 'clickhouse/docs-check')
 
     test_output = os.path.join(temp_path, 'docs_check_log')
     if not os.path.exists(test_output):
