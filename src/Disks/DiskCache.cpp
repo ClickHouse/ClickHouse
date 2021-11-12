@@ -371,7 +371,7 @@ DiskCachePolicy::CachePart DiskCacheLRUPolicy::find(const String & key, size_t o
                         if (cq->first > res.offset)
                         {
                             res.size = cq->first - res.offset;
-                            LOG_TRACE(log, "Download less size for key {} ({}+{}) to aviod downloading collision", key, res.offset, res.size);
+                            LOG_TRACE(log, "Download less size for key {} ({}+{}) to avoid downloading collision", key, res.offset, res.size);
                             break;
                         }
 
