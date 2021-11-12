@@ -28,7 +28,7 @@ def get_build_config(build_check_name, build_number):
 
 
 def _can_export_binaries(build_config):
-    if build_config['package-type'] != 'deb':
+    if build_config['package_type'] != 'deb':
         return False
     if build_config['bundled'] != "bundled":
         return False
@@ -36,18 +36,18 @@ def _can_export_binaries(build_config):
         return False
     if build_config['sanitizer'] != '':
         return True
-    if build_config['build-type'] != '':
+    if build_config['build_type'] != '':
         return True
     return False
 
 
 def get_packager_cmd(build_config, packager_path, output_path, build_version, image_version, ccache_path, pr_info):
-    package_type = build_config['package-type']
+    package_type = build_config['package_type']
     comp = build_config['compiler']
     cmd = f"cd {packager_path} && ./packager --output-dir={output_path} --package-type={package_type} --compiler={comp}"
 
-    if build_config['build-type']:
-        cmd += ' --build-type={}'.format(build_config['build-type'])
+    if build_config['build_type']:
+        cmd += ' --build-type={}'.format(build_config['build_type'])
     if build_config['sanitizer']:
         cmd += ' --sanitizer={}'.format(build_config['sanitizer'])
     if build_config['bundled'] == 'unbundled':
@@ -75,7 +75,7 @@ def get_packager_cmd(build_config, packager_path, output_path, build_version, im
 def get_image_name(build_config):
     if build_config['bundled'] != 'bundled':
         return 'clickhouse/unbundled-builder'
-    elif build_config['package-type'] != 'deb':
+    elif build_config['package_type'] != 'deb':
         return 'clickhouse/binary-builder'
     else:
         return 'clickhouse/deb-builder'
