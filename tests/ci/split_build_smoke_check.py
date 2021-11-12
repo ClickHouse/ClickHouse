@@ -44,14 +44,6 @@ def process_result(result_folder, server_log_folder):
         if os.path.exists(path):
             result_logs.append(path)
 
-    if os.path.exists(stderr_log_path):
-        result_logs.append(stderr_log_path)
-
-    if os.path.exists(client_stderr_log_path):
-        result_logs.append(client_stderr_log_path)
-
-    if os.path.exists(run)
-
     return status, description, summary, result_logs
 
 def process_(log_path):
