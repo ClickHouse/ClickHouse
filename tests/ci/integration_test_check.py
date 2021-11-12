@@ -60,22 +60,6 @@ def get_env_for_runner(build_path, repo_path, result_path, work_path):
 
     return my_env
 
-def get_images_with_versions(images_path):
-    if os.path.exists(images_path):
-        result = {}
-        logging.info("Images file exists")
-        with open(images_path, 'r', encoding='utf-8') as images_fd:
-            images = json.load(images_fd)
-            logging.info("Got images %s", images)
-            for required_image in IMAGES:
-                if required_image in images:
-                    result[required_image] = images[required_image]
-                else:
-                    result[required_image] = 'latest'
-        return result
-    else:
-        return {image: 'latest' for image in IMAGES}
-
 def process_results(result_folder):
     test_results = []
     additional_files = []
@@ -143,7 +127,7 @@ if __name__ == "__main__":
 
     json_path = os.path.join(work_path, 'params.json')
     with open(json_path, 'w', encoding='utf-8') as json_params:
-        json_params.write(json.dumps(get_json_params_dict(check_name, pr_info.sha, pr_info.number, images_with_version)))
+        json_params.write(json.dumps(get_json_params_dict(check_name, pr_info.sha, pr_info.number, images_with_versions)))
 
     output_path_log = os.path.join(result_path, "main_script_log.txt")
 
