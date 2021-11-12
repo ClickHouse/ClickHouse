@@ -1003,7 +1003,6 @@ void DiskS3::restoreFileOperations(const RestoreInformation & restore_informatio
                 to_path /= from_path.filename();
 
             metadata_disk->moveDirectory(from_path, to_path);
-            metadata_disk->createDirectory(from_path);
         }
     }
 
