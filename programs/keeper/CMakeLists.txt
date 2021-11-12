@@ -5,7 +5,7 @@ set(CLICKHOUSE_KEEPER_SOURCES
 )
 
 if (OS_LINUX)
-    set (LINK_RESOURCE_LIB INTERFACE "-Wl,${WHOLE_ARCHIVE} $<TARGET_FILE:clickhouse_keeper_configs> -Wl,${NO_WHOLE_ARCHIVE} -lc++")
+    set (LINK_RESOURCE_LIB INTERFACE "-Wl,${WHOLE_ARCHIVE} $<TARGET_FILE:clickhouse_keeper_configs> -Wl,${NO_WHOLE_ARCHIVE} -stdlib=libc++")
 endif ()
 
 set (CLICKHOUSE_KEEPER_LINK

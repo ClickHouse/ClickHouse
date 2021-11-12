@@ -313,7 +313,7 @@ void KeeperDispatcher::shutdown()
 
             if (requests_queue)
             {
-                requests_queue->finish();
+                //requests_queue->finish();
 
                 if (request_thread.joinable())
                     request_thread.join();
