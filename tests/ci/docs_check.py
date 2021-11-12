@@ -10,13 +10,10 @@ from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
+from commit_status_helper import post_commit_status, get_commit
+
 
 NAME = "Docs Check (actions)"
-
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -91,5 +88,4 @@ if __name__ == "__main__":
 
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, lines, additional_files, NAME)
     print("::notice ::Report url: {report_url}")
-    commit = get_commit(gh, pr_info.sha)
-    commit.create_status(context=NAME, description=description, state=status, target_url=report_url)
+    post_commit_status(gh, pr_info.sha, NAME, description, status, report_url)

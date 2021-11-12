@@ -4,7 +4,6 @@ import logging
 import subprocess
 import os
 import json
-import time
 import csv
 from github import Github
 from pr_info import PRInfo
@@ -12,7 +11,7 @@ from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
-
+from commit_status_helper import post_commit_status
 
 NAME = 'Fast test (actions)'
 
@@ -48,10 +47,6 @@ def process_results(result_folder):
 
     return state, description, test_results, additional_files
 
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
 
 
 if __name__ == "__main__":
@@ -135,5 +130,4 @@ if __name__ == "__main__":
 
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [run_log_path] + additional_logs, NAME)
     print("::notice ::Report url: {}".format(report_url))
-    commit = get_commit(gh, pr_info.sha)
-    commit.create_status(context=NAME, description=description, state=state, target_url=report_url)
+    post_commit_status(gh, pr_info.sha, NAME, description, state, report_url)

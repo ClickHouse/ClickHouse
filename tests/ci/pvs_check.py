@@ -12,6 +12,7 @@ from s3_helper import S3Helper
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from upload_result_helper import upload_results
+from commit_status_helper import get_commit
 
 NAME = 'PVS Studio (actions)'
 LICENCE_NAME = 'Free license: ClickHouse, Yandex'
@@ -32,11 +33,6 @@ def _process_txt_report(path):
                 errors.append(':'.join(line.split('\t')[0:2]))
 
     return warnings, errors
-
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

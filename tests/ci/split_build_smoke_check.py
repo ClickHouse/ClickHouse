@@ -15,6 +15,7 @@ from pr_info import PRInfo
 from build_download_helper import download_shared_build
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
+from commit_status_helper import post_commit_status
 
 DOCKER_IMAGE = "clickhouse/split-build-smoke-test"
 DOWNLOAD_RETRIES_COUNT = 5
@@ -51,11 +52,6 @@ def get_run_command(build_path, result_folder, server_log_folder, docker_image):
            f" --volume={result_folder}:/test_output" \
            f" {docker_image} >{result_folder}/{RESULT_LOG_NAME}"
 
-
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -113,5 +109,4 @@ if __name__ == "__main__":
     s3_helper = S3Helper('https://s3.amazonaws.com')
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_logs, CHECK_NAME)
     print(f"::notice ::Report url: {report_url}")
-    commit = get_commit(gh, pr_info.sha)
-    commit.create_status(context=CHECK_NAME, description=description, state=state, target_url=report_url)
+    post_commit_status(gh, pr_info.sha, CHECK_NAME, state, description, report_url)

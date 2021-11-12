@@ -3,7 +3,6 @@ import logging
 import subprocess
 import os
 import csv
-import time
 import json
 from github import Github
 from s3_helper import S3Helper
@@ -11,6 +10,7 @@ from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
+from commit_status_helper import post_commit_status, get_commit
 
 NAME = "Style Check (actions)"
 
@@ -43,11 +43,6 @@ def process_result(result_folder):
             state, description = "error", "Failed to read test_results.tsv"
         return state, description, test_results, additional_files
 
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     repo_path = os.path.join(os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../")))
@@ -69,5 +64,4 @@ if __name__ == "__main__":
     state, description, test_results, additional_files = process_result(temp_path)
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_files, NAME)
     print("::notice ::Report url: {}".format(report_url))
-    commit = get_commit(gh, pr_info.sha)
-    commit.create_status(context=NAME, description=description, state=state, target_url=report_url)
+    post_commit_status(gh, pr_info.sha, NAME, description, state, report_url)
