@@ -187,7 +187,7 @@ struct Range
         auto pos = content_range.find_first_not_of(" \t", 5);
         if (pos == std::string::npos || pos <= 5)
             return false;
-        auto str = content_range.c_str();
+        const auto * str = content_range.c_str();
         char * str_end;
         start = std::strtoull(str + pos, &str_end, 10);
         if (*str_end != '-')
