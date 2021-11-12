@@ -73,8 +73,11 @@ def download_builds(result_path, build_urls, filter_fn):
 
 def download_builds_filter(check_name, reports_path, result_path, filter_fn=lambda _: True):
     build_config = get_build_config_for_check(check_name)
+    print(build_config)
     build_config_str = build_config_to_string(build_config)
+    print(build_config_str)
     urls = get_build_urls(build_config_str, reports_path)
+    print(urls)
 
     if not urls:
         raise Exception("No build URLs found")

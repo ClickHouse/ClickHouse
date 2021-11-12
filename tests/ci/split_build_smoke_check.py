@@ -3,7 +3,6 @@
 import os
 import logging
 import json
-import sys
 import subprocess
 
 from github import Github
@@ -57,8 +56,6 @@ if __name__ == "__main__":
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
     reports_path = os.getenv("REPORTS_PATH", "./reports")
-
-    build_number = int(sys.argv[1])
 
     with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
         event = json.load(event_file)

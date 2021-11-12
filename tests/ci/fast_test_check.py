@@ -128,6 +128,6 @@ if __name__ == "__main__":
     else:
         state, description, test_results, additional_logs = process_results(output_path)
 
-    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [run_log_path] + additional_logs, NAME)
+    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [run_log_path] + additional_logs, NAME, True)
     print("::notice ::Report url: {}".format(report_url))
     post_commit_status(gh, pr_info.sha, NAME, description, state, report_url)

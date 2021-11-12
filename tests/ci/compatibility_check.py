@@ -117,7 +117,7 @@ if __name__ == "__main__":
     def url_filter(url):
         return url.endswith('.deb') and ('clickhouse-common-static_' in url or 'clickhouse-server_' in url)
 
-    download_builds_filter(CHECK_NAME, packages_path, reports_path, url_filter)
+    download_builds_filter(CHECK_NAME, reports_path, packages_path, url_filter)
 
     for f in os.listdir(packages_path):
         if '.deb' in f:

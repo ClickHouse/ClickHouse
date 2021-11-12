@@ -106,6 +106,7 @@ if __name__ == "__main__":
     docker_image = get_image_with_version(reports_path, IMAGE_NAME)
 
     download_unit_tests(check_name, reports_path, temp_path)
+
     tests_binary_path = os.path.join(temp_path, "unit_tests_dbms")
     os.chmod(tests_binary_path, 0o777)
 

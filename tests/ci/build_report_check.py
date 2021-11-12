@@ -41,7 +41,7 @@ def process_report(build_report):
     build_config = build_report['build_config']
     build_result = BuildResult(
         compiler=build_config['compiler'],
-        build_type=build_config['build-type'],
+        build_type=build_config['build_type'],
         sanitizer=build_config['sanitizer'],
         bundled=build_config['bundled'],
         splitted=build_config['splitted'],
