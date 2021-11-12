@@ -117,3 +117,9 @@ def test_dependency_via_dictionary_database(node):
     node.restart_clickhouse()
     for d_name in d_names:
         assert node.query_with_retry("SELECT dictGet({}, 'y', toUInt64(5))".format(d_name)) == "6\n"
+
+    # cleanup 
+    for d_name in d_names:
+        node.query(f"DROP DICTIONARY IF EXISTS {d_name} SYNC")
+    node.query("DROP DATABASE dict_db SYNC")
+    node.restart_clickhouse()
