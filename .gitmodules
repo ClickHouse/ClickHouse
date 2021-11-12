@@ -256,3 +256,7 @@
 [submodule "contrib/sysroot"]
 	path = contrib/sysroot
 	url = https://github.com/ClickHouse-Extras/sysroot.git
+[submodule "contrib/oneTBB"]
+	path = contrib/oneTBB
+	url = https://github.com/zhanglistar/oneTBB.git
+	branch = tbb_v2021.4.0

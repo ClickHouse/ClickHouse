@@ -346,6 +346,10 @@ if (USE_S2_GEOMETRY)
     add_subdirectory(s2geometry-cmake)
 endif()
 
+if (USE_ONETBB)
+    add_subdirectory(oneTBB-cmake)
+endif()
+
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
 # in "contrib/..." as originally planned, so we workaround this by fixing FOLDER properties of all targets manually,

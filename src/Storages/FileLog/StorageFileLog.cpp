@@ -470,7 +470,7 @@ void StorageFileLog::openFilesAndSetPos()
 
 void StorageFileLog::closeFilesAndStoreMeta(size_t start, size_t end)
 {
-    assert(start >= 0);
+    //assert(start >= 0);
     assert(start < end);
     assert(end <= file_infos.file_names.size());
 
@@ -491,7 +491,7 @@ void StorageFileLog::closeFilesAndStoreMeta(size_t start, size_t end)
 
 void StorageFileLog::storeMetas(size_t start, size_t end)
 {
-    assert(start >= 0);
+    //assert(start >= 0);
     assert(start < end);
     assert(end <= file_infos.file_names.size());
 
