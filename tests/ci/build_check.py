@@ -12,11 +12,11 @@ from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from version_helper import get_version_from_repo, update_version_local
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
-from ci_config import build_config_to_string
+from ci_config import build_config_to_string, CI_CONFIG
 from docker_pull_helper import get_image_with_version
 
 
-def get_build_config(build_check_name, build_number, repo_path):
+def get_build_config(build_check_name, build_number):
     if build_check_name == 'ClickHouse build check (actions)':
         build_config_name = 'build_config'
     elif build_check_name == 'ClickHouse special build check (actions)':
@@ -24,10 +24,7 @@ def get_build_config(build_check_name, build_number, repo_path):
     else:
         raise Exception(f"Unknown build check name {build_check_name}")
 
-    ci_config_path = os.path.join(repo_path, "tests/ci/ci_config.json")
-    with open(ci_config_path, 'r') as ci_config:
-        config_dict = json.load(ci_config)
-        return config_dict[build_config_name][build_number]
+    return CI_CONFIG[build_config_name][build_number]
 
 
 def _can_export_binaries(build_config):
@@ -103,7 +100,7 @@ if __name__ == "__main__":
     build_check_name = sys.argv[1]
     build_number = int(sys.argv[2])
 
-    build_config = get_build_config(build_check_name, build_number, repo_path)
+    build_config = get_build_config(build_check_name, build_number)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
