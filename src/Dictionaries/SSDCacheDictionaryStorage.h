@@ -542,7 +542,7 @@ public:
                 file_path,
                 std::to_string(bytes_written));
 
-        #if defined(OS_DARWIN) 
+        #if defined(OS_DARWIN)
         if (::fsync(file.fd) < 0)
             throwFromErrnoWithPath("Cannot fsync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
         #else
