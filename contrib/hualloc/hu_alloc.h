@@ -1,5 +1,8 @@
 #pragma once
 
+/// Author: Andrey Gulin, Yandex.
+/// This code is published to be tested for performance with ClickHouse.
+
 //
 // -profile mimalloc winning workload
 // -speed up SwitchSegment with some hierarchical structure
@@ -10,10 +13,23 @@
 
 #include <atomic>
 
-#include <util/system/yassert.h>
-#include <util/system/defaults.h>
-#include <util/generic/utility.h>
-#include <util/system/yield.h>
+#include <cassert>
+
+#define Y_ASSERT assert
+#define Y_VERIFY assert
+
+#include <cstdint>
+
+#define ui8 uint8_t
+#define ui64 uint64_t
+
+#include <sched.h>
+
+#define SchedYield sched_yield
+
+#include <algorithm>
+
+#define Max std::max
 
 #ifdef _MSC_VER
 #ifndef _CRT_SECURE_NO_WARNINGS
@@ -29,7 +45,6 @@
 #define _win_
 
 #else
-//#include <intrin.h> // somehow failed?
 #include <immintrin.h>
 #include <pthread.h>
 #include <sys/mman.h>

@@ -1,5 +1,7 @@
 #include "hu_alloc.h"
 
+#include <string.h> // memset, memcpy
+
 #ifndef NDEBUG
 #define DBG_FILL_MEMORY
 #endif
@@ -15,48 +17,6 @@ static void *hu_alloc_dbg(size_t _nSize)
 #else
 #define ALLOC_FUNC hu_alloc
 #endif
-
-//////////////////////////////////////////////////////////////////////////
-// hooks
-#if defined(USE_INTELCC) || defined(_darwin_) || defined(_freebsd_) || defined(_STLPORT_VERSION)
-#define OP_THROWNOTHING throw ()
-#define OP_THROWBADALLOC throw (std::bad_alloc)
-#else
-#define OP_THROWNOTHING noexcept
-#define OP_THROWBADALLOC
-#endif
-
-void* operator new(size_t size) OP_THROWBADALLOC {
-    return ALLOC_FUNC(size);
-}
-
-void* operator new(size_t size, const std::nothrow_t&) OP_THROWNOTHING {
-    return ALLOC_FUNC(size);
-}
-
-void operator delete(void* p) OP_THROWNOTHING {
-    hu_free(p);
-}
-
-void operator delete(void* p, const std::nothrow_t&) OP_THROWNOTHING {
-    hu_free(p);
-}
-
-void* operator new[](size_t size) OP_THROWBADALLOC {
-    return ALLOC_FUNC(size);
-}
-
-void* operator new[](size_t size, const std::nothrow_t&) OP_THROWNOTHING {
-    return ALLOC_FUNC(size);
-}
-
-void operator delete[](void* p) OP_THROWNOTHING {
-    hu_free(p);
-}
-
-void operator delete[](void* p, const std::nothrow_t&) OP_THROWNOTHING {
-    hu_free(p);
-}
 
 #ifdef _MSC_VER
 void DisableWarningHuGetSize()

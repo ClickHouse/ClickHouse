@@ -161,10 +161,10 @@ if (((SANITIZE STREQUAL "thread") OR (SANITIZE STREQUAL "address")) AND COMPILER
     message(WARNING "Memory tracking is disabled, due to gcc sanitizers")
 else()
     add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
-    target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io jemalloc)
+    target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io malloc)
 endif()
 
-target_link_libraries (clickhouse_common_io PRIVATE jemalloc)
+target_link_libraries (clickhouse_common_io PRIVATE malloc)
 
 add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
@@ -239,12 +239,12 @@ endif()
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PRIVATE jemalloc libdivide ${DBMS_COMMON_LIBRARIES})
+    target_link_libraries (dbms PRIVATE malloc libdivide ${DBMS_COMMON_LIBRARIES})
     set (all_modules dbms)
 else()
     add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
     target_link_libraries (dbms PUBLIC ${all_modules} ${DBMS_COMMON_LIBRARIES})
-    target_link_libraries (clickhouse_interpreters PRIVATE jemalloc libdivide)
+    target_link_libraries (clickhouse_interpreters PRIVATE malloc libdivide)
     list (APPEND all_modules dbms)
     # force all split libs to be linked
     if (OS_DARWIN)

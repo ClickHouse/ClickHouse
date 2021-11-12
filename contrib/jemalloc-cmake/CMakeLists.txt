@@ -12,8 +12,8 @@ else ()
 endif ()
 
 if (NOT ENABLE_JEMALLOC)
-    add_library(jemalloc INTERFACE)
-    target_compile_definitions(jemalloc INTERFACE USE_JEMALLOC=0)
+    add_library(malloc INTERFACE)
+    target_compile_definitions(malloc INTERFACE USE_JEMALLOC=0)
 
     message (STATUS "Not using jemalloc")
     return()
@@ -143,3 +143,5 @@ target_compile_options(jemalloc PRIVATE -D_GNU_SOURCE)
 set_property(TARGET jemalloc APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS USE_JEMALLOC=1)
 
 message (STATUS "Using jemalloc")
+
+add_library(malloc ALIAS jemalloc)
