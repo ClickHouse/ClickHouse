@@ -4,11 +4,11 @@ import ast
 
 from report import create_test_html_report
 
-def process_logs(s3_client, additional_logs, s3_path_prefix, test_results):
+def process_logs(s3_client, additional_logs, s3_path_prefix, test_results, with_raw_logs):
     proccessed_logs = {}
     # Firstly convert paths of logs from test_results to urls to s3.
     for test_result in test_results:
-        if len(test_result) <= 3:
+        if len(test_result) <= 3 or with_raw_logs:
             continue
 
         # Convert from string repr of list to list.
@@ -38,7 +38,7 @@ def process_logs(s3_client, additional_logs, s3_path_prefix, test_results):
 
 def upload_results(s3_client, pr_number, commit_sha, test_results, additional_files, check_name, with_raw_logs=True):
     s3_path_prefix = f"{pr_number}/{commit_sha}/" + check_name.lower().replace(' ', '_').replace('(', '_').replace(')', '_').replace(',', '_')
-    additional_urls = process_logs(s3_client, additional_files, s3_path_prefix, test_results)
+    additional_urls = process_logs(s3_client, additional_files, s3_path_prefix, test_results, with_raw_logs)
 
     branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
     branch_name = "master"

@@ -50,7 +50,9 @@ if __name__ == "__main__":
     docker_image = get_image_with_version(temp_path, IMAGE_NAME)
 
     build_config = get_build_config_for_check(check_name)
+    print(build_config)
     build_config_str = build_config_to_string(build_config)
+    print(build_config_str)
     urls = get_build_urls(build_config_str, reports_path)
     if not urls:
         raise Exception("No build URLs found")
