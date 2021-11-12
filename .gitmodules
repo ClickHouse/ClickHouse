@@ -258,5 +258,5 @@
 	url = https://github.com/ClickHouse-Extras/sysroot.git
 [submodule "contrib/oneTBB"]
 	path = contrib/oneTBB
-	url = https://github.com/zhanglistar/oneTBB.git
+	url = https://github.com/oneapi-src/oneTBB.git
 	branch = tbb_v2021.4.0
