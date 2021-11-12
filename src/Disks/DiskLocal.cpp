@@ -109,7 +109,7 @@ private:
 class DiskLocalDirectoryIterator final : public IDiskDirectoryIterator
 {
 public:
-    DiskLocalDirectoryIterator() { }
+    DiskLocalDirectoryIterator() = default;
     DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_)
         : dir_path(dir_path_), entry(fs::path(disk_path_) / dir_path_)
     {
