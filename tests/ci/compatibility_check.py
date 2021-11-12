@@ -9,12 +9,12 @@ import subprocess
 import time
 
 from github import Github
-import requests
 
 from report import create_test_html_report
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
+from build_download_helper import download_builds_filter
 
 
 IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
@@ -82,82 +82,6 @@ def process_result(result_folder, server_log_folder):
 
     return status, description, summary, result_logs
 
-def dowload_build_with_progress(url, path):
-    logging.info("Downloading from %s to temp path %s", url, path)
-    for i in range(DOWNLOAD_RETRIES_COUNT):
-        try:
-            with open(path, 'wb') as f:
-                response = requests.get(url, stream=True)
-                response.raise_for_status()
-                total_length = response.headers.get('content-length')
-                if total_length is None or int(total_length) == 0:
-                    logging.info("No content-length, will download file without progress")
-                    f.write(response.content)
-                else:
-                    dl = 0
-                    total_length = int(total_length)
-                    logging.info("Content length is %ld bytes", total_length)
-                    for data in response.iter_content(chunk_size=4096):
-                        dl += len(data)
-                        f.write(data)
-                        if sys.stdout.isatty():
-                            done = int(50 * dl / total_length)
-                            percent = int(100 * float(dl) / total_length)
-                            eq_str = '=' * done
-                            space_str = ' ' * (50 - done)
-                            sys.stdout.write(f"\r[{eq_str}{space_str}] {percent}%")
-                            sys.stdout.flush()
-            break
-        except Exception as ex:
-            sys.stdout.write("\n")
-            time.sleep(3)
-            logging.info("Exception while downloading %s, retry %s", ex, i + 1)
-            if os.path.exists(path):
-                os.remove(path)
-    else:
-        raise Exception(f"Cannot download dataset from {url}, all retries exceeded")
-
-    sys.stdout.write("\n")
-    logging.info("Downloading finished")
-
-
-def download_builds(result_path, build_urls):
-    for url in build_urls:
-        if url.endswith('.deb') and ('clickhouse-common-static_' in url or 'clickhouse-server_' in url):
-            fname = os.path.basename(url)
-            logging.info("Will download %s to %s", fname, result_path)
-            dowload_build_with_progress(url, os.path.join(result_path, fname))
-
-def get_build_config(build_number, repo_path):
-    ci_config_path = os.path.join(repo_path, "tests/ci/ci_config.json")
-    with open(ci_config_path, 'r', encoding='utf-8') as ci_config:
-        config_dict = json.load(ci_config)
-        return config_dict['build_config'][build_number]
-
-def get_build_urls(build_config_str, reports_path):
-    for root, _, files in os.walk(reports_path):
-        for f in files:
-            if build_config_str in f :
-                logging.info("Found build report json %s", f)
-                with open(os.path.join(root, f), 'r', encoding='utf-8') as file_handler:
-                    build_report = json.load(file_handler)
-                    return build_report['build_urls']
-    return []
-
-def build_config_to_string(build_config):
-    if build_config["package-type"] == "performance":
-        return "performance"
-
-    return "_".join([
-        build_config['compiler'],
-        build_config['build-type'] if build_config['build-type'] else "relwithdebuginfo",
-        build_config['sanitizer'] if build_config['sanitizer'] else "none",
-        build_config['bundled'],
-        build_config['splitted'],
-        "tidy" if build_config['tidy'] == "enable" else "notidy",
-        "with_coverage" if build_config['with_coverage'] else "without_coverage",
-        build_config['package-type'],
-    ])
 
 def get_run_commands(build_path, result_folder, server_log_folder, image_centos, image_ubuntu):
     return [
@@ -217,8 +141,6 @@ if __name__ == "__main__":
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
     reports_path = os.getenv("REPORTS_PATH", "./reports")
 
-    build_number = int(sys.argv[1])
-
     with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
         event = json.load(event_file)
 
@@ -258,18 +180,15 @@ if __name__ == "__main__":
         else:
             raise Exception(f"Cannot pull dockerhub for image docker pull {docker_image}")
 
-
-    build_config = get_build_config(build_number, repo_path)
-    build_config_str = build_config_to_string(build_config)
-    urls = get_build_urls(build_config_str, reports_path)
-    if not urls:
-        raise Exception("No build URLs found")
-
     packages_path = os.path.join(temp_path, "packages")
     if not os.path.exists(packages_path):
         os.makedirs(packages_path)
 
-    download_builds(packages_path, urls)
+    def url_filter(url):
+        return url.endswith('.deb') and ('clickhouse-common-static_' in url or 'clickhouse-server_' in url)
+
+    download_builds_filter(CHECK_NAME, packages_path, reports_path, url_filter)
+
     for f in os.listdir(packages_path):
         if '.deb' in f:
             full_path = os.path.join(packages_path, f)

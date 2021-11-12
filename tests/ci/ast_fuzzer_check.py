@@ -12,41 +12,12 @@ from github import Github
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
+from ci_config import build_config_to_string
+from build_download_helper import get_build_config_for_check, get_build_urls
 
 
 DOWNLOAD_RETRIES_COUNT = 5
 IMAGE_NAME = 'clickhouse/fuzzer'
-
-def get_build_urls(build_config_str, reports_path):
-    for root, _, files in os.walk(reports_path):
-        for f in files:
-            if build_config_str in f :
-                logging.info("Found build report json %s", f)
-                with open(os.path.join(root, f), 'r', encoding='utf-8') as file_handler:
-                    build_report = json.load(file_handler)
-                    return build_report['build_urls']
-    return []
-
-def get_build_config(build_number, repo_path):
-    ci_config_path = os.path.join(repo_path, "tests/ci/ci_config.json")
-    with open(ci_config_path, 'r', encoding='utf-8') as ci_config:
-        config_dict = json.load(ci_config)
-        return config_dict['build_config'][build_number]
-
-def build_config_to_string(build_config):
-    if build_config["package-type"] == "performance":
-        return "performance"
-
-    return "_".join([
-        build_config['compiler'],
-        build_config['build-type'] if build_config['build-type'] else "relwithdebuginfo",
-        build_config['sanitizer'] if build_config['sanitizer'] else "none",
-        build_config['bundled'],
-        build_config['splitted'],
-        "tidy" if build_config['tidy'] == "enable" else "notidy",
-        "with_coverage" if build_config['with_coverage'] else "without_coverage",
-        build_config['package-type'],
-    ])
 
 
 def get_run_command(pr_number, sha, download_url, workspace_path, image):
@@ -67,7 +38,6 @@ if __name__ == "__main__":
     reports_path = os.getenv("REPORTS_PATH", "./reports")
 
     check_name = sys.argv[1]
-    build_number = int(sys.argv[2])
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
@@ -101,7 +71,7 @@ if __name__ == "__main__":
     else:
         raise Exception(f"Cannot pull dockerhub for image docker pull {docker_image}")
 
-    build_config = get_build_config(build_number, repo_path)
+    build_config = get_build_config_for_check(check_name)
     build_config_str = build_config_to_string(build_config)
     urls = get_build_urls(build_config_str, reports_path)
     if not urls:
