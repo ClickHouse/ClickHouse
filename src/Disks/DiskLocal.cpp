@@ -12,6 +12,11 @@
 #include <unistd.h>
 
 
+namespace CurrentMetrics
+{
+    extern const Metric DiskSpaceReservedForMerge;
+}
+
 namespace DB
 {
 
@@ -172,7 +177,7 @@ UInt64 DiskLocal::getTotalSpace() const
         fs = getStatVFS((fs::path(disk_path) / "data/").string());
     else
         fs = getStatVFS(disk_path);
-    UInt64 total_size = fs.f_blocks * fs.f_bsize;
+    UInt64 total_size = fs.f_blocks * fs.f_frsize;
     if (total_size < keep_free_space_bytes)
         return 0;
     return total_size - keep_free_space_bytes;
@@ -187,7 +192,7 @@ UInt64 DiskLocal::getAvailableSpace() const
         fs = getStatVFS((fs::path(disk_path) / "data/").string());
     else
         fs = getStatVFS(disk_path);
-    UInt64 total_size = fs.f_bavail * fs.f_bsize;
+    UInt64 total_size = fs.f_bavail * fs.f_frsize;
     if (total_size < keep_free_space_bytes)
         return 0;
     return total_size - keep_free_space_bytes;
