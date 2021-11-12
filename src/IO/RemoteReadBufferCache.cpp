@@ -126,7 +126,7 @@ RemoteReadBufferCacheError RemoteCacheController::waitMoreData(size_t start_offs
             return RemoteReadBufferCacheError::OK;
         }
         else
-            more_data_signal.wait(lock, [this, end_offset_] { return this->download_finished || this->current_offset >= end_offset_ ;});
+            more_data_signal.wait(lock, [this, end_offset_] { return this->download_finished || this->current_offset >= end_offset_; });
     }
     lock.unlock();
     return RemoteReadBufferCacheError::OK;
@@ -436,7 +436,6 @@ void RemoteReadBufferCache::recover_cached_files_meta(
             auto &cell = caches[path];
             cell.cache_controller = cache_cntrl;
             cell.key_iterator = keys.insert(keys.end(), path);
-            
         }
         return;
     }
