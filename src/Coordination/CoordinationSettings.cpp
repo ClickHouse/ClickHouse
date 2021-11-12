@@ -3,6 +3,8 @@
 #include <base/logger_useful.h>
 #include <filesystem>
 #include <Coordination/Defines.h>
+#include <IO/WriteHelpers.h>
+#include <IO/WriteIntText.h>
 
 namespace DB
 {
@@ -49,103 +51,100 @@ KeeperSettings::KeeperSettings()
 
 void KeeperSettings::dump(WriteBufferFromOwnString & buf) const
 {
-    auto write = [&buf](const String & content) { buf.write(content.data(), content.size()); };
-
     auto write_int = [&buf](Int64 value)
     {
-        String str_val = std::to_string(value);
-        buf.write(str_val.data(), str_val.size());
+        writeIntText(value, buf);
         buf.write('\n');
     };
 
     auto write_bool = [&buf](bool value)
     {
         String str_val = value ? "true" : "false";
-        buf.write(str_val.data(), str_val.size());
+        writeText(str_val, buf);
         buf.write('\n');
     };
 
-    write("server_id=");
+    writeText("server_id=", buf);
     write_int(server_id);
 
     if (tcp_port != NOT_EXIST)
     {
-        write("tcp_port=");
+        writeText("tcp_port=", buf);
         write_int(tcp_port);
     }
     if (tcp_port_secure != NOT_EXIST)
     {
-        write("tcp_port_secure=");
+        writeText("tcp_port_secure=", buf);
         write_int(tcp_port_secure);
     }
 
-    write("four_letter_word_white_list=");
-    write(four_letter_word_white_list);
+    writeText("four_letter_word_white_list=", buf);
+    writeText(four_letter_word_white_list, buf);
     buf.write('\n');
 
-    write("log_storage_path=");
-    write(log_storage_path);
+    writeText("log_storage_path=", buf);
+    writeText(log_storage_path, buf);
     buf.write('\n');
 
-    write("snapshot_storage_path=");
-    write(snapshot_storage_path);
+    writeText("snapshot_storage_path=", buf);
+    writeText(snapshot_storage_path, buf);
     buf.write('\n');
 
     /// coordination_settings
 
-    write("max_requests_batch_size=");
+    writeText("max_requests_batch_size=", buf);
     write_int(coordination_settings->max_requests_batch_size);
-    write("session_timeout_ms=");
+    writeText("session_timeout_ms=", buf);
     write_int(UInt64(coordination_settings->session_timeout_ms));
-    write("operation_timeout_ms=");
+    writeText("operation_timeout_ms=", buf);
     write_int(UInt64(coordination_settings->operation_timeout_ms));
-    write("dead_session_check_period_ms=");
+    writeText("dead_session_check_period_ms=", buf);
     write_int(UInt64(coordination_settings->dead_session_check_period_ms));
 
-    write("heart_beat_interval_ms=");
+    writeText("heart_beat_interval_ms=", buf);
     write_int(UInt64(coordination_settings->heart_beat_interval_ms));
-    write("election_timeout_lower_bound_ms=");
+    writeText("election_timeout_lower_bound_ms=", buf);
     write_int(UInt64(coordination_settings->election_timeout_lower_bound_ms));
-    write("election_timeout_upper_bound_ms=");
+    writeText("election_timeout_upper_bound_ms=", buf);
     write_int(UInt64(coordination_settings->election_timeout_upper_bound_ms));
 
-    write("reserved_log_items=");
+    writeText("reserved_log_items=", buf);
     write_int(coordination_settings->reserved_log_items);
-    write("snapshot_distance=");
+    writeText("snapshot_distance=", buf);
     write_int(coordination_settings->snapshot_distance);
 
-    write("auto_forwarding=");
+    writeText("auto_forwarding=", buf);
     write_bool(coordination_settings->auto_forwarding);
-    write("shutdown_timeout=");
+    writeText("shutdown_timeout=", buf);
     write_int(UInt64(coordination_settings->shutdown_timeout));
-    write("startup_timeout=");
+    writeText("startup_timeout=", buf);
     write_int(UInt64(coordination_settings->startup_timeout));
 
-    write("raft_logs_level=");
-    write(coordination_settings->raft_logs_level.toString());
+    writeText("raft_logs_level=", buf);
+    writeText(coordination_settings->raft_logs_level.toString(), buf);
     buf.write('\n');
 
-    write("snapshots_to_keep=");
+    writeText("snapshots_to_keep=", buf);
     write_int(coordination_settings->snapshots_to_keep);
-    write("rotate_log_storage_interval=");
+    writeText("rotate_log_storage_interval=", buf);
     write_int(coordination_settings->rotate_log_storage_interval);
-    write("stale_log_gap=");
+    writeText("stale_log_gap=", buf);
     write_int(coordination_settings->stale_log_gap);
-    write("fresh_log_gap=");
+    writeText("fresh_log_gap=", buf);
     write_int(coordination_settings->fresh_log_gap);
 
-    write("max_requests_batch_size=");
+    writeText("max_requests_batch_size=", buf);
     write_int(coordination_settings->max_requests_batch_size);
-    write("quorum_reads=");
+    writeText("quorum_reads=", buf);
     write_bool(coordination_settings->quorum_reads);
-    write("force_sync=");
+    writeText("force_sync=", buf);
     write_bool(coordination_settings->force_sync);
 
-    write("compress_logs=");
+    writeText("compress_logs=", buf);
     write_bool(coordination_settings->compress_logs);
-    write("compress_snapshots_with_zstd_format=");
+    writeText("compress_snapshots_with_zstd_format=", buf);
     write_bool(coordination_settings->compress_snapshots_with_zstd_format);
-    write("configuration_change_tries_count=");
+    writeText("configuration_change_tries_count=", buf);
     write_int(coordination_settings->configuration_change_tries_count);
 }
 

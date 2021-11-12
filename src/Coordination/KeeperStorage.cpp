@@ -1223,18 +1223,13 @@ void KeeperStorage::clearDeadWatches(int64_t session_id)
 
 void KeeperStorage::dumpWatches(WriteBufferFromOwnString & buf) const
 {
-    auto write_str_set = [&buf](const std::unordered_set<String> & objs)
-    {
-        for (const String & obj : objs)
-        {
-            buf << "\t" << obj << "\n";
-        }
-    };
-
     for (const auto & e : sessions_and_watchers)
     {
         buf << "0x" << getHexUIntLowercase(e.first) << "\n";
-        write_str_set(e.second);
+        for (const String & path : e.second)
+        {
+            buf << "\t" << path << "\n";
+        }
     }
 }
 

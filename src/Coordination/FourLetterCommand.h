@@ -35,8 +35,6 @@ public:
     static inline String toName(Int32 code);
     static inline Int32 toCode(const String & name);
 
-    static void printSet(StringBuffer & buffer, std::unordered_set<String> & set, String && prefix);
-
 protected:
     const KeeperDispatcher & keeper_dispatcher;
 };

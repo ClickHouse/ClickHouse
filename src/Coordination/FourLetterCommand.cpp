@@ -38,16 +38,6 @@ Int32 IFourLetterCommand::toCode(const String & name)
     return __builtin_bswap32(res);
 }
 
-void IFourLetterCommand::printSet(IFourLetterCommand::StringBuffer & buffer, std::unordered_set<String> & set, String && prefix)
-{
-    for (const auto & str : set)
-    {
-        buffer.write(prefix.data(), prefix.size());
-        buffer.write(str.data(), str.size());
-        buffer.write('\n');
-    }
-}
-
 IFourLetterCommand::~IFourLetterCommand() = default;
 
 FourLetterCommandFactory & FourLetterCommandFactory::instance()
@@ -82,8 +72,6 @@ void FourLetterCommandFactory::registerCommand(FourLetterCommandPtr & command)
     {
         throw Exception("Four letter command " + command->name() + " already registered", ErrorCodes::LOGICAL_ERROR);
     }
-    auto * log = &Poco::Logger::get("FourLetterCommandFactory");
-    LOG_INFO(log, "Register four letter command {}, code {}", command->name(), std::to_string(command->code()));
     commands.emplace(command->code(), std::move(command));
 }
 
@@ -230,32 +218,23 @@ String MonitorCommand::run()
     {
         print(ret, "followers", raft_info.getFollowerCount());
         print(ret, "synced_followers", raft_info.getSyncedFollowerCount());
-        /// print(ret, "pending_syncs", 0);
     }
-
-    /// print(ret, "last_proposal_size", -1);
-    /// print(ret, "max_proposal_size", -1);
-    /// print(ret, "min_proposal_size", -1);
 
     return ret.str();
 }
 
 void MonitorCommand::print(IFourLetterCommand::StringBuffer & buf, const String & key, const String & value)
 {
-    const static String prefix = "zk_";
-    const int prefix_len = prefix.size();
-
-    buf.write(prefix.data(), prefix_len);
-    buf.write(key.data(), key.size());
-
-    buf.write('\t');
-    buf.write(value.data(), value.size());
-    buf.write('\n');
+    writeText("zk_", buf);
+    writeText(key, buf);
+    writeText('\t', buf);
+    writeText(value, buf);
+    writeText('\n', buf);
 }
 
 void MonitorCommand::print(IFourLetterCommand::StringBuffer & buf, const String & key, UInt64 value)
 {
-    print(buf, key, std::to_string(value));
+    print(buf, key, toString(value));
 }
 
 String StatResetCommand::run()
@@ -292,15 +271,14 @@ String RestConnStatsCommand::run()
 
 String ServerStatCommand::run()
 {
-    using std::to_string;
     StringBuffer buf;
 
     auto write = [&buf](const String & key, const String & value)
     {
-        buf.write(key.data(), key.size());
-        buf.write(": ", 2);
-        buf.write(value.data(), value.size());
-        buf.write('\n');
+        writeText(key, buf);
+        writeText(": ", buf);
+        writeText(value, buf);
+        writeText('\n', buf);
     };
 
     KeeperStatsPtr stats = keeper_dispatcher.getKeeperStats();
@@ -313,20 +291,19 @@ String ServerStatCommand::run()
     latency << stats->getMinLatency() << "/" << stats->getAvgLatency() << "/" << stats->getMaxLatency() << "\n";
     write("Latency min/avg/max", latency.str());
 
-    write("Received", to_string(stats->getPacketsReceived()));
-    write("Sent ", to_string(stats->getPacketsSent()));
-    write("Connections", to_string(keeper_info.getNumAliveConnections()));
-    write("Outstanding", to_string(keeper_info.getOutstandingRequests()));
-    write("Zxid", to_string(state_machine.getLastProcessedZxid()));
+    write("Received", toString(stats->getPacketsReceived()));
+    write("Sent ", toString(stats->getPacketsSent()));
+    write("Connections", toString(keeper_info.getNumAliveConnections()));
+    write("Outstanding", toString(keeper_info.getOutstandingRequests()));
+    write("Zxid", toString(state_machine.getLastProcessedZxid()));
     write("Mode", keeper_info.getRole());
-    write("Node count", to_string(state_machine.getNodeCount()));
+    write("Node count", toString(state_machine.getNodeCount()));
 
     return buf.str();
 }
 
 String StatCommand::run()
 {
-    using std::to_string;
     StringBuffer buf;
 
     auto write = [&buf](const String & key, const String & value) { buf << key << ": " << value << '\n'; };
@@ -345,13 +322,13 @@ String StatCommand::run()
     latency << stats->getMinLatency() << "/" << stats->getAvgLatency() << "/" << stats->getMaxLatency() << "\n";
     write("Latency min/avg/max", latency.str());
 
-    write("Received", to_string(stats->getPacketsReceived()));
-    write("Sent ", to_string(stats->getPacketsSent()));
-    write("Connections", to_string(keeper_info.getNumAliveConnections()));
-    write("Outstanding", to_string(keeper_info.getOutstandingRequests()));
-    write("Zxid", to_string(state_machine.getLastProcessedZxid()));
+    write("Received", toString(stats->getPacketsReceived()));
+    write("Sent ", toString(stats->getPacketsSent()));
+    write("Connections", toString(keeper_info.getNumAliveConnections()));
+    write("Outstanding", toString(keeper_info.getOutstandingRequests()));
+    write("Zxid", toString(state_machine.getLastProcessedZxid()));
     write("Mode", keeper_info.getRole());
-    write("Node count", to_string(state_machine.getNodeCount()));
+    write("Node count", toString(state_machine.getNodeCount()));
 
     return buf.str();
 }
