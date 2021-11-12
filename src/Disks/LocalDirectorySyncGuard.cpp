@@ -34,10 +34,10 @@ LocalDirectorySyncGuard::~LocalDirectorySyncGuard()
 #if defined(OS_DARWIN)
         if (fcntl(fd, F_FULLFSYNC, 0))
             throwFromErrno("Cannot fcntl(F_FULLFSYNC)", ErrorCodes::CANNOT_FSYNC);
-#endif
+#else
         if (-1 == ::fdatasync(fd))
-            throw Exception("Cannot fsync", ErrorCodes::CANNOT_FSYNC);
-
+            throw Exception("Cannot fdatasync", ErrorCodes::CANNOT_FSYNC);
+#endif
         if (-1 == ::close(fd))
             throw Exception("Cannot close file", ErrorCodes::CANNOT_CLOSE_FILE);
     }
