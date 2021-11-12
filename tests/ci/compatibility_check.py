@@ -14,6 +14,7 @@ from pr_info import PRInfo
 from build_download_helper import download_builds_filter
 from upload_result_helper import upload_results
 from docker_pull_helper import get_images_with_versions
+from commit_status_helper import post_commit_status
 
 IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
 IMAGE_CENTOS = "clickhouse/test-old-centos"
@@ -93,10 +94,6 @@ def get_run_commands(build_path, result_folder, server_log_folder, image_centos,
             f"--volume={server_log_folder}:/var/log/clickhouse-server {image_centos} > {result_folder}/centos:5",
     ]
 
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -152,5 +149,4 @@ if __name__ == "__main__":
     state, description, test_results, additional_logs = process_result(result_path, server_log_path)
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_logs, CHECK_NAME)
     print(f"::notice ::Report url: {report_url}")
-    commit = get_commit(gh, pr_info.sha)
-    commit.create_status(context=CHECK_NAME, description=description, state=state, target_url=report_url)
+    post_commit_status(gh, pr_info.sha, CHECK_NAME, description, state, report_url)

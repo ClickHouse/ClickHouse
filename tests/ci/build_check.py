@@ -13,7 +13,7 @@ from get_robot_token import get_best_robot_token
 from version_helper import get_version_from_repo, update_version_local
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
 from ci_config import build_config_to_string
-from docker_pull_helper import get_images_with_versions
+from docker_pull_helper import get_image_with_version
 
 
 def get_build_config(build_check_name, build_number, repo_path):
@@ -118,8 +118,8 @@ if __name__ == "__main__":
     gh = Github(get_best_robot_token())
 
     image_name = get_image_name(build_config)
-    docker_images = get_images_with_versions(reports_path=os.getenv("IMAGES_PATH"), [image_name])
-    image_version = docker_images[0].version
+    docker_image = get_image_with_version(os.getenv("IMAGES_PATH"), image_name)
+    image_version = docker_image.version
 
     version = get_version_from_repo(repo_path)
     version.tweak_update()

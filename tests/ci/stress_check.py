@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 
-#!/usr/bin/env python3
-
 import csv
 import logging
 import subprocess
 import os
 import json
-import time
 import sys
 
 from github import Github
@@ -18,6 +15,7 @@ from pr_info import PRInfo
 from build_download_helper import download_all_deb_packages
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
+from commit_status_helper import post_commit_status
 
 def get_run_command(build_path, result_folder, server_log_folder, image):
     cmd = "docker run -e S3_URL='https://clickhouse-datasets.s3.amazonaws.com' " + \
@@ -26,11 +24,6 @@ def get_run_command(build_path, result_folder, server_log_folder, image):
           f"--volume={server_log_folder}:/var/log/clickhouse-server {image}"
 
     return cmd
-
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
 
 def process_results(result_folder, server_log_path, run_log_path):
     test_results = []
@@ -121,5 +114,5 @@ if __name__ == "__main__":
     state, description, test_results, additional_logs = process_results(result_path, server_log_path, run_log_path)
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [run_log_path] + additional_logs, check_name)
     print(f"::notice ::Report url: {report_url}")
-    commit = get_commit(gh, pr_info.sha)
-    commit.create_status(context=check_name, description=description, state=state, target_url=report_url)
+
+    post_commit_status(gh, pr_info.sha, check_name, description, state, report_url)

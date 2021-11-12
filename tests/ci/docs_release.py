@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-
-#!/usr/bin/env python3
 import logging
 import subprocess
 import os
-import time
 import json
 import sys
 
@@ -15,14 +12,10 @@ from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from ssh import SSHKey
 from upload_result_helper import upload_results
-from docker_pull_helper import get_chaned_images
+from docker_pull_helper import get_image_with_version
+from commit_status_helper import get_commit
 
 NAME = "Docs Release (actions)"
-
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -47,7 +40,7 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    docker_image = get_chaned_images(temp_path, ['clickhouse/docs-release'])
+    docker_image = get_image_with_version(temp_path, 'clickhouse/docs-release')
 
     test_output = os.path.join(temp_path, 'docs_release_log')
     if not os.path.exists(test_output):

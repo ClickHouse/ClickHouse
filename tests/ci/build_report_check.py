@@ -9,6 +9,7 @@ from report import create_build_html_report
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
+from commit_status_helper import  get_commit
 
 class BuildResult():
     def __init__(self, compiler, build_type, sanitizer, bundled, splitted, status, elapsed_seconds, with_coverage):
@@ -35,11 +36,6 @@ def group_by_artifacts(build_urls):
         else:
             groups['binary'].append(url)
     return groups
-
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
 
 def process_report(build_report):
     build_config = build_report['build_config']

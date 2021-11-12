@@ -4,7 +4,6 @@ import logging
 import subprocess
 import os
 import json
-import time
 import sys
 
 from github import Github
@@ -15,11 +14,9 @@ from pr_info import PRInfo
 from ci_config import build_config_to_string
 from build_download_helper import get_build_config_for_check, get_build_urls
 from docker_pull_helper import get_image_with_version
+from commit_status_helper import post_commit_status
 
-
-DOWNLOAD_RETRIES_COUNT = 5
 IMAGE_NAME = 'clickhouse/fuzzer'
-
 
 def get_run_command(pr_number, sha, download_url, workspace_path, image):
     return f'docker run --network=host --volume={workspace_path}:/workspace ' \
@@ -128,5 +125,4 @@ if __name__ == "__main__":
 
     logging.info("Result: '%s', '%s', '%s'", status, description, report_url)
     print(f"::notice ::Report url: {report_url}")
-    commit = get_commit(gh, pr_info.sha)
-    commit.create_status(context=check_name, description=description, state=status, target_url=report_url)
+    post_commit_status(gh, pr_info.sha, check_name, description, status, report_url)

@@ -18,25 +18,27 @@ class DockerImage:
         return f"{self.name}:{self.version}"
 
 def get_images_with_versions(reports_path, images, pull=True):
+    images_path = None
     for root, _, files in os.walk(reports_path):
         for f in files:
             if f == 'changed_images.json':
                 images_path = os.path.join(root, 'changed_images.json')
                 break
 
-    docker_images = []
-    if images_path and os.path.exists(images_path):
-        for image_name in images:
-            docker_image = DockerImage(image_name)
-            logging.info("Images file exists")
-            with open(images_path, 'r', encoding='utf-8') as images_fd:
-                images = json.load(images_fd)
-                logging.info("Got images %s", images)
-                if image_name in images:
-                    docker_image.version = images[image_name]
-            docker_images.append(docker_image)
+    if images_path is not None and os.path.exists(images_path):
+        logging.info("Images file exists")
+        with open(images_path, 'r', encoding='utf-8') as images_fd:
+            images = json.load(images_fd)
+            logging.info("Got images %s", images)
     else:
-        logging.info("Images file not found")
+        images = {}
+
+    docker_images = []
+    for image_name in images:
+        docker_image = DockerImage(image_name)
+        if image_name in images:
+            docker_image.version = images[image_name]
+        docker_images.append(docker_image)
 
     if pull:
         for docker_image in docker_images:
