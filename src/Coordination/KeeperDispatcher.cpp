@@ -4,9 +4,10 @@
 #include <future>
 #include <chrono>
 #include <Poco/Path.h>
-#include <Poco/File.h>
-#include <Poco/DirectoryIterator.h>
 #include <Common/hex.h>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -18,13 +19,12 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
-using Poco::Path;
-using Poco::File;
-using Poco::DirectoryIterator;
+using Path = fs::path;
+using DirectoryIterator = fs::directory_iterator;
 
 UInt64 getDirSize(Path dir)
 {
-    if (!File(dir).exists())
+    if (!fs::exists(dir))
     {
         return 0;
     }
@@ -35,8 +35,8 @@ UInt64 getDirSize(Path dir)
     UInt64 size{0};
     while (it != end)
     {
-        if (it->isFile())
-            size += it->getSize();
+        if (!it->is_regular_file())
+            size += fs::file_size(*it);
         else
             size += getDirSize(it->path());
         ++it;

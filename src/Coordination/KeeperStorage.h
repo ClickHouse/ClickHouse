@@ -41,7 +41,7 @@ public:
         ChildrenSet children{};
 
         /// object memory size
-        UInt64 size() const
+        UInt64 sizeInBytes() const
         {
             UInt64 child_size{0};
             for (const auto & child : children)

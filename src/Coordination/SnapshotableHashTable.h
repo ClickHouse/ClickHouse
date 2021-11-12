@@ -16,11 +16,11 @@ struct ListNode
 };
 
 template <class V>
-struct HasSizeMethod
+struct CanCalculateSize
 {
 private:
     template <class T>
-    static auto check(int) -> decltype(std::declval<T>().size(), std::true_type());
+        static auto check(int) -> decltype(std::declval<T>().sizeInBytes(), std::true_type());
     template <class T>
     static std::false_type check(...);
 
@@ -82,7 +82,7 @@ private:
                         approximate_data_size -= old_value_size;
                     }
                 }
-                /// inseert
+                /// insert
                 else
                 {
                     approximate_data_size += key_size;
@@ -118,15 +118,15 @@ private:
     }
 
     /// Calculate object memory size.
-    /// @return size(), if T has method size(), otherwise return sizeof(T)
+    /// @return sizeInBytes(), if T has method sizeInBytes, otherwise return sizeof(T)
     template <typename T>
-    inline UInt64 sizeOf(const typename std::enable_if<HasSizeMethod<T>::value, T>::type * obj)
+    inline UInt64 sizeOf(const typename std::enable_if<CanCalculateSize<T>::value, T>::type * obj)
     {
-        return obj->size();
+        return obj->sizeInBytes();
     }
 
     template <typename T>
-    inline UInt64 sizeOf(const typename std::enable_if<!HasSizeMethod<T>::value, T>::type *)
+    inline UInt64 sizeOf(const typename std::enable_if<!CanCalculateSize<T>::value, T>::type *)
     {
         return sizeof(T);
     }
@@ -147,7 +147,7 @@ public:
             ListElem elem{key, value, true};
             auto itr = list.insert(list.end(), elem);
             map.emplace(itr->key, itr);
-            updateDataSize(INSERT, sizeOf<std::string>(&key), sizeOf<V>(&value), 0);
+            updateDataSize(INSERT, key.size(), sizeOf<V>(&value), 0);
             return true;
         }
 
@@ -182,7 +182,7 @@ public:
                 list_itr->value = value;
             }
         }
-        updateDataSize(INSERT_OR_REPLACE, sizeOf<std::string>(&key), sizeOf<V>(&value), old_value_size);
+        updateDataSize(INSERT_OR_REPLACE, key.size(), sizeOf<V>(&value), old_value_size);
     }
 
     bool erase(const std::string & key)
@@ -204,7 +204,7 @@ public:
             list.erase(list_itr);
         }
 
-        updateDataSize(ERASE, sizeOf<std::string>(&key), 0, old_data_size);
+        updateDataSize(ERASE, key.size(), 0, old_data_size);
         return true;
     }
 
@@ -238,7 +238,7 @@ public:
             updater(list_itr->value);
             ret = list_itr;
         }
-        updateDataSize(UPDATE_VALUE, sizeOf<std::string>(&key), sizeOf<V>(&ret->value), old_value_size);
+        updateDataSize(UPDATE_VALUE, key.size(), sizeOf<V>(&ret->value), old_value_size);
         return ret;
     }
 
@@ -265,7 +265,7 @@ public:
         {
             if (!itr->active_in_map)
             {
-                updateDataSize(CLEAR_OUTDATED_NODES, sizeOf<String>(&itr->key), sizeOf<V>(&itr->value), 0);
+                updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size(), sizeOf<V>(&itr->value), 0);
                 itr = list.erase(itr);
             }
             else

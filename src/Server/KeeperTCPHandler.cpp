@@ -529,56 +529,54 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
 
 void KeeperTCPHandler::dumpStats(WriteBufferFromOwnString & buf, bool brief)
 {
-    auto write_str = [&buf](const String & str) { buf.write(str.data(), str.size()); };
-    using std::to_string;
 
-    buf.write(' ');
-    write_str(socket().peerAddress().toString());
-    write_str("(recved=");
-    write_str(to_string(conn_stats->getPacketsReceived()));
-    write_str(",sent=");
-    write_str(to_string(conn_stats->getPacketsSent()));
+    writeText(' ', buf);
+    writeText(socket().peerAddress().toString(), buf);
+    writeText("(recved=", buf);
+    writeIntText(conn_stats->getPacketsReceived(), buf);
+    writeText(",sent=", buf);
+    writeIntText(conn_stats->getPacketsSent(), buf);
     if (!brief)
     {
         if (session_id != 0)
         {
-            write_str(",sid=0x");
-            write_str(getHexUIntLowercase(getSessionId()));
+            writeText(",sid=0x", buf);
+            writeText(getHexUIntLowercase(getSessionId()), buf);
 
-            write_str(",lop=");
+            writeText(",lop=", buf);
             LastOp op;
             {
                 std::lock_guard lock(last_op_mutex);
                 op = last_op.clone();
             }
-            write_str(op.getLastOp());
-            write_str(",est=");
-            write_str(to_string(getEstablished().epochMicroseconds() / 1000));
-            write_str(",to=");
-            write_str(to_string(getSessionTimeout()));
+            writeText(op.getLastOp(), buf);
+            writeText(",est=", buf);
+            writeIntText(getEstablished().epochMicroseconds() / 1000, buf);
+            writeText(",to=", buf);
+            writeIntText(getSessionTimeout(), buf);
             Int64 last_cxid = op.getLastCxid();
             if (last_cxid >= 0)
             {
-                write_str(",lcxid=0x");
-                write_str(getHexUIntLowercase(last_cxid));
+                writeText(",lcxid=0x", buf);
+                writeText(getHexUIntLowercase(last_cxid), buf);
             }
-            write_str(",lzxid=0x");
-            write_str(getHexUIntLowercase(op.getLastZxid()));
-            write_str(",lresp=");
-            write_str(to_string(op.getLastResponseTime()));
+            writeText(",lzxid=0x", buf);
+            writeText(getHexUIntLowercase(op.getLastZxid()), buf);
+            writeText(",lresp=", buf);
+            writeIntText(op.getLastResponseTime(), buf);
 
-            write_str(",llat=");
-            write_str(to_string(conn_stats->getLastLatency()));
-            write_str(",minlat=");
-            write_str(to_string(conn_stats->getMinLatency()));
-            write_str(",avglat=");
-            write_str(to_string(conn_stats->getAvgLatency()));
-            write_str(",maxlat=");
-            write_str(to_string(conn_stats->getMaxLatency()));
+            writeText(",llat=", buf);
+            writeIntText(conn_stats->getLastLatency(), buf);
+            writeText(",minlat=", buf);
+            writeIntText(conn_stats->getMinLatency(), buf);
+            writeText(",avglat=", buf);
+            writeIntText(conn_stats->getAvgLatency(), buf);
+            writeText(",maxlat=", buf);
+            writeIntText(conn_stats->getMaxLatency(), buf);
         }
     }
-    buf.write(')');
-    buf.write('\n');
+    writeText(')', buf);
+    writeText('\n', buf);
 }
 
 void KeeperTCPHandler::resetStats()

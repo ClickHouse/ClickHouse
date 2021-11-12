@@ -52,6 +52,7 @@ struct CoordinationSettings : public BaseSettings<CoordinationSettingsTraits>
 
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
 
+/// encapsulation of keeper settings from keeper_server
 struct KeeperSettings
 {
     static constexpr int NOT_EXIST = -1;
