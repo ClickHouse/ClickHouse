@@ -94,7 +94,6 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event ContextLock;
-    extern const Event CompiledCacheSizeBytes;
 }
 
 namespace CurrentMetrics
@@ -105,14 +104,9 @@ namespace CurrentMetrics
     extern const Metric BackgroundBufferFlushSchedulePoolTask;
     extern const Metric BackgroundDistributedSchedulePoolTask;
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
-
-
-    extern const Metric DelayedInserts;
     extern const Metric BackgroundMergesAndMutationsPoolTask;
-    extern const Metric BackgroundMovePoolTask;
     extern const Metric BackgroundFetchesPoolTask;
     extern const Metric BackgroundCommonPoolTask;
-
 }
 
 namespace DB
@@ -3071,6 +3065,10 @@ ReadSettings Context::getReadSettings() const
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
     res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
     res.priority = settings.read_priority;
+
+    res.http_max_tries = settings.http_max_tries;
+    res.http_retry_initial_backoff_ms = settings.http_retry_initial_backoff_ms;
+    res.http_retry_max_backoff_ms = settings.http_retry_max_backoff_ms;
 
     res.mmap_cache = getMMappedFileCache().get();
 

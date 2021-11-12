@@ -30,6 +30,8 @@
     M(UncompressedCacheWeightLost, "") \
     M(MMappedFileCacheHits, "") \
     M(MMappedFileCacheMisses, "") \
+    M(OpenedFileCacheHits, "") \
+    M(OpenedFileCacheMisses, "") \
     M(AIOWrite, "Number of writes with Linux or FreeBSD AIO interface") \
     M(AIOWriteBytes, "Number of bytes written with Linux or FreeBSD AIO interface") \
     M(AIORead, "Number of reads with Linux or FreeBSD AIO interface") \
@@ -187,8 +189,6 @@
     M(SystemTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in OS kernel space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \
     M(SoftPageFaults, "") \
     M(HardPageFaults, "") \
-    M(VoluntaryContextSwitches, "") \
-    M(InvoluntaryContextSwitches, "") \
     \
     M(OSIOWaitMicroseconds, "Total time a thread spent waiting for a result of IO operation, from the OS point of view. This is real IO that doesn't include page cache.") \
     M(OSCPUWaitMicroseconds, "Total time a thread was ready for execution but waiting to be scheduled by OS, from the OS point of view.") \
