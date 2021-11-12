@@ -20,6 +20,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <filesystem>
+#include <base/logger_useful.h>
 
 namespace fs = std::filesystem;
 
