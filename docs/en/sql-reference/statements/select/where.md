@@ -30,7 +30,3 @@ Result:
 │     18 │
 └────────┘
 ```
-
-**See Also**
-
--   [EXISTS](../../../sql-reference/operators/exists.md) operator
