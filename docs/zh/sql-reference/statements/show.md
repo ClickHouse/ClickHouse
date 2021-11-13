@@ -12,6 +12,8 @@ SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [F
 ```
 返回单个字符串类型的 ‘statement’列，其中只包含了一个值 - 用来创建指定对象的 `CREATE` 语句。
 
+注意你不能使用该语句查询那些实时创建的表，大部分 `system` 库中的表都属于这个范畴，如 `system.users` 。
+使用 `DESCRIBE TABLE` 语句来获取这些表的结构信息。
 
 ## SHOW DATABASES {#show-databases}
 
