@@ -143,7 +143,7 @@ namespace detail
 
         size_t getOffset() const
         {
-            return read_range.begin + bytes_read;
+            return read_range.begin + offset_from_begin_pos;
         }
 
         std::istream * call(Poco::URI uri_, Poco::Net::HTTPResponse & response, const std::string & method_)
@@ -172,19 +172,6 @@ namespace detail
                 request.set("Range", range_header_value);
             }
 
-            /**
-              * Add range header if we have some passed range (for disk web)
-              * or if we want to retry GET request on purpose.
-              */
-            bool with_partial_content = read_range.begin || read_range.end || retry_with_range_header;
-            if (with_partial_content)
-            {
-                if (read_range.end)
-                    request.set("Range", fmt::format("bytes={}-{}", read_range.begin + offset_from_begin_pos, *read_range.end));
-                else
-                    request.set("Range", fmt::format("bytes={}-", read_range.begin + offset_from_begin_pos));
-            }
-
             if (!credentials.getUsername().empty())
                 credentials.authenticate(request);
 
@@ -201,14 +188,6 @@ namespace detail
 
                 istr = receiveResponse(*sess, request, response, true);
                 response.getCookies(cookies);
-
-                if (with_partial_content && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
-                {
-                    /// If we retried some request, throw error from that request.
-                    if (exception)
-                        std::rethrow_exception(exception);
-                    throw Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE, "Cannot read with range: {}", request.get("Range"));
-                }
 
                 content_encoding = response.get("Content-Encoding", "");
                 return istr;
@@ -340,7 +319,7 @@ namespace detail
                 }
             }
 
-            if (!bytes_read && !read_range.end && response.hasContentLength())
+            if (!offset_from_begin_pos && !read_range.end && response.hasContentLength())
                 read_range.end = read_range.begin + response.getContentLength();
 
             try
@@ -374,7 +353,7 @@ namespace detail
             if (next_callback)
                 next_callback(count());
 
-            if (read_range.end && static_cast<size_t>(getOffset()) == read_range.end.value())
+            if (read_range.end && getOffset() == read_range.end.value())
                 return false;
 
             if (impl)
@@ -438,9 +417,9 @@ namespace detail
                 {
                     /**
                      * Retry request unconditionally if nothing has been read yet.
-                     * Otherwise if it is GET method retry with range header starting from bytes_read.
+                     * Otherwise if it is GET method retry with range header.
                      */
-                    bool can_retry_request = !bytes_read || method == Poco::Net::HTTPRequest::HTTP_GET;
+                    bool can_retry_request = !offset_from_begin_pos || method == Poco::Net::HTTPRequest::HTTP_GET;
                     if (!can_retry_request)
                         throw;
 
@@ -471,7 +450,7 @@ namespace detail
 
             internal_buffer = impl->buffer();
             working_buffer = internal_buffer;
-            bytes_read += working_buffer.size();
+            offset_from_begin_pos += working_buffer.size();
             return true;
         }
 
@@ -488,7 +467,7 @@ namespace detail
             if (offset_ < 0)
                 throw Exception("Seek position is out of bounds. Offset: " + std::to_string(offset_), ErrorCodes::SEEK_POSITION_OUT_OF_BOUND);
 
-            auto current_offset = getOffset();
+            off_t current_offset = getOffset();
             if (!working_buffer.empty()
                 && size_t(offset_) >= current_offset - working_buffer.size()
                 && offset_ < current_offset)
@@ -520,6 +499,7 @@ namespace detail
 
             pos = working_buffer.end();
             read_range.begin = offset_;
+            read_range.end = std::nullopt;
             offset_from_begin_pos = 0;
 
             return offset_;
