@@ -22,7 +22,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int FILE_SIZE_UNKNOWN;
+    extern const int UNKNOWN_FILE_SIZE;
 }
 
 ArrowBufferedOutputStream::ArrowBufferedOutputStream(WriteBuffer & out_) : out{out_}, is_open{true}
@@ -65,7 +65,7 @@ arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::GetSize()
         if (buf_with_size)
             file_size = buf_with_size->getTotalSize();
         if (!file_size)
-            throw Exception(ErrorCodes::FILE_SIZE_UNKNOWN, "Cannot find out size of file");
+            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out size of file");
     }
     return arrow::Result<int64_t>(*file_size);
 }
