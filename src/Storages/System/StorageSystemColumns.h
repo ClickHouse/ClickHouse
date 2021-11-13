@@ -26,6 +26,8 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
+    bool supportsShowCreateTable() const override { return false; }
+
 protected:
     StorageSystemColumns(const StorageID & table_id_);
 };

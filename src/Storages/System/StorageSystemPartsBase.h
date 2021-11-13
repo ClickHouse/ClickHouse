@@ -67,6 +67,8 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
+    bool supportsShowCreateTable() const override { return false; }
+
 private:
     bool hasStateColumn(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const;
 

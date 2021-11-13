@@ -30,6 +30,7 @@ public:
         unsigned num_streams) override;
 
     bool hasEvenlyDistributedRead() const override { return true; }
+    bool supportsShowCreateTable() const override { return false; }
 
 private:
     bool multithreaded;

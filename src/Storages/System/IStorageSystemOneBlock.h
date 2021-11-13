@@ -61,6 +61,8 @@ public:
         return Pipe(std::make_shared<SourceFromSingleChunk>(sample_block, std::move(chunk)));
     }
 
+    bool supportsShowCreateTable() const override { return false; }
+
     static NamesAndAliases getNamesAndAliases() { return {}; }
 };
 
