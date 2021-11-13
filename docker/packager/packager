@@ -130,6 +130,7 @@ def parse_env_variables(
     ARM_SUFFIX = "-aarch64"
     FREEBSD_SUFFIX = "-freebsd"
     PPC_SUFFIX = "-ppc64le"
+    RISCV_SUFFIX = "-riscv64"
 
     result = []
     result.append("OUTPUT_DIR=/output")
@@ -140,6 +141,7 @@ def parse_env_variables(
     is_cross_darwin_arm = compiler.endswith(DARWIN_ARM_SUFFIX)
     is_cross_arm = compiler.endswith(ARM_SUFFIX)
     is_cross_ppc = compiler.endswith(PPC_SUFFIX)
+    is_cross_riscv = compiler.endswith(RISCV_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
 
     if is_cross_darwin:
@@ -185,6 +187,11 @@ def parse_env_variables(
         cc = compiler[: -len(PPC_SUFFIX)]
         cmake_flags.append(
             "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-ppc64le.cmake"
+        )
+    elif is_cross_riscv:
+        cc = compiler[: -len(RISCV_SUFFIX)]
+        cmake_flags.append(
+            "-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-riscv64.cmake"
         )
     else:
         cc = compiler
@@ -329,6 +336,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--output-dir", type=dir_name, required=True)
     parser.add_argument("--build-type", choices=("debug", ""), default="")
+<<<<<<< HEAD
 
     parser.add_argument(
         "--compiler",
@@ -352,6 +360,16 @@ if __name__ == "__main__":
     )
 
     parser.add_argument("--shared-libraries", action="store_true")
+=======
+    parser.add_argument("--compiler", choices=("clang-11", "clang-11-darwin", "clang-11-darwin-aarch64", "clang-11-aarch64",
+                                               "clang-12", "clang-12-darwin", "clang-12-darwin-aarch64", "clang-12-aarch64",
+                                               "clang-13", "clang-13-darwin", "clang-13-darwin-aarch64", "clang-13-aarch64",
+                                               "clang-13-ppc64le", "clang-13-riscv64",
+                                               "clang-11-freebsd", "clang-12-freebsd", "clang-13-freebsd", "gcc-11"), default="clang-13")
+    parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
+    parser.add_argument("--unbundled", action="store_true")
+    parser.add_argument("--split-binary", action="store_true")
+>>>>>>> 8bc7bf3d87 (Add Linux RISC-V 64 build to CI)
     parser.add_argument("--clang-tidy", action="store_true")
     parser.add_argument("--cache", choices=("ccache", "distcc", ""), default="")
     parser.add_argument(
