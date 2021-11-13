@@ -159,7 +159,7 @@ def test_profile_events(cluster):
     assert metrics3["S3WriteRequestsCount"] - metrics2["S3WriteRequestsCount"] == minio3["set_requests"] - minio2[
         "set_requests"]
     stat3 = get_query_stat(instance, query3)
-    # Last assert does not work properly with remote_filesystem_read_method=threadpool
+    # With async reads profile events are not updated fully because reads are done in a separate thread.
     #for metric in stat3:
     #    print(metric)
     #    assert stat3[metric] == metrics3[metric] - metrics2[metric]
