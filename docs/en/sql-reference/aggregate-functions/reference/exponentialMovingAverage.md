@@ -25,7 +25,6 @@ Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
 Input table:
 
 ``` text
-
 ┌──temperature─┬─timestamp──┐
 │          95  │         1  │
 │          95  │         2  │
