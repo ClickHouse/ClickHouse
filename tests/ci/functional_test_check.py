@@ -147,19 +147,42 @@ def build_config_to_string(build_config):
         build_config['package-type'],
     ])
 
-def get_run_command(builds_path, result_path, server_log_path, kill_timeout, additional_envs, image):
+def get_run_command(builds_path, result_path, server_log_path, kill_timeout, additional_envs, image, flaky_check, tests_to_run):
     additional_options = ['--hung-check']
     additional_options.append('--print-time')
+
+    if tests_to_run:
+        additional_options += tests_to_run
+
     additional_options_str = '-e ADDITIONAL_OPTIONS="' + ' '.join(additional_options) + '"'
 
     envs = [f'-e MAX_RUN_TIME={int(0.9 * kill_timeout)}', '-e S3_URL="https://clickhouse-datasets.s3.amazonaws.com"']
+
+    if flaky_check:
+        envs += ['-e NUM_TRIES=100', '-e MAX_RUN_TIME=1800']
+
     envs += [f'-e {e}' for e in additional_envs]
+
     env_str = ' '.join(envs)
 
     return f"docker run --volume={builds_path}:/package_folder " \
         f"--volume={result_path}:/test_output --volume={server_log_path}:/var/log/clickhouse-server " \
         f"--cap-add=SYS_PTRACE {env_str} {additional_options_str} {image}"
 
+
+def get_tests_to_run(pr_info):
+    result = set([])
+
+    if pr_info.changed_files is None:
+        return []
+
+    for fpath in pr_info.changed_files:
+        if 'tests/queries/0_stateless/0' in fpath:
+            logging.info('File %s changed and seems like stateless test', fpath)
+            fname = fpath.split('/')[3]
+            fname_without_ext = os.path.splitext(fname)[0]
+            result.add(fname_without_ext + '.')
+    return list(result)
 
 def process_results(result_folder, server_log_path):
     test_results = []
@@ -201,6 +224,7 @@ if __name__ == "__main__":
     check_name = sys.argv[1]
     build_number = int(sys.argv[2])
     kill_timeout = int(sys.argv[3])
+    flaky_check = 'flaky' in check_name.lower()
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
@@ -208,10 +232,15 @@ if __name__ == "__main__":
     with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
         event = json.load(event_file)
 
-    pr_info = PRInfo(event)
-
     gh = Github(get_best_robot_token())
-
+    pr_info = PRInfo(event, need_changed_files=flaky_check)
+    tests_to_run = []
+    if flaky_check:
+        tests_to_run = get_tests_to_run(pr_info)
+        if not tests_to_run:
+            commit = get_commit(gh, pr_info.sha)
+            commit.create_status(context=check_name, description='Not found changed stateless tests', state='success')
+            sys.exit(0)
 
     for root, _, files in os.walk(reports_path):
         for f in files:
@@ -264,7 +293,7 @@ if __name__ == "__main__":
     run_log_path = os.path.join(result_path, "runlog.log")
 
     download_builds(packages_path, urls)
-    run_command = get_run_command(packages_path, result_path, server_log_path, kill_timeout, [], docker_image)
+    run_command = get_run_command(packages_path, result_path, server_log_path, kill_timeout, [], docker_image, flaky_check, tests_to_run)
     logging.info("Going to run func tests: %s", run_command)
 
     with open(run_log_path, 'w', encoding='utf-8') as log:

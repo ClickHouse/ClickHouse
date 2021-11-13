@@ -117,6 +117,9 @@ def build_for_lang(lang, args):
             )
         )
 
+        # Clean to be safe if last build finished abnormally
+        single_page.remove_temporary_files(lang, args)  
+
         raw_config['nav'] = nav.build_docs_nav(lang, args)
 
         cfg = config.load_config(**raw_config)

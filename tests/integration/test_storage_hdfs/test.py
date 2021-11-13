@@ -2,6 +2,7 @@ import os
 
 import pytest
 from helpers.cluster import ClickHouseCluster
+from pyhdfs import HdfsClient
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance('node1', with_hdfs=True)
@@ -100,7 +101,7 @@ def test_bad_hdfs_uri(started_cluster):
             "create table BadStorage1 (id UInt32, name String, weight Float64) ENGINE = HDFS('hads:hgsdfs100500:9000/other_storage', 'TSV')")
     except Exception as ex:
         print(ex)
-        assert "Illegal HDFS URI" in str(ex)
+        assert "Bad hdfs url" in str(ex)
     try:
         node1.query(
             "create table BadStorage2 (id UInt32, name String, weight Float64) ENGINE = HDFS('hdfs://hdfs100500:9000/other_storage', 'TSV')")
@@ -238,11 +239,21 @@ def test_virtual_columns(started_cluster):
 def test_read_files_with_spaces(started_cluster):
     hdfs_api = started_cluster.hdfs_api
 
-    hdfs_api.write_data("/test test test 1.txt", "1\n")
-    hdfs_api.write_data("/test test test 2.txt", "2\n")
-    hdfs_api.write_data("/test test test 3.txt", "3\n")
-    node1.query("create table test (id UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/test*', 'TSV')")
+    fs = HdfsClient(hosts=started_cluster.hdfs_ip)
+    dir = '/test_spaces'
+    exists = fs.exists(dir)
+    if exists:
+        fs.delete(dir, recursive=True)
+    fs.mkdirs(dir)
+
+    hdfs_api.write_data(f"{dir}/test test test 1.txt", "1\n")
+    hdfs_api.write_data(f"{dir}/test test test 2.txt", "2\n")
+    hdfs_api.write_data(f"{dir}/test test test 3.txt", "3\n")
+
+    node1.query(f"create table test (id UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{dir}/test*', 'TSV')")
     assert node1.query("select * from test order by id") == "1\n2\n3\n"
+    fs.delete(dir, recursive=True)
+
 
 
 def test_truncate_table(started_cluster):
