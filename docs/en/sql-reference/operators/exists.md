@@ -2,6 +2,8 @@
 
 The `EXISTS` operator tests how many records are in the result of a subquery. If it is empty, then the operator returns `0`. Otherwise it returns `1`.
 
+`EXISTS` can be used in a [WHERE](../../sql-reference/statements/select/where.md) clause.
+
 !!! warning "Warning"
     References to main query tables and columns are not supported in a subquery.
 
