@@ -425,12 +425,12 @@ Enabled by default.
 
 ## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
 
-Enables or disables parsing enum values as enum ids for TSV input format.
+When enabled, always treat enum values as enum ids for TSV input format. It's recommended to enable this setting if data contains only enum ids to optimize enum parsing.
 
 Possible values:
 
--   0 — Enum values are parsed as values.
--   1 — Enum values are parsed as enum IDs.
+-   0 — Enum values are parsed as values or as enum IDs.
+-   1 — Enum values are parsed only as enum IDs.
 
 Default value: 0.
 
@@ -444,10 +444,39 @@ CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' 
 
 When the `input_format_tsv_enum_as_number` setting is enabled:
 
+Query:
+
 ```sql
 SET input_format_tsv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	1;
+SELECT * FROM table_with_enum_column_for_tsv_insert;
+```
+
+Result:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+```
+
+Query:
+
+```sql
+SET input_format_tsv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
+```
+
+throws an exception.
+
+When the `input_format_tsv_enum_as_number` setting is disabled:
+
+Query:
+
+```sql
+SET input_format_tsv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
 SELECT * FROM table_with_enum_column_for_tsv_insert;
 ```
 
@@ -461,15 +490,6 @@ Result:
 │ 103 │ first  │
 └─────┴────────┘
 ```
-
-When the `input_format_tsv_enum_as_number` setting is disabled, the `INSERT` query:
-
-```sql
-SET input_format_tsv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-```
-
-throws an exception.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
@@ -992,6 +1012,16 @@ Example:
 log_query_views=1
 ```
 
+## log_formatted_queries {#settings-log-formatted-queries}
+
+Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table.
+
+Possible values:
+
+-   0 — Formatted queries are not logged in the system table.
+-   1 — Formatted queries are logged in the system table.
+
+Default value: `0`.
 
 ## log_comment {#settings-log-comment}
 
@@ -1206,6 +1236,9 @@ Default value: `0`.
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
+!!! note "Note"
+    60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
 Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) sends for the server. Only has meaning at server startup.  You can also limit the speed for a particular table with [max_replicated_sends_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth) setting.
@@ -1222,6 +1255,9 @@ Default value: `0`.
 **Usage**
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
+
+!!! note "Note"
+    60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
@@ -1578,12 +1614,12 @@ The character is interpreted as a delimiter in the CSV data. By default, the del
 
 ## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
 
-Enables or disables parsing enum values as enum ids for CSV input format.
+When enabled, always treat enum values as enum ids for CSV input format. It's recommended to enable this setting if data contains only enum ids to optimize enum parsing.
 
 Possible values:
 
--   0 — Enum values are parsed as values.
--   1 — Enum values are parsed as enum IDs.
+-   0 — Enum values are parsed as values or as enum IDs.
+-   1 — Enum values are parsed only as enum IDs.
 
 Default value: 0.
 
@@ -1597,28 +1633,51 @@ CREATE TABLE table_with_enum_column_for_csv_insert (Id Int32,Value Enum('first' 
 
 When the `input_format_csv_enum_as_number` setting is enabled:
 
+Query:
+
 ```sql
 SET input_format_csv_enum_as_number = 1;
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2
+```
+
+Result:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+```
+
+Query:
+
+```sql
+SET input_format_csv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
+```
+
+throws an exception.
+
+When the `input_format_csv_enum_as_number` setting is disabled:
+
+Query:
+
+```sql
+SET input_format_csv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
 SELECT * FROM table_with_enum_column_for_csv_insert;
 ```
 
 Result:
 
 ```text
-┌──Id─┬─Value─────┐
-│ 102 │ second    │
-└─────┴───────────┘
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+┌──Id─┬─Value─┐
+│ 103 │ first │
+└─────┴───────┘
 ```
-
-When the `input_format_csv_enum_as_number` setting is disabled, the `INSERT` query:
-
-```sql
-SET input_format_csv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
-```
-
-throws an exception.
 
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 

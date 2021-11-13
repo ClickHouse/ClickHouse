@@ -922,6 +922,17 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 log_query_threads=1
 ```
 
+## log_formatted_queries {#settings-log-formatted-queries}
+
+Позволяет регистрировать отформатированные запросы в системной таблице [system.query_log](../../operations/system-tables/query_log.md).
+
+Возможные значения:
+
+-   0 — отформатированные запросы не регистрируются в системной таблице.
+-   1 — отформатированные запросы регистрируются в системной таблице.
+
+Значение по умолчанию: `0`.
+
 ## log_comment {#settings-log-comment}
 
 Задаёт значение поля `log_comment` таблицы [system.query_log](../system-tables/query_log.md) и текст комментария в логе сервера.
@@ -1135,6 +1146,9 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
 
+!!! note "Note"
+    60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8). 
+
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
 Ограничивает максимальную скорость обмена данными в сети (в байтах в секунду) для [репликационных](../../engines/table-engines/mergetree-family/replication.md) отправок. Применяется только при запуске сервера. Можно также ограничить скорость для конкретной таблицы с помощью настройки [max_replicated_sends_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth).
@@ -1151,6 +1165,9 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 **Использование**
 
 Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
+
+!!! note "Note"
+    60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8). 
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 

@@ -126,9 +126,25 @@ namespace detail
         /// Delayed exception in case retries with partial content are not satisfiable.
         std::exception_ptr exception;
         bool retry_with_range_header = false;
+        /// In case of redirects, save result uri to use it if we retry the request.
+        std::optional<Poco::URI> saved_uri_redirect;
 
         ReadSettings settings;
         Poco::Logger * log;
+
+        bool withPartialContent() const
+        {
+            /**
+             * Add range header if we have some passed range (for disk web)
+             * or if we want to retry GET request on purpose.
+             */
+            return read_range.begin || read_range.end || retry_with_range_header;
+        }
+
+        size_t getOffset() const
+        {
+            return read_range.begin + bytes_read;
+        }
 
         std::istream * call(Poco::URI uri_, Poco::Net::HTTPResponse & response, const std::string & method_)
         {
@@ -143,8 +159,17 @@ namespace detail
                 request.setChunkedTransferEncoding(true);
 
             for (auto & http_header_entry: http_header_entries)
-            {
                 request.set(std::get<0>(http_header_entry), std::get<1>(http_header_entry));
+
+            if (withPartialContent())
+            {
+                String range_header_value;
+                if (read_range.end)
+                    range_header_value = fmt::format("bytes={}-{}", getOffset(), *read_range.end);
+                else
+                    range_header_value = fmt::format("bytes={}-", getOffset());
+                LOG_TEST(log, "Adding header: Range: {}", range_header_value);
+                request.set("Range", range_header_value);
             }
 
             /**
@@ -195,11 +220,6 @@ namespace detail
                 sess->attachSessionData(e.message());
                 throw;
             }
-        }
-
-        off_t getOffset() const
-        {
-            return read_range.begin + offset_from_begin_pos;
         }
 
         std::optional<size_t> getTotalSize() override
@@ -280,10 +300,14 @@ namespace detail
                 initialize();
         }
 
-        void initialize()
+        /**
+         * Note: In case of error return false if error is not retriable, otherwise throw.
+         */
+        bool initialize()
         {
             Poco::Net::HTTPResponse response;
-            istr = call(uri, response, method);
+
+            istr = call(saved_uri_redirect ? *saved_uri_redirect : uri, response, method);
 
             while (isRedirect(response.getStatus()))
             {
@@ -293,10 +317,32 @@ namespace detail
                 session->updateSession(uri_redirect);
 
                 istr = call(uri_redirect, response, method);
+                saved_uri_redirect = uri_redirect;
             }
 
-            if (!offset_from_begin_pos && !read_range.end && response.hasContentLength())
-                read_range.end = response.getContentLength();
+            if (withPartialContent() && response.getStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_PARTIAL_CONTENT)
+            {
+                /// Having `200 OK` instead of `206 Partial Content` is acceptable in case we retried with range.begin == 0.
+                if (read_range.begin)
+                {
+                    if (!exception)
+                        exception = std::make_exception_ptr(
+                            Exception(ErrorCodes::HTTP_RANGE_NOT_SATISFIABLE,
+                                      "Cannot read with range: [{}, {}]", read_range.begin, read_range.end ? *read_range.end : '-'));
+
+                    return false;
+                }
+                else if (read_range.end)
+                {
+                    /// We could have range.begin == 0 and range.end != 0 in case of DiskWeb and failing to read with partial content
+                    /// will affect only performance, so a warning is enough.
+                    LOG_WARNING(log, "Unable to read with range header: [{}, {}]", read_range.begin, *read_range.end);
+                }
+            }
+
+            if (!bytes_read && !read_range.end && response.hasContentLength())
+                read_range.end = read_range.begin + response.getContentLength();
+
             try
             {
                 impl = std::make_unique<ReadBufferFromIStream>(*istr, buffer_size);
@@ -319,6 +365,8 @@ namespace detail
                 sess->attachSessionData(e.message());
                 throw;
             }
+
+            return true;
         }
 
         bool nextImpl() override
@@ -328,7 +376,6 @@ namespace detail
 
             if (read_range.end && static_cast<size_t>(getOffset()) == read_range.end.value())
                 return false;
-
 
             if (impl)
             {
@@ -357,17 +404,22 @@ namespace detail
             }
 
             bool result = false;
-            bool successful_read = false;
             size_t milliseconds_to_wait = settings.http_retry_initial_backoff_ms;
 
-            /// Default http_max_tries = 1.
             for (size_t i = 0; i < settings.http_max_tries; ++i)
             {
                 try
                 {
                     if (!impl)
                     {
-                        initialize();
+                        /// If error is not retriable -- false is returned and exception is set.
+                        /// Otherwise the error is thrown and retries continue.
+                        bool initialized = initialize();
+                        if (!initialized)
+                        {
+                            assert(exception);
+                            break;
+                        }
 
                         if (use_external_buffer)
                         {
@@ -379,38 +431,39 @@ namespace detail
                     }
 
                     result = impl->next();
-                    successful_read = true;
+                    exception = nullptr;
                     break;
                 }
                 catch (const Poco::Exception & e)
                 {
                     /**
-                     * Retry request unconditionally if nothing has beed read yet.
+                     * Retry request unconditionally if nothing has been read yet.
                      * Otherwise if it is GET method retry with range header starting from bytes_read.
                      */
-                    bool can_retry_request = !offset_from_begin_pos || method == Poco::Net::HTTPRequest::HTTP_GET;
+                    bool can_retry_request = !bytes_read || method == Poco::Net::HTTPRequest::HTTP_GET;
                     if (!can_retry_request)
                         throw;
 
                     LOG_ERROR(log,
-                              "HTTP request to `{}` failed at try {}/{} with bytes read: {}. "
+                              "HTTP request to `{}` failed at try {}/{} with bytes read: {}/{}. "
                               "Error: {}. (Current backoff wait is {}/{} ms)",
-                              uri.toString(), i, settings.http_max_tries, offset_from_begin_pos, e.what(),
+                              uri.toString(), i, settings.http_max_tries,
+                              getOffset(), read_range.end ? toString(*read_range.end) : "unknown",
+                              e.displayText(),
                               milliseconds_to_wait, settings.http_retry_max_backoff_ms);
 
                     retry_with_range_header = true;
                     exception = std::current_exception();
                     impl.reset();
+                    auto http_session = session->getSession();
+                    http_session->reset();
                     sleepForMilliseconds(milliseconds_to_wait);
                 }
-
-                if (successful_read)
-                    break;
 
                 milliseconds_to_wait = std::min(milliseconds_to_wait * 2, settings.http_retry_max_backoff_ms);
             }
 
-            if (!successful_read && exception)
+            if (exception)
                 std::rethrow_exception(exception);
 
             if (!result)
@@ -418,7 +471,7 @@ namespace detail
 
             internal_buffer = impl->buffer();
             working_buffer = internal_buffer;
-            offset_from_begin_pos += working_buffer.size();
+            bytes_read += working_buffer.size();
             return true;
         }
 
@@ -565,7 +618,7 @@ public:
 
     void buildNewSession(const Poco::URI & uri) override
     {
-       session = makePooledHTTPSession(uri, timeouts, per_endpoint_pool_size);
+        session = makePooledHTTPSession(uri, timeouts, per_endpoint_pool_size);
     }
 };
 
