@@ -33,7 +33,7 @@ if (CMAKE_CROSSCOMPILING)
         elseif (ARCH_PPC64LE)
             set (ENABLE_GRPC OFF CACHE INTERNAL "")
             set (ENABLE_SENTRY OFF CACHE INTERNAL "")
-        elseif (ARCH_RISCV64 OFF CACHE INTERNAL "")
+        elseif (ARCH_RISCV64)
             # RISC-V support is preliminary
             set (GLIBC_COMPATIBILITY OFF CACHE INTERNAL "")
             set (ENABLE_LDAP OFF CACHE INTERNAL "")
