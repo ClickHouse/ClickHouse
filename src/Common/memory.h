@@ -94,7 +94,7 @@ inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t
 #else
         if (size)
             CurrentMemoryTracker::free(size);
-#if defined(_GNU_SOURCE) && !defined(USE_HUALLOC)
+#if defined(_GNU_SOURCE)
         /// It's innaccurate resource free for sanitizers. malloc_usable_size() result is greater or equal to allocated size.
         else
             CurrentMemoryTracker::free(malloc_usable_size(ptr));

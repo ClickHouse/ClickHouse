@@ -80,4 +80,9 @@ extern "C" int posix_memalign(void** ptr, size_t align, size_t size) {
 
     return 0;
 }
+
+extern "C" size_t malloc_usable_size(void * ptr) {
+    return hu_getsize(ptr);
+}
+
 #endif
