@@ -403,36 +403,6 @@ void Client::initialize(Poco::Util::Application & self)
 }
 
 
-void Client::prepareForInteractive()
-{
-    clearTerminal();
-    showClientVersion();
-
-    if (delayed_interactive)
-        std::cout << std::endl;
-
-    /// Load Warnings at the beginning of connection
-    if (!config().has("no-warnings"))
-    {
-        try
-        {
-            std::vector<String> messages = loadWarningMessages();
-            if (!messages.empty())
-            {
-                std::cout << "Warnings:" << std::endl;
-                for (const auto & message : messages)
-                    std::cout << " * " << message << std::endl;
-                std::cout << std::endl;
-            }
-        }
-        catch (...)
-        {
-            /// Ignore exception
-        }
-    }
-}
-
-
 int Client::main(const std::vector<std::string> & /*args*/)
 try
 {
@@ -459,11 +429,37 @@ try
 
     processConfig();
 
+    /// Includes delayed_interactive.
+    if (is_interactive)
+    {
+        clearTerminal();
+        showClientVersion();
+    }
+
     connect();
+
+    /// Load Warnings at the beginning of connection
+    if (is_interactive && !config().has("no-warnings"))
+    {
+        try
+        {
+            std::vector<String> messages = loadWarningMessages();
+            if (!messages.empty())
+            {
+                std::cout << "Warnings:" << std::endl;
+                for (const auto & message : messages)
+                    std::cout << " * " << message << std::endl;
+                std::cout << std::endl;
+            }
+        }
+        catch (...)
+        {
+            /// Ignore exception
+        }
+    }
 
     if (is_interactive && !delayed_interactive)
     {
-        prepareForInteractive();
         runInteractive();
     }
     else
@@ -489,10 +485,7 @@ try
         }
 
         if (delayed_interactive)
-        {
-            prepareForInteractive();
             runInteractive();
-        }
     }
 
     return 0;
@@ -566,9 +559,7 @@ void Client::connect()
     if (is_interactive)
     {
         std::cout << "Connected to " << server_name << " server version " << server_version << " revision " << server_revision << "."
-                    << std::endl;
-        if (!delayed_interactive)
-            std::cout << std::endl;
+                    << std::endl << std::endl;
 
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
