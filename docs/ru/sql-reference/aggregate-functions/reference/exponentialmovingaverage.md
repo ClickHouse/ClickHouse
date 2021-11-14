@@ -1,3 +1,7 @@
+---
+toc_priority: 108
+---
+
 ## exponentialMovingAverage {#exponential-moving-average}
 
 Вычисляет экспоненциальное скользящее среднее.
