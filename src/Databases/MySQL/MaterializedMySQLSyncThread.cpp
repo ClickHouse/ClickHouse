@@ -3,26 +3,27 @@
 #if USE_MYSQL
 
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
-#    include <cstdlib>
-#    include <random>
-#    include <Columns/ColumnTuple.h>
-#    include <Columns/ColumnDecimal.h>
-#    include <QueryPipeline/QueryPipelineBuilder.h>
-#    include <Processors/Executors/PullingPipelineExecutor.h>
-#    include <Processors/Executors/CompletedPipelineExecutor.h>
-#    include <Processors/Sources/SourceFromSingleChunk.h>
-#    include <Processors/Transforms/CountingTransform.h>
-#    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
-#    include <Databases/MySQL/MaterializeMetadata.h>
-#    include <Processors/Sources/MySQLSource.h>
-#    include <IO/ReadBufferFromString.h>
-#    include <Interpreters/Context.h>
-#    include <Interpreters/executeQuery.h>
-#    include <Storages/StorageMergeTree.h>
-#    include <Common/quoteString.h>
-#    include <Common/setThreadName.h>
-#    include <base/sleep.h>
-#    include <base/bit_cast.h>
+#include <cstdlib>
+#include <random>
+#include <string_view>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnDecimal.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/CountingTransform.h>
+#include <Databases/MySQL/DatabaseMaterializedMySQL.h>
+#include <Databases/MySQL/MaterializeMetadata.h>
+#include <Processors/Sources/MySQLSource.h>
+#include <IO/ReadBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/executeQuery.h>
+#include <Storages/StorageMergeTree.h>
+#include <Common/quoteString.h>
+#include <Common/setThreadName.h>
+#include <base/sleep.h>
+#include <base/bit_cast.h>
 
 namespace DB
 {
@@ -765,7 +766,7 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
 
 bool MaterializedMySQLSyncThread::isMySQLSyncThread()
 {
-    return getThreadName() == MYSQL_BACKGROUND_THREAD_NAME;
+    return getThreadName() == std::string_view(MYSQL_BACKGROUND_THREAD_NAME);
 }
 
 void MaterializedMySQLSyncThread::setSynchronizationThreadException(const std::exception_ptr & exception)
