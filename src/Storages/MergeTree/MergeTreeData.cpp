@@ -3595,6 +3595,9 @@ RestoreDataTasks MergeTreeData::restoreDataPartsFromBackup(const BackupPtr & bac
         if (!partition_ids.empty() && !partition_ids.contains(part_info->partition_id))
             continue;
 
+        if (getActiveContainingPart(*part_info))
+            continue; /// We already have this part.
+
         UInt64 total_size_of_part = 0;
         Strings filenames = backup->listFiles(data_path_in_backup + part_name + "/", "");
         for (const String & filename : filenames)

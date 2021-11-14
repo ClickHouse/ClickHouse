@@ -10,7 +10,7 @@ def create_and_fill_table(engine="MergeTree"):
         engine = "MergeTree ORDER BY y PARTITION BY x%10"
     instance.query("CREATE DATABASE test")
     instance.query(f"CREATE TABLE test.table(x UInt32, y String) ENGINE={engine}")
-    instance.query("INSERT INTO test.table SELECT number, toString(number) FROM numbers(100)")
+    instance.query("INSERT INTO test.table SELECT number, toString(number) FROM numbers(10)")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -27,7 +27,8 @@ def cleanup_after_test():
     try:
         yield
     finally:
-        instance.query("DROP DATABASE IF EXISTS test")
+        pass
+        #instance.query("DROP DATABASE IF EXISTS test")
 
 
 backup_id_counter = 0
@@ -35,6 +36,31 @@ def new_backup_name():
     global backup_id_counter
     backup_id_counter += 1
     return f"Disk('backups', '{backup_id_counter}/')"
+
+import logging
+
+def test_xxx():
+    backup_name = new_backup_name()
+    create_and_fill_table(engine='TinyLog')
+
+    instance.query(f"BACKUP TABLE test.table TO {backup_name}")
+    #assert instance.query("SELECT count(), sum(x) FROM test.table") == "10\t495\n"
+
+    instance.query(f"RESTORE TABLE test.table INTO test.table2 FROM {backup_name}")
+    instance.query("INSERT INTO test.table2 SELECT number, toString(number) FROM numbers(10, 10)")
+    backup_name2 = new_backup_name()
+    instance.query(f"BACKUP TABLE test.table2 TO {backup_name2}")
+    #logging.info(instance.query("SELECT count(), sum(x) FROM test.table2"))
+    logging.info(instance.query("SELECT 'a', x FROM test.table2"))
+
+    instance.query("INSERT INTO test.table SELECT number, toString(number) FROM numbers(20, 10)")
+
+    logging.info(instance.query("SELECT 'b', x FROM test.table"))
+    instance.query(f"RESTORE TABLE test.table2 INTO test.table FROM {backup_name2}")
+
+    #logging.info(instance.query("SELECT count(), sum(x) FROM test.table"))
+    logging.info(instance.query("SELECT 'c', x FROM test.table"))
+    assert False
 
 
 @pytest.mark.parametrize("engine", ["MergeTree", "Log", "TinyLog", "StripeLog"])

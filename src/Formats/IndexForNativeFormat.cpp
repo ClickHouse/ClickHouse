@@ -1,6 +1,7 @@
 #include <Formats/IndexForNativeFormat.h>
 #include <IO/ReadHelpers.h>
 
+#include <base/logger_useful.h>
 
 namespace DB
 {
@@ -35,6 +36,7 @@ void IndexOfBlockForNativeFormat::write(WriteBuffer & ostr) const
         writeBinary(column.name, ostr);
         writeBinary(column.type, ostr);
         writeBinary(column.location.offset_in_compressed_file, ostr);
+        LOG_INFO(&Poco::Logger::get("!!!"), "offset_in_compressed_file[{}]={}", i, column.location.offset_in_compressed_file);
         writeBinary(column.location.offset_in_decompressed_block, ostr);
     }
 }
@@ -60,6 +62,18 @@ IndexOfBlockForNativeFormat IndexOfBlockForNativeFormat::extractIndexForColumns(
     res.num_columns = res.columns.size();
     res.num_rows = num_rows;
     return res;
+}
+
+
+size_t IndexOfBlockForNativeFormat::getMinOffsetInCompressedFile() const
+{
+    if (columns.empty())
+        return 0;
+    size_t offset = std::numeric_limits<size_t>::max();
+    for (const auto & column : columns)
+        if (offset > column.location.offset_in_compressed_file)
+            offset = column.location.offset_in_compressed_file;
+    return offset;
 }
 
 
