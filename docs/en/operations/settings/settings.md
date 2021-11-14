@@ -4051,11 +4051,11 @@ Default value: `0`.
 
 ## format_capn_proto_enum_comparising_mode {#format-capn-proto-enum-comparising-mode}
 
-Determines how to map ClickHouse Enum and CapnProto Enum from schema.
+Determines how to map ClickHouse `Enum` data type and CapnProto `Enum` data type from schema.
 
 Possible values:
 
--   `'by_values'` — Values in Enums should be the same, names can be different.
+-   `'by_values'` — Values in enums should be the same, names can be different.
 -   `'by_names'` — Names in enums should be the same, values can be different.
 -   `'by_name_case_insensitive'` — Names in enums should be the same case-insensitive, values can be different.
 
