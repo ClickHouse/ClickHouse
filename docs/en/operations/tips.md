@@ -69,6 +69,8 @@ Regardless of RAID use, always use replication for data security.
 Enable NCQ with a long queue. For HDD, choose the CFQ scheduler, and for SSD, choose noop. Don’t reduce the ‘readahead’ setting.
 For HDD, enable the write cache.
 
+Make sure that [fstrim](https://en.wikipedia.org/wiki/Trim_(computing)) is enaled for NVME and SSD disks in your OS (usually it's implemented using a cronjob or systemd service).
+
 ## File System {#file-system}
 
 Ext4 is the most reliable option. Set the mount options `noatime`.
