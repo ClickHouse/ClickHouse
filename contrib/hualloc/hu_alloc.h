@@ -1155,6 +1155,10 @@ static void *hu_alloc(yint sz)
 
 static void hu_free(void *p)
 {
+    if (p == 0) {
+        return;
+    }
+
     Y_ASSERT(AllMemoryPtr != 0);
     ui64 offset = ((char*)p) - AllMemoryPtr;
     if (offset < SEGMENT_COUNT * SEGMENT_SIZE) {
@@ -1202,9 +1206,6 @@ static void hu_free(void *p)
             abort(); // memory corruption
         }
     } else {
-        if (p == 0) {
-            return;
-        }
         GAFree(p);
     }
 }
