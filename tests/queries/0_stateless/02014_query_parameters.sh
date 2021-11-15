@@ -15,6 +15,6 @@ ${CLICKHOUSE_CLIENT} --param_db="test_db" --param_tbl="test_t" --query "OPTIMIZE
 ${CLICKHOUSE_CLIENT} --param_db="test_db" --param_tbl="test_t" --query "ALTER TABLE {db:Identifier}.{tbl:Identifier} RENAME COLUMN col1 to col2";
 ${CLICKHOUSE_CLIENT} --param_db="test_db" --param_tbl="test_t" --query "EXISTS TABLE {db:Identifier}.{tbl:Identifier}";
 ${CLICKHOUSE_CLIENT} --param_db="test_db" --param_tbl="test_t" --query "INSERT INTO {db:Identifier}.{tbl:Identifier} VALUES (3,4)";
-${CLICKHOUSE_CLIENT} --param_db="test_db" --param_tbl="test_t" --query "SELECT col2 FROM {db:Identifier}.{tbl:Identifier}";
+${CLICKHOUSE_CLIENT} --param_db="test_db" --param_tbl="test_t" --query "SELECT col2 FROM {db:Identifier}.{tbl:Identifier} ORDER BY col2 DESC";
 ${CLICKHOUSE_CLIENT} --param_db="test_db" --param_tbl="test_t" --query "DROP TABLE {db:Identifier}.{tbl:Identifier}";
 ${CLICKHOUSE_CLIENT} --param_db="test_db" --param_tbl="test_t" --query "DROP DATABASE {db:Identifier}";
