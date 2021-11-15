@@ -380,6 +380,14 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
         min_log_id = last_commited_log_index;
         max_log_id = last_commited_log_index == 0 ? 0 : last_commited_log_index - 1;
     }
+    else if (last_commited_log_index != 0 && max_log_id < last_commited_log_index - 1) /// If we have more fresh snapshot than our logs
+    {
+        LOG_WARNING(log, "Our most fresh log_id {} is smaller than stored data in snapshot {}. It can indicate data loss. Removing outdated logs.", max_log_id, last_commited_log_index - 1);
+
+        removeAllLogs();
+        min_log_id = last_commited_log_index;
+        max_log_id = last_commited_log_index - 1;
+    }
     else if (last_log_is_not_complete) /// if it's complete just start new one
     {
         assert(last_log_read_result != std::nullopt);

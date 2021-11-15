@@ -1,6 +1,6 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 
-#include <Access/AccessRightsElement.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
@@ -80,7 +80,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (table->isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
-    auto alter_lock = table->lockForAlter(getContext()->getSettingsRef().lock_acquire_timeout);
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
@@ -160,6 +159,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (!alter_commands.empty())
     {
+        auto alter_lock = table->lockForAlter(getContext()->getSettingsRef().lock_acquire_timeout);
         StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
         alter_commands.validate(metadata, getContext());
         alter_commands.prepare(metadata);

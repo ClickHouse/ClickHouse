@@ -33,11 +33,6 @@ namespace ProfileEvents
     extern const Event ExternalAggregationUncompressedBytes;
 }
 
-namespace CurrentMetrics
-{
-    extern const Metric QueryThread;
-}
-
 namespace DB
 {
 

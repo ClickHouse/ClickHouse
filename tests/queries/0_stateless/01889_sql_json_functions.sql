@@ -11,6 +11,7 @@ SELECT JSON_VALUE('{"hello":["world","world2"]}', '$.hello');
 SELECT JSON_VALUE('{"hello":{"world":"!"}}', '$.hello');
 SELECT JSON_VALUE('{hello:world}', '$.hello'); -- invalid json => default value (empty string)
 SELECT JSON_VALUE('', '$.hello');
+SELECT JSON_VALUE('{"foo foo":"bar"}', '$."foo foo"');
 
 SELECT '--JSON_QUERY--';
 SELECT JSON_QUERY('{"hello":1}', '$');
