@@ -10,6 +10,7 @@ import time
 import helpers.client
 import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, get_instances_dir
+from helpers.network import PartitionManager
 
 MINIO_INTERNAL_PORT = 9001
 
@@ -162,6 +163,13 @@ def test_partition_by(started_cluster):
     assert "1,2,3\n" == get_s3_file_content(started_cluster, bucket, "test_3.csv")
     assert "3,2,1\n" == get_s3_file_content(started_cluster, bucket, "test_1.csv")
     assert "78,43,45\n" == get_s3_file_content(started_cluster, bucket, "test_45.csv")
+
+    filename = "test2_{_partition_id}.csv"
+    instance.query(f"create table p ({table_format}) engine=S3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}', 'CSV') partition by column3")
+    instance.query(f"insert into p values {values}")
+    assert "1,2,3\n" == get_s3_file_content(started_cluster, bucket, "test2_3.csv")
+    assert "3,2,1\n" == get_s3_file_content(started_cluster, bucket, "test2_1.csv")
+    assert "78,43,45\n" == get_s3_file_content(started_cluster, bucket, "test2_45.csv")
 
 
 def test_partition_by_string_column(started_cluster):
@@ -750,3 +758,40 @@ def test_predefined_connection_configuration(started_cluster):
 
     result = instance.query("SELECT * FROM s3(s3_conf1, format='CSV', structure='id UInt32')")
     assert result == instance.query("SELECT number FROM numbers(10)")
+
+result = ""
+def test_url_reconnect_in_the_middle(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+    table_format = "id String, data String"
+    filename = "test_url_reconnect_{}.tsv".format(random.randint(0, 1000))
+
+    instance.query(f"""insert into table function
+                   s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}', 'TSV', '{table_format}')
+                   select number, randomPrintableASCII(number % 1000) from numbers(1000000)""")
+
+    with PartitionManager() as pm:
+        pm_rule_reject = {'probability': 0.02, 'destination': instance.ip_address, 'source_port': started_cluster.minio_port, 'action': 'REJECT --reject-with tcp-reset'}
+        pm_rule_drop_all = {'destination': instance.ip_address, 'source_port': started_cluster.minio_port, 'action': 'DROP'}
+        pm._add_rule(pm_rule_reject)
+
+        def select():
+            global result
+            result = instance.query(
+                f"""select sum(cityHash64(x)) from (select toUInt64(id) + sleep(0.1) as x from
+                url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{filename}', 'TSV', '{table_format}')
+                settings http_max_tries = 10, http_retry_max_backoff_ms=2000, http_send_timeout=1, http_receive_timeout=1)""")
+            assert(int(result), 3914219105369203805)
+
+        thread = threading.Thread(target=select)
+        thread.start()
+        time.sleep(4)
+        pm._add_rule(pm_rule_drop_all)
+
+        time.sleep(2)
+        pm._delete_rule(pm_rule_drop_all)
+        pm._delete_rule(pm_rule_reject)
+
+        thread.join()
+
+        assert(int(result), 3914219105369203805)

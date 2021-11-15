@@ -37,5 +37,4 @@ DROP TABLE test_table_default;
 DROP DICTIONARY test_dictionary;
 DROP TABLE test_table;
 
-DROP DATABASE 02097_db;
-
+DROP DATABASE IF EXISTS 02097_db;
