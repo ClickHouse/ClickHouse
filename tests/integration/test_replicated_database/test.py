@@ -8,6 +8,8 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
 from helpers.network import PartitionManager
 
+test_recover_staled_replica_run = 1
+
 cluster = ClickHouseCluster(__file__)
 
 main_node = cluster.add_instance('main_node', main_configs=['configs/config.xml'], user_configs=['configs/settings.xml'], with_zookeeper=True, stay_alive=True, macros={"shard": 1, "replica": 1})
@@ -36,6 +38,7 @@ def started_cluster():
 
 def test_create_replicated_table(started_cluster):
     main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');")
+    dummy_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');")
     assert "Explicit zookeeper_path and replica_name are specified" in \
            main_node.query_and_get_error("CREATE TABLE testdb.replicated_table (d Date, k UInt64, i32 Int32) "
                                          "ENGINE=ReplicatedMergeTree('/test/tmp', 'r') ORDER BY k PARTITION BY toYYYYMM(d);")
@@ -57,10 +60,12 @@ def test_create_replicated_table(started_cluster):
     # assert without replacing uuid
     assert main_node.query("show create testdb.replicated_table") == dummy_node.query("show create testdb.replicated_table")
     main_node.query("DROP DATABASE testdb SYNC")
+    dummy_node.query("DROP DATABASE testdb SYNC")
 
 @pytest.mark.parametrize("engine", ['MergeTree', 'ReplicatedMergeTree'])
 def test_simple_alter_table(started_cluster, engine):
     main_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica1');")
+    dummy_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');")
     # test_simple_alter_table
     name  = "testdb.alter_test_{}".format(engine)
     main_node.query("CREATE TABLE {} "
@@ -102,6 +107,8 @@ def test_simple_alter_table(started_cluster, engine):
 
     assert_create_query([main_node, dummy_node, competing_node], name, expected)
     main_node.query("DROP DATABASE testdb SYNC")
+    dummy_node.query("DROP DATABASE testdb SYNC")
+    competing_node.query("DROP DATABASE testdb SYNC")
 
 def get_table_uuid(database, name):
     return main_node.query(f"SELECT uuid FROM system.tables WHERE database = '{database}' and name = '{name}'").strip()
@@ -224,7 +231,7 @@ def test_alters_from_different_replicas(started_cluster):
     dummy_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica2');")
 
     # test_alters_from_different_replicas
-    competing_node.query("CREATE DATABASE IF NOT EXISTS testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica3');")
+    competing_node.query("CREATE DATABASE testdb ENGINE = Replicated('/clickhouse/databases/test1', 'shard1', 'replica3');")
 
     main_node.query("CREATE TABLE testdb.concurrent_test "
                     "(CounterID UInt32, StartDate Date, UserID UInt32, VisitID UInt32, NestedColumn Nested(A UInt8, S String), ToDrop UInt32) "
@@ -258,7 +265,7 @@ def test_alters_from_different_replicas(started_cluster):
     assert_create_query([main_node, competing_node], "testdb.concurrent_test", expected)
 
     # test_create_replica_after_delay
-    main_node.query("DROP TABLE testdb.concurrent_test")
+    main_node.query("DROP TABLE testdb.concurrent_test SYNC")
     main_node.query("CREATE TABLE testdb.concurrent_test "
                     "(CounterID UInt32, StartDate Date, UserID UInt32, VisitID UInt32, NestedColumn Nested(A UInt8, S String), ToDrop UInt32) "
                     "ENGINE = ReplicatedMergeTree ORDER BY CounterID;")
@@ -320,6 +327,9 @@ def test_alters_from_different_replicas(started_cluster):
     assert_eq_with_retry(dummy_node, "SELECT CounterID, StartDate, UserID FROM testdb.dist ORDER BY CounterID", expected)
     main_node.query("DROP DATABASE testdb SYNC")
     dummy_node.query("DROP DATABASE testdb SYNC")
+    competing_node.query("DROP DATABASE testdb SYNC")
+    snapshotting_node.query("DROP DATABASE testdb SYNC")
+    snapshot_recovering_node.query("DROP DATABASE testdb SYNC")
 
 def test_recover_staled_replica(started_cluster):
     main_node.query("CREATE DATABASE recover ENGINE = Replicated('/clickhouse/databases/recover', 'shard1', 'replica1');")
@@ -391,11 +401,12 @@ def test_recover_staled_replica(started_cluster):
         assert dummy_node.query("SELECT (*,).1 FROM recover.{}".format(table)) == "42\n"
     for table in ['m1', 'mt1']:
         assert dummy_node.query("SELECT count() FROM recover.{}".format(table)) == "0\n"
-
-    assert dummy_node.query("SELECT count() FROM system.tables WHERE database='recover_broken_tables'") == "2\n"
-    table = dummy_node.query("SHOW TABLES FROM recover_broken_tables LIKE 'mt1_29_%'").strip()
+    global test_recover_staled_replica_run
+    assert dummy_node.query("SELECT count() FROM system.tables WHERE database='recover_broken_tables'") == f"{2*test_recover_staled_replica_run}\n"
+    test_recover_staled_replica_run += 1
+    table = dummy_node.query("SHOW TABLES FROM recover_broken_tables LIKE 'mt1_29_%' LIMIT 1").strip()
     assert dummy_node.query("SELECT (*,).1 FROM recover_broken_tables.{}".format(table)) == "42\n"
-    table = dummy_node.query("SHOW TABLES FROM recover_broken_tables LIKE 'rmt5_29_%'").strip()
+    table = dummy_node.query("SHOW TABLES FROM recover_broken_tables LIKE 'rmt5_29_%' LIMIT 1").strip()
     assert dummy_node.query("SELECT (*,).1 FROM recover_broken_tables.{}".format(table)) == "42\n"
 
     expected = "Cleaned 6 outdated objects: dropped 1 dictionaries and 3 tables, moved 2 tables"
