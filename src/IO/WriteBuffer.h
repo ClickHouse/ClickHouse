@@ -109,8 +109,8 @@ public:
 
         /// finalize() is often called from destructors.
         MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-        finalizeImpl();
         finalized = true;
+        finalizeImpl();
     }
 
 protected:
