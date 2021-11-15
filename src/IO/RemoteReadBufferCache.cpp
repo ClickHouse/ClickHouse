@@ -472,7 +472,7 @@ std::tuple<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCacheError> R
     const RemoteFileMeta &remote_file_meta,
     std::shared_ptr<ReadBuffer> & readbuffer)
 {
-    // If something is wrong on startup, rollback to read from the orignal ReadBuffer
+    // If something is wrong on startup, rollback to read from the original ReadBuffer
     if (!hasInitialized())
     {
         LOG_ERROR(log, "RemoteReadBufferCache has not initialized");
