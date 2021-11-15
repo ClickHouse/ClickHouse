@@ -1661,7 +1661,9 @@ void ClusterCopier::dropAndCreateLocalTable(const ASTPtr & create_ast)
     const auto & create = create_ast->as<ASTCreateQuery &>();
     dropLocalTableIfExists({create.getDatabase(), create.getTable()});
 
-    InterpreterCreateQuery interpreter(create_ast, getContext());
+    auto create_context = Context::createCopy(getContext());
+
+    InterpreterCreateQuery interpreter(create_ast, create_context);
     interpreter.execute();
 }
 
@@ -1672,7 +1674,9 @@ void ClusterCopier::dropLocalTableIfExists(const DatabaseAndTableName & table_na
     drop_ast->setDatabase(table_name.first);
     drop_ast->setTable(table_name.second);
 
-    InterpreterDropQuery interpreter(drop_ast, getContext());
+    auto drop_context = Context::createCopy(getContext());
+
+    InterpreterDropQuery interpreter(drop_ast, drop_context);
     interpreter.execute();
 }
 
