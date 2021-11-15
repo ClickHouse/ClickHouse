@@ -64,7 +64,7 @@ The built-in client is [utils/grpc-client/clickhouse-grpc-client.py](https://git
 
 Arguments:
 
--   `--help` – Show this help message and exit
+-   `--help` – Show this help message and exit.
 -   `--host HOST, -h HOST` – The server name, ‘localhost’ by default. You can use either the name or the IPv4 or IPv6 address.
 -   `--port PORT` – The port to connect to. This port should be enabled on the ClickHouse server (see grpc_port in the config).
 -   `--user USER_NAME, -u USER_NAME` – The username. Default value: ‘default’.
@@ -72,7 +72,7 @@ Arguments:
 -   `--query QUERY, -q QUERY` – The query to process when using non-interactive mode.
 -   `--database DATABASE, -d DATABASE` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
 -   `--format OUTPUT_FORMAT, -f OUTPUT_FORMAT` – Use the specified default format to output the result.
--   `--debug` –               Enables showing the debug information.
+-   `--debug` – Enables showing the debug information.
 
 **Client Usage Example**
 
