@@ -1298,6 +1298,90 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
+  UnitTestsTsan:
+    needs: [BuilderDebTsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Unit test
+        env:
+          TEMP_PATH: ${{runner.temp}}/unit_tests_tsan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Unit tests (tsan, actions)'
+          REPO_COPY: ${{runner.temp}}/unit_tests_tsan/ClickHouse
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 unit_tests_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  UnitTestsMsan:
+    needs: [BuilderDebMsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Unit test
+        env:
+          TEMP_PATH: ${{runner.temp}}/unit_tests_msan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Unit tests (msan, actions)'
+          REPO_COPY: ${{runner.temp}}/unit_tests_msan/ClickHouse
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 unit_tests_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  UnitTestsUBsan:
+    needs: [BuilderDebUBsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Unit test
+        env:
+          TEMP_PATH: ${{runner.temp}}/unit_tests_ubsan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Unit tests (msan, actions)'
+          REPO_COPY: ${{runner.temp}}/unit_tests_ubsan/ClickHouse
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 unit_tests_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
   FinishCheck:
     needs:
       - StyleCheck
@@ -1308,9 +1392,15 @@ jobs:
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease
       - FunctionalStatelessTestAsan
+      - FunctionalStatelessTestTsan
+      - FunctionalStatelessTestMsan
+      - FunctionalStatelessTestUBsan
       - FunctionalStatefulTestDebug
       - FunctionalStatefulTestRelease
       - FunctionalStatefulTestAsan
+      - FunctionalStatefulTestTsan
+      - FunctionalStatefulTestMsan
+      - FunctionalStatefulTestUBsan
       - DocsCheck
       - StressTestDebug
       - StressTestAsan
@@ -1319,8 +1409,14 @@ jobs:
       - StressTestUBsan
       - ASTFuzzerTestDebug
       - ASTFuzzerTestAsan
+      - ASTFuzzerTestTsan
+      - ASTFuzzerTestMSan
+      - ASTFuzzerTestUBSan
       - PVSCheck
       - UnitTestsAsan
+      - UnitTestsTsan
+      - UnitTestsMsan
+      - UnitTestsUBsan
       - UnitTestsReleaseClang
       - SplitBuildSmokeTest
       - CompatibilityCheck
