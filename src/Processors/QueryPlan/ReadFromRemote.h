@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Core/QueryProcessingStage.h>
+#include <Client/IConnections.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/ClusterProxy/IStreamFactory.h>
@@ -60,9 +61,13 @@ private:
 
     UInt32 shard_count;
     void addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
-        std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator, std::shared_ptr<ConnectionPoolWithFailover> pool);
+        std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator,
+        std::shared_ptr<ConnectionPoolWithFailover> pool,
+        std::optional<IConnections::ReplicaInfo> replica_info);
     void addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
-        std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator, std::shared_ptr<ConnectionPoolWithFailover> pool);
+        std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator,
+        std::shared_ptr<ConnectionPoolWithFailover> pool,
+        std::optional<IConnections::ReplicaInfo> replica_info);
 
     void addPipeForReplica();
 };

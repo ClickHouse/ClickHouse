@@ -18,14 +18,6 @@ namespace ErrorCodes
 }
 
 
-size_t getAutoInc() {
-    static size_t autoinc = 0;
-    auto result = autoinc;
-    ++autoinc;
-    return result;
-}
-
-
 MultiplexedConnections::MultiplexedConnections(Connection & connection, const Settings & settings_, const ThrottlerPtr & throttler)
     : settings(settings_), drain_timeout(settings.drain_timeout), receive_timeout(settings.receive_timeout)
 {
@@ -142,9 +134,10 @@ void MultiplexedConnections::sendQuery(
 
         if (settings.parallel_reading_from_replicas)
         {
+            assert(replica_info != ReplicaInfo{});
             modified_settings.collaborate_with_initiator = true;
-            modified_settings.count_participating_replicas = settings.max_parallel_replicas;
-            modified_settings.number_of_current_replica = getAutoInc() % settings.max_parallel_replicas;
+            modified_settings.count_participating_replicas = replica_info.all_replicas_count;
+            modified_settings.number_of_current_replica = replica_info.number_of_current_replica;
 
             std::cout << fmt::format("{} {}", modified_settings.count_participating_replicas, modified_settings.number_of_current_replica);
         }

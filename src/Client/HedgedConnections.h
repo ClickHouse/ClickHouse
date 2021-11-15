@@ -117,6 +117,8 @@ public:
 
     bool hasActiveConnections() const override { return active_connection_count > 0; }
 
+    void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
+
 private:
     /// If we don't receive data from replica and there is no progress in query
     /// execution for receive_data_timeout, we are trying to get new
@@ -203,6 +205,8 @@ private:
     ThrottlerPtr throttler;
     bool sent_query = false;
     bool cancelled = false;
+
+    ReplicaInfo replica_info;
 
     mutable std::mutex cancel_mutex;
 };

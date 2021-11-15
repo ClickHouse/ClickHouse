@@ -43,24 +43,26 @@ namespace ErrorCodes
 RemoteQueryExecutor::RemoteQueryExecutor(
     const String & query_, const Block & header_, ContextPtr context_,
     const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_,
-    std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_)
+    QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
     : header(header_), query(query_), context(context_), scalars(scalars_)
-    , external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
-    , parallel_reading_coordinator(parallel_reading_coordinator_)
+    , external_tables(external_tables_), stage(stage_)
+    , task_iterator(extension_ ? extension_->task_iterator : nullptr)
+    , parallel_reading_coordinator(extension_ ? extension_->parallel_reading_coordinator : nullptr)
 {}
 
 RemoteQueryExecutor::RemoteQueryExecutor(
     Connection & connection,
     const String & query_, const Block & header_, ContextPtr context_,
     ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_,
-    std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, task_iterator_, parallel_reading_coordinator_)
+    QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
 {
-    create_connections = [this, &connection, throttler]()
+    create_connections = [this, &connection, throttler, extension_]()
     {
-        return std::make_shared<MultiplexedConnections>(connection, context->getSettingsRef(), throttler);
+        auto res = std::make_shared<MultiplexedConnections>(connection, context->getSettingsRef(), throttler);
+        if (extension_ && extension_->replica_info)
+            res->setReplicaInfo(*extension_->replica_info);
+        return res;
     };
 }
 
@@ -68,13 +70,15 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     std::shared_ptr<Connection> connection_ptr,
     const String & query_, const Block & header_, ContextPtr context_,
     ThrottlerPtr throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_,
-    std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_)
-    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, task_iterator_, parallel_reading_coordinator_)
+    QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
+    : RemoteQueryExecutor(query_, header_, context_, scalars_, external_tables_, stage_, extension_)
 {
-    create_connections = [this, connection_ptr, throttler]()
+    create_connections = [this, connection_ptr, throttler, extension_]()
     {
-        return std::make_shared<MultiplexedConnections>(connection_ptr, context->getSettingsRef(), throttler);
+        auto res = std::make_shared<MultiplexedConnections>(connection_ptr, context->getSettingsRef(), throttler);
+        if (extension_ && extension_->replica_info)
+            res->setReplicaInfo(*extension_->replica_info);
+        return res;
     };
 }
 
@@ -83,14 +87,18 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     std::vector<IConnectionPool::Entry> && connections_,
     const String & query_, const Block & header_, ContextPtr context_,
     const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_,
-    std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_)
+    QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
     : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
-    , parallel_reading_coordinator(parallel_reading_coordinator_), pool(pool_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_)
+    , task_iterator(extension_ ? extension_->task_iterator : nullptr)
+    , parallel_reading_coordinator(extension_ ? extension_->parallel_reading_coordinator : nullptr)
+    , pool(pool_)
 {
-    create_connections = [this, connections_, throttler]() mutable {
-        return std::make_shared<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
+    create_connections = [this, connections_, throttler, extension_]() mutable {
+        auto res = std::make_shared<MultiplexedConnections>(std::move(connections_), context->getSettingsRef(), throttler);
+        if (extension_ && extension_->replica_info)
+            res->setReplicaInfo(*extension_->replica_info);
+        return res;
     };
 }
 
@@ -98,13 +106,14 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     const ConnectionPoolWithFailoverPtr & pool_,
     const String & query_, const Block & header_, ContextPtr context_,
     const ThrottlerPtr & throttler, const Scalars & scalars_, const Tables & external_tables_,
-    QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_,
-    std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_)
+    QueryProcessingStage::Enum stage_, std::optional<Extension> extension_)
     : header(header_), query(query_), context(context_)
-    , scalars(scalars_), external_tables(external_tables_), stage(stage_), task_iterator(task_iterator_)
-    , parallel_reading_coordinator(parallel_reading_coordinator_), pool(pool_)
+    , scalars(scalars_), external_tables(external_tables_), stage(stage_)
+    , task_iterator(extension_ ? extension_->task_iterator : nullptr)
+    , parallel_reading_coordinator(extension_ ? extension_->parallel_reading_coordinator : nullptr)
+    , pool(pool_)
 {
-    create_connections = [this, throttler]()->std::shared_ptr<IConnections>
+    create_connections = [this, throttler, extension_]()->std::shared_ptr<IConnections>
     {
         const Settings & current_settings = context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
@@ -116,7 +125,10 @@ RemoteQueryExecutor::RemoteQueryExecutor(
             if (main_table)
                 table_to_check = std::make_shared<QualifiedTableName>(main_table.getQualifiedName());
 
-            return std::make_shared<HedgedConnections>(pool, context, timeouts, throttler, pool_mode, table_to_check);
+            auto res = std::make_shared<HedgedConnections>(pool, context, timeouts, throttler, pool_mode, table_to_check);
+            if (extension_ && extension_->replica_info)
+                res->setReplicaInfo(*extension_->replica_info);
+            return res;
         }
 #endif
 
@@ -131,7 +143,10 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         else
             connection_entries = pool->getMany(timeouts, &current_settings, pool_mode);
 
-        return std::make_shared<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
+        auto res = std::make_shared<MultiplexedConnections>(std::move(connection_entries), current_settings, throttler);
+        if (extension_ && extension_->replica_info)
+            res->setReplicaInfo(*extension_->replica_info);
+        return res;
     };
 }
 

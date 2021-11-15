@@ -25,6 +25,12 @@ $CLICKHOUSE_CLIENT $SETTINGS -nm -q '''
 FAILED=()
 
 PreviouslyFailed=(
+    "00082_quantiles.sql"
+    "00088_global_in_one_shard_and_rows_before_limit.sql"
+    "00147_global_in_aggregate_function.sql"
+    "00149_quantiles_timing_distributed.sql"
+    "00150_quantiles_timing_precision.sql"
+    "00164_quantileBfloat16.sql"
 )
 
 SkipList=(
@@ -40,7 +46,7 @@ SkipList=(
     "00166_explain_estimate.sql" # Distributed table returns nothing
 )
 
-# for TESTNAME in "${PreviouslyFailed[@]}"
+# for TESTPATH in "${PreviouslyFailed[@]}"
 for TESTPATH in $CURDIR/*.sql;
 do
     TESTNAME=$(basename $TESTPATH)

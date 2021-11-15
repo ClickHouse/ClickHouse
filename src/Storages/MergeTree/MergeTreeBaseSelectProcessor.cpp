@@ -79,38 +79,9 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
 
 bool MergeTreeBaseSelectProcessor::getNewTask()
 {
-    /// Try to get from buffer
-    while (!buffered_ranges.empty())
+    auto get_from_buffer = [&]()
     {
-        auto ranges = std::move(buffered_ranges.front());
-        buffered_ranges.pop_front();
-
-        assert(!ranges.empty());
-
-        if (Status::Accepted == performRequestToCoordinator(ranges))
-            return true;
-    }
-
-    while (true)
-    {
-        auto res = getNewTaskImpl();
-
-        if (!extension.has_value())
-        {
-            if (res)
-                finalizeNewTask();
-
-            return res;
-        }
-
-        if (!res)
-            return false;
-
-        if (task->mark_ranges.empty())
-            continue;
-
-        fillBufferedRanged(task.get());
-
+        /// Try to get from buffer
         while (!buffered_ranges.empty())
         {
             auto ranges = std::move(buffered_ranges.front());
@@ -121,6 +92,51 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
             if (Status::Accepted == performRequestToCoordinator(ranges))
                 return true;
         }
+        return false;
+    };
+
+    if (get_from_buffer())
+        return true;
+
+    while (true)
+    {
+        auto res = getNewTaskImpl();
+
+        /// It means that parallel_reading feature is disabled
+        if (!extension.has_value())
+        {
+            if (res)
+                finalizeNewTask();
+
+            return res;
+        }
+
+        /// The end of execution. No task.
+        if (!res)
+            return false;
+
+        if (task->mark_ranges.empty())
+            continue;
+
+        auto predicate = [this](MarkRange range)
+        {
+            // auto what = fmt::format("{}_{}_{}", task->data_part->info.getPartName(), range.begin, range.end);
+            // auto hash = CityHash_v1_0_2::CityHash64(what.data(), what.size());
+            // LOG_TRACE(log, "Replica info {} {}", extension->count_participating_replicas, extension->number_of_current_replica);
+            // auto consistent_hash = ConsistentHashing(hash, extension->count_participating_replicas);
+            // LOG_TRACE(log, "Anime [{}, {}]. Hash {}, Consistent hash: {}", range.begin, range.end, hash, consistent_hash);
+            // return consistent_hash != extension->number_of_current_replica;
+
+            (void)this;
+            (void)range;
+
+            return true;
+        };
+
+        fillBufferedRanged(task.get(), std::move(predicate));
+
+        if (get_from_buffer())
+            return true;
     }
 }
 
@@ -570,7 +586,7 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
 
     auto responce = extension.value().callback(std::move(request));
 
-    LOG_TRACE(&Poco::Logger::get("MTBSP"), "Elapsed: {}ns", stop.elapsed());
+    LOG_TRACE(log, "Elapsed time to perform request: {}ns", stop.elapsed());
 
     auto dump_mark_ranges = [&] (MarkRanges ranges) {
         String result;
@@ -581,7 +597,7 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
         return result;
     };
 
-    LOG_TRACE(&Poco::Logger::get("MTBSP"), "<<< {} {}", (responce.denied ? "denied" : "accepted"), dump_mark_ranges(responce.mark_ranges));
+    LOG_TRACE(log, (responce.denied ? "denied" : "accepted"), dump_mark_ranges(responce.mark_ranges));
 
     task->mark_ranges = std::move(responce.mark_ranges);
 
@@ -598,7 +614,9 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
     return Status::Accepted;
 }
 
-void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * current_task)
+
+template <typename Predicate>
+void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * current_task, Predicate && predicate)
 {
     // const size_t max_batch_size = 10;
 
@@ -663,35 +681,31 @@ void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * curren
 
     // buffered_ranges.emplace_back(std::move(current_task->mark_ranges));
 
-
-    /// This won't work for compact parts
     size_t sum_average_marks_size = 0;
-    if (extension.has_value())
+    /// getColumnSize is not fully implemented for compact parts
+    if (task->data_part->getType() == IMergeTreeDataPart::Type::COMPACT)
+    {
+        sum_average_marks_size = 8UL * 1024 * 1024 * 10; // 10 MiB
+    }
+    else
     {
         for (const auto & name : extension->colums_to_read)
         {
             auto size = task->data_part->getColumnSize(name);
 
-            if (size == ColumnSize{}) {
-                continue;
-            }
+            assert(size != ColumnSize{});
             assert(size.marks != 0);
-            average_mark_size_bytes.emplace_back(size.data_compressed / size.marks);
+            average_mark_size_bytes.emplace_back(size.data_uncompressed / size.marks);
             sum_average_marks_size += average_mark_size_bytes.back();
         }
     }
 
-    (void)sum_average_marks_size;
+    LOG_TRACE(log, "Reading from {} part, average mark size is {}",
+        task->data_part->getTypeName(), sum_average_marks_size);
 
-    std::cout << "sum_average_marks_size " << sum_average_marks_size << std::endl;
+    const size_t max_batch_size = (8UL * 1024 * 1024 * 1024) / sum_average_marks_size;
 
-    // const size_t max_batch_size = (8UL * 1024 * 1024 * 1024) / (sum_average_marks_size == 0 ? 8UL * 1024 * 1024 * 10 : sum_average_marks_size);
-
-    const size_t max_batch_size = 100;
-
-    // assert(max_batch_size > 0);
-
-    LOG_TRACE(&Poco::Logger::get("MTBSP"), "Using max batch size equal to {}", max_batch_size);
+    LOG_TRACE(log, "Using max batch size to performa request equals {} marks", max_batch_size);
 
     size_t current_batch_size = 0;
 
@@ -713,8 +727,11 @@ void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * curren
 
         if (range.end - range.begin < max_batch_size)
         {
-            buffered_ranges.back().push_back(range);
-            current_batch_size += range.end - range.begin;
+            if (predicate(range))
+            {
+                buffered_ranges.back().push_back(range);
+                current_batch_size += range.end - range.begin;
+            }
             continue;
         }
 
@@ -723,8 +740,12 @@ void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * curren
 
         while (current_end < range.end)
         {
-            buffered_ranges.back().emplace_back(current_begin, current_end);
-            current_batch_size += current_end - current_begin;
+            if (predicate(MarkRange{current_begin, current_end}))
+            {
+                buffered_ranges.back().emplace_back(current_begin, current_end);
+                current_batch_size += current_end - current_begin;
+            }
+
             current_begin = current_end;
             current_end = current_end + max_batch_size;
 

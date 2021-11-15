@@ -115,7 +115,9 @@ ReadFromRemote::ReadFromRemote(
 }
 
 void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
-    std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator, std::shared_ptr<ConnectionPoolWithFailover> pool)
+    std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator,
+    std::shared_ptr<ConnectionPoolWithFailover> pool,
+    std::optional<IConnections::ReplicaInfo> replica_info)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -128,6 +130,7 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
     }
 
     auto lazily_create_stream = [
+            replica_info = replica_info,
             pool = pool ? pool : shard.pool,
             coordinator = coordinator,
             shard_num = shard.shard_num, shard_count = shard_count, query = shard.query, header = shard.header,
@@ -186,7 +189,8 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
             scalars["_shard_num"]
                 = Block{{DataTypeUInt32().createColumnConst(1, shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
             auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                pool, std::move(connections), query_string, header, context, throttler, scalars, external_tables, stage, nullptr, std::move(coordinator));
+                pool, std::move(connections), query_string, header, context, throttler, scalars, external_tables, stage,
+                RemoteQueryExecutor::Extension{.parallel_reading_coordinator = std::move(coordinator), .replica_info = replica_info});
 
             return createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read);
         }
@@ -198,7 +202,9 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
 }
 
 void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard,
-    std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator, std::shared_ptr<ConnectionPoolWithFailover> pool)
+    std::shared_ptr<ParallelReplicasReadingCoordinator> coordinator,
+    std::shared_ptr<ConnectionPoolWithFailover> pool,
+    std::optional<IConnections::ReplicaInfo> replica_info)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
     bool add_totals = false;
@@ -219,7 +225,8 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::
     if (pool)
     {
         remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            pool, query_string, shard.header, context, throttler, scalars, external_tables, stage, nullptr, std::move(coordinator));
+            pool, query_string, shard.header, context, throttler, scalars, external_tables, stage,
+            RemoteQueryExecutor::Extension{.parallel_reading_coordinator = std::move(coordinator), .replica_info = std::move(replica_info)});
 
         remote_query_executor->setLogger(log);
 
@@ -229,7 +236,8 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::
     else
     {
         remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            shard.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage, nullptr, std::move(coordinator));
+            shard.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage,
+            RemoteQueryExecutor::Extension{.parallel_reading_coordinator = std::move(coordinator), .replica_info = std::move(replica_info)});
 
         remote_query_executor->setLogger(log);
 
@@ -262,14 +270,20 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 
             for (size_t replica_num = 0; replica_num < shard.num_replicas; ++replica_num)
             {
+                IConnections::ReplicaInfo replica_info
+                {
+                    .all_replicas_count = shard.num_replicas,
+                    .number_of_current_replica = replica_num
+                };
+
                 auto pool = shard.per_replica_pools[replica_num];
                 auto pool_with_failover =  std::make_shared<ConnectionPoolWithFailover>(
                     ConnectionPoolPtrs{pool}, current_settings.load_balancing);
 
                 if (shard.lazy)
-                    addLazyPipe(pipes, shard, coordinator, pool_with_failover);
+                    addLazyPipe(pipes, shard, coordinator, pool_with_failover, replica_info);
                 else
-                    addPipe(pipes, shard, coordinator, pool_with_failover);
+                    addPipe(pipes, shard, coordinator, pool_with_failover, replica_info);
             }
         }
     }
@@ -280,9 +294,9 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
             auto coordinator = std::make_shared<ParallelReplicasReadingCoordinator>();
 
             if (shard.lazy)
-                addLazyPipe(pipes, shard, /*coordinator=*/nullptr, /*pool*/{});
+                addLazyPipe(pipes, shard, /*coordinator=*/nullptr, /*pool*/{}, /*replica_info*/std::nullopt);
             else
-                addPipe(pipes, shard, /*coordinator=*/nullptr, /*pool*/{});
+                addPipe(pipes, shard, /*coordinator=*/nullptr, /*pool*/{}, /*replica_info*/std::nullopt);
         }
     }
 

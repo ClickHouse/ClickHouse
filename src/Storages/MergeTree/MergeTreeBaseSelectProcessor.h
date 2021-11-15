@@ -112,7 +112,18 @@ protected:
 
     std::optional<ParallelReadingExtension> extension;
     std::vector<size_t> average_mark_size_bytes;
+
+    struct DelayedTask
+    {
+        /// data part which should be read while performing this task
+        MergeTreeData::DataPartPtr data_part;
+        /// Ranges to read from `data_part`.
+        MarkRanges mark_ranges;
+    };
+
+    std::vector<DelayedTask> delayed_tasks;
 private:
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeBaseSelectProcessor");
 
     enum class Status {
         Accepted,
@@ -121,7 +132,9 @@ private:
 
     /// It will reinitialize
     Status performRequestToCoordinator(MarkRanges requested_ranges);
-    void fillBufferedRanged(MergeTreeReadTask * current_task);
+
+    template <typename Predicate>
+    void fillBufferedRanged(MergeTreeReadTask * current_task, Predicate && predicate);
 
     std::deque<MarkRanges> buffered_ranges;
 };

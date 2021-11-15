@@ -37,22 +37,27 @@ class RemoteQueryExecutor
 public:
     using ReadContext = RemoteQueryExecutorReadContext;
 
+    struct Extension
+    {
+      std::shared_ptr<TaskIterator> task_iterator{nullptr};
+      std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator;
+      std::optional<IConnections::ReplicaInfo> replica_info;
+    };
+
     /// Takes already set connection.
     /// We don't own connection, thus we have to drain it synchronously.
     RemoteQueryExecutor(
         Connection & connection,
         const String & query_, const Block & header_, ContextPtr context_,
         ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {},
-        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_ = {});
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes already set connection.
     RemoteQueryExecutor(
         std::shared_ptr<Connection> connection,
         const String & query_, const Block & header_, ContextPtr context_,
         ThrottlerPtr throttler_ = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {},
-        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_ = {});
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
 
     /// Accepts several connections already taken from pool.
     RemoteQueryExecutor(
@@ -60,16 +65,14 @@ public:
         std::vector<IConnectionPool::Entry> && connections_,
         const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {},
-        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_ = {});
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
 
     /// Takes a pool and gets one or several connections from it.
     RemoteQueryExecutor(
         const ConnectionPoolWithFailoverPtr & pool,
         const String & query_, const Block & header_, ContextPtr context_,
         const ThrottlerPtr & throttler = nullptr, const Scalars & scalars_ = Scalars(), const Tables & external_tables_ = Tables(),
-        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::shared_ptr<TaskIterator> task_iterator_ = {},
-        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_ = {});
+        QueryProcessingStage::Enum stage_ = QueryProcessingStage::Complete, std::optional<Extension> extension_ = std::nullopt);
 
     ~RemoteQueryExecutor();
 
@@ -121,8 +124,7 @@ private:
     RemoteQueryExecutor(
         const String & query_, const Block & header_, ContextPtr context_,
         const Scalars & scalars_, const Tables & external_tables_,
-        QueryProcessingStage::Enum stage_, std::shared_ptr<TaskIterator> task_iterator_,
-        std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator_);
+        QueryProcessingStage::Enum stage_, std::optional<Extension> extension_);
 
     Block header;
     Block totals;
@@ -144,6 +146,8 @@ private:
     std::shared_ptr<TaskIterator> task_iterator;
 
     std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator;
+
+    IConnections::ReplicaInfo replica_info;
 
     std::function<std::shared_ptr<IConnections>()> create_connections;
     /// Hold a shared reference to the connection pool so that asynchronous connection draining will

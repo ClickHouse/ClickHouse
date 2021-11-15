@@ -1,5 +1,7 @@
 #pragma once
 
+#include <compare>
+
 #include <Client/Connection.h>
 #include <Storages/MergeTree/RequestResponse.h>
 
@@ -57,6 +59,19 @@ public:
 
     /// Get the replica addresses as a string.
     virtual std::string dumpAddresses() const = 0;
+
+
+    struct ReplicaInfo
+    {
+        size_t all_replicas_count{0};
+        size_t number_of_current_replica{0};
+
+        auto operator<=>(const ReplicaInfo&) const = default;
+    };
+
+    /// This is needed in max_parallel_replicas case.
+    /// We create a RemoteQueryExecutor for each replica
+    virtual void setReplicaInfo(ReplicaInfo value) = 0;
 
     /// Returns the number of replicas.
     virtual size_t size() const = 0;
