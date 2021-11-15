@@ -9,10 +9,10 @@ on: # yamllint disable-line rule:truthy
       - opened
     branches:
       - master
-jobs:
 ##########################################################################################
 ##################################### SMALL CHECKS #######################################
 ##########################################################################################
+jobs:
   CheckLabels:
     runs-on: [self-hosted, style-checker]
     steps:
@@ -1023,7 +1023,7 @@ jobs:
         uses: actions/checkout@v2
       - name: Stress test
         env:
-          TEMP_PATH: ${{runner.temp}}/stress_undefiend
+          TEMP_PATH: ${{runner.temp}}/stress_undefined
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Stress test (undefined, actions)'
           REPO_COPY: ${{runner.temp}}/stress_undefined/ClickHouse
@@ -1313,6 +1313,10 @@ jobs:
       - FunctionalStatefulTestAsan
       - DocsCheck
       - StressTestDebug
+      - StressTestAsan
+      - StressTestTsan
+      - StressTestMsan
+      - StressTestUBsan
       - ASTFuzzerTestDebug
       - ASTFuzzerTestAsan
       - PVSCheck
