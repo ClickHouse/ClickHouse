@@ -94,7 +94,6 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event ContextLock;
-    extern const Event CompiledCacheSizeBytes;
 }
 
 namespace CurrentMetrics
@@ -105,14 +104,9 @@ namespace CurrentMetrics
     extern const Metric BackgroundBufferFlushSchedulePoolTask;
     extern const Metric BackgroundDistributedSchedulePoolTask;
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
-
-
-    extern const Metric DelayedInserts;
     extern const Metric BackgroundMergesAndMutationsPoolTask;
-    extern const Metric BackgroundMovePoolTask;
     extern const Metric BackgroundFetchesPoolTask;
     extern const Metric BackgroundCommonPoolTask;
-
 }
 
 namespace DB
@@ -796,7 +790,7 @@ void Context::setInitialRowPolicy()
     auto initial_user_id = getAccessControl().find<User>(client_info.initial_user);
     if (!initial_user_id)
         return;
-    initial_row_policy = getAccessControl().getEnabledRowPolicies(*initial_user_id, {});
+    initial_row_policy = getAccessControl().tryGetDefaultRowPolicies(*initial_user_id);
 }
 
 
