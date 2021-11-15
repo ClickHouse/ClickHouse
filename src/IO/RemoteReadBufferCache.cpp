@@ -448,7 +448,6 @@ void RemoteReadBufferCache::initOnce(const std::filesystem::path & dir,
         LOG_INFO(log, "{} not exists. this cache will be disable", local_path_prefix);
         return;
     }
-    
     auto recover_task = [this, root_dir]()
     {
         auto callback = [this](RemoteCacheController * cntrl) { this->total_size += cntrl->size(); };
