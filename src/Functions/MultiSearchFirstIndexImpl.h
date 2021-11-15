@@ -7,7 +7,7 @@
 namespace DB
 {
 
-template <typename Impl>
+template <typename Name, typename Impl>
 struct MultiSearchFirstIndexImpl
 {
     using ResultType = UInt64;
@@ -15,6 +15,8 @@ struct MultiSearchFirstIndexImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = false;
+    static constexpr auto name = Name::name;
+
     static auto getReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
 
     static void vectorConstant(
@@ -42,6 +44,8 @@ struct MultiSearchFirstIndexImpl
             }
             ++iteration;
         }
+        if (iteration == 0)
+            std::fill(res.begin(), res.end(), 0);
     }
 };
 

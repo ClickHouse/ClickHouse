@@ -11,8 +11,9 @@ DATASET="${TABLE}_v1.tar.xz"
 QUERIES_FILE="queries.sql"
 TRIES=3
 
-AMD64_BIN_URL="https://builds.clickhouse.tech/master/amd64/clickhouse"
-AARCH64_BIN_URL="https://builds.clickhouse.tech/master/aarch64/clickhouse"
+AMD64_BIN_URL="https://builds.clickhouse.com/master/amd64/clickhouse"
+AARCH64_BIN_URL="https://builds.clickhouse.com/master/aarch64/clickhouse"
+POWERPC64_BIN_URL="https://builds.clickhouse.com/master/ppc64le/clickhouse"
 
 # Note: on older Ubuntu versions, 'axel' does not support IPv6. If you are using IPv6-only servers on very old Ubuntu, just don't install 'axel'.
 
@@ -38,6 +39,8 @@ if [[ ! -f clickhouse ]]; then
         $FASTER_DOWNLOAD "$AMD64_BIN_URL"
     elif [[ $CPU == aarch64 ]]; then
         $FASTER_DOWNLOAD "$AARCH64_BIN_URL"
+    elif [[ $CPU == powerpc64le ]]; then
+        $FASTER_DOWNLOAD "$POWERPC64_BIN_URL"
     else
         echo "Unsupported CPU type: $CPU"
         exit 1
@@ -52,7 +55,7 @@ fi
 
 if [[ ! -d data ]]; then
     if [[ ! -f $DATASET ]]; then
-        $FASTER_DOWNLOAD "https://clickhouse-datasets.s3.yandex.net/hits/partitions/$DATASET"
+        $FASTER_DOWNLOAD "https://datasets.clickhouse.com/hits/partitions/$DATASET"
     fi
 
     tar $TAR_PARAMS --strip-components=1 --directory=. -x -v -f $DATASET

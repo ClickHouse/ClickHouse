@@ -236,4 +236,4 @@ FROM
 !!! note "注"
     詳細について [avg()](../sql-reference/aggregate-functions/reference.md#agg_function-avg) と [ログ()](../sql-reference/functions/math-functions.md) 機能。
 
-[元の記事](https://clickhouse.tech/docs/en/guides/apply_catboost_model/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/guides/apply_catboost_model/) <!--hide-->

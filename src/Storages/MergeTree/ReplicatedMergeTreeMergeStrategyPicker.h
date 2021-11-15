@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <optional>
 #include <mutex>
 #include <vector>
@@ -58,7 +58,6 @@ public:
 
     /// returns the replica name
     /// and it's not current replica should do the merge
-    /// used in shouldExecuteLogEntry and in tryExecuteMerge
     std::optional<String> pickReplicaToExecuteMerge(const ReplicatedMergeTreeLogEntryData & entry);
 
     /// checks (in zookeeper) if the picked replica finished the merge

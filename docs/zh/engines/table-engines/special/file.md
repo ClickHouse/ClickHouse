@@ -70,4 +70,4 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
     -   索引
     -   副本
 
-[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/file/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/operations/table_engines/file/) <!--hide-->

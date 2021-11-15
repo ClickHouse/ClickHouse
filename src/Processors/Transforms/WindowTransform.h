@@ -80,8 +80,10 @@ struct RowNumber
  * the order of input data. This property also trivially holds for the ROWS and
  * GROUPS frames. For the RANGE frame, the proof requires the additional fact
  * that the ranges are specified in terms of (the single) ORDER BY column.
+ *
+ * `final` is so that the isCancelled() is devirtualized, we call it every row.
  */
-class WindowTransform : public IProcessor /* public ISimpleTransform */
+class WindowTransform final : public IProcessor
 {
 public:
     WindowTransform(
@@ -216,8 +218,8 @@ public:
 #endif
     }
 
-    auto moveRowNumber(const RowNumber & _x, int offset) const;
-    auto moveRowNumberNoCheck(const RowNumber & _x, int offset) const;
+    auto moveRowNumber(const RowNumber & _x, int64_t offset) const;
+    auto moveRowNumberNoCheck(const RowNumber & _x, int64_t offset) const;
 
     void assertValid(const RowNumber & x) const
     {

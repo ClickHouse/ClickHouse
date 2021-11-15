@@ -2,14 +2,15 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
-#include <common/errnoToString.h>
+#include <base/errnoToString.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <Poco/Logger.h>
-#include <common/getThreadId.h>
-#include <common/getPageSize.h>
+#include <base/getThreadId.h>
+#include <base/getPageSize.h>
 
 #include <csignal>
+#include <mutex>
 
 
 namespace DB
@@ -25,7 +26,7 @@ namespace ErrorCodes
 thread_local ThreadStatus * current_thread = nullptr;
 thread_local ThreadStatus * main_thread = nullptr;
 
-#if !defined(SANITIZER) && !defined(ARCADIA_BUILD)
+#if !defined(SANITIZER)
 namespace
 {
 
@@ -44,7 +45,7 @@ namespace
 struct ThreadStack
 {
     ThreadStack()
-        : data(aligned_alloc(getPageSize(), size))
+        : data(aligned_alloc(getPageSize(), getSize()))
     {
         /// Add a guard page
         /// (and since the stack grows downward, we need to protect the first page).
@@ -56,12 +57,11 @@ struct ThreadStack
         free(data);
     }
 
-    static size_t getSize() { return size; }
+    static size_t getSize() { return std::max<size_t>(16 << 10, MINSIGSTKSZ); }
     void * getData() const { return data; }
 
 private:
     /// 16 KiB - not too big but enough to handle error.
-    static constexpr size_t size = std::max<size_t>(16 << 10, MINSIGSTKSZ);
     void * data;
 };
 
@@ -88,7 +88,7 @@ ThreadStatus::ThreadStatus()
     /// Will set alternative signal stack to provide diagnostics for stack overflow errors.
     /// If not already installed for current thread.
     /// Sanitizer makes larger stack usage and also it's incompatible with alternative stack by default (it sets up and relies on its own).
-#if !defined(SANITIZER) && !defined(ARCADIA_BUILD)
+#if !defined(SANITIZER)
     if (!has_alt_stack)
     {
         /// Don't repeat tries even if not installed successfully.
@@ -141,15 +141,23 @@ ThreadStatus::~ThreadStatus()
         /// We've already allocated a little bit more than the limit and cannot track it in the thread memory tracker or its parent.
     }
 
-#if !defined(ARCADIA_BUILD)
+    if (thread_group)
+    {
+        std::lock_guard guard(thread_group->mutex);
+        thread_group->threads.erase(this);
+    }
+
     /// It may cause segfault if query_context was destroyed, but was not detached
     auto query_context_ptr = query_context.lock();
     assert((!query_context_ptr && query_id.empty()) || (query_context_ptr && query_id == query_context_ptr->getCurrentQueryId()));
-#endif
 
     if (deleter)
         deleter();
-    current_thread = nullptr;
+
+    /// Only change current_thread if it's currently being used by this ThreadStatus
+    /// For example, PushingToViewsBlockOutputStream creates and deletes ThreadStatus instances while running in the main query thread
+    if (current_thread == this)
+        current_thread = nullptr;
 }
 
 void ThreadStatus::updatePerformanceCounters()
@@ -193,6 +201,17 @@ void ThreadStatus::attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & 
     thread_group->client_logs_level = client_logs_level;
 }
 
+void ThreadStatus::attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue)
+{
+    profile_queue_ptr = profile_queue;
+
+    if (!thread_group)
+        return;
+
+    std::lock_guard lock(thread_group->mutex);
+    thread_group->profile_queue_ptr = profile_queue;
+}
+
 void ThreadStatus::setFatalErrorCallback(std::function<void()> callback)
 {
     fatal_error_callback = std::move(callback);
@@ -217,7 +236,6 @@ MainThreadStatus & MainThreadStatus::getInstance()
     return thread_status;
 }
 MainThreadStatus::MainThreadStatus()
-    : ThreadStatus()
 {
     main_thread = current_thread;
 }

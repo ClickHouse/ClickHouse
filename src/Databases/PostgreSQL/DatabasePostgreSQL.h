@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
-#endif
 
 #if USE_LIBPQXX
 
@@ -10,7 +8,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
-
+#include <Storages/ExternalDataSourceConfiguration.h>
 
 namespace DB
 {
@@ -32,7 +30,7 @@ public:
         const String & metadata_path_,
         const ASTStorage * database_engine_define,
         const String & dbname_,
-        const String & postgres_dbname,
+        const StoragePostgreSQLConfiguration & configuration,
         postgres::PoolWithFailoverPtr pool_,
         bool cache_tables_);
 
@@ -47,9 +45,9 @@ public:
 
     bool empty() const override;
 
-    void loadStoredObjects(ContextMutablePtr, bool, bool force_attach) override;
+    void loadStoredObjects(ContextMutablePtr, bool, bool force_attach, bool skip_startup_tables) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 
     bool isTableExist(const String & name, ContextPtr context) const override;
     StoragePtr tryGetTable(const String & name, ContextPtr context) const override;
@@ -69,13 +67,17 @@ protected:
 private:
     String metadata_path;
     ASTPtr database_engine_define;
-    String dbname;
+    StoragePostgreSQLConfiguration configuration;
     postgres::PoolWithFailoverPtr pool;
     const bool cache_tables;
 
     mutable Tables cached_tables;
     std::unordered_set<std::string> detached_or_dropped;
     BackgroundSchedulePool::TaskHolder cleaner_task;
+
+    String getTableNameForLogs(const String & table_name) const;
+
+    String formatTableName(const String & table_name, bool quoted = true) const;
 
     bool checkPostgresTable(const String & table_name) const;
 

@@ -4,13 +4,13 @@
 #include <vector>
 #include <stdint.h>
 #include <string.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Poco/Unicode.h>
 #include <Common/StringSearcher.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UTF8Helpers.h>
-#include <common/StringRef.h>
-#include <common/unaligned.h>
+#include <base/StringRef.h>
+#include <base/unaligned.h>
 
 /** Search for a substring in a string by Volnitsky's algorithm
   * http://volnitsky.com/project/str_search/

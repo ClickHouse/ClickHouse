@@ -90,6 +90,46 @@ def test_sequential_nodes(started_cluster):
         genuine_childs = list(sorted(genuine_zk.get_children("/test_sequential_nodes")))
         fake_childs = list(sorted(fake_zk.get_children("/test_sequential_nodes")))
         assert genuine_childs == fake_childs
+
+        genuine_zk.create("/test_sequential_nodes_1")
+        fake_zk.create("/test_sequential_nodes_1")
+
+        genuine_zk.create("/test_sequential_nodes_1/a", sequence=True)
+        fake_zk.create("/test_sequential_nodes_1/a", sequence=True)
+
+        genuine_zk.create("/test_sequential_nodes_1/a0000000002")
+        fake_zk.create("/test_sequential_nodes_1/a0000000002")
+
+        genuine_throw = False
+        fake_throw = False
+        try:
+            genuine_zk.create("/test_sequential_nodes_1/a", sequence=True)
+        except Exception as ex:
+            genuine_throw = True
+
+        try:
+            fake_zk.create("/test_sequential_nodes_1/a", sequence=True)
+        except Exception as ex:
+            fake_throw = True
+
+        assert genuine_throw == True
+        assert fake_throw == True
+
+        genuine_childs_1 = list(sorted(genuine_zk.get_children("/test_sequential_nodes_1")))
+        fake_childs_1 = list(sorted(fake_zk.get_children("/test_sequential_nodes_1")))
+        assert genuine_childs_1 == fake_childs_1
+
+        genuine_zk.create("/test_sequential_nodes_2")
+        fake_zk.create("/test_sequential_nodes_2")
+
+        genuine_zk.create("/test_sequential_nodes_2/node")
+        fake_zk.create("/test_sequential_nodes_2/node")
+        genuine_zk.create("/test_sequential_nodes_2/node", sequence=True)
+        fake_zk.create("/test_sequential_nodes_2/node", sequence=True)
+
+        genuine_childs_2 = list(sorted(genuine_zk.get_children("/test_sequential_nodes_2")))
+        fake_childs_2 = list(sorted(fake_zk.get_children("/test_sequential_nodes_2")))
+        assert genuine_childs_2 == fake_childs_2
     finally:
         for zk in [genuine_zk, fake_zk]:
             stop_zk(zk)
@@ -178,6 +218,10 @@ def test_watchers(started_cluster):
         print("Fake data", fake_data_watch_data)
         assert genuine_data_watch_data == fake_data_watch_data
 
+
+        genuine_zk.create("/test_data_watches/child", b"a")
+        fake_zk.create("/test_data_watches/child", b"a")
+
         genuine_children = None
         def genuine_child_callback(event):
             print("Genuine child watch called")
@@ -193,16 +237,74 @@ def test_watchers(started_cluster):
         genuine_zk.get_children("/test_data_watches", watch=genuine_child_callback)
         fake_zk.get_children("/test_data_watches", watch=fake_child_callback)
 
+        print("Calling non related genuine child")
+        genuine_zk.set("/test_data_watches/child", b"q")
+        genuine_zk.set("/test_data_watches", b"q")
+
+        print("Calling non related fake child")
+        fake_zk.set("/test_data_watches/child", b"q")
+        fake_zk.set("/test_data_watches", b"q")
+
+        time.sleep(3)
+
+        assert genuine_children == None
+        assert fake_children == None
+
         print("Calling genuine child")
-        genuine_zk.create("/test_data_watches/child", b"b")
+        genuine_zk.create("/test_data_watches/child_new", b"b")
         print("Calling fake child")
-        fake_zk.create("/test_data_watches/child", b"b")
+        fake_zk.create("/test_data_watches/child_new", b"b")
 
         time.sleep(3)
 
         print("Genuine children", genuine_children)
         print("Fake children", fake_children)
         assert genuine_children == fake_children
+
+        genuine_children_delete = None
+        def genuine_child_delete_callback(event):
+            print("Genuine child watch called")
+            nonlocal genuine_children_delete
+            genuine_children_delete = event
+
+        fake_children_delete = None
+        def fake_child_delete_callback(event):
+            print("Fake child watch called")
+            nonlocal fake_children_delete
+            fake_children_delete = event
+
+        genuine_child_delete = None
+        def genuine_own_delete_callback(event):
+            print("Genuine child watch called")
+            nonlocal genuine_child_delete
+            genuine_child_delete = event
+
+        fake_child_delete = None
+        def fake_own_delete_callback(event):
+            print("Fake child watch called")
+            nonlocal fake_child_delete
+            fake_child_delete = event
+
+        genuine_zk.get_children("/test_data_watches", watch=genuine_child_delete_callback)
+        fake_zk.get_children("/test_data_watches", watch=fake_child_delete_callback)
+        genuine_zk.get_children("/test_data_watches/child", watch=genuine_own_delete_callback)
+        fake_zk.get_children("/test_data_watches/child", watch=fake_own_delete_callback)
+
+        print("Calling genuine child delete")
+        genuine_zk.delete("/test_data_watches/child")
+        print("Calling fake child delete")
+        fake_zk.delete("/test_data_watches/child")
+
+        time.sleep(3)
+
+        print("Genuine children delete", genuine_children_delete)
+        print("Fake children delete", fake_children_delete)
+        assert genuine_children_delete == fake_children_delete
+
+        print("Genuine child delete", genuine_child_delete)
+        print("Fake child delete", fake_child_delete)
+        assert genuine_child_delete == fake_child_delete
+
     finally:
         for zk in [genuine_zk, fake_zk]:
             stop_zk(zk)

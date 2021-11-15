@@ -242,4 +242,4 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/agg_functions/combinators/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/agg_functions/combinators/) <!--hide-->

@@ -9,9 +9,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/DecimalFunctions.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -21,11 +19,9 @@
 namespace DB
 {
 struct Settings;
-template <typename T>
-using DecimalOrVectorCol = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 
 template <typename T> constexpr bool DecimalOrExtendedInt =
-    IsDecimalNumber<T>
+    is_decimal<T>
     || std::is_same_v<T, Int128>
     || std::is_same_v<T, Int256>
     || std::is_same_v<T, UInt128>
@@ -44,7 +40,7 @@ struct AvgFraction
     /// Invoked only is either Numerator or Denominator are Decimal.
     Float64 NO_SANITIZE_UNDEFINED divideIfAnyDecimal(UInt32 num_scale, UInt32 denom_scale [[maybe_unused]]) const
     {
-        if constexpr (IsDecimalNumber<Numerator> && IsDecimalNumber<Denominator>)
+        if constexpr (is_decimal<Numerator> && is_decimal<Denominator>)
         {
             // According to the docs, num(S1) / denom(S2) would have scale S1
 
@@ -60,7 +56,7 @@ struct AvgFraction
         /// Numerator is always casted to Float64 to divide correctly if the denominator is not Float64.
         Float64 num_converted;
 
-        if constexpr (IsDecimalNumber<Numerator>)
+        if constexpr (is_decimal<Numerator>)
             num_converted = DecimalUtils::convertTo<Float64>(numerator, num_scale);
         else
             num_converted = static_cast<Float64>(numerator); /// all other types, including extended integral.
@@ -68,7 +64,7 @@ struct AvgFraction
         std::conditional_t<DecimalOrExtendedInt<Denominator>,
             Float64, Denominator> denom_converted;
 
-        if constexpr (IsDecimalNumber<Denominator>)
+        if constexpr (is_decimal<Denominator>)
             denom_converted = DecimalUtils::convertTo<Float64>(denominator, denom_scale);
         else if constexpr (DecimalOrExtendedInt<Denominator>)
             /// no way to divide Float64 and extended integral type without an explicit cast.
@@ -139,7 +135,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        if constexpr (IsDecimalNumber<Numerator> || IsDecimalNumber<Denominator>)
+        if constexpr (is_decimal<Numerator> || is_decimal<Denominator>)
             assert_cast<ColumnVector<Float64> &>(to).getData().push_back(
                 this->data(place).divideIfAnyDecimal(num_scale, denom_scale));
         else
@@ -222,7 +218,7 @@ private:
 };
 
 template <typename T>
-using AvgFieldType = std::conditional_t<IsDecimalNumber<T>,
+using AvgFieldType = std::conditional_t<is_decimal<T>,
     std::conditional_t<std::is_same_v<T, Decimal256>, Decimal256, Decimal128>,
     NearestFieldType<T>>;
 
@@ -239,7 +235,7 @@ public:
 
     void NO_SANITIZE_UNDEFINED add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
-        this->data(place).numerator += static_cast<const DecimalOrVectorCol<T> &>(*columns[0]).getData()[row_num];
+        this->data(place).numerator += static_cast<const ColumnVectorOrDecimal<T> &>(*columns[0]).getData()[row_num];
         ++this->data(place).denominator;
     }
 

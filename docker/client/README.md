@@ -1,6 +1,6 @@
 # ClickHouse Client Docker Image
 
-For more information see [ClickHouse Server Docker Image](https://hub.docker.com/r/yandex/clickhouse-server/).
+For more information see [ClickHouse Server Docker Image](https://hub.docker.com/r/clickhouse/clickhouse-server/).
 
 ## License
 
