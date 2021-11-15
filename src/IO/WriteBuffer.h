@@ -118,7 +118,7 @@ protected:
     {
         next();
     }
-    
+
     bool finalized = false;
 
 private:
