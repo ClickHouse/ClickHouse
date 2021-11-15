@@ -1130,7 +1130,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
             }
 
             if (done_count <= settings->finished_mutations_to_keep)
-                return;
+                return 0;
 
             to_delete_count = done_count - settings->finished_mutations_to_keep;
         }
