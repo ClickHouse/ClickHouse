@@ -59,16 +59,23 @@ String AsynchronousReadIndirectBufferFromRemoteFS::getFileName() const
 
 bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
 {
-    /// Position is set only for MergeTree tables.
+    /**
+     * Note: read_until_position here can be std::nullopt only for non-MergeTree tables.
+     * For mergeTree tables it must be guaranteed that setReadUntilPosition() or
+     * setReadUntilEnd() is called before any read or prefetch.
+     * setReadUntilEnd() always sets read_until_position to file size.
+     * setReadUntilPosition(pos) always has pos > 0, because if
+     * right_offset_in_compressed_file is 0, then setReadUntilEnd() is used.
+     */
     if (read_until_position)
     {
         /// Everything is already read.
-        if (file_offset_of_buffer_end == read_until_position)
+        if (file_offset_of_buffer_end == *read_until_position)
             return false;
 
-        if (file_offset_of_buffer_end > read_until_position)
+        if (file_offset_of_buffer_end > *read_until_position)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Read beyond last offset ({} > {})",
-                            file_offset_of_buffer_end, read_until_position);
+                            file_offset_of_buffer_end, *read_until_position);
     }
     else if (must_read_until_position)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -117,7 +124,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilPosition(size_t pos
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Prefetch is valid in readUntilPosition");
 
     read_until_position = position;
-    impl->setReadUntilPosition(read_until_position);
+    impl->setReadUntilPosition(*read_until_position);
 }
 
 
@@ -127,7 +134,7 @@ void AsynchronousReadIndirectBufferFromRemoteFS::setReadUntilEnd()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Prefetch is valid in readUntilEnd");
 
     read_until_position = impl->getFileSize();
-    impl->setReadUntilPosition(read_until_position);
+    impl->setReadUntilPosition(*read_until_position);
 }
 
 
@@ -225,7 +232,7 @@ off_t AsynchronousReadIndirectBufferFromRemoteFS::seek(off_t offset_, int whence
     pos = working_buffer.end();
 
     /// Note: we read in range [file_offset_of_buffer_end, read_until_position).
-    if (file_offset_of_buffer_end < read_until_position
+    if (read_until_position && file_offset_of_buffer_end < *read_until_position
         && static_cast<off_t>(file_offset_of_buffer_end) >= getPosition()
         && static_cast<off_t>(file_offset_of_buffer_end) < getPosition() + static_cast<off_t>(min_bytes_for_seek))
     {
