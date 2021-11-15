@@ -293,6 +293,64 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestAsan:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (address, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
+          KILL_TIMEOUT: 10800
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestRelease:
+    needs: [BuilderDebRelease]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (release, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
+          KILL_TIMEOUT: 10800
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
   FunctionalStatefulTestDebug:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, func-tester]
@@ -308,6 +366,64 @@ jobs:
           TEMP_PATH: ${{runner.temp}}/stateful_debug
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Stateful tests (debug, actions)'
+          REPO_COPY: ${{runner.temp}}/stateful_debug/ClickHouse
+          KILL_TIMEOUT: 3600
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatefulTestAsan:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateful_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateful tests (address, actions)'
+          REPO_COPY: ${{runner.temp}}/stateful_debug/ClickHouse
+          KILL_TIMEOUT: 3600
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatefulTestRelease:
+    needs: [BuilderDebRelease]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateful_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateful tests (release, actions)'
           REPO_COPY: ${{runner.temp}}/stateful_debug/ClickHouse
           KILL_TIMEOUT: 3600
         run: |
@@ -379,6 +495,34 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
+  StressTestAsan:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Stress test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stress_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stress test (address, actions)'
+          REPO_COPY: ${{runner.temp}}/stress_debug/ClickHouse
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 stress_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
   ASTFuzzerTestDebug:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, func-tester]
@@ -394,6 +538,34 @@ jobs:
           TEMP_PATH: ${{runner.temp}}/ast_fuzzer_debug
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'AST fuzzer (debug, actions)'
+          REPO_COPY: ${{runner.temp}}/ast_fuzzer_debug/ClickHouse
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 ast_fuzzer_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  ASTFuzzerTestAsan:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Fuzzer
+        env:
+          TEMP_PATH: ${{runner.temp}}/ast_fuzzer_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'AST fuzzer (ASan, actions)'
           REPO_COPY: ${{runner.temp}}/ast_fuzzer_debug/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
@@ -450,6 +622,34 @@ jobs:
           TEMP_PATH: ${{runner.temp}}/unit_tests_asan
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Unit tests (asan, actions)'
+          REPO_COPY: ${{runner.temp}}/unit_tests_asan/ClickHouse
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 unit_tests_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  UnitTestsReleaseClang:
+    needs: [BuilderDebRelease]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Unit test
+        env:
+          TEMP_PATH: ${{runner.temp}}/unit_tests_asan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Unit tests (release-clang, actions)'
           REPO_COPY: ${{runner.temp}}/unit_tests_asan/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
@@ -565,8 +765,27 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   FinishCheck:
-    needs: [StyleCheck, DockerHubPush, CheckLabels, BuilderReport, FastTest, FunctionalStatelessTestDebug, FunctionalStatefulTestDebug, DocsCheck, StressTestDebug, ASTFuzzerTestDebug, PVSCheck, UnitTestsAsan, SplitBuildSmokeTest, CompatibilityCheck]
-
+    needs:
+      - StyleCheck
+      - DockerHubPush
+      - CheckLabels
+      - BuilderReport
+      - FastTest
+      - FunctionalStatelessTestDebug
+      - FunctionalStatelessTestRelease
+      - FunctionalStatelessTestAsan
+      - FunctionalStatefulTestDebug
+      - FunctionalStatefulTestRelease
+      - FunctionalStatefulTestAsan
+      - DocsCheck
+      - StressTestDebug
+      - ASTFuzzerTestDebug
+      - ASTFuzzerTestAsan
+      - PVSCheck
+      - UnitTestsAsan
+      - UnitTestsReleaseClang
+      - SplitBuildSmokeTest
+      - CompatibilityCheck
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
