@@ -660,7 +660,7 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  FunctionalStatelessTestMemory:
+  FunctionalStatelessTestMsan:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, func-tester]
     steps:
