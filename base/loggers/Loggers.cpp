@@ -62,7 +62,13 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (!log_path.empty())
     {
         createDirectory(log_path);
-        std::cerr << "Logging " << log_level_string << " to " << log_path << std::endl;
+
+        std::string ext;
+        if (config.getRawString("logger.stream_compress", "false") == "true")
+            ext = ".lz4";
+
+        std::cerr << "Logging " << log_level_string << " to " << log_path << ext << std::endl;
+
         auto log_level = Poco::Logger::parseLevel(log_level_string);
         if (log_level > max_log_level)
         {
@@ -101,7 +107,11 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             max_log_level = errorlog_level;
         }
 
-        std::cerr << "Logging errors to " << errorlog_path << std::endl;
+        std::string ext;
+        if (config.getRawString("logger.stream_compress", "false") == "true")
+            ext = ".lz4";
+
+        std::cerr << "Logging errors to " << errorlog_path << ext << std::endl;
 
         error_log_file = new Poco::FileChannel;
         error_log_file->setProperty(Poco::FileChannel::PROP_PATH, fs::weakly_canonical(errorlog_path));

@@ -37,7 +37,6 @@
 #include <Poco/Condition.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/DirectoryIterator.h>
-#include <Poco/Logger.h>
 
 #include <base/logger_useful.h>
 #include <base/ErrorHandlers.h>

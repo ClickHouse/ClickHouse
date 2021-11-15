@@ -14,11 +14,7 @@ def started_cluster():
         yield cluster
 
     finally:
-        # It will print Fatal message after pkill -SEGV, suppress it
-        try:
-            cluster.shutdown()
-        except:
-            pass
+        cluster.shutdown()
 
 
 def check_log_file():
