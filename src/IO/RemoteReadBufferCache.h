@@ -115,7 +115,6 @@ private:
 
     std::mutex mutex;
     std::condition_variable more_data_signal;
-    std::shared_ptr<ThreadPool> download_thread;
 
     std::set<FILE *> opened_file_streams;
 
@@ -192,8 +191,9 @@ public:
     ~RemoteReadBufferCache();
     // global instance
     static RemoteReadBufferCache & instance();
+    std::shared_ptr<FreeThreadPool> GetThreadPool(){ return threadPool; }
 
-    void initOnce(const std::filesystem::path & dir, size_t limit_size, size_t bytes_read_before_flush_);
+    void initOnce(const std::filesystem::path & dir, size_t limit_size, size_t bytes_read_before_flush_, size_t max_threads);
     inline bool hasInitialized() const { return inited; }
 
     std::tuple<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCacheError> createReader(
@@ -203,6 +203,7 @@ public:
 private:
     std::string local_path_prefix;
 
+    std::shared_ptr<FreeThreadPool> threadPool;
     std::atomic<bool> inited = false;
     std::mutex mutex;
     size_t limit_size = 0;
@@ -222,6 +223,8 @@ private:
 
     void recoverCachedFilesMeta(
             const std::filesystem::path & path_,
+            size_t current_depth,
+            size_t max_depth,
             std::function<void(RemoteCacheController *)> const & finish_callback);
     bool clearLocalCache();
 };

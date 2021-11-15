@@ -67,7 +67,6 @@ RemoteCacheController::RemoteCacheController(
     std::shared_ptr<ReadBuffer> readbuffer_,
     std::function<void(RemoteCacheController *)> const & finish_callback)
 {
-    download_thread = nullptr;
     schema = remote_file_meta.schema;
     cluster = remote_file_meta.cluster;
     local_path = local_path_;
@@ -105,12 +104,6 @@ RemoteReadBufferCacheError RemoteCacheController::waitMoreData(size_t start_offs
     std::unique_lock lock{mutex};
     if (download_finished)
     {
-        if (download_thread != nullptr)
-        {
-            download_thread->wait();
-            LOG_TRACE(&Poco::Logger::get("RemoteCacheController"), "try to release down thread");
-            download_thread = nullptr;
-        }
         // finish reading
         if (start_offset_ >= current_offset)
         {
@@ -134,7 +127,6 @@ RemoteReadBufferCacheError RemoteCacheController::waitMoreData(size_t start_offs
 
 void RemoteCacheController::backgroupDownload(std::function<void(RemoteCacheController *)> const & finish_callback)
 {
-    download_thread = std::make_shared<ThreadPool>(1);
     auto task = [this, finish_callback]()
     {
         size_t unflush_bytes = 0;
@@ -173,7 +165,7 @@ void RemoteCacheController::backgroupDownload(std::function<void(RemoteCacheCont
             "finish download.{} into {}. size:{} ",
             remote_path, local_path.string(), current_offset);
     };
-    download_thread->scheduleOrThrow(task);
+    RemoteReadBufferCache::instance().GetThreadPool()->scheduleOrThrow(task);
 }
 
 void RemoteCacheController::flush(bool need_flush_meta_)
@@ -199,14 +191,7 @@ void RemoteCacheController::flush(bool need_flush_meta_)
     meta_file.close();
 }
 
-RemoteCacheController::~RemoteCacheController()
-{
-    if (download_thread != nullptr)
-    {
-        download_thread->wait();
-    }
-}
-
+RemoteCacheController::~RemoteCacheController() = default;
 void RemoteCacheController::close()
 {
     // delete the directory
@@ -406,7 +391,10 @@ off_t RemoteReadBuffer::getPosition()
 
 RemoteReadBufferCache::RemoteReadBufferCache() = default;
 
-RemoteReadBufferCache::~RemoteReadBufferCache() = default;
+RemoteReadBufferCache::~RemoteReadBufferCache()
+{
+    threadPool->wait();
+}
 
 RemoteReadBufferCache & RemoteReadBufferCache::instance()
 {
@@ -415,28 +403,43 @@ RemoteReadBufferCache & RemoteReadBufferCache::instance()
 }
 
 void RemoteReadBufferCache::recoverCachedFilesMeta(
-        const std::filesystem::path &path_,
+        const std::filesystem::path &current_path,
+        size_t current_depth,
+        size_t max_depth,
         std::function<void(RemoteCacheController *)> const & finish_callback)
 {
-    for (auto const & dir : std::filesystem::directory_iterator{path_})
+    if (current_depth >= max_depth)
     {
-        std::string path = dir.path();
-        auto cache_controller = RemoteCacheController::recover(path, finish_callback);
-        if (!cache_controller)
-            continue;
-        auto &cell = caches[path];
-        cell.cache_controller = cache_controller;
-        cell.key_iterator = keys.insert(keys.end(), path);
+        for (auto const & dir : std::filesystem::directory_iterator{current_path})
+        {
+            std::string path = dir.path();
+            auto cache_controller = RemoteCacheController::recover(path, finish_callback);
+            if (!cache_controller)
+                continue;
+            auto &cell = caches[path];
+            cell.cache_controller = cache_controller;
+            cell.key_iterator = keys.insert(keys.end(), path);
+        }
+        return;
     }
+
+    for (auto const &dir : std::filesystem::directory_iterator{current_path})
+    {
+        recoverCachedFilesMeta(dir.path(), current_depth + 1, max_depth, finish_callback);
+    }
+
 }
 
-void RemoteReadBufferCache::initOnce(const std::filesystem::path & dir, size_t limit_size_, size_t bytes_read_before_flush_)
+void RemoteReadBufferCache::initOnce(const std::filesystem::path & dir,
+        size_t limit_size_,
+        size_t bytes_read_before_flush_,
+        size_t max_threads)
 {
     LOG_TRACE(log, "init local cache. path: {}, limit {}", dir.string(), limit_size_);
-    std::lock_guard lock(mutex);
     local_path_prefix = dir;
     limit_size = limit_size_;
     local_cache_bytes_read_before_flush = bytes_read_before_flush_;
+    threadPool = std::make_shared<FreeThreadPool>(max_threads, 1000, 1000, false);
 
     // scan local disk dir and recover the cache metas
     std::filesystem::path root_dir(local_path_prefix);
@@ -445,10 +448,17 @@ void RemoteReadBufferCache::initOnce(const std::filesystem::path & dir, size_t l
         LOG_INFO(log, "{} not exists. this cache will be disable", local_path_prefix);
         return;
     }
-    auto callback = [this](RemoteCacheController * cntrl) { this->total_size += cntrl->size(); };
-
-    recoverCachedFilesMeta(root_dir, callback);
-    inited = true;
+    
+    auto recover_task = [this, root_dir]()
+    {
+        auto callback = [this](RemoteCacheController * cntrl) { this->total_size += cntrl->size(); };
+        std::lock_guard lock(this->mutex);
+        // two level dir. /<first 3 chars of path hash code>/<path hash code>
+        recoverCachedFilesMeta(root_dir, 1, 2, callback);
+        this->inited = true;
+        LOG_TRACE(this->log, "recovered from disk ");
+    };
+    GetThreadPool()->scheduleOrThrow(recover_task);
 }
 
 std::filesystem::path RemoteReadBufferCache::calculateLocalPath(const RemoteFileMeta & meta)
@@ -463,11 +473,13 @@ std::tuple<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCacheError> R
     const RemoteFileMeta &remote_file_meta,
     std::shared_ptr<ReadBuffer> & readbuffer)
 {
+    // If something is wrong on startup, rollback to read from the orignal ReadBuffer
     if (!hasInitialized())
     {
-        LOG_ERROR(log, "RemoteReadBufferCache not init");
+        LOG_ERROR(log, "RemoteReadBufferCache has not initialized");
         return {nullptr, RemoteReadBufferCacheError::NOT_INIT};
     }
+
     auto remote_path = remote_file_meta.path;
     const auto & file_size = remote_file_meta.file_size;
     const auto & last_modification_timestamp = remote_file_meta.last_modification_timestamp;
