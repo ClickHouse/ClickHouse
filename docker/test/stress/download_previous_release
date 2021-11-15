@@ -20,7 +20,7 @@ CLICKHOUSE_CLIENT_PACKET_NAME = "clickhouse-client_{version}_all.deb"
 CLICKHOUSE_TEST_PACKET_NAME = "clickhouse-test_{version}_all.deb"
 
 PACKETS_DIR = "previous_release_package_folder/"
-VERSION_PATTERN = r"((?:\d+\.)?(?:\d+\.)?(?:\d+\.)?\d+*)"
+VERSION_PATTERN = r"((?:\d+\.)?(?:\d+\.)?(?:\d+\.)?\d+.*)"
 
 
 class Version:
