@@ -280,14 +280,13 @@ jobs:
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Stateless tests (debug, actions)'
           REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
-          REQUIRED_BUILD_NUMBER: 7
           KILL_TIMEOUT: 10800
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER $KILL_TIMEOUT
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
       - name: Cleanup
         if: always()
         run: |
@@ -310,14 +309,13 @@ jobs:
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Stateful tests (debug, actions)'
           REPO_COPY: ${{runner.temp}}/stateful_debug/ClickHouse
-          REQUIRED_BUILD_NUMBER: 7
           KILL_TIMEOUT: 3600
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER $KILL_TIMEOUT
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
       - name: Cleanup
         if: always()
         run: |
@@ -340,14 +338,13 @@ jobs:
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Stateless tests flaky check (address, actions)'
           REPO_COPY: ${{runner.temp}}/stateless_flaky_asan/ClickHouse
-          REQUIRED_BUILD_NUMBER: 3
           KILL_TIMEOUT: 3600
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci
-          python3 functional_test_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER $KILL_TIMEOUT
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
       - name: Cleanup
         if: always()
         run: |
@@ -368,15 +365,14 @@ jobs:
         env:
           TEMP_PATH: ${{runner.temp}}/stress_debug
           REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Stress tests (debug, actions)'
+          CHECK_NAME: 'Stress test (debug, actions)'
           REPO_COPY: ${{runner.temp}}/stress_debug/ClickHouse
-          REQUIRED_BUILD_NUMBER: 7
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci
-          python3 stress_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER
+          python3 stress_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
@@ -399,13 +395,12 @@ jobs:
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'AST fuzzer (debug, actions)'
           REPO_COPY: ${{runner.temp}}/ast_fuzzer_debug/ClickHouse
-          REQUIRED_BUILD_NUMBER: 7
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci
-          python3 ast_fuzzer_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER
+          python3 ast_fuzzer_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
@@ -428,13 +423,12 @@ jobs:
 #          REPORTS_PATH: ${{runner.temp}}/reports_dir
 #          CHECK_NAME: 'Integration tests (asan, actions)'
 #          REPO_COPY: ${{runner.temp}}/integration_tests_asan/ClickHouse
-#          REQUIRED_BUILD_NUMBER: 3
 #        run: |
 #          sudo rm -fr $TEMP_PATH
 #          mkdir -p $TEMP_PATH
 #          cp -r $GITHUB_WORKSPACE $TEMP_PATH
 #          cd $REPO_COPY/tests/ci
-#          python3 integration_test_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER
+#          python3 integration_test_check.py "$CHECK_NAME"
 #      - name: Cleanup
 #        if: always()
 #        run: |
@@ -457,13 +451,12 @@ jobs:
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Unit tests (asan, actions)'
           REPO_COPY: ${{runner.temp}}/unit_tests_asan/ClickHouse
-          REQUIRED_BUILD_NUMBER: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
           cd $REPO_COPY/tests/ci
-          python3 unit_tests_check.py "$CHECK_NAME" $REQUIRED_BUILD_NUMBER
+          python3 unit_tests_check.py "$CHECK_NAME"
       - name: Cleanup
         if: always()
         run: |
@@ -560,12 +553,11 @@ jobs:
           TEMP_PATH: ${{runner.temp}}/split_build_check
           REPO_COPY: ${{runner.temp}}/split_build_check/ClickHouse
           REPORTS_PATH: ${{runner.temp}}/reports_dir
-          SPECIAL_BUILD_NUMBER: 1
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 split_build_smoke_check.py $SPECIAL_BUILD_NUMBER
+          cd $REPO_COPY/tests/ci && python3 split_build_smoke_check.py
       - name: Cleanup
         if: always()
         run: |
