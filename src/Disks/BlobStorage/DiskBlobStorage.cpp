@@ -158,8 +158,19 @@ void DiskBlobStorage::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
     {
         for (auto path : paths_keeper->paths)
         {
-            if (!blob_container_client->DeleteBlob(path).Value.Deleted)
-                throw Exception(ErrorCodes::BLOB_STORAGE_ERROR, "Failed to delete file in Blob Storage: {}", path);
+            try
+            {
+                auto delete_info = blob_container_client->DeleteBlob(path);
+                if (!delete_info.Value.Deleted)
+                {
+                    throw Exception(ErrorCodes::BLOB_STORAGE_ERROR, "Failed to delete file in Blob Storage: {}", path);
+                }
+            }
+            catch (const Azure::Storage::StorageException& e)
+            {
+                LOG_INFO(log, "Caught an error while deleting file {} : {}", path, e.Message);
+                throw e;
+            }
         }
     }
 }

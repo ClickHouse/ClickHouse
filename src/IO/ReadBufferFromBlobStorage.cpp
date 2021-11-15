@@ -54,10 +54,9 @@ bool ReadBufferFromBlobStorage::nextImpl()
             bytes_read = data_stream->ReadToCount(tmp_buffer.data(), to_read_bytes);
             break;
         }
-        catch (const Exception & e)
+        catch (const Azure::Storage::StorageException & e)
         {
-            // TODO: can't get LOG_DEBUG to compile here
-            std::cout << "\n\nException caught during Azure Read: " << e.message() << "\n";
+            LOG_INFO(log, "Exception caught during Azure Read for file {} : {}", path, e.Message);
 
             std::this_thread::sleep_for(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
@@ -112,9 +111,17 @@ void ReadBufferFromBlobStorage::initialize()
 
     blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
 
-    // TODO: try-catch for Download ?
-    auto download_response = blob_client->Download(download_options);
-    data_stream = std::move(download_response.Value.BodyStream);
+    try
+    {
+        auto download_response = blob_client->Download(download_options);
+        data_stream = std::move(download_response.Value.BodyStream);
+    }
+    catch (const Azure::Storage::StorageException & e)
+    {
+        LOG_INFO(log, "Exception caught during Azure Download for file {} : {}", path, e.Message);
+        throw e;
+    }
+
 
     if (data_stream == nullptr)
         throw Exception("Null data stream obtained while downloading a file from Blob Storage", ErrorCodes::RECEIVED_EMPTY_DATA);
