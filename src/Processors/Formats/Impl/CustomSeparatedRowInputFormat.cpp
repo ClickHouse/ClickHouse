@@ -12,6 +12,16 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+static FormatSettings updateFormatSettings(const FormatSettings & settings)
+{
+    if (settings.custom.escaping_rule != FormatSettings::EscapingRule::CSV || settings.custom.field_delimiter.empty())
+        return settings;
+
+    auto updated = settings;
+    updated.csv.delimiter = settings.custom.field_delimiter.front();
+    return updated;
+}
+
 CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
     const Block & header_,
     ReadBuffer & in_,
@@ -20,7 +30,7 @@ CustomSeparatedRowInputFormat::CustomSeparatedRowInputFormat(
     bool with_types_,
     bool ignore_spaces_,
     const FormatSettings & format_settings_)
-    : RowInputFormatWithNamesAndTypes(header_, in_, params_, with_names_, with_types_, format_settings_)
+    : RowInputFormatWithNamesAndTypes(header_, buf, params_, with_names_, with_types_, updateFormatSettings(format_settings_))
     , buf(in_)
     , ignore_spaces(ignore_spaces_)
     , escaping_rule(format_settings_.custom.escaping_rule)
@@ -134,6 +144,14 @@ bool CustomSeparatedRowInputFormat::readField(IColumn & column, const DataTypePt
 bool CustomSeparatedRowInputFormat::checkForSuffixImpl(bool check_eof)
 {
     skipSpaces();
+    if (format_settings.custom.result_after_delimiter.empty())
+    {
+        if (!check_eof)
+            return false;
+
+        return buf.eof();
+    }
+
     if (unlikely(checkString(format_settings.custom.result_after_delimiter, buf)))
     {
         skipSpaces();
@@ -151,7 +169,7 @@ bool CustomSeparatedRowInputFormat::tryParseSuffixWithDiagnosticInfo(WriteBuffer
     PeekableReadBufferCheckpoint checkpoint{buf};
     if (checkForSuffixImpl(false))
     {
-        if (in->eof())
+        if (buf.eof())
             out << "<End of stream>\n";
         else
             out << " There is some data after suffix\n";

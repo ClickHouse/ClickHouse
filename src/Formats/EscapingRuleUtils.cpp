@@ -71,6 +71,9 @@ void skipFieldByEscapingRule(ReadBuffer & buf, FormatSettings::EscapingRule esca
             readEscapedString(tmp, buf);
             break;
         case FormatSettings::EscapingRule::Quoted:
+            /// FIXME: it skips only strings, not numbers, arrays or tuples.
+            ///        we should read until delimiter and skip all data between
+            ///        single quotes.
             readQuotedString(tmp, buf);
             break;
         case FormatSettings::EscapingRule::CSV:
