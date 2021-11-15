@@ -23,7 +23,7 @@ private:
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
     void writeRowBetweenDelimiter() override;
-    void writePrefix() override;
+    void doWritePrefix() override;
     void writeSuffix() override;
 
     void writeLine(const std::vector<String> & values);

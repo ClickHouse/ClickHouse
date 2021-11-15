@@ -24,11 +24,17 @@ CustomSeparatedRowOutputFormat::CustomSeparatedRowOutputFormat(
 
 void CustomSeparatedRowOutputFormat::writeLine(const std::vector<String> & values)
 {
-    for (const auto & value : values)
-        writeStringByEscapingRule(value, out, escaping_rule, format_settings);
+    writeRowStartDelimiter();
+    for (size_t i = 0; i != values.size(); ++i)
+    {
+        writeStringByEscapingRule(values[i], out, escaping_rule, format_settings);
+        if (i + 1 != values.size())
+            writeFieldDelimiter();
+    }
+    writeRowEndDelimiter();
 }
 
-void CustomSeparatedRowOutputFormat::writePrefix()
+void CustomSeparatedRowOutputFormat::doWritePrefix()
 {
     writeString(format_settings.custom.result_before_delimiter, out);
 
@@ -88,9 +94,7 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
        {
            return std::make_shared<CustomSeparatedRowOutputFormat>(sample, buf, params, settings,  with_names, with_types);
        });
-
-       factory.markOutputFormatSupportsParallelFormatting(format_name);
-   };
+    };
 
    registerWithNamesAndTypes("CustomSeparated", register_func);
 }

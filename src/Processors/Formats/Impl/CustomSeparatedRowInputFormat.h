@@ -21,6 +21,11 @@ public:
     String getName() const override { return "CustomSeparatedRowInputFormat"; }
 
 private:
+    CustomSeparatedRowInputFormat(
+        const Block & header_,
+        std::unique_ptr<PeekableReadBuffer> in_,
+        const Params & params_,
+        bool with_names_, bool with_types_, bool ignore_spaces_, const FormatSettings & format_settings_);
     using EscapingRule = FormatSettings::EscapingRule;
 
     bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
