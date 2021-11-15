@@ -432,9 +432,9 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
     ASTPtr ast;
     StoragePtr storage = tryGetTable(table_name, getContext());
     bool has_table = storage != nullptr;
-    bool support_show_create_table = true;
+    bool is_system_storage = false;
     if (has_table)
-        support_show_create_table = storage->supportsShowCreateTable();
+        is_system_storage = storage->isSystemStorage();
     auto table_metadata_path = getObjectMetadataPath(table_name);
     try
     {
@@ -445,7 +445,7 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
         if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
             throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
                             ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
-        else if (!support_show_create_table && throw_on_error)
+        else if (is_system_storage && throw_on_error)
             throw Exception{"Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't support SHOW CREATE TABLE",
                             ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
         else if (throw_on_error)
