@@ -542,17 +542,17 @@ public:
 
     /// Delete irrelevant parts from memory and disk.
     /// If 'force' - don't wait for old_parts_lifetime.
-    void clearOldPartsFromFilesystem(bool force = false);
+    size_t clearOldPartsFromFilesystem(bool force = false);
     void clearPartsFromFilesystem(const DataPartsVector & parts);
 
     /// Delete WAL files containing parts, that all already stored on disk.
-    void clearOldWriteAheadLogs();
+    size_t clearOldWriteAheadLogs();
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
-    void clearOldTemporaryDirectories(const MergeTreeDataMergerMutator & merger_mutator, size_t custom_directories_lifetime_seconds);
+    size_t clearOldTemporaryDirectories(const MergeTreeDataMergerMutator & merger_mutator, size_t custom_directories_lifetime_seconds);
 
-    void clearEmptyParts();
+    size_t clearEmptyParts();
 
     /// After the call to dropAllData() no method can be called.
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
@@ -630,7 +630,7 @@ public:
         TableLockHolder & table_lock_holder);
 
     /// Prepares entries to backup data of the storage.
-    BackupEntries backup(const ASTs & partitions, ContextPtr context) const override;
+    BackupEntries backup(const ASTs & partitions, ContextPtr context) override;
     static BackupEntries backupDataParts(const DataPartsVector & data_parts);
 
     /// Extract data from the backup and put it to the storage.

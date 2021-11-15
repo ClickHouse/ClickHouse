@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <iomanip>
+#include <string_view>
 #include <filesystem>
 
 #include <base/argsToConfig.h>
@@ -9,10 +10,15 @@
 #include <base/LocalDate.h>
 #include <base/LineReader.h>
 #include <base/scope_guard_safe.h>
+#include "Common/Exception.h"
+#include "Common/getNumberOfPhysicalCPUCores.h"
+#include "Common/tests/gtest_global_context.h"
+#include "Common/typeid_cast.h"
 #include "Columns/ColumnString.h"
 #include "Columns/ColumnsNumber.h"
 #include "Core/Block.h"
 #include "Core/Protocol.h"
+#include "Formats/FormatFactory.h"
 
 #include <Common/config_version.h>
 #include <Common/UTF8Helpers.h>
@@ -52,12 +58,26 @@
 #include <Client/InternalTextLogs.h>
 
 namespace fs = std::filesystem;
+using namespace std::literals;
 
 
 namespace DB
 {
 
-static const NameSet exit_strings{"exit", "quit", "logout", "учше", "йгше", "дщпщге", "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж", "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"};
+static const NameSet exit_strings
+{
+    "exit", "quit", "logout", "учше", "йгше", "дщпщге",
+    "exit;", "quit;", "logout;", "учшеж", "йгшеж", "дщпщгеж",
+    "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
+};
+
+static const std::initializer_list<std::pair<String, String>> backslash_aliases
+{
+    { "\\l", "SHOW DATABASES" },
+    { "\\d", "SHOW TABLES" },
+    { "\\c", "USE" },
+};
+
 
 namespace ErrorCodes
 {
@@ -70,6 +90,7 @@ namespace ErrorCodes
     extern const int INVALID_USAGE_OF_INPUT;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int UNRECOGNIZED_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 }
@@ -103,8 +124,10 @@ void interruptSignalHandler(int signum)
         _exit(signum);
 }
 
+
 ClientBase::~ClientBase() = default;
 ClientBase::ClientBase() = default;
+
 
 void ClientBase::setupSignalHandler()
 {
@@ -168,8 +191,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, bool allow_mu
 }
 
 
-// Consumes trailing semicolons and tries to consume the same-line trailing
-// comment.
+/// Consumes trailing semicolons and tries to consume the same-line trailing comment.
 void ClientBase::adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, int max_parser_depth)
 {
     // We have to skip the trailing semicolon that might be left
@@ -246,7 +268,8 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (block.rows() == 0 || (query_fuzzer_runs != 0 && processed_rows >= 100))
         return;
 
-    if (need_render_progress && (stdout_is_a_tty || is_interactive))
+    /// If results are written INTO OUTFILE, we can avoid clearing progress to avoid flicker.
+    if (need_render_progress && (stdout_is_a_tty || is_interactive) && !select_into_file)
         progress_indication.clearProgressOutput();
 
     output_format->write(materializeBlock(block));
@@ -257,7 +280,11 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
 
     /// Restore progress bar after data block.
     if (need_render_progress && (stdout_is_a_tty || is_interactive))
+    {
+        if (select_into_file)
+            std::cerr << "\r";
         progress_indication.writeProgress();
+    }
 }
 
 
@@ -328,12 +355,15 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
 
         String current_format = format;
 
+        select_into_file = false;
+
         /// The query can specify output format or output file.
-        /// FIXME: try to prettify this cast using `as<>()`
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
             if (query_with_output->out_file)
             {
+                select_into_file = true;
+
                 const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
                 const auto & out_file = out_file_node.value.safeGet<std::string>();
 
@@ -366,11 +396,14 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
         if (has_vertical_output_suffix)
             current_format = "Vertical";
 
-        /// It is not clear how to write progress with parallel formatting. It may increase code complexity significantly.
-        if (!need_render_progress)
-            output_format = global_context->getOutputFormatParallelIfPossible(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+        /// It is not clear how to write progress intermixed with data with parallel formatting.
+        /// It may increase code complexity significantly.
+        if (!need_render_progress || select_into_file)
+            output_format = global_context->getOutputFormatParallelIfPossible(
+                current_format, out_file_buf ? *out_file_buf : *out_buf, block);
         else
-            output_format = global_context->getOutputFormat(current_format, out_file_buf ? *out_file_buf : *out_buf, block);
+            output_format = global_context->getOutputFormat(
+                current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
         output_format->doWritePrefix();
     }
@@ -823,6 +856,13 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 
 void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
 {
+    /// Get columns description from variable or (if it was empty) create it from sample.
+    auto columns_description_for_query = columns_description.empty() ? ColumnsDescription(sample.getNamesAndTypesList()) : columns_description;
+    if (columns_description_for_query.empty())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column description is empty and it can't be built from sample from table. Cannot execute query.");
+    }
+
     /// If INSERT data must be sent.
     auto * parsed_insert_query = parsed_query->as<ASTInsertQuery>();
     if (!parsed_insert_query)
@@ -844,7 +884,8 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         /// Get name of this file (path to file)
         const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
         const auto in_file = in_file_node.value.safeGet<std::string>();
-
+        /// Get name of table
+        const auto table_name = parsed_insert_query->table_id.getTableName();
         std::string compression_method;
         /// Compression method can be specified in query
         if (parsed_insert_query->compression)
@@ -853,13 +894,35 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
             compression_method = compression_method_node.value.safeGet<std::string>();
         }
 
-        /// Otherwise, it will be detected from file name automatically (by chooseCompressionMethod)
-        /// Buffer for reading from file is created and wrapped with appropriate compression method
-        auto in_buffer = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromFile>(in_file), chooseCompressionMethod(in_file, compression_method));
+        /// Create temporary storage file, to support globs and parallel reading
+        StorageFile::CommonArguments args{
+            WithContext(global_context),
+            parsed_insert_query->table_id,
+            parsed_insert_query->format,
+            getFormatSettings(global_context),
+            compression_method,
+            columns_description_for_query,
+            ConstraintsDescription{},
+            String{},
+        };
+        StoragePtr storage = StorageFile::create(in_file, global_context->getUserFilesPath(), args);
+        storage->startup();
+        SelectQueryInfo query_info;
 
         try
         {
-            sendDataFrom(*in_buffer, sample, columns_description, parsed_query);
+            sendDataFromPipe(
+                storage->read(
+                        sample.getNames(),
+                        storage->getInMemoryMetadataPtr(),
+                        query_info,
+                        global_context,
+                        {},
+                        global_context->getSettingsRef().max_block_size,
+                        getNumberOfPhysicalCPUCores()
+                    ),
+                parsed_query
+            );
         }
         catch (Exception & e)
         {
@@ -873,7 +936,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         ReadBufferFromMemory data_in(parsed_insert_query->data, parsed_insert_query->end - parsed_insert_query->data);
         try
         {
-            sendDataFrom(data_in, sample, columns_description, parsed_query);
+            sendDataFrom(data_in, sample, columns_description_for_query, parsed_query);
         }
         catch (Exception & e)
         {
@@ -898,7 +961,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         /// Send data read from stdin.
         try
         {
-            sendDataFrom(std_in, sample, columns_description, parsed_query);
+            sendDataFrom(std_in, sample, columns_description_for_query, parsed_query);
         }
         catch (Exception & e)
         {
@@ -933,6 +996,11 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
         });
     }
 
+    sendDataFromPipe(std::move(pipe), parsed_query);
+}
+
+void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query)
+{
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
 
@@ -1354,6 +1422,24 @@ void ClientBase::runInteractive()
             has_vertical_output_suffix = true;
         }
 
+        for (const auto& [alias, command] : backslash_aliases)
+        {
+            auto it = std::search(input.begin(), input.end(), alias.begin(), alias.end());
+            if (it != input.end() && std::all_of(input.begin(), it, isWhitespaceASCII))
+            {
+                it += alias.size();
+                if (it == input.end() || isWhitespaceASCII(*it))
+                {
+                    String new_input = command;
+                    // append the rest of input to the command
+                    // for parameters support, e.g. \c db_name -> USE db_name
+                    new_input.append(it, input.end());
+                    input = std::move(new_input);
+                    break;
+                }
+            }
+        }
+
         try
         {
             if (!processQueryText(input))
@@ -1446,8 +1532,7 @@ void ClientBase::clearTerminal()
     /// It is needed if garbage is left in terminal.
     /// Show cursor. It can be left hidden by invocation of previous programs.
     /// A test for this feature: perl -e 'print "x"x100000'; echo -ne '\033[0;0H\033[?25l'; clickhouse-client
-    std::cout << "\033[0J"
-                    "\033[?25h";
+    std::cout << "\033[0J" "\033[?25h";
 }
 
 
@@ -1472,7 +1557,7 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
     {
         const char * arg = argv[arg_num];
 
-        if (0 == strcmp(arg, "--external"))
+        if (arg == "--external"sv)
         {
             in_external_group = true;
             external_tables_arguments.emplace_back(Arguments{""});
@@ -1487,8 +1572,8 @@ void ClientBase::readArguments(int argc, char ** argv, Arguments & common_argume
         }
         /// Options with value after whitespace.
         else if (in_external_group
-            && (0 == strcmp(arg, "--file") || 0 == strcmp(arg, "--name") || 0 == strcmp(arg, "--format")
-                || 0 == strcmp(arg, "--structure") || 0 == strcmp(arg, "--types")))
+            && (arg == "--file"sv || arg == "--name"sv || arg == "--format"sv
+                || arg == "--structure"sv || arg == "--types"sv))
         {
             if (arg_num + 1 < argc)
             {
@@ -1594,8 +1679,12 @@ void ClientBase::init(int argc, char ** argv)
 
         ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
         ("time,t", "print query execution time to stderr in non-interactive mode (for benchmarks)")
+
         ("echo", "in batch mode, print query before execution")
         ("verbose", "print query and other debugging info")
+
+        ("log-level", po::value<std::string>(), "log level")
+        ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
 
         ("multiline,m", "multiline")
         ("multiquery,n", "multiquery")
@@ -1612,6 +1701,8 @@ void ClientBase::init(int argc, char ** argv)
         ("hardware-utilization", "print hardware utilization information in progress bar")
         ("print-profile-events", po::value(&profile_events.print)->zero_tokens(), "Printing ProfileEvents packets")
         ("profile-events-delay-ms", po::value<UInt64>()->default_value(profile_events.delay_ms), "Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet)")
+
+        ("interactive", "Process queries-file or --query query and start interactive mode")
     ;
 
     addOptions(options_description);
@@ -1681,8 +1772,13 @@ void ClientBase::init(int argc, char ** argv)
         config().setString("history_file", options["history_file"].as<std::string>());
     if (options.count("verbose"))
         config().setBool("verbose", true);
+    if (options.count("interactive"))
+        config().setBool("interactive", true);
+
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
+    if (options.count("server_logs_file"))
+        server_logs_file = options["server_logs_file"].as<std::string>();
     if (options.count("hardware-utilization"))
         progress_indication.print_hardware_utilization = true;
 

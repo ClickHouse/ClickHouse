@@ -758,9 +758,9 @@ class ClickHouseCluster:
                      with_kerberized_hdfs=False, with_mongo=False, with_mongo_secure=False, with_nginx=False,
                      with_redis=False, with_minio=False, with_cassandra=False, with_jdbc_bridge=False,
                      hostname=None, env_variables=None, image="clickhouse/integration-test", tag=None,
-                     stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
+                     stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None,
                      zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True,
-                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="yandex"):
+                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="clickhouse"):
 
         """Add an instance to the cluster.
 
@@ -832,6 +832,7 @@ class ClickHouseCluster:
             main_config_name=main_config_name,
             users_config_name=users_config_name,
             copy_common_configs=copy_common_configs,
+            external_dirs=external_dirs,
             tmpfs=tmpfs or [],
             config_root_name=config_root_name)
 
@@ -1785,6 +1786,7 @@ services:
             {binary_volume}
             {odbc_bridge_volume}
             {library_bridge_volume}
+            {external_dirs_volumes}
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
@@ -1827,7 +1829,7 @@ class ClickHouseInstance:
             main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True,
             hostname=None, env_variables=None,
             image="clickhouse/integration-test", tag="latest",
-            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None, config_root_name="yandex"):
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None, config_root_name="clickhouse"):
 
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -1835,6 +1837,7 @@ class ClickHouseInstance:
         self.cluster = cluster
         self.hostname = hostname if hostname is not None else self.name
 
+        self.external_dirs = external_dirs
         self.tmpfs = tmpfs or []
         self.base_config_dir = p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
@@ -2360,11 +2363,6 @@ class ClickHouseInstance:
         shutil.copyfile(p.join(self.base_config_dir, self.main_config_name), p.join(instance_config_dir, self.main_config_name))
         shutil.copyfile(p.join(self.base_config_dir, self.users_config_name), p.join(instance_config_dir, self.users_config_name))
 
-        # For old images, keep 'yandex' as root element name.
-        if self.image.startswith('yandex/'):
-            os.system("sed -i 's!<clickhouse>!<yandex>!; s!</clickhouse>!</yandex>!;' '{}'".format(p.join(instance_config_dir, self.main_config_name)))
-            os.system("sed -i 's!<clickhouse>!<yandex>!; s!</clickhouse>!</yandex>!;' '{}'".format(p.join(instance_config_dir, self.users_config_name)))
-
         logging.debug("Create directory for configuration generated in this helper")
         # used by all utils with any config
         conf_d_dir = p.abspath(p.join(instance_config_dir, 'conf.d'))
@@ -2382,7 +2380,7 @@ class ClickHouseInstance:
         def write_embedded_config(name, dest_dir, fix_log_level=False):
             with open(p.join(HELPERS_DIR, name), 'r') as f:
                 data = f.read()
-                data = data.replace('yandex', self.config_root_name)
+                data = data.replace('clickhouse', self.config_root_name)
                 if fix_log_level:
                     data = data.replace('<level>test</level>', '<level>trace</level>')
                 with open(p.join(dest_dir, name), 'w') as r:
@@ -2519,6 +2517,14 @@ class ClickHouseInstance:
             odbc_bridge_volume = "- " + self.odbc_bridge_bin_path + ":/usr/share/clickhouse-odbc-bridge_fresh"
             library_bridge_volume = "- " + self.library_bridge_bin_path + ":/usr/share/clickhouse-library-bridge_fresh"
 
+        external_dirs_volumes = ""
+        if self.external_dirs:
+            for external_dir in self.external_dirs:
+                external_dir_abs_path = p.abspath(p.join(self.path, external_dir.lstrip('/')))
+                logging.info(f'external_dir_abs_path={external_dir_abs_path}')
+                os.mkdir(external_dir_abs_path)
+                external_dirs_volumes += "- " + external_dir_abs_path + ":"  + external_dir + "\n"
+
 
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
@@ -2532,6 +2538,7 @@ class ClickHouseInstance:
                 instance_config_dir=instance_config_dir,
                 config_d_dir=self.config_d_dir,
                 db_dir=db_dir,
+                external_dirs_volumes=external_dirs_volumes,
                 tmpfs=str(self.tmpfs),
                 logs_dir=logs_dir,
                 depends_on=str(depends_on),

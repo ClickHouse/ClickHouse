@@ -20,6 +20,7 @@
 #include <regex>
 #include <Common/setThreadName.h>
 #include <Core/MySQL/Authentication.h>
+#include <base/logger_useful.h>
 
 #include <Common/config_version.h>
 
@@ -243,7 +244,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     try
     {
         // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
-        if (session->getAuthenticationTypeOrLogInFailure(user_name) == DB::Authentication::SHA256_PASSWORD)
+        if (session->getAuthenticationTypeOrLogInFailure(user_name) == DB::AuthenticationType::SHA256_PASSWORD)
         {
             authPluginSSL();
         }
