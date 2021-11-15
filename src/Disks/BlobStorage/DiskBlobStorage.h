@@ -20,10 +20,6 @@
 namespace DB
 {
 
-/// helper demo function to show how to access and modify Blob Storage
-void blob_storage_demo();
-
-
 struct DiskBlobStorageSettings final
 {
     DiskBlobStorageSettings(
