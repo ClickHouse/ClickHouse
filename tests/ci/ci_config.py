@@ -552,7 +552,7 @@ CI_CONFIG = {
         "Unit tests (release-gcc, actions)": {
             "required_build_properties": {
                 "compiler": "gcc-11",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
                 "bundled": "bundled",
@@ -564,7 +564,7 @@ CI_CONFIG = {
         "Unit tests (release-clang, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
                 "bundled": "bundled",
@@ -576,7 +576,7 @@ CI_CONFIG = {
         "Unit tests (asan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
                 "bundled": "bundled",
@@ -588,7 +588,7 @@ CI_CONFIG = {
         "Unit tests (msan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "memory",
                 "bundled": "bundled",
@@ -600,7 +600,7 @@ CI_CONFIG = {
         "Unit tests (tsan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
                 "bundled": "bundled",
@@ -612,7 +612,7 @@ CI_CONFIG = {
         "Unit tests (ubsan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
                 "bundled": "bundled",
@@ -624,7 +624,7 @@ CI_CONFIG = {
         "AST fuzzer (debug, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "debug",
                 "sanitizer": "none",
                 "bundled": "bundled",
@@ -636,7 +636,7 @@ CI_CONFIG = {
         "AST fuzzer (ASan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
                 "bundled": "bundled",
@@ -648,7 +648,7 @@ CI_CONFIG = {
         "AST fuzzer (MSan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "memory",
                 "bundled": "bundled",
@@ -660,7 +660,7 @@ CI_CONFIG = {
         "AST fuzzer (TSan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
                 "bundled": "bundled",
@@ -672,7 +672,7 @@ CI_CONFIG = {
         "AST fuzzer (UBSan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "undefined",
                 "bundled": "bundled",

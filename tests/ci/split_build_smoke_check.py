@@ -105,4 +105,4 @@ if __name__ == "__main__":
     s3_helper = S3Helper('https://s3.amazonaws.com')
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_logs, CHECK_NAME)
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(gh, pr_info.sha, CHECK_NAME, state, description, report_url)
+    post_commit_status(gh, pr_info.sha, CHECK_NAME, description, state, report_url)
