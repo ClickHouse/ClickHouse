@@ -213,13 +213,14 @@ ASTPtr ASTTableIdentifier::getTable() const
         else
             return std::make_shared<ASTIdentifier>("", children[0]->clone());
     }
-    else
+    else if (name_parts.size() == 1)
     {
         if (name_parts[0].empty())
             return std::make_shared<ASTIdentifier>("", children[0]->clone());
         else
             return std::make_shared<ASTIdentifier>(name_parts[0]);
     }
+    else return {};
 }
 
 ASTPtr ASTTableIdentifier::getDatabase() const

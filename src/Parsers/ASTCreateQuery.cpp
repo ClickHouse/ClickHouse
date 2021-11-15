@@ -221,7 +221,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 {
     frame.need_parens = false;
 
-    if (database && table)
+    if (database && !table)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "")
             << (attach ? "ATTACH DATABASE " : "CREATE DATABASE ")

@@ -831,7 +831,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 
     String current_database = getContext()->getCurrentDatabase();
-    auto database_name = !create.database ? current_database : create.getDatabase();
+    auto database_name = create.database ? create.getDatabase() : current_database;
 
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
