@@ -705,7 +705,7 @@ ASTs ActionsMatcher::doUntuple(const ASTFunction * function, ActionsMatcher::Dat
 
         auto func = makeASTFunction("tupleElement", tuple_ast, literal);
         if (!func_alias.empty())
-            func->setAlias(func_alias + toString(tid));
+            func->setAlias(func_alias + "." + toString(tid));
         auto function_builder = FunctionFactory::instance().get(func->name, data.getContext());
         data.addFunction(function_builder, {tuple_name_type->name, literal->getColumnName()}, func->getColumnName());
 
