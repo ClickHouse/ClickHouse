@@ -11,7 +11,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 
-
 namespace DB
 {
 
@@ -1609,7 +1608,7 @@ struct RecurrentWindowFunction : public WindowFunction
 
     void create(AggregateDataPtr __restrict place) const override
     {
-        const auto * state = static_cast<Float64 *>(static_cast<void *>(place));
+        auto * const state = static_cast<Float64 *>(static_cast<void *>(place));
         for (size_t i = 0; i < state_size; ++i)
             state[i] = 0.0;
     }
