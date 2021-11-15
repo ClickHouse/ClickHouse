@@ -1,9 +1,9 @@
-default	alter_index_test	index_a	set	a	1
-default	alter_index_test	index_b	minmax	b	1
-default	alter_index_test	index_c	set	c	2
-default	alter_index_test	index_a	set	a	1
-default	alter_index_test	index_d	set	d	1
-default	alter_index_test	index_b	minmax	b	1
-default	alter_index_test	index_c	set	c	2
-default	alter_index_test	index_a	set	a	1
-default	alter_index_test	index_d	set	d	1
+default	alter_index_test	index_a	set	a	1	0	0	0
+default	alter_index_test	index_b	minmax	b	1	0	0	0
+default	alter_index_test	index_c	set	c	2	0	0	0
+default	alter_index_test	index_a	set	a	1	0	0	0
+default	alter_index_test	index_d	set	d	1	0	0	0
+default	alter_index_test	index_b	minmax	b	1	0	0	0
+default	alter_index_test	index_c	set	c	2	0	0	0
+default	alter_index_test	index_a	set	a	1	0	0	0
+default	alter_index_test	index_d	set	d	1	0	0	0

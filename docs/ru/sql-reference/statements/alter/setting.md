@@ -38,7 +38,7 @@ ALTER TABLE example_table MODIFY SETTING max_part_loading_threads=8, max_parts_i
 
 ## RESET SETTING {#alter_reset_setting}
 
-Сбрасывает настройки таблицы в значения по умолчанию. Если настройка уже находится в состоянии по умолчанию, то никакие действия не выполняются. 
+Сбрасывает настройки таблицы в значения по умолчанию. Если настройка уже находится в состоянии по умолчанию, то никакие действия не выполняются.
 
 **Синтаксис**
 
@@ -51,10 +51,10 @@ RESET SETTING setting_name [, ...]
 ```sql
 CREATE TABLE example_table (id UInt32, data String) ENGINE=MergeTree() ORDER BY id
     SETTINGS max_part_loading_threads=8;
-    
+
 ALTER TABLE example_table RESET SETTING max_part_loading_threads;
 ```
 
-**Смотрите также** 
+**Смотрите также**
 
 -   [Настройки MergeTree таблиц](../../../operations/settings/merge-tree-settings.md)

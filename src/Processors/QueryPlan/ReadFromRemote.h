@@ -29,11 +29,12 @@ public:
         ThrottlerPtr throttler_,
         Scalars scalars_,
         Tables external_tables_,
-        Poco::Logger * log_);
+        Poco::Logger * log_,
+        UInt32 shard_count_);
 
     String getName() const override { return "ReadFromRemote"; }
 
-    void initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
     ClusterProxy::IStreamFactory::Shards shards;
@@ -50,6 +51,7 @@ private:
 
     Poco::Logger * log;
 
+    UInt32 shard_count;
     void addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard);
     void addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::Shard & shard);
 };

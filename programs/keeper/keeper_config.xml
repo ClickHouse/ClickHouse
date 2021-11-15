@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <logger>
         <!-- Possible levels [1]:
 
@@ -78,4 +78,4 @@
         </server>
     </openSSL>
 
-</yandex>
+</clickhouse>

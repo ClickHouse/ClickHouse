@@ -21,8 +21,6 @@ public:
     bool operator() (UInt64 & x) const;
     bool operator() (Float64 & x) const;
     bool operator() (Null &) const;
-    bool operator() (NegativeInfinity & x) const;
-    bool operator() (PositiveInfinity & x) const;
     bool operator() (String &) const;
     bool operator() (Array &) const;
     bool operator() (Tuple &) const;

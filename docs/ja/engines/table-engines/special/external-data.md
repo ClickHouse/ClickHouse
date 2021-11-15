@@ -65,4 +65,4 @@ $ curl -F 'passwd=@passwd.tsv;' 'http://localhost:8123/?query=SELECT+shell,+coun
 
 分散クエリ処理では、一時テーブルがすべてのリモートサーバーに送信されます。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/external_data/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/external_data/) <!--hide-->

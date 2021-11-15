@@ -86,7 +86,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
             - `ALTER RENAME COLUMN`
         - `ALTER INDEX`
             - `ALTER ORDER BY`
-            - `ALTER SAMPLE BY`			
+            - `ALTER SAMPLE BY`
             - `ALTER ADD INDEX`
             - `ALTER DROP INDEX`
             - `ALTER MATERIALIZE INDEX`
@@ -109,11 +109,13 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
         - `CREATE TEMPORARY TABLE`
     - `CREATE VIEW`
     - `CREATE DICTIONARY`
+    - `CREATE FUNCTION`
 - [DROP](#grant-drop)
     - `DROP DATABASE`
     - `DROP TABLE`
     - `DROP VIEW`
     - `DROP DICTIONARY`
+    - `DROP FUNCTION`
 - [TRUNCATE](#grant-truncate)
 - [OPTIMIZE](#grant-optimize)
 - [SHOW](#grant-show)
@@ -155,6 +157,8 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
         - `SYSTEM RELOAD CONFIG`
         - `SYSTEM RELOAD DICTIONARY`
             - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+        -   `SYSTEM RELOAD FUNCTION`
+        -   `SYSTEM RELOAD FUNCTIONS`
     - `SYSTEM MERGES`
     - `SYSTEM TTL MERGES`
     - `SYSTEM FETCHES`
@@ -185,7 +189,7 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 
 Примеры того, как трактуется данная иерархия:
 
-- Привилегия `ALTER` включает все остальные `ALTER*` привилегии. 
+- Привилегия `ALTER` включает все остальные `ALTER*` привилегии.
 - `ALTER CONSTRAINT` включает `ALTER ADD CONSTRAINT` и `ALTER DROP CONSTRAINT`.
 
 Привилегии применяются на разных уровнях. Уровень определяет синтаксис присваивания привилегии.
@@ -259,7 +263,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 Разрешает выполнять запросы [ALTER](alter/index.md) в соответствии со следующей иерархией привилегий:
 
-- `ALTER`. Уровень: `COLUMN`. 
+- `ALTER`. Уровень: `COLUMN`.
     - `ALTER TABLE`. Уровень: `GROUP`
         - `ALTER UPDATE`. Уровень: `COLUMN`.  Алиасы: `UPDATE`
         - `ALTER DELETE`. Уровень: `COLUMN`. Алиасы: `DELETE`
@@ -272,7 +276,7 @@ GRANT INSERT(x,y) ON db.table TO john
             - `ALTER RENAME COLUMN`. Уровень: `COLUMN`. Алиасы: `RENAME COLUMN`
         - `ALTER INDEX`. Уровень: `GROUP`. Алиасы: `INDEX`
             - `ALTER ORDER BY`. Уровень: `TABLE`. Алиасы: `ALTER MODIFY ORDER BY`, `MODIFY ORDER BY`
-            - `ALTER SAMPLE BY`. Уровень: `TABLE`. Алиасы: `ALTER MODIFY SAMPLE BY`, `MODIFY SAMPLE BY`			
+            - `ALTER SAMPLE BY`. Уровень: `TABLE`. Алиасы: `ALTER MODIFY SAMPLE BY`, `MODIFY SAMPLE BY`
             - `ALTER ADD INDEX`. Уровень: `TABLE`. Алиасы: `ADD INDEX`
             - `ALTER DROP INDEX`. Уровень: `TABLE`. Алиасы: `DROP INDEX`
             - `ALTER MATERIALIZE INDEX`. Уровень: `TABLE`. Алиасы: `MATERIALIZE INDEX`
@@ -292,7 +296,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 Примеры того, как трактуется данная иерархия:
 
-- Привилегия `ALTER` включает все остальные `ALTER*` привилегии. 
+- Привилегия `ALTER` включает все остальные `ALTER*` привилегии.
 - `ALTER CONSTRAINT` включает `ALTER ADD CONSTRAINT` и `ALTER DROP CONSTRAINT`.
 
 **Дополнительно**

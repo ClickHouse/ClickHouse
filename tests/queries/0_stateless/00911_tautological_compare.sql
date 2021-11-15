@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 -- TODO: Tautological optimization breaks JIT expression compilation, because it can return constant result
 -- for non constant columns. And then sample blocks from same ActionsDAGs can be mismatched.
 -- This optimization cannot be performed on AST rewrite level, because we does not have information about types

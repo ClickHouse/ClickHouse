@@ -8,6 +8,7 @@ if [ -x ./clickhouse ]
 then
     CLICKHOUSE_CLIENT="./clickhouse client"
 elif command -v clickhouse-client >/dev/null 2>&1
+then
     CLICKHOUSE_CLIENT="clickhouse-client"
 else
     echo "clickhouse-client is not found"

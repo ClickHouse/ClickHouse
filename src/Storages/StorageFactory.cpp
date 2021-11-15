@@ -146,8 +146,8 @@ StoragePtr StorageFactory::get(
                     throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
             }
 
-            if (storage_def->comment)
-                comment = storage_def->comment->as<ASTLiteral &>().value.get<String>();
+            if (query.comment)
+                comment = query.comment->as<ASTLiteral &>().value.get<String>();
 
             auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
             {
@@ -222,7 +222,7 @@ StoragePtr StorageFactory::get(
         storage_def->engine->arguments->children = empty_engine_args;
     }
 
-    if (local_context->hasQueryContext() && context->getSettingsRef().log_queries)
+    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
         local_context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, name);
 
     return res;

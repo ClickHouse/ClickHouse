@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/quoteString.h>
 #include <Parsers/ASTNameTypePair.h>

@@ -123,6 +123,8 @@ class DatabaseCatalog : boost::noncopyable, WithMutableContext
 public:
     static constexpr const char * TEMPORARY_DATABASE = "_temporary_and_external_tables";
     static constexpr const char * SYSTEM_DATABASE = "system";
+    static constexpr const char * INFORMATION_SCHEMA = "information_schema";
+    static constexpr const char * INFORMATION_SCHEMA_UPPERCASE = "INFORMATION_SCHEMA";
 
     static DatabaseCatalog & init(ContextMutablePtr global_context_);
     static DatabaseCatalog & instance();
@@ -130,6 +132,7 @@ public:
 
     void initializeAndLoadTemporaryDatabase();
     void loadDatabases();
+    void loadMarkedAsDroppedTables();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     DDLGuardPtr getDDLGuard(const String & database, const String & table);
@@ -144,7 +147,7 @@ public:
     DatabasePtr getSystemDatabase() const;
 
     void attachDatabase(const String & database_name, const DatabasePtr & database);
-    DatabasePtr detachDatabase(const String & database_name, bool drop = false, bool check_empty = true);
+    DatabasePtr detachDatabase(ContextPtr local_context, const String & database_name, bool drop = false, bool check_empty = true);
     void updateDatabaseName(const String & old_name, const String & new_name);
 
     /// database_name must be not empty
@@ -240,7 +243,6 @@ private:
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 
-    void loadMarkedAsDroppedTables();
     void dropTableDataTask();
     void dropTableFinally(const TableMarkedAsDropped & table);
 

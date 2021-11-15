@@ -308,7 +308,7 @@ clone
 ```
 ## tid {#tid}
 
-Returns id of the thread, in which current [Block](https://clickhouse.tech/docs/en/development/architecture/#block) is processed.
+Returns id of the thread, in which current [Block](https://clickhouse.com/docs/en/development/architecture/#block) is processed.
 
 **Syntax**
 
@@ -338,7 +338,7 @@ Result:
 
 ## logTrace {#logtrace}
 
-Emits trace log message to server log for each [Block](https://clickhouse.tech/docs/en/development/architecture/#block).
+Emits trace log message to server log for each [Block](https://clickhouse.com/docs/en/development/architecture/#block).
 
 **Syntax**
 

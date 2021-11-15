@@ -365,4 +365,4 @@ ORDER BY
     P_BRAND ASC;
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/getting_started/example_datasets/star_schema/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/getting_started/example_datasets/star_schema/) <!--hide-->

@@ -14,7 +14,7 @@
 **Пример**
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <ldap_servers>
         <!- Typical LDAP server. -->
@@ -32,7 +32,7 @@
             <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
             <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
         </my_ldap_server>
-		
+
         <!- Typical Active Directory with configured user DN detection for further role mapping. -->
         <my_ad_server>
             <host>localhost</host>
@@ -45,7 +45,7 @@
             <enable_tls>no</enable_tls>
         </my_ad_server>
     </ldap_servers>
-</yandex>
+</clickhouse>
 ```
 
 Обратите внимание, что можно определить несколько LDAP серверов внутри секции `ldap_servers`, используя различные имена.
@@ -66,7 +66,7 @@
             - При формировании фильтра все подстроки `{user_name}`, `{bind_dn}`, `{user_dn}` и `{base_dn}` в шаблоне будут заменяться на фактическое имя пользователя, DN подключения, DN пользователя и базовый DN соответственно при каждом LDAP поиске.
             - Обратите внимание, что специальные символы должны быть правильно экранированы в XML.
 - `verification_cooldown` — промежуток времени (в секундах) после успешной попытки подключения, в течение которого пользователь будет считаться аутентифицированным и сможет выполнять запросы без повторного обращения к серверам LDAP.
-    - Чтобы отключить кеширование и заставить обращаться к серверу LDAP для каждого запроса аутентификации, укажите `0` (значение по умолчанию). 
+    - Чтобы отключить кеширование и заставить обращаться к серверу LDAP для каждого запроса аутентификации, укажите `0` (значение по умолчанию).
 - `enable_tls` — флаг, включающий использование защищенного соединения с сервером LDAP.
     - Укажите `no` для использования текстового протокола `ldap://` (не рекомендовано).
     - Укажите `yes` для обращения к LDAP по протоколу SSL/TLS `ldaps://` (рекомендовано, используется по умолчанию).
@@ -78,7 +78,7 @@
 - `tls_cert_file` — путь к файлу сертификата.
 - `tls_key_file` — путь к файлу ключа сертификата.
 - `tls_ca_cert_file` — путь к файлу ЦС (certification authority) сертификата.
-- `tls_ca_cert_dir` — путь к каталогу, содержащему сертификаты ЦС. 
+- `tls_ca_cert_dir` — путь к каталогу, содержащему сертификаты ЦС.
 - `tls_cipher_suite` — разрешенный набор шифров (в нотации OpenSSL).
 
 ## Внешний аутентификатор LDAP {#ldap-external-authenticator}
@@ -90,7 +90,7 @@
 **Пример**
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <users>
         <!- ... -->
@@ -101,7 +101,7 @@
             </ldap>
         </my_user>
     </users>
-</yandex>
+</clickhouse>
 ```
 
 Обратите внимание, что пользователь `my_user` ссылается на `my_ldap_server`. Этот LDAP сервер должен быть настроен в основном файле `config.xml`, как это было описано ранее.
@@ -125,7 +125,7 @@ CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
 В `config.xml`.
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <user_directories>
         <!- Typical LDAP server. -->
@@ -143,7 +143,7 @@ CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
                 <prefix>clickhouse_</prefix>
             </role_mapping>
         </ldap>
-		
+
         <!- Typical Active Directory with role mapping that relies on the detected user DN. -->
         <ldap>
             <server>my_ad_server</server>
@@ -156,7 +156,7 @@ CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
             </role_mapping>
         </ldap>
     </user_directories>
-</yandex>
+</clickhouse>
 ```
 
 Обратите внимание, что `my_ldap_server`, указанный в секции `ldap` внутри секции `user_directories`, должен быть настроен в файле `config.xml`, как это было описано ранее. (см. [Определение LDAP сервера](#ldap-server-definition)).
@@ -177,6 +177,6 @@ CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
             - При формировании фильтра все подстроки `{user_name}`, `{bind_dn}`, `{user_dn}` и `{base_dn}` в шаблоне будут заменяться на фактическое имя пользователя, DN подключения, DN пользователя и базовый DN соответственно при каждом LDAP поиске.
             - Обратите внимание, что специальные символы должны быть правильно экранированы в XML.
         - `attribute` — имя атрибута, значение которого будет возвращаться LDAP поиском. По умолчанию: `cn`.
-        - `prefix` — префикс, который, как предполагается, будет находиться перед началом каждой строки в исходном списке строк, возвращаемых LDAP поиском. Префикс будет удален из исходных строк, а сами они будут рассматриваться как имена локальных ролей. По умолчанию: пустая строка. 
+        - `prefix` — префикс, который, как предполагается, будет находиться перед началом каждой строки в исходном списке строк, возвращаемых LDAP поиском. Префикс будет удален из исходных строк, а сами они будут рассматриваться как имена локальных ролей. По умолчанию: пустая строка.
 
-[Оригинальная статья](https://clickhouse.tech/docs/en/operations/external-authenticators/ldap) <!--hide-->
+[Оригинальная статья](https://clickhouse.com/docs/en/operations/external-authenticators/ldap) <!--hide-->

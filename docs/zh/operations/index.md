@@ -22,4 +22,4 @@ ClickHouse操作手册由以下主要部分组成：
 -   [设置](../operations/settings/index.md)
 -   [实用工具](../operations/utilities/index.md)
 
-[原文](https://clickhouse.tech/docs/en/operations/) <!--hide-->
+[原文](https://clickhouse.com/docs/en/operations/) <!--hide-->
