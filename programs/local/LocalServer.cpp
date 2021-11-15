@@ -396,14 +396,6 @@ void LocalServer::connect()
 }
 
 
-void LocalServer::prepareForInteractive()
-{
-    clearTerminal();
-    showClientVersion();
-    std::cerr << std::endl;
-}
-
-
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
@@ -436,11 +428,18 @@ try
 
     processConfig();
     applyCmdSettings(global_context);
+
+    if (is_interactive)
+    {
+        clearTerminal();
+        showClientVersion();
+        std::cerr << std::endl;
+    }
+
     connect();
 
     if (is_interactive && !delayed_interactive)
     {
-        prepareForInteractive();
         runInteractive();
     }
     else
@@ -448,10 +447,7 @@ try
         runNonInteractive();
 
         if (delayed_interactive)
-        {
-            prepareForInteractive();
             runInteractive();
-        }
     }
 
     cleanup();
