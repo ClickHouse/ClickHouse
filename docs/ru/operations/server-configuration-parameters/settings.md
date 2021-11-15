@@ -1466,7 +1466,7 @@ ClickHouse использует ZooKeeper для хранения метадан
 
 ## compiled_expression_cache_elements_size {#compiled_expression_cache_elements_size}
 
-Задает размер кэша (в элементах) для [скомпилированных выражений](../../operations/caches.md).
+Задает размер кеша (в элементах) для [скомпилированных выражений](../../operations/caches.md).
 
 Возможные значения:
 
