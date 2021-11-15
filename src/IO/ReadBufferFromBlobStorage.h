@@ -6,6 +6,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <IO/HTTPCommon.h>
 #include <IO/SeekableReadBuffer.h>
 #include <azure/storage/blobs.hpp>
 
@@ -41,6 +42,7 @@ private:
     size_t total_size;
     bool initialized = false;
 
+    Poco::Logger * log = &Poco::Logger::get("ReadBufferFromBlobStorage");
 };
 
 }
