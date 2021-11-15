@@ -415,31 +415,19 @@ RemoteReadBufferCache & RemoteReadBufferCache::instance()
 }
 
 void RemoteReadBufferCache::recoverCachedFilesMeta(
-        const std::filesystem::path &current_path,
-        size_t current_depth,
-        size_t max_depth,
+        const std::filesystem::path &path_,
         std::function<void(RemoteCacheController *)> const & finish_callback)
 {
-    if (current_depth >= max_depth)
+    for (auto const & dir : std::filesystem::directory_iterator{path_})
     {
-        for (auto const & dir : std::filesystem::directory_iterator{current_path})
-        {
-            std::string path = dir.path();
-            auto cache_controller = RemoteCacheController::recover(path, finish_callback);
-            if (!cache_controller)
-                continue;
-            auto &cell = caches[path];
-            cell.cache_controller = cache_controller;
-            cell.key_iterator = keys.insert(keys.end(), path);
-        }
-        return;
+        std::string path = dir.path();
+        auto cache_controller = RemoteCacheController::recover(path, finish_callback);
+        if (!cache_controller)
+            continue;
+        auto &cell = caches[path];
+        cell.cache_controller = cache_controller;
+        cell.key_iterator = keys.insert(keys.end(), path);
     }
-
-    for (auto const &dir : std::filesystem::directory_iterator{current_path})
-    {
-        recoverCachedFilesMeta(dir.path(), current_depth + 1, max_depth, finish_callback);
-    }
-
 }
 
 void RemoteReadBufferCache::initOnce(const std::filesystem::path & dir, size_t limit_size_, size_t bytes_read_before_flush_)
@@ -459,8 +447,7 @@ void RemoteReadBufferCache::initOnce(const std::filesystem::path & dir, size_t l
     }
     auto callback = [this](RemoteCacheController * cntrl) { this->total_size += cntrl->size(); };
 
-    // two level dir. /<first 3 chars of path hash code>/<path hash code>
-    recoverCachedFilesMeta(root_dir, 1, 2, callback);
+    recoverCachedFilesMeta(root_dir, callback);
     inited = true;
 }
 
