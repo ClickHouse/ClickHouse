@@ -71,6 +71,14 @@ static const NameSet exit_strings
     "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
 };
 
+static const std::initializer_list<std::pair<String, String>> backslash_aliases
+{
+    { "\\l", "SHOW DATABASES" },
+    { "\\d", "SHOW TABLES" },
+    { "\\c", "USE" },
+};
+
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -1424,6 +1432,24 @@ void ClientBase::runInteractive()
             has_vertical_output_suffix = true;
         }
 
+        for (const auto& [alias, command] : backslash_aliases)
+        {
+            auto it = std::search(input.begin(), input.end(), alias.begin(), alias.end());
+            if (it != input.end() && std::all_of(input.begin(), it, isWhitespaceASCII))
+            {
+                it += alias.size();
+                if (it == input.end() || isWhitespaceASCII(*it))
+                {
+                    String new_input = command;
+                    // append the rest of input to the command
+                    // for parameters support, e.g. \c db_name -> USE db_name
+                    new_input.append(it, input.end());
+                    input = std::move(new_input);
+                    break;
+                }
+            }
+        }
+
         try
         {
             if (!processQueryText(input))
@@ -1685,6 +1711,8 @@ void ClientBase::init(int argc, char ** argv)
         ("hardware-utilization", "print hardware utilization information in progress bar")
         ("print-profile-events", po::value(&profile_events.print)->zero_tokens(), "Printing ProfileEvents packets")
         ("profile-events-delay-ms", po::value<UInt64>()->default_value(profile_events.delay_ms), "Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet)")
+
+        ("interactive", "Process queries-file or --query query and start interactive mode")
     ;
 
     addOptions(options_description);
@@ -1754,6 +1782,9 @@ void ClientBase::init(int argc, char ** argv)
         config().setString("history_file", options["history_file"].as<std::string>());
     if (options.count("verbose"))
         config().setBool("verbose", true);
+    if (options.count("interactive"))
+        config().setBool("interactive", true);
+
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.count("server_logs_file"))

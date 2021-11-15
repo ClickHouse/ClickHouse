@@ -76,7 +76,7 @@ private:
 
     size_t bytes_to_ignore = 0;
 
-    size_t read_until_position = 0;
+    std::optional<size_t> read_until_position;
 
     bool must_read_until_position;
 };
