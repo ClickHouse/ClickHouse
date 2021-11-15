@@ -654,11 +654,6 @@ public:
         write_buf->finalize();
     }
 
-    // void flush() override
-    // {
-    //     writer->flush();
-    // }
-
 private:
     StorageMetadataPtr metadata_snapshot;
     String table_name_for_log;
