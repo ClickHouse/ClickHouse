@@ -506,9 +506,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 if (ThreadFuzzer::instance().isEffective())
     global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
 
-if (config().has("local_cache_dir") && config().has("local_cache_quota"))
-    RemoteReadBufferCache::instance().initOnce(config().getString("local_cache_dir"), config().getUInt64("local_cache_quota"), config().getUInt64("local_cache_bytes_read_before_flush",DBMS_DEFAULT_BUFFER_SIZE));
-
 #if defined(SANITIZER)
     global_context->addWarningMessage("Server was built with sanitizer. It will work slowly.");
 #endif
@@ -518,6 +515,13 @@ if (config().has("local_cache_dir") && config().has("local_cache_quota"))
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
     GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
+
+    if (config().has("local_cache_dir") && config().has("local_cache_quota"))
+        RemoteReadBufferCache::instance().initOnce(
+                config().getString("local_cache_dir"),
+                config().getUInt64("local_cache_quota"),
+                config().getUInt64("local_cache_bytes_read_before_flush",DBMS_DEFAULT_BUFFER_SIZE),
+                config().getUInt64("local_cache_max_threads", 1000));
 
     ConnectionCollector::init(global_context, config().getUInt("max_threads_for_connection_collector", 10));
 
