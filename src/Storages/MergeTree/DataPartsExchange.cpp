@@ -24,6 +24,7 @@ namespace fs = std::filesystem;
 namespace CurrentMetrics
 {
     extern const Metric ReplicatedSend;
+    extern const Metric ReplicatedFetch;
 }
 
 namespace DB
@@ -344,7 +345,7 @@ void Service::sendPartFromDiskRemoteMeta(const MergeTreeData::DataPartPtr & part
         writeStringBinary(it.first, out);
         writeBinary(file_size, out);
 
-        auto file_in = createReadBufferFromFileBase(metadata_file, {}, 0);
+        auto file_in = createReadBufferFromFileBase(metadata_file, /* settings= */ {});
         HashingWriteBuffer hashing_out(out);
         copyDataWithThrottler(*file_in, hashing_out, blocker.getCounter(), data.getSendsThrottler());
         if (blocker.isCancelled())

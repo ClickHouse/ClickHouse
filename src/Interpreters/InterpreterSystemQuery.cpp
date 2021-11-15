@@ -31,7 +31,7 @@
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/ContextAccess.h>
-#include <Access/AllowedClientHosts.h>
+#include <Access/Common/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
 #include <Disks/DiskRestartProxy.h>
 #include <Storages/StorageDistributed.h>
@@ -44,9 +44,7 @@
 #include <csignal>
 #include <algorithm>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 namespace DB
 {

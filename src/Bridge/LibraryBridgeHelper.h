@@ -102,6 +102,7 @@ private:
     size_t bridge_port;
     bool library_initialized = false;
     ConnectionTimeouts http_timeouts;
+    Poco::Net::HTTPBasicCredentials credentials{};
 };
 
 }
