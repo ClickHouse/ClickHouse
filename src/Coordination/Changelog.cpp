@@ -168,7 +168,8 @@ public:
     explicit ChangelogReader(const std::string & filepath_)
         : filepath(filepath_)
         , read_buf(filepath)
-    {}
+    {
+    }
 
     /// start_log_index -- all entries with index < start_log_index will be skipped, but accounted into total_entries_read_from_log
     ChangelogReadResult readChangelog(IndexToLogEntry & logs, uint64_t start_log_index, IndexToOffset & index_to_offset, Poco::Logger * log)
