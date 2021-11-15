@@ -459,7 +459,7 @@ void RemoteReadBufferCache::initOnce(const std::filesystem::path & dir, size_t l
     }
     auto callback = [this](RemoteCacheController * cntrl) { this->total_size += cntrl->size(); };
 
-    // tw0 level dir. /<first 3 chars of path hash code>/<path hash code>
+    // two level dir. /<first 3 chars of path hash code>/<path hash code>
     recoverCachedFilesMeta(root_dir, 1, 2, callback);
     inited = true;
 }
