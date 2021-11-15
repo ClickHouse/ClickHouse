@@ -414,7 +414,7 @@ RemoteReadBufferCache & RemoteReadBufferCache::instance()
     return instance;
 }
 
-void RemoteReadBufferCache::recover_cached_files_meta(
+void RemoteReadBufferCache::recoverCachedFilesMeta(
         const std::filesystem::path &current_path,
         size_t current_depth,
         size_t max_depth,
@@ -425,16 +425,11 @@ void RemoteReadBufferCache::recover_cached_files_meta(
         for (auto const & dir : std::filesystem::directory_iterator{current_path})
         {
             std::string path = dir.path();
-            if (caches.count(path))
-            {
-                LOG_ERROR(log, "duplicated file:{}", path);
-                continue;
-            }
-            auto cache_cntrl = RemoteCacheController::recover(path, finish_callback);
-            if (!cache_cntrl)
+            auto cache_controller = RemoteCacheController::recover(path, finish_callback);
+            if (!cache_controller)
                 continue;
             auto &cell = caches[path];
-            cell.cache_controller = cache_cntrl;
+            cell.cache_controller = cache_controller;
             cell.key_iterator = keys.insert(keys.end(), path);
         }
         return;
@@ -442,7 +437,7 @@ void RemoteReadBufferCache::recover_cached_files_meta(
 
     for (auto const &dir : std::filesystem::directory_iterator{current_path})
     {
-        recover_cached_files_meta(dir.path(), current_depth + 1, max_depth, finish_callback);
+        recoverCachedFilesMeta(dir.path(), current_depth + 1, max_depth, finish_callback);
     }
 
 }
@@ -464,18 +459,17 @@ void RemoteReadBufferCache::initOnce(const std::filesystem::path & dir, size_t l
     }
     auto callback = [this](RemoteCacheController * cntrl) { this->total_size += cntrl->size(); };
 
-    // four level dir. <schema>/<cluster>/<first 3 chars of path hash code>/<path hash code>
-    recover_cached_files_meta(root_dir, 1, 4, callback);
+    // tw0 level dir. /<first 3 chars of path hash code>/<path hash code>
+    recoverCachedFilesMeta(root_dir, 1, 2, callback);
     inited = true;
 }
 
 std::filesystem::path RemoteReadBufferCache::calculateLocalPath(const RemoteFileMeta & meta)
 {
-    auto path_prefix = std::filesystem::path(local_path_prefix) / meta.schema /  meta.cluster;
-
-    UInt128 hashcode = sipHash128(meta.path.c_str(), meta.path.size());
+    std::string full_path = meta.schema + ":" + meta.cluster + ":" + meta.path;
+    UInt128 hashcode = sipHash128(full_path.c_str(), full_path.size());
     std::string hashcode_str = getHexUIntLowercase(hashcode);
-    return path_prefix / hashcode_str.substr(0,3) / hashcode_str;
+    return std::filesystem::path(local_path_prefix) / hashcode_str.substr(0,3) / hashcode_str;
 }
 
 std::tuple<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCacheError> RemoteReadBufferCache::createReader(
