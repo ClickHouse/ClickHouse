@@ -763,6 +763,30 @@ Default value: 10000.
 <max_thread_pool_size>12000</max_thread_pool_size>
 ```
 
+## max_thread_pool_free_size {#max-thread-pool-free-size}
+
+The number of threads that are always held in the Global Thread pool.
+
+Default value: 1000.
+
+**Example**
+
+``` xml
+<max_thread_pool_free_size>1200</max_thread_pool_free_size>
+```
+
+## thread_pool_queue_size {#thread-pool-queue-size}
+
+The limit to the number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to the `max_thread_pool_size`.
+
+Default value: 10000.
+
+**Example**
+
+``` xml
+<thread_pool_queue_size>12000</thread_pool_queue_size>
+```
+
 ## merge_tree {#server_configuration_parameters-merge_tree}
 
 Fine tuning for tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).

@@ -59,7 +59,6 @@ protected:
 
     virtual bool executeMultiQuery(const String & all_queries_text) = 0;
     virtual void connect() = 0;
-    virtual void prepareForInteractive() = 0;
     virtual void processError(const String & query) const = 0;
     virtual String getName() const = 0;
 

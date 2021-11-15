@@ -10,11 +10,6 @@
 #include <Common/CurrentMetrics.h>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric BackgroundPoolTask;
-}
-
 namespace DB
 {
 
