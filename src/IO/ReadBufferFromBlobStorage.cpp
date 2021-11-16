@@ -94,7 +94,7 @@ off_t ReadBufferFromBlobStorage::seek(off_t offset_, int whence)
 
 off_t ReadBufferFromBlobStorage::getPosition()
 {
-    // TODO: which one is the right one? In S3: return offset - available();
+    // TODO: why is it `return offset - available()` in S3?
 
     return offset;
 }
@@ -118,15 +118,13 @@ void ReadBufferFromBlobStorage::initialize()
     }
     catch (const Azure::Storage::StorageException & e)
     {
-        // TODO log the download options to
-        LOG_INFO(log, "Exception caught during Azure Download for file {} : {}", path, e.Message);
+        LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} : {}", path, offset, e.Message);
         throw e;
     }
 
 
     if (data_stream == nullptr)
-        // TODO log the download options and the context
-        throw Exception("Null data stream obtained while downloading a file from Blob Storage", ErrorCodes::RECEIVED_EMPTY_DATA);
+        throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Null data stream obtained while downloading file {} from Blob Storage", path);
 
     total_size = data_stream->Length() + offset;
 

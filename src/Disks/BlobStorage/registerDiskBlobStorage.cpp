@@ -139,7 +139,6 @@ void registerDiskBlobStorage(DiskFactory & factory)
             String cache_path = config.getString(config_prefix + ".cache_path", context->getPath() + "disks/" + name + "/cache/");
 
             if (metadata_path == cache_path)
-                // TODO maybe provide the cache_path in the error message too.
                 throw Exception("Metadata and cache path should be different: " + metadata_path, ErrorCodes::BAD_ARGUMENTS);
 
             auto cache_disk = std::make_shared<DiskLocal>("blob-storage-cache", cache_path, 0);
