@@ -222,7 +222,7 @@ private:
     std::filesystem::path calculateLocalPath(const RemoteFileMeta &meta);
 
     void recoverCachedFilesMeta(
-            const std::filesystem::path & path_,
+            const std::filesystem::path & current_path,
             size_t current_depth,
             size_t max_depth,
             std::function<void(RemoteCacheController *)> const & finish_callback);
