@@ -459,7 +459,7 @@ public:
         {
             return Aws::Auth::AWSCredentials();
         }
-        RefreshIfExpired();
+        refreshIfExpired();
         Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
         return credentials;
     }
@@ -488,7 +488,7 @@ protected:
     }
 
 private:
-    void RefreshIfExpired()
+    void refreshIfExpired()
     {
         Aws::Utils::Threading::ReaderLockGuard guard(m_reloadLock);
         if (!credentials.IsExpiredOrEmpty())
