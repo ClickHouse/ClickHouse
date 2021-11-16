@@ -449,8 +449,8 @@ ASTs InterpreterCreateImpl::getRewrittenQueries(
         String table_name = table_like->shortName();
         ASTPtr rewritten_create_ast = DatabaseCatalog::instance().getDatabase(mapped_to_database)->getCreateTableQuery(table_name, context);
         auto * create_ptr = rewritten_create_ast->as<ASTCreateQuery>();
-        create_ptr->database = mapped_to_database;
-        create_ptr->table = create_query.table;
+        create_ptr->setDatabase(mapped_to_database);
+        create_ptr->setTable(create_query.table);
         create_ptr->uuid = UUIDHelpers::generateV4();
         create_ptr->if_not_exists = create_query.if_not_exists;
         return ASTs{rewritten_create_ast};
