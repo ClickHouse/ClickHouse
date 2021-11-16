@@ -15,7 +15,7 @@ exponentialMovingAverage(x)(value, timestamp)
 Each `value` corresponds to the determinate `timestamp`. The half-decay period is the time interval `x` during which the previous values are taken into account. The function returns a weighted average: the older the time point, the less weight the corresponding value is considered to be.
 
 **Arguments**
-- `value` - value must be [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), or [Decimal](../../../sql-reference/data-types/decimal.md).
+-   `value` — Value. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), or [Decimal](../../../sql-reference/data-types/decimal.md).
 - `timestamp` - timestamp must be [Integer](../../../sql-reference/data-types/int-uint.md).
 
 **Parameters**
