@@ -25,6 +25,16 @@ void trim(String & s)
     s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return !std::isspace(ch); }).base(), s.end());
 }
 
+std::string get_editor()
+{
+    const char * editor = std::getenv("EDITOR");
+
+    if (!editor || !*editor)
+        editor = "vim";
+
+    return editor;
+}
+
 /// Copied from replxx::src/util.cxx::now_ms_str() under the terms of 3-clause BSD license of Replxx.
 /// Copyright (c) 2017-2018, Marcin Konarski (amok at codestation.org)
 /// Copyright (c) 2010, Salvatore Sanfilippo (antirez at gmail dot com)
@@ -123,6 +133,7 @@ ReplxxLineReader::ReplxxLineReader(
     Patterns delimiters_,
     replxx::Replxx::highlighter_callback_t highlighter_)
     : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_)), highlighter(std::move(highlighter_))
+    , editor(get_editor())
 {
     using namespace std::placeholders;
     using Replxx = replxx::Replxx;
@@ -236,14 +247,11 @@ void ReplxxLineReader::addToHistory(const String & line)
         rx.print("Unlock of history file failed: %s\n", errnoToString(errno).c_str());
 }
 
-int ReplxxLineReader::execute(const std::string & command)
+int ReplxxLineReader::executeEditor(const std::string & path)
 {
-    std::vector<char> argv0("sh", &("sh"[3]));
-    std::vector<char> argv1("-c", &("-c"[3]));
-    std::vector<char> argv2(command.data(), command.data() + command.size() + 1);
-
-    const char * filename = "/bin/sh";
-    char * const argv[] = {argv0.data(), argv1.data(), argv2.data(), nullptr};
+    std::vector<char> argv0(editor.data(), editor.data() + editor.size() + 1);
+    std::vector<char> argv1(path.data(), path.data() + path.size() + 1);
+    char * const argv[] = {argv0.data(), argv1.data(), nullptr};
 
     static void * real_vfork = dlsym(RTLD_DEFAULT, "vfork");
     if (!real_vfork)
@@ -267,7 +275,8 @@ int ReplxxLineReader::execute(const std::string & command)
         sigprocmask(0, nullptr, &mask);
         sigprocmask(SIG_UNBLOCK, &mask, nullptr);
 
-        execv(filename, argv);
+        execvp(editor.c_str(), argv);
+        rx.print("Cannot execute %s: %s\n", editor.c_str(), errnoToString(errno).c_str());
         _exit(-1);
     }
 
@@ -289,10 +298,6 @@ void ReplxxLineReader::openEditor()
         rx.print("Cannot create temporary file to edit query: %s\n", errnoToString(errno).c_str());
         return;
     }
-
-    const char * editor = std::getenv("EDITOR");
-    if (!editor || !*editor)
-        editor = "vim";
 
     replxx::Replxx::State state(rx.get_state());
 
@@ -316,7 +321,7 @@ void ReplxxLineReader::openEditor()
         return;
     }
 
-    if (0 == execute(fmt::format("{} {}", editor, filename)))
+    if (0 == executeEditor(filename))
     {
         try
         {
