@@ -24,10 +24,11 @@ def start_cluster():
         cluster.shutdown()
 
 
-def check_nodes_count_in_cluster(nodes, expected, cluster_name, *, retries):
+def check_nodes_count_in_cluster(nodes, expected, cluster_name, *, retries=5):
     """
     Check nodes count in system.clusters for specified cluster
     """
+
     for retry in range(1, retries + 1):
         nodes_cnt = [
             int(node.query(f"SELECT count() FROM system.clusters WHERE cluster = '{cluster_name}'"))
@@ -48,16 +49,16 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
     then stop/start some nodes and check that it (dis)appeared in cluster.
     """
 
-    check_nodes_count_in_cluster([nodes[0], nodes[2]], len(nodes), 'test_auto_cluster', retries=1)
+    check_nodes_count_in_cluster([nodes[0], nodes[2]], len(nodes), 'test_auto_cluster')
 
     nodes[1].stop_clickhouse(kill=True)
-    check_nodes_count_in_cluster([nodes[0], nodes[2]], len(nodes) - 1, 'test_auto_cluster', retries=5)
+    check_nodes_count_in_cluster([nodes[0], nodes[2]], len(nodes) - 1, 'test_auto_cluster')
 
     nodes[3].stop_clickhouse()
-    check_nodes_count_in_cluster([nodes[0], nodes[2]], len(nodes) - 2, 'test_auto_cluster', retries=5)
+    check_nodes_count_in_cluster([nodes[0], nodes[2]], len(nodes) - 2, 'test_auto_cluster')
 
     nodes[1].start_clickhouse()
-    check_nodes_count_in_cluster([nodes[0], nodes[2]], len(nodes) - 1, 'test_auto_cluster', retries=5)
+    check_nodes_count_in_cluster([nodes[0], nodes[2]], len(nodes) - 1, 'test_auto_cluster')
 
     nodes[3].start_clickhouse()
-    check_nodes_count_in_cluster([nodes[0], nodes[2]], len(nodes), 'test_auto_cluster', retries=5)
+    check_nodes_count_in_cluster([nodes[0], nodes[2]], len(nodes), 'test_auto_cluster')
