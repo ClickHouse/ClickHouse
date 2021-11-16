@@ -256,6 +256,3 @@
 [submodule "contrib/sysroot"]
 	path = contrib/sysroot
 	url = https://github.com/ClickHouse-Extras/sysroot.git
-[submodule "contrib/hive-metastore"]
-	path = contrib/hive-metastore
-	url = https://github.com/ClickHouse-Extras/hive-metastore.git
