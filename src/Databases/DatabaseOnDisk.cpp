@@ -438,15 +438,15 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
     auto table_metadata_path = getObjectMetadataPath(table_name);
     try
     {
-        ast = getCreateQueryFromMetadata(table_metadata_path, throw_on_error);
+        if (is_system_storage)
+            ast = getCreateQueryFromStorage(table_name, storage, throw_on_error);
+        else
+            ast = getCreateQueryFromMetadata(table_metadata_path, throw_on_error);
     }
     catch (const Exception & e)
     {
         if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
             throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
-                            ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
-        else if (is_system_storage && throw_on_error)
-            throw Exception{"Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't support SHOW CREATE TABLE",
                             ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
         else if (throw_on_error)
             throw;
@@ -678,6 +678,69 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metada
     }
 
     return ast;
+}
+
+ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, const StoragePtr & storage, bool throw_on_error) const
+{
+    auto metadata_ptr = storage->getInMemoryMetadataPtr();
+    if (metadata_ptr == nullptr)
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot get metadata of {}.{}", backQuote(getDatabaseName()), backQuote(table_name));
+        else
+            return nullptr;
+    }
+
+    auto create_table_query = std::make_shared<ASTCreateQuery>();
+    create_table_query->table = table_name;
+    create_table_query->database = getDatabaseName();
+    create_table_query->attach = false;
+    create_table_query->set(create_table_query->comment, std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly."));
+
+    /// setup create table query storage info.
+    {
+        auto ast_engine = std::make_shared<ASTFunction>();
+        ast_engine->name = storage->getName();
+        auto ast_storage = std::make_shared<ASTStorage>();
+        ast_storage->set(ast_storage->engine, ast_engine);
+        create_table_query->set(create_table_query->storage, ast_storage);
+    }
+    /// setup create table query columns info.
+    {
+        auto ast_columns_list = std::make_shared<ASTColumns>();
+        auto ast_expression_list = std::make_shared<ASTExpressionList>();
+
+        for (const auto & column_name_and_type: metadata_ptr->columns)
+        {
+            const auto & ast_column_declaration = std::make_shared<ASTColumnDeclaration>();
+            ast_column_declaration->name = column_name_and_type.name;
+            /// parser typename
+            {
+                ASTPtr ast_type;
+                auto type_name = column_name_and_type.type->getName();
+                const auto * string_end = type_name.c_str() + type_name.length();
+                Expected expected;
+                expected.max_parsed_pos = string_end;
+                Tokens tokens(type_name.c_str(), string_end);
+                IParser::Pos pos(tokens, getContext()->getSettingsRef().max_parser_depth);
+                ParserDataType parser;
+                if (!parser.parse(pos, ast_type, expected))
+                {
+                    /// this should never occur, shall we change to use assert?
+                    if (throw_on_error)
+                        throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot parser metadata of {}.{}", backQuote(getDatabaseName()), backQuote(table_name));
+                    else
+                        return nullptr;
+                }
+                ast_column_declaration->type = ast_type;
+            }
+            ast_expression_list->children.emplace_back(ast_column_declaration);
+        }
+
+        ast_columns_list->set(ast_columns_list->columns, ast_expression_list);
+        create_table_query->set(create_table_query->columns_list, ast_columns_list);
+    }
+    return create_table_query;
 }
 
 void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context)

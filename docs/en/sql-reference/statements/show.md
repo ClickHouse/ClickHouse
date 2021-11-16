@@ -13,8 +13,7 @@ SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY|VIEW] [db.]table|view [INTO OUTFILE fi
 
 Returns a single `String`-type ‘statement’ column, which contains a single value – the `CREATE` query used for creating the specified object.
 
-Note that you cannot use it on the tables built on the fly, almost all tables from database `system` are included, such as `system.users`.
-Use `DESCRIBE TABLE` to get the structures of those.
+Note that if you use this statement to get `CREATE` query of system tables, you will get a *fake* query, which only declares table structure, but cannot be used to create table.
 
 ## SHOW DATABASES {#show-databases}
 
