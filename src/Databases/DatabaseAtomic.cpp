@@ -514,9 +514,17 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
     }
 }
 
-void DatabaseAtomic::renameDatabase(const String & new_name)
+void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new_name)
 {
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
+
+    if (query_context->getSettingsRef().check_table_dependencies)
+    {
+        std::lock_guard lock(mutex);
+        for (auto & table : tables)
+            DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first});
+    }
+
     try
     {
         fs::remove(path_to_metadata_symlink);
@@ -535,7 +543,13 @@ void DatabaseAtomic::renameDatabase(const String & new_name)
 
     {
         std::lock_guard lock(mutex);
-        DatabaseCatalog::instance().updateDatabaseName(database_name, new_name);
+        {
+            Strings table_names;
+            table_names.reserve(tables.size());
+            for (auto & table : tables)
+                table_names.push_back(table.first);
+            DatabaseCatalog::instance().updateDatabaseName(database_name, new_name, table_names);
+        }
         database_name = new_name;
 
         for (auto & table : tables)

@@ -2,6 +2,7 @@
 #include <base/logger_useful.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
+#include <Databases/DDLDependencyVisitor.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
@@ -111,7 +112,7 @@ void DatabaseMemory::drop(ContextPtr local_context)
     std::filesystem::remove_all(local_context->getPath() + data_path);
 }
 
-void DatabaseMemory::alterTable(ContextPtr, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
+void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
     std::lock_guard lock{mutex};
     auto it = create_queries.find(table_id.table_name);
@@ -119,6 +120,8 @@ void DatabaseMemory::alterTable(ContextPtr, const StorageID & table_id, const St
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
 
     applyMetadataChangesToCreateQuery(it->second, metadata);
+    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), it->second);
+    DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
 }
 
 }
