@@ -25,9 +25,9 @@ namespace
 constexpr size_t MAX_QUEUE_SIZE = 16;
 constexpr UInt64 QUEUE_OP_TIMEOUT_MS = 1000;
 
-fs::path getReplicasListPath(const String & zk_root)
+fs::path getShardsListPath(const String & zk_root)
 {
-    return fs::path(zk_root + "/replicas");
+    return fs::path(zk_root + "/shards");
 }
 
 }
@@ -71,30 +71,32 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
     };
 
     Coordination::Stat stat;
-    Strings nodes = zk->getChildrenWatch(getReplicasListPath(zk_root), &stat, set_callback ? watch_callback : Coordination::WatchCallback{});
+    Strings nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, set_callback ? watch_callback : Coordination::WatchCallback{});
     if (version)
         *version = stat.cversion;
     return nodes;
 }
 
-/// Reads node information from scpecified zookeper nodes
-ClusterDiscovery::NodesInfo ClusterDiscovery::getNodes(zkutil::ZooKeeperPtr & zk, const String & zk_root, const Strings & nodes)
+/// Reads node information from specified zookeper nodes
+ClusterDiscovery::NodesInfo ClusterDiscovery::getNodes(zkutil::ZooKeeperPtr & zk, const String & zk_root, const Strings & node_uuids)
 {
     NodesInfo result;
-    for (const auto & node_uuid : nodes)
+    for (const auto & node_uuid : node_uuids)
     {
-        bool ok = zk->tryGet(getReplicasListPath(zk_root) / node_uuid, result[node_uuid]);
+        String payload;
+        bool ok = zk->tryGet(getShardsListPath(zk_root) / node_uuid, payload);
         if (!ok)
         {
-            result.erase(node_uuid);
-            LOG_WARNING(log, "Cluster configuration was changed during update, skip nonexisting node");
+            LOG_WARNING(log, "Cluster configuration was changed during update, found nonexisting node");
+            return {};
         }
+        result.emplace(node_uuid, NodeInfo(payload));
     }
     return result;
 }
 
-/// Checks if custer nodes set is changed.
-/// Returs true if update required.
+/// Checks if cluster nodes set is changed.
+/// Returns true if update required.
 /// It performs only shallow check (set of nodes' uuids).
 /// So, if node's hostname are changed, then cluster won't be updated.
 bool ClusterDiscovery::needUpdate(const Strings & node_uuids, const NodesInfo & nodes)
@@ -109,8 +111,8 @@ ClusterPtr ClusterDiscovery::getCluster(const ClusterInfo & cluster_info)
 {
     Strings replica_adresses;
     replica_adresses.reserve(cluster_info.nodes_info.size());
-    for (const auto & node : cluster_info.nodes_info)
-        replica_adresses.emplace_back(node.second);
+    for (const auto & [_, node] : cluster_info.nodes_info)
+        replica_adresses.emplace_back(node.address);
 
     std::vector<std::vector<String>> shards = {replica_adresses};
 
@@ -154,7 +156,6 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
     }
 
     nodes_info = getNodes(zk, cluster_info.zk_root, node_uuids);
-
     if (nodes_info.empty())
         return false;
 
@@ -185,7 +186,7 @@ bool ClusterDiscovery::updateCluster(const String & cluster_name)
 
 void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info)
 {
-    String node_path = getReplicasListPath(info.zk_root) / node_name;
+    String node_path = getShardsListPath(info.zk_root) / node_name;
     zk->createAncestors(node_path);
 
     String payload = getFQDNOrHostName() + ":" + toString(server_port);
@@ -204,8 +205,6 @@ void ClusterDiscovery::start()
     for (auto & [_, info] : clusters_info)
     {
         registerInZk(zk, info);
-        updateCluster(info);
-
         if (!updateCluster(info))
             LOG_WARNING(log, "Error on updating cluster '{}'", info.name);
     }
