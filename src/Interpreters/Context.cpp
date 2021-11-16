@@ -2206,11 +2206,11 @@ void Context::registerNodeForClusterDiscovery()
 
 
 /// On repeating calls updates existing clusters and adds new clusters, doesn't delete old clusters
-void Context::setClustersConfig(const ConfigurationPtr & config, const String & config_name)
+void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_discovery, const String & config_name)
 {
     std::lock_guard lock(shared->clusters_mutex);
 
-    if (!shared->cluster_discovery)
+    if (enable_discovery && !shared->cluster_discovery)
     {
         shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, shared_from_this());
     }
