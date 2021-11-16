@@ -247,6 +247,8 @@ void ReplxxLineReader::addToHistory(const String & line)
         rx.print("Unlock of history file failed: %s\n", errnoToString(errno).c_str());
 }
 
+/// See comments in ShellCommand::executeImpl()
+/// (for the vfork via dlsym())
 int ReplxxLineReader::executeEditor(const std::string & path)
 {
     std::vector<char> argv0(editor.data(), editor.data() + editor.size() + 1);
@@ -268,6 +270,7 @@ int ReplxxLineReader::executeEditor(const std::string & path)
         return -1;
     }
 
+    /// Child
     if (0 == pid)
     {
         sigset_t mask;
