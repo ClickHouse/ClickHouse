@@ -281,11 +281,19 @@ int ReplxxLineReader::executeEditor(const std::string & path)
     }
 
     int status = 0;
-    if (-1 == waitpid(pid, &status, 0))
-    {
-        rx.print("Cannot waitpid: %s\n", errnoToString(errno).c_str());
-        return -1;
-    }
+    do {
+        int exited_pid = waitpid(pid, &status, 0);
+        if (exited_pid == -1)
+        {
+            if (errno == EINTR)
+                continue;
+
+            rx.print("Cannot waitpid: %s\n", errnoToString(errno).c_str());
+            return -1;
+        }
+        else
+            break;
+    } while (true);
     return status;
 }
 
