@@ -1,0 +1,7 @@
+<clickhouse>
+    <remote_servers_discovery>
+        <test_auto_cluster>
+            <path>/clickhouse/discovery/test_auto_cluster</path>
+        </test_auto_cluster>
+    </remote_servers_discovery>
+</clickhouse>
