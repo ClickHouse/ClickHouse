@@ -650,7 +650,6 @@ public:
     {
         writer->doWriteSuffix();
         writer->flush();
-        write_buf->sync();
         write_buf->finalize();
     }
 
