@@ -15,7 +15,7 @@ exponentialMovingAverage(x)(value, timestamp)
 Каждой точке `timestamp` на временном отрезке соответствует определенное значение `value`. Период полу-распада — временной интервал `х`, в течение которого учитываются предыдущие значения. Функция возвращает взвешенное среднее: чем старше временная точка, тем c меньшим весом считается соответствующее ей значение.
 
 **Аргументы:**
-- `value` - входные значения, должны быть типа [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) или [Decimal](../../../sql-reference/data-types/decimal.md).
+-   `value` — входные значения. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) или [Decimal](../../../sql-reference/data-types/decimal.md).
 - `timestamp` - параметр для упорядочивания значений, должен быть типа [Integer](../../../sql-reference/data-types/int-uint.md).
 
 **Параметры**
