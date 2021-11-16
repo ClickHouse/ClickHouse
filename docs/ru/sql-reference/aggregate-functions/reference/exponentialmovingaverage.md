@@ -23,7 +23,8 @@ exponentialMovingAverage(x)(value, timestamp)
 
 -   `x` — период полураспада. [Integer](../../../sql-reference/data-types/int-uint.md).
 
-**Возвращаемые значения:**
+**Возвращаемые значения**
+
 -   Возвращает экспоненциальное скользящее среднее. 
 
 Тип: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
