@@ -13,6 +13,12 @@ Example configuration:
 
 ``` xml
 <dictionary>
+    <source>
+        <source_type>
+            <store_polygon_key_column>1</store_polygon_key_column>
+        </source_type>
+    ...
+    </source>
     <structure>
         <key>
             <name>key</name>
@@ -48,7 +54,7 @@ CREATE DICTIONARY polygon_dict_name (
     value UInt64
 )
 PRIMARY KEY key
-LAYOUT(POLYGON())
+LAYOUT(POLYGON(STORE_POLYGON_KEY_COLUMN 1))
 ...
 ```
 
@@ -59,7 +65,6 @@ When configuring the polygon dictionary, the key must have one of two types:
 Points can be specified as an array or a tuple of their coordinates. In the current implementation, only two-dimensional points are supported.
 
 The user can [upload their own data](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md) in all formats supported by ClickHouse.
-
 
 There are 3 types of [in-memory storage](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) available:
 
@@ -89,3 +94,38 @@ SELECT tuple(x, y) AS key, dictGet(dict_name, 'name', key), dictGet(dict_name, '
 ```
 
 As a result of executing the last command for each point in the 'points' table, a minimum area polygon containing this point will be found, and the requested attributes will be output.
+
+Turn on the `store_polygon_key_column` to read polygon dictionary via SELECT query.
+
+Query:
+
+
+``` sql
+CREATE TABLE polygons_test_table
+(
+    key Array(Array(Array(Tuple(Float64, Float64)))),
+    name String
+) ENGINE = TinyLog;
+
+INSERT INTO polygons_test_table VALUES ([[[(3, 1), (0, 1), (0, -1), (3, -1)]]], 'Value');
+
+CREATE DICTIONARY polygons_test_dictionary
+(
+    key Array(Array(Array(Tuple(Float64, Float64)))),
+    name String
+)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(TABLE 'polygons_test_table'))
+LAYOUT(POLYGON(STORE_POLYGON_KEY_COLUMN 1))
+LIFETIME(0);
+
+SELECT * FROM polygons_test_dictionary;
+```
+
+Result:
+
+``` text
+┌─key─────────────────────────────┬─name──┐
+│ [[[(3,1),(0,1),(0,-1),(3,-1)]]] │ Value │
+└─────────────────────────────────┴───────┘
+```
