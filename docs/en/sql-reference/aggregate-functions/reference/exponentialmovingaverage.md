@@ -22,7 +22,8 @@ Each `value` corresponds to the determinate `timestamp`. The half-decay period i
 
 -   `x` — Half-life period. [Integer](../../../sql-reference/data-types/int-uint.md).
 
-**Returned value(s)**
+**Returned values**
+
 - Returnes an exponentially smoothed moving average of the values for the past `x` time at the latest point of time.
 
 Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
