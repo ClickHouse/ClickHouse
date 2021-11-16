@@ -85,107 +85,107 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  FastTest:
-    needs: DockerHubPush
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
-    runs-on: [self-hosted, builder]
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Fast Test
-        env:
-          TEMP_PATH: ${{runner.temp}}/fasttest
-          REPO_COPY: ${{runner.temp}}/fasttest/ClickHouse
-          CACHES_PATH: ${{runner.temp}}/../ccaches
-        run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 fast_test_check.py
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
-  PVSCheck:
-    needs: DockerHubPush
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
-    runs-on: [self-hosted, func-tester]
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
-      - name: PVS Check
-        env:
-          TEMP_PATH: ${{runner.temp}}/pvs_check
-          REPO_COPY: ${{runner.temp}}/pvs_check/ClickHouse
-        run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 pvs_check.py
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
-  CompatibilityCheck:
-    needs: [BuilderDebRelease]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Download json reports
-        uses: actions/download-artifact@v2
-        with:
-          path: ${{runner.temp}}/reports_dir
-      - name: CompatibilityCheck
-        env:
-          TEMP_PATH: ${{runner.temp}}/compatibility_check
-          REPO_COPY: ${{runner.temp}}/compatibility_check/ClickHouse
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-        run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 compatibility_check.py 0
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
-  SplitBuildSmokeTest:
-    needs: [BuilderDebSplitted]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
-    runs-on: [self-hosted, style-checker]
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Download json reports
-        uses: actions/download-artifact@v2
-        with:
-          path: ${{runner.temp}}/reports_dir
-      - name: Split build check
-        env:
-          TEMP_PATH: ${{runner.temp}}/split_build_check
-          REPO_COPY: ${{runner.temp}}/split_build_check/ClickHouse
-          REPORTS_PATH: ${{runner.temp}}/reports_dir
-        run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 split_build_smoke_check.py
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+#  FastTest:
+#    needs: DockerHubPush
+#    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
+#    runs-on: [self-hosted, builder]
+#    steps:
+#      - name: Check out repository code
+#        uses: actions/checkout@v2
+#      - name: Fast Test
+#        env:
+#          TEMP_PATH: ${{runner.temp}}/fasttest
+#          REPO_COPY: ${{runner.temp}}/fasttest/ClickHouse
+#          CACHES_PATH: ${{runner.temp}}/../ccaches
+#        run: |
+#          sudo rm -fr $TEMP_PATH
+#          mkdir -p $TEMP_PATH
+#          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+#          cd $REPO_COPY/tests/ci && python3 fast_test_check.py
+#      - name: Cleanup
+#        if: always()
+#        run: |
+#          docker kill $(docker ps -q) ||:
+#          docker rm -f $(docker ps -a -q) ||:
+#          sudo rm -fr $TEMP_PATH
+#  PVSCheck:
+#    needs: DockerHubPush
+#    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
+#    runs-on: [self-hosted, func-tester]
+#    steps:
+#      - name: Check out repository code
+#        uses: actions/checkout@v2
+#        with:
+#          submodules: 'recursive'
+#      - name: PVS Check
+#        env:
+#          TEMP_PATH: ${{runner.temp}}/pvs_check
+#          REPO_COPY: ${{runner.temp}}/pvs_check/ClickHouse
+#        run: |
+#          sudo rm -fr $TEMP_PATH
+#          mkdir -p $TEMP_PATH
+#          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+#          cd $REPO_COPY/tests/ci && python3 pvs_check.py
+#      - name: Cleanup
+#        if: always()
+#        run: |
+#          docker kill $(docker ps -q) ||:
+#          docker rm -f $(docker ps -a -q) ||:
+#          sudo rm -fr $TEMP_PATH
+#  CompatibilityCheck:
+#    needs: [BuilderDebRelease]
+#    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
+#    runs-on: [self-hosted, style-checker]
+#    steps:
+#      - name: Check out repository code
+#        uses: actions/checkout@v2
+#      - name: Download json reports
+#        uses: actions/download-artifact@v2
+#        with:
+#          path: ${{runner.temp}}/reports_dir
+#      - name: CompatibilityCheck
+#        env:
+#          TEMP_PATH: ${{runner.temp}}/compatibility_check
+#          REPO_COPY: ${{runner.temp}}/compatibility_check/ClickHouse
+#          REPORTS_PATH: ${{runner.temp}}/reports_dir
+#        run: |
+#          sudo rm -fr $TEMP_PATH
+#          mkdir -p $TEMP_PATH
+#          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+#          cd $REPO_COPY/tests/ci && python3 compatibility_check.py 0
+#      - name: Cleanup
+#        if: always()
+#        run: |
+#          docker kill $(docker ps -q) ||:
+#          docker rm -f $(docker ps -a -q) ||:
+#          sudo rm -fr $TEMP_PATH
+#  SplitBuildSmokeTest:
+#    needs: [BuilderDebSplitted]
+#    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
+#    runs-on: [self-hosted, style-checker]
+#    steps:
+#      - name: Check out repository code
+#        uses: actions/checkout@v2
+#      - name: Download json reports
+#        uses: actions/download-artifact@v2
+#        with:
+#          path: ${{runner.temp}}/reports_dir
+#      - name: Split build check
+#        env:
+#          TEMP_PATH: ${{runner.temp}}/split_build_check
+#          REPO_COPY: ${{runner.temp}}/split_build_check/ClickHouse
+#          REPORTS_PATH: ${{runner.temp}}/reports_dir
+#        run: |
+#          sudo rm -fr $TEMP_PATH
+#          mkdir -p $TEMP_PATH
+#          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+#          cd $REPO_COPY/tests/ci && python3 split_build_smoke_check.py
+#      - name: Cleanup
+#        if: always()
+#        run: |
+#          docker kill $(docker ps -q) ||:
+#          docker rm -f $(docker ps -a -q) ||:
+#          sudo rm -fr $TEMP_PATH
 ##########################################################################################
 ##################################### ORDINARY BUILDS ####################################
 ##########################################################################################
