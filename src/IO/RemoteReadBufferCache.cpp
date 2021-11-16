@@ -403,7 +403,7 @@ RemoteReadBufferCache & RemoteReadBufferCache::instance()
 }
 
 void RemoteReadBufferCache::recoverCachedFilesMeta(
-        const std::filesystem::path &current_path,
+        const std::filesystem::path & current_path,
         size_t current_depth,
         size_t max_depth,
         std::function<void(RemoteCacheController *)> const & finish_callback)
