@@ -927,10 +927,6 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
             break;
     }
 
-
-    /// An heuristic: if previous shard is already done, then check next one without sleeps due to max_workers constraint
-    bool previous_shard_is_instantly_finished = false;
-
     /// Process each partition that is present in cluster
     for (const String & partition_name : task_table.ordered_partition_names)
     {
@@ -987,8 +983,6 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
                 }
                 else
                 {
-                    /// We have already checked that partition, but did not discover it
-                    previous_shard_is_instantly_finished = true;
                     continue;
                 }
             }
@@ -1002,20 +996,15 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
 
             expected_shards.emplace_back(shard);
 
-            /// Do not sleep if there is a sequence of already processed shards to increase startup
-            bool is_unprioritized_task = !previous_shard_is_instantly_finished && shard->priority.is_remote;
             task_status = TaskStatus::Error;
-            bool was_error = false;
             has_shard_to_process = true;
             for (UInt64 try_num = 1; try_num <= max_shard_partition_tries; ++try_num)
             {
-                task_status = tryProcessPartitionTask(timeouts, partition, is_unprioritized_task);
+                task_status = tryProcessPartitionTask(timeouts, partition, false);
 
                 /// Exit if success
                 if (task_status == TaskStatus::Finished)
                     break;
-
-                was_error = true;
 
                 /// Skip if the task is being processed by someone
                 if (task_status == TaskStatus::Active)
@@ -1027,8 +1016,6 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
 
             if (task_status == TaskStatus::Error)
                 ++num_failed_shards;
-
-            previous_shard_is_instantly_finished = !was_error;
         }
 
         cluster_partition.elapsed_time_seconds += watch.elapsedSeconds();

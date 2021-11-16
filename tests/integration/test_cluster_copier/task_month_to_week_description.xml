@@ -13,6 +13,12 @@
         <max_rows_in_distinct>0</max_rows_in_distinct>
     </settings_pull>
 
+    <settings_push>
+        <insert_distributed_sync>1</insert_distributed_sync>
+        <replication_alter_partitions_sync>0</replication_alter_partitions_sync>
+        <use_hedged_requests>0</use_hedged_requests>
+    </settings_push>
+
     <!-- Tasks -->
     <tables>
         <AB>

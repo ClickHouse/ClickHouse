@@ -104,7 +104,35 @@ class Task1:
         instance.query("INSERT INTO hits_all SELECT * FROM system.numbers LIMIT 1002",
                        settings={"insert_distributed_sync": 1})
 
+
+        print(instance.query("SELECT count() FROM hits_all"))
+
     def check(self):
+
+        print("s0_0_0", self.cluster.instances['s0_0_0'].query("SELECT count() FROM hits").strip())
+        print("s0_0_0", self.cluster.instances['s0_0_0'].query("SELECT distinct d % 3 FROM hits").strip())
+        print("s0_0_0", self.cluster.instances['s0_0_0'].query("show tables").strip())
+
+        print("s0_0_1", self.cluster.instances['s0_0_1'].query("SELECT count() FROM hits").strip())
+        print("s0_0_1", self.cluster.instances['s0_0_1'].query("SELECT distinct d % 3 FROM hits").strip())
+        print("s0_0_1", self.cluster.instances['s0_0_1'].query("show tables").strip())
+
+        print("s0_1_0", self.cluster.instances['s0_1_0'].query("SELECT count() FROM hits").strip())
+        print("s0_1_0", self.cluster.instances['s0_1_0'].query("SELECT distinct d % 3 FROM hits").strip())
+        print("s0_1_0", self.cluster.instances['s0_1_0'].query("show tables").strip())
+
+        print("s1_0_0", self.cluster.instances['s1_0_0'].query("SELECT count() FROM hits").strip())
+        print("s1_0_0", self.cluster.instances['s1_0_0'].query("SELECT distinct d % 3 FROM hits").strip())
+        print("s1_0_0", self.cluster.instances['s1_0_0'].query("show tables").strip())
+
+        print("s1_0_1", self.cluster.instances['s1_0_1'].query("SELECT count() FROM hits").strip())
+        print("s1_0_1", self.cluster.instances['s1_0_1'].query("SELECT distinct d % 3 FROM hits").strip())
+        print("s1_0_1", self.cluster.instances['s1_0_1'].query("show tables").strip())
+
+        print("s1_1_0", self.cluster.instances['s1_1_0'].query("SELECT count() FROM hits").strip())
+        print("s1_1_0", self.cluster.instances['s1_1_0'].query("SELECT distinct d % 3 FROM hits").strip())
+        print("s1_1_0", self.cluster.instances['s1_1_0'].query("show tables").strip())
+
         assert self.cluster.instances['s0_0_0'].query("SELECT count() FROM hits_all").strip() == "1002"
         assert self.cluster.instances['s1_0_0'].query("SELECT count() FROM hits_all").strip() == "1002"
 
@@ -349,6 +377,8 @@ def execute_task(started_cluster, task, cmd_options):
     print(cmd)
 
     copiers = random.sample(list(started_cluster.instances.keys()), 3)
+
+    print(copiers)
 
     for instance_name in copiers:
         instance = started_cluster.instances[instance_name]
