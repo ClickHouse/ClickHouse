@@ -30,7 +30,7 @@ void TabSeparatedRowOutputFormat::writeLine(const std::vector<String> & values)
     }
 }
 
-void TabSeparatedRowOutputFormat::writePrefix()
+void TabSeparatedRowOutputFormat::doWritePrefix()
 {
     const auto & header = getPort(PortKind::Main).getHeader();
 
