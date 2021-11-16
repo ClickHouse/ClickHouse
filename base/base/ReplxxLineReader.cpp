@@ -25,7 +25,7 @@ void trim(String & s)
     s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) { return !std::isspace(ch); }).base(), s.end());
 }
 
-std::string get_editor()
+std::string getEditor()
 {
     const char * editor = std::getenv("EDITOR");
 
@@ -133,7 +133,7 @@ ReplxxLineReader::ReplxxLineReader(
     Patterns delimiters_,
     replxx::Replxx::highlighter_callback_t highlighter_)
     : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_)), highlighter(std::move(highlighter_))
-    , editor(get_editor())
+    , editor(getEditor())
 {
     using namespace std::placeholders;
     using Replxx = replxx::Replxx;
@@ -284,7 +284,8 @@ int ReplxxLineReader::executeEditor(const std::string & path)
     }
 
     int status = 0;
-    do {
+    do
+    {
         int exited_pid = waitpid(pid, &status, 0);
         if (exited_pid == -1)
         {
