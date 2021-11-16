@@ -861,12 +861,12 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (alter_object_type == ASTAlterQuery::AlterObjectType::DATABASE)
     {
-        if (!parseDatabaseASTPtr(pos, expected, query->database))
+        if (!parseDatabaseAsAST(pos, expected, query->database))
             return false;
     }
     else
     {
-        if (!parseDatabaseAndTableASTPtr(pos, expected, query->database, query->table))
+        if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
             return false;
 
         String cluster_str;

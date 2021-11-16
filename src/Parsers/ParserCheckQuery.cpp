@@ -23,7 +23,7 @@ bool ParserCheckQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     auto query = std::make_shared<ASTCheckQuery>();
 
-    if (!parseDatabaseAndTableASTPtr(pos, expected, query->database, query->table))
+    if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
         return false;
 
     if (s_partition.ignore(pos, expected))
