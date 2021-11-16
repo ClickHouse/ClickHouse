@@ -17,7 +17,7 @@ exponentialMovingAverage(x)(value, timestamp)
 **Аргументы**
 
 -   `value` — входные значения. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) или [Decimal](../../../sql-reference/data-types/decimal.md).
-- `timestamp` - параметр для упорядочивания значений, должен быть типа [Integer](../../../sql-reference/data-types/int-uint.md).
+-   `timestamp` — параметр для упорядочивания значений. [Integer](../../../sql-reference/data-types/int-uint.md).
 
 **Параметры**
 
