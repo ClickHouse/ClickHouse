@@ -118,12 +118,14 @@ void ReadBufferFromBlobStorage::initialize()
     }
     catch (const Azure::Storage::StorageException & e)
     {
+        // TODO log the download options to
         LOG_INFO(log, "Exception caught during Azure Download for file {} : {}", path, e.Message);
         throw e;
     }
 
 
     if (data_stream == nullptr)
+        // TODO log the download options and the context
         throw Exception("Null data stream obtained while downloading a file from Blob Storage", ErrorCodes::RECEIVED_EMPTY_DATA);
 
     total_size = data_stream->Length() + offset;

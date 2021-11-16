@@ -38,6 +38,7 @@ void WriteBufferFromBlobStorage::nextImpl()
         return;
 
     auto pos = working_buffer.begin();
+    auto * pos = working_buffer.begin();
     auto len = offset();
     auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
 

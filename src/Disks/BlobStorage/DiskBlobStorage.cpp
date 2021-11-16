@@ -140,7 +140,7 @@ bool DiskBlobStorage::checkUniqueId(const String & id) const
     auto blobs_list_response = blob_container_client->ListBlobs(blobs_list_options);
     auto blobs_list = blobs_list_response.Blobs;
 
-    for (auto blob : blobs_list)
+    for (const auto & blob : blobs_list)
     {
         if (id == blob.Name)
             return true;
