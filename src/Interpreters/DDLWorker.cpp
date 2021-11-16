@@ -1154,8 +1154,7 @@ void DDLWorker::runMainThread()
             cleanup_event->set();
             scheduleTasks(reinitialized);
 
-            LOG_DEBUG(log, "Waiting for queue updates (stat: {}, {}, {}, {})",
-                      queue_node_stat.version, queue_node_stat.cversion, queue_node_stat.numChildren, queue_node_stat.pzxid);
+            LOG_DEBUG(log, "Waiting for queue updates");
             queue_updated_event->wait();
         }
         catch (const Coordination::Exception & e)

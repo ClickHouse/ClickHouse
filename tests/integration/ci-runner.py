@@ -16,9 +16,9 @@ MAX_RETRY = 3
 NUM_WORKERS = 5
 SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
-CLICKHOUSE_BINARY_PATH = "/usr/bin/clickhouse"
-CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-odbc-bridge"
-CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "/usr/bin/clickhouse-library-bridge"
+CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
+CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-odbc-bridge"
+CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-library-bridge"
 
 TRIES_COUNT = 10
 MAX_TIME_SECONDS = 3600
@@ -122,7 +122,7 @@ def get_test_times(output):
 
 
 def clear_ip_tables_and_restart_daemons():
-    logging.info("Dump iptables after run %s", subprocess.check_output("iptables -L", shell=True))
+    logging.info("Dump iptables after run %s", subprocess.check_output("sudo iptables -L", shell=True))
     try:
         logging.info("Killing all alive docker containers")
         subprocess.check_output("timeout -s 9 10m docker kill $(docker ps -q)", shell=True)
@@ -135,33 +135,35 @@ def clear_ip_tables_and_restart_daemons():
     except subprocess.CalledProcessError as err:
         logging.info("docker rm excepted: " + str(err))
 
-    try:
-        logging.info("Stopping docker daemon")
-        subprocess.check_output("service docker stop", shell=True)
-    except subprocess.CalledProcessError as err:
-        logging.info("docker stop excepted: " + str(err))
+    # don't restart docker if it's disabled
+    if os.environ.get("CLICKHOUSE_TESTS_RUNNER_RESTART_DOCKER", '1') == '1':
+        try:
+            logging.info("Stopping docker daemon")
+            subprocess.check_output("service docker stop", shell=True)
+        except subprocess.CalledProcessError as err:
+            logging.info("docker stop excepted: " + str(err))
 
-    try:
-        for i in range(200):
-            try:
-                logging.info("Restarting docker %s", i)
-                subprocess.check_output("service docker start", shell=True)
-                subprocess.check_output("docker ps", shell=True)
-                break
-            except subprocess.CalledProcessError as err:
-                time.sleep(0.5)
-                logging.info("Waiting docker to start, current %s", str(err))
-        else:
-            raise Exception("Docker daemon doesn't responding")
-    except subprocess.CalledProcessError as err:
-        logging.info("Can't reload docker: " + str(err))
+        try:
+            for i in range(200):
+                try:
+                    logging.info("Restarting docker %s", i)
+                    subprocess.check_output("service docker start", shell=True)
+                    subprocess.check_output("docker ps", shell=True)
+                    break
+                except subprocess.CalledProcessError as err:
+                    time.sleep(0.5)
+                    logging.info("Waiting docker to start, current %s", str(err))
+            else:
+                raise Exception("Docker daemon doesn't responding")
+        except subprocess.CalledProcessError as err:
+            logging.info("Can't reload docker: " + str(err))
 
     iptables_iter = 0
     try:
         for i in range(1000):
             iptables_iter = i
             # when rules will be empty, it will raise exception
-            subprocess.check_output("iptables -D DOCKER-USER 1", shell=True)
+            subprocess.check_output("sudo iptables -D DOCKER-USER 1", shell=True)
     except subprocess.CalledProcessError as err:
         logging.info("All iptables rules cleared, " + str(iptables_iter) + "iterations, last error: " + str(err))
 
@@ -231,7 +233,7 @@ class ClickhouseIntegrationTestsRunner:
                     log_name = "install_" + f + ".log"
                     log_path = os.path.join(str(self.path()), log_name)
                     with open(log_path, 'w') as log:
-                        cmd = "dpkg -i {}".format(full_path)
+                        cmd = "dpkg -x {} .".format(full_path)
                         logging.info("Executing installation cmd %s", cmd)
                         retcode = subprocess.Popen(cmd, shell=True, stderr=log, stdout=log).wait()
                         if retcode == 0:
@@ -248,13 +250,9 @@ class ClickhouseIntegrationTestsRunner:
         os.chmod(CLICKHOUSE_BINARY_PATH, 0o777)
         os.chmod(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, 0o777)
         os.chmod(CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH, 0o777)
-        result_path_bin = os.path.join(str(self.base_path()), "clickhouse")
-        result_path_odbc_bridge = os.path.join(str(self.base_path()), "clickhouse-odbc-bridge")
-        result_path_library_bridge = os.path.join(str(self.base_path()), "clickhouse-library-bridge")
-        shutil.copy(CLICKHOUSE_BINARY_PATH, result_path_bin)
-        shutil.copy(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, result_path_odbc_bridge)
-        shutil.copy(CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH, result_path_library_bridge)
-        return None, None
+        shutil.copy(CLICKHOUSE_BINARY_PATH, os.getenv("CLICKHOUSE_TESTS_SERVER_BIN_PATH"))
+        shutil.copy(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, os.getenv("CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"))
+        shutil.copy(CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH, os.getenv("CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH"))
 
     def _compress_logs(self, dir, relpaths, result_path):
         subprocess.check_call("tar czf {} -C {} {}".format(result_path, dir, ' '.join(relpaths)), shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
@@ -565,7 +563,7 @@ class ClickhouseIntegrationTestsRunner:
             return self.run_flaky_check(repo_path, build_path)
 
         self._install_clickhouse(build_path)
-        logging.info("Dump iptables before run %s", subprocess.check_output("iptables -L", shell=True))
+        logging.info("Dump iptables before run %s", subprocess.check_output("sudo iptables -L", shell=True))
         all_tests = self._get_all_tests(repo_path)
         parallel_skip_tests = self._get_parallel_tests_skip_list(repo_path)
         logging.info("Found %s tests first 3 %s", len(all_tests), ' '.join(all_tests[:3]))
