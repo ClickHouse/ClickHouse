@@ -19,7 +19,8 @@ Each `value` corresponds to the determinate `timestamp`. The half-decay period i
 - `timestamp` - timestamp must be [Integer](../../../sql-reference/data-types/int-uint.md).
 
 **Parameters**
-- `x` - half-decay period in seconds must be  [Integer](../../../sql-reference/data-types/int-uint.md).
+
+-   `x` — Half-life period. [Integer](../../../sql-reference/data-types/int-uint.md).
 
 **Returned value(s)**
 - Returnes an exponentially smoothed moving average of the values for the past `x` time at the latest point of time.
