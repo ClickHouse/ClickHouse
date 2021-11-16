@@ -155,7 +155,7 @@ class Task2:
         assert TSV(self.cluster.instances['s0_0_0'].query("SELECT count() FROM cluster(cluster0, default, a)")) == TSV(
             "85\n")
         assert TSV(self.cluster.instances['s1_0_0'].query(
-            "SELECT count(), uniqExact(date) FROM cluster(cluster1, default, b)")) == TSV("test_copy_month_to_week_partition_with_recovering\t85\n")
+            "SELECT count(), uniqExact(date) FROM cluster(cluster1, default, b)")) == TSV("85\t85\n")
 
         assert TSV(self.cluster.instances['s1_0_0'].query(
             "SELECT DISTINCT jumpConsistentHash(intHash64(d), 2) FROM b")) == TSV("0\n")
