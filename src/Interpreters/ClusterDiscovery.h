@@ -18,7 +18,7 @@ namespace DB
  * Discover cluster nodes.
  *
  * Each node adds ephemernal node into specified path in zookeeper (each cluster have own path).
- * Also node subscribed for updates for theese paths, and at each child node chanhe cluster updated.
+ * Also node subscribed for updates for these paths, and at each child node chanhe cluster updated.
  * When node goes down ephemernal node are destroyed, cluster configuration is updated on other node and gone node is removed from cluster.
  */
 class ClusterDiscovery
@@ -35,8 +35,18 @@ public:
     ~ClusterDiscovery();
 
 private:
+    struct NodeInfo
+    {
+        /// host:port
+        String address;
+
+        explicit NodeInfo(const String & data)
+            : address(data)
+        {}
+    };
+
     // node uuid -> address ("host:port")
-    using NodesInfo = std::unordered_map<String, String>;
+    using NodesInfo = std::unordered_map<String, NodeInfo>;
 
     struct ClusterInfo
     {
@@ -55,7 +65,7 @@ private:
                          int * version = nullptr,
                          bool set_callback = true);
 
-    NodesInfo getNodes(zkutil::ZooKeeperPtr & zk, const String & zk_root, const Strings & nodes);
+    NodesInfo getNodes(zkutil::ZooKeeperPtr & zk, const String & zk_root, const Strings & node_uuids);
 
     ClusterPtr getCluster(const ClusterInfo & cluster_info);
 
