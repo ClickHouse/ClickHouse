@@ -564,7 +564,7 @@ CI_CONFIG = {
         "Unit tests (release-clang, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "deb",
+                "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
                 "bundled": "bundled",
