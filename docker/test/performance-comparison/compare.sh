@@ -308,12 +308,7 @@ function get_profiles_watchdog
 function get_profiles
 {
     # Collect the profiles
-    clickhouse-client --port $LEFT_SERVER_PORT --query "set query_profiler_cpu_time_period_ns = 0"
-    clickhouse-client --port $LEFT_SERVER_PORT --query "set query_profiler_real_time_period_ns = 0"
     clickhouse-client --port $LEFT_SERVER_PORT --query "system flush logs" &
-
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "set query_profiler_cpu_time_period_ns = 0"
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "set query_profiler_real_time_period_ns = 0"
     clickhouse-client --port $RIGHT_SERVER_PORT --query "system flush logs" &
 
     wait

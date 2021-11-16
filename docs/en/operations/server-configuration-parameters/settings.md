@@ -370,7 +370,7 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
   <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
 </http_server_default_response>
 ```  
-## hsts_max_age  
+## hsts_max_age  {#hsts-max-age}
   
 Expired time for HSTS in seconds. The default value is 0 means clickhouse disabled HSTS. If you set a positive number, the HSTS will be enabled and the max-age is the number you set.  
   
@@ -761,6 +761,30 @@ Default value: 10000.
 
 ``` xml
 <max_thread_pool_size>12000</max_thread_pool_size>
+```
+
+## max_thread_pool_free_size {#max-thread-pool-free-size}
+
+The number of threads that are always held in the Global Thread pool.
+
+Default value: 1000.
+
+**Example**
+
+``` xml
+<max_thread_pool_free_size>1200</max_thread_pool_free_size>
+```
+
+## thread_pool_queue_size {#thread-pool-queue-size}
+
+The limit to the number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to the `max_thread_pool_size`.
+
+Default value: 10000.
+
+**Example**
+
+``` xml
+<thread_pool_queue_size>12000</thread_pool_queue_size>
 ```
 
 ## merge_tree {#server_configuration_parameters-merge_tree}

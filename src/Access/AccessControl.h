@@ -42,11 +42,11 @@ struct Settings;
 
 
 /// Manages access control entities.
-class AccessControlManager : public MultipleAccessStorage
+class AccessControl : public MultipleAccessStorage
 {
 public:
-    AccessControlManager();
-    ~AccessControlManager() override;
+    AccessControl();
+    ~AccessControl() override;
 
     /// Parses access entities from a configuration loaded from users.xml.
     /// This function add UsersConfigAccessStorage if it wasn't added before.
@@ -132,6 +132,8 @@ public:
     std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies(
         const UUID & user_id,
         const boost::container::flat_set<UUID> & enabled_roles) const;
+
+    std::shared_ptr<const EnabledRowPolicies> tryGetDefaultRowPolicies(const UUID & user_id) const;
 
     std::shared_ptr<const EnabledQuota> getEnabledQuota(
         const UUID & user_id,
