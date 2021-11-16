@@ -618,7 +618,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
         Settings settings_push = task_cluster->settings_push;
         ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_NODE;
 
-        if (settings_push.replication_alter_partitions_sync == 1)
+        if (settings_push.replication_alter_partitions_sync >= 1)
             execution_mode = ClusterExecutionMode::ON_EACH_SHARD;
 
         query_alter_ast_string += " ALTER TABLE " + getQuotedTable(original_table) +
@@ -636,7 +636,7 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
                 task_cluster->settings_push,
                 execution_mode);
 
-            if (settings_push.replication_alter_partitions_sync == 1)
+            if (settings_push.replication_alter_partitions_sync >= 1)
             {
                 LOG_INFO(
                     log,
