@@ -36,6 +36,7 @@ private:
     std::vector<std::string> block_ids;
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     UInt64 max_single_part_upload_size;
+    size_t max_single_part_upload_size;
     const String blob_path;
     bool finalized = false;
 };
