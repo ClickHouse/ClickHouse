@@ -618,9 +618,6 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
         Settings settings_push = task_cluster->settings_push;
         ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_NODE;
 
-        if (settings_push.replication_alter_partitions_sync >= 1)
-            execution_mode = ClusterExecutionMode::ON_EACH_SHARD;
-
         query_alter_ast_string += " ALTER TABLE " + getQuotedTable(original_table) +
                                   ((partition_name == "'all'") ? " ATTACH PARTITION ID " : " ATTACH PARTITION ") + partition_name +
                                   " FROM " + getQuotedTable(helping_table);
@@ -629,29 +626,17 @@ TaskStatus ClusterCopier::tryMoveAllPiecesToDestinationTable(const TaskTable & t
 
         try
         {
-            /// Try attach partition on each shard
+            /// Try attach partition on each node
             UInt64 num_nodes = executeQueryOnCluster(
                 task_table.cluster_push,
                 query_alter_ast_string,
                 task_cluster->settings_push,
                 execution_mode);
 
-            if (settings_push.replication_alter_partitions_sync >= 1)
-            {
-                LOG_INFO(
-                    log,
-                    "Destination tables {} have been executed alter query successfully on {} shards of {}",
-                    getQuotedTable(task_table.table_push),
-                    num_nodes,
-                    task_table.cluster_push->getShardCount());
+            LOG_INFO(log, "Number of nodes that executed ALTER query successfully : {}", toString(num_nodes));
 
-                if (num_nodes != task_table.cluster_push->getShardCount())
-                    return TaskStatus::Error;
-            }
-            else
-            {
-                LOG_INFO(log, "Number of nodes that executed ALTER query successfully : {}", toString(num_nodes));
-            }
+            if (task_table.cluster_push->getClusterWithReplicasAsShards(task_cluster->settings_push)->getShardsInfo().size() != num_nodes)
+                return TaskStatus::Error;
         }
         catch (...)
         {
@@ -2007,12 +1992,7 @@ UInt64 ClusterCopier::executeQueryOnCluster(
                     continue;
                 }
 
-                while (true)
-                {
-                    auto block = remote_query_executor->read();
-                    if (!block)
-                        break;
-                }
+                while (remote_query_executor->read()) {}
 
                 remote_query_executor->finish();
                 ++successfully_executed;
