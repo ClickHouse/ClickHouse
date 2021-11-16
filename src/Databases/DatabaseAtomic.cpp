@@ -295,9 +295,9 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
     try
     {
         std::unique_lock lock{mutex};
-        if (query.database != database_name)
+        if (query.getDatabase() != database_name)
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed to `{}`, cannot create table in `{}`",
-                            database_name, query.database);
+                            database_name, query.getDatabase());
         /// Do some checks before renaming file from .tmp to .sql
         not_in_use = cleanupDetachedTables();
         assertDetachedTableNotInUse(query.uuid);
@@ -314,8 +314,8 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
 
         /// It throws if `table_metadata_path` already exists (it's possible if table was detached)
         renameNoReplace(table_metadata_tmp_path, table_metadata_path);  /// Commit point (a sort of)
-        attachTableUnlocked(query.table, table, lock);   /// Should never throw
-        table_name_to_path.emplace(query.table, table_data_path);
+        attachTableUnlocked(query.getTable(), table, lock);   /// Should never throw
+        table_name_to_path.emplace(query.getTable(), table_data_path);
     }
     catch (...)
     {
@@ -325,7 +325,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         throw;
     }
     if (table->storesDataOnDisk())
-        tryCreateSymlink(query.table, table_data_path);
+        tryCreateSymlink(query.getTable(), table_data_path);
 }
 
 void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path,
