@@ -27,3 +27,20 @@ SELECT * FROM t_null WHERE y IS NULL
 !!! note "Примечание"
     Существует оптимизация фильтрации под названием [prewhere](prewhere.md).
 
+**Пример**
+
+Чтобы найти числа, которые кратны 3 и больше 10, можно выполнить запрос к [таблице numbers](../../../sql-reference/table-functions/numbers.md):
+
+``` sql
+SELECT number FROM numbers(20) WHERE (number > 10) AND (number % 3 == 0);
+```
+
+Результат:
+
+``` text
+┌─number─┐
+│     12 │
+│     15 │
+│     18 │
+└────────┘
+```
