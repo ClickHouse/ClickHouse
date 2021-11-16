@@ -64,6 +64,6 @@ private:
     const std::string row_between_delimiter;
 };
 
-bool parseDelimiterWithDiagnosticInfo(WriteBuffer & out,  ReadBuffer & buf, const String & delimiter, const String & description, bool skip_spaces);
+bool parseDelimiterWithDiagnosticInfo(WriteBuffer & out, ReadBuffer & buf, const String & delimiter, const String & description, bool skip_spaces);
 
 }

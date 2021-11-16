@@ -318,10 +318,10 @@ bool TemplateRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & col
         }
     }
 
-    return parseDelimiterWithDiagnosticInfo(out, buf,  row_format.delimiters.back(), "delimiter after last field", ignore_spaces);
+    return parseDelimiterWithDiagnosticInfo(out, buf, row_format.delimiters.back(), "delimiter after last field", ignore_spaces);
 }
 
-bool parseDelimiterWithDiagnosticInfo(WriteBuffer & out,  ReadBuffer & buf, const String & delimiter, const String & description, bool skip_spaces)
+bool parseDelimiterWithDiagnosticInfo(WriteBuffer & out, ReadBuffer & buf, const String & delimiter, const String & description, bool skip_spaces)
 {
     if (skip_spaces)
         skipWhitespaceIfAny(buf);

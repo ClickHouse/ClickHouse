@@ -169,7 +169,7 @@ bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadE
 
     updateDiagnosticInfo();
 
-    if (likely(row_num != 1 || getCurrentUnitNumber() == 0 && (with_names || with_types)))
+    if (likely(row_num != 1 || (getCurrentUnitNumber() == 0 && (with_names || with_types))))
         skipRowBetweenDelimiter();
 
     skipRowStartDelimiter();
