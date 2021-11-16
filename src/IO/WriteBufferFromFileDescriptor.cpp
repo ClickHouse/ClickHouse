@@ -114,9 +114,16 @@ void WriteBufferFromFileDescriptor::sync()
     next();
 
     /// Request OS to sync data with storage medium.
-    int res = fdatasync(fd);
+#if defined(OS_DARWIN)
+    int res = ::fsync(fd);   
     if (-1 == res)
         throwFromErrnoWithPath("Cannot fsync " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSYNC);
+#else
+    int res = ::fdatasync(fd);
+    if (-1 == res)
+        throwFromErrnoWithPath("Cannot fdatasync " + getFileName(), getFileName(), ErrorCodes::CANNOT_FSYNC);
+#endif
+
 }
 
 
