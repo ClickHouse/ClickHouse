@@ -7,11 +7,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 CustomSeparatedRowOutputFormat::CustomSeparatedRowOutputFormat(
     const Block & header_, WriteBuffer & out_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_, bool with_names_, bool with_types_)
     : IRowOutputFormat(header_, out_, params_)
@@ -84,19 +79,19 @@ void CustomSeparatedRowOutputFormat::writeField(const IColumn & column, const IS
 
 void registerOutputFormatCustomSeparated(FormatFactory & factory)
 {
-   auto register_func = [&](const String & format_name, bool with_names, bool with_types)
-   {
-       factory.registerOutputFormat(format_name, [with_names, with_types](
-           WriteBuffer & buf,
-           const Block & sample,
-           const RowOutputFormatParams & params,
-           const FormatSettings & settings)
-       {
-           return std::make_shared<CustomSeparatedRowOutputFormat>(sample, buf, params, settings,  with_names, with_types);
-       });
+    auto register_func = [&](const String & format_name, bool with_names, bool with_types)
+    {
+        factory.registerOutputFormat(format_name, [with_names, with_types](
+            WriteBuffer & buf,
+            const Block & sample,
+            const RowOutputFormatParams & params,
+            const FormatSettings & settings)
+        {
+            return std::make_shared<CustomSeparatedRowOutputFormat>(sample, buf, params, settings, with_names, with_types);
+        });
     };
 
-   registerWithNamesAndTypes("CustomSeparated", register_func);
+    registerWithNamesAndTypes("CustomSeparated", register_func);
 }
 
 }

@@ -9,8 +9,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_READ_ALL_DATA;
-    extern const int ATTEMPT_TO_READ_AFTER_EOF;
 }
 
 FormatSettings::EscapingRule stringToEscapingRule(const String & escaping_rule)
