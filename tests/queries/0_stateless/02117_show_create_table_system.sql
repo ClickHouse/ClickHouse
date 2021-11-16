@@ -65,7 +65,6 @@ show create table replicas;
 show create table replicated_fetches;
 show create table replicated_merge_tree_settings;
 show create table replication_queue;
-show create table rocksdb;
 show create table role_grants;
 show create table roles;
 show create table row_policies;

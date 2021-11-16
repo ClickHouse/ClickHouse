@@ -438,16 +438,15 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
     auto table_metadata_path = getObjectMetadataPath(table_name);
     try
     {
-        if (is_system_storage)
-            ast = getCreateQueryFromStorage(table_name, storage, throw_on_error);
-        else
-            ast = getCreateQueryFromMetadata(table_metadata_path, throw_on_error);
+        ast = getCreateQueryFromMetadata(table_metadata_path, throw_on_error);
     }
     catch (const Exception & e)
     {
         if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
             throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
                             ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
+        else if (is_system_storage)
+            ast = getCreateQueryFromStorage(table_name, storage, throw_on_error);
         else if (throw_on_error)
             throw;
     }
