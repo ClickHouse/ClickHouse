@@ -1,5 +1,5 @@
 #include <Storages/System/StorageSystemUsers.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/User.h>
 #include <DataTypes/DataTypeString.h>
@@ -25,7 +25,7 @@ namespace
     DataTypeEnum8::Values getAuthenticationTypeEnumValues()
     {
         DataTypeEnum8::Values enum_values;
-        for (auto type : collections::range(AuthenticationType::MAX_TYPE))
+        for (auto type : collections::range(AuthenticationType::MAX))
             enum_values.emplace_back(AuthenticationTypeInfo::get(type).name, static_cast<Int8>(type));
         return enum_values;
     }
@@ -59,7 +59,7 @@ NamesAndTypesList StorageSystemUsers::getNamesAndTypes()
 void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     context->checkAccess(AccessType::SHOW_USERS);
-    const auto & access_control = context->getAccessControlManager();
+    const auto & access_control = context->getAccessControl();
     std::vector<UUID> ids = access_control.findAll<User>();
 
     size_t column_index = 0;
