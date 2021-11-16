@@ -19,7 +19,7 @@ exponentialMovingAverage(x)(value, timestamp)
 - `timestamp` - параметр для упорядочивания значений, должен быть типа [Integer](../../../sql-reference/data-types/int-uint.md).
 
 **Параметры**
-- `x` - период полу-распада в секундах, должен быть типа [Integer](../../../sql-reference/data-types/int-uint.md).
+-   `x` — период полураспада. [Integer](../../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения:**
 - Возвращает экспоненциальное скользящее среднее. 
