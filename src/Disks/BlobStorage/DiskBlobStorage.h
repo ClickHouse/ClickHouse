@@ -28,7 +28,7 @@ struct DiskBlobStorageSettings final
         int thread_pool_size_,
         int objects_chunk_size_to_delete_);
 
-    UInt64 max_single_part_upload_size;
+    size_t max_single_part_upload_size;
     UInt64 min_bytes_for_seek;
     int thread_pool_size;
     int objects_chunk_size_to_delete;
