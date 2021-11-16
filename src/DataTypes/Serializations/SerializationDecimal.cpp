@@ -51,10 +51,13 @@ void SerializationDecimal<T>::serializeText(const IColumn & column, size_t row_n
 }
 
 template <typename T>
-void SerializationDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationDecimal<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
     T x;
     readText(x, istr);
+    if (whole && !istr.eof())
+        ISerialization::throwUnexpectedDataAfterParsedValue(column, istr, settings, "Decimal");
+
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
 
