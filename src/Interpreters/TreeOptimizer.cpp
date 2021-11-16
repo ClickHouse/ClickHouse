@@ -164,7 +164,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                 if (value.getType() == Field::Types::UInt64)
                 {
                     auto pos = value.get<UInt64>();
-                    if (pos > 0 && pos <= select_query->children.size())
+                    if (pos > 0 && pos <= select_query->select()->children.size())
                         keep_position = true;
                 }
             }
