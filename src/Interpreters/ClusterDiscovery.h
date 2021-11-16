@@ -27,11 +27,16 @@ public:
     ~ClusterDiscovery();
 
 private:
-    Strings getNodeNames(zkutil::ZooKeeperPtr & zk, const String & zk_root, const String & cluster_name);
+    Strings getNodeNames(zkutil::ZooKeeperPtr & zk,
+                         const String & zk_root,
+                         const String & cluster_name,
+                         int * version = nullptr,
+                         bool set_callback = true);
+
     Strings getNodes(zkutil::ZooKeeperPtr & zk, const String & zk_root, const Strings & nodes);
 
-    void updateCluster(const String & cluster_name);
-    void updateCluster(const String & cluster_name, const String & zk_root);
+    bool updateCluster(const String & cluster_name);
+    bool updateCluster(const String & cluster_name, const String & zk_root);
 
     void runMainThread();
     void shutdown();
