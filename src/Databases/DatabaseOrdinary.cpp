@@ -181,27 +181,21 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
                     return;
                 }
 
-                TableLoadingDependenciesVisitor::Data data;
-                data.default_database = metadata.default_database;
-                data.create_query = ast;
-                data.global_context = getContext();
-                TableLoadingDependenciesVisitor visitor{data};
-                visitor.visit(ast);
+                TableNamesSet loading_dependencies = getDependenciesSetFromCreateQuery(getContext(), ast);
                 QualifiedTableName qualified_name{database_name, create_query->table};
 
                 std::lock_guard lock{metadata.mutex};
                 metadata.parsed_tables[qualified_name] = ParsedTableMetadata{full_path.string(), ast};
-                if (data.dependencies.empty())
+                if (loading_dependencies.empty())
                 {
                     metadata.independent_database_objects.emplace_back(std::move(qualified_name));
                 }
                 else
                 {
-                    for (const auto & dependency : data.dependencies)
-                    {
-                        metadata.dependencies_info[dependency].dependent_database_objects.push_back(qualified_name);
-                        ++metadata.dependencies_info[qualified_name].dependencies_count;
-                    }
+                    for (const auto & dependency : loading_dependencies)
+                        metadata.dependencies_info[dependency].dependent_database_objects.insert(qualified_name);
+                    assert(metadata.dependencies_info[qualified_name].dependencies.empty());
+                    metadata.dependencies_info[qualified_name].dependencies = std::move(loading_dependencies);
                 }
                 metadata.total_dictionaries += create_query->is_dictionary;
             }
@@ -302,6 +296,9 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
             out.sync();
         out.close();
     }
+
+    TableNamesSet new_dependencies = getDependenciesSetFromCreateQuery(local_context->getGlobalContext(), ast);
+    DatabaseCatalog::instance().updateLoadingDependencies(table_id, std::move(new_dependencies));
 
     commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, local_context);
 }
