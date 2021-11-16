@@ -120,7 +120,7 @@ static NamesAndTypesList getColumnsList(const ASTExpressionList * columns_defini
                     auto * literal = child->as<ASTLiteral>();
 
                     new_child->arguments = std::make_shared<ASTExpressionList>();
-                    new_child->arguments->children.push_back(std::make_shared<ASTLiteral>(literal->value.get<String>()));
+                    new_child->arguments->children.push_back(std::make_shared<ASTLiteral>(literal->value.safeGet<String>()));
                     new_child->arguments->children.push_back(std::make_shared<ASTLiteral>(Int16(++i)));
                     child = new_child;
                 }
@@ -421,23 +421,42 @@ static ASTPtr getOrderByPolicy(
 
 void InterpreterCreateImpl::validate(const InterpreterCreateImpl::TQuery & create_query, ContextPtr)
 {
-    /// This is dangerous, because the like table may not exists in ClickHouse
-    if (create_query.like_table)
-        throw Exception("Cannot convert create like statement to ClickHouse SQL", ErrorCodes::NOT_IMPLEMENTED);
-
-    const auto & create_defines = create_query.columns_list->as<MySQLParser::ASTCreateDefines>();
-
-    if (!create_defines || !create_defines->columns || create_defines->columns->children.empty())
-        throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+    if (!create_query.like_table)
+    {
+        bool missing_columns_definition = true;
+        if (create_query.columns_list)
+        {
+            const auto & create_defines = create_query.columns_list->as<MySQLParser::ASTCreateDefines>();
+            if (create_defines && create_defines->columns && !create_defines->columns->children.empty())
+                missing_columns_definition = false;
+        }
+        if (missing_columns_definition)
+            throw Exception("Missing definition of columns.", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+    }
 }
 
 ASTs InterpreterCreateImpl::getRewrittenQueries(
     const TQuery & create_query, ContextPtr context, const String & mapped_to_database, const String & mysql_database)
 {
-    auto rewritten_query = std::make_shared<ASTCreateQuery>();
     if (resolveDatabase(create_query.database, mysql_database, mapped_to_database, context) != mapped_to_database)
         return {};
 
+    if (create_query.like_table)
+    {
+        auto * table_like = create_query.like_table->as<ASTTableIdentifier>();
+        if (table_like->compound() && table_like->getTableId().database_name != mysql_database)
+            return {};
+        String table_name = table_like->shortName();
+        ASTPtr rewritten_create_ast = DatabaseCatalog::instance().getDatabase(mapped_to_database)->getCreateTableQuery(table_name, context);
+        auto * create_ptr = rewritten_create_ast->as<ASTCreateQuery>();
+        create_ptr->database = mapped_to_database;
+        create_ptr->table = create_query.table;
+        create_ptr->uuid = UUIDHelpers::generateV4();
+        create_ptr->if_not_exists = create_query.if_not_exists;
+        return ASTs{rewritten_create_ast};
+    }
+
+    auto rewritten_query = std::make_shared<ASTCreateQuery>();
     const auto & create_defines = create_query.columns_list->as<MySQLParser::ASTCreateDefines>();
 
     NamesAndTypesList columns_name_and_type = getColumnsList(create_defines->columns);
@@ -571,6 +590,7 @@ ASTs InterpreterAlterImpl::getRewrittenQueries(
     auto rewritten_rename_query = std::make_shared<ASTRenameQuery>();
     rewritten_alter_query->database = mapped_to_database;
     rewritten_alter_query->table = alter_query.table;
+    rewritten_alter_query->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
     rewritten_alter_query->set(rewritten_alter_query->command_list, std::make_shared<ASTExpressionList>());
 
     String default_after_column;

@@ -1,7 +1,8 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS 01759_db;
 CREATE DATABASE 01759_db;
 
-DROP TABLE IF EXISTS 01759_db.dictionary_source_table;
 CREATE TABLE 01759_db.dictionary_source_table
 (
    key UInt64,
@@ -11,8 +12,6 @@ CREATE TABLE 01759_db.dictionary_source_table
 ENGINE = TinyLog;
 
 INSERT INTO 01759_db.dictionary_source_table VALUES (0, 2, 3), (1, 5, 6), (2, 8, 9);
-
-DROP DICTIONARY IF EXISTS 01759_db.test_dictionary;
 
 CREATE DICTIONARY 01759_db.test_dictionary(key UInt64, value1 UInt64, value1 UInt64)
 PRIMARY KEY key
@@ -26,7 +25,5 @@ LAYOUT(COMPLEX_KEY_DIRECT());
 
 SELECT number, dictGet('01759_db.test_dictionary', 'value1', tuple(number)) as value1,
    dictGet('01759_db.test_dictionary', 'value2', tuple(number)) as value2 FROM system.numbers LIMIT 3;
-
-DROP TABLE 01759_db.dictionary_source_table;
 
 DROP DATABASE 01759_db;

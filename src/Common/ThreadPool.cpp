@@ -3,6 +3,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 
 #include <cassert>
+#include <iostream>
 #include <type_traits>
 
 #include <Poco/Util/Application.h>
@@ -74,6 +75,8 @@ void ThreadPoolImpl<Thread>::setQueueSize(size_t value)
 {
     std::lock_guard lock(mutex);
     queue_size = value;
+    /// Reserve memory to get rid of allocations
+    jobs.reserve(queue_size);
 }
 
 
@@ -191,10 +194,11 @@ void ThreadPoolImpl<Thread>::wait()
 template <typename Thread>
 ThreadPoolImpl<Thread>::~ThreadPoolImpl()
 {
+    /// Note: should not use logger from here,
+    /// because it can be an instance of GlobalThreadPool that is a global variable
+    /// and the destruction order of global variables is unspecified.
+
     finalize();
-    /// wait() hadn't been called, log exception at least.
-    if (first_exception)
-        DB::tryLogException(first_exception, __PRETTY_FUNCTION__);
 }
 
 template <typename Thread>
@@ -246,7 +250,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 
             if (!jobs.empty())
             {
-                /// std::priority_queue does not provide interface for getting non-const reference to an element
+                /// boost::priority_queue does not provide interface for getting non-const reference to an element
                 /// to prevent us from modifying its priority. We have to use const_cast to force move semantics on JobWithPriority::job.
                 job = std::move(const_cast<Job &>(jobs.top().job));
                 jobs.pop();
@@ -256,6 +260,7 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 /// shutdown is true, simply finish the thread.
                 return;
             }
+
         }
 
         if (!need_shutdown)
@@ -273,21 +278,11 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
             }
             catch (...)
             {
-                ALLOW_ALLOCATIONS_IN_SCOPE;
-
                 /// job should be reset before decrementing scheduled_jobs to
                 /// ensure that the Job destroyed before wait() returns.
                 job = {};
 
                 {
-                    /// In case thread pool will not be terminated on exception
-                    /// (this is the case for GlobalThreadPool),
-                    /// than first_exception may be overwritten and got lost,
-                    /// and this usually is an error, since this will finish the thread,
-                    /// and for this the caller may not be ready.
-                    if (!shutdown_on_exception)
-                        DB::tryLogException(std::current_exception(), __PRETTY_FUNCTION__);
-
                     std::unique_lock lock(mutex);
                     if (!first_exception)
                         first_exception = std::current_exception(); // NOLINT
@@ -325,7 +320,7 @@ template class ThreadPoolImpl<ThreadFromGlobalPool>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
-void GlobalThreadPool::initialize(size_t max_threads)
+void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
 {
     if (the_instance)
     {
@@ -333,9 +328,7 @@ void GlobalThreadPool::initialize(size_t max_threads)
             "The global thread pool is initialized twice");
     }
 
-    the_instance.reset(new GlobalThreadPool(max_threads,
-        1000 /*max_free_threads*/, 10000 /*max_queue_size*/,
-        false /*shutdown_on_exception*/));
+    the_instance.reset(new GlobalThreadPool(max_threads, max_free_threads, queue_size, false /*shutdown_on_exception*/));
 }
 
 GlobalThreadPool & GlobalThreadPool::instance()

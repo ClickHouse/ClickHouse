@@ -1,8 +1,6 @@
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
-#if USE_BROTLI
+#if USE_BZIP2
 #    include <IO/Bzip2WriteBuffer.h>
 #    include <bzlib.h>
 

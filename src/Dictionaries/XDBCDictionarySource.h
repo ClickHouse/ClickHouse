@@ -32,6 +32,7 @@ public:
         const std::string db;
         const std::string schema;
         const std::string table;
+        const std::string query;
         const std::string where;
         const std::string invalidate_query;
         const std::string update_field;
@@ -88,6 +89,7 @@ private:
     BridgeHelperPtr bridge_helper;
     Poco::URI bridge_url;
     ConnectionTimeouts timeouts;
+    Poco::Net::HTTPBasicCredentials credentials{};
 };
 
 }

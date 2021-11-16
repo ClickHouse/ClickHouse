@@ -28,7 +28,7 @@ struct ProjectionDescription
         Aggregate,
     };
 
-    static const char * typeToString(Type type);
+    static constexpr const char * MINMAX_COUNT_PROJECTION_NAME = "_minmax_count_projection";
 
     /// Definition AST of projection
     ASTPtr definition_ast;
@@ -47,12 +47,6 @@ struct ProjectionDescription
 
     Names getRequiredColumns() const { return required_columns; }
 
-    /// Names of projection columns (not to be confused with required columns)
-    Names column_names;
-
-    /// Data types of projection columns
-    DataTypes data_types;
-
     /// Sample block with projection columns. (NOTE: columns in block are empty, but not nullptr)
     Block sample_block;
 
@@ -62,9 +56,17 @@ struct ProjectionDescription
 
     size_t key_size = 0;
 
+    bool is_minmax_count_projection = false;
+
+    /// If a primary key expression is used in the minmax_count projection, store the name of max expression.
+    String primary_key_max_column_name;
+
     /// Parse projection from definition AST
     static ProjectionDescription
     getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
+
+    static ProjectionDescription getMinMaxCountProjection(
+        const ColumnsDescription & columns, const Names & minmax_columns, const ASTs & primary_key_asts, ContextPtr query_context);
 
     ProjectionDescription() = default;
 
@@ -85,7 +87,13 @@ struct ProjectionDescription
     void recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr query_context);
 
     bool isPrimaryKeyColumnPossiblyWrappedInFunctions(const ASTPtr & node) const;
+
+    Block calculate(const Block & block, ContextPtr context) const;
+
+    String getDirectoryName() const { return name + ".proj"; }
 };
+
+using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 
 /// All projections in storage
 struct ProjectionsDescription

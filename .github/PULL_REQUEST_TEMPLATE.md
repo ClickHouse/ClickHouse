@@ -1,9 +1,7 @@
-I hereby agree to the terms of the CLA available at: https://yandex.ru/legal/cla/?lang=en
-
 Changelog category (leave one):
 - New Feature
 - Improvement
-- Bug Fix
+- Bug Fix (user-visible misbehaviour in official stable or prestable release)
 - Performance Improvement
 - Backward Incompatible Change
 - Build/Testing/Packaging Improvement

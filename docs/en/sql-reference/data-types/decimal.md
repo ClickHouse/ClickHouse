@@ -111,4 +111,4 @@ DB::Exception: Can't compare.
 -   [isDecimalOverflow](../../sql-reference/functions/other-functions.md#is-decimal-overflow)
 -   [countDigits](../../sql-reference/functions/other-functions.md#count-digits)
 
-[Original article](https://clickhouse.tech/docs/en/data_types/decimal/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/data_types/decimal/) <!--hide-->

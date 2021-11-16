@@ -1,6 +1,6 @@
 #include <string>
 #include <vector>
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <gtest/gtest.h>
 
 

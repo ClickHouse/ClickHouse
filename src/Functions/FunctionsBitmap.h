@@ -99,6 +99,8 @@ public:
 
     bool isVariadic() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -227,6 +229,8 @@ public:
 
     bool isVariadic() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     size_t getNumberOfArguments() const override { return 1; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -316,6 +320,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 3; }
 
@@ -490,6 +496,8 @@ public:
 
     bool isVariadic() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     size_t getNumberOfArguments() const override { return 3; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -655,6 +663,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
@@ -828,6 +838,8 @@ public:
 
     bool isVariadic() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -931,6 +943,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -1063,6 +1077,11 @@ struct BitmapAndnotImpl
     }
 };
 
+struct NameBitmapAnd
+{
+    static constexpr auto name = "bitmapAnd";
+};
+
 template <template <typename> class Impl, typename Name>
 class FunctionBitmap : public IFunction
 {
@@ -1074,6 +1093,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -1160,10 +1181,16 @@ private:
             const AggregateDataPtr data_ptr_0 = is_column_const[0] ? container0[0] : container0[i];
             const AggregateDataPtr data_ptr_1 = is_column_const[1] ? container1[0] : container1[i];
 
-            col_to->insertFrom(data_ptr_0);
+            // bitmapAnd(RoaringBitMap, SmallSet) is slower than bitmapAnd(SmallSet, RoaringBitMap), so we can exchange the position of two arguments for the speed
+            auto * bm_1 = reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(data_ptr_0);
+            auto * bm_2 = reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(data_ptr_1);
+
+            // check the name of operation (bitmapAnd) and check if it is the situation mentioned above
+            auto need_exchange = (name == NameBitmapAnd::name) && bm_1->rbs.isLarge() && bm_2->rbs.isSmall();
+            col_to->insertFrom(need_exchange ? data_ptr_1 : data_ptr_0);
             AggregateFunctionGroupBitmapData<T> & bitmap_data_1 = *reinterpret_cast<AggregateFunctionGroupBitmapData<T> *>(col_to->getData()[i]);
             const AggregateFunctionGroupBitmapData<T> & bitmap_data_2
-                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(data_ptr_1);
+                = *reinterpret_cast<const AggregateFunctionGroupBitmapData<T> *>(need_exchange ? data_ptr_0 : data_ptr_1);
             Impl<T>::apply(bitmap_data_1, bitmap_data_2);
         }
         return col_to;
@@ -1221,10 +1248,6 @@ using FunctionBitmapAndnotCardinality = FunctionBitmapCardinality<BitmapAndnotCa
 using FunctionBitmapHasAll = FunctionBitmapCardinality<BitmapHasAllImpl, NameBitmapHasAll, UInt8>;
 using FunctionBitmapHasAny = FunctionBitmapCardinality<BitmapHasAnyImpl, NameBitmapHasAny, UInt8>;
 
-struct NameBitmapAnd
-{
-    static constexpr auto name = "bitmapAnd";
-};
 struct NameBitmapOr
 {
     static constexpr auto name = "bitmapOr";

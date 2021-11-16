@@ -147,4 +147,10 @@ CompressionCodecLZ4HC::CompressionCodecLZ4HC(int level_)
     setCodecDescription("LZ4HC", {std::make_shared<ASTLiteral>(static_cast<UInt64>(level))});
 }
 
+
+CompressionCodecPtr getCompressionCodecLZ4(int level)
+{
+    return std::make_shared<CompressionCodecLZ4HC>(level);
+}
+
 }

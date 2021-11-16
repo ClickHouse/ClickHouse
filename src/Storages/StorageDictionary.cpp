@@ -8,8 +8,7 @@
 #include <Interpreters/ExternalLoaderDictionaryStorageConfigRepository.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/quoteString.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <IO/Operators.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
@@ -165,11 +164,11 @@ Pipe StorageDictionary::read(
     ContextPtr local_context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
-    const unsigned /*threads*/)
+    const unsigned threads)
 {
     auto registered_dictionary_name = location == Location::SameDatabaseAndNameAsDictionary ? getStorageID().getInternalDictionaryName() : dictionary_name;
     auto dictionary = getContext()->getExternalDictionariesLoader().getDictionary(registered_dictionary_name, local_context);
-    return dictionary->read(column_names, max_block_size);
+    return dictionary->read(column_names, max_block_size, threads);
 }
 
 void StorageDictionary::shutdown()
@@ -193,10 +192,6 @@ void StorageDictionary::startup()
 
 void StorageDictionary::removeDictionaryConfigurationFromRepository()
 {
-    if (remove_repository_callback_executed)
-        return;
-
-    remove_repository_callback_executed = true;
     remove_repository_callback.reset();
 }
 
@@ -217,11 +212,20 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
     auto old_table_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
 
-    if (configuration)
+    bool has_configuration = false;
     {
-        configuration->setString("dictionary.database", new_table_id.database_name);
-        configuration->setString("dictionary.name", new_table_id.table_name);
+        std::lock_guard<std::mutex> lock(dictionary_config_mutex);
 
+        if (configuration)
+        {
+            has_configuration = true;
+            configuration->setString("dictionary.database", new_table_id.database_name);
+            configuration->setString("dictionary.name", new_table_id.table_name);
+        }
+    }
+
+    if (has_configuration)
+    {
         const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
         auto result = external_dictionaries_loader.getLoadResult(old_table_id.getInternalDictionaryName());
 

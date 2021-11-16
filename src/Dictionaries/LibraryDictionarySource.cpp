@@ -1,8 +1,7 @@
 #include "LibraryDictionarySource.h"
 
-#include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/Context.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/filesystemHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -41,11 +40,9 @@ LibraryDictionarySource::LibraryDictionarySource(
     , sample_block{sample_block_}
     , context(Context::createCopy(context_))
 {
-    if (fs::path(path).is_relative())
-        path = fs::canonical(path);
-
-    if (created_from_ddl && !pathStartsWith(path, context->getDictionariesLibPath()))
-        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", path, context->getDictionariesLibPath());
+    auto dictionaries_lib_path = context->getDictionariesLibPath();
+    if (created_from_ddl && !fileOrSymlinkPathStartsWith(path, dictionaries_lib_path))
+        throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", path, dictionaries_lib_path);
 
     if (!fs::exists(path))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "LibraryDictionarySource: Can't load library {}: file doesn't exist", path);
@@ -183,11 +180,11 @@ void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 ContextPtr context,
+                                 ContextPtr global_context,
                                  const std::string & /* default_database */,
                                  bool created_from_ddl) -> DictionarySourcePtr
     {
-        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, context, created_from_ddl);
+        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, global_context, created_from_ddl);
     };
 
     factory.registerSource("library", create_table_source);

@@ -2,17 +2,15 @@
 
 #include <Core/Block.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_MYSQL
-#    include <common/LocalDateTime.h>
+#    include <base/LocalDateTime.h>
 #    include <mysqlxx/PoolWithFailover.h>
 #    include "DictionaryStructure.h"
 #    include "ExternalQueryBuilder.h"
 #    include "IDictionarySource.h"
-#    include <Formats/MySQLBlockInputStream.h>
+#    include <Processors/Sources/MySQLSource.h>
 
 namespace Poco
 {
@@ -35,6 +33,7 @@ public:
     {
         const std::string db;
         const std::string table;
+        const std::string query;
         const std::string where;
         const std::string invalidate_query;
         const std::string update_field;

@@ -1,4 +1,5 @@
 #!/usr/bin/expect -f
+# Tags: no-fasttest
 
 # This is a separate test, because we want to test the interactive mode.
 # https://github.com/ClickHouse/ClickHouse/issues/19353

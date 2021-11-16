@@ -19,9 +19,6 @@ target_link_libraries (parallel_aggregation2 PRIVATE dbms)
 add_executable (int_hashes_perf int_hashes_perf.cpp)
 target_link_libraries (int_hashes_perf PRIVATE clickhouse_common_io)
 
-add_executable (simple_cache simple_cache.cpp)
-target_link_libraries (simple_cache PRIVATE common)
-
 add_executable (compact_array compact_array.cpp)
 target_link_libraries (compact_array PRIVATE clickhouse_common_io)
 
@@ -81,7 +78,5 @@ target_link_libraries (average PRIVATE clickhouse_common_io)
 add_executable (shell_command_inout shell_command_inout.cpp)
 target_link_libraries (shell_command_inout PRIVATE clickhouse_common_io)
 
-if (ENABLE_FUZZING)
-    add_executable(YAML_fuzzer YAML_fuzzer.cpp ${SRCS})
-    target_link_libraries(YAML_fuzzer PRIVATE clickhouse_parsers ${LIB_FUZZING_ENGINE})
-endif ()
+add_executable (executable_udf executable_udf.cpp)
+target_link_libraries (executable_udf PRIVATE dbms)

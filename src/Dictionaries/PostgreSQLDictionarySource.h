@@ -1,16 +1,14 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
-#endif
 #include "DictionaryStructure.h"
 #include "IDictionarySource.h"
 
 #if USE_LIBPQXX
 #include "ExternalQueryBuilder.h"
 #include <Core/Block.h>
-#include <common/LocalDateTime.h>
-#include <common/logger_useful.h>
+#include <base/LocalDateTime.h>
+#include <base/logger_useful.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
 
@@ -26,6 +24,7 @@ public:
         const String db;
         const String schema;
         const String table;
+        const String query;
         const String where;
         const String invalidate_query;
         const String update_field;

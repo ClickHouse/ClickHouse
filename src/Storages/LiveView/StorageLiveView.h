@@ -11,7 +11,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License. */
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <Core/BackgroundSchedulePool.h>
 
@@ -52,9 +52,9 @@ using Pipes = std::vector<Pipe>;
 class StorageLiveView final : public shared_ptr_helper<StorageLiveView>, public IStorage, WithContext
 {
 friend struct shared_ptr_helper<StorageLiveView>;
-friend class LiveViewBlockInputStream;
-friend class LiveViewEventsBlockInputStream;
-friend class LiveViewBlockOutputStream;
+friend class LiveViewSource;
+friend class LiveViewEventsSource;
+friend class LiveViewSink;
 
 public:
     ~StorageLiveView() override;
@@ -153,7 +153,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockInputStreams watch(
+    Pipe watch(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -167,7 +167,7 @@ public:
     /// Collect mergeable blocks and their sample. Must be called holding mutex
     MergeableBlocksPtr collectMergeableBlocks(ContextPtr context);
     /// Complete query using input streams from mergeable blocks
-    BlockInputStreamPtr completeQuery(Pipes pipes);
+    QueryPipelineBuilder completeQuery(Pipes pipes);
 
     void setMergeableBlocks(MergeableBlocksPtr blocks) { mergeable_blocks = blocks; }
     std::shared_ptr<bool> getActivePtr() { return active_ptr; }

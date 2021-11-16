@@ -60,4 +60,4 @@ WHERE a = 'b\0'
 
 の長さに注意してください。 `FixedString(N)` 値は一定です。 その [長さ](../../sql-reference/functions/array-functions.md#array_functions-length) 関数の戻り値 `N` たとえ `FixedString(N)` 値はnullバイトのみで埋められますが、 [空](../../sql-reference/functions/string-functions.md#empty) 関数の戻り値 `1` この場合。
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/fixedstring/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/fixedstring/) <!--hide-->

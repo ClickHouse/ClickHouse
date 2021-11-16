@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 drop table if exists ttl_00933_2;
 
 create table ttl_00933_2 (d DateTime, a Int default 111 ttl d + interval 1 DAY) engine = MergeTree order by tuple() partition by toDayOfMonth(d);

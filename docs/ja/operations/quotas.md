@@ -109,4 +109,4 @@ toc_title: "\u30AF\u30A9\u30FC\u30BF"
 
 サーバーを再起動すると、クォータがリセットされます。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/quotas/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/quotas/) <!--hide-->

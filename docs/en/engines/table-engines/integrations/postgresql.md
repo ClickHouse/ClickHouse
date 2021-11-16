@@ -34,6 +34,7 @@ The table structure can differ from the original PostgreSQL table structure:
 -   `user` — PostgreSQL user.
 -   `password` — User password.
 -   `schema` — Non-default table schema. Optional.
+-   `on conflict ...` — example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
 
 ## Implementation Details {#implementation-details}
 
@@ -148,4 +149,4 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 -   [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
 -   [Using PostgreSQL as a source of external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
-[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/postgresql/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/postgresql/) <!--hide-->
