@@ -96,9 +96,9 @@ static void GAInit()
 }
 
 
-static yint GAHashPtr(void *ptr)
+static yint GAHashPtr(const void *ptr)
 {
-    ui64 x = (char*)(ptr) - (char*)nullptr;
+    ui64 x = (const char*)(ptr) - (const char*)nullptr;
     ui64 res = (0x4847badfea31337ull * x) >> (64 - GLOBAL_HASH_SIZE_LN);
     Y_ASSERT(res < GLOBAL_HASH_SIZE);
     return res;
@@ -182,7 +182,7 @@ NOINLINE static void GAFree(void *ptr)
 }
 
 
-static yint GAGetSize(void *ptr)
+static yint GAGetSize(const void *ptr)
 {
     if (ptr == 0) {
         return 0;
@@ -260,7 +260,7 @@ static bool BitMaskFind(ui64 mask, yint sz, unsigned long *index)
 
 const yint SEGMENT_SIZE_LN = 21;
 const yint SEGMENT_SIZE = 1ll << SEGMENT_SIZE_LN;
-const yint SEGMENT_COUNT = (1ull << (30 - SEGMENT_SIZE_LN)) * 64; // 64G
+const yint SEGMENT_COUNT = (1ull << (30 - SEGMENT_SIZE_LN)) * 640; // 640 gb ought to be enough for anybody
 const yint HUGE_SIZE_LN = SEGMENT_SIZE_LN - 1;
 const yint BLOCK_SIZE_LN = SEGMENT_SIZE_LN - 6;
 const yint BLOCK_SIZE = 1 << BLOCK_SIZE_LN;
@@ -354,7 +354,7 @@ struct TGlobalSizeContext
 
 // pointer to segmented memory
 static char *AllMemoryPtr;
-static TSegmentInfo SegmentInfo[SEGMENT_COUNT];
+static TSegmentInfo *SegmentInfo;
 static TFirstFreeId FirstFree;
 static TGlobalSizeContext GlobalSizeCtx[BLOCK_SIZE_LN + 1];
 static PERTHREAD char* pThreadSegment;
@@ -380,10 +380,12 @@ static void hu_init()
 
     yint sz = SEGMENT_COUNT * SEGMENT_SIZE;
 #ifdef _win_
+    SegmentInfo = (TSegmentInfo*)VirtualAlloc(0, sizeof(TSegmentInfo) * SEGMENT_COUNT, MEM_COMMIT, PAGE_READWRITE);
     // large pages under windows require reserve + commit simultaneously, invent way to live with that
     //AllMemoryPtr = (char*)VirtualAlloc(0, sz, MEM_RESERVE | MEM_COMMIT | MEM_LARGE_PAGES, PAGE_READWRITE);
     AllMemoryPtr = (char*)VirtualAlloc(0, sz, MEM_RESERVE, PAGE_NOACCESS);
 #else
+    SegmentInfo = (TSegmentInfo*)mmap(0, sizeof(TSegmentInfo) * SEGMENT_COUNT, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
     for (char *ptr = (char*)0x1300000000ull;; ptr += 0x100000000ull) {
         AllMemoryPtr = (char*)mmap(ptr, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
         if (AllMemoryPtr == ptr) {
@@ -393,6 +395,8 @@ static void hu_init()
     madvise(AllMemoryPtr, sz, MADV_HUGEPAGE);
 #endif
 
+    Y_ASSERT(SegmentInfo);
+    Y_ASSERT(AllMemoryPtr);
     Y_ASSERT(BITS_OFFSET_MULT * sizeof(ui64) * 8 >= BLOCK_SIZE / MIN_ALLOC); // MemFreeBits has space for one bit per MIN_ALLOC
     Y_ASSERT(BITS_OFFSET_MULT * BLOCK_COUNT * sizeof(ui64) <= BLOCK_SIZE); // MemFreeBits fits into first block
     Y_ASSERT(BITS_OFFSET_MULT * sizeof(ui64) >= sizeof(ui64) * BLOCK_COUNT); // one block MemFreeBits is sufficient for BlockFreeBits storage
@@ -1155,10 +1159,6 @@ static void *hu_alloc(yint sz)
 
 static void hu_free(void *p)
 {
-    if (p == 0) {
-        return;
-    }
-
     Y_ASSERT(AllMemoryPtr != 0);
     ui64 offset = ((char*)p) - AllMemoryPtr;
     if (offset < SEGMENT_COUNT * SEGMENT_SIZE) {
@@ -1206,18 +1206,21 @@ static void hu_free(void *p)
             abort(); // memory corruption
         }
     } else {
+        if (p == 0) {
+            return;
+        }
         GAFree(p);
     }
 }
 
 
-static yint hu_getsize(void *p)
+static yint hu_getsize(const void *p)
 {
     Y_ASSERT(AllMemoryPtr != 0);
     if (p == 0) {
         return 0;
     }
-    ui64 offset = ((char*)p) - AllMemoryPtr;
+    ui64 offset = ((const char*)p) - AllMemoryPtr;
     if (offset < SEGMENT_COUNT * SEGMENT_SIZE) {
         yint segmentId = offset >> SEGMENT_SIZE_LN;
         char *segment = AllMemoryPtr + (segmentId << SEGMENT_SIZE_LN);
