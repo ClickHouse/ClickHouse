@@ -5,7 +5,6 @@
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <IO/Progress.h>
 #include <Common/Stopwatch.h>
-#include <iostream>
 
 namespace DB
 {
