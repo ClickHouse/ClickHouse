@@ -22,6 +22,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
+#include <Databases/DatabaseReplicatedHelpers.h>
 
 namespace DB
 {
@@ -541,6 +542,12 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         /// to make possible copying metadata files between replicas.
         Macros::MacroExpansionInfo info;
         info.table_id = args.table_id;
+        if (is_replicated_database)
+        {
+            auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name);
+            info.shard = getReplicatedDatabaseShardName(database);
+            info.replica = getReplicatedDatabaseReplicaName(database);
+        }
         if (!allow_uuid_macro)
             info.table_id.uuid = UUIDHelpers::Nil;
         zookeeper_path = args.getContext()->getMacros()->expand(zookeeper_path, info);

@@ -48,6 +48,8 @@ public:
 
     void stopReplication();
 
+    String getShardName() const { return shard_name; }
+    String getReplicaName() const { return replica_name; }
     String getFullReplicaName() const;
     static std::pair<String, String> parseFullReplicaName(const String & name);
 
