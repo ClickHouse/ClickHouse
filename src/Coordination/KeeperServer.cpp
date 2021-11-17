@@ -88,7 +88,7 @@ KeeperServer::KeeperServer(
     , coordination_settings(settings_->coordination_settings)
     , state_machine(nuraft::cs_new<KeeperStateMachine>(
                         responses_queue_, snapshots_queue_,
-                        settings_->log_storage_path,
+                        settings_->snapshot_storage_path,
                         coordination_settings,
                         checkAndGetSuperdigest(settings_->super_digest)))
                         , state_manager(nuraft::cs_new<KeeperStateManager>(server_id, "keeper_server", settings_->log_storage_path, config, coordination_settings))
