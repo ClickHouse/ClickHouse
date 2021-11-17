@@ -33,7 +33,9 @@ class ASTStorage;
     M(HandleKafkaErrorMode, kafka_handle_error_mode, HandleKafkaErrorMode::DEFAULT, "How to handle errors for Kafka engine. Passible values: default, stream.", 0) \
     M(Bool, kafka_commit_on_select, false, "Commit messages when select query is made", 0) \
     M(String, kafka_sasl_username, "", "A sasl user name for each kafa table.", 0) \
-    M(String, kafka_sasl_password, "", "A sasl password for each kafka table.", 0)
+    M(String, kafka_sasl_password, "", "A sasl password for each kafka table.", 0) \
+    M(String, kafka_security_protocol, "", "A security protocol for each kafka table.", 0) \
+    M(String, kafka_sasl_mechanism, "", "A sasl mechanism for each kafka table.", 0)
 
     /** TODO: */
     /* https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md */

@@ -218,6 +218,8 @@ StorageKafka::StorageKafka(
     , settings_adjustments(createSettingsAdjustments())
     , sasl_user(kafka_settings->kafka_sasl_username.value)
     , sasl_password(kafka_settings->kafka_sasl_password.value)
+    , security_protocol(kafka_settings->kafka_security_protocol.value)
+    , sasl_mechanism(kafka_settings->kafka_sasl_mechanism.value)
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
     , collection_name(collection_name_)
 {
@@ -470,10 +472,20 @@ ConsumerBufferPtr StorageKafka::createReadBuffer(size_t consumer_number)
 
     if (sasl_user != "")
     {
-      conf.set("security.protocol", "sasl_plaintext");
-      conf.set("sasl.mechanism", "PLAIN");
       conf.set("sasl.username", sasl_user);
       conf.set("sasl.password", sasl_password);
+      if (security_protocol != "")
+      {
+          conf.set("security.protocol", security_protocol);
+      } else {
+          conf.set("security.protocol", "sasl_plaintext");
+      }
+      if (sasl_mechanism != "")
+      {
+          conf.set("sasl.mechanism", sasl_mechanism);
+      } else {
+          conf.set("sasl.mechanism", "PLAIN");
+      }
     }
 
     // Create a consumer and subscribe to topics
@@ -850,6 +862,8 @@ void registerStorageKafka(StorageFactory & factory)
             CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(11, kafka_sasl_username, 0)
             CHECK_KAFKA_STORAGE_ARGUMENT(12, kafka_sasl_password, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(13, kafka_security_protocol, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(14, kafka_sasl_mechanism, 0)
         }
 
         #undef CHECK_KAFKA_STORAGE_ARGUMENT

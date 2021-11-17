@@ -100,6 +100,8 @@ private:
 
     const String sasl_user;
     const String sasl_password;
+    const String security_protocol;
+    const String sasl_mechanism;
 
     // Stream thread
     struct TaskContext
