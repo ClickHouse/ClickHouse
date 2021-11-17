@@ -14,7 +14,7 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
 **Example**
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <ldap_servers>
         <!- Typical LDAP server. -->
@@ -45,7 +45,7 @@ To define LDAP server you must add `ldap_servers` section to the `config.xml`.
             <enable_tls>no</enable_tls>
         </my_ad_server>
     </ldap_servers>
-</yandex>
+</clickhouse>
 ```
 
 Note, that you can define multiple LDAP servers inside the `ldap_servers` section using distinct names.
@@ -56,13 +56,13 @@ Note, that you can define multiple LDAP servers inside the `ldap_servers` sectio
 - `port` — LDAP server port, default is `636` if `enable_tls` is set to `true`, `389` otherwise.
 - `bind_dn` — Template used to construct the DN to bind to.
     - The resulting DN will be constructed by replacing all `{user_name}` substrings of the template with the actual user name during each authentication attempt.
-- `user_dn_detection` - Section with LDAP search parameters for detecting the actual user DN of the bound user.
+- `user_dn_detection` — Section with LDAP search parameters for detecting the actual user DN of the bound user.
     - This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `{user_dn}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated with to the actual detected user DN value.
-        - `base_dn` - Template used to construct the base DN for the LDAP search.
+        - `base_dn` — Template used to construct the base DN for the LDAP search.
             - The resulting DN will be constructed by replacing all `{user_name}` and `{bind_dn}` substrings of the template with the actual user name and bind DN during the LDAP search.
-        - `scope` - Scope of the LDAP search.
+        - `scope` — Scope of the LDAP search.
             - Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).
-        - `search_filter` - Template used to construct the search filter for the LDAP search.
+        - `search_filter` — Template used to construct the search filter for the LDAP search.
             - The resulting filter will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{base_dn}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search.
             - Note, that the special characters must be escaped properly in XML.
 - `verification_cooldown` — A period of time, in seconds, after a successful bind attempt, during which the user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server.
@@ -90,7 +90,7 @@ At each login attempt, ClickHouse tries to "bind" to the specified DN defined by
 **Example**
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <users>
         <!- ... -->
@@ -101,13 +101,12 @@ At each login attempt, ClickHouse tries to "bind" to the specified DN defined by
             </ldap>
         </my_user>
     </users>
-</yandex>
+</clickhouse>
 ```
 
 Note, that user `my_user` refers to `my_ldap_server`. This LDAP server must be configured in the main `config.xml` file as described previously.
 
 When SQL-driven [Access Control and Account Management](../access-rights.md#access-control) is enabled, users that are authenticated by LDAP servers can also be created using the [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement) statement.
-
 
 Query:
 
@@ -126,7 +125,7 @@ At each login attempt, ClickHouse tries to find the user definition locally and 
 Goes into `config.xml`.
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <user_directories>
         <!- Typical LDAP server. -->
@@ -157,7 +156,7 @@ Goes into `config.xml`.
             </role_mapping>
         </ldap>
     </user_directories>
-</yandex>
+</clickhouse>
 ```
 
 Note that `my_ldap_server` referred in the `ldap` section inside the `user_directories` section must be a previously defined LDAP server that is configured in the `config.xml` (see [LDAP Server Definition](#ldap-server-definition)).
@@ -180,4 +179,4 @@ Note that `my_ldap_server` referred in the `ldap` section inside the `user_direc
         - `attribute` — Attribute name whose values will be returned by the LDAP search. `cn`, by default.
         - `prefix` — Prefix, that will be expected to be in front of each string in the original list of strings returned by the LDAP search. The prefix will be removed from the original strings and the resulting strings will be treated as local role names. Empty by default.
 
-[Original article](https://clickhouse.tech/docs/en/operations/external-authenticators/ldap/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/operations/external-authenticators/ldap/) <!--hide-->

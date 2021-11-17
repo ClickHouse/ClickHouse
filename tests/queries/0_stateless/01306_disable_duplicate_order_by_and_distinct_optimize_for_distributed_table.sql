@@ -1,3 +1,5 @@
+-- Tags: distributed
+
 set optimize_duplicate_order_by_and_distinct = 1;
 SET distributed_group_by_no_merge = 0;
 

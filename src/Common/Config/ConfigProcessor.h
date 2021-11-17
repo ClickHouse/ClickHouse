@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-    #include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #include <string>
 #include <unordered_set>
@@ -15,13 +13,10 @@
 #include <Poco/DOM/NodeList.h>
 #include <Poco/DOM/NamedNodeMap.h>
 #include <Poco/AutoPtr.h>
-#include <Poco/File.h>
-#include <Poco/Path.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
-
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace zkutil

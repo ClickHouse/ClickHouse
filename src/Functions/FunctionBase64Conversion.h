@@ -1,7 +1,5 @@
 #pragma once
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_BASE64
 #    include <Columns/ColumnConst.h>
@@ -75,6 +73,8 @@ public:
     {
         return 1;
     }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override
     {

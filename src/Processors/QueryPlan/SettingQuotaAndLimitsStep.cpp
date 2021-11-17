@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/IStorage.h>
 
 namespace DB
@@ -39,7 +39,7 @@ SettingQuotaAndLimitsStep::SettingQuotaAndLimitsStep(
 {
 }
 
-void SettingQuotaAndLimitsStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void SettingQuotaAndLimitsStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     /// Table lock is stored inside pipeline here.
     pipeline.setLimits(limits);

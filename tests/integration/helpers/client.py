@@ -1,6 +1,7 @@
 import os
 import subprocess as sp
 import tempfile
+import logging
 from threading import Timer
 
 
@@ -15,13 +16,34 @@ class Client:
 
         self.command += ['--host', self.host, '--port', str(self.port), '--stacktrace']
 
-    def query(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
-              ignore_error=False):
-        return self.get_query_request(sql, stdin=stdin, timeout=timeout, settings=settings, user=user,
-                                      password=password, database=database, ignore_error=ignore_error).get_answer()
+    def query(self, sql,
+              stdin=None,
+              timeout=None,
+              settings=None,
+              user=None,
+              password=None,
+              database=None,
+              ignore_error=False,
+              query_id=None):
+        return self.get_query_request(sql,
+                                      stdin=stdin,
+                                      timeout=timeout,
+                                      settings=settings,
+                                      user=user,
+                                      password=password,
+                                      database=database,
+                                      ignore_error=ignore_error,
+                                      query_id=query_id).get_answer()
 
-    def get_query_request(self, sql, stdin=None, timeout=None, settings=None, user=None, password=None, database=None,
-                          ignore_error=False):
+    def get_query_request(self, sql,
+                          stdin=None,
+                          timeout=None,
+                          settings=None,
+                          user=None,
+                          password=None,
+                          database=None,
+                          ignore_error=False,
+                          query_id=None):
         command = self.command[:]
 
         if stdin is None:
@@ -42,6 +64,9 @@ class Client:
 
         if database is not None:
             command += ['--database', database]
+
+        if query_id is not None:
+            command += ['--query_id', query_id]
 
         return CommandRequest(command, stdin, timeout, ignore_error)
 
@@ -101,10 +126,11 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode()
-        stderr = self.stderr_file.read().decode()
+        stdout = self.stdout_file.read().decode('utf-8', errors='replace')
+        stderr = self.stderr_file.read().decode('utf-8', errors='replace')
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
+            logging.debug(f"Timed out. Last stdout:{stdout}, stderr:{stderr}")
             raise QueryTimeoutExceedException('Client timed out!')
 
         if (self.process.returncode != 0 or stderr) and not self.ignore_error:
@@ -118,8 +144,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode()
-        stderr = self.stderr_file.read().decode()
+        stdout = self.stdout_file.read().decode('utf-8', errors='replace')
+        stderr = self.stderr_file.read().decode('utf-8', errors='replace')
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
             raise QueryTimeoutExceedException('Client timed out!')
@@ -134,8 +160,8 @@ class CommandRequest:
         self.stdout_file.seek(0)
         self.stderr_file.seek(0)
 
-        stdout = self.stdout_file.read().decode()
-        stderr = self.stderr_file.read().decode()
+        stdout = self.stdout_file.read().decode('utf-8', errors='replace')
+        stderr = self.stderr_file.read().decode('utf-8', errors='replace')
 
         if self.timer is not None and not self.process_finished_before_timeout and not self.ignore_error:
             raise QueryTimeoutExceedException('Client timed out!')

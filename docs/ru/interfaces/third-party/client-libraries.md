@@ -38,6 +38,8 @@ toc_title: "Клиентские библиотеки от сторонних р
 -   Ruby
     -   [ClickHouse (Ruby)](https://github.com/shlima/click_house)
     -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
+-   Rust
+    -   [Klickhouse](https://github.com/Protryon/klickhouse)
 -   R
     -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     -   [RClickhouse](https://github.com/IMSMWU/RClickhouse)

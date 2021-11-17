@@ -4,7 +4,6 @@
 #include <string>
 #include <cerrno>
 
-
 namespace DB
 {
 
@@ -29,7 +28,7 @@ static void localBackupImpl(const DiskPtr & disk, const String & source_path, co
     for (auto it = disk->iterateDirectory(source_path); it->isValid(); it->next())
     {
         auto source = it->path();
-        auto destination = destination_path + "/" + it->name();
+        auto destination = fs::path(destination_path) / it->name();
 
         if (!disk->isDirectory(source))
         {
@@ -43,6 +42,27 @@ static void localBackupImpl(const DiskPtr & disk, const String & source_path, co
     }
 }
 
+class CleanupOnFail
+{
+public:
+    explicit CleanupOnFail(std::function<void()> && cleaner_) : cleaner(cleaner_), is_success(false) {}
+
+    ~CleanupOnFail()
+    {
+        if (!is_success)
+            cleaner();
+    }
+
+    void success()
+    {
+        is_success = true;
+    }
+
+private:
+    std::function<void()> cleaner;
+    bool is_success;
+};
+
 void localBackup(const DiskPtr & disk, const String & source_path, const String & destination_path, std::optional<size_t> max_level)
 {
     if (disk->exists(destination_path) && !disk->isDirectoryEmpty(destination_path))
@@ -52,6 +72,8 @@ void localBackup(const DiskPtr & disk, const String & source_path, const String 
 
     size_t try_no = 0;
     const size_t max_tries = 10;
+
+    CleanupOnFail cleanup([&](){disk->removeRecursive(destination_path);});
 
     /** Files in the directory can be permanently added and deleted.
       * If some file is deleted during an attempt to make a backup, then try again,
@@ -74,17 +96,22 @@ void localBackup(const DiskPtr & disk, const String & source_path, const String 
 
             continue;
         }
-        catch (const Poco::FileNotFoundException &)
+        catch (const fs::filesystem_error & e)
         {
-            ++try_no;
-            if (try_no == max_tries)
-                throw;
-
-            continue;
+            if (e.code() == std::errc::no_such_file_or_directory)
+            {
+                ++try_no;
+                if (try_no == max_tries)
+                    throw;
+                continue;
+            }
+            throw;
         }
 
         break;
     }
+
+    cleanup.success();
 }
 
 }

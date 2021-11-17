@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS test_show_tables;
 
 CREATE DATABASE test_show_tables;

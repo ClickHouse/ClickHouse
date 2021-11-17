@@ -1,6 +1,6 @@
 #include <Access/GSSAcceptor.h>
 #include <Common/Exception.h>
-#include <ext/scope_guard.h>
+#include <base/scope_guard.h>
 
 #include <Poco/StringTokenizer.h>
 

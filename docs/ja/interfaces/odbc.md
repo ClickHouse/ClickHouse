@@ -9,4 +9,4 @@ toc_title: "ODBC\u30C9\u30E9\u30A4\u30D0"
 
 -   [公式ドライバー](https://github.com/ClickHouse/clickhouse-odbc).
 
-[元の記事](https://clickhouse.tech/docs/en/interfaces/odbc/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/interfaces/odbc/) <!--hide-->

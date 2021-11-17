@@ -4,7 +4,7 @@
 
 #include <Common/Arena.h>
 #include <Common/ThreadPool.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/Exception.h>
 #include "IO/WriteBufferFromString.h"
 #include <Formats/FormatFactory.h>
@@ -95,7 +95,7 @@ public:
         need_flush = true;
     }
 
-    void doWritePrefix() override
+    void writePrefix() override
     {
         addChunk(Chunk{}, ProcessingUnitType::START, /*can_throw_exception*/ true);
     }
@@ -114,7 +114,7 @@ public:
         return internal_formatter_creator(buffer)->getContentType();
     }
 
-protected:
+private:
     void consume(Chunk chunk) override final
     {
         addChunk(std::move(chunk), ProcessingUnitType::PLAIN, /*can_throw_exception*/ true);
@@ -130,9 +130,8 @@ protected:
         addChunk(std::move(extremes), ProcessingUnitType::EXTREMES, /*can_throw_exception*/ true);
     }
 
-    void finalize() override;
+    void finalizeImpl() override;
 
-private:
     InternalFormatterCreator internal_formatter_creator;
 
     /// Status to synchronize multiple threads.
@@ -172,6 +171,7 @@ private:
     ThreadPool pool;
     // Collecting all memory to original ReadBuffer
     ThreadFromGlobalPool collector_thread;
+    std::mutex collector_thread_mutex;
 
     std::exception_ptr background_exception = nullptr;
 

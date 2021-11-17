@@ -4,10 +4,11 @@
 #include <Access/RowPolicy.h>
 #include <Interpreters/ClientInfo.h>
 #include <Core/UUID.h>
-#include <ext/scope_guard.h>
-#include <ext/shared_ptr_helper.h>
+#include <base/scope_guard.h>
+#include <base/shared_ptr_helper.h>
 #include <boost/container/flat_set.hpp>
 #include <mutex>
+#include <unordered_map>
 
 
 namespace Poco { class Logger; }
@@ -23,8 +24,9 @@ class EnabledQuota;
 class EnabledSettings;
 struct QuotaUsage;
 struct Settings;
-class SettingsConstraints;
-class AccessControlManager;
+struct SettingsProfilesInfo;
+class SettingsChanges;
+class AccessControl;
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 
@@ -69,13 +71,12 @@ public:
     /// Returns the current user. The function can return nullptr.
     UserPtr getUser() const;
     String getUserName() const;
+    std::optional<UUID> getUserID() const { return getParams().user_id; }
 
     /// Returns information about current and enabled roles.
-    /// The function can return nullptr.
     std::shared_ptr<const EnabledRolesInfo> getRolesInfo() const;
 
     /// Returns information about enabled row policies.
-    /// The function can return nullptr.
     std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies() const;
 
     /// Returns the row policy filter for a specified table.
@@ -83,17 +84,12 @@ public:
     ASTPtr getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType index, const ASTPtr & extra_condition = nullptr) const;
 
     /// Returns the quota to track resource consumption.
-    /// The function returns nullptr if no tracking or limitation is needed.
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;
 
-    /// Returns the default settings, i.e. the settings to apply on user's login.
-    /// The function returns nullptr if it's no need to apply settings.
-    std::shared_ptr<const Settings> getDefaultSettings() const;
-
-    /// Returns the settings' constraints.
-    /// The function returns nullptr if there are no constraints.
-    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const;
+    /// Returns the default settings, i.e. the settings which should be applied on user's login.
+    SettingsChanges getDefaultSettings() const;
+    std::shared_ptr<const SettingsProfilesInfo> getDefaultProfileInfo() const;
 
     /// Returns the current access rights.
     std::shared_ptr<const AccessRights> getAccessRights() const;
@@ -160,9 +156,9 @@ public:
     static std::shared_ptr<const ContextAccess> getFullAccess();
 
 private:
-    friend class AccessControlManager;
+    friend class AccessControl;
     ContextAccess() {}
-    ContextAccess(const AccessControlManager & manager_, const Params & params_);
+    ContextAccess(const AccessControl & access_control_, const Params & params_);
 
     void setUser(const UserPtr & user_) const;
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const;
@@ -208,15 +204,15 @@ private:
     template <bool throw_if_denied, typename Container, typename GetNameFunction>
     bool checkAdminOptionImplHelper(const Container & role_ids, const GetNameFunction & get_name_function) const;
 
-    const AccessControlManager * manager = nullptr;
+    const AccessControl * access_control = nullptr;
     const Params params;
     bool is_full_access = false;
     mutable Poco::Logger * trace_log = nullptr;
     mutable UserPtr user;
     mutable String user_name;
-    mutable ext::scope_guard subscription_for_user_change;
+    mutable scope_guard subscription_for_user_change;
     mutable std::shared_ptr<const EnabledRoles> enabled_roles;
-    mutable ext::scope_guard subscription_for_roles_changes;
+    mutable scope_guard subscription_for_roles_changes;
     mutable std::shared_ptr<const EnabledRolesInfo> roles_info;
     mutable std::shared_ptr<const AccessRights> access;
     mutable std::shared_ptr<const AccessRights> access_with_implicit;

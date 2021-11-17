@@ -1,5 +1,5 @@
-# docker build -t yandex/clickhouse-stateless-pytest .
-FROM yandex/clickhouse-test-base
+# docker build -t clickhouse/stateless-pytest .
+FROM clickhouse/test-base
 
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends \
@@ -8,6 +8,7 @@ RUN apt-get update -y && \
         python3-wheel \
         brotli \
         netcat-openbsd \
+        postgresql-client \
         zstd
 
 RUN python3 -m pip install \

@@ -5,7 +5,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
-#include <ext/range.h>
+#include <base/range.h>
 
 #include <memory>
 #include <string>
@@ -37,6 +37,8 @@ public:
 
     bool isVariadic() const override { return true; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     size_t getNumberOfArguments() const override { return 0; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
@@ -55,7 +57,7 @@ public:
                     + ", should be at most " + std::to_string(FormatImpl::argument_threshold),
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        for (const auto arg_idx : ext::range(0, arguments.size()))
+        for (const auto arg_idx : collections::range(0, arguments.size()))
         {
             const auto * arg = arguments[arg_idx].get();
             if (!isStringOrFixedString(arg))

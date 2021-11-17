@@ -13,9 +13,9 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
-#include <ext/range.h>
+#include <base/range.h>
 
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 #include "Columns/ColumnConst.h"
 
 
@@ -51,6 +51,7 @@ public:
     const ColumnPtr & getNestedNotNullableColumn() const override { return column_holder; }
     bool nestedColumnIsNullable() const override { return is_nullable; }
     void nestedToNullable() override;
+    void nestedRemoveNullable() override;
 
     size_t uniqueInsert(const Field & x) override;
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
@@ -272,6 +273,14 @@ void ColumnUnique<ColumnType>::nestedToNullable()
 }
 
 template <typename ColumnType>
+void ColumnUnique<ColumnType>::nestedRemoveNullable()
+{
+    is_nullable = false;
+    nested_null_mask = nullptr;
+    nested_column_nullable = nullptr;
+}
+
+template <typename ColumnType>
 const ColumnPtr & ColumnUnique<ColumnType>::getNestedColumn() const
 {
     if (is_nullable)
@@ -292,10 +301,10 @@ size_t ColumnUnique<ColumnType>::getNullValueIndex() const
 template <typename ColumnType>
 size_t ColumnUnique<ColumnType>::uniqueInsert(const Field & x)
 {
-    if (x.getType() == Field::Types::Null)
+    if (x.isNull())
         return getNullValueIndex();
 
-    if (isNumeric())
+    if (valuesHaveFixedSize())
         return uniqueInsertData(&x.reinterpret<char>(), size_of_value_if_fixed);
 
     auto & val = x.get<String>();

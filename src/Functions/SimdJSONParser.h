@@ -1,13 +1,11 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_SIMDJSON
-#    include <common/types.h>
+#    include <base/types.h>
 #    include <Common/Exception.h>
-#    include <common/defines.h>
+#    include <base/defines.h>
 #    include <simdjson.h>
 
 
@@ -49,6 +47,8 @@ struct SimdJSONParser
         ALWAYS_INLINE std::string_view getString() const { return element.get_string().value_unsafe(); }
         ALWAYS_INLINE Array getArray() const;
         ALWAYS_INLINE Object getObject() const;
+
+        ALWAYS_INLINE simdjson::dom::element getElement() const { return element; }
 
     private:
         simdjson::dom::element element;

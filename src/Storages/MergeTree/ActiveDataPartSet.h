@@ -1,10 +1,14 @@
 #pragma once
 
 #include <Storages/MergeTree/MergeTreePartInfo.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <map>
 #include <vector>
 
+namespace Poco
+{
+class Logger;
+}
 
 namespace DB
 {

@@ -401,15 +401,15 @@ void PrettyBlockOutputFormat::writeSuffix()
     }
 }
 
-void PrettyBlockOutputFormat::finalize()
+void PrettyBlockOutputFormat::finalizeImpl()
 {
     writeSuffixIfNot();
 }
 
 
-void registerOutputFormatProcessorPretty(FormatFactory & factory)
+void registerOutputFormatPretty(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("Pretty", [](
+    factory.registerOutputFormat("Pretty", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,
@@ -418,7 +418,7 @@ void registerOutputFormatProcessorPretty(FormatFactory & factory)
         return std::make_shared<PrettyBlockOutputFormat>(buf, sample, format_settings);
     });
 
-    factory.registerOutputFormatProcessor("PrettyNoEscapes", [](
+    factory.registerOutputFormat("PrettyNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,

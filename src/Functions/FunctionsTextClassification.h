@@ -34,11 +34,13 @@ class FunctionsTextClassification : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionsTextClassification>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionsTextClassification>(); }
 
     String getName() const override { return name; }
 
     size_t getNumberOfArguments() const override { return 1; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

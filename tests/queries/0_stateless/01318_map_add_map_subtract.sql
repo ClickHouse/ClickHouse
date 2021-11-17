@@ -2,7 +2,7 @@ drop table if exists map_test;
 create table map_test engine=TinyLog() as (select ([1, number], [toInt32(2),2]) as map from numbers(1, 10));
 
 -- mapAdd
-select mapAdd([1], [1]); -- { serverError 42 }
+select mapAdd([1], [1]); -- { serverError 43 }
 select mapAdd(([1], [1])); -- { serverError 42 }
 select mapAdd(([1], [1]), map) from map_test; -- { serverError 43 }
 select mapAdd(([toUInt64(1)], [1]), map) from map_test; -- { serverError 43 }
@@ -27,7 +27,7 @@ select mapAdd(([toInt64(1), 2], [toInt64(1), 1]), ([toInt64(1), 2], [toInt64(1),
 
 select mapAdd(([1, 2], [toFloat32(1.1), 1]), ([1, 2], [2.2, 1])) as res, toTypeName(res);
 select mapAdd(([1, 2], [toFloat64(1.1), 1]), ([1, 2], [2.2, 1])) as res, toTypeName(res);
-select mapAdd(([toFloat32(1), 2], [toFloat64(1.1), 1]), ([toFloat32(1), 2], [2.2, 1])) as res, toTypeName(res); -- { serverError 44 }
+select mapAdd(([toFloat32(1), 2], [toFloat64(1.1), 1]), ([toFloat32(1), 2], [2.2, 1])) as res, toTypeName(res); -- { serverError 43 }
 select mapAdd(([1, 2], [toFloat64(1.1), 1]), ([1, 2], [1, 1])) as res, toTypeName(res); -- { serverError 43 }
 select mapAdd((['a', 'b'], [1, 1]), ([key], [1])) from values('key String', ('b'), ('c'), ('d'));
 select mapAdd((cast(['a', 'b'], 'Array(FixedString(1))'), [1, 1]), ([key], [1])) as res, toTypeName(res) from values('key FixedString(1)', ('b'), ('c'), ('d'));

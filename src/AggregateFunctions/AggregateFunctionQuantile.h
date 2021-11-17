@@ -67,10 +67,10 @@ class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data
     AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>
 {
 private:
-    using ColVecType = std::conditional_t<IsDecimalNumber<Value>, ColumnDecimal<Value>, ColumnVector<Value>>;
+    using ColVecType = ColumnVectorOrDecimal<Value>;
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
-    static_assert(!IsDecimalNumber<Value> || !returns_float);
+    static_assert(!is_decimal<Value> || !returns_float);
 
     QuantileLevels<Float64> levels;
 
@@ -105,6 +105,11 @@ public:
             return res;
     }
 
+    bool haveSameStateRepresentation(const IAggregateFunction & rhs) const override
+    {
+        return getName() == rhs.getName() && this->haveEqualArgumentTypes(rhs);
+    }
+
     bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
@@ -113,8 +118,8 @@ public:
 
         if constexpr (std::is_same_v<Data, QuantileTiming<Value>>)
         {
-            /// QuantileTiming only supports integers.
-            if (isNaN(value) || value > std::numeric_limits<Value>::max() || value < std::numeric_limits<Value>::min())
+            /// QuantileTiming only supports unsigned integers. Too large values are also meaningless.
+            if (isNaN(value) || value > std::numeric_limits<Int64>::max() || value < 0)
                 return;
         }
 
@@ -232,5 +237,7 @@ struct NameQuantilesTDigestWeighted { static constexpr auto name = "quantilesTDi
 
 struct NameQuantileBFloat16 { static constexpr auto name = "quantileBFloat16"; };
 struct NameQuantilesBFloat16 { static constexpr auto name = "quantilesBFloat16"; };
+struct NameQuantileBFloat16Weighted { static constexpr auto name = "quantileBFloat16Weighted"; };
+struct NameQuantilesBFloat16Weighted { static constexpr auto name = "quantilesBFloat16Weighted"; };
 
 }
