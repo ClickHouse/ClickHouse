@@ -40,9 +40,11 @@ private:
         /// host:port
         String address;
 
-        explicit NodeInfo(const String & data)
-            : address(data)
-        {}
+        NodeInfo() = default;
+        explicit NodeInfo(const String & address_) : address(address_) {}
+
+        static bool parse(const String & data, NodeInfo & result);
+        String serialize() const;
     };
 
     // node uuid -> address ("host:port")
@@ -65,7 +67,7 @@ private:
                          int * version = nullptr,
                          bool set_callback = true);
 
-    static NodesInfo getNodes(zkutil::ZooKeeperPtr & zk, const String & zk_root, const Strings & node_uuids);
+    NodesInfo getNodes(zkutil::ZooKeeperPtr & zk, const String & zk_root, const Strings & node_uuids);
 
     ClusterPtr getCluster(const ClusterInfo & cluster_info);
 
