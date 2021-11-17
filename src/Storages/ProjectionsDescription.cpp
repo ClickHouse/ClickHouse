@@ -15,6 +15,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <base/range.h>
 
 
 namespace DB
@@ -61,6 +62,7 @@ ProjectionDescription ProjectionDescription::clone() const
     other.key_size = key_size;
     other.is_minmax_count_projection = is_minmax_count_projection;
     other.primary_key_max_column_name = primary_key_max_column_name;
+    other.partition_value_indices = partition_value_indices;
 
     return other;
 }
@@ -212,18 +214,31 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
 
+    std::map<String, size_t> partition_column_name_to_value_index;
+    if (partition_columns)
+    {
+        for (auto i : collections::range(partition_columns->children.size()))
+            partition_column_name_to_value_index[partition_columns->children[i]->getColumnNameWithoutAlias()] = i;
+    }
+
     const auto & analysis_result = select.getAnalysisResult();
     if (analysis_result.need_aggregate)
     {
         for (const auto & key : select.getQueryAnalyzer()->aggregationKeys())
+        {
             result.sample_block_for_keys.insert({nullptr, key.type, key.name});
+            auto it = partition_column_name_to_value_index.find(key.name);
+            if (it == partition_column_name_to_value_index.end())
+                throw Exception("minmax_count projection can only have keys about partition columns. It's a bug", ErrorCodes::LOGICAL_ERROR);
+            result.partition_value_indices.push_back(it->second);
+        }
     }
 
     /// If we have primary key and it's not in minmax_columns, it will be used as one additional minmax columns.
     if (!primary_key_asts.empty()
         && result.sample_block.columns()
             == 2 * (minmax_columns.size() + 1) /* minmax columns */ + 1 /* count() */
-                + result.sample_block_for_keys.columns() /* partition_columns */)
+                + result.partition_value_indices.size() /* partition_columns */)
     {
         /// partition_expr1, partition_expr2, ..., min(p1), max(p1), min(p2), max(p2), ..., min(k1), max(k1), count()
         ///                                                                                              ^
@@ -265,7 +280,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
     Block ret;
     executor.pull(ret);
     if (executor.pull(ret))
-        throw Exception("Projection cannot increase the number of rows in a block", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Projection cannot increase the number of rows in a block. It's a bug", ErrorCodes::LOGICAL_ERROR);
     return ret;
 }
 

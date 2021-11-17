@@ -4480,9 +4480,12 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         }
 
         size_t pos = 0;
-        size_t partition_columns_size = part->partition.value.size();
-        for (size_t i = 0; i < partition_columns_size; ++i)
+        for(size_t i : metadata_snapshot->minmax_count_projection->partition_value_indices)
+        {
+            if (i >= part->partition.value.size())
+                throw Exception("Partition value index is out of boundary. It's a bug", ErrorCodes::LOGICAL_ERROR);
             partition_minmax_count_columns[pos++]->insert(part->partition.value[i]);
+        }
 
         size_t minmax_idx_size = part->minmax_idx->hyperrectangle.size();
         for (size_t i = 0; i < minmax_idx_size; ++i)
