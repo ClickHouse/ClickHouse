@@ -69,7 +69,7 @@ private:
 
     ClusterPtr getCluster(const ClusterInfo & cluster_info);
 
-    static bool needUpdate(const Strings & node_uuids, const NodesInfo & nodes);
+    bool needUpdate(const Strings & node_uuids, const NodesInfo & nodes);
     bool updateCluster(const String & cluster_name);
     bool updateCluster(ClusterInfo & cluster_info);
 
