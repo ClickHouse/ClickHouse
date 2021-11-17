@@ -19,6 +19,11 @@
 #include <Interpreters/ClusterDiscovery.h>
 #include <Interpreters/Context.h>
 
+#include <Poco/Exception.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+
 namespace DB
 {
 
@@ -132,10 +137,16 @@ ClusterDiscovery::NodesInfo ClusterDiscovery::getNodes(zkutil::ZooKeeperPtr & zk
     for (const auto & node_uuid : node_uuids)
     {
         String payload;
-        bool ok = zk->tryGet(getShardsListPath(zk_root) / node_uuid, payload);
-        if (!ok)
+        if (!zk->tryGet(getShardsListPath(zk_root) / node_uuid, payload))
+        {
+            LOG_WARNING(log, "Error getting data from node '{}' in '{}'", node_uuid, zk_root);
             return {};
-        result.emplace(node_uuid, NodeInfo(payload));
+        }
+        if (!NodeInfo::parse(payload, result[node_uuid]))
+        {
+            LOG_WARNING(log, "Error parsing data from node '{}' in '{}'", node_uuid, zk_root);
+            return {};
+        }
     }
     return result;
 }
@@ -261,9 +272,9 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
     String node_path = getShardsListPath(info.zk_root) / node_name;
     zk->createAncestors(node_path);
 
-    String payload = getFQDNOrHostName() + ":" + toString(server_port);
+    NodeInfo self_node(getFQDNOrHostName() + ":" + toString(server_port));
 
-    zk->createOrUpdate(node_path, payload, zkutil::CreateMode::Ephemeral);
+    zk->createOrUpdate(node_path, self_node.serialize(), zkutil::CreateMode::Ephemeral);
     LOG_DEBUG(log, "Current node {} registered in cluster {}", node_name, info.name);
 }
 
@@ -320,6 +331,37 @@ void ClusterDiscovery::shutdown()
 ClusterDiscovery::~ClusterDiscovery()
 {
     ClusterDiscovery::shutdown();
+}
+
+bool ClusterDiscovery::NodeInfo::parse(const String & data, NodeInfo & result)
+{
+    try
+    {
+        Poco::JSON::Parser parser;
+        auto json = parser.parse(data).extract<Poco::JSON::Object::Ptr>();
+
+        result.address = json->getValue<std::string>("address");
+    }
+    catch (Poco::Exception & e)
+    {
+        LOG_WARNING(
+            &Poco::Logger::get("ClusterDiscovery"),
+            "Can't parse '{}' from node: {}",
+            data.size() < 1024 ? data : "[data too long]", e.displayText());
+        return false;
+    }
+    return true;
+}
+
+String ClusterDiscovery::NodeInfo::serialize() const
+{
+    Poco::JSON::Object json;
+    json.set("address", address);
+
+    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    Poco::JSON::Stringifier::stringify(json, oss);
+    return oss.str();
 }
 
 }
