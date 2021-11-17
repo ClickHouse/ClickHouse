@@ -13,8 +13,9 @@ namespace DB
   *          TEMPORARY TABLE table_name [AS table_name_in_backup]
   *          ALL TEMPORARY TABLES |
   *          EVERYTHING } [,...]
-  *        TO 'backup_name'
-  *        [SETTINGS base_backup = 'base_backup_name']
+  *        TO { File('path/') |
+  *             Disk('disk_name', 'path/')
+  *        [SETTINGS base_backup = {FILE(...) | DISK(...)}]
   *
   * RESTORE { TABLE [db.]table_name_in_backup [INTO [db.]table_name] [PARTITION[S] partition_expr [,...]] |
   *           DICTIONARY [db.]dictionary_name_in_backup [INTO [db.]dictionary_name] |
@@ -23,7 +24,7 @@ namespace DB
   *           TEMPORARY TABLE table_name_in_backup [INTO table_name] |
   *           ALL TEMPORARY TABLES |
   *           EVERYTHING } [,...]
-  *         FROM 'backup_name'
+  *         FROM {File(...) | Disk(...)}
   */
 class ParserBackupQuery : public IParserBase
 {

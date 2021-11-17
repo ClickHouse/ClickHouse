@@ -9,6 +9,7 @@ from report import create_build_html_report
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
+from commit_status_helper import  get_commit
 
 class BuildResult():
     def __init__(self, compiler, build_type, sanitizer, bundled, splitted, status, elapsed_seconds, with_coverage):
@@ -36,16 +37,11 @@ def group_by_artifacts(build_urls):
             groups['binary'].append(url)
     return groups
 
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
-
 def process_report(build_report):
     build_config = build_report['build_config']
     build_result = BuildResult(
         compiler=build_config['compiler'],
-        build_type=build_config['build-type'],
+        build_type=build_config['build_type'],
         sanitizer=build_config['sanitizer'],
         bundled=build_config['bundled'],
         splitted=build_config['splitted'],
@@ -86,7 +82,6 @@ if __name__ == "__main__":
 
     build_reports = []
     for root, dirs, files in os.walk(reports_path):
-        print(files)
         for f in files:
             if f.startswith("build_urls_") and f.endswith('.json'):
                 logging.info("Found build report json %s", f)

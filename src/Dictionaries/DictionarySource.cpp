@@ -7,6 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 bool DictionarySourceCoordinator::getKeyColumnsNextRangeToRead(ColumnsWithTypeAndName & key_columns, ColumnsWithTypeAndName & data_columns)
@@ -56,7 +57,7 @@ void DictionarySourceCoordinator::initialize(const Names & column_names)
             {
                 column_with_type.type = dictionary_structure.range_max->type;
             }
-            else
+            else if (dictionary_structure.key.has_value())
             {
                 const auto & dictionary_key_attributes = *dictionary_structure.key;
                 for (const auto & attribute : dictionary_key_attributes)
@@ -78,6 +79,11 @@ void DictionarySourceCoordinator::initialize(const Names & column_names)
 
             column_with_type.type = attribute.type;
         }
+
+        if (!column_with_type.type)
+            throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "No such column name {} in dictionary {}",
+                column_name,
+                dictionary->getDictionaryID().getNameForLogs());
 
         column_with_type.column = column_with_type.type->createColumn();
         columns_with_type.emplace_back(std::move(column_with_type));

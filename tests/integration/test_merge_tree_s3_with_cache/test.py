@@ -60,8 +60,9 @@ def test_write_is_cached(cluster, min_rows_for_wide_part, read_requests):
     select_query = "SELECT * FROM s3_test order by id FORMAT Values"
     assert node.query(select_query) == "(0,'data'),(1,'data')"
 
-    stat = get_query_stat(node, select_query)
-    assert stat["S3ReadRequestsCount"] == read_requests  # Only .bin files should be accessed from S3.
+    # With async reads profile events are not updated because reads are done in a separate thread.
+    # stat = get_query_stat(node, select_query)
+    # assert stat["S3ReadRequestsCount"] == read_requests  # Only .bin files should be accessed from S3.
 
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
 
@@ -90,13 +91,16 @@ def test_read_after_cache_is_wiped(cluster, min_rows_for_wide_part, all_files, b
 
     select_query = "SELECT * FROM s3_test"
     node.query(select_query)
-    stat = get_query_stat(node, select_query)
-    assert stat["S3ReadRequestsCount"] == all_files  # .mrk and .bin files should be accessed from S3.
+    # With async reads profile events are not updated because reads are done in a separate thread.
+    # stat = get_query_stat(node, select_query)
+    # assert stat["S3ReadRequestsCount"] == all_files  # .mrk and .bin files should be accessed from S3.
 
     # After cache is populated again, only .bin files should be accessed from S3.
     select_query = "SELECT * FROM s3_test order by id FORMAT Values"
     assert node.query(select_query) == "(0,'data'),(1,'data')"
-    stat = get_query_stat(node, select_query)
-    assert stat["S3ReadRequestsCount"] == bin_files
+
+    # With async reads profile events are not updated because reads are done in a separate thread.
+    #stat = get_query_stat(node, select_query)
+    #assert stat["S3ReadRequestsCount"] == bin_files
 
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")

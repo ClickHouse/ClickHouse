@@ -63,9 +63,7 @@
 #include <Common/Elf.h>
 #include <filesystem>
 
-#if !defined(ARCADIA_BUILD)
-#   include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 #if defined(OS_DARWIN)
 #   pragma GCC diagnostic ignored "-Wunused-macros"
@@ -677,6 +675,34 @@ void BaseDaemon::initialize(Application & self)
     if ((!log_path.empty() && is_daemon) || config().has("logger.stderr"))
     {
         std::string stderr_path = config().getString("logger.stderr", log_path + "/stderr.log");
+
+        /// Check that stderr is writable before freopen(),
+        /// since freopen() will make stderr invalid on error,
+        /// and logging to stderr will be broken,
+        /// so the following code (that is used in every program) will not write anything:
+        ///
+        ///     int main(int argc, char ** argv)
+        ///     {
+        ///         try
+        ///         {
+        ///             DB::SomeApp app;
+        ///             return app.run(argc, argv);
+        ///         }
+        ///         catch (...)
+        ///         {
+        ///             std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        ///             return 1;
+        ///         }
+        ///     }
+        if (access(stderr_path.c_str(), W_OK))
+        {
+            int fd;
+            if ((fd = creat(stderr_path.c_str(), 0600)) == -1 && errno != EEXIST)
+                throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
+            if (fd != -1)
+                ::close(fd);
+        }
+
         if (!freopen(stderr_path.c_str(), "a+", stderr))
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
