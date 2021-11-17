@@ -141,6 +141,21 @@ Progress & Progress::operator=(Progress && other)
     return *this;
 }
 
+Progress & Progress::operator=(const Progress & other)
+{
+    read_rows = other.read_rows.load(std::memory_order_relaxed);
+    read_bytes = other.read_bytes.load(std::memory_order_relaxed);
+    read_raw_bytes = other.read_raw_bytes.load(std::memory_order_relaxed);
+
+    total_rows_to_read = other.total_rows_to_read.load(std::memory_order_relaxed);
+    total_raw_bytes_to_read = other.total_raw_bytes_to_read.load(std::memory_order_relaxed);
+
+    written_rows = other.written_rows.load(std::memory_order_relaxed);
+    written_bytes = other.written_bytes.load(std::memory_order_relaxed);
+
+    return *this;
+}
+
 void Progress::read(ReadBuffer & in, UInt64 server_revision)
 {
     ProgressValues values;

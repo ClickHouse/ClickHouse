@@ -53,9 +53,13 @@ namespace DB
         unit.segment.resize(0);
         unit.status = READY_TO_FORMAT;
         unit.type = type;
+        unit.statistics = statistics;
 
-        scheduleFormatterThreadForUnitWithNumber(current_unit_number);
+        size_t first_row_number = rows_consumed;
+        if (unit.type == ProcessingUnitType::PLAIN)
+            rows_consumed += unit.chunk.getNumRows();
 
+        scheduleFormatterThreadForUnitWithNumber(current_unit_number, first_row_number);
         ++writer_unit_number;
     }
 
@@ -144,7 +148,7 @@ namespace DB
     }
 
 
-    void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, const ThreadGroupStatusPtr & thread_group)
+    void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupStatusPtr & thread_group)
     {
         setThreadName("Formatter");
         if (thread_group)
@@ -166,6 +170,7 @@ namespace DB
             unit.segment.resize(0);
 
             auto formatter = internal_formatter_creator(out_buffer);
+            formatter->setFirstRowNumber(first_row_num);
 
             switch (unit.type)
             {
@@ -179,19 +184,33 @@ namespace DB
                     formatter->consume(std::move(unit.chunk));
                     break;
                 }
+                case ProcessingUnitType::PLAIN_FINISH :
+                {
+                    formatter->writeSuffix();
+                    break;
+                }
                 case ProcessingUnitType::TOTALS :
                 {
                     formatter->consumeTotals(std::move(unit.chunk));
+                    are_totals_written = true;
                     break;
                 }
                 case ProcessingUnitType::EXTREMES :
                 {
+                    if (are_totals_written)
+                        formatter->setTotalsAreWritten();
                     formatter->consumeExtremes(std::move(unit.chunk));
                     break;
                 }
                 case ProcessingUnitType::FINALIZE :
                 {
+                    formatter->setOutsideStatistics(unit.statistics);
                     formatter->finalizeImpl();
+                    break;
+                }
+                case ProcessingUnitType::ON_PROGRESS :
+                {
+                    formatter->onProgress(unit.statistics.progress);
                     break;
                 }
             }

@@ -4,6 +4,7 @@
 
 #include <Common/Arena.h>
 #include <Common/ThreadPool.h>
+#include <Common/Stopwatch.h>
 #include <base/logger_useful.h>
 #include <Common/Exception.h>
 #include "IO/WriteBufferFromString.h"
@@ -104,8 +105,16 @@ public:
         finishAndWait();
     }
 
-    /// There are no formats which support parallel formatting and progress writing at the same time
-    void onProgress(const Progress &) override {}
+    void onProgress(const Progress & value) override
+    {
+        statistics.progress.incrementPiecewiseAtomically(value);
+        addChunk(Chunk{}, ProcessingUnitType::ON_PROGRESS, /*can_throw_exception*/ true);
+    }
+
+    void writeSuffix() override
+    {
+        addChunk(Chunk{}, ProcessingUnitType::PLAIN_FINISH, /*can_throw_exception*/ true);
+    }
 
     String getContentType() const override
     {
@@ -146,9 +155,11 @@ private:
     {
         START,
         PLAIN,
+        PLAIN_FINISH,
         TOTALS,
         EXTREMES,
-        FINALIZE
+        FINALIZE,
+        ON_PROGRESS,
     };
 
     void addChunk(Chunk chunk, ProcessingUnitType type, bool can_throw_exception);
@@ -160,6 +171,7 @@ private:
         Chunk chunk;
         Memory<> segment;
         size_t actual_memory_size{0};
+        Statistics statistics;
     };
 
     Poco::Event collector_finished{};
@@ -186,6 +198,11 @@ private:
     std::condition_variable collector_condvar;
     std::condition_variable writer_condvar;
 
+    size_t rows_consumed = 0;
+    std::atomic_bool are_totals_written = false;
+
+    Statistics statistics;
+
     void finishAndWait();
 
     void onBackgroundException()
@@ -200,11 +217,11 @@ private:
         collector_condvar.notify_all();
     }
 
-    void scheduleFormatterThreadForUnitWithNumber(size_t ticket_number)
+    void scheduleFormatterThreadForUnitWithNumber(size_t ticket_number, size_t first_row_num)
     {
-        pool.scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup(), ticket_number]
+        pool.scheduleOrThrowOnError([this, thread_group = CurrentThread::getGroup(), ticket_number, first_row_num]
         {
-            formatterThreadFunction(ticket_number, thread_group);
+            formatterThreadFunction(ticket_number, first_row_num, thread_group);
         });
     }
 
@@ -212,7 +229,13 @@ private:
     void collectorThreadFunction(const ThreadGroupStatusPtr & thread_group);
 
     /// This function is executed in ThreadPool and the only purpose of it is to format one Chunk into a continuous buffer in memory.
-    void formatterThreadFunction(size_t current_unit_number, const ThreadGroupStatusPtr & thread_group);
+    void formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupStatusPtr & thread_group);
+
+    void setRowsBeforeLimit(size_t rows_before_limit) override
+    {
+        statistics.rows_before_limit = rows_before_limit;
+        statistics.applied_limit = true;
+    }
 };
 
 }
