@@ -4394,8 +4394,13 @@ static void selectBestProjection(
         if (normal_result_ptr->error())
             return;
 
-        sum_marks += normal_result_ptr->marks();
-        candidate.merge_tree_normal_select_result_ptr = normal_result_ptr;
+        if (normal_result_ptr->marks() == 0)
+            candidate.complete = true;
+        else
+        {
+            sum_marks += normal_result_ptr->marks();
+            candidate.merge_tree_normal_select_result_ptr = normal_result_ptr;
+        }
     }
     candidate.merge_tree_projection_select_result_ptr = projection_result_ptr;
 
