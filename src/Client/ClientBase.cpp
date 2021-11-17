@@ -71,6 +71,14 @@ static const NameSet exit_strings
     "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
 };
 
+static const std::initializer_list<std::pair<String, String>> backslash_aliases
+{
+    { "\\l", "SHOW DATABASES" },
+    { "\\d", "SHOW TABLES" },
+    { "\\c", "USE" },
+};
+
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -482,7 +490,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
         ReplaceQueryParameterVisitor visitor(query_parameters);
         visitor.visit(parsed_query);
 
-        /// Get new query after substitutions. Note that it cannot be done for INSERT query with embedded data.
+        /// Get new query after substitutions.
         query = serializeAST(*parsed_query);
     }
 
@@ -816,6 +824,17 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 
 void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
+    auto query = query_to_execute;
+    if (!query_parameters.empty())
+    {
+        /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+        ReplaceQueryParameterVisitor visitor(query_parameters);
+        visitor.visit(parsed_query);
+
+        /// Get new query after substitutions.
+        query = serializeAST(*parsed_query);
+    }
+
     /// Process the query that requires transferring data blocks to the server.
     const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
     if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
@@ -823,7 +842,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 
     connection->sendQuery(
         connection_parameters.timeouts,
-        query_to_execute,
+        query,
         global_context->getCurrentQueryId(),
         query_processing_stage,
         &global_context->getSettingsRef(),
@@ -876,8 +895,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         /// Get name of this file (path to file)
         const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
         const auto in_file = in_file_node.value.safeGet<std::string>();
-        /// Get name of table
-        const auto table_name = parsed_insert_query->table_id.getTableName();
+
         std::string compression_method;
         /// Compression method can be specified in query
         if (parsed_insert_query->compression)
@@ -1412,6 +1430,24 @@ void ClientBase::runInteractive()
         {
             input.resize(input.size() - 2);
             has_vertical_output_suffix = true;
+        }
+
+        for (const auto& [alias, command] : backslash_aliases)
+        {
+            auto it = std::search(input.begin(), input.end(), alias.begin(), alias.end());
+            if (it != input.end() && std::all_of(input.begin(), it, isWhitespaceASCII))
+            {
+                it += alias.size();
+                if (it == input.end() || isWhitespaceASCII(*it))
+                {
+                    String new_input = command;
+                    // append the rest of input to the command
+                    // for parameters support, e.g. \c db_name -> USE db_name
+                    new_input.append(it, input.end());
+                    input = std::move(new_input);
+                    break;
+                }
+            }
         }
 
         try
