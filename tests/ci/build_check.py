@@ -14,6 +14,7 @@ from version_helper import get_version_from_repo, update_version_local
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
 from ci_config import build_config_to_string, CI_CONFIG
 from docker_pull_helper import get_image_with_version
+from compress_files import compress_fast
 
 
 def get_build_config(build_check_name, build_number):
@@ -164,6 +165,13 @@ if __name__ == "__main__":
         logging.info("Log url %s", log_url)
     else:
         logging.info("Build log doesn't exist")
+
+    # compress directory for performance tests
+    if build_config['package_type'] == "performance":
+        archive_path = os.path.join(temp_path, "performance.tgz")
+        compress_fast(build_output_path, archive_path)
+        subprocess.check_call(f"rm -fr {build_output_path}/*", shell=True)
+        subprocess.check_call(f"mv {archive_path} {build_output_path}/", shell=True)
 
     build_urls = s3_helper.upload_build_folder_to_s3(build_output_path, s3_path_prefix, keep_dirs_in_s3_path=False, upload_symlinks=False)
     logging.info("Got build URLs %s", build_urls)
