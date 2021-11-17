@@ -716,7 +716,19 @@ CI_CONFIG = {
                 "clang_tidy": "disable",
                 "with_coverage": False
             }
-        }
+        },
+        "Performance Comparison (actions)": {
+            "required_build_properties": {
+                "compiler": "clang-13",
+                "package_type": "performance",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": False
+            }
+        },
     }
 }
 
