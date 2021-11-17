@@ -6,29 +6,21 @@
 
 int getMaxFileDescriptorCount()
 {
+    int result = -1;
 #if defined(__linux__) || defined(__APPLE__)
     using namespace DB;
 
     auto command = ShellCommand::execute("ulimit -n");
     try
     {
+        readIntText(result, command->out);
         command->wait();
     }
     catch (...)
     {
-        return -1;
     }
 
-    WriteBufferFromOwnString out;
-    copyData(command->out, out);
-
-    if (!out.str().empty())
-    {
-        return parse<Int32>(out.str());
-    }
-
-    return -1;
-#else
-    return -1;
 #endif
+
+    return result;
 }
