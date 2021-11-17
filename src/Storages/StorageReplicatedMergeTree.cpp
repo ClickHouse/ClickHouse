@@ -405,7 +405,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
     if (!attach)
     {
-        if (!getDataParts().empty())
+        if (!getDataPartsForInternalUsage().empty())
             throw Exception("Data directory for table already contains data parts"
                 " - probably it was unclean DROP table or manual intervention."
                 " You must either clear directory by hand or use ATTACH TABLE"
@@ -2452,7 +2452,7 @@ void StorageReplicatedMergeTree::cloneReplica(const String & source_replica, Coo
 
     tryRemovePartsFromZooKeeperWithRetries(parts_to_remove_from_zk);
 
-    auto local_active_parts = getDataParts();
+    auto local_active_parts = getDataPartsForInternalUsage();
 
     DataPartsVector parts_to_remove_from_working_set;
 
@@ -4187,7 +4187,7 @@ ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock StorageReplicatedMerg
 {
     ReplicatedMergeTreeQuorumAddedParts::PartitionIdToMaxBlock max_added_blocks;
 
-    for (const auto & data_part : getDataParts())
+    for (const auto & data_part : getDataPartsForInternalUsage())
     {
         max_added_blocks[data_part->info.partition_id]
             = std::max(max_added_blocks[data_part->info.partition_id], data_part->info.max_block);
@@ -4293,6 +4293,7 @@ void StorageReplicatedMergeTree::foreachCommittedParts(Func && func, bool select
         max_added_blocks = getMaxAddedBlocks();
 
     auto lock = lockParts();
+    /// TODO Transactions: should we count visible parts only?
     for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
     {
         if (part->isEmpty())
@@ -6246,7 +6247,7 @@ void StorageReplicatedMergeTree::replacePartitionFrom(
     String partition_id = getPartitionIDFromQuery(partition, query_context);
 
     /// NOTE: Some covered parts may be missing in src_all_parts if corresponding log entries are not executed yet.
-    DataPartsVector src_all_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    DataPartsVector src_all_parts = src_data.getVisibleDataPartsVectorInPartition(query_context, partition_id);
 
     LOG_DEBUG(log, "Cloning {} parts", src_all_parts.size());
 
@@ -7068,7 +7069,7 @@ CheckResults StorageReplicatedMergeTree::checkData(const ASTPtr & query, Context
     if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
     {
         String partition_id = getPartitionIDFromQuery(check_query.partition, local_context);
-        data_parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        data_parts = getVisibleDataPartsVectorInPartition(local_context, partition_id);
     }
     else
         data_parts = getDataPartsVector();

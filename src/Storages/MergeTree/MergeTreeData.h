@@ -425,6 +425,7 @@ public:
 
     Int64 getMaxBlockNumber() const;
 
+
     /// Returns a copy of the list so that the caller shouldn't worry about locks.
     DataParts getDataParts(const DataPartStates & affordable_states) const;
 
@@ -436,24 +437,18 @@ public:
     /// Returns absolutely all parts (and snapshot of their states)
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr, bool require_projection_parts = false) const;
 
-    /// Returns all detached parts
-    DetachedPartsInfo getDetachedParts() const;
-
-    void validateDetachedPartName(const String & name) const;
-
-    void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
-
-    MutableDataPartsVector tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
-            ContextPtr context, PartsTemporaryRename & renamed_parts);
-
-    /// Returns Committed parts
-    DataParts getDataParts() const;
+    /// Returns parts in Committed state (NOT in terms of transactions, should be used carefully)
+    DataParts getDataPartsForInternalUsage() const;
     DataPartsVector getDataPartsVector() const;
 
-    DataPartsVector getDataPartsVector(ContextPtr local_context) const;
-    DataPartsVector getVisibleDataPartsVector(const MergeTreeTransactionPtr & txn) const;
+    void filterVisibleDataParts(DataPartsVector & maybe_visible_parts, Snapshot snapshot_version, TransactionID current_tid) const;
 
-    /// Returns a committed part with the given name or a part containing it. If there is no such part, returns nullptr.
+    /// Returns parts that visible with current snapshot
+    DataPartsVector getVisibleDataPartsVector(ContextPtr local_context) const;
+    DataPartsVector getVisibleDataPartsVector(const MergeTreeTransactionPtr & txn) const;
+    DataPartsVector getVisibleDataPartsVector(Snapshot snapshot_version, TransactionID current_tid) const;
+
+    /// Returns a part in Committed state with the given name or a part containing it. If there is no such part, returns nullptr.
     DataPartPtr getActiveContainingPart(const String & part_name) const;
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info) const;
     DataPartPtr getActiveContainingPart(const MergeTreePartInfo & part_info, DataPartState state, DataPartsLock & lock) const;
@@ -463,8 +458,8 @@ public:
     void swapActivePart(MergeTreeData::DataPartPtr part_copy);
 
     /// Returns all parts in specified partition
-    DataPartsVector getDataPartsVectorInPartition(DataPartState state, const String & partition_id) const;
-    DataPartsVector getDataPartsVectorInPartitions(DataPartState state, const std::unordered_set<String> & partition_ids) const;
+    DataPartsVector getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id) const;
+    DataPartsVector getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const;
 
     /// Returns the part with the given name and state or nullptr if no such part.
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
@@ -483,6 +478,18 @@ public:
     /// Get min value of part->info.getDataVersion() for all active parts.
     /// Makes sense only for ordinary MergeTree engines because for them block numbering doesn't depend on partition.
     std::optional<Int64> getMinPartDataVersion() const;
+
+
+    /// Returns all detached parts
+    DetachedPartsInfo getDetachedParts() const;
+
+    void validateDetachedPartName(const String & name) const;
+
+    void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
+
+    MutableDataPartsVector tryLoadPartsToAttach(const ASTPtr & partition, bool attach_part,
+                                                ContextPtr context, PartsTemporaryRename & renamed_parts);
+
 
     /// If the table contains too many active parts, sleep for a while to give them time to merge.
     /// If until is non-null, wake up from the sleep earlier if the event happened.
@@ -656,7 +663,10 @@ public:
     /// Moves partition to specified Volume
     void movePartitionToVolume(const ASTPtr & partition, const String & name, bool moving_part, ContextPtr context);
 
-    void checkPartitionCanBeDropped(const ASTPtr & partition) override;
+    /// Checks that Partition could be dropped right now
+    /// Otherwise - throws an exception with detailed information.
+    /// We do not use mutex because it is not very important that the size could change during the operation.
+    void checkPartitionCanBeDropped(const ASTPtr & partition, ContextPtr local_context);
 
     void checkPartCanBeDropped(const String & part_name);
 

@@ -538,11 +538,6 @@ public:
     /// Similar to above but checks for DETACH. It's only used for DICTIONARIES.
     virtual void checkTableCanBeDetached() const {}
 
-    /// Checks that Partition could be dropped right now
-    /// Otherwise - throws an exception with detailed information.
-    /// We do not use mutex because it is not very important that the size could change during the operation.
-    virtual void checkPartitionCanBeDropped(const ASTPtr & /*partition*/) {}
-
     /// Returns true if Storage may store some data on disk.
     /// NOTE: may not be equivalent to !getDataPaths().empty()
     virtual bool storesDataOnDisk() const { return false; }

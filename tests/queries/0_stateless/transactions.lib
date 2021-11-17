@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+function tx()
+{
+    tx_num=$1
+    query=$2
+
+    url_without_session="https://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTPS}/?"
+    session="${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}_$tx_num"
+    url="${url_without_session}session_id=$session&database=$CLICKHOUSE_DATABASE"
+
+    ${CLICKHOUSE_CURL} -m 30 -sSk "$url" --data "$query"
+}
+

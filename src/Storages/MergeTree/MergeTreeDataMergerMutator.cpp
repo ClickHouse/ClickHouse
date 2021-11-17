@@ -395,7 +395,7 @@ MergeTreeData::DataPartsVector MergeTreeDataMergerMutator::selectAllPartsFromPar
 {
     MergeTreeData::DataPartsVector parts_from_partition;
 
-    MergeTreeData::DataParts data_parts = data.getDataParts();
+    MergeTreeData::DataParts data_parts = data.getDataPartsForInternalUsage();
 
     for (const auto & current_part : data_parts)
     {

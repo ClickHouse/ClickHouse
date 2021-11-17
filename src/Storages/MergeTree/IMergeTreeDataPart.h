@@ -226,6 +226,7 @@ public:
      */
     enum class State
     {
+        ///TODO Transactions: rename Committed to Active, because it becomes confusing
         Temporary,       /// the part is generating now, it is not in data_parts list
         PreCommitted,    /// the part is in data_parts, but not used for SELECTs
         Committed,       /// active data part, used by current and upcoming SELECTs

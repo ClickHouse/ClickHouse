@@ -87,7 +87,7 @@ StorageMergeTree::StorageMergeTree(
 {
     loadDataParts(has_force_restore_data_flag);
 
-    if (!attach && !getDataParts().empty())
+    if (!attach && !getDataPartsForInternalUsage().empty())
         throw Exception("Data directory for table already containing data parts - probably it was unclean DROP table or manual intervention. You must either clear directory by hand or use ATTACH TABLE instead of CREATE TABLE if you need to use that parts.", ErrorCodes::INCORRECT_DATA);
 
     increment.set(getMaxBlockNumber());
@@ -258,7 +258,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = stopMergesAndWait();
 
-        auto parts_to_remove = getDataPartsVector();
+        auto parts_to_remove = getVisibleDataPartsVector(local_context);
         removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), parts_to_remove, true);
 
         LOG_INFO(log, "Removed {} parts.", parts_to_remove.size());
@@ -713,9 +713,9 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
         {
             /// Cannot merge parts if some of them is not visible in current snapshot
             /// TODO We can use simplified visibility rules (without CSN lookup) here
-            if (left && !left->versions.isVisible(*tx))
+            if (left && !left->versions.isVisible(tx->getSnapshot(), Tx::EmptyTID))
                 return false;
-            if (right && !right->versions.isVisible(*tx))
+            if (right && !right->versions.isVisible(tx->getSnapshot(), Tx::EmptyTID))
                 return false;
         }
 
@@ -1288,7 +1288,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
         /// This protects against "revival" of data for a removed partition after completion of merge.
         auto merge_blocker = stopMergesAndWait();
         String partition_id = getPartitionIDFromQuery(partition, local_context);
-        parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        parts_to_remove = getVisibleDataPartsVectorInPartition(local_context, partition_id);
 
         /// TODO should we throw an exception if parts_to_remove is empty?
         removePartsFromWorkingSet(local_context->getCurrentTransaction().get(), parts_to_remove, true);
@@ -1370,7 +1370,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table, source_metadata_snapshot, my_metadata_snapshot);
     String partition_id = getPartitionIDFromQuery(partition, local_context);
 
-    DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
     MutableDataPartsVector dst_parts;
 
     static const String TMP_PREFIX = "tmp_replace_from_";
@@ -1455,7 +1455,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this, metadata_snapshot, dest_metadata_snapshot);
     String partition_id = getPartitionIDFromQuery(partition, local_context);
 
-    DataPartsVector src_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    DataPartsVector src_parts = src_data.getVisibleDataPartsVectorInPartition(local_context, partition_id);
     MutableDataPartsVector dst_parts;
 
     static const String TMP_PREFIX = "tmp_move_from_";
@@ -1535,7 +1535,7 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, ContextPtr local_
     if (const auto & check_query = query->as<ASTCheckQuery &>(); check_query.partition)
     {
         String partition_id = getPartitionIDFromQuery(check_query.partition, local_context);
-        data_parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        data_parts = getVisibleDataPartsVectorInPartition(local_context, partition_id);
     }
     else
         data_parts = getDataPartsVector();
