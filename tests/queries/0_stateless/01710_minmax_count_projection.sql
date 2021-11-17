@@ -43,3 +43,10 @@ drop table if exists t;
 create table t (server_date Date, something String) engine MergeTree partition by (toYYYYMM(server_date), server_date) order by (server_date, something);
 insert into t values ('2019-01-01', 'test1'), ('2019-02-01', 'test2'), ('2019-03-01', 'test3');
 select count() from t;
+drop table t;
+
+drop table if exists d;
+create table d (dt DateTime, j int) engine MergeTree partition by toDate(dt) order by tuple();
+insert into d values ('2021-10-24 10:00:00', 10), ('2021-10-25 10:00:00', 10), ('2021-10-26 10:00:00', 10), ('2021-10-27 10:00:00', 10);
+select min(dt), max(dt), count() from d where toDate(dt) >= '2021-10-25';
+drop table d;

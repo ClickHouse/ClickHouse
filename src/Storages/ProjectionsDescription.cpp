@@ -175,6 +175,7 @@ ProjectionDescription::getProjectionFromAST(const ASTPtr & definition_ast, const
 
 ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     const ColumnsDescription & columns,
+    const ASTPtr & partition_columns,
     const Names & minmax_columns,
     const ASTs & primary_key_asts,
     ContextPtr query_context)
@@ -197,6 +198,9 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     select_expression_list->children.push_back(makeASTFunction("count"));
     select_query->setExpression(ASTProjectionSelectQuery::Expression::SELECT, std::move(select_expression_list));
 
+    if (partition_columns)
+        select_query->setExpression(ASTProjectionSelectQuery::Expression::GROUP_BY, partition_columns->clone());
+
     result.definition_ast = select_query;
     result.name = MINMAX_COUNT_PROJECTION_NAME;
     result.query_ast = select_query->cloneToASTSelect();
@@ -207,12 +211,23 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
         result.query_ast, query_context, storage, {}, SelectQueryOptions{QueryProcessingStage::WithMergeableState}.modify().ignoreAlias());
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
-    /// If we have primary key and it's not in minmax_columns, it will be used as one additional minmax columns.
-    if (!primary_key_asts.empty() && result.sample_block.columns() == 2 * (minmax_columns.size() + 1) + 1)
+
+    const auto & analysis_result = select.getAnalysisResult();
+    if (analysis_result.need_aggregate)
     {
-        /// min(p1), max(p1), min(p2), max(p2), ..., min(k1), max(k1), count()
-        ///                                                      ^
-        ///                                                   size - 2
+        for (const auto & key : select.getQueryAnalyzer()->aggregationKeys())
+            result.sample_block_for_keys.insert({nullptr, key.type, key.name});
+    }
+
+    /// If we have primary key and it's not in minmax_columns, it will be used as one additional minmax columns.
+    if (!primary_key_asts.empty()
+        && result.sample_block.columns()
+            == 2 * (minmax_columns.size() + 1) /* minmax columns */ + 1 /* count() */
+                + result.sample_block_for_keys.columns() /* partition_columns */)
+    {
+        /// partition_expr1, partition_expr2, ..., min(p1), max(p1), min(p2), max(p2), ..., min(k1), max(k1), count()
+        ///                                                                                              ^
+        ///                                                                                           size - 2
         result.primary_key_max_column_name = *(result.sample_block.getNames().cend() - 2);
     }
     result.type = ProjectionDescription::Type::Aggregate;
