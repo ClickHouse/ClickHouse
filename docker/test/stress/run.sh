@@ -37,6 +37,12 @@ function configure()
     # install test configs
     /usr/share/clickhouse-test/config/install.sh
 
+    # avoid too slow startup
+    sudo cat /etc/clickhouse-server/config.d/keeper_port.xml | sed "s|<snapshot_distance>100000</snapshot_distance>|<snapshot_distance>10000</snapshot_distance>|" > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
+    sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+    sudo chown clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
+    sudo chgrp clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
+
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
     # for clickhouse-client

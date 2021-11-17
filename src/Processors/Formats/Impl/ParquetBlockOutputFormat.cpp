@@ -60,7 +60,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
         throw Exception{"Error while writing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
-void ParquetBlockOutputFormat::finalize()
+void ParquetBlockOutputFormat::finalizeImpl()
 {
     if (!file_writer)
     {
