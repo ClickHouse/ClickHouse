@@ -178,6 +178,13 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
         for (auto & view : views)
         {
             auto thread_group = CurrentThread::getGroup();
+
+            // the previous write to that view failed, so we
+            // can not write to it anymore, as it can be
+            // in dirty state now
+            if (view.exception)
+                continue;
+
             pool.scheduleOrThrowOnError([=, &view, this]
             {
                 setThreadName("PushingToViews");
@@ -258,6 +265,11 @@ void PushingToViewsBlockOutputStream::writeSuffix()
                 {
                     view.out->writeSuffix();
                 }
+                catch (Exception & ex)
+                {
+                    ex.addMessage("while write suffix to view " + view.table_id.getNameForLogs());
+                    view.exception = std::current_exception();
+                }
                 catch (...)
                 {
                     view.exception = std::current_exception();
@@ -278,8 +290,11 @@ void PushingToViewsBlockOutputStream::writeSuffix()
     {
         if (view.exception)
         {
+            // we will throw the first exception later, others - just put to the log right now.
             if (!first_exception)
                 first_exception = view.exception;
+            else
+                tryLogException(view.exception, log, "Exception from the view " + view.table_id.getNameForLogs());
 
             continue;
         }
@@ -294,9 +309,10 @@ void PushingToViewsBlockOutputStream::writeSuffix()
         }
         catch (Exception & ex)
         {
-            ex.addMessage("while write prefix to view " + view.table_id.getNameForLogs());
+            ex.addMessage("while write suffix to view " + view.table_id.getNameForLogs());
             throw;
         }
+
         view.elapsed_ms += watch.elapsedMilliseconds();
 
         LOG_TRACE(log, "Pushing from {} to {} took {} ms.",
@@ -305,9 +321,6 @@ void PushingToViewsBlockOutputStream::writeSuffix()
             view.elapsed_ms);
     }
 
-    if (first_exception)
-        std::rethrow_exception(first_exception);
-
     UInt64 milliseconds = main_watch.elapsedMilliseconds();
     if (views.size() > 1)
     {
@@ -315,6 +328,9 @@ void PushingToViewsBlockOutputStream::writeSuffix()
             storage->getStorageID().getNameForLogs(), views.size(),
             milliseconds);
     }
+
+    if (first_exception)
+        std::rethrow_exception(first_exception);
 }
 
 void PushingToViewsBlockOutputStream::flush()
