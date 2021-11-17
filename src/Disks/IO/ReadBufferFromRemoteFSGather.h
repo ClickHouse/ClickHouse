@@ -8,6 +8,10 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadSettings.h>
 
+#if USE_AZURE_BLOB_STORAGE
+#include <azure/storage/blobs.hpp>
+#endif
+
 namespace Aws
 {
 namespace S3
@@ -94,6 +98,34 @@ private:
     std::shared_ptr<Aws::S3::S3Client> client_ptr;
     String bucket;
     UInt64 max_single_read_retries;
+    ReadSettings settings;
+    bool threadpool_read;
+};
+#endif
+
+
+#if USE_AZURE_BLOB_STORAGE
+/// Reads data from Blob Storage using stored paths in metadata.
+class ReadBufferFromBlobStorageGather final : public ReadBufferFromRemoteFSGather
+{
+public:
+    ReadBufferFromBlobStorageGather(
+        const String & path_,
+        std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
+        IDiskRemote::Metadata metadata_,
+        const ReadSettings & settings_,
+        bool threadpool_read_ = false)
+        : ReadBufferFromRemoteFSGather(metadata_, path_)
+        , blob_container_client(blob_container_client_)
+        , settings(settings_)
+        , threadpool_read(threadpool_read_)
+    {
+    }
+
+    SeekableReadBufferPtr createImplementationBuffer(const String & path, size_t read_until_position) const override;
+
+private:
+    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     ReadSettings settings;
     bool threadpool_read;
 };

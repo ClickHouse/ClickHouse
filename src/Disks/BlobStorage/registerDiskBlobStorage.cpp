@@ -115,10 +115,11 @@ void registerDiskBlobStorage(DiskFactory & factory)
         /// where the metadata files are stored locally
         auto metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
         fs::create_directories(metadata_path);
+        auto metadata_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, 0);
 
         std::shared_ptr<IDisk> blob_storage_disk = std::make_shared<DiskBlobStorage>(
             name,
-            metadata_path,
+            metadata_disk,
             blob_container_client,
             getSettings(config, config_prefix, context),
             getSettings

@@ -8,6 +8,7 @@
 
 #include <IO/HTTPCommon.h>
 #include <IO/SeekableReadBuffer.h>
+#include <IO/ReadSettings.h>
 #include <azure/storage/blobs.hpp>
 
 namespace DB
@@ -20,7 +21,9 @@ public:
     explicit ReadBufferFromBlobStorage(
         std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         const String & path_,
-        size_t buf_size_
+        size_t tmp_buffer_size_,
+        bool use_external_buffer_ = false,
+        size_t read_until_position_ = 0
     );
 
     off_t seek(off_t off, int whence) override;
@@ -35,12 +38,16 @@ private:
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     std::unique_ptr<Azure::Storage::Blobs::BlobClient> blob_client;
-    std::vector<uint8_t> tmp_buffer;
+    std::vector<char> tmp_buffer;
     const String path;
-    size_t offset = 0;
-    size_t buf_size;
+    bool use_external_buffer;
+    off_t read_until_position = 0;
+    off_t offset = 0;
+    size_t tmp_buffer_size;
     size_t total_size;
     bool initialized = false;
+    char * data_ptr;
+    size_t data_capacity;
 
     Poco::Logger * log = &Poco::Logger::get("ReadBufferFromBlobStorage");
 };

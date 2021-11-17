@@ -2,9 +2,10 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <iostream>
-#include <random>
-#include <common/logger_useful.h>
+#include <Disks/IO/ReadBufferFromRemoteFSGather.h>
+#include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
+#include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 
 
 namespace DB
@@ -44,36 +45,13 @@ public:
 };
 
 
-class ReadIndirectBufferFromBlobStorage final : public ReadIndirectBufferFromRemoteFS<ReadBufferFromBlobStorage>
-{
-public:
-    ReadIndirectBufferFromBlobStorage(
-        std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
-        IDiskRemote::Metadata metadata_,
-        size_t buf_size_) :
-        ReadIndirectBufferFromRemoteFS<ReadBufferFromBlobStorage>(metadata_),
-        blob_container_client(blob_container_client_),
-        buf_size(buf_size_)
-    {}
-
-    std::unique_ptr<ReadBufferFromBlobStorage> createReadBuffer(const String & path) override
-    {
-        return std::make_unique<ReadBufferFromBlobStorage>(blob_container_client, metadata.remote_fs_root_path + path, buf_size);
-    }
-
-private:
-    std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
-    size_t buf_size;
-};
-
-
 DiskBlobStorage::DiskBlobStorage(
     const String & name_,
-    const String & metadata_path_,
+    DiskPtr metadata_disk_,
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     SettingsPtr settings_,
     GetDiskSettings settings_getter_) :
-    IDiskRemote(name_, "" /* TODO: shall we provide a config for this path? */, metadata_path_, "DiskBlobStorage", settings_->thread_pool_size),
+    IDiskRemote(name_, "" /* TODO: shall we provide a config for this path? */, metadata_disk_, "DiskBlobStorage", settings_->thread_pool_size),
     blob_container_client(blob_container_client_),
     current_settings(std::move(settings_)),
     settings_getter(settings_getter_) {}
@@ -82,16 +60,27 @@ DiskBlobStorage::DiskBlobStorage(
 std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
     const String & path,
     const ReadSettings & read_settings,
-    size_t /*estimated_size*/) const
+    std::optional<size_t> /*estimated_size*/) const
 {
     auto metadata = readMeta(path);
 
-    LOG_TRACE(log, "Read from file by path: {}", backQuote(metadata_path + path));
+    LOG_TRACE(log, "Read from file by path: {}", backQuote(metadata_disk->getPath() + path));
 
-    auto reader = std::make_unique<ReadIndirectBufferFromBlobStorage>(
-        blob_container_client, metadata, read_settings.remote_fs_buffer_size);
+    bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
 
-    return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), current_settings.get()->min_bytes_for_seek);
+    auto reader_impl = std::make_unique<ReadBufferFromBlobStorageGather>(
+        path, blob_container_client, metadata, read_settings, threadpool_read);
+
+    if (threadpool_read)
+    {
+        auto reader = getThreadPoolReader();
+        return std::make_unique<AsynchronousReadIndirectBufferFromRemoteFS>(reader, read_settings, std::move(reader_impl));
+    }
+    else
+    {
+        auto buf = std::make_unique<ReadIndirectBufferFromRemoteFS>(std::move(reader_impl));
+        return std::make_unique<SeekAvoidingReadBuffer>(std::move(buf), current_settings.get()->min_bytes_for_seek);
+    }
 }
 
 
@@ -104,7 +93,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskBlobStorage::writeFile(
     auto blob_path = path; // TODO: maybe use getRandomName() or modify the path (now it contains the tmp_* directory part)
 
     LOG_TRACE(log, "{} to file by path: {}. Blob Storage path: {}",
-        mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_path + path), remote_fs_root_path + blob_path);
+        mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), remote_fs_root_path + blob_path);
 
     auto buffer = std::make_unique<WriteBufferFromBlobStorage>(
         blob_container_client,

@@ -9,8 +9,6 @@
 #include <Disks/IDiskRemote.h>
 #include <IO/ReadBufferFromBlobStorage.h>
 #include <IO/WriteBufferFromBlobStorage.h>
-#include <Disks/ReadIndirectBufferFromRemoteFS.h>
-#include <Disks/WriteIndirectBufferFromRemoteFS.h>
 #include <IO/SeekAvoidingReadBuffer.h>
 
 #include <azure/identity/managed_identity_credential.hpp>
@@ -45,7 +43,7 @@ public:
 
     DiskBlobStorage(
         const String & name_,
-        const String & metadata_path_,
+        DiskPtr metadata_disk_,
         std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         SettingsPtr settings_,
         GetDiskSettings settings_getter_);
@@ -53,7 +51,7 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings,
-        size_t estimated_size) const override;
+        std::optional<size_t> estimated_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
