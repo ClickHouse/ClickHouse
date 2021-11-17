@@ -1,11 +1,14 @@
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <unordered_map>
 #include <unordered_set>
 
 #include <base/getFQDNOrHostName.h>
 #include <base/logger_useful.h>
 
-#include <Common/DNSResolver.h>
+#include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/setThreadName.h>
@@ -19,11 +22,13 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace
 {
-
-constexpr size_t MAX_QUEUE_SIZE = 16;
-constexpr UInt64 QUEUE_OP_TIMEOUT_MS = 1000;
 
 fs::path getShardsListPath(const String & zk_root)
 {
@@ -32,6 +37,56 @@ fs::path getShardsListPath(const String & zk_root)
 
 }
 
+/*
+ * Holds boolean flags for fixed set of keys.
+ * Flags can be concurrently set from different threads, and consumer can wait for it.
+ */
+template <typename T>
+class ClusterDiscovery::ConcurrentFlags
+{
+public:
+    template <typename It>
+    ConcurrentFlags(It begin, It end)
+    {
+        for (auto it = begin; it != end; ++it)
+            flags.emplace(*it, false);
+    }
+
+    void set(const T & val)
+    {
+        auto it = flags.find(val);
+        if (it == flags.end())
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unknown value '{}'", val);
+        it->second = true;
+        cv.notify_one();
+    }
+
+    void unset(const T & val)
+    {
+        auto it = flags.find(val);
+        if (it == flags.end())
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unknown value '{}'", val);
+        it->second = false;
+    }
+
+    void wait(std::chrono::milliseconds timeout)
+    {
+        std::unique_lock<std::mutex> lk(mu);
+        cv.wait_for(lk, timeout);
+    }
+
+    const std::unordered_map<T, std::atomic_bool> & get()
+    {
+        return flags;
+    }
+
+private:
+    std::condition_variable cv;
+    std::mutex mu;
+
+    std::unordered_map<T, std::atomic_bool> flags;
+};
+
 ClusterDiscovery::ClusterDiscovery(
     const Poco::Util::AbstractConfiguration & config,
     ContextMutablePtr context_,
@@ -39,7 +94,6 @@ ClusterDiscovery::ClusterDiscovery(
     : context(context_)
     , node_name(toString(ServerUUID::get()))
     , server_port(context->getTCPPort())
-    , queue(std::make_shared<UpdateQueue>(MAX_QUEUE_SIZE))
     , log(&Poco::Logger::get("ClusterDiscovery"))
 {
     Poco::Util::AbstractConfiguration::Keys config_keys;
@@ -51,6 +105,7 @@ ClusterDiscovery::ClusterDiscovery(
         trimRight(path, '/');
         clusters_info.emplace(key, ClusterInfo(key, path));
     }
+    clusters_to_update = std::make_shared<UpdateFlags>(config_keys.begin(), config_keys.end());
 }
 
 /// List node in zookeper for cluster
@@ -60,15 +115,7 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
                                        int * version,
                                        bool set_callback)
 {
-    auto watch_callback = [cluster_name, queue=queue, log=log](const Coordination::WatchResponse &)
-    {
-        if (!queue->tryPush(cluster_name, QUEUE_OP_TIMEOUT_MS))
-        {
-            if (queue->isFinished())
-                return;
-            LOG_WARNING(log, "Cannot push update request for cluster '{}'", cluster_name);
-        }
-    };
+    auto watch_callback = [cluster_name, clusters_to_update=clusters_to_update](auto) { clusters_to_update->set(cluster_name); };
 
     Coordination::Stat stat;
     Strings nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, set_callback ? watch_callback : Coordination::WatchCallback{});
@@ -77,7 +124,8 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
     return nodes;
 }
 
-/// Reads node information from specified zookeper nodes
+/// Reads node information from specified zookeeper nodes
+/// On error returns empty result
 ClusterDiscovery::NodesInfo ClusterDiscovery::getNodes(zkutil::ZooKeeperPtr & zk, const String & zk_root, const Strings & node_uuids)
 {
     NodesInfo result;
@@ -86,10 +134,7 @@ ClusterDiscovery::NodesInfo ClusterDiscovery::getNodes(zkutil::ZooKeeperPtr & zk
         String payload;
         bool ok = zk->tryGet(getShardsListPath(zk_root) / node_uuid, payload);
         if (!ok)
-        {
-            LOG_WARNING(log, "Cluster configuration was changed during update, found nonexisting node");
             return {};
-        }
         result.emplace(node_uuid, NodeInfo(payload));
     }
     return result;
@@ -206,7 +251,10 @@ void ClusterDiscovery::start()
     {
         registerInZk(zk, info);
         if (!updateCluster(info))
-            LOG_WARNING(log, "Error on updating cluster '{}'", info.name);
+        {
+            LOG_WARNING(log, "Error on updating cluster '{}', will retry", info.name);
+            clusters_to_update->set(info.name);
+        }
     }
 }
 
@@ -216,42 +264,18 @@ void ClusterDiscovery::runMainThread()
     // setThreadName("ClusterDiscovery");
 
     using namespace std::chrono_literals;
-    constexpr UInt64 full_update_interval = std::chrono::milliseconds(5min).count();
-
-    std::unordered_map<String, Stopwatch> last_cluster_update;
-    for (const auto & [cluster_name, _] : clusters_info)
-        last_cluster_update.emplace(cluster_name, Stopwatch());
-    Stopwatch last_full_update;
-
-    pcg64 rng(randomSeed());
 
     while (!stop_flag)
     {
+        /// if some cluster update was ended with error on previous iteration, we will retry after timeout
+        clusters_to_update->wait(5s);
+        for (const auto & [cluster_name, need_update] : clusters_to_update->get())
         {
-            String cluster_name;
-            if (queue->tryPop(cluster_name, QUEUE_OP_TIMEOUT_MS))
-            {
-                if (updateCluster(cluster_name))
-                    last_cluster_update[cluster_name].restart();
-                else
-                    LOG_WARNING(log, "Error on updating cluster '{}', configuration changed during update, will retry", cluster_name);
-            }
-        }
-
-        auto jitter = std::uniform_real_distribution<>(1.0, 2.0)(rng);
-        if (last_full_update.elapsedMilliseconds() > UInt64(full_update_interval * jitter))
-        {
-            for (const auto & lastupd : last_cluster_update)
-            {
-                if (lastupd.second.elapsedMilliseconds() > full_update_interval)
-                {
-                    if (updateCluster(lastupd.first))
-                        last_cluster_update[lastupd.first].restart();
-                    else
-                        LOG_WARNING(log, "Error on updating cluster '{}'", lastupd.first);
-                }
-            }
-            last_full_update.restart();
+            if (!need_update)
+                continue;
+            bool ok = updateCluster(cluster_name);
+            if (ok)
+                clusters_to_update->unset(cluster_name);
         }
     }
     LOG_TRACE(log, "Worker thread stopped");
@@ -262,7 +286,6 @@ void ClusterDiscovery::shutdown()
     LOG_TRACE(log, "Shutting down");
 
     stop_flag.exchange(true);
-    queue->clearAndFinish();
     if (main_thread.joinable())
         main_thread.join();
 }

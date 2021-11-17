@@ -65,7 +65,7 @@ private:
                          int * version = nullptr,
                          bool set_callback = true);
 
-    NodesInfo getNodes(zkutil::ZooKeeperPtr & zk, const String & zk_root, const Strings & node_uuids);
+    static NodesInfo getNodes(zkutil::ZooKeeperPtr & zk, const String & zk_root, const Strings & node_uuids);
 
     ClusterPtr getCluster(const ClusterInfo & cluster_info);
 
@@ -84,12 +84,13 @@ private:
     String node_name;
     UInt16 server_port;
 
-    /// Cluster names to update
-    using UpdateQueue = ConcurrentBoundedQueue<std::string>;
+    template <typename T> class ConcurrentFlags;
+    using UpdateFlags = ConcurrentFlags<std::string>;
 
-    /// shared_ptr is used because it's passed to watch callback
-    /// it prevents accessing to invalid queue after ClusterDiscovery is destroyed
-    std::shared_ptr<UpdateQueue> queue;
+    /// Cluster names to update.
+    /// The `shared_ptr` is used because it's passed to watch callback.
+    /// It prevents accessing to invalid object after ClusterDiscovery is destroyed.
+    std::shared_ptr<UpdateFlags> clusters_to_update;
 
     std::atomic<bool> stop_flag = false;
     ThreadFromGlobalPool main_thread;
