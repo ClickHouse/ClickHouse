@@ -81,11 +81,11 @@ then
 fi
 
 # Also build fuzzers if any sanitizer specified
-if [ -n "$SANITIZER" ]
-then
-  # Currently we are in build/build_docker directory
-  ../docker/packager/other/fuzzer.sh
-fi
+# if [ -n "$SANITIZER" ]
+# then
+#   # Currently we are in build/build_docker directory
+#   ../docker/packager/other/fuzzer.sh
+# fi
 
 ccache --show-config ||:
 ccache --show-stats ||:

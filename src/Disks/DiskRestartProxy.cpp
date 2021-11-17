@@ -24,6 +24,8 @@ public:
 
     void setReadUntilPosition(size_t position) override { impl->setReadUntilPosition(position); }
 
+    void setReadUntilEnd() override { impl->setReadUntilEnd(); }
+
 private:
     ReadLock lock;
 };

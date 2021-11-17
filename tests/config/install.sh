@@ -16,9 +16,7 @@ mkdir -p $DEST_SERVER_PATH/users.d/
 mkdir -p $DEST_CLIENT_PATH
 
 ln -sf $SRC_PATH/config.d/listen.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/part_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/text_log.xml $DEST_SERVER_PATH/config.d/
-ln -sf $SRC_PATH/config.d/metric_log.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/custom_settings_prefixes.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/macros.xml $DEST_SERVER_PATH/config.d/
 ln -sf $SRC_PATH/config.d/disks.xml $DEST_SERVER_PATH/config.d/

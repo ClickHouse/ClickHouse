@@ -7,7 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/Context.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Access/QuotaUsage.h>
 #include <Access/Common/AccessFlags.h>
 #include <base/range.h>
