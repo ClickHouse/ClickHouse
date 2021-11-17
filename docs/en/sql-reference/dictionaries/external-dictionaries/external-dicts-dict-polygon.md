@@ -3,22 +3,16 @@ toc_priority: 46
 toc_title: Polygon Dictionaries With Grids
 ---
 
-
 # Polygon dictionaries {#polygon-dictionaries}
 
 Polygon dictionaries allow you to efficiently search for the polygon containing specified points.
 For example: defining a city area by geographical coordinates.
 
-Example configuration:
+Example of a polygon dictionary configuration:
 
 ``` xml
 <dictionary>
-    <source>
-        <source_type>
-            <store_polygon_key_column>1</store_polygon_key_column>
-        </source_type>
     ...
-    </source>
     <structure>
         <key>
             <name>key</name>
@@ -36,11 +30,12 @@ Example configuration:
             <type>UInt64</type>
             <null_value>0</null_value>
         </attribute>
-
     </structure>
 
     <layout>
-        <polygon />
+        <polygon>
+            <store_polygon_key_column>1</store_polygon_key_column>
+        </polygon>
     </layout>
 
 </dictionary>
@@ -59,6 +54,7 @@ LAYOUT(POLYGON(STORE_POLYGON_KEY_COLUMN 1))
 ```
 
 When configuring the polygon dictionary, the key must have one of two types:
+
 -   A simple polygon. It is an array of points.
 -   MultiPolygon. It is an array of polygons. Each polygon is a two-dimensional array of points. The first element of this array is the outer boundary of the polygon, and subsequent elements specify areas to be excluded from it.
 
@@ -68,22 +64,25 @@ The user can [upload their own data](../../../sql-reference/dictionaries/externa
 
 There are 3 types of [in-memory storage](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-layout.md) available:
 
--   POLYGON_SIMPLE. This is a naive implementation, where a linear pass through all polygons is made for each query, and membership is checked for each one without using additional indexes.
+-   `POLYGON_SIMPLE`. This is a naive implementation, where a linear pass through all polygons is made for each query, and membership is checked for each one without using additional indexes.
 
--   POLYGON_INDEX_EACH. A separate index is built for each polygon, which allows you to quickly check whether it belongs in most cases (optimized for geographical regions).
+-   `POLYGON_INDEX_EACH`. A separate index is built for each polygon, which allows you to quickly check whether it belongs in most cases (optimized for geographical regions).
 Also, a grid is superimposed on the area under consideration, which significantly narrows the number of polygons under consideration.
 The grid is created by recursively dividing the cell into 16 equal parts and is configured with two parameters.
-The division stops when the recursion depth reaches MAX_DEPTH or when the cell crosses no more than MIN_INTERSECTIONS polygons.
+The division stops when the recursion depth reaches `MAX_DEPTH` or when the cell crosses no more than `MIN_INTERSECTIONS` polygons.
 To respond to the query, there is a corresponding cell, and the index for the polygons stored in it is accessed alternately.
 
--   POLYGON_INDEX_CELL. This placement also creates the grid described above. The same options are available. For each sheet cell, an index is built on all pieces of polygons that fall into it, which allows you to quickly respond to a request.
+-   `POLYGON_INDEX_CELL`. This placement also creates the grid described above. The same options are available. For each sheet cell, an index is built on all pieces of polygons that fall into it, which allows you to quickly respond to a request.
 
--   POLYGON. Synonym to POLYGON_INDEX_CELL.
+-   `POLYGON`. Synonym to `POLYGON_INDEX_CELL`.
 
 Dictionary queries are carried out using standard [functions](../../../sql-reference/functions/ext-dict-functions.md) for working with external dictionaries.
 An important difference is that here the keys will be the points for which you want to find the polygon containing them.
 
+**Example**
+
 Example of working with the dictionary defined above:
+
 ``` sql
 CREATE TABLE points (
     x Float64,
@@ -95,10 +94,11 @@ SELECT tuple(x, y) AS key, dictGet(dict_name, 'name', key), dictGet(dict_name, '
 
 As a result of executing the last command for each point in the 'points' table, a minimum area polygon containing this point will be found, and the requested attributes will be output.
 
-Turn on the `store_polygon_key_column` to read polygon dictionary via SELECT query.
+**Example**
+
+You can read columns from polygon dictionaries via SELECT query, just turn on the `store_polygon_key_column = 1` in the dictionary configuration or corresponding DDL-query.
 
 Query:
-
 
 ``` sql
 CREATE TABLE polygons_test_table
