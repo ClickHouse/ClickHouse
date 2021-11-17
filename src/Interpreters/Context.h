@@ -345,7 +345,7 @@ public:
     String getUserScriptsPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
-    std::vector<String> getWarnings() const;
+    Strings getWarnings() const;
 
     VolumePtr getTemporaryVolume() const;
 
@@ -358,9 +358,6 @@ public:
     void addWarningMessage(const String & msg);
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
-
-    void setBackupsVolume(const String & path, const String & policy_name = "");
-    VolumePtr getBackupsVolume() const;
 
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 

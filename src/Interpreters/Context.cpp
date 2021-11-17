@@ -94,7 +94,6 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event ContextLock;
-    extern const Event CompiledCacheSizeBytes;
 }
 
 namespace CurrentMetrics
@@ -105,14 +104,9 @@ namespace CurrentMetrics
     extern const Metric BackgroundBufferFlushSchedulePoolTask;
     extern const Metric BackgroundDistributedSchedulePoolTask;
     extern const Metric BackgroundMessageBrokerSchedulePoolTask;
-
-
-    extern const Metric DelayedInserts;
     extern const Metric BackgroundMergesAndMutationsPoolTask;
-    extern const Metric BackgroundMovePoolTask;
     extern const Metric BackgroundFetchesPoolTask;
     extern const Metric BackgroundCommonPoolTask;
-
 }
 
 namespace DB
@@ -510,10 +504,23 @@ String Context::getUserScriptsPath() const
     return shared->user_scripts_path;
 }
 
-std::vector<String> Context::getWarnings() const
+Strings Context::getWarnings() const
 {
-    auto lock = getLock();
-    return shared->warnings;
+    Strings common_warnings;
+    {
+        auto lock = getLock();
+        common_warnings = shared->warnings;
+    }
+    for (const auto & setting : settings)
+    {
+        if (setting.isValueChanged() && setting.isObsolete())
+        {
+            common_warnings.emplace_back("Some obsolete setting is changed. "
+                                         "Check 'select * from system.settings where changed' and read the changelog.");
+            break;
+        }
+    }
+    return common_warnings;
 }
 
 VolumePtr Context::getTemporaryVolume() const
@@ -570,35 +577,6 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
          throw Exception("No disks volume for temporary files", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     return shared->tmp_volume;
-}
-
-void Context::setBackupsVolume(const String & path, const String & policy_name)
-{
-    std::lock_guard lock(shared->storage_policies_mutex);
-    if (policy_name.empty())
-    {
-        String path_with_separator = path;
-        if (!path_with_separator.ends_with('/'))
-            path_with_separator += '/';
-        auto disk = std::make_shared<DiskLocal>("_backups_default", path_with_separator, 0);
-        shared->backups_volume = std::make_shared<SingleDiskVolume>("_backups_default", disk, 0);
-    }
-    else
-    {
-        StoragePolicyPtr policy = getStoragePolicySelector(lock)->get(policy_name);
-        if (policy->getVolumes().size() != 1)
-             throw Exception("Policy " + policy_name + " is used for backups, such policy should have exactly one volume",
-                             ErrorCodes::NO_ELEMENTS_IN_CONFIG);
-        shared->backups_volume = policy->getVolume(0);
-    }
-
-    BackupFactory::instance().setBackupsVolume(shared->backups_volume);
-}
-
-VolumePtr Context::getBackupsVolume() const
-{
-    std::lock_guard lock(shared->storage_policies_mutex);
-    return shared->backups_volume;
 }
 
 void Context::setFlagsPath(const String & path)
@@ -811,7 +789,7 @@ void Context::setInitialRowPolicy()
     auto initial_user_id = getAccessControl().find<User>(client_info.initial_user);
     if (!initial_user_id)
         return;
-    initial_row_policy = getAccessControl().getEnabledRowPolicies(*initial_user_id, {});
+    initial_row_policy = getAccessControl().tryGetDefaultRowPolicies(*initial_user_id);
 }
 
 
@@ -893,7 +871,9 @@ const Block * Context::tryGetLocalScalar(const String & name) const
 
 Tables Context::getExternalTables() const
 {
-    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
+
     auto lock = getLock();
 
     Tables res;
@@ -918,7 +898,9 @@ Tables Context::getExternalTables() const
 
 void Context::addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
 {
-    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
+
     auto lock = getLock();
     if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
         throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
@@ -928,7 +910,9 @@ void Context::addExternalTable(const String & table_name, TemporaryTableHolder &
 
 std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String & table_name)
 {
-    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have external tables");
+
     std::shared_ptr<TemporaryTableHolder> holder;
     {
         auto lock = getLock();
@@ -944,21 +928,27 @@ std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String 
 
 void Context::addScalar(const String & name, const Block & block)
 {
-    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
+
     scalars[name] = block;
 }
 
 
 void Context::addLocalScalar(const String & name, const Block & block)
 {
-    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have local scalars");
+
     local_scalars[name] = block;
 }
 
 
 bool Context::hasScalar(const String & name) const
 {
-    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
+
     return scalars.count(name);
 }
 
@@ -970,7 +960,9 @@ void Context::addQueryAccessInfo(
     const String & projection_name,
     const String & view_name)
 {
-    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query access info");
+
     std::lock_guard<std::mutex> lock(query_access_info.mutex);
     query_access_info.databases.emplace(quoted_database_name);
     query_access_info.tables.emplace(full_quoted_table_name);
@@ -984,7 +976,9 @@ void Context::addQueryAccessInfo(
 
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
 {
-    assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have query factories info");
+
     auto lock = getLock();
 
     switch (factory_type)
@@ -2843,6 +2837,10 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
     }
 
     bool look_for_external_table = where & StorageNamespace::ResolveExternal;
+    /// Global context should not contain temporary tables
+    if (isGlobalContext())
+        look_for_external_table = false;
+
     bool in_current_database = where & StorageNamespace::ResolveCurrentDatabase;
     bool in_specified_database = where & StorageNamespace::ResolveGlobal;
 
@@ -2860,9 +2858,6 @@ StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace w
 
     if (look_for_external_table)
     {
-        /// Global context should not contain temporary tables
-        assert(!isGlobalContext() || getApplicationType() == ApplicationType::LOCAL);
-
         auto resolved_id = StorageID::createEmpty();
         auto try_resolve = [&](ContextPtr context) -> bool
         {
@@ -3101,6 +3096,10 @@ ReadSettings Context::getReadSettings() const
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
     res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
     res.priority = settings.read_priority;
+
+    res.http_max_tries = settings.http_max_tries;
+    res.http_retry_initial_backoff_ms = settings.http_retry_initial_backoff_ms;
+    res.http_retry_max_backoff_ms = settings.http_retry_max_backoff_ms;
 
     res.mmap_cache = getMMappedFileCache().get();
 

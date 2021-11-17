@@ -82,7 +82,8 @@ ColumnsDescription ITableFunctionXDBC::getActualTableStructure(ContextPtr contex
     columns_info_uri.addQueryParameter("external_table_functions_use_nulls",
                                        Poco::NumberFormatter::format(use_nulls));
 
-    ReadWriteBufferFromHTTP buf(columns_info_uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context));
+    Poco::Net::HTTPBasicCredentials credentials{};
+    ReadWriteBufferFromHTTP buf(columns_info_uri, Poco::Net::HTTPRequest::HTTP_POST, {}, ConnectionTimeouts::getHTTPTimeouts(context), credentials);
 
     std::string columns_info;
     readStringBinary(columns_info, buf);
