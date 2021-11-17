@@ -138,8 +138,6 @@ void MultiplexedConnections::sendQuery(
             modified_settings.collaborate_with_initiator = true;
             modified_settings.count_participating_replicas = replica_info.all_replicas_count;
             modified_settings.number_of_current_replica = replica_info.number_of_current_replica;
-
-            std::cout << fmt::format("{} {}", modified_settings.count_participating_replicas, modified_settings.number_of_current_replica);
         }
 
     }
