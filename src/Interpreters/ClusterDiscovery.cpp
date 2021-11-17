@@ -148,7 +148,34 @@ bool ClusterDiscovery::needUpdate(const Strings & node_uuids, const NodesInfo & 
 {
     bool has_difference = node_uuids.size() != nodes.size() ||
                           std::any_of(node_uuids.begin(), node_uuids.end(), [&nodes] (auto u) { return !nodes.contains(u); });
+    UNUSED(log);
+    #if defined(NDEBUG) || defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) || defined(UNDEFINED_BEHAVIOR_SANITIZER)
+    {
+        /// Just to log updated nodes, suboptimal, but should be ok for expected update sizes.
+        /// Disabled on release build.
+        std::set<String> new_names(node_uuids.begin(), node_uuids.end());
+        std::set<String> old_names;
+        for (const auto & [name, _] : nodes)
+            old_names.emplace(name);
 
+        auto format_cluster_update = [](const std::set<String> & s1, const std::set<String> & s2)
+        {
+            std::vector<String> diff;
+            std::set_difference(s1.begin(), s1.end(), s2.begin(), s2.end(), std::back_inserter(diff));
+
+            constexpr size_t max_to_show = 3;
+            size_t sz = diff.size();
+            if (sz > max_to_show)
+                diff.resize(max_to_show);
+            return fmt::format("{} nodes ({}{})", sz, fmt::join(diff, ", "), diff.size() == sz ? "" : ",...");
+        };
+
+        LOG_DEBUG(log, "Cluster update: added: {}, removed: {}",
+            format_cluster_update(new_names, old_names),
+            format_cluster_update(old_names, new_names));
+
+    }
+    #endif
     return has_difference;
 }
 
