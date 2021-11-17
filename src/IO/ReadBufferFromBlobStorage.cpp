@@ -4,11 +4,9 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <iostream>
-
 #include <IO/ReadBufferFromBlobStorage.h>
 #include <IO/ReadBufferFromString.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -19,39 +17,64 @@ namespace ErrorCodes
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int RECEIVED_EMPTY_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 
 ReadBufferFromBlobStorage::ReadBufferFromBlobStorage(
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & path_,
-    size_t buf_size_) :
-    SeekableReadBuffer(nullptr, 0),
-    blob_container_client(blob_container_client_),
-    tmp_buffer(buf_size_),
-    path(path_),
-    buf_size(buf_size_) {}
+    size_t tmp_buffer_size_,
+    bool use_external_buffer_,
+    size_t read_until_position_)
+    : SeekableReadBuffer(nullptr, 0)
+    , blob_container_client(blob_container_client_)
+    , path(path_)
+    , use_external_buffer(use_external_buffer_)
+    , read_until_position(read_until_position_)
+    , tmp_buffer_size(tmp_buffer_size_) // NOTE: field used only here in the constructor
+{
+    if (!use_external_buffer)
+    {
+        tmp_buffer.resize(tmp_buffer_size);
+        data_ptr = tmp_buffer.data();
+        data_capacity = tmp_buffer_size;
+    }
+}
 
 
 bool ReadBufferFromBlobStorage::nextImpl()
 {
     // TODO: is this "stream" approach better than a single DownloadTo approach (last commit 90fc230c4dfacc1a9d50d2d65b91363150caa784) ?
 
+    if (read_until_position)
+    {
+        if (read_until_position == offset)
+            return false;
+
+        if (read_until_position < offset)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
+    }
+
     if (!initialized)
         initialize();
 
-    if (offset >= total_size)
-        return false;
 
-    size_t to_read_bytes = std::min(total_size - offset, buf_size);
+    if (use_external_buffer)
+    {
+        data_ptr = internal_buffer.begin();
+        data_capacity = internal_buffer.size();
+    }
+
+    size_t to_read_bytes = std::min(total_size - offset, data_capacity);
     size_t bytes_read = 0;
 
     auto sleep_time_with_backoff_milliseconds = std::chrono::milliseconds(100);
-    for (int i = 0; i < 3; i++)
+    for (int i = 0; i < 3; i++) // TODO: setting for max retries?
     {
         try
         {
-            bytes_read = data_stream->ReadToCount(tmp_buffer.data(), to_read_bytes);
+            bytes_read = data_stream->ReadToCount(reinterpret_cast<uint8_t *>(data_ptr), to_read_bytes);
             break;
         }
         catch (const Azure::Storage::StorageException & e)
@@ -68,7 +91,7 @@ bool ReadBufferFromBlobStorage::nextImpl()
     if (bytes_read == 0)
         return false;
 
-    BufferBase::set(reinterpret_cast<char *>(tmp_buffer.data()), bytes_read, 0);
+    BufferBase::set(data_ptr, bytes_read, 0);
     offset += bytes_read;
 
     return true;
@@ -106,8 +129,12 @@ void ReadBufferFromBlobStorage::initialize()
         return;
 
     Azure::Storage::Blobs::DownloadBlobOptions download_options;
-    if (offset != 0)
-        download_options.Range = {static_cast<int64_t>(offset), {}};
+
+    Azure::Nullable<int64_t> length {};
+    if (read_until_position != 0)
+        length = {static_cast<int64_t>(read_until_position - offset)};
+
+    download_options.Range = {static_cast<int64_t>(offset), length};
 
     blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
 
@@ -121,7 +148,6 @@ void ReadBufferFromBlobStorage::initialize()
         LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} : {}", path, offset, e.Message);
         throw e;
     }
-
 
     if (data_stream == nullptr)
         throw Exception(ErrorCodes::RECEIVED_EMPTY_DATA, "Null data stream obtained while downloading file {} from Blob Storage", path);
