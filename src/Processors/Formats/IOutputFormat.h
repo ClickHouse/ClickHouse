@@ -4,7 +4,8 @@
 #include <Processors/IProcessor.h>
 #include <Processors/RowsBeforeLimitCounter.h>
 #include <IO/Progress.h>
-
+#include <Common/Stopwatch.h>
+#include <iostream>
 
 namespace DB
 {
@@ -59,13 +60,42 @@ public:
 
     virtual bool expectMaterializedColumns() const { return true; }
 
-    void setTotals(const Block & totals) { consumeTotals(Chunk(totals.getColumns(), totals.rows())); }
-    void setExtremes(const Block & extremes) { consumeExtremes(Chunk(extremes.getColumns(), extremes.rows())); }
+    void setTotals(const Block & totals)
+    {
+        writeSuffixIfNot();
+        consumeTotals(Chunk(totals.getColumns(), totals.rows()));
+        are_totals_written = true;
+    }
+    void setExtremes(const Block & extremes)
+    {
+        writeSuffixIfNot();
+        consumeExtremes(Chunk(extremes.getColumns(), extremes.rows()));
+    }
 
     size_t getResultRows() const { return result_rows; }
     size_t getResultBytes() const { return result_bytes; }
 
     void doNotWritePrefix() { need_write_prefix = false; }
+
+    void setFirstRowNumber(size_t first_row_number_)
+    {
+        first_row_number = first_row_number_;
+        onFirstRowNumberUpdate();
+    }
+
+    struct Statistics
+    {
+        Stopwatch watch;
+        Progress progress;
+        bool applied_limit = false;
+        size_t rows_before_limit = 0;
+    };
+
+    void setOutsideStatistics(const Statistics & statistics) { outside_statistics = statistics; }
+
+    void setTotalsAreWritten() { are_totals_written = true; }
+
+    bool areTotalsWritten() const { return are_totals_written; }
 
 protected:
     friend class ParallelFormattingOutputFormat;
@@ -75,6 +105,12 @@ protected:
     virtual void consumeExtremes(Chunk) {}
     virtual void finalizeImpl() {}
     virtual void writePrefix() {}
+    virtual void writeSuffix() {}
+
+    virtual void onFirstRowNumberUpdate() {}
+
+    size_t getFirstRowNumber() const { return first_row_number; }
+    std::optional<Statistics> getOutsideStatistics() const { return outside_statistics; }
 
     void writePrefixIfNot()
     {
@@ -82,6 +118,15 @@ protected:
         {
             writePrefix();
             need_write_prefix = false;
+        }
+    }
+
+    void writeSuffixIfNot()
+    {
+        if (need_write_suffix)
+        {
+            writeSuffix();
+            need_write_suffix = false;
         }
     }
 
@@ -95,11 +140,17 @@ protected:
 
     /// Flush data on each consumed chunk. This is intended for interactive applications to output data as soon as it's ready.
     bool auto_flush = false;
+
     bool need_write_prefix  = true;
+    bool need_write_suffix = true;
 
     RowsBeforeLimitCounterPtr rows_before_limit_counter;
 
 private:
+    size_t first_row_number = 0;
+    std::optional<Statistics> outside_statistics = std::nullopt;
+    bool are_totals_written = false;
+
     /// Counters for consumed chunks. Are used for QueryLog.
     size_t result_rows = 0;
     size_t result_bytes = 0;

@@ -20,8 +20,8 @@ public:
 
     String getName() const override { return "TemplateBlockOutputFormat"; }
 
-    void setRowsBeforeLimit(size_t rows_before_limit_) override { rows_before_limit = rows_before_limit_; rows_before_limit_set = true; }
-    void onProgress(const Progress & progress_) override { progress.incrementPiecewiseAtomically(progress_); }
+    void setRowsBeforeLimit(size_t rows_before_limit_) override { statistics.rows_before_limit = rows_before_limit_; statistics.rows_before_limit = true; }
+    void onProgress(const Progress & progress_) override { statistics.progress.incrementPiecewiseAtomically(progress_); }
 
     enum class ResultsetPart : size_t
     {
@@ -48,18 +48,17 @@ private:
     void writeRow(const Chunk & chunk, size_t row_num);
     template <typename U, typename V> void writeValue(U value, EscapingRule escaping_rule);
 
+    void onFirstRowNumberUpdate() override { row_count = getFirstRowNumber(); }
+
     const FormatSettings settings;
     Serializations serializations;
 
     ParsedTemplateFormatString format;
     ParsedTemplateFormatString row_format;
 
-    size_t rows_before_limit = 0;
-    bool rows_before_limit_set = false;
     Chunk totals;
     Chunk extremes;
-    Progress progress;
-    Stopwatch watch;
+    Statistics statistics;
 
     size_t row_count = 0;
 

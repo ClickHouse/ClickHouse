@@ -144,6 +144,9 @@ void TemplateBlockOutputFormat::finalizeImpl()
         return;
 
     size_t parts = format.format_idx_to_column_idx.size();
+    auto outside_statistics = getOutsideStatistics();
+    if (outside_statistics)
+        statistics = outside_statistics.value();
 
     for (size_t i = 0; i < parts; ++i)
     {
@@ -170,7 +173,7 @@ void TemplateBlockOutputFormat::finalizeImpl()
                 writeValue<size_t, DataTypeUInt64>(row_count, format.escaping_rules[i]);
                 break;
             case ResultsetPart::RowsBeforeLimit:
-                if (!rows_before_limit_set)
+                if (!statistics.applied_limit)
                     format.throwInvalidFormat("Cannot print rows_before_limit for this request", i);
                 writeValue<size_t, DataTypeUInt64>(rows_before_limit, format.escaping_rules[i]);
                 break;
