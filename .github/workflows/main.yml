@@ -190,7 +190,7 @@ jobs:
 #################################### ORDINARY BUILDS ####################################
 #########################################################################################
   BuilderDebRelease:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -229,7 +229,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   BuilderBinRelease:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -268,7 +268,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   BuilderDebAsan:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -307,7 +307,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   BuilderDebUBsan:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -346,7 +346,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   BuilderDebTsan:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -385,7 +385,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   BuilderDebMsan:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -424,7 +424,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   BuilderDebDebug:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -466,7 +466,7 @@ jobs:
 ##################################### SPECIAL BUILDS #####################################
 ##########################################################################################
   BuilderDebSplitted:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -1214,7 +1214,7 @@ jobs:
 ############################# INTEGRATION TESTS #############################################
 #############################################################################################
   IntegrationTestsAsan:
-    needs: [BuilderDebAsan]
+    needs: [BuilderDebAsan, FunctionalStatelessTestAsan]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
@@ -1242,7 +1242,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   IntegrationTestsTsan:
-    needs: [BuilderDebTsan]
+    needs: [BuilderDebTsan, FunctionalStatelessTestTsan]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
@@ -1270,7 +1270,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   IntegrationTestsRelease:
-    needs: [BuilderDebRelease]
+    needs: [BuilderDebRelease, FunctionalStatelessTestRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
