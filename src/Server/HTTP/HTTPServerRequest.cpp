@@ -22,6 +22,7 @@ HTTPServerRequest::HTTPServerRequest(ContextPtr context, HTTPServerResponse & re
     , max_fields_number(context->getSettingsRef().http_max_fields)
     , max_field_name_size(context->getSettingsRef().http_max_field_name_size)
     , max_field_value_size(context->getSettingsRef().http_max_field_value_size)
+    , stream_socket(session.socket())
 {
     response.attachRequest(this);
 
