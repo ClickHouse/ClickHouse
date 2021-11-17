@@ -26,7 +26,7 @@ inline String toString(DiskType disk_type)
             return "memory";
         case DiskType::S3:
             return "s3";
-        case Type::BlobStorage:
+        case DiskType::BlobStorage:
             return "blob_storage";
         case DiskType::HDFS:
             return "hdfs";

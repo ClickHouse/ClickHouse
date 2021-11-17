@@ -28,6 +28,7 @@ struct DiskBlobStorageSettings final
         int thread_pool_size_,
         int objects_chunk_size_to_delete_);
 
+    // NOTE: on 32-bit machines it will be at most 4GB, but size_t is also used in BufferBase for offset
     size_t max_single_part_upload_size;
     UInt64 min_bytes_for_seek;
     int thread_pool_size;
@@ -51,18 +52,17 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        size_t buf_size,
-        size_t estimated_size,
-        size_t direct_io_threshold,
-        size_t mmap_threshold,
-        MMappedFileCache * mmap_cache) const override;
+        const ReadSettings & settings,
+        size_t estimated_size) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
         size_t buf_size,
         WriteMode mode) override;
 
-    DiskType::Type getType() const override;
+    DiskType getType() const override;
+
+    bool isRemote() const override;
 
     bool supportZeroCopyReplication() const override;
 

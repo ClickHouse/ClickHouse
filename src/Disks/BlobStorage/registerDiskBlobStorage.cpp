@@ -38,7 +38,7 @@ void checkWriteAccess(IDisk & disk)
 
 void checkReadAccess(IDisk & disk)
 {
-    auto file = disk.readFile(test_file, DBMS_DEFAULT_BUFFER_SIZE);
+    auto file = disk.readFile(test_file);
     String buf(test_str_size, '0');
     file->readStrict(buf.data(), test_str_size);
     if (buf != test_str)
@@ -49,7 +49,7 @@ void checkReadAccess(IDisk & disk)
 // TODO: make it a unit test ?
 void checkReadWithOffset(IDisk & disk)
 {
-    auto file = disk.readFile(test_file, DBMS_DEFAULT_BUFFER_SIZE);
+    auto file = disk.readFile(test_file);
     auto offset = 2;
     auto test_size = test_str_size - offset;
     String buf(test_size, '0');
@@ -104,7 +104,7 @@ void registerDiskBlobStorage(DiskFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
         ContextPtr context,
-        const DisksMap &)
+        const DisksMap & /*map*/)
     {
         auto endpoint_url = config.getString(config_prefix + ".endpoint");
         validate_endpoint_url(endpoint_url);
