@@ -176,5 +176,6 @@ toc_title: Adopters
 | <a href="https://domclick.ru/" class="favicon">ДомКлик</a> | Real Estate | — | — | — | [Article in Russian, October 2021](https://habr.com/ru/company/domclick/blog/585936/) |
 | <a href="https://www.deepl.com/" class="favicon">Deepl</a> | Machine Learning | — | — | — | [Video, October 2021](https://www.youtube.com/watch?v=WIYJiPwxXdM&t=1182s) |
 | <a href="https://vercel.com/" class="favicon">Vercel</a> | Traffic and Performance Analytics | — | — | — | Direct reference, October 2021 |
+| <a href="https://www.your-analytics.org/" class="favicon">YourAnalytics</a> | Web Analytics | — | — | — | [Tweet, Nov 2021](https://twitter.com/mikenikles/status/1460860140249235461) |
 
 [Original article](https://clickhouse.com/docs/en/introduction/adopters/) <!--hide-->
