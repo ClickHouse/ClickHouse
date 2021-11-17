@@ -24,7 +24,7 @@ String getRandomName(char first = 'a', char last = 'z', size_t len = 64)
 WriteBufferFromBlobStorage::WriteBufferFromBlobStorage(
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & blob_path_,
-    UInt64 max_single_part_upload_size_,
+    size_t max_single_part_upload_size_,
     size_t buf_size_) :
     BufferWithOwnMemory<WriteBuffer>(buf_size_, nullptr, 0),
     blob_container_client(blob_container_client_),

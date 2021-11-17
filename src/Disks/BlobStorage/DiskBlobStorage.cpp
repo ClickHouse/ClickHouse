@@ -30,6 +30,7 @@ DiskBlobStorageSettings::DiskBlobStorageSettings(
 class BlobStoragePathKeeper : public RemoteFSPathKeeper
 {
 public:
+    // NOTE : chunk_limit unused
     BlobStoragePathKeeper(size_t chunk_limit_) : RemoteFSPathKeeper(chunk_limit_) {}
 
     void addPath(const String & path) override
@@ -80,18 +81,15 @@ DiskBlobStorage::DiskBlobStorage(
 
 std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
     const String & path,
-    size_t buf_size,
-    size_t /*estimated_size*/,
-    size_t /*direct_io_threshold*/,
-    size_t /*mmap_threshold*/,
-    MMappedFileCache *) const
+    const ReadSettings & read_settings,
+    size_t /*estimated_size*/) const
 {
     auto metadata = readMeta(path);
 
-    LOG_DEBUG(log, "Read from file by path: {}", backQuote(metadata_path + path));
+    LOG_TRACE(log, "Read from file by path: {}", backQuote(metadata_path + path));
 
     auto reader = std::make_unique<ReadIndirectBufferFromBlobStorage>(
-        blob_container_client, metadata, buf_size);
+        blob_container_client, metadata, read_settings.remote_fs_buffer_size);
 
     return std::make_unique<SeekAvoidingReadBuffer>(std::move(reader), current_settings.get()->min_bytes_for_seek);
 }
@@ -105,7 +103,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskBlobStorage::writeFile(
     auto metadata = readOrCreateMetaForWriting(path, mode);
     auto blob_path = path; // TODO: maybe use getRandomName() or modify the path (now it contains the tmp_* directory part)
 
-    LOG_DEBUG(log, "{} to file by path: {}. Blob Storage path: {}",
+    LOG_TRACE(log, "{} to file by path: {}. Blob Storage path: {}",
         mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_path + path), remote_fs_root_path + blob_path);
 
     auto buffer = std::make_unique<WriteBufferFromBlobStorage>(
@@ -118,9 +116,15 @@ std::unique_ptr<WriteBufferFromFileBase> DiskBlobStorage::writeFile(
 }
 
 
-DiskType::Type DiskBlobStorage::getType() const
+DiskType DiskBlobStorage::getType() const
 {
-    return DiskType::Type::BlobStorage;
+    return DiskType::BlobStorage;
+}
+
+
+bool DiskBlobStorage::isRemote() const
+{
+    return true;
 }
 
 
@@ -156,15 +160,13 @@ void DiskBlobStorage::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
 
     if (paths_keeper)
     {
-        for (auto path : paths_keeper->paths)
+        for (const auto & path : paths_keeper->paths)
         {
             try
             {
                 auto delete_info = blob_container_client->DeleteBlob(path);
                 if (!delete_info.Value.Deleted)
-                {
                     throw Exception(ErrorCodes::BLOB_STORAGE_ERROR, "Failed to delete file in Blob Storage: {}", path);
-                }
             }
             catch (const Azure::Storage::StorageException& e)
             {
