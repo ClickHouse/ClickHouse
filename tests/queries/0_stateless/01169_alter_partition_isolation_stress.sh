@@ -53,7 +53,8 @@ function thread_partition_src_to_dst()
         COMMIT;" 2>&1) ||:
 
         echo "$out" | grep -Fv "SERIALIZATION_ERROR" | grep -F "Received from " && $CLICKHOUSE_CLIENT -q "SELECT _table, type, arraySort(groupArray(n)) FROM merge(currentDatabase(), '') GROUP BY _table, type ORDER BY _table, type" ||:
-        echo "$out" | grep -Fa "SERIALIZATION_ERROR" >/dev/null || count=$((count+1)) && sum=$((sum+i))
+        echo "$out" | grep -Fa "SERIALIZATION_ERROR" >/dev/null || count=$((count+1))
+        echo "$out" | grep -Fa "SERIALIZATION_ERROR" >/dev/null || sum=$((sum+i))
     done
 }
 
