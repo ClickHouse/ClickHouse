@@ -51,7 +51,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     bool force_restore)
 {
     ast_create_query.attach = true;
-    ast_create_query.database = database_name;
+    ast_create_query.setDatabase(database_name);
 
     if (ast_create_query.as_table_function)
     {
@@ -60,9 +60,9 @@ std::pair<String, StoragePtr> createTableFromAST(
         ColumnsDescription columns;
         if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true);
-        StoragePtr storage = table_function->execute(ast_create_query.as_table_function, context, ast_create_query.table, std::move(columns));
+        StoragePtr storage = table_function->execute(ast_create_query.as_table_function, context, ast_create_query.getTable(), std::move(columns));
         storage->renameInMemory(ast_create_query);
-        return {ast_create_query.table, storage};
+        return {ast_create_query.getTable(), storage};
     }
 
     ColumnsDescription columns;
@@ -82,7 +82,7 @@ std::pair<String, StoragePtr> createTableFromAST(
 
     return
     {
-        ast_create_query.table,
+        ast_create_query.getTable(),
         StorageFactory::instance().get(
             ast_create_query,
             table_data_path_relative,
@@ -112,7 +112,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
 
     /// We remove everything that is not needed for ATTACH from the query.
     assert(!create->temporary);
-    create->database.clear();
+    create->database.reset();
     create->as_database.clear();
     create->as_table.clear();
     create->if_not_exists = false;
@@ -129,7 +129,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     create->out_file = nullptr;
 
     if (create->uuid != UUIDHelpers::Nil)
-        create->table = TABLE_WITH_UUID_NAME_PLACEHOLDER;
+        create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
 
     WriteBufferFromOwnString statement_buf;
     formatAST(*create, statement_buf, false);
@@ -161,7 +161,7 @@ void DatabaseOnDisk::createTable(
 {
     const auto & settings = local_context->getSettingsRef();
     const auto & create = query->as<ASTCreateQuery &>();
-    assert(table_name == create.table);
+    assert(table_name == create.getTable());
 
     /// Create a file with metadata if necessary - if the query is not ATTACH.
     /// Write the query of `ATTACH table` to it.
@@ -251,7 +251,7 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
     try
     {
         /// Add a table to the map of known tables.
-        attachTable(query.table, table, getTableDataPath(query));
+        attachTable(query.getTable(), table, getTableDataPath(query));
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
@@ -382,8 +382,8 @@ void DatabaseOnDisk::renameTable(
         table_metadata_path = getObjectMetadataPath(table_name);
         attach_query = parseQueryFromMetadata(log, local_context, table_metadata_path);
         auto & create = attach_query->as<ASTCreateQuery &>();
-        create.database = to_database.getDatabaseName();
-        create.table = to_table_name;
+        create.setDatabase(to_database.getDatabaseName());
+        create.setTable(to_table_name);
         if (from_ordinary_to_atomic)
             create.uuid = UUIDHelpers::generateV4();
         if (from_atomic_to_ordinary)
@@ -464,7 +464,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
         ast = parseQueryFromMetadata(log, getContext(), database_metadata_path, true);
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.attach = false;
-        ast_create_query.database = database_name;
+        ast_create_query.setDatabase(database_name);
     }
     if (!ast)
     {
@@ -648,18 +648,18 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
         return nullptr;
 
     auto & create = ast->as<ASTCreateQuery &>();
-    if (!create.table.empty() && create.uuid != UUIDHelpers::Nil)
+    if (create.table && create.uuid != UUIDHelpers::Nil)
     {
         String table_name = unescapeForFileName(fs::path(metadata_file_path).stem());
 
-        if (create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER && logger)
+        if (create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER && logger)
             LOG_WARNING(
                 logger,
                 "File {} contains both UUID and table name. Will use name `{}` instead of `{}`",
                 metadata_file_path,
                 table_name,
-                create.table);
-        create.table = table_name;
+                create.getTable());
+        create.setTable(table_name);
     }
 
     return ast;
@@ -673,7 +673,7 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metada
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.attach = false;
-        ast_create_query.database = getDatabaseName();
+        ast_create_query.setDatabase(getDatabaseName());
     }
 
     return ast;

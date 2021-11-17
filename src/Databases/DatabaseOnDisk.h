@@ -63,7 +63,7 @@ public:
 
     String getDataPath() const override { return data_path; }
     String getTableDataPath(const String & table_name) const override { return data_path + escapeForFileName(table_name) + "/"; }
-    String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.table); }
+    String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.getTable()); }
     String getMetadataPath() const override { return metadata_path; }
 
     static ASTPtr parseQueryFromMetadata(Poco::Logger * log, ContextPtr context, const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false);
