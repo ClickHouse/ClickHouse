@@ -61,7 +61,7 @@ if __name__ == "__main__":
         raise Exception("Cannot binary clickhouse among build results")
 
     docker_env = ''
-    if pr_info.number != 0 and 'force tests' in {label.name for label in pr_info.labels}:
+    if pr_info.number != 0 and 'force tests' in {label for label in pr_info.labels}:
         # Run all perf tests if labeled 'force tests'.
         docker_env += ' -e CHPC_MAX_QUERIES=0 '
 
