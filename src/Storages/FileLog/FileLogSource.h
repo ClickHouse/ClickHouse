@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Processors/Sources/SourceWithProgress.h>
-
 #include <Storages/FileLog/ReadBufferFromFileLog.h>
 #include <Storages/FileLog/StorageFileLog.h>
 

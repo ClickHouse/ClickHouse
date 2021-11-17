@@ -1,3 +1,5 @@
+#include <string_view>
+
 #include <Parsers/ExpressionListParsers.h>
 
 #include <Parsers/ASTAsterisk.h>
@@ -11,6 +13,8 @@
 #include <Parsers/parseIntervalKind.h>
 #include <Parsers/ParserUnionQueryElement.h>
 #include <Common/StringUtils/StringUtils.h>
+
+using namespace std::literals;
 
 
 namespace DB
@@ -345,7 +349,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
             /** special exception for the access operator to the element of the array `x[y]`, which
               * contains the infix part '[' and the suffix ''] '(specified as' [')
               */
-            if (0 == strcmp(it[0], "["))
+            if (it[0] == "["sv)
             {
                 if (pos->type != TokenType::ClosingSquareBracket)
                     return false;

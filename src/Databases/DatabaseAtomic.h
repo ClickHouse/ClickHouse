@@ -25,7 +25,7 @@ public:
     String getEngineName() const override { return "Atomic"; }
     UUID getUUID() const override { return db_uuid; }
 
-    void renameDatabase(const String & new_name) override;
+    void renameDatabase(ContextPtr query_context, const String & new_name) override;
 
     void renameTable(
             ContextPtr context,

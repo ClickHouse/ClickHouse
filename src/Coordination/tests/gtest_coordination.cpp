@@ -1,9 +1,7 @@
 #include <gtest/gtest.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#    include "config_core.h"
-#endif
+#include <Common/config.h>
+#include "config_core.h"
 
 #if USE_NURAFT
 #include <Poco/ConsoleChannel.h>
@@ -22,7 +20,7 @@
 #include <Common/ZooKeeper/ZooKeeperIO.h>
 #include <Common/Exception.h>
 #include <base/logger_useful.h>
-#include <libnuraft/nuraft.hxx> // Y_IGNORE
+#include <libnuraft/nuraft.hxx>
 #include <thread>
 #include <Coordination/KeeperLogStore.h>
 #include <Coordination/Changelog.h>
@@ -1539,7 +1537,6 @@ TEST_P(CoordinationTest, TestCompressedLogsMultipleRewrite)
         changelog2.append(entry);
         changelog2.end_of_append_batch(0, 0);
     }
-
 }
 
 TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
@@ -1585,6 +1582,33 @@ TEST_P(CoordinationTest, TestStorageSnapshotDifferentCompressions)
     EXPECT_EQ(restored_storage->ephemerals[3].size(), 1);
     EXPECT_EQ(restored_storage->ephemerals[1].size(), 1);
     EXPECT_EQ(restored_storage->session_and_timeout.size(), 2);
+}
+
+
+TEST_P(CoordinationTest, TestLogGap)
+{
+    using namespace Coordination;
+    auto test_params = GetParam();
+    ChangelogDirTest logs("./logs");
+    DB::KeeperLogStore changelog("./logs", 100, true, test_params.enable_compression);
+
+    changelog.init(0, 3);
+    for (size_t i = 1; i < 55; ++i)
+    {
+        std::shared_ptr<ZooKeeperCreateRequest> request = std::make_shared<ZooKeeperCreateRequest>();
+        request->path = "/hello_" + std::to_string(i);
+        auto entry = getLogEntryFromZKRequest(0, 1, request);
+        changelog.append(entry);
+        changelog.end_of_append_batch(0, 0);
+    }
+
+    DB::KeeperLogStore changelog1("./logs", 100, true, test_params.enable_compression);
+    changelog1.init(61, 3);
+
+    /// Logs discarded
+    EXPECT_FALSE(fs::exists("./logs/changelog_1_100.bin" + test_params.extension));
+    EXPECT_EQ(changelog1.start_index(), 61);
+    EXPECT_EQ(changelog1.next_slot(), 61);
 }
 
 

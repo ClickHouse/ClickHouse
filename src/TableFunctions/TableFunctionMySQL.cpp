@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
-#endif
 
 #if USE_MYSQL
 #include <Core/Defines.h>

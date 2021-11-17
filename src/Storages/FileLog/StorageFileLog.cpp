@@ -1,6 +1,5 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Disks/StoragePolicy.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
@@ -24,8 +23,6 @@
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
-#include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
 
 #include <sys/stat.h>
 
@@ -753,7 +750,12 @@ void registerStorageFileLog(StorageFactory & factory)
         auto physical_cpu_cores = getNumberOfPhysicalCPUCores();
         auto num_threads = filelog_settings->max_threads.value;
 
-        if (num_threads > physical_cpu_cores)
+        if (!num_threads) /// Default
+        {
+            num_threads = std::max(unsigned(1), physical_cpu_cores / 4);
+            filelog_settings->set("max_threads", num_threads);
+        }
+        else if (num_threads > physical_cpu_cores)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of threads to parse files can not be bigger than {}", physical_cpu_cores);
         }

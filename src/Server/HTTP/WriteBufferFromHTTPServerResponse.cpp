@@ -8,9 +8,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/MemoryTracker.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #include <Poco/Version.h>
 

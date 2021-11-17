@@ -393,10 +393,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         client_info.initial_query_start_time_microseconds = time_in_microseconds(current_time);
     }
 
-#if !defined(ARCADIA_BUILD)
     assert(internal || CurrentThread::get().getQueryContext());
     assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
-#endif
 
     const Settings & settings = context->getSettingsRef();
 
@@ -431,12 +429,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             if (query_with_output->settings_ast)
                 InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
-        }
-
-        if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
-        {
-            query_database = query_with_table_output->database;
-            query_table = query_with_table_output->table;
         }
 
         if (auto * create_query = ast->as<ASTCreateQuery>())
@@ -510,6 +502,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(ast);
             query = serializeAST(*ast);
+        }
+
+        if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
+        {
+            query_database = query_with_table_output->getDatabase();
+            query_table = query_with_table_output->getTable();
         }
 
         /// MUST go before any modification (except for prepared statements,
