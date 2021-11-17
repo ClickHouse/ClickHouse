@@ -44,6 +44,13 @@ void VersionMetadata::lockMaxTID(const TransactionID & tid, const String & error
     bool locked = maxtid_lock.compare_exchange_strong(expected_max_lock_value, max_lock_value);
     if (!locked)
     {
+        if (tid == Tx::PrehistoricTID && expected_max_lock_value == Tx::PrehistoricTID.getHash())
+        {
+            /// Don't need to lock part for queries without transaction
+            //FIXME Transactions: why is it possible?
+            return;
+        }
+
         throw Exception(ErrorCodes::SERIALIZATION_ERROR, "Serialization error: "
                                                          "Transaction {} tried to remove data part, "
                                                          "but it's locked ({}) by another transaction {} which is currently removing this part. {}",

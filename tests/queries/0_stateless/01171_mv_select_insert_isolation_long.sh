@@ -22,6 +22,7 @@ $CLICKHOUSE_CLIENT --query "INSERT INTO src VALUES (0, 0)"
 # some transactions will fail due to constraint
 function thread_insert_commit()
 {
+    set -e
     for i in {1..100}; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
@@ -34,6 +35,7 @@ function thread_insert_commit()
 
 function thread_insert_rollback()
 {
+    set -e
     for _ in {1..100}; do
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
@@ -46,11 +48,17 @@ function thread_insert_rollback()
 # make merges more aggressive
 function thread_optimize()
 {
+    set -e
     trap "exit 0" INT
     while true; do
         optimize_query="OPTIMIZE TABLE src"
+        partition_id=$(( RANDOM % 2 ))
         if (( RANDOM % 2 )); then
             optimize_query="OPTIMIZE TABLE dst"
+            partition_id="all"
+        fi
+        if (( RANDOM % 2 )); then
+            optimize_query="$optimize_query PARTITION ID '$partition_id'"
         fi
         if (( RANDOM % 2 )); then
             optimize_query="$optimize_query FINAL"
@@ -71,6 +79,7 @@ function thread_optimize()
 
 function thread_select()
 {
+    set -e
     trap "exit 0" INT
     while true; do
         $CLICKHOUSE_CLIENT --multiquery --query "
@@ -86,6 +95,7 @@ function thread_select()
 
 function thread_select_insert()
 {
+    set -e
     trap "exit 0" INT
     while true; do
         $CLICKHOUSE_CLIENT --multiquery --query "

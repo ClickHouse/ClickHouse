@@ -3142,9 +3142,23 @@ MergeTreeData::DataPartPtr MergeTreeData::getActiveContainingPart(const String &
     return getActiveContainingPart(part_info);
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartition(MergeTreeData::DataPartState state, const String & partition_id) const
+MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartition(ContextPtr local_context, const String & partition_id) const
 {
-    DataPartStateAndPartitionID state_with_partition{state, partition_id};
+    if (const auto * txn = local_context->getCurrentTransaction().get())
+    {
+        DataPartStateAndPartitionID active_parts{MergeTreeDataPartState::Committed, partition_id};
+        DataPartStateAndPartitionID outdated_parts{MergeTreeDataPartState::Outdated, partition_id};
+        DataPartsVector res;
+        {
+            auto lock = lockParts();
+            res.insert(res.end(), data_parts_by_state_and_info.lower_bound(active_parts), data_parts_by_state_and_info.upper_bound(active_parts));
+            res.insert(res.end(), data_parts_by_state_and_info.lower_bound(outdated_parts), data_parts_by_state_and_info.upper_bound(outdated_parts));
+        }
+        filterVisibleDataParts(res, txn->getSnapshot(), txn->tid);
+        return res;
+    }
+
+    DataPartStateAndPartitionID state_with_partition{MergeTreeDataPartState::Committed, partition_id};
 
     auto lock = lockParts();
     return DataPartsVector(
@@ -3152,19 +3166,37 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartition(Merg
         data_parts_by_state_and_info.upper_bound(state_with_partition));
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorInPartitions(MergeTreeData::DataPartState state, const std::unordered_set<String> & partition_ids) const
+MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVectorInPartitions(ContextPtr local_context, const std::unordered_set<String> & partition_ids) const
 {
-    auto lock = lockParts();
+    auto txn = local_context->getCurrentTransaction();
     DataPartsVector res;
-    for (const auto & partition_id : partition_ids)
     {
-        DataPartStateAndPartitionID state_with_partition{state, partition_id};
-        insertAtEnd(
-            res,
-            DataPartsVector(
-                data_parts_by_state_and_info.lower_bound(state_with_partition),
-                data_parts_by_state_and_info.upper_bound(state_with_partition)));
+        auto lock = lockParts();
+        for (const auto & partition_id : partition_ids)
+        {
+            DataPartStateAndPartitionID active_parts{MergeTreeDataPartState::Committed, partition_id};
+            insertAtEnd(
+                res,
+                DataPartsVector(
+                    data_parts_by_state_and_info.lower_bound(active_parts),
+                    data_parts_by_state_and_info.upper_bound(active_parts)));
+
+            if (txn)
+            {
+                DataPartStateAndPartitionID outdated_parts{MergeTreeDataPartState::Committed, partition_id};
+
+                insertAtEnd(
+                    res,
+                    DataPartsVector(
+                        data_parts_by_state_and_info.lower_bound(outdated_parts),
+                        data_parts_by_state_and_info.upper_bound(outdated_parts)));
+            }
+        }
     }
+
+    if (txn)
+        filterVisibleDataParts(res, txn->getSnapshot(), txn->tid);
+
     return res;
 }
 
@@ -3295,10 +3327,10 @@ void MergeTreeData::checkAlterPartitionIsPossible(
     }
 }
 
-void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition)
+void MergeTreeData::checkPartitionCanBeDropped(const ASTPtr & partition, ContextPtr local_context)
 {
-    const String partition_id = getPartitionIDFromQuery(partition, getContext());
-    auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+    const String partition_id = getPartitionIDFromQuery(partition, local_context);
+    auto parts_to_remove = getVisibleDataPartsVectorInPartition(local_context, partition_id);
 
     UInt64 partition_size = 0;
 
@@ -3337,7 +3369,7 @@ void MergeTreeData::movePartitionToDisk(const ASTPtr & partition, const String &
             throw Exception("Part " + partition_id + " is not exists or not active", ErrorCodes::NO_SUCH_DATA_PART);
     }
     else
-        parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        parts = getVisibleDataPartsVectorInPartition(local_context, partition_id);
 
     auto disk = getStoragePolicy()->getDiskByName(name);
     if (!disk)
@@ -3382,7 +3414,7 @@ void MergeTreeData::movePartitionToVolume(const ASTPtr & partition, const String
             throw Exception("Part " + partition_id + " is not exists or not active", ErrorCodes::NO_SUCH_DATA_PART);
     }
     else
-        parts = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
+        parts = getVisibleDataPartsVectorInPartition(local_context, partition_id);
 
     auto volume = getStoragePolicy()->getVolumeByName(name);
     if (!volume)
@@ -3454,7 +3486,7 @@ Pipe MergeTreeData::alterPartition(
                 }
                 else
                 {
-                    checkPartitionCanBeDropped(command.partition);
+                    checkPartitionCanBeDropped(command.partition, query_context);
                     dropPartition(command.partition, command.detach, query_context);
                 }
             }
@@ -3503,7 +3535,7 @@ Pipe MergeTreeData::alterPartition(
             case PartitionCommand::REPLACE_PARTITION:
             {
                 if (command.replace)
-                    checkPartitionCanBeDropped(command.partition);
+                    checkPartitionCanBeDropped(command.partition, query_context);
                 String from_database = query_context->resolveDatabase(command.from_database);
                 auto from_storage = DatabaseCatalog::instance().getTable({from_database, command.from_table}, query_context);
                 replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
@@ -3564,7 +3596,7 @@ BackupEntries MergeTreeData::backup(const ASTs & partitions, ContextPtr local_co
     if (partitions.empty())
         data_parts = getDataPartsVector();
     else
-        data_parts = getDataPartsVectorInPartitions(MergeTreeDataPartState::Committed, getPartitionIDsFromQuery(partitions, local_context));
+        data_parts = getVisibleDataPartsVectorInPartitions(local_context, getPartitionIDsFromQuery(partitions, local_context));
     return backupDataParts(data_parts);
 }
 
@@ -3771,26 +3803,54 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
 }
 
 
-DataPartsVector MergeTreeData::getDataPartsVector(ContextPtr local_context) const
+DataPartsVector MergeTreeData::getVisibleDataPartsVector(ContextPtr local_context) const
 {
-    return getVisibleDataPartsVector(local_context->getCurrentTransaction());
+    DataPartsVector res;
+    if (const auto * txn = local_context->getCurrentTransaction().get())
+    {
+        res = getDataPartsVector({DataPartState::Committed, DataPartState::Outdated});
+        filterVisibleDataParts(res, txn->getSnapshot(), txn->tid);
+    }
+    else
+    {
+        res = getDataPartsVector();
+    }
+    return res;
 }
 
 MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVector(const MergeTreeTransactionPtr & txn) const
 {
-    if (!txn)
-        return getDataPartsVector();
+    DataPartsVector res;
+    if (txn)
+    {
+        res = getDataPartsVector({DataPartState::Committed, DataPartState::Outdated});
+        filterVisibleDataParts(res, txn->getSnapshot(), txn->tid);
+    }
+    else
+    {
+        res = getDataPartsVector();
+    }
+    return res;
+}
 
-    DataPartsVector maybe_visible_parts = getDataPartsVector({DataPartState::PreCommitted, DataPartState::Committed, DataPartState::Outdated});
+MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVector(Snapshot snapshot_version, TransactionID current_tid) const
+{
+    auto res = getDataPartsVector({DataPartState::Committed, DataPartState::Outdated});
+    filterVisibleDataParts(res, snapshot_version, current_tid);
+    return res;
+}
+
+void MergeTreeData::filterVisibleDataParts(DataPartsVector & maybe_visible_parts, Snapshot snapshot_version, TransactionID current_tid) const
+{
     if (maybe_visible_parts.empty())
-        return maybe_visible_parts;
+        return;
 
     auto it = maybe_visible_parts.begin();
     auto it_last = maybe_visible_parts.end() - 1;
     String visible_parts_str;
     while (it <= it_last)
     {
-        if ((*it)->versions.isVisible(*txn))
+        if ((*it)->versions.isVisible(snapshot_version, current_tid))
         {
             visible_parts_str += (*it)->name;
             visible_parts_str += " ";
@@ -3804,9 +3864,8 @@ MergeTreeData::DataPartsVector MergeTreeData::getVisibleDataPartsVector(const Me
     }
 
     size_t new_size = it_last - maybe_visible_parts.begin() + 1;
-    LOG_TRACE(log, "Got {} parts visible for {}: {}", new_size, txn->tid, visible_parts_str);
+    LOG_TEST(log, "Got {} parts visible in snapshot {} (TID {}): {}", new_size, snapshot_version, current_tid, visible_parts_str);
     maybe_visible_parts.resize(new_size);
-    return maybe_visible_parts;
 }
 
 
@@ -4238,7 +4297,7 @@ MergeTreeData::DataParts MergeTreeData::getDataParts(const DataPartStates & affo
     return res;
 }
 
-MergeTreeData::DataParts MergeTreeData::getDataParts() const
+MergeTreeData::DataParts MergeTreeData::getDataPartsForInternalUsage() const
 {
     return getDataParts({DataPartState::Committed});
 }
@@ -4879,7 +4938,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             max_added_blocks = std::make_shared<PartitionIdToMaxBlock>(replicated->getMaxAddedBlocks());
     }
 
-    auto parts = getDataPartsVector(query_context);
+    auto parts = getVisibleDataPartsVector(query_context);
 
     // If minmax_count_projection is a valid candidate, check its completeness.
     if (minmax_conut_projection_candidate)
@@ -5237,7 +5296,7 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
     const String shadow_path = "shadow/";
 
     /// Acquire a snapshot of active data parts to prevent removing while doing backup.
-    const auto data_parts = getDataParts();
+    const auto data_parts = getVisibleDataPartsVector(local_context);
 
     String backup_name = (!with_name.empty() ? escapeForFileName(with_name) : toString(increment));
     String backup_path = fs::path(shadow_path) / backup_name / "";

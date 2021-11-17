@@ -130,7 +130,7 @@ QueryPlanPtr MergeTreeDataSelectExecutor::read(
         return std::make_unique<QueryPlan>();
 
     const auto & settings = context->getSettingsRef();
-    auto parts = data.getDataPartsVector(context);
+    auto parts = data.getVisibleDataPartsVector(context);
 
     if (!query_info.projection)
     {
