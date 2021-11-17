@@ -43,8 +43,8 @@ def test_backup_from_old_version(started_cluster):
 
     assert node1.query("SELECT COUNT() FROM dest_table") == "1\n"
 
-    node1.exec_in_container(['bash', '-c',
-                             'cp -r /var/lib/clickhouse/shadow/1/data/default/source_table/all_1_1_0/ /var/lib/clickhouse/data/default/dest_table/detached'])
+    node1.exec_in_container(['find', '/var/lib/clickhouse/shadow/1/data/default/source_table'])
+    node1.exec_in_container(['cp', '-r', '/var/lib/clickhouse/shadow/1/data/default/source_table/all_1_1_0/', '/var/lib/clickhouse/data/default/dest_table/detached'])
 
     assert node1.query("SELECT COUNT() FROM dest_table") == "1\n"
 
@@ -81,8 +81,7 @@ def test_backup_from_old_version_setting(started_cluster):
 
     assert node2.query("SELECT COUNT() FROM dest_table") == "1\n"
 
-    node2.exec_in_container(['bash', '-c',
-                             'cp -r /var/lib/clickhouse/shadow/1/data/default/source_table/all_1_1_0/ /var/lib/clickhouse/data/default/dest_table/detached'])
+    node2.exec_in_container(['cp', '-r', '/var/lib/clickhouse/shadow/1/data/default/source_table/all_1_1_0/', '/var/lib/clickhouse/data/default/dest_table/detached'])
 
     assert node2.query("SELECT COUNT() FROM dest_table") == "1\n"
 
@@ -112,7 +111,7 @@ def test_backup_from_old_version_config(started_cluster):
 
     def callback(n):
         n.replace_config("/etc/clickhouse-server/merge_tree_settings.xml",
-                         "<yandex><merge_tree><enable_mixed_granularity_parts>1</enable_mixed_granularity_parts></merge_tree></yandex>")
+                         "<clickhouse><merge_tree><enable_mixed_granularity_parts>1</enable_mixed_granularity_parts></merge_tree></clickhouse>")
 
     node3.restart_with_latest_version(callback_onstop=callback)
 
@@ -123,8 +122,7 @@ def test_backup_from_old_version_config(started_cluster):
 
     assert node3.query("SELECT COUNT() FROM dest_table") == "1\n"
 
-    node3.exec_in_container(['bash', '-c',
-                             'cp -r /var/lib/clickhouse/shadow/1/data/default/source_table/all_1_1_0/ /var/lib/clickhouse/data/default/dest_table/detached'])
+    node3.exec_in_container(['cp', '-r', '/var/lib/clickhouse/shadow/1/data/default/source_table/all_1_1_0/', '/var/lib/clickhouse/data/default/dest_table/detached'])
 
     assert node3.query("SELECT COUNT() FROM dest_table") == "1\n"
 
@@ -156,8 +154,7 @@ def test_backup_and_alter(started_cluster):
 
     node4.query("ALTER TABLE test.backup_table DROP PARTITION tuple()")
 
-    node4.exec_in_container(['bash', '-c',
-                             'cp -r /var/lib/clickhouse/shadow/1/data/test/backup_table/all_1_1_0/ /var/lib/clickhouse/data/test/backup_table/detached'])
+    node4.exec_in_container(['cp', '-r', '/var/lib/clickhouse/shadow/1/data/test/backup_table/all_1_1_0/', '/var/lib/clickhouse/data/test/backup_table/detached'])
 
     node4.query("ALTER TABLE test.backup_table ATTACH PARTITION tuple()")
 

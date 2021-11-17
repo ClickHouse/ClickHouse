@@ -16,4 +16,4 @@ INSERTを使用すると、テーブルにデータを挿入できます。 新�
 
 ラサーバを再起動し、ブロックのデータのディスクが失われることも想定されます。 後者の場合、破損したデータを含むファイルを手動で削除する必要がある場合があります。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/set/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/set/) <!--hide-->

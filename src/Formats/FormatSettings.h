@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 
 
 namespace DB
@@ -25,9 +25,12 @@ struct FormatSettings
 
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
+    bool with_types_use_header = false;
     bool write_statistics = true;
     bool import_nested_json = false;
     bool null_as_default = true;
+    bool decimal_trailing_zeros = false;
+    bool defaults_for_omitted_fields = true;
 
     enum class DateTimeInputFormat
     {
@@ -52,6 +55,8 @@ struct FormatSettings
     struct
     {
         UInt64 row_group_size = 1000000;
+        bool low_cardinality_as_dictionary = false;
+        bool import_nested = false;
     } arrow;
 
     struct
@@ -60,6 +65,8 @@ struct FormatSettings
         String output_codec;
         UInt64 output_sync_interval = 16 * 1024;
         bool allow_missing_fields = false;
+        String string_column_pattern;
+        UInt64 output_rows_in_file = 1;
     } avro;
 
     struct CSV
@@ -67,11 +74,11 @@ struct FormatSettings
         char delimiter = ',';
         bool allow_single_quotes = true;
         bool allow_double_quotes = true;
-        bool unquoted_null_literal_as_null = false;
         bool empty_as_default = false;
         bool crlf_end_of_line = false;
         bool input_format_enum_as_number = false;
         bool input_format_arrays_as_nested_csv = false;
+        String null_representation = "\\N";
     } csv;
 
     struct Custom
@@ -98,6 +105,7 @@ struct FormatSettings
     struct
     {
         UInt64 row_group_size = 1000000;
+        bool import_nested = false;
     } parquet;
 
     struct Pretty
@@ -129,6 +137,13 @@ struct FormatSettings
          */
         bool allow_multiple_rows_without_delimiter = false;
     } protobuf;
+
+    struct
+    {
+        uint32_t client_capabilities = 0;
+        size_t max_packet_size = 0;
+        uint8_t * sequence_id = nullptr; /// Not null if it's MySQLWire output format used to handle MySQL protocol connections.
+    } mysql_wire;
 
     struct
     {
@@ -165,7 +180,25 @@ struct FormatSettings
         bool deduce_templates_of_expressions = true;
         bool accurate_types_of_literals = true;
     } values;
+
+    struct
+    {
+        bool import_nested = false;
+    } orc;
+
+    /// For capnProto format we should determine how to
+    /// compare ClickHouse Enum and Enum from schema.
+    enum class EnumComparingMode
+    {
+        BY_NAMES, // Names in enums should be the same, values can be different.
+        BY_NAMES_CASE_INSENSITIVE, // Case-insensitive name comparison.
+        BY_VALUES, // Values should be the same, names can be different.
+    };
+
+    struct
+    {
+        EnumComparingMode enum_comparing_mode = EnumComparingMode::BY_VALUES;
+    } capn_proto;
 };
 
 }
-

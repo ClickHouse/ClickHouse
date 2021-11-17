@@ -4,7 +4,7 @@
 #include <Common/quoteString.h>
 #include <algorithm>
 
-#include <common/JSON.h>
+#include <base/JSON.h>
 
 namespace DB
 {
@@ -55,6 +55,10 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
             MergeTreeDataPartTTLInfo ttl_info;
             ttl_info.min = col["min"].getUInt();
             ttl_info.max = col["max"].getUInt();
+
+            if (col.has("finished"))
+                ttl_info.finished = col["finished"].getUInt();
+
             String name = col["name"].getString();
             columns_ttl.emplace(name, ttl_info);
 
@@ -67,6 +71,9 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
         table_ttl.min = table["min"].getUInt();
         table_ttl.max = table["max"].getUInt();
 
+        if (table.has("finished"))
+            table_ttl.finished = table["finished"].getUInt();
+
         updatePartMinMaxTTL(table_ttl.min, table_ttl.max);
     }
 
@@ -77,6 +84,10 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
             MergeTreeDataPartTTLInfo ttl_info;
             ttl_info.min = elem["min"].getUInt();
             ttl_info.max = elem["max"].getUInt();
+
+            if (elem.has("finished"))
+                ttl_info.finished = elem["finished"].getUInt();
+
             String expression = elem["expression"].getString();
             ttl_info_map.emplace(expression, ttl_info);
 
@@ -126,6 +137,8 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
             writeIntText(it->second.min, out);
             writeString(",\"max\":", out);
             writeIntText(it->second.max, out);
+            writeString(R"(,"finished":)", out);
+            writeIntText(static_cast<uint8_t>(it->second.finished), out);
             writeString("}", out);
         }
         writeString("]", out);
@@ -138,6 +151,8 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
         writeIntText(table_ttl.min, out);
         writeString(R"(,"max":)", out);
         writeIntText(table_ttl.max, out);
+        writeString(R"(,"finished":)", out);
+        writeIntText(static_cast<uint8_t>(table_ttl.finished), out);
         writeString("}", out);
     }
 
@@ -159,6 +174,8 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
             writeIntText(it->second.min, out);
             writeString(R"(,"max":)", out);
             writeIntText(it->second.max, out);
+            writeString(R"(,"finished":)", out);
+            writeIntText(static_cast<uint8_t>(it->second.finished), out);
             writeString("}", out);
         }
         writeString("]", out);
@@ -202,6 +219,39 @@ time_t MergeTreeDataPartTTLInfos::getMinimalMaxRecompressionTTL() const
     return max;
 }
 
+bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedTTLs() const
+{
+    auto has_non_finished_ttl = [] (const TTLInfoMap & map) -> bool
+    {
+        for (const auto & [name, info] : map)
+        {
+            if (!info.finished)
+                return true;
+        }
+        return false;
+    };
+
+    if (!table_ttl.finished)
+        return true;
+
+    if (has_non_finished_ttl(columns_ttl))
+        return true;
+
+    if (has_non_finished_ttl(rows_where_ttl))
+        return true;
+
+    if (has_non_finished_ttl(moves_ttl))
+        return true;
+
+    if (has_non_finished_ttl(recompression_ttl))
+        return true;
+
+    if (has_non_finished_ttl(group_by_ttl))
+        return true;
+
+    return false;
+}
+
 std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescriptions & descriptions, const TTLInfoMap & ttl_info_map, time_t current_time, bool use_max)
 {
     time_t best_ttl_time = 0;
@@ -231,5 +281,6 @@ std::optional<TTLDescription> selectTTLDescriptionForTTLInfos(const TTLDescripti
 
     return best_ttl_time ? *best_entry_it : std::optional<TTLDescription>();
 }
+
 
 }

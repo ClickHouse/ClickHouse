@@ -98,4 +98,4 @@ LIMIT 1
 
     1 rows in set. Elapsed: 0.006 sec.
 
-[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/dictionary/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/en/operations/table_engines/dictionary/) <!--hide-->

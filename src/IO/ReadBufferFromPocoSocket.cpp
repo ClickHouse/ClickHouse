@@ -1,15 +1,22 @@
 #include <Poco/Net/NetException.h>
 
 #include <IO/ReadBufferFromPocoSocket.h>
-#include <IO/TimeoutSetter.h>
 #include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/Stopwatch.h>
+#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
 
 
 namespace ProfileEvents
 {
     extern const Event NetworkReceiveElapsedMicroseconds;
+    extern const Event NetworkReceiveBytes;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric NetworkReceive;
 }
 
 
@@ -31,6 +38,8 @@ bool ReadBufferFromPocoSocket::nextImpl()
     /// Add more details to exceptions.
     try
     {
+        CurrentMetrics::Increment metric_increment(CurrentMetrics::NetworkReceive);
+
         /// If async_callback is specified, and read will block, run async_callback and try again later.
         /// It is expected that file descriptor may be polled externally.
         /// Note that receive timeout is not checked here. External code should check it while polling.
@@ -45,7 +54,9 @@ bool ReadBufferFromPocoSocket::nextImpl()
     }
     catch (const Poco::TimeoutException &)
     {
-        throw NetException("Timeout exceeded while reading from socket (" + peer_address.toString() + ")", ErrorCodes::SOCKET_TIMEOUT);
+        throw NetException(fmt::format("Timeout exceeded while reading from socket ({}, {} ms)",
+            peer_address.toString(),
+            socket.impl()->getReceiveTimeout().totalMilliseconds()), ErrorCodes::SOCKET_TIMEOUT);
     }
     catch (const Poco::IOException & e)
     {
@@ -57,6 +68,7 @@ bool ReadBufferFromPocoSocket::nextImpl()
 
     /// NOTE: it is quite inaccurate on high loads since the thread could be replaced by another one
     ProfileEvents::increment(ProfileEvents::NetworkReceiveElapsedMicroseconds, watch.elapsedMicroseconds());
+    ProfileEvents::increment(ProfileEvents::NetworkReceiveBytes, bytes_read);
 
     if (bytes_read)
         working_buffer.resize(bytes_read);
@@ -76,7 +88,13 @@ ReadBufferFromPocoSocket::ReadBufferFromPocoSocket(Poco::Net::Socket & socket_, 
 
 bool ReadBufferFromPocoSocket::poll(size_t timeout_microseconds) const
 {
-    return available() || socket.poll(timeout_microseconds, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR);
+    if (available())
+        return true;
+
+    Stopwatch watch;
+    bool res = socket.poll(timeout_microseconds, Poco::Net::Socket::SELECT_READ | Poco::Net::Socket::SELECT_ERROR);
+    ProfileEvents::increment(ProfileEvents::NetworkReceiveElapsedMicroseconds, watch.elapsedMicroseconds());
+    return res;
 }
 
 }

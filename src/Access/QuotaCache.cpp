@@ -1,10 +1,10 @@
 #include <Access/EnabledQuota.h>
 #include <Access/QuotaCache.h>
 #include <Access/QuotaUsage.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
-#include <ext/range.h>
+#include <base/range.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm/lower_bound.hpp>
@@ -124,7 +124,7 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
         if (limits.randomize_interval)
             end_of_interval += randomDuration(limits.duration);
         interval.end_of_interval = end_of_interval.time_since_epoch();
-        for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
+        for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
         {
             if (limits.max[resource_type])
                 interval.max[resource_type] = *limits.max[resource_type];
@@ -159,7 +159,7 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
 
             /// Found an interval with the same duration, we need to copy its usage information to `result`.
             const auto & current_interval = *lower_bound;
-            for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
+            for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
             {
                 new_interval.used[resource_type].store(current_interval.used[resource_type].load());
                 new_interval.end_of_interval.store(current_interval.end_of_interval.load());
@@ -172,8 +172,8 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
 }
 
 
-QuotaCache::QuotaCache(const AccessControlManager & access_control_manager_)
-    : access_control_manager(access_control_manager_)
+QuotaCache::QuotaCache(const AccessControl & access_control_)
+    : access_control(access_control_)
 {
 }
 
@@ -215,7 +215,7 @@ void QuotaCache::ensureAllQuotasRead()
         return;
     all_quotas_read = true;
 
-    subscription = access_control_manager.subscribeForChanges<Quota>(
+    subscription = access_control.subscribeForChanges<Quota>(
         [&](const UUID & id, const AccessEntityPtr & entity)
         {
             if (entity)
@@ -224,9 +224,9 @@ void QuotaCache::ensureAllQuotasRead()
                 quotaRemoved(id);
         });
 
-    for (const UUID & quota_id : access_control_manager.findAll<Quota>())
+    for (const UUID & quota_id : access_control.findAll<Quota>())
     {
-        auto quota = access_control_manager.tryRead<Quota>(quota_id);
+        auto quota = access_control.tryRead<Quota>(quota_id);
         if (quota)
             all_quotas.emplace(quota_id, QuotaInfo(quota, quota_id));
     }

@@ -181,7 +181,8 @@ std::vector<std::shared_ptr<Coordination::ZooKeeper>> Runner::getConnections()
             "", /*identity*/
             Poco::Timespan(0, 30000 * 1000),
             Poco::Timespan(0, 1000 * 1000),
-            Poco::Timespan(0, 10000 * 1000)));
+            Poco::Timespan(0, 10000 * 1000),
+            nullptr));
     }
 
     return zookeepers;

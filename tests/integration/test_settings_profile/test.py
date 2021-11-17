@@ -22,6 +22,13 @@ def system_settings_profile_elements(profile_name=None, user_name=None, role_nam
     return TSV(instance.query("SELECT * FROM system.settings_profile_elements" + where))
 
 
+session_id_counter = 0
+def new_session_id():
+    global session_id_counter
+    session_id_counter += 1
+    return 'session #' + str(session_id_counter)
+
+
 @pytest.fixture(scope="module", autouse=True)
 def setup_nodes():
     try:
@@ -42,7 +49,7 @@ def reset_after_test():
     finally:
         instance.query("CREATE USER OR REPLACE robin")
         instance.query("DROP ROLE IF EXISTS worker")
-        instance.query("DROP SETTINGS PROFILE IF EXISTS xyz, alpha")
+        instance.query("DROP SETTINGS PROFILE IF EXISTS xyz, alpha, P1, P2, P3, P4, P5, P6")
 
 
 def test_smoke():
@@ -204,6 +211,54 @@ def test_show_profiles():
                       "CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1\n" \
                       "CREATE SETTINGS PROFILE xyz\n"
     assert expected_access in instance.query("SHOW ACCESS")
+
+
+def test_set_profile():
+    instance.query("CREATE SETTINGS PROFILE P1 SETTINGS max_memory_usage=10000000001 MAX 20000000002")
+
+    session_id = new_session_id()
+    instance.http_query("SET profile='P1'", user='robin', params={'session_id':session_id})
+    assert instance.http_query("SELECT getSetting('max_memory_usage')", user='robin', params={'session_id':session_id}) == "10000000001\n"
+
+    expected_error = "max_memory_usage shouldn't be greater than 20000000002"
+    assert expected_error in instance.http_query_and_get_error("SET max_memory_usage=20000000003", user='robin', params={'session_id':session_id})
+
+
+def test_changing_default_profiles_affects_new_sessions_only():
+    instance.query("CREATE SETTINGS PROFILE P1 SETTINGS max_memory_usage=10000000001")
+    instance.query("CREATE SETTINGS PROFILE P2 SETTINGS max_memory_usage=10000000002")
+    instance.query("ALTER USER robin SETTINGS PROFILE P1")
+
+    session_id = new_session_id()
+    assert instance.http_query("SELECT getSetting('max_memory_usage')", user='robin', params={'session_id':session_id}) == "10000000001\n"
+    instance.query("ALTER USER robin SETTINGS PROFILE P2")
+    assert instance.http_query("SELECT getSetting('max_memory_usage')", user='robin', params={'session_id':session_id}) == "10000000001\n"
+
+    other_session_id = new_session_id()
+    assert instance.http_query("SELECT getSetting('max_memory_usage')", user='robin', params={'session_id':other_session_id}) == "10000000002\n"
+
+
+def test_function_current_profiles():
+    instance.query("CREATE SETTINGS PROFILE P1, P2")
+    instance.query("ALTER USER robin SETTINGS PROFILE P1, P2")
+    instance.query("CREATE SETTINGS PROFILE P3 TO robin")
+    instance.query("CREATE SETTINGS PROFILE P4")
+    instance.query("CREATE SETTINGS PROFILE P5 SETTINGS INHERIT P4")
+    instance.query("CREATE ROLE worker SETTINGS PROFILE P5")
+    instance.query("GRANT worker TO robin")
+    instance.query("CREATE SETTINGS PROFILE P6")
+
+    session_id = new_session_id()
+    assert instance.http_query('SELECT defaultProfiles(), currentProfiles(), enabledProfiles()', user='robin', params={'session_id':session_id}) == "['P1','P2']\t['P1','P2']\t['default','P3','P4','P5','P1','P2']\n"
+
+    instance.http_query("SET profile='P6'", user='robin', params={'session_id':session_id})
+    assert instance.http_query('SELECT defaultProfiles(), currentProfiles(), enabledProfiles()', user='robin', params={'session_id':session_id}) == "['P1','P2']\t['P6']\t['default','P3','P4','P5','P1','P2','P6']\n"
+
+    instance.http_query("SET profile='P5'", user='robin', params={'session_id':session_id})
+    assert instance.http_query('SELECT defaultProfiles(), currentProfiles(), enabledProfiles()', user='robin', params={'session_id':session_id}) == "['P1','P2']\t['P5']\t['default','P3','P1','P2','P6','P4','P5']\n"
+
+    instance.query("ALTER USER robin SETTINGS PROFILE P2")
+    assert instance.http_query('SELECT defaultProfiles(), currentProfiles(), enabledProfiles()', user='robin', params={'session_id':session_id}) == "['P2']\t['P5']\t['default','P3','P1','P2','P6','P4','P5']\n"
 
 
 def test_allow_ddl():

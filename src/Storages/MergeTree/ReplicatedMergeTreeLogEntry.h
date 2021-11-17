@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/Types.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeType.h>
@@ -77,6 +77,7 @@ struct ReplicatedMergeTreeLogEntryData
     String toString() const;
 
     String znode_name;
+    String log_entry_id;
 
     Type type = EMPTY;
     String source_replica; /// Empty string means that this entry was added to the queue immediately, and not copied from the log.
@@ -140,17 +141,12 @@ struct ReplicatedMergeTreeLogEntryData
     /// selection of merges. These parts are added to queue.virtual_parts.
     Strings getVirtualPartNames(MergeTreeDataFormatVersion format_version) const;
 
-    /// Returns set of parts that denote the block number ranges that should be blocked during the entry execution.
-    /// These parts are added to future_parts.
-    Strings getBlockingPartNames(MergeTreeDataFormatVersion format_version) const
-    {
-        Strings res = getVirtualPartNames(format_version);
+    /// Returns fake part for drop range (for DROP_RANGE and REPLACE_RANGE)
+    std::optional<String> getDropRange(MergeTreeDataFormatVersion format_version) const;
 
-        if (type == CLEAR_COLUMN)
-            res.emplace_back(new_part_name);
-
-        return res;
-    }
+    /// This entry is DROP PART, not DROP PARTITION. They both have same
+    /// DROP_RANGE entry type, but differs in information about drop range.
+    bool isDropPart(MergeTreeDataFormatVersion format_version) const;
 
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     bool currently_executing = false;    /// Whether the action is executing now.

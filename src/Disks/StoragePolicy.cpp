@@ -8,8 +8,6 @@
 
 #include <set>
 
-#include <Poco/File.h>
-
 
 namespace
 {
@@ -155,17 +153,6 @@ Disks StoragePolicy::getDisks() const
     for (const auto & volume : volumes)
         for (const auto & disk : volume->getDisks())
             res.push_back(disk);
-    return res;
-}
-
-
-Disks StoragePolicy::getDisksByType(DiskType::Type type) const
-{
-    Disks res;
-    for (const auto & volume : volumes)
-        for (const auto & disk : volume->getDisks())
-            if (disk->getType() == type)
-                res.push_back(disk);
     return res;
 }
 

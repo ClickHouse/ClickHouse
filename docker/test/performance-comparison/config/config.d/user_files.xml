@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <!-- Directory with user provided files that are accessible by 'file' table function. -->
     <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 
@@ -7,4 +7,4 @@
 
     <!-- Path to directory where users created by SQL commands are stored. -->
     <access_control_path>access/</access_control_path>
-</yandex>
+</clickhouse>

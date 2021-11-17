@@ -56,6 +56,8 @@ public:
 
     bool isDeterministic() const override { return false; }
 
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 };
 
@@ -114,7 +116,12 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     bool has_column;
     if (host_name.empty())
     {
-        const StoragePtr & table = DatabaseCatalog::instance().getTable({database_name, table_name}, getContext());
+        // FIXME this (probably) needs a non-constant access to query context,
+        // because it might initialized a storage. Ideally, the tables required
+        // by the query should be initialized at an earlier stage.
+        const StoragePtr & table = DatabaseCatalog::instance().getTable(
+            {database_name, table_name},
+            const_pointer_cast<Context>(getContext()));
         auto table_metadata = table->getInMemoryMetadataPtr();
         has_column = table_metadata->getColumns().hasPhysical(column_name);
     }
@@ -122,15 +129,24 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     {
         std::vector<std::vector<String>> host_names = {{ host_name }};
 
+        bool treat_local_as_remote = false;
+        bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
         auto cluster = std::make_shared<Cluster>(
             getContext()->getSettings(),
             host_names,
             !user_name.empty() ? user_name : "default",
             password,
             getContext()->getTCPPort(),
-            false);
+            treat_local_as_remote,
+            treat_local_port_as_remote);
 
-        auto remote_columns = getStructureOfRemoteTable(*cluster, {database_name, table_name}, getContext());
+        // FIXME this (probably) needs a non-constant access to query context,
+        // because it might initialized a storage. Ideally, the tables required
+        // by the query should be initialized at an earlier stage.
+        auto remote_columns = getStructureOfRemoteTable(*cluster,
+            {database_name, table_name},
+            const_pointer_cast<Context>(getContext()));
+
         has_column = remote_columns.hasPhysical(column_name);
     }
 

@@ -1,3 +1,5 @@
+-- Tags: long, no-parallel
+
 --
 -- Simple key
 --
@@ -307,3 +309,4 @@ SELECT name, found_rate FROM system.dictionaries WHERE database = currentDatabas
 
 DROP TABLE polygons_01862;
 DROP TABLE points_01862;
+DROP DICTIONARY polygon_dictionary_01862;

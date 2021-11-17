@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: zookeeper
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,13 +10,13 @@ R2=table_1017_2
 T1=table_1017_merge
 
 ${CLICKHOUSE_CLIENT} -n -q "
+    DROP DICTIONARY IF EXISTS dict1;
     DROP TABLE IF EXISTS $R1;
     DROP TABLE IF EXISTS $R2;
     DROP TABLE IF EXISTS $T1;
 
     DROP TABLE IF EXISTS lookup_table;
     DROP TABLE IF EXISTS table_for_dict;
-    DROP DICTIONARY IF EXISTS dict1;
 
     CREATE TABLE table_for_dict (y UInt64, y_new UInt32) ENGINE = Log;
     INSERT INTO table_for_dict VALUES (3, 3003),(4,4004);
@@ -68,10 +69,10 @@ ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 DELETE WHERE dictHas('${CLICKHOUSE
 && echo 'OK' || echo 'FAIL'
 
 ${CLICKHOUSE_CLIENT} -n -q "
+    DROP DICTIONARY IF EXISTS dict1;
     DROP TABLE IF EXISTS $R2;
     DROP TABLE IF EXISTS $R1;
     DROP TABLE IF EXISTS $T1;
     DROP TABLE IF EXISTS lookup_table;
     DROP TABLE IF EXISTS table_for_dict;
-    DROP DICTIONARY IF EXISTS dict1;
 "

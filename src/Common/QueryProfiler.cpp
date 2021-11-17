@@ -5,9 +5,9 @@
 #include <Common/StackTrace.h>
 #include <Common/TraceCollector.h>
 #include <Common/thread_local_rng.h>
-#include <common/logger_useful.h>
-#include <common/phdr_cache.h>
-#include <common/errnoToString.h>
+#include <base/logger_useful.h>
+#include <base/phdr_cache.h>
+#include <base/errnoToString.h>
 
 #include <random>
 
@@ -15,6 +15,7 @@
 namespace ProfileEvents
 {
     extern const Event QueryProfilerSignalOverruns;
+    extern const Event QueryProfilerRuns;
 }
 
 namespace DB
@@ -60,6 +61,7 @@ namespace
         const StackTrace stack_trace(signal_context);
 
         TraceCollector::collect(trace_type, stack_trace, 0);
+        ProfileEvents::increment(ProfileEvents::QueryProfilerRuns);
 
         errno = saved_errno;
     }
@@ -82,7 +84,21 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
     : log(&Poco::Logger::get("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
-#if USE_UNWIND
+#if defined(SANITIZER)
+    UNUSED(thread_id);
+    UNUSED(clock_type);
+    UNUSED(period);
+    UNUSED(pause_signal);
+
+    throw Exception("QueryProfiler disabled because they cannot work under sanitizers", ErrorCodes::NOT_IMPLEMENTED);
+#elif !USE_UNWIND
+    UNUSED(thread_id);
+    UNUSED(clock_type);
+    UNUSED(period);
+    UNUSED(pause_signal);
+
+    throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
+#else
     /// Sanity check.
     if (!hasPHDRCache())
         throw Exception("QueryProfiler cannot be used without PHDR cache, that is not available for TSan build", ErrorCodes::NOT_IMPLEMENTED);
@@ -110,11 +126,13 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
         sev.sigev_notify = SIGEV_THREAD_ID;
         sev.sigev_signo = pause_signal;
 
-#   if defined(OS_FREEBSD)
+#if defined(OS_FREEBSD)
         sev._sigev_un._threadid = thread_id;
-#   else
+#elif defined(USE_MUSL)
+        sev.sigev_notify_thread_id = thread_id;
+#else
         sev._sigev_un._tid = thread_id;
-#   endif
+#endif
         if (timer_create(clock_type, &sev, &timer_id))
         {
             /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.
@@ -144,13 +162,6 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
         tryCleanup();
         throw;
     }
-#else
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
-    throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
 #endif
 }
 
@@ -173,7 +184,7 @@ void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 }
 
 template class QueryProfilerBase<QueryProfilerReal>;
-template class QueryProfilerBase<QueryProfilerCpu>;
+template class QueryProfilerBase<QueryProfilerCPU>;
 
 QueryProfilerReal::QueryProfilerReal(const UInt64 thread_id, const UInt32 period)
     : QueryProfilerBase(thread_id, CLOCK_MONOTONIC, period, SIGUSR1)
@@ -185,11 +196,11 @@ void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
     writeTraceInfo(TraceType::Real, sig, info, context);
 }
 
-QueryProfilerCpu::QueryProfilerCpu(const UInt64 thread_id, const UInt32 period)
+QueryProfilerCPU::QueryProfilerCPU(const UInt64 thread_id, const UInt32 period)
     : QueryProfilerBase(thread_id, CLOCK_THREAD_CPUTIME_ID, period, SIGUSR2)
 {}
 
-void QueryProfilerCpu::signalHandler(int sig, siginfo_t * info, void * context)
+void QueryProfilerCPU::signalHandler(int sig, siginfo_t * info, void * context)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
     writeTraceInfo(TraceType::CPU, sig, info, context);

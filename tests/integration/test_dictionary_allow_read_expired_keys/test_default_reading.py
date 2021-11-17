@@ -7,11 +7,10 @@ from helpers.cluster import ClickHouseCluster
 from helpers.cluster import ClickHouseKiller
 from helpers.network import PartitionManager
 
-cluster = ClickHouseCluster(__file__)
+cluster = ClickHouseCluster(__file__, name="reading")
 
 dictionary_node = cluster.add_instance('dictionary_node', stay_alive=True)
-main_node = cluster.add_instance('main_node', main_configs=['configs/enable_dictionaries.xml',
-                                                            'configs/dictionaries/cache_ints_dictionary.xml'])
+main_node = cluster.add_instance('main_node', dictionaries=['configs/dictionaries/cache_ints_dictionary.xml'])
 
 
 @pytest.fixture(scope="module")
@@ -52,7 +51,7 @@ def test_default_reading(started_cluster):
     test_helper()
 
     with PartitionManager() as pm, ClickHouseKiller(dictionary_node):
-        assert None == dictionary_node.get_process_pid("clickhouse"), "CLickHouse must be alive"
+        assert None == dictionary_node.get_process_pid("clickhouse"), "ClickHouse must be alive"
 
         # Remove connection between main_node and dictionary for sure
         pm.heal_all()
