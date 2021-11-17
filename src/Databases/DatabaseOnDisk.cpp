@@ -691,8 +691,8 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
     }
 
     auto create_table_query = std::make_shared<ASTCreateQuery>();
-    create_table_query->table = table_name;
-    create_table_query->database = getDatabaseName();
+    create_table_query->setTable(table_name);
+    create_table_query->setDatabase(getDatabaseName());
     create_table_query->attach = false;
     create_table_query->set(create_table_query->comment, std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly."));
 
