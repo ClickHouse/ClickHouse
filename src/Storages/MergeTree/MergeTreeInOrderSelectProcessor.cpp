@@ -12,10 +12,7 @@ bool MergeTreeInOrderSelectProcessor::getNewTaskImpl()
 try
 {
     if (all_mark_ranges.empty())
-    {
-        finish();
         return false;
-    }
 
     if (!reader)
         initializeReaders();

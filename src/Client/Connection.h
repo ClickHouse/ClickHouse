@@ -106,7 +106,7 @@ public:
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
 
-    void sendMergeTreeReadTaskResponce(const PartitionReadResponce & response) override;
+    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
 
     void sendExternalTablesData(ExternalTablesData & data) override;
 

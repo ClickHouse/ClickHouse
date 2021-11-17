@@ -46,9 +46,9 @@ MergeTreeReadTaskPtr modifyTaskAccordingToParallelReplicasReading(MergeTreeReadT
 
     /// Send...
 
-    PartitionReadResponce responce;
+    PartitionReadResponse Response;
 
-    task->mark_ranges = std::move(responce.mark_ranges);
+    task->mark_ranges = std::move(Response.mark_ranges);
 
     return task;
 }

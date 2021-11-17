@@ -40,8 +40,33 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
         min_marks_to_read = (min_marks_to_read_ * fixed_index_granularity + max_block_size_rows - 1)
             / max_block_size_rows * max_block_size_rows / fixed_index_granularity;
     }
+    else if (extension.has_value())
+    {
+        size_t sum_average_marks_size = 0;
+        auto column_sizes = storage.getColumnSizes();
+        for (const auto & name : extension->colums_to_read)
+        {
+            auto it = column_sizes.find(name);
+            if (it == column_sizes.end())
+                continue;
+            auto size = it->second;
+
+            if (size == ColumnSize{} || size.marks == 0)
+                continue;
+
+            sum_average_marks_size += size.data_uncompressed / size.marks;
+        }
+
+        if (sum_average_marks_size == 0)
+            sum_average_marks_size = 8UL * 1024 * 1024 * 10; // 10Mib
+
+        min_marks_to_read = extension->count_participating_replicas * (8UL * 1024 * 1024 * 1024) / sum_average_marks_size;
+    }
     else
+    {
         min_marks_to_read = min_marks_to_read_;
+    }
+
 
     ordered_names = getPort().getHeader().getNames();
 }
@@ -49,20 +74,8 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
 /// Requests read task from MergeTreeReadPool and signals whether it got one
 bool MergeTreeThreadSelectProcessor::getNewTaskImpl()
 {
-    task = pool->getTask(std::max(150UL, min_marks_to_read), thread, ordered_names);
-
-    if (!task)
-    {
-        /** Close the files (before destroying the object).
-          * When many sources are created, but simultaneously reading only a few of them,
-          * buffers don't waste memory.
-          */
-        reader.reset();
-        pre_reader.reset();
-        return false;
-    }
-
-    return true;
+    task = pool->getTask(min_marks_to_read, thread, ordered_names);
+    return static_cast<bool>(task);
 }
 
 
@@ -106,6 +119,13 @@ void MergeTreeThreadSelectProcessor::finalizeNewTask()
     }
 
     last_readed_part_name = part_name;
+}
+
+
+void MergeTreeThreadSelectProcessor::finish()
+{
+    reader.reset();
+    pre_reader.reset();
 }
 
 

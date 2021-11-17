@@ -195,12 +195,12 @@ void MultiplexedConnections::sendReadTaskResponse(const String & response)
 }
 
 
-void MultiplexedConnections::sendMergeTreeReadTaskResponce(PartitionReadResponce response)
+void MultiplexedConnections::sendMergeTreeReadTaskResponse(PartitionReadResponse response)
 {
     std::lock_guard lock(cancel_mutex);
     if (cancelled)
         return;
-    current_connection->sendMergeTreeReadTaskResponce(response);
+    current_connection->sendMergeTreeReadTaskResponse(response);
 }
 
 

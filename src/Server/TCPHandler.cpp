@@ -314,7 +314,7 @@ void TCPHandler::runImpl()
                 return receiveReadTaskResponseAssumeLocked();
             });
 
-            query_context->setMergeTreeReadTaskCallback([this](PartitionReadRequest request) -> PartitionReadResponce
+            query_context->setMergeTreeReadTaskCallback([this](PartitionReadRequest request) -> PartitionReadResponse
             {
                 std::lock_guard lock(task_callback_mutex);
 
@@ -1304,7 +1304,7 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
 }
 
 
-PartitionReadResponce TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
+PartitionReadResponse TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
@@ -1327,7 +1327,7 @@ PartitionReadResponce TCPHandler::receivePartitionMergeTreeReadTaskResponseAssum
                     Protocol::Client::toString(packet_type)), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
         }
     }
-    PartitionReadResponce response;
+    PartitionReadResponse response;
     response.deserialize(*in);
     return response;
 }

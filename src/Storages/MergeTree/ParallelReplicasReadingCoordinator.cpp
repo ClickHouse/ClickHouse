@@ -41,7 +41,7 @@ public:
 
     std::mutex mutex;
 
-    PartitionReadResponce handleRequest(PartitionReadRequest request);
+    PartitionReadResponse handleRequest(PartitionReadRequest request);
 
 private:
 
@@ -61,7 +61,7 @@ void ParallelReplicasReadingCoordinator::Impl::checkConsistencyOrThrow()
 }
 
 
-PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(PartitionReadRequest request)
+PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(PartitionReadRequest request)
 {
     AtomicStopwatch watch;
     std::lock_guard lock(mutex);
@@ -182,7 +182,7 @@ PartitionReadResponce ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
  */
 
 
-PartitionReadResponce ParallelReplicasReadingCoordinator::handleRequest(PartitionReadRequest request)
+PartitionReadResponse ParallelReplicasReadingCoordinator::handleRequest(PartitionReadRequest request)
 {
     return pimpl->handleRequest(std::move(request));
 }

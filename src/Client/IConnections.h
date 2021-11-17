@@ -34,7 +34,7 @@ public:
         bool with_pending_data) = 0;
 
     virtual void sendReadTaskResponse(const String &) = 0;
-    virtual void sendMergeTreeReadTaskResponce(PartitionReadResponce response) = 0;
+    virtual void sendMergeTreeReadTaskResponse(PartitionReadResponse response) = 0;
 
     /// Get packet from any replica.
     virtual Packet receivePacket() = 0;

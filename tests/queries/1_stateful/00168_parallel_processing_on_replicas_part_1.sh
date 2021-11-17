@@ -25,17 +25,14 @@ $CLICKHOUSE_CLIENT $SETTINGS -nm -q '''
 FAILED=()
 
 PreviouslyFailed=(
-    "00082_quantiles.sql"
-    "00088_global_in_one_shard_and_rows_before_limit.sql"
-    "00147_global_in_aggregate_function.sql"
-    "00149_quantiles_timing_distributed.sql"
-    "00150_quantiles_timing_precision.sql"
-    "00164_quantileBfloat16.sql"
 )
 
 SkipList=(
     "00061_storage_buffer.sql"
     "00095_hyperscan_profiler.sql" # too long in debug (there is a --no-debug tag inside a test)
+
+    "00140_rename.sql" # Multiple renames are not allowed with DatabaseReplicated and tags are not forwarded through this test
+
     "00154_avro.sql" # Plain select * with limit with Distributed table is not deterministic
     "00151_replace_partition_with_different_granularity.sql" # Replace partition from Distributed is not allowed
     "00152_insert_different_granularity.sql" # The same as above

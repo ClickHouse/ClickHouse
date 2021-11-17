@@ -36,7 +36,7 @@ struct PartitionReadRequest
     void deserialize(ReadBuffer & in);
 };
 
-struct PartitionReadResponce
+struct PartitionReadResponse
 {
     bool denied{false};
     MarkRanges mark_ranges{};
@@ -46,7 +46,7 @@ struct PartitionReadResponce
 };
 
 
-using MergeTreeReadTaskCallback = std::function<PartitionReadResponce(PartitionReadRequest)>;
+using MergeTreeReadTaskCallback = std::function<PartitionReadResponse(PartitionReadRequest)>;
 
 
 }

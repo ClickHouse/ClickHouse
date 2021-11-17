@@ -75,14 +75,14 @@ void PartitionReadRequest::deserialize(ReadBuffer & in)
 }
 
 
-void PartitionReadResponce::serialize(WriteBuffer & out) const
+void PartitionReadResponse::serialize(WriteBuffer & out) const
 {
     writeVarUInt(static_cast<UInt64>(denied), out);
     writeMarkRangesBinary(mark_ranges, out);
 }
 
 
-void PartitionReadResponce::deserialize(ReadBuffer & in)
+void PartitionReadResponse::deserialize(ReadBuffer & in)
 {
     UInt64 value;
     readVarUInt(value, in);

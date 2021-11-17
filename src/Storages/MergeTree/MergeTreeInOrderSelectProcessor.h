@@ -23,7 +23,6 @@ public:
     String getName() const override { return "MergeTreeInOrder"; }
 
 private:
-    void prepareNewTask() override {}
     bool getNewTaskImpl() override;
     void finalizeNewTask() override {}
 

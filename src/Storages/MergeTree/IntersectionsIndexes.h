@@ -176,9 +176,6 @@ struct MarkRangesIntersectionsIndex
         auto ranges = getIntersectingRanges(range);
         std::sort(ranges.begin(), ranges.end(), CompareByBegin());
 
-        if (ranges.empty())
-            throw std::runtime_error("Ranges empty!1");
-
         std::vector<MarkRange> gaps;
 
         if (range.begin < ranges.front().begin)

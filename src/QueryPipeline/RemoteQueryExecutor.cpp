@@ -473,7 +473,7 @@ void RemoteQueryExecutor::processMergeTreeReadTaskRequest(PartitionReadRequest r
         throw Exception("Coordinator for parallel reading from replicas is not initialized", ErrorCodes::LOGICAL_ERROR);
 
     auto response = parallel_reading_coordinator->handleRequest(std::move(request));
-    connections->sendMergeTreeReadTaskResponce(response);
+    connections->sendMergeTreeReadTaskResponse(response);
 }
 
 void RemoteQueryExecutor::finish(std::unique_ptr<ReadContext> * read_context)

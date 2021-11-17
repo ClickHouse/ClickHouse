@@ -36,13 +36,12 @@ public:
 
     ~MergeTreeSelectProcessor() override;
 
-    /// Closes readers and unlock part locks
-    void finish();
-
 protected:
     /// Defer initialization from constructor, because it may be heavy
     /// and it's better to do it lazily in `getNewTaskImpl`, which is executing in parallel.
     void initializeReaders();
+
+    void finish() override;
 
     /// Used by Task
     Names required_columns;

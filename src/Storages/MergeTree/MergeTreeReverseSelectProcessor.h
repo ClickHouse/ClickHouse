@@ -24,7 +24,6 @@ public:
     String getName() const override { return "MergeTreeReverse"; }
 
 private:
-    void prepareNewTask() override {}
     bool getNewTaskImpl() override;
     void finalizeNewTask() override {}
 

@@ -82,7 +82,7 @@ Testing 00093_prewhere_array_join.sql ----> Ok! ✅
 Testing 00094_order_by_array_join_limit.sql ----> Ok! ✅
 Skipping 00095_hyperscan_profiler.sql 
 Testing 00139_like.sql ----> Ok! ✅
-Testing 00140_rename.sql ----> Ok! ✅
+Skipping 00140_rename.sql 
 Testing 00141_transform.sql ----> Ok! ✅
 Testing 00142_system_columns.sql ----> Ok! ✅
 Testing 00143_transform_non_const_default.sql ----> Ok! ✅

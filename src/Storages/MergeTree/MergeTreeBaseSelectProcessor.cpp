@@ -95,8 +95,29 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
         return false;
     };
 
+    auto get_delayed = [&]()
+    {
+        /// Try to get from buffer
+        while (!delayed_tasks.empty())
+        {
+            task = std::move(delayed_tasks.front());
+            delayed_tasks.pop_front();
+
+            assert(!task->mark_ranges.empty());
+
+            if (Status::Accepted == performRequestToCoordinator(task->mark_ranges))
+                return true;
+        }
+
+        finish();
+        return false;
+    };
+
     if (get_from_buffer())
         return true;
+
+    if (no_more_tasks)
+        return get_delayed();
 
     while (true)
     {
@@ -113,24 +134,20 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
 
         /// The end of execution. No task.
         if (!res)
-            return false;
+        {
+            no_more_tasks = true;
+            return get_delayed();
+        }
 
         if (task->mark_ranges.empty())
             continue;
 
         auto predicate = [this](MarkRange range)
         {
-            // auto what = fmt::format("{}_{}_{}", task->data_part->info.getPartName(), range.begin, range.end);
-            // auto hash = CityHash_v1_0_2::CityHash64(what.data(), what.size());
-            // LOG_TRACE(log, "Replica info {} {}", extension->count_participating_replicas, extension->number_of_current_replica);
-            // auto consistent_hash = ConsistentHashing(hash, extension->count_participating_replicas);
-            // LOG_TRACE(log, "Anime [{}, {}]. Hash {}, Consistent hash: {}", range.begin, range.end, hash, consistent_hash);
-            // return consistent_hash != extension->number_of_current_replica;
-
-            (void)this;
-            (void)range;
-
-            return true;
+            auto what = fmt::format("{}_{}_{}", task->data_part->info.getPartName(), range.begin, range.end);
+            auto hash = CityHash_v1_0_2::CityHash64(what.data(), what.size());
+            auto consistent_hash = ConsistentHashing(hash, extension->count_participating_replicas);
+            return consistent_hash == extension->number_of_current_replica;
         };
 
         fillBufferedRanged(task.get(), std::move(predicate));
@@ -584,7 +601,7 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
 
     AtomicStopwatch stop;
 
-    auto responce = extension.value().callback(std::move(request));
+    auto Response = extension.value().callback(std::move(request));
 
     LOG_TRACE(log, "Elapsed time to perform request: {}ns", stop.elapsed());
 
@@ -597,11 +614,11 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
         return result;
     };
 
-    LOG_TRACE(log, (responce.denied ? "denied" : "accepted"), dump_mark_ranges(responce.mark_ranges));
+    LOG_TRACE(log, (Response.denied ? "denied" : "accepted"), dump_mark_ranges(Response.mark_ranges));
 
-    task->mark_ranges = std::move(responce.mark_ranges);
+    task->mark_ranges = std::move(Response.mark_ranges);
 
-    if (responce.denied)
+    if (Response.denied)
         return Status::Denied;
 
     if (task->mark_ranges.empty())
@@ -618,69 +635,6 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
 template <typename Predicate>
 void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * current_task, Predicate && predicate)
 {
-    // const size_t max_batch_size = 10;
-
-    // MarkRanges new_ranges;
-
-    // for (const auto & range : current_task->mark_ranges)
-    // {
-    //     if (range.end - range.begin <= max_batch_size)
-    //     {
-    //         new_ranges.push_back(range);
-    //         continue;
-    //     }
-
-    //     auto current_begin = range.begin;
-    //     auto current_end = range.begin + max_batch_size;
-
-    //     while (current_end < range.end)
-    //     {
-    //         new_ranges.emplace_back(current_begin, current_end);
-    //         current_begin = current_end;
-    //         current_end = current_end + max_batch_size;
-    //     }
-
-    //     if (range.end - current_begin > 0)
-    //     {
-    //         new_ranges.emplace_back(current_begin, range.end);
-    //     }
-    // }
-
-    // assert(extension.has_value());
-
-    // String log_message = "Got ranges: ";
-    // for (const auto & range: new_ranges) {
-    //     log_message += fmt::format("({}, {}), ", range.begin, range.end);
-    // }
-    // log_message += '\n';
-
-    // auto calculate_hash = [&](MarkRange range)
-    // {
-    //     auto what = fmt::format("{}_{}_{}", current_task->data_part->info.getPartName(), range.begin, range.end);
-    //     auto hash = CityHash_v1_0_2::CityHash64(what.data(), what.size());
-    //     return ConsistentHashing(hash, extension->count_participating_replicas);
-    // };
-
-    // std::sort(new_ranges.begin(), new_ranges.end());
-
-    // auto it = std::remove_if(new_ranges.begin(), new_ranges.end(), [&](MarkRange range) {
-    //     return calculate_hash(range) != extension->number_of_current_replica;
-    // });
-
-    // new_ranges.erase(it, new_ranges.end());
-
-    // log_message += "Applied consistent hash: ";
-    // for (const auto & range: new_ranges) {
-    //     log_message += fmt::format("({}, {}), ", range.begin, range.end);
-    // }
-    // log_message += '\n';
-
-    // LOG_TRACE(&Poco::Logger::get("MergeTreeBaseSelectProcessor"), log_message);
-
-    // buffered_ranges.emplace_back(std::move(new_ranges));
-
-    // buffered_ranges.emplace_back(std::move(current_task->mark_ranges));
-
     size_t sum_average_marks_size = 0;
     /// getColumnSize is not fully implemented for compact parts
     if (task->data_part->getType() == IMergeTreeDataPart::Type::COMPACT)
@@ -711,6 +665,8 @@ void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * curren
 
     buffered_ranges.emplace_back();
 
+    MarkRanges delayed_ranges;
+
     for (const auto & range : current_task->mark_ranges)
     {
         auto expand_if_needed = [&]
@@ -740,10 +696,15 @@ void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * curren
 
         while (current_end < range.end)
         {
-            if (predicate(MarkRange{current_begin, current_end}))
+            auto current_range = MarkRange{current_begin, current_end};
+            if (predicate(current_range))
             {
-                buffered_ranges.back().emplace_back(current_begin, current_end);
+                buffered_ranges.back().push_back(current_range);
                 current_batch_size += current_end - current_begin;
+            }
+            else
+            {
+                delayed_ranges.emplace_back(current_range);
             }
 
             current_begin = current_end;
@@ -754,17 +715,32 @@ void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * curren
 
         if (range.end - current_begin > 0)
         {
-            buffered_ranges.back().emplace_back(current_begin, range.end);
-            current_batch_size += range.end - current_begin;
+            auto current_range = MarkRange{current_begin, range.end};
+            if (predicate(current_range))
+            {
+                buffered_ranges.back().push_back(current_range);
+                current_batch_size += range.end - current_begin;
 
-            /// Do not need to update current_begin and current_end
+                /// Do not need to update current_begin and current_end
 
-            expand_if_needed();
+                expand_if_needed();
+            }
+            else
+            {
+                delayed_ranges.emplace_back(current_range);
+            }
         }
     }
 
     if (buffered_ranges.back().empty())
         buffered_ranges.pop_back();
+
+    if (!delayed_ranges.empty())
+    {
+        auto delayed_task = std::make_unique<MergeTreeReadTask>(*current_task); // Create a copy
+        delayed_task->mark_ranges = std::move(delayed_ranges);
+        delayed_tasks.emplace_back(std::move(delayed_task));
+    }
 }
 
 MergeTreeBaseSelectProcessor::~MergeTreeBaseSelectProcessor() = default;

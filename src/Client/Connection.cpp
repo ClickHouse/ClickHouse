@@ -604,7 +604,7 @@ void Connection::sendReadTaskResponse(const String & response)
 }
 
 
-void Connection::sendMergeTreeReadTaskResponce(const PartitionReadResponce & response)
+void Connection::sendMergeTreeReadTaskResponse(const PartitionReadResponse & response)
 {
     writeVarUInt(Protocol::Client::MergeTreeReadTaskResponse, *out);
     response.serialize(*out);

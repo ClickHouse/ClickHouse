@@ -35,10 +35,11 @@ public:
     ~MergeTreeThreadSelectProcessor() override;
 
 protected:
-    void prepareNewTask() override {}
     /// Requests read task from MergeTreeReadPool and signals whether it got one
     bool getNewTaskImpl() override;
     void finalizeNewTask() override;
+
+    void finish() override;
 
 private:
     /// "thread" index (there are N threads and each thread is assigned index in interval [0..N-1])

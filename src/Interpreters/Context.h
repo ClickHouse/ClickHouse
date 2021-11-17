@@ -148,7 +148,7 @@ using InputBlocksReader = std::function<Block(ContextPtr)>;
 /// Used in distributed task processing
 using ReadTaskCallback = std::function<String()>;
 
-using MergeTreeReadTaskCallback = std::function<PartitionReadResponce(PartitionReadRequest)>;
+using MergeTreeReadTaskCallback = std::function<PartitionReadResponse(PartitionReadRequest)>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.

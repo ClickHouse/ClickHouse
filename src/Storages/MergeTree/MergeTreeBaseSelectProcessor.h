@@ -63,9 +63,11 @@ protected:
 
     Chunk generate() final;
 
-    virtual void prepareNewTask() = 0;
     virtual bool getNewTaskImpl() = 0;
     virtual void finalizeNewTask() = 0;
+
+    /// Closes readers and unlock part locks
+    virtual void finish() = 0;
 
     virtual Chunk readFromPart();
 
@@ -113,15 +115,8 @@ protected:
     std::optional<ParallelReadingExtension> extension;
     std::vector<size_t> average_mark_size_bytes;
 
-    struct DelayedTask
-    {
-        /// data part which should be read while performing this task
-        MergeTreeData::DataPartPtr data_part;
-        /// Ranges to read from `data_part`.
-        MarkRanges mark_ranges;
-    };
-
-    std::vector<DelayedTask> delayed_tasks;
+    bool no_more_tasks{false};
+    std::deque<MergeTreeReadTaskPtr> delayed_tasks;
 private:
     Poco::Logger * log = &Poco::Logger::get("MergeTreeBaseSelectProcessor");
 

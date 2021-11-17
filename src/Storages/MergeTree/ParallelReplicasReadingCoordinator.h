@@ -11,7 +11,7 @@ class ParallelReplicasReadingCoordinator
 public:
     ParallelReplicasReadingCoordinator();
     ~ParallelReplicasReadingCoordinator();
-    PartitionReadResponce handleRequest(PartitionReadRequest request);
+    PartitionReadResponse handleRequest(PartitionReadRequest request);
 private:
     class Impl;
     std::unique_ptr<Impl> pimpl;
