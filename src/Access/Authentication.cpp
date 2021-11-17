@@ -23,7 +23,7 @@ namespace
 
     bool checkPasswordPlainText(const String & password, const Digest & password_plaintext)
     {
-        return (Util::encodePlainText(password) == password_plaintext);
+        return (Util::stringToDigest(password) == password_plaintext);
     }
 
     bool checkPasswordDoubleSHA1(const std::string_view & password, const Digest & password_double_sha1)
@@ -87,7 +87,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::KERBEROS:
                 return external_authenticators.checkKerberosCredentials(auth_data.getKerberosRealm(), *gss_acceptor_context);
 
-            case AuthenticationType::MAX_TYPE:
+            case AuthenticationType::MAX:
                 break;
         }
     }
@@ -110,7 +110,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::KERBEROS:
                 throw Authentication::Require<BasicCredentials>("ClickHouse Basic Authentication");
 
-            case AuthenticationType::MAX_TYPE:
+            case AuthenticationType::MAX:
                 break;
         }
     }
@@ -137,7 +137,7 @@ bool Authentication::areCredentialsValid(const Credentials & credentials, const 
             case AuthenticationType::KERBEROS:
                 throw Authentication::Require<GSSAcceptorContext>(auth_data.getKerberosRealm());
 
-            case AuthenticationType::MAX_TYPE:
+            case AuthenticationType::MAX:
                 break;
         }
     }

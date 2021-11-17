@@ -29,7 +29,7 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     bool has_structure = ast_create_query.columns_list && ast_create_query.columns_list->columns;
     if (ast_create_query.as_table_function && !has_structure)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot alter table {} because it was created AS table function"
-                                                     " and doesn't have structure in metadata", backQuote(ast_create_query.table));
+                                                     " and doesn't have structure in metadata", backQuote(ast_create_query.getTable()));
 
     assert(has_structure);
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);

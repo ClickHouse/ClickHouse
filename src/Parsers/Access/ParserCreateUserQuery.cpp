@@ -55,7 +55,7 @@ namespace
 
             if (ParserKeyword{"WITH"}.ignore(pos, expected))
             {
-                for (auto check_type : collections::range(AuthenticationType::MAX_TYPE))
+                for (auto check_type : collections::range(AuthenticationType::MAX))
                 {
                     if (ParserKeyword{AuthenticationTypeInfo::get(check_type).raw_name}.ignore(pos, expected))
                     {
