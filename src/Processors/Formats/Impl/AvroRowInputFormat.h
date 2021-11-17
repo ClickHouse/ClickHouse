@@ -22,6 +22,16 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int THERE_IS_NO_COLUMN;
+    extern const int INCORRECT_DATA;
+    extern const int ILLEGAL_COLUMN;
+    extern const int TYPE_MISMATCH;
+    extern const int CANNOT_PARSE_UUID;
+    extern const int CANNOT_READ_ALL_DATA;
+}
 class AvroDeserializer
 {
 public:
@@ -81,7 +91,12 @@ private:
                         action.execute(columns, decoder, ext);
                     break;
                 case Union:
-                    actions[decoder.decodeUnionIndex()].execute(columns, decoder, ext);
+                    auto index = decoder.decodeUnionIndex();
+                    if(index >= actions.size())
+                    {
+                        throw Exception("Union index out of boundary",  ErrorCodes::INCORRECT_DATA);
+                    }
+                    actions[index].execute(columns, decoder, ext);
                     break;
             }
         }

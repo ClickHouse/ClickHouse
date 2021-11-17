@@ -68,17 +68,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-    extern const int THERE_IS_NO_COLUMN;
-    extern const int INCORRECT_DATA;
-    extern const int ILLEGAL_COLUMN;
-    extern const int TYPE_MISMATCH;
-    extern const int CANNOT_PARSE_UUID;
-    extern const int CANNOT_READ_ALL_DATA;
-}
-
 class InputStreamReadBufferAdapter : public avro::InputStream
 {
 public:
@@ -447,7 +436,15 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
             {
                 union_skip_fns.push_back(createSkipFn(root_node->leafAt(i)));
             }
-            return [union_skip_fns](avro::Decoder & decoder) { union_skip_fns[decoder.decodeUnionIndex()](decoder); };
+            return [union_skip_fns](avro::Decoder & decoder)
+            {
+                auto index = decoder.decodeUnionIndex();
+                if (index >= union_skip_fns.size())
+                {
+                    throw Exception("Union index out of boundary", ErrorCodes::INCORRECT_DATA);
+                }                
+                union_skip_fns[index](decoder);
+            };
         }
         case avro::AVRO_NULL:
             return [](avro::Decoder & decoder) { decoder.decodeNull(); };
