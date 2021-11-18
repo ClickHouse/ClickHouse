@@ -415,7 +415,8 @@ void MergeTreeBaseSelectProcessor::injectVirtualColumns(
     chunk.setColumns(columns, num_rows);
 }
 
-void MergeTreeBaseSelectProcessor::transformBlockViaPrewhereInfo(Block & block, const PrewhereInfoPtr & prewhere_info)
+Block MergeTreeBaseSelectProcessor::transformHeader(
+    Block block, const PrewhereInfoPtr & prewhere_info, const DataTypePtr & partition_value_type, const Names & virtual_columns)
 {
     if (prewhere_info)
     {
@@ -459,12 +460,7 @@ void MergeTreeBaseSelectProcessor::transformBlockViaPrewhereInfo(Block & block, 
                                 ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER);
         }
     }
-}
 
-Block MergeTreeBaseSelectProcessor::transformHeader(
-    Block block, const PrewhereInfoPtr & prewhere_info, const DataTypePtr & partition_value_type, const Names & virtual_columns)
-{
-    transformBlockViaPrewhereInfo(block, prewhere_info);
     injectVirtualColumns(block, nullptr, partition_value_type, virtual_columns);
     return block;
 }

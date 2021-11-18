@@ -4789,8 +4789,24 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         query_info.minmax_count_projection_block = getMinMaxCountProjectionBlock(
             metadata_snapshot, minmax_conut_projection_candidate->required_columns, query_info, parts, normal_parts, query_context);
 
-        MergeTreeBaseSelectProcessor::transformBlockViaPrewhereInfo(
-            query_info.minmax_count_projection_block, minmax_conut_projection_candidate->prewhere_info);
+        if (minmax_conut_projection_candidate->prewhere_info)
+        {
+            const auto & prewhere_info = minmax_conut_projection_candidate->prewhere_info;
+            if (prewhere_info->alias_actions)
+                ExpressionActions(prewhere_info->alias_actions, actions_settings).execute(query_info.minmax_count_projection_block);
+
+            if (prewhere_info->row_level_filter)
+            {
+                ExpressionActions(prewhere_info->row_level_filter, actions_settings).execute(query_info.minmax_count_projection_block);
+                query_info.minmax_count_projection_block.erase(prewhere_info->row_level_column_name);
+            }
+
+            if (prewhere_info->prewhere_actions)
+                ExpressionActions(prewhere_info->prewhere_actions, actions_settings).execute(query_info.minmax_count_projection_block);
+
+            if (prewhere_info->remove_prewhere_column)
+                query_info.minmax_count_projection_block.erase(prewhere_info->prewhere_column_name);
+        }
 
         if (normal_parts.empty())
         {
