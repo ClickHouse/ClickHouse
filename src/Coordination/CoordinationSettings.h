@@ -52,13 +52,15 @@ struct CoordinationSettings : public BaseSettings<CoordinationSettingsTraits>
 
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
 
-/// encapsulation of keeper settings from keeper_server
-struct KeeperSettings
+/// Coordination settings + some other parts of keeper configuration
+/// which are not stored in settings. Allows to dump configuration
+/// with four letter word commands.
+struct KeeperConfigurationAndSettings
 {
     static constexpr int NOT_EXIST = -1;
     static const String DEFAULT_FOUR_LETTER_WORD_CMD;
 
-    KeeperSettings();
+    KeeperConfigurationAndSettings();
     int server_id;
 
     int tcp_port;
@@ -75,13 +77,13 @@ struct KeeperSettings
     String snapshot_storage_path;
 
     void dump(WriteBufferFromOwnString & buf) const;
-    static std::shared_ptr<KeeperSettings> loadFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
+    static std::shared_ptr<KeeperConfigurationAndSettings> loadFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
 
 private:
     static String getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
     static String getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
 };
 
-using KeeperSettingsPtr = std::shared_ptr<KeeperSettings>;
+using KeeperConfigurationAndSettingsPtr = std::shared_ptr<KeeperConfigurationAndSettings>;
 
 }

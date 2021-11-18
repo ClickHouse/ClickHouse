@@ -833,7 +833,7 @@ struct IntNode
 {
     int value;
     IntNode(int value_) : value(value_) { }
-    UInt64 sizeInBytes() const { return sizeof value; }
+    uint64_t sizeInBytes() const { return sizeof value; }
     IntNode & operator=(int rhs)
     {
         this->value = rhs;

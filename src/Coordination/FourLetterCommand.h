@@ -3,7 +3,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
+
 #include <Coordination/KeeperDispatcher.h>
 #include <Coordination/KeeperInfos.h>
 #include <IO/WriteBufferFromString.h>
@@ -24,48 +24,48 @@ struct IFourLetterCommand
 {
 public:
     using StringBuffer = DB::WriteBufferFromOwnString;
-    explicit IFourLetterCommand(const KeeperDispatcher & keeper_dispatcher_);
+    explicit IFourLetterCommand(KeeperDispatcher & keeper_dispatcher_);
 
     virtual String name() = 0;
     virtual String run() = 0;
 
     virtual ~IFourLetterCommand();
-    Int32 code();
+    int32_t code();
 
-    static String toName(Int32 code);
-    static inline Int32 toCode(const String & name);
+    static String toName(int32_t code);
+    static inline int32_t toCode(const String & name);
 
 protected:
-    const KeeperDispatcher & keeper_dispatcher;
+    KeeperDispatcher & keeper_dispatcher;
 };
 
 struct FourLetterCommandFactory : private boost::noncopyable
 {
 public:
-    using Commands = std::unordered_map<Int32, FourLetterCommandPtr>;
-    using WhiteList = std::vector<Int32>;
+    using Commands = std::unordered_map<int32_t, FourLetterCommandPtr>;
+    using WhiteList = std::vector<int32_t>;
 
     ///represent '*' which is used in white list
-    static constexpr Int32 WHITE_LIST_ALL = 0;
+    static constexpr int32_t WHITE_LIST_ALL = 0;
 
-    bool isKnown(Int32 code);
-    bool isEnabled(Int32 code);
+    bool isKnown(int32_t code);
+    bool isEnabled(int32_t code);
 
-    FourLetterCommandPtr get(Int32 code);
+    FourLetterCommandPtr get(int32_t code);
 
     /// There is no need to make it thread safe, because registration is no initialization and get is after startup.
     void registerCommand(FourLetterCommandPtr & command);
-    void initializeWhiteList(const KeeperDispatcher & keeper_dispatcher);
+    void initializeWhiteList(KeeperDispatcher & keeper_dispatcher);
 
     void checkInitialization() const;
     bool isInitialized() const { return initialized; }
     void setInitialize(bool flag) { initialized = flag; }
 
     static FourLetterCommandFactory & instance();
-    static void registerCommands(const KeeperDispatcher & keeper_dispatcher);
+    static void registerCommands(KeeperDispatcher & keeper_dispatcher);
 
 private:
-    volatile bool initialized = false;
+    std::atomic<bool> initialized = false;
     Commands commands;
     WhiteList white_list;
 };
@@ -79,14 +79,15 @@ private:
  */
 struct RuokCommand : public IFourLetterCommand
 {
-    explicit RuokCommand(const KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
+    explicit RuokCommand(KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
 
     String name() override { return "ruok"; }
     String run() override;
     ~RuokCommand() override = default;
 };
 
-/**Outputs a list of variables that could be used for monitoring the health of the cluster.
+/**
+ * Outputs a list of variables that could be used for monitoring the health of the cluster.
  *
  * echo mntr | nc localhost 2181
  * zk_version  3.5.9
@@ -109,20 +110,22 @@ struct RuokCommand : public IFourLetterCommand
  */
 struct MonitorCommand : public IFourLetterCommand
 {
-    explicit MonitorCommand(const KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
+    explicit MonitorCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
 
     String name() override { return "mntr"; }
     String run() override;
     ~MonitorCommand() override = default;
-
-private:
-    static void print(StringBuffer & buf, const String & key, const String & value);
-    static void print(StringBuffer & buf, const String & key, UInt64 value);
 };
 
 struct StatResetCommand : public IFourLetterCommand
 {
-    explicit StatResetCommand(const KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
+    explicit StatResetCommand(KeeperDispatcher & keeper_dispatcher_) :
+        IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
 
     String name() override { return "srst"; }
     String run() override;
@@ -133,7 +136,10 @@ struct StatResetCommand : public IFourLetterCommand
 ///It is used to inform clients who execute none white listed four letter word commands.
 struct NopCommand : public IFourLetterCommand
 {
-    explicit NopCommand(const KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
+    explicit NopCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
 
     String name() override { return "nopc"; }
     String run() override;
@@ -142,7 +148,10 @@ struct NopCommand : public IFourLetterCommand
 
 struct ConfCommand : public IFourLetterCommand
 {
-    explicit ConfCommand(const KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
+    explicit ConfCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
 
     String name() override { return "conf"; }
     String run() override;
@@ -153,7 +162,10 @@ struct ConfCommand : public IFourLetterCommand
 /// Includes information on numbers of packets received/sent, session id, operation latencies, last operation performed, etc...
 struct ConsCommand : public IFourLetterCommand
 {
-    explicit ConsCommand(const KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
+    explicit ConsCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
 
     String name() override { return "cons"; }
     String run() override;
@@ -163,7 +175,10 @@ struct ConsCommand : public IFourLetterCommand
 /// Reset connection/session statistics for all connections.
 struct RestConnStatsCommand : public IFourLetterCommand
 {
-    explicit RestConnStatsCommand(const KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
+    explicit RestConnStatsCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
 
     String name() override { return "crst"; }
     String run() override;
@@ -173,7 +188,10 @@ struct RestConnStatsCommand : public IFourLetterCommand
 /// Lists full details for the server.
 struct ServerStatCommand : public IFourLetterCommand
 {
-    explicit ServerStatCommand(const KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
+    explicit ServerStatCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
 
     String name() override { return "srvr"; }
     String run() override;
@@ -183,7 +201,10 @@ struct ServerStatCommand : public IFourLetterCommand
 /// Lists brief details for the server and connected clients.
 struct StatCommand : public IFourLetterCommand
 {
-    explicit StatCommand(const KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
+    explicit StatCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
 
     String name() override { return "stat"; }
     String run() override;
@@ -193,7 +214,10 @@ struct StatCommand : public IFourLetterCommand
 /// Lists brief information on watches for the server.
 struct BriefWatchCommand : public IFourLetterCommand
 {
-    explicit BriefWatchCommand(const KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
+    explicit BriefWatchCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
 
     String name() override { return "wchs"; }
     String run() override;
@@ -205,7 +229,10 @@ struct BriefWatchCommand : public IFourLetterCommand
 /// Note, depending on the number of watches this operation may be expensive (ie impact server performance), use it carefully.
 struct WatchCommand : public IFourLetterCommand
 {
-    explicit WatchCommand(const KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
+    explicit WatchCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
 
     String name() override { return "wchc"; }
     String run() override;
@@ -217,7 +244,10 @@ struct WatchCommand : public IFourLetterCommand
 /// Note, depending on the number of watches this operation may be expensive (ie impact server performance), use it carefully.
 struct WatchByPathCommand : public IFourLetterCommand
 {
-    explicit WatchByPathCommand(const KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
+    explicit WatchByPathCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
 
     String name() override { return "wchp"; }
     String run() override;
@@ -227,7 +257,10 @@ struct WatchByPathCommand : public IFourLetterCommand
 /// Lists the outstanding sessions and ephemeral nodes. This only works on the leader.
 struct DumpCommand : public IFourLetterCommand
 {
-    explicit DumpCommand(const KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
+    explicit DumpCommand(KeeperDispatcher & keeper_dispatcher_):
+        IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
 
     String name() override { return "dump"; }
     String run() override;
@@ -237,7 +270,10 @@ struct DumpCommand : public IFourLetterCommand
 /// Print details about serving environment
 struct EnviCommand : public IFourLetterCommand
 {
-    explicit EnviCommand(const KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
+    explicit EnviCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
 
     String name() override { return "envi"; }
     String run() override;
@@ -247,7 +283,10 @@ struct EnviCommand : public IFourLetterCommand
 /// Shows the total size of snapshot and log files in bytes
 struct DataSizeCommand : public IFourLetterCommand
 {
-    explicit DataSizeCommand(const KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
+    explicit DataSizeCommand(KeeperDispatcher & keeper_dispatcher_):
+        IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
 
     String name() override { return "dirs"; }
     String run() override;
@@ -258,12 +297,14 @@ struct DataSizeCommand : public IFourLetterCommand
 /// The server will respond with "ro" if in read-only mode or "rw" if not in read-only mode.
 struct IsReadOnlyCommand : public IFourLetterCommand
 {
-    explicit IsReadOnlyCommand(const KeeperDispatcher & keeper_dispatcher_) : IFourLetterCommand(keeper_dispatcher_) { }
+    explicit IsReadOnlyCommand(KeeperDispatcher & keeper_dispatcher_)
+        : IFourLetterCommand(keeper_dispatcher_)
+    {
+    }
 
     String name() override { return "isro"; }
     String run() override;
     ~IsReadOnlyCommand() override = default;
 };
-
 
 }

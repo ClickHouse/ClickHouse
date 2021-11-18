@@ -17,24 +17,25 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-IFourLetterCommand::IFourLetterCommand(const KeeperDispatcher & keeper_dispatcher_) : keeper_dispatcher(keeper_dispatcher_)
+IFourLetterCommand::IFourLetterCommand(KeeperDispatcher & keeper_dispatcher_)
+    : keeper_dispatcher(keeper_dispatcher_)
 {
 }
 
-Int32 IFourLetterCommand::code()
+int32_t IFourLetterCommand::code()
 {
     return toCode(name());
 }
 
-String IFourLetterCommand::toName(Int32 code)
+String IFourLetterCommand::toName(int32_t code)
 {
     int reverted_code = __builtin_bswap32(code);
     return String(reinterpret_cast<char *>(&reverted_code), 4);
 }
 
-Int32 IFourLetterCommand::toCode(const String & name)
+int32_t IFourLetterCommand::toCode(const String & name)
 {
-    Int32 res = *reinterpret_cast<const Int32 *>(name.data());
+    int32_t res = *reinterpret_cast<const int32_t *>(name.data());
     /// keep consistent with Coordination::read method by changing big endian to little endian.
     return __builtin_bswap32(res);
 }
@@ -55,13 +56,13 @@ void FourLetterCommandFactory::checkInitialization() const
     }
 }
 
-bool FourLetterCommandFactory::isKnown(Int32 code)
+bool FourLetterCommandFactory::isKnown(int32_t code)
 {
     checkInitialization();
     return commands.contains(code);
 }
 
-FourLetterCommandPtr FourLetterCommandFactory::get(Int32 code)
+FourLetterCommandPtr FourLetterCommandFactory::get(int32_t code)
 {
     checkInitialization();
     return commands.at(code);
@@ -70,13 +71,12 @@ FourLetterCommandPtr FourLetterCommandFactory::get(Int32 code)
 void FourLetterCommandFactory::registerCommand(FourLetterCommandPtr & command)
 {
     if (commands.contains(command->code()))
-    {
         throw Exception("Four letter command " + command->name() + " already registered", ErrorCodes::LOGICAL_ERROR);
-    }
+
     commands.emplace(command->code(), std::move(command));
 }
 
-void FourLetterCommandFactory::registerCommands(const KeeperDispatcher & keeper_dispatcher)
+void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispatcher)
 {
     FourLetterCommandFactory & factory = FourLetterCommandFactory::instance();
 
@@ -132,20 +132,19 @@ void FourLetterCommandFactory::registerCommands(const KeeperDispatcher & keeper_
     }
 }
 
-bool FourLetterCommandFactory::isEnabled(Int32 code)
+bool FourLetterCommandFactory::isEnabled(int32_t code)
 {
     checkInitialization();
     if (!white_list.empty() && *white_list.cbegin() == WHITE_LIST_ALL)
-    {
         return true;
-    }
+
     return std::find(white_list.begin(), white_list.end(), code) != white_list.end();
 }
 
-void FourLetterCommandFactory::initializeWhiteList(const KeeperDispatcher & keeper_dispatcher)
+void FourLetterCommandFactory::initializeWhiteList(KeeperDispatcher & keeper_dispatcher)
 {
     using Poco::StringTokenizer;
-    const auto & keeper_settings = keeper_dispatcher.getKeeperSettings();
+    const auto & keeper_settings = keeper_dispatcher.getKeeperConfigurationAndSettings();
 
     String list_str = keeper_settings->four_letter_word_white_list;
     StringTokenizer tokenizer(list_str, ",", 2);
@@ -179,52 +178,10 @@ String RuokCommand::run()
     return "imok";
 }
 
-String MonitorCommand::run()
+namespace
 {
-    KeeperStatsPtr stats = keeper_dispatcher.getKeeperStats();
-    const IKeeperInfo & keeper_info = keeper_dispatcher.getKeeperInfo();
 
-    if (!keeper_info.hasLeader())
-    {
-        return "This instance is not currently serving requests";
-    }
-
-    const IRaftInfo & raft_info = keeper_dispatcher.getRaftInfo();
-    const IStateMachineInfo & state_machine = keeper_dispatcher.getStateMachineInfo();
-
-    StringBuffer ret;
-    print(ret, "version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
-
-    print(ret, "avg_latency", stats->getAvgLatency());
-    print(ret, "max_latency", stats->getMaxLatency());
-    print(ret, "min_latency", stats->getMinLatency());
-    print(ret, "packets_received", stats->getPacketsReceived());
-    print(ret, "packets_sent", stats->getPacketsSent());
-
-    print(ret, "num_alive_connections", keeper_info.getNumAliveConnections());
-    print(ret, "outstanding_requests", keeper_info.getOutstandingRequests());
-    print(ret, "server_state", keeper_info.getRole());
-
-    print(ret, "znode_count", state_machine.getNodeCount());
-    print(ret, "watch_count", state_machine.getWatchCount());
-    print(ret, "ephemerals_count", state_machine.getEphemeralNodeCount());
-    print(ret, "approximate_data_size", state_machine.getApproximateDataSize());
-
-#if defined(__linux__) || defined(__APPLE__)
-    print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
-    print(ret, "max_file_descriptor_count", getMaxFileDescriptorCount());
-#endif
-
-    if (raft_info.isLeader())
-    {
-        print(ret, "followers", raft_info.getFollowerCount());
-        print(ret, "synced_followers", raft_info.getSyncedFollowerCount());
-    }
-
-    return ret.str();
-}
-
-void MonitorCommand::print(IFourLetterCommand::StringBuffer & buf, const String & key, const String & value)
+void print(IFourLetterCommand::StringBuffer & buf, const String & key, const String & value)
 {
     writeText("zk_", buf);
     writeText(key, buf);
@@ -233,15 +190,60 @@ void MonitorCommand::print(IFourLetterCommand::StringBuffer & buf, const String 
     writeText('\n', buf);
 }
 
-void MonitorCommand::print(IFourLetterCommand::StringBuffer & buf, const String & key, UInt64 value)
+void print(IFourLetterCommand::StringBuffer & buf, const String & key, uint64_t value)
 {
     print(buf, key, toString(value));
 }
 
+}
+
+String MonitorCommand::run()
+{
+    KeeperConnectionStats stats = keeper_dispatcher.getKeeperConnectionStats();
+    KeeperInfo keeper_info = keeper_dispatcher.getKeeperInfo();
+
+    if (!keeper_info.has_leader)
+        return "This instance is not currently serving requests";
+
+    const auto & state_machine = keeper_dispatcher.getStateMachine();
+
+    StringBuffer ret;
+    print(ret, "version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
+
+    print(ret, "avg_latency", stats.getAvgLatency());
+    print(ret, "max_latency", stats.getMaxLatency());
+    print(ret, "min_latency", stats.getMinLatency());
+    print(ret, "packets_received", stats.getPacketsReceived());
+    print(ret, "packets_sent", stats.getPacketsSent());
+
+    print(ret, "num_alive_connections", keeper_info.alive_connections_count);
+    print(ret, "outstanding_requests", keeper_info.outstanding_requests_count);
+
+    print(ret, "server_state", keeper_info.getRole());
+
+    print(ret, "znode_count", state_machine.getNodesCount());
+    print(ret, "watch_count", state_machine.getTotalWatchesCount());
+    print(ret, "ephemerals_count", state_machine.getTotalEphemeralNodesCount());
+    print(ret, "approximate_data_size", state_machine.getApproximateDataSize());
+
+#if defined(__linux__) || defined(__APPLE__)
+    print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
+    print(ret, "max_file_descriptor_count", getMaxFileDescriptorCount());
+#endif
+
+    if (keeper_info.is_leader)
+    {
+        print(ret, "followers", keeper_info.follower_count);
+        print(ret, "synced_followers", keeper_info.synced_follower_count);
+    }
+
+    return ret.str();
+}
+
+
 String StatResetCommand::run()
 {
-    KeeperStatsPtr stats = keeper_dispatcher.getKeeperStats();
-    stats->reset();
+    keeper_dispatcher.resetConnectionStats();
     return "Server stats reset.";
 }
 
@@ -282,23 +284,22 @@ String ServerStatCommand::run()
         writeText('\n', buf);
     };
 
-    KeeperStatsPtr stats = keeper_dispatcher.getKeeperStats();
-    const IKeeperInfo & keeper_info = keeper_dispatcher.getKeeperInfo();
-    const IStateMachineInfo & state_machine = keeper_dispatcher.getStateMachineInfo();
+    KeeperConnectionStats stats = keeper_dispatcher.getKeeperConnectionStats();
+    KeeperInfo keeper_info = keeper_dispatcher.getKeeperInfo();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
     StringBuffer latency;
-    latency << stats->getMinLatency() << "/" << stats->getAvgLatency() << "/" << stats->getMaxLatency() << "\n";
+    latency << stats.getMinLatency() << "/" << stats.getAvgLatency() << "/" << stats.getMaxLatency() << "\n";
     write("Latency min/avg/max", latency.str());
 
-    write("Received", toString(stats->getPacketsReceived()));
-    write("Sent ", toString(stats->getPacketsSent()));
-    write("Connections", toString(keeper_info.getNumAliveConnections()));
-    write("Outstanding", toString(keeper_info.getOutstandingRequests()));
-    write("Zxid", toString(state_machine.getLastProcessedZxid()));
+    write("Received", toString(stats.getPacketsReceived()));
+    write("Sent ", toString(stats.getPacketsSent()));
+    write("Connections", toString(keeper_info.alive_connections_count));
+    write("Outstanding", toString(keeper_info.outstanding_requests_count));
+    write("Zxid", toString(keeper_info.last_zxid));
     write("Mode", keeper_info.getRole());
-    write("Node count", toString(state_machine.getNodeCount()));
+    write("Node count", toString(keeper_info.total_nodes_count));
 
     return buf.str();
 }
@@ -307,11 +308,10 @@ String StatCommand::run()
 {
     StringBuffer buf;
 
-    auto write = [&buf](const String & key, const String & value) { buf << key << ": " << value << '\n'; };
+    auto write = [&buf] (const String & key, const String & value) { buf << key << ": " << value << '\n'; };
 
-    KeeperStatsPtr stats = keeper_dispatcher.getKeeperStats();
-    const IKeeperInfo & keeper_info = keeper_dispatcher.getKeeperInfo();
-    const IStateMachineInfo & state_machine = keeper_dispatcher.getStateMachineInfo();
+    KeeperConnectionStats stats = keeper_dispatcher.getKeeperConnectionStats();
+    KeeperInfo keeper_info = keeper_dispatcher.getKeeperInfo();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
@@ -320,16 +320,16 @@ String StatCommand::run()
     buf << '\n';
 
     StringBuffer latency;
-    latency << stats->getMinLatency() << "/" << stats->getAvgLatency() << "/" << stats->getMaxLatency() << "\n";
+    latency << stats.getMinLatency() << "/" << stats.getAvgLatency() << "/" << stats.getMaxLatency() << "\n";
     write("Latency min/avg/max", latency.str());
 
-    write("Received", toString(stats->getPacketsReceived()));
-    write("Sent ", toString(stats->getPacketsSent()));
-    write("Connections", toString(keeper_info.getNumAliveConnections()));
-    write("Outstanding", toString(keeper_info.getOutstandingRequests()));
-    write("Zxid", toString(state_machine.getLastProcessedZxid()));
+    write("Received", toString(stats.getPacketsReceived()));
+    write("Sent ", toString(stats.getPacketsSent()));
+    write("Connections", toString(keeper_info.alive_connections_count));
+    write("Outstanding", toString(keeper_info.outstanding_requests_count));
+    write("Zxid", toString(keeper_info.last_zxid));
     write("Mode", keeper_info.getRole());
-    write("Node count", toString(state_machine.getNodeCount()));
+    write("Node count", toString(keeper_info.total_nodes_count));
 
     return buf.str();
 }
@@ -337,16 +337,17 @@ String StatCommand::run()
 String BriefWatchCommand::run()
 {
     StringBuffer buf;
-    const IStateMachineInfo & state_machine = keeper_dispatcher.getStateMachineInfo();
-    buf << keeper_dispatcher.getNumAliveConnections() << " connections watching " << state_machine.getWatchPathCount() << " paths\n";
-    buf << "Total watches:" << state_machine.getWatchCount();
+    const auto & state_machine = keeper_dispatcher.getStateMachine();
+    buf << state_machine.getSessionsWithWatchesCount() << " connections watching "
+        << state_machine.getWatchedPathsCount() << " paths\n";
+    buf << "Total watches:" << state_machine.getTotalWatchesCount();
     return buf.str();
 }
 
 String WatchCommand::run()
 {
     StringBuffer buf;
-    const IStateMachineInfo & state_machine = keeper_dispatcher.getStateMachineInfo();
+    const auto & state_machine = keeper_dispatcher.getStateMachine();
     state_machine.dumpWatches(buf);
     return buf.str();
 }
@@ -354,7 +355,7 @@ String WatchCommand::run()
 String WatchByPathCommand::run()
 {
     StringBuffer buf;
-    const IStateMachineInfo & state_machine = keeper_dispatcher.getStateMachineInfo();
+    const auto & state_machine = keeper_dispatcher.getStateMachine();
     state_machine.dumpWatchesByPath(buf);
     return buf.str();
 }
@@ -363,16 +364,15 @@ String DataSizeCommand::run()
 {
     StringBuffer buf;
     buf << "snapshot_dir_size: " << keeper_dispatcher.getSnapDirSize() << '\n';
-    buf << "log_dir_size: " << keeper_dispatcher.getDataDirSize() << '\n';
+    buf << "log_dir_size: " << keeper_dispatcher.getLogDirSize() << '\n';
     return buf.str();
 }
 
 String DumpCommand::run()
 {
     StringBuffer buf;
-    const IStateMachineInfo & state_machine = keeper_dispatcher.getStateMachineInfo();
-    keeper_dispatcher.dumpSessions(buf);
-    state_machine.dumpEphemerals(buf);
+    const auto & state_machine = keeper_dispatcher.getStateMachine();
+    state_machine.dumpSessionsAndEphemerals(buf);
     return buf.str();
 }
 
@@ -391,9 +391,14 @@ String EnviCommand::run()
     buf << "os.version=" << Environment::osVersion() << '\n';
     buf << "cpu.count=" << Environment::processorCount() << '\n';
 
-    char user_name[128];
-    getlogin_r(user_name, 128);
-    buf << "user.name=" << user_name << '\n';
+    String os_user;
+    os_user.resize(256, '\0');
+    if (0 == getlogin_r(os_user.data(), os_user.size() - 1))
+        os_user.resize(strlen(os_user.c_str()));
+    else
+        os_user.clear();    /// Don't mind if we cannot determine user login.
+
+    buf << "user.name=" << os_user << '\n';
 
     buf << "user.home=" << Path::home() << '\n';
     buf << "user.dir=" << Path::current() << '\n';
@@ -404,7 +409,7 @@ String EnviCommand::run()
 
 String IsReadOnlyCommand::run()
 {
-    if (keeper_dispatcher.getRole() == "observer")
+    if (keeper_dispatcher.isObserver())
         return "ro";
     else
         return "rw";

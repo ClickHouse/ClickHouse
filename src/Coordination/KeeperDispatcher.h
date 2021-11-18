@@ -14,6 +14,7 @@
 #include <Coordination/KeeperServer.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperInfos.h>
+#include <Coordination/KeeperConnectionStats.h>
 
 namespace DB
 {
@@ -21,7 +22,7 @@ using ZooKeeperResponseCallback = std::function<void(const Coordination::ZooKeep
 
 /// Highlevel wrapper for ClickHouse Keeper.
 /// Process user requests via consensus and return responses.
-class KeeperDispatcher : public IKeeperInfo
+class KeeperDispatcher
 {
 private:
     mutable std::mutex push_request_mutex;
@@ -67,9 +68,10 @@ private:
     /// RAFT wrapper.
     std::unique_ptr<KeeperServer> server;
 
-    std::shared_ptr<KeeperStats> keeper_stats;
+    mutable std::mutex keeper_stats_mutex;
+    KeeperConnectionStats keeper_stats;
 
-    KeeperSettingsPtr settings;
+    KeeperConfigurationAndSettingsPtr configuration_and_settings;
 
     Poco::Logger * log;
 
@@ -103,7 +105,7 @@ public:
     KeeperDispatcher();
 
     /// Call shutdown
-    ~KeeperDispatcher() override;
+    ~KeeperDispatcher();
 
     /// Initialization from config.
     /// standalone_keeper -- we are standalone keeper application (not inside clickhouse server)
@@ -134,66 +136,66 @@ public:
     void finishSession(int64_t session_id);
 
     /// Invoked when a request completes.
-    void updateKeeperStat(UInt64 process_time_ms);
+    void updateKeeperStatLatency(uint64_t process_time_ms);
 
     /// Are we leader
-    bool isLeader() const override
+    bool isLeader() const
     {
         return server->isLeader();
     }
 
-    bool hasLeader() const override
+    bool hasLeader() const
     {
         return server->isLeaderAlive();
     }
 
-    ///
-    String getRole() const override;
+    bool isObserver() const
+    {
+        return server->isObserver();
+    }
 
-    UInt64 getOutstandingRequests() const override;
-    UInt64 getNumAliveConnections() const override;
+    uint64_t getLogDirSize() const;
 
-    UInt64 getDataDirSize() const override;
-    UInt64 getSnapDirSize() const override;
+    uint64_t getSnapDirSize() const;
 
     /// Request statistics such as qps, latency etc.
-    std::shared_ptr<KeeperStats> getKeeperStats() const
+    KeeperConnectionStats getKeeperConnectionStats() const
     {
+        std::lock_guard lock(keeper_stats_mutex);
         return keeper_stats;
     }
 
-    const IKeeperInfo & getKeeperInfo() const
-    {
-        return *this;
-    }
+    KeeperInfo getKeeperInfo() const;
 
-    IRaftInfo & getRaftInfo() const
-    {
-        return *server;
-    }
-
-    const IStateMachineInfo & getStateMachineInfo() const
+    const KeeperStateMachine & getStateMachine() const
     {
         return *server->getKeeperStateMachine();
     }
 
-    const KeeperSettingsPtr & getKeeperSettings() const
+    const KeeperConfigurationAndSettingsPtr & getKeeperConfigurationAndSettings() const
     {
-        return settings;
+        return configuration_and_settings;
     }
 
-    inline void incrementPacketsSent()
+    void incrementPacketsSent()
     {
-        keeper_stats->incrementPacketsSent();
+        std::lock_guard lock(keeper_stats_mutex);
+        keeper_stats.incrementPacketsSent();
     }
 
-    inline void incrementPacketsReceived()
+    void incrementPacketsReceived()
     {
-        keeper_stats->incrementPacketsReceived();
+        std::lock_guard lock(keeper_stats_mutex);
+        keeper_stats.incrementPacketsReceived();
+    }
+
+    void resetConnectionStats()
+    {
+        std::lock_guard lock(keeper_stats_mutex);
+        keeper_stats.reset();
     }
 
     void dumpConf(WriteBufferFromOwnString & buf) const;
-    void dumpSessions(WriteBufferFromOwnString & buf) const override;
 };
 
 }

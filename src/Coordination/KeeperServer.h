@@ -15,7 +15,7 @@ namespace DB
 
 using RaftAppendResult = nuraft::ptr<nuraft::cmd_result<nuraft::ptr<nuraft::buffer>>>;
 
-class KeeperServer : public IRaftInfo
+class KeeperServer
 {
 private:
     const int server_id;
@@ -53,7 +53,7 @@ private:
 
 public:
     KeeperServer(
-        const KeeperSettingsPtr & settings_,
+        const KeeperConfigurationAndSettingsPtr & settings_,
         const Poco::Util::AbstractConfiguration & config_,
         ResponsesQueue & responses_queue_,
         SnapshotsQueue & snapshots_queue_);
@@ -72,24 +72,24 @@ public:
     /// Return set of the non-active sessions
     std::vector<int64_t> getDeadSessions();
 
-    /// Return set of the non-active sessions
     nuraft::ptr<KeeperStateMachine> getKeeperStateMachine() const
     {
         return state_machine;
     }
 
-    bool isLeader() const override;
+    bool isLeader() const;
 
-    bool isLeaderAlive() const override;
+    bool isFollower() const;
 
-    /// server role ignore zookeeper state "read-only" and "standalone"
-    String getRole() const override;
+    bool isObserver() const;
+
+    bool isLeaderAlive() const;
 
     /// @return follower count if node is not leader return 0
-    UInt64 getFollowerCount() const override;
+    uint64_t getFollowerCount() const;
 
     /// @return synced follower count if node is not leader return 0
-    UInt64 getSyncedFollowerCount() const override;
+    uint64_t getSyncedFollowerCount() const;
 
     /// Wait server initialization (see callbackFunc)
     void waitInit();

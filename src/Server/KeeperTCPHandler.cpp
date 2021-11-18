@@ -32,6 +32,16 @@
 namespace DB
 {
 
+struct LastOp
+{
+public:
+    String name{"NA"};
+    int64_t last_cxid{-1};
+    int64_t last_zxid{-1};
+    int64_t last_response_time{0};
+};
+
+static const LastOp EMPTY_LAST_OP {"NA", -1, -1, 0};
 
 namespace ErrorCodes
 {
@@ -202,7 +212,7 @@ KeeperTCPHandler::KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSoc
     , session_timeout(0, global_context->getConfigRef().getUInt("keeper_server.session_timeout_ms", Coordination::DEFAULT_SESSION_TIMEOUT_MS) * 1000)
     , poll_wrapper(std::make_unique<SocketInterruptablePollWrapper>(socket_))
     , responses(std::make_unique<ThreadSafeResponseQueue>(std::numeric_limits<size_t>::max()))
-    , conn_stats(std::make_shared<KeeperStats>())
+    , last_op(std::make_unique<LastOp>(EMPTY_LAST_OP))
 {
     KeeperTCPHandler::registerConnection(this);
 }
@@ -507,14 +517,21 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
 
 void KeeperTCPHandler::packageSent()
 {
-    conn_stats->incrementPacketsSent();
+    {
+        std::lock_guard lock(conn_stats_mutex);
+        conn_stats.incrementPacketsSent();
+    }
     keeper_dispatcher->incrementPacketsSent();
 }
 
 void KeeperTCPHandler::packageReceived()
 {
-    conn_stats->incrementPacketsReceived();
+    {
+        std::lock_guard lock(conn_stats_mutex);
+        conn_stats.incrementPacketsReceived();
+    }
     keeper_dispatcher->incrementPacketsReceived();
+    LOG_INFO(log, "INCREMENT PACKTEDS RECEIVED VALUE {} SESSION {}", keeper_dispatcher->getKeeperConnectionStats().getPacketsReceived(), session_id);
 }
 
 void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response)
@@ -523,67 +540,71 @@ void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response
     if (response->xid != Coordination::WATCH_XID && response->getOpNum() != Coordination::OpNum::Heartbeat)
     {
         Int64 elapsed = (Poco::Timestamp() - operations[response->xid]) / 1000;
-        conn_stats->updateLatency(elapsed);
-        keeper_dispatcher->updateKeeperStat(elapsed);
-
         {
-            std::lock_guard lock(last_op_mutex);
-            last_op.update(
-                Coordination::toString(response->getOpNum()),
-                response->xid,
-                response->zxid,
-                Poco::Timestamp().epochMicroseconds() / 1000,
-                elapsed);
+            std::lock_guard lock(conn_stats_mutex);
+            conn_stats.updateLatency(elapsed);
         }
+        keeper_dispatcher->updateKeeperStatLatency(elapsed);
+
+        last_op.set(std::make_unique<LastOp>(LastOp{
+            .name = Coordination::toString(response->getOpNum()),
+            .last_cxid = response->xid,
+            .last_zxid = response->zxid,
+            .last_response_time = Poco::Timestamp().epochMicroseconds() / 1000,
+        }));
     }
+
+}
+
+KeeperConnectionStats KeeperTCPHandler::getConnectionStats() const
+{
+    std::lock_guard lock(conn_stats_mutex);
+    return conn_stats;
 }
 
 void KeeperTCPHandler::dumpStats(WriteBufferFromOwnString & buf, bool brief)
 {
+    KeeperConnectionStats stats = getConnectionStats();
 
     writeText(' ', buf);
     writeText(socket().peerAddress().toString(), buf);
     writeText("(recved=", buf);
-    writeIntText(conn_stats->getPacketsReceived(), buf);
+    writeIntText(stats.getPacketsReceived(), buf);
     writeText(",sent=", buf);
-    writeIntText(conn_stats->getPacketsSent(), buf);
+    writeIntText(stats.getPacketsSent(), buf);
     if (!brief)
     {
         if (session_id != 0)
         {
             writeText(",sid=0x", buf);
-            writeText(getHexUIntLowercase(getSessionId()), buf);
+            writeText(getHexUIntLowercase(session_id), buf);
 
             writeText(",lop=", buf);
-            LastOp op;
-            {
-                std::lock_guard lock(last_op_mutex);
-                op = last_op.clone();
-            }
-            writeText(op.getLastOp(), buf);
+            LastOpPtr op = last_op.get();
+            writeText(op->name, buf);
             writeText(",est=", buf);
-            writeIntText(getEstablished().epochMicroseconds() / 1000, buf);
+            writeIntText(established.epochMicroseconds() / 1000, buf);
             writeText(",to=", buf);
-            writeIntText(getSessionTimeout(), buf);
-            Int64 last_cxid = op.getLastCxid();
+            writeIntText(session_timeout.totalMilliseconds(), buf);
+            int64_t last_cxid = op->last_cxid;
             if (last_cxid >= 0)
             {
                 writeText(",lcxid=0x", buf);
                 writeText(getHexUIntLowercase(last_cxid), buf);
             }
             writeText(",lzxid=0x", buf);
-            writeText(getHexUIntLowercase(op.getLastZxid()), buf);
+            writeText(getHexUIntLowercase(op->last_zxid), buf);
             writeText(",lresp=", buf);
-            writeIntText(op.getLastResponseTime(), buf);
+            writeIntText(op->last_response_time, buf);
 
             writeText(",llat=", buf);
-            writeIntText(conn_stats->getLastLatency(), buf);
+            writeIntText(stats.getLastLatency(), buf);
             writeText(",minlat=", buf);
-            writeIntText(conn_stats->getMinLatency(), buf);
+            writeIntText(stats.getMinLatency(), buf);
             writeText(",avglat=", buf);
-            writeIntText(conn_stats->getAvgLatency(), buf);
+            writeIntText(stats.getAvgLatency(), buf);
             writeText(",maxlat=", buf);
-            writeIntText(conn_stats->getMaxLatency(), buf);
+            writeIntText(stats.getMaxLatency(), buf);
         }
     }
     writeText(')', buf);
@@ -592,42 +613,13 @@ void KeeperTCPHandler::dumpStats(WriteBufferFromOwnString & buf, bool brief)
 
 void KeeperTCPHandler::resetStats()
 {
-    conn_stats->reset();
-    std::lock_guard lock(last_op_mutex);
     {
-        last_op.reset();
+        std::lock_guard lock(conn_stats_mutex);
+        conn_stats.reset();
     }
+    last_op.set(std::make_unique<LastOp>(EMPTY_LAST_OP));
 }
 
-Int64 KeeperTCPHandler::getPacketsReceived() const
-{
-    return conn_stats->getPacketsReceived();
-}
-Int64 KeeperTCPHandler::getPacketsSent() const
-{
-    return conn_stats->getPacketsReceived();
-}
-Int64 KeeperTCPHandler::getSessionId() const
-{
-    return session_id;
-}
-Int64 KeeperTCPHandler::getSessionTimeout() const
-{
-    return session_timeout.totalMilliseconds();
-}
-Poco::Timestamp KeeperTCPHandler::getEstablished() const
-{
-    return established;
-}
-LastOp KeeperTCPHandler::getLastOp() const
-{
-    return last_op;
-}
-
-KeeperStatsPtr KeeperTCPHandler::getSessionStats() const
-{
-    return conn_stats;
-}
 KeeperTCPHandler::~KeeperTCPHandler()
 {
     KeeperTCPHandler::unregisterConnection(this);
