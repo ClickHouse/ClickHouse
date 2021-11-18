@@ -24,15 +24,18 @@ namespace ErrorCodes
 ReadBufferFromBlobStorage::ReadBufferFromBlobStorage(
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & path_,
+    size_t max_single_read_retries_,
     size_t tmp_buffer_size_,
     bool use_external_buffer_,
     size_t read_until_position_)
+    // TODO: shall this notation be used in all constructors?
     : SeekableReadBuffer(nullptr, 0)
     , blob_container_client(blob_container_client_)
     , path(path_)
+    , max_single_read_retries(max_single_read_retries_)
+    , tmp_buffer_size(tmp_buffer_size_) // NOTE: field used only here in the constructor
     , use_external_buffer(use_external_buffer_)
     , read_until_position(read_until_position_)
-    , tmp_buffer_size(tmp_buffer_size_) // NOTE: field used only here in the constructor
 {
     if (!use_external_buffer)
     {
@@ -59,7 +62,6 @@ bool ReadBufferFromBlobStorage::nextImpl()
     if (!initialized)
         initialize();
 
-
     if (use_external_buffer)
     {
         data_ptr = internal_buffer.begin();
@@ -70,7 +72,7 @@ bool ReadBufferFromBlobStorage::nextImpl()
     size_t bytes_read = 0;
 
     auto sleep_time_with_backoff_milliseconds = std::chrono::milliseconds(100);
-    for (int i = 0; i < 3; i++) // TODO: setting for max retries?
+    for (size_t i = 0; i < max_single_read_retries; ++i) // TODO: Is this try part necessary with Azure reliable streams?
     {
         try
         {

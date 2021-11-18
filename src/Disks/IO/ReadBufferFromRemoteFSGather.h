@@ -113,10 +113,12 @@ public:
         const String & path_,
         std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         IDiskRemote::Metadata metadata_,
+        size_t max_single_read_retries_,
         const ReadSettings & settings_,
         bool threadpool_read_ = false)
         : ReadBufferFromRemoteFSGather(metadata_, path_)
         , blob_container_client(blob_container_client_)
+        , max_single_read_retries(max_single_read_retries_)
         , settings(settings_)
         , threadpool_read(threadpool_read_)
     {
@@ -126,7 +128,8 @@ public:
 
 private:
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
-    ReadSettings settings;
+    size_t max_single_read_retries;
+    ReadSettings settings; // NOTE: used only for remote_fs_buffer_size
     bool threadpool_read;
 };
 #endif

@@ -21,6 +21,7 @@ public:
     explicit ReadBufferFromBlobStorage(
         std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
         const String & path_,
+        size_t max_single_read_retries_,
         size_t tmp_buffer_size_,
         bool use_external_buffer_ = false,
         size_t read_until_position_ = 0
@@ -38,12 +39,15 @@ private:
     std::unique_ptr<Azure::Core::IO::BodyStream> data_stream;
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     std::unique_ptr<Azure::Storage::Blobs::BlobClient> blob_client;
-    std::vector<char> tmp_buffer;
+
     const String path;
+    size_t max_single_read_retries;
+    std::vector<char> tmp_buffer;
+    size_t tmp_buffer_size;
     bool use_external_buffer;
     off_t read_until_position = 0;
+
     off_t offset = 0;
-    size_t tmp_buffer_size;
     size_t total_size;
     bool initialized = false;
     char * data_ptr;
