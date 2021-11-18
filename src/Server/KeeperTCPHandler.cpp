@@ -450,12 +450,12 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(Int32 & command)
 {
     if (!FourLetterCommandFactory::instance().isKnown(command))
     {
-        LOG_WARNING(log, "invalid four letter command {}", std::to_string(command));
+        LOG_WARNING(log, "invalid four letter command {}", IFourLetterCommand::toName(command));
         return false;
     }
     else if (!FourLetterCommandFactory::instance().isEnabled(command))
     {
-        LOG_WARNING(log, "four letter command {} not enabled", IFourLetterCommand::toName(command));
+        LOG_WARNING(log, "not enabled four letter command {}", IFourLetterCommand::toName(command));
         return false;
     }
     else
