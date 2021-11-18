@@ -170,13 +170,6 @@ if __name__ == "__main__":
     else:
         logging.info("Build log doesn't exist")
 
-    # compress directory for performance tests
-    if build_config['package_type'] == "performance":
-        archive_path = os.path.join(temp_path, "performance.tgz")
-        compress_fast(build_output_path, archive_path)
-        subprocess.check_call(f"rm -fr {build_output_path}/*", shell=True)
-        subprocess.check_call(f"mv {archive_path} {build_output_path}/", shell=True)
-
     build_urls = s3_helper.upload_build_folder_to_s3(build_output_path, s3_path_prefix, keep_dirs_in_s3_path=False, upload_symlinks=False)
     logging.info("Got build URLs %s", build_urls)
 
