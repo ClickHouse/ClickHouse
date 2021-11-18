@@ -32,9 +32,28 @@ def get_large_objects_count(cluster, size=100, folder='data'):
     minio = cluster.minio_client
     counter = 0
     for obj in minio.list_objects(cluster.minio_bucket, '{}/'.format(folder)):
-        if obj.size >= size:
+        if obj.size is not None and obj.size >= size:
             counter = counter + 1
     return counter
+
+
+def check_objects_exisis(cluster, object_list, folder='data'):
+    minio = cluster.minio_client
+    for obj in object_list:
+        if obj:
+            minio.stat_object(cluster.minio_bucket, '{}/{}'.format(folder, obj))
+
+
+def check_objects_not_exisis(cluster, object_list, folder='data'):
+    minio = cluster.minio_client
+    for obj in object_list:
+        if obj:
+            try:
+                minio.stat_object(cluster.minio_bucket, '{}/{}'.format(folder, obj))
+            except Exception as error:
+                assert "NoSuchKey" in str(error)
+            else:
+                assert False, "Object {} should not be exists".format(obj)
 
 
 def wait_for_large_objects_count(cluster, expected, size=100, timeout=30):
@@ -248,3 +267,53 @@ def test_s3_zero_copy_with_ttl_delete(cluster, large_data, iterations):
 
         node1.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
         node2.query("DROP TABLE IF EXISTS ttl_delete_test NO DELAY")
+
+
+def test_s3_zero_copy_unfreeze(cluster):
+    node1 = cluster.instances["node1"]
+    node2 = cluster.instances["node2"]
+
+    node1.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
+    node2.query("DROP TABLE IF EXISTS unfreeze_test NO DELAY")
+
+    node1.query(
+        """
+        CREATE TABLE unfreeze_test ON CLUSTER test_cluster (d UInt64)
+        ENGINE=ReplicatedMergeTree('/clickhouse/tables/unfreeze_test', '{}')
+        ORDER BY d
+        SETTINGS storage_policy='s3'
+        """
+            .format('{replica}')
+    )
+
+    node1.query("INSERT INTO unfreeze_test VALUES (0)")
+
+    node1.query("ALTER TABLE unfreeze_test FREEZE WITH NAME 'backup1'")
+    node2.query("ALTER TABLE unfreeze_test FREEZE WITH NAME 'backup2'")
+
+    time.sleep(1)
+
+    objects01 = node1.get_backuped_s3_objects("s31", "backup1")
+    objects02 = node2.get_backuped_s3_objects("s31", "backup2")
+
+    assert objects01 == objects02
+
+    check_objects_exisis(cluster, objects01)
+
+    node1.query("TRUNCATE TABLE unfreeze_test")
+
+    objects11 = node1.get_backuped_s3_objects("s31", "backup1")
+    objects12 = node2.get_backuped_s3_objects("s31", "backup2")
+
+    assert objects01 == objects11
+    assert objects01 == objects12
+
+    check_objects_exisis(cluster, objects11)
+
+    node1.query("ALTER TABLE unfreeze_test UNFREEZE WITH NAME 'backup1'")
+
+    check_objects_exisis(cluster, objects12)
+
+    node2.query("ALTER TABLE unfreeze_test UNFREEZE WITH NAME 'backup2'")
+
+    check_objects_not_exisis(cluster, objects12)
