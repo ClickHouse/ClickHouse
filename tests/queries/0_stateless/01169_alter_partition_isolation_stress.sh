@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-replicated-database
 
 # shellcheck disable=SC2015
 
@@ -18,17 +18,18 @@ function thread_insert()
 {
     set -e
     trap "exit 0" INT
+    val=1
     while true; do
         action="ROLLBACK"
         if (( RANDOM % 2 )); then
             action="COMMIT"
         fi
-        val=$RANDOM
         $CLICKHOUSE_CLIENT --multiquery --query "
         BEGIN TRANSACTION;
         INSERT INTO src VALUES ($val, 1);
         INSERT INTO src VALUES ($val, 2);
         COMMIT;"
+        val=$((val+1))
         sleep 0.$RANDOM;
     done
 }
@@ -90,6 +91,8 @@ function thread_select()
         SELECT type, throwIf(count(n) != countDistinct(n)) FROM dst GROUP BY type FORMAT Null;
         -- rows inserted by thread_insert moved together
         SELECT _table, throwIf(arraySort(groupArrayIf(n, type=1)) != arraySort(groupArrayIf(n, type=2))) FROM merge(currentDatabase(), '') GROUP BY _table FORMAT Null;
+        -- all rows are inserted in insert_thread
+        SELECT type, throwIf(count(n) != max(n)), throwIf(sum(n) != max(n)*(max(n)+1)/2) FROM merge(currentDatabase(), '') WHERE type IN (1, 2) GROUP BY type ORDER BY type FORMAT Null;
         COMMIT;" || $CLICKHOUSE_CLIENT -q "SELECT _table, type, arraySort(groupArray(n)) FROM merge(currentDatabase(), '') GROUP BY _table, type ORDER BY _table, type"
     done
 }
@@ -108,6 +111,7 @@ wait
 $CLICKHOUSE_CLIENT -q "SELECT type, count(n) = countDistinct(n) FROM merge(currentDatabase(), '') GROUP BY type ORDER BY type"
 $CLICKHOUSE_CLIENT -q "SELECT DISTINCT arraySort(groupArrayIf(n, type=1)) = arraySort(groupArrayIf(n, type=2)) FROM merge(currentDatabase(), '') GROUP BY _table ORDER BY _table"
 $CLICKHOUSE_CLIENT -q "SELECT count(n), sum(n) FROM merge(currentDatabase(), '') WHERE type=4"
+$CLICKHOUSE_CLIENT -q "SELECT type, count(n) == max(n), sum(n) == max(n)*(max(n)+1)/2 FROM merge(currentDatabase(), '') WHERE type IN (1, 2) GROUP BY type ORDER BY type"
 
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE src";

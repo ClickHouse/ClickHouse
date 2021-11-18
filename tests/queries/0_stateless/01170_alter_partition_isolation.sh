@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest, no-replicated-database
+# Looks like server does not listen https port in fasttest
+# FIXME Replicated database executes ALTERs in separate context, so transaction info is lost
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
