@@ -370,9 +370,8 @@ class AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider : public Aws::Auth::AWS
     /// See STSAssumeRoleWebIdentityCredentialsProvider.
 
 public:
-    AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(DB::S3::PocoHTTPClientConfiguration & aws_client_configuration)
+    explicit AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider(DB::S3::PocoHTTPClientConfiguration & aws_client_configuration)
         : logger(&Poco::Logger::get("AwsAuthSTSAssumeRoleWebIdentityCredentialsProvider"))
-
     {
         // check environment variables
         String tmp_region = Aws::Environment::GetEnv("AWS_DEFAULT_REGION");
