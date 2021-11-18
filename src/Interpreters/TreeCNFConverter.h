@@ -145,8 +145,19 @@ private:
 class TreeCNFConverter
 {
 public:
+    static constexpr size_t DEFAULT_MAX_GROWTH_MULTIPLIER = 20;
+    static constexpr size_t MAX_ATOMS_WITHOUT_CHECK = 200;
 
-    static CNFQuery toCNF(const ASTPtr & query);
+    /// @max_growth_multipler means that it's allowed to grow size of formula only
+    /// in that amount of times. It's needed to avoid exponential explosion of formula.
+    /// CNF of boolean formula with N clauses can have 2^N clauses.
+    /// If amout of atomic formulas will be exceded nullopt will be returned.
+    /// 0 - means unlimited.
+    static std::optional<CNFQuery> tryConvertToCNF(
+        const ASTPtr & query, size_t max_growth_multipler = DEFAULT_MAX_GROWTH_MULTIPLIER);
+
+    static CNFQuery toCNF(
+        const ASTPtr & query, size_t max_growth_multipler = DEFAULT_MAX_GROWTH_MULTIPLIER);
 
     static ASTPtr fromCNF(const CNFQuery & cnf);
 };

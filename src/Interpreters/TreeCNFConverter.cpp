@@ -1,7 +1,9 @@
 #include <Interpreters/TreeCNFConverter.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
-#include <Poco/Logger.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Common/checkStackSize.h>
+
 
 namespace DB
 {
@@ -10,14 +12,37 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+    extern const int TOO_MANY_TEMPORARY_COLUMNS;
 }
 
 namespace
 {
 
+bool isLogicalFunction(const ASTFunction & func)
+{
+    return func.name == "and" || func.name == "or" || func.name == "not";
+}
+
+size_t countAtoms(const ASTPtr & node)
+{
+    checkStackSize();
+    if (node->as<ASTIdentifier>())
+        return 1;
+
+    const auto * func = node->as<ASTFunction>();
+    if (func && !isLogicalFunction(*func))
+        return 1;
+
+    size_t num_atoms = 0;
+    for (const auto & child : node->children)
+        num_atoms += countAtoms(child);
+    return num_atoms;
+}
+
 /// Splits AND(a, b, c) to AND(a, AND(b, c)) for AND/OR
 void splitMultiLogic(ASTPtr & node)
 {
+    checkStackSize();
     auto * func = node->as<ASTFunction>();
 
     if (func && (func->name == "and" || func->name == "or"))
@@ -29,9 +54,8 @@ void splitMultiLogic(ASTPtr & node)
         {
             ASTPtr res = func->arguments->children[0]->clone();
             for (size_t i = 1; i < func->arguments->children.size(); ++i)
-            {
                 res = makeASTFunction(func->name, res, func->arguments->children[i]->clone());
-            }
+
             node = res;
         }
 
@@ -49,6 +73,7 @@ void splitMultiLogic(ASTPtr & node)
 /// Push NOT to leafs, remove NOT NOT ...
 void traversePushNot(ASTPtr & node, bool add_negation)
 {
+    checkStackSize();
     auto * func = node->as<ASTFunction>();
 
     if (func && (func->name == "and" || func->name == "or"))
@@ -86,14 +111,19 @@ void traversePushNot(ASTPtr & node, bool add_negation)
 }
 
 /// Push Or inside And (actually pull AND to top)
-void traversePushOr(ASTPtr & node)
+bool traversePushOr(ASTPtr & node, size_t num_atoms, size_t max_atoms)
 {
+    if (max_atoms && num_atoms > max_atoms)
+        return false;
+
+    checkStackSize();
     auto * func = node->as<ASTFunction>();
 
     if (func && (func->name == "or" || func->name == "and"))
     {
         for (auto & child : func->arguments->children)
-            traversePushOr(child);
+            if (!traversePushOr(child, num_atoms, max_atoms))
+                return false;
     }
 
     if (func && func->name == "or")
@@ -105,15 +135,15 @@ void traversePushOr(ASTPtr & node)
             auto & child = func->arguments->children[i];
             auto * and_func = child->as<ASTFunction>();
             if (and_func && and_func->name == "and")
-            {
                 and_node_id = i;
-            }
         }
-        if (and_node_id == func->arguments->children.size())
-            return;
-        const size_t other_node_id = 1 - and_node_id;
 
+        if (and_node_id == func->arguments->children.size())
+            return true;
+
+        const size_t other_node_id = 1 - and_node_id;
         const auto * and_func = func->arguments->children[and_node_id]->as<ASTFunction>();
+
         auto a = func->arguments->children[other_node_id];
         auto b = and_func->arguments->children[0];
         auto c = and_func->arguments->children[1];
@@ -124,13 +154,19 @@ void traversePushOr(ASTPtr & node)
             makeASTFunction("or", a->clone(), b),
             makeASTFunction("or", a, c));
 
-        traversePushOr(node);
+        /// Count all atoms from 'a', because it was cloned.
+        num_atoms += countAtoms(a);
+        return traversePushOr(node, num_atoms, max_atoms);
     }
+
+    return true;
 }
 
 /// transform ast into cnf groups
 void traverseCNF(const ASTPtr & node, CNFQuery::AndGroup & and_group, CNFQuery::OrGroup & or_group)
 {
+    checkStackSize();
+
     auto * func = node->as<ASTFunction>();
     if (func && func->name == "and")
     {
@@ -171,19 +207,40 @@ void traverseCNF(const ASTPtr & node, CNFQuery::AndGroup & result)
 
 }
 
-CNFQuery TreeCNFConverter::toCNF(const ASTPtr & query)
+std::optional<CNFQuery> TreeCNFConverter::tryConvertToCNF(
+    const ASTPtr & query, size_t max_growth_multipler)
 {
     auto cnf = query->clone();
+    size_t num_atoms = countAtoms(cnf);
 
     splitMultiLogic(cnf);
     traversePushNot(cnf, false);
-    traversePushOr(cnf);
+
+    size_t max_atoms = max_growth_multipler
+        ? std::max(MAX_ATOMS_WITHOUT_CHECK, num_atoms * max_growth_multipler)
+        : 0;
+
+    if (!traversePushOr(cnf, num_atoms, max_atoms))
+        return {};
+
     CNFQuery::AndGroup and_group;
     traverseCNF(cnf, and_group);
 
     CNFQuery result{std::move(and_group)};
 
     return result;
+}
+
+CNFQuery TreeCNFConverter::toCNF(
+    const ASTPtr & query, size_t max_growth_multipler)
+{
+    auto cnf = tryConvertToCNF(query, max_growth_multipler);
+    if (!cnf)
+        throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
+            "Cannot expression '{}' to CNF, because it produces to many clauses."
+            "Size of formula inCNF can be exponential of size of source formula.");
+
+    return *cnf;
 }
 
 ASTPtr TreeCNFConverter::fromCNF(const CNFQuery & cnf)
@@ -208,7 +265,7 @@ ASTPtr TreeCNFConverter::fromCNF(const CNFQuery & cnf)
             auto * func = or_groups.back()->as<ASTFunction>();
             for (const auto & atom : group)
             {
-                if ((*group.begin()).negative)
+                if (atom.negative)
                     func->arguments->children.push_back(makeASTFunction("not", atom.ast->clone()));
                 else
                     func->arguments->children.push_back(atom.ast->clone());

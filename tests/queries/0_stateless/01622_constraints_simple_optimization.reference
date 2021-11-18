@@ -32,14 +32,14 @@
 1
 1
 0
-SELECT count()
+SELECT count() AS `count()`
 FROM constraint_test_constants
 WHERE (c > 100) OR (b > 100)
-SELECT count()
+SELECT count() AS `count()`
 FROM constraint_test_constants
 WHERE c > 100
-SELECT count()
+SELECT count() AS `count()`
 FROM constraint_test_constants
 WHERE c > 100
-SELECT count()
+SELECT count() AS `count()`
 FROM constraint_test_constants
