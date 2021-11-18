@@ -230,10 +230,8 @@ namespace
             return getCreateQueryImpl(*quota, access_control, attach_mode);
         if (const SettingsProfile * profile = typeid_cast<const SettingsProfile *>(&entity))
             return getCreateQueryImpl(*profile, access_control, attach_mode);
-        throw Exception(entity.outputTypeAndName() + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
+        throw Exception(entity.formatTypeWithName() + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
     }
-
-    using EntityType = IAccessEntity::Type;
 }
 
 
@@ -307,7 +305,7 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
         if (usage)
             entities.push_back(access_control.read<Quota>(usage->quota_id));
     }
-    else if (show_query.type == EntityType::ROW_POLICY)
+    else if (show_query.type == AccessEntityType::ROW_POLICY)
     {
         auto ids = access_control.findAll<RowPolicy>();
         if (show_query.row_policy_names)
@@ -379,12 +377,12 @@ AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess()
     AccessRightsElements res;
     switch (show_query.type)
     {
-        case EntityType::USER: res.emplace_back(AccessType::SHOW_USERS); return res;
-        case EntityType::ROLE: res.emplace_back(AccessType::SHOW_ROLES); return res;
-        case EntityType::SETTINGS_PROFILE: res.emplace_back(AccessType::SHOW_SETTINGS_PROFILES); return res;
-        case EntityType::ROW_POLICY: res.emplace_back(AccessType::SHOW_ROW_POLICIES); return res;
-        case EntityType::QUOTA: res.emplace_back(AccessType::SHOW_QUOTAS); return res;
-        case EntityType::MAX: break;
+        case AccessEntityType::USER: res.emplace_back(AccessType::SHOW_USERS); return res;
+        case AccessEntityType::ROLE: res.emplace_back(AccessType::SHOW_ROLES); return res;
+        case AccessEntityType::SETTINGS_PROFILE: res.emplace_back(AccessType::SHOW_SETTINGS_PROFILES); return res;
+        case AccessEntityType::ROW_POLICY: res.emplace_back(AccessType::SHOW_ROW_POLICIES); return res;
+        case AccessEntityType::QUOTA: res.emplace_back(AccessType::SHOW_QUOTAS); return res;
+        case AccessEntityType::MAX: break;
     }
     throw Exception(toString(show_query.type) + ": type is not supported by SHOW CREATE query", ErrorCodes::NOT_IMPLEMENTED);
 }

@@ -60,7 +60,7 @@ struct QuotaKeyTypeInfo
 {
     const char * const raw_name;
     const String name;  /// Lowercased with underscores, e.g. "client_key".
-    const std::vector<QuotaKeyType> base_types; /// For combined types keeps base types, e.g. for CLIENT_KEY_OR_USER_NAME it keeps [KeyType::CLIENT_KEY, KeyType::USER_NAME].
+    const std::vector<QuotaKeyType> base_types; /// For combined types keeps base types, e.g. for CLIENT_KEY_OR_USER_NAME it keeps [KeyType::CLIENT_KEY, KeyAccessEntityType::USER_NAME].
     static const QuotaKeyTypeInfo & get(QuotaKeyType type);
 };
 

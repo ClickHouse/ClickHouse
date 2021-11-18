@@ -8,6 +8,7 @@
 #include <base/shared_ptr_helper.h>
 #include <boost/container/flat_set.hpp>
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 
 
