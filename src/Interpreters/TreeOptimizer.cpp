@@ -564,13 +564,20 @@ void optimizeSubstituteColumn(ASTSelectQuery * select_query,
 }
 
 /// Transform WHERE to CNF for more convenient optimization.
-void convertQueryToCNF(ASTSelectQuery * select_query)
+bool convertQueryToCNF(ASTSelectQuery * select_query)
 {
     if (select_query->where())
     {
-        auto cnf_form = TreeCNFConverter::toCNF(select_query->where()).pushNotInFuntions();
-        select_query->refWhere() = TreeCNFConverter::fromCNF(cnf_form);
+        auto cnf_form = TreeCNFConverter::tryConvertToCNF(select_query->where());
+        if (!cnf_form)
+            return false;
+
+        cnf_form->pushNotInFuntions();
+        select_query->refWhere() = TreeCNFConverter::fromCNF(*cnf_form);
+        return true;
     }
+
+    return false;
 }
 
 /// Remove duplicated columns from USING(...).
@@ -734,10 +741,11 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
         optimizeAggregationFunctions(query);
 
+    bool converted_to_cnf = false;
     if (settings.convert_query_to_cnf)
-        convertQueryToCNF(select_query);
+        converted_to_cnf = convertQueryToCNF(select_query);
 
-    if (settings.convert_query_to_cnf && settings.optimize_using_constraints)
+    if (converted_to_cnf && settings.optimize_using_constraints)
     {
         optimizeWithConstraints(select_query, result.aliases, result.source_columns_set,
             tables_with_columns, result.metadata_snapshot, settings.optimize_append_index);
