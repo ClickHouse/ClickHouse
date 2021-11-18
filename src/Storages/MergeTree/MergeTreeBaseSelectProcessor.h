@@ -42,8 +42,6 @@ public:
         const MergeTreeReadTaskColumns & task_columns,
         const Block & sample_block);
 
-    static void transformBlockViaPrewhereInfo(Block & block, const PrewhereInfoPtr & prewhere_info);
-
 protected:
     Chunk generate() final;
 
