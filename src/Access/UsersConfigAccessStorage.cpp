@@ -252,12 +252,12 @@ namespace
             limits.duration = duration;
             limits.randomize_interval = config.getBool(interval_config + ".randomize", false);
 
-            for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
+            for (auto quota_type : collections::range(QuotaType::MAX))
             {
-                const auto & type_info = Quota::ResourceTypeInfo::get(resource_type);
+                const auto & type_info = QuotaTypeInfo::get(quota_type);
                 auto value = config.getString(interval_config + "." + type_info.name, "0");
                 if (value != "0")
-                    limits.max[resource_type] = type_info.amountFromString(value);
+                    limits.max[static_cast<size_t>(quota_type)] = type_info.stringToValue(value);
             }
         }
 

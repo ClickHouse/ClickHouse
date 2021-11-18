@@ -113,7 +113,6 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
     new_intervals->quota_key = key;
     auto & intervals = new_intervals->intervals;
     intervals.reserve(quota->all_limits.size());
-    static constexpr auto MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
     for (const auto & limits : quota->all_limits)
     {
         intervals.emplace_back();
@@ -124,11 +123,12 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
         if (limits.randomize_interval)
             end_of_interval += randomDuration(limits.duration);
         interval.end_of_interval = end_of_interval.time_since_epoch();
-        for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
+        for (auto quota_type : collections::range(QuotaType::MAX))
         {
-            if (limits.max[resource_type])
-                interval.max[resource_type] = *limits.max[resource_type];
-            interval.used[resource_type] = 0;
+            auto quota_type_i = static_cast<size_t>(quota_type);
+            if (limits.max[quota_type_i])
+                interval.max[quota_type_i] = *limits.max[quota_type_i];
+            interval.used[quota_type_i] = 0;
         }
     }
 
@@ -159,9 +159,10 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
 
             /// Found an interval with the same duration, we need to copy its usage information to `result`.
             const auto & current_interval = *lower_bound;
-            for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
+            for (auto quota_type : collections::range(QuotaType::MAX))
             {
-                new_interval.used[resource_type].store(current_interval.used[resource_type].load());
+                auto quota_type_i = static_cast<size_t>(quota_type);
+                new_interval.used[quota_type_i].store(current_interval.used[quota_type_i].load());
                 new_interval.end_of_interval.store(current_interval.end_of_interval.load());
             }
         }

@@ -36,7 +36,6 @@ public:
     bool or_replace = false;
 
     using KeyType = Quota::KeyType;
-    using ResourceAmount = Quota::ResourceAmount;
 
     Strings names;
     String new_name;
@@ -44,7 +43,7 @@ public:
 
     struct Limits
     {
-        std::optional<ResourceAmount> max[Quota::MAX_RESOURCE_TYPE];
+        std::optional<QuotaValue> max[static_cast<size_t>(QuotaType::MAX)];
         bool drop = false;
         std::chrono::seconds duration = std::chrono::seconds::zero();
         bool randomize_interval = false;
