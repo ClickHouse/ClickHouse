@@ -35,6 +35,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
@@ -4480,7 +4481,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         }
 
         size_t pos = 0;
-        for(size_t i : metadata_snapshot->minmax_count_projection->partition_value_indices)
+        for (size_t i : metadata_snapshot->minmax_count_projection->partition_value_indices)
         {
             if (i >= part->partition.value.size())
                 throw Exception("Partition value index is out of boundary. It's a bug", ErrorCodes::LOGICAL_ERROR);
@@ -4787,6 +4788,9 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         DataPartsVector normal_parts;
         query_info.minmax_count_projection_block = getMinMaxCountProjectionBlock(
             metadata_snapshot, minmax_conut_projection_candidate->required_columns, query_info, parts, normal_parts, query_context);
+
+        MergeTreeBaseSelectProcessor::transformBlockViaPrewhereInfo(
+            query_info.minmax_count_projection_block, minmax_conut_projection_candidate->prewhere_info);
 
         if (normal_parts.empty())
         {
