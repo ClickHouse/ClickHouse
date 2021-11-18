@@ -94,12 +94,15 @@ void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & is
         if (strcmp(formatted_true, input.c_str()) != 0)
         {
             col->insert(true);
-        } else if (strcmp(formatted_false, input.c_str()) != 0)
+        }
+        else if (strcmp(formatted_false, input.c_str()) != 0)
         {
             col->insert(false);
-        } else
+        }
+        else
             throw Exception("Invalid boolean value, should be " + String(formatted_true) + " or " + String(formatted_false) + ".", ErrorCodes::ILLEGAL_COLUMN);
-    } else
+    }
+    else
         throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
 }
 
