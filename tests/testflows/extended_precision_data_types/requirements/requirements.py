@@ -754,8 +754,8 @@ RQ_SRS_020_ClickHouse_Extended_Precision_Create_Table = Requirement(
     level=3,
     num='4.13.1')
 
-QA_SRS020_ClickHouse_Extended_Precision_Data_Types = Specification(
-    name='QA-SRS020 ClickHouse Extended Precision Data Types', 
+SRS020_ClickHouse_Extended_Precision_Data_Types = Specification(
+    name='SRS020 ClickHouse Extended Precision Data Types',
     description=None,
     author=None,
     date=None, 
@@ -855,7 +855,7 @@ QA_SRS020_ClickHouse_Extended_Precision_Data_Types = Specification(
         RQ_SRS_020_ClickHouse_Extended_Precision_Create_Table,
         ),
     content='''
-# QA-SRS020 ClickHouse Extended Precision Data Types
+# SRS020 ClickHouse Extended Precision Data Types
 # Software Requirements Specification
 
 ## Table of Contents
@@ -1398,24 +1398,24 @@ version: 1.0
 
 ## References
 
-* **ClickHouse:** https://clickhouse.tech
+* **ClickHouse:** https://clickhouse.com
 * **GitHub Repository**: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/extended_precision_data_types/requirements/requirements.md
 * **Revision History**: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/extended_precision_data_types/requirements/requirements.md
 * **Git:** https://git-scm.com/
 
 [Extended Precision Data Types]: #extended-precision-data-types
-[Arithmetic functions]: https://clickhouse.tech/docs/en/sql-reference/functions/arithmetic-functions/
-[Array functions]: https://clickhouse.tech/docs/en/sql-reference/functions/array-functions/
-[Comparison functions]: https://clickhouse.tech/docs/en/sql-reference/functions/comparison-functions/
-[Logical Functions]: https://clickhouse.tech/docs/en/sql-reference/functions/logical-functions/
-[Mathematical Functions]: https://clickhouse.tech/docs/en/sql-reference/functions/math-functions/
-[Rounding Functions]: https://clickhouse.tech/docs/en/sql-reference/functions/rounding-functions/
-[Bit Functions]: https://clickhouse.tech/docs/en/sql-reference/functions/bit-functions/
-[Null Functions]: https://clickhouse.tech/docs/en/sql-reference/functions/functions-for-nulls/
-[Tuple Functions]: https://clickhouse.tech/docs/en/sql-reference/functions/tuple-functions/
-[Map Functions]: https://clickhouse.tech/docs/en/sql-reference/functions/tuple-map-functions/
+[Arithmetic functions]: https://clickhouse.com/docs/en/sql-reference/functions/arithmetic-functions/
+[Array functions]: https://clickhouse.com/docs/en/sql-reference/functions/array-functions/
+[Comparison functions]: https://clickhouse.com/docs/en/sql-reference/functions/comparison-functions/
+[Logical Functions]: https://clickhouse.com/docs/en/sql-reference/functions/logical-functions/
+[Mathematical Functions]: https://clickhouse.com/docs/en/sql-reference/functions/math-functions/
+[Rounding Functions]: https://clickhouse.com/docs/en/sql-reference/functions/rounding-functions/
+[Bit Functions]: https://clickhouse.com/docs/en/sql-reference/functions/bit-functions/
+[Null Functions]: https://clickhouse.com/docs/en/sql-reference/functions/functions-for-nulls/
+[Tuple Functions]: https://clickhouse.com/docs/en/sql-reference/functions/tuple-functions/
+[Map Functions]: https://clickhouse.com/docs/en/sql-reference/functions/tuple-map-functions/
 [SRS]: #srs
-[ClickHouse]: https://clickhouse.tech
+[ClickHouse]: https://clickhouse.com
 [GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/extended_precision_data_types/requirements/requirements.md
 [Revision History]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/extended_precision_data_types/requirements/requirements.md
 [Git]: https://git-scm.com/

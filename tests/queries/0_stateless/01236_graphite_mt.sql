@@ -1,27 +1,40 @@
+
+-- Use DateTime('UTC') to have a common rollup window
 drop table if exists test_graphite;
-create table test_graphite (key UInt32, Path String, Time DateTime, Value Float64, Version UInt32, col UInt64) engine = GraphiteMergeTree('graphite_rollup') order by key settings index_granularity=10;
+create table test_graphite (key UInt32, Path String, Time DateTime('UTC'), Value Float64, Version UInt32, col UInt64)
+    engine = GraphiteMergeTree('graphite_rollup') order by key settings index_granularity=10;
 
-insert into test_graphite
-select 1, 'sum_1', toDateTime(today()) - number * 60 - 30, number, 1, number from numbers(300) union all
-select 2, 'sum_1', toDateTime(today()) - number * 60 - 30, number, 1, number from numbers(300) union all
-select 1, 'sum_2', toDateTime(today()) - number * 60 - 30, number, 1, number from numbers(300) union all
-select 2, 'sum_2', toDateTime(today()) - number * 60 - 30, number, 1, number from numbers(300) union all
-select 1, 'max_1', toDateTime(today()) - number * 60 - 30, number, 1, number from numbers(300) union all
-select 2, 'max_1', toDateTime(today()) - number * 60 - 30, number, 1, number from numbers(300) union all
-select 1, 'max_2', toDateTime(today()) - number * 60 - 30, number, 1, number from numbers(300) union all
-select 2, 'max_2', toDateTime(today()) - number * 60 - 30, number, 1, number from numbers(300);
+SET joined_subquery_requires_alias = 0;
 
-insert into test_graphite
-select 1, 'sum_1', toDateTime(today() - 3) - number * 60 - 30, number, 1, number from numbers(1200) union all
-select 2, 'sum_1', toDateTime(today() - 3) - number * 60 - 30, number, 1, number from numbers(1200) union all
-select 1, 'sum_2', toDateTime(today() - 3) - number * 60 - 30, number, 1, number from numbers(1200) union all
-select 2, 'sum_2', toDateTime(today() - 3) - number * 60 - 30, number, 1, number from numbers(1200) union all
-select 1, 'max_1', toDateTime(today() - 3) - number * 60 - 30, number, 1, number from numbers(1200) union all
-select 2, 'max_1', toDateTime(today() - 3) - number * 60 - 30, number, 1, number from numbers(1200) union all
-select 1, 'max_2', toDateTime(today() - 3) - number * 60 - 30, number, 1, number from numbers(1200) union all
-select 2, 'max_2', toDateTime(today() - 3) - number * 60 - 30, number, 1, number from numbers(1200);
+INSERT into test_graphite
+WITH dates AS
+    (
+        SELECT toStartOfDay(toDateTime(now('UTC'), 'UTC')) as today,
+               today - INTERVAL 3 day as older_date
+    )
+    -- Newer than 2 days are kept in windows of 600 seconds
+    select 1 AS key, 'sum_1' AS s, today - number * 60 - 30, number, 1, number from dates, numbers(300) union all
+    select 2, 'sum_1', today - number * 60 - 30, number, 1, number from dates, numbers(300) union all
+    select 1, 'sum_2', today - number * 60 - 30, number, 1, number from dates, numbers(300) union all
+    select 2, 'sum_2', today - number * 60 - 30, number, 1, number from dates, numbers(300) union all
+    select 1, 'max_1', today - number * 60 - 30, number, 1, number from dates, numbers(300) union all
+    select 2, 'max_1', today - number * 60 - 30, number, 1, number from dates, numbers(300) union all
+    select 1, 'max_2', today - number * 60 - 30, number, 1, number from dates, numbers(300) union all
+    select 2, 'max_2', today - number * 60 - 30, number, 1, number from dates, numbers(300) union all
 
-optimize table test_graphite;
+    -- Older than 2 days use 6000 second windows
+    select 1 AS key, 'sum_1' AS s, older_date - number * 60 - 30, number, 1, number from dates, numbers(1200) union all
+    select 2, 'sum_1', older_date - number * 60 - 30, number, 1, number from dates, numbers(1200) union all
+    select 1, 'sum_2', older_date - number * 60 - 30, number, 1, number from dates, numbers(1200) union all
+    select 2, 'sum_2', older_date - number * 60 - 30, number, 1, number from dates, numbers(1200) union all
+    select 1, 'max_1', older_date - number * 60 - 30, number, 1, number from dates, numbers(1200) union all
+    select 2, 'max_1', older_date - number * 60 - 30, number, 1, number from dates, numbers(1200) union all
+    select 1, 'max_2', older_date - number * 60 - 30, number, 1, number from dates, numbers(1200) union all
+    select 2, 'max_2', older_date - number * 60 - 30, number, 1, number from dates, numbers(1200);
+
+select key, Path, Value, Version, col from test_graphite final order by key, Path, Time desc;
+
+optimize table test_graphite final;
 
 select key, Path, Value, Version, col from test_graphite order by key, Path, Time desc;
 

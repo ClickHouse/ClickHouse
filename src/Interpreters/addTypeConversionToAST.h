@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
-#include <common/types.h>
+#include <base/types.h>
 
 
 namespace DB
@@ -14,6 +14,6 @@ class NamesAndTypesList;
 ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name);
 
 // If same type, then ignore the wrapper of CAST function
-ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name, const NamesAndTypesList & all_columns, ContextConstPtr context);
+ASTPtr addTypeConversionToAST(ASTPtr && ast, const String & type_name, const NamesAndTypesList & all_columns, ContextPtr context);
 
 }

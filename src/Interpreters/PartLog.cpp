@@ -16,7 +16,7 @@
 namespace DB
 {
 
-Block PartLogElement::createBlock()
+NamesAndTypesList PartLogElement::getNamesAndTypes()
 {
     auto event_type_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
@@ -33,35 +33,34 @@ Block PartLogElement::createBlock()
     ColumnsWithTypeAndName columns_with_type_and_name;
 
     return {
+        {"query_id", std::make_shared<DataTypeString>()},
+        {"event_type", std::move(event_type_datatype)},
+        {"event_date", std::make_shared<DataTypeDate>()},
 
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(), "query_id"),
-        columns_with_type_and_name.emplace_back(std::move(event_type_datatype), "event_type"),
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDate>(), "event_date"),
+        {"event_time", std::make_shared<DataTypeDateTime>()},
+        {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6)},
 
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDateTime>(), "event_time"),
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDateTime64>(6), "event_time_microseconds"),
+        {"duration_ms", std::make_shared<DataTypeUInt64>()},
 
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), "duration_ms"),
+        {"database", std::make_shared<DataTypeString>()},
+        {"table", std::make_shared<DataTypeString>()},
+        {"part_name", std::make_shared<DataTypeString>()},
+        {"partition_id", std::make_shared<DataTypeString>()},
+        {"path_on_disk", std::make_shared<DataTypeString>()},
 
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(), "database"),
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(), "table"),
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(), "part_name"),
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(), "partition_id"),
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(), "path_on_disk"),
-
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), "rows"),
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), "size_in_bytes"), // On disk
+        {"rows", std::make_shared<DataTypeUInt64>()},
+        {"size_in_bytes", std::make_shared<DataTypeUInt64>()}, // On disk
 
         /// Merge-specific info
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "merged_from"),
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), "bytes_uncompressed"), // Result bytes
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), "read_rows"),
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), "read_bytes"),
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), "peak_memory_usage"),
+        {"merged_from", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
+        {"bytes_uncompressed", std::make_shared<DataTypeUInt64>()}, // Result bytes
+        {"read_rows", std::make_shared<DataTypeUInt64>()},
+        {"read_bytes", std::make_shared<DataTypeUInt64>()},
+        {"peak_memory_usage", std::make_shared<DataTypeUInt64>()},
 
         /// Is there an error during the execution or commit
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt16>(), "error"),
-        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeString>(), "exception"),
+        {"error", std::make_shared<DataTypeUInt16>()},
+        {"exception", std::make_shared<DataTypeString>()},
     };
 }
 

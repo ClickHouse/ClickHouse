@@ -1,13 +1,11 @@
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_AWS_S3
 
 #include <Storages/StorageS3Cluster.h>
 
 #include <DataTypes/DataTypeString.h>
-#include <DataStreams/RemoteBlockInputStream.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <IO/S3Common.h>
 #include <Storages/StorageS3.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -21,12 +19,12 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST_fwd.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 
 #include "registerTableFunctions.h"
 
 #include <memory>
 #include <thread>
+
 
 namespace DB
 {
@@ -109,7 +107,7 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
         Poco::URI uri (filename);
         S3::URI s3_uri (uri);
         /// Actually this parameters are not used
-        UInt64 s3_max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
+        UInt64 max_single_read_retries = context->getSettingsRef().s3_max_single_read_retries;
         UInt64 min_upload_part_size = context->getSettingsRef().s3_min_upload_part_size;
         UInt64 max_single_part_upload_size = context->getSettingsRef().s3_max_single_part_upload_size;
         UInt64 max_connections = context->getSettingsRef().s3_max_connections;
@@ -119,7 +117,7 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
             secret_access_key,
             StorageID(getDatabaseName(), table_name),
             format,
-            s3_max_single_read_retries,
+            max_single_read_retries,
             min_upload_part_size,
             max_single_part_upload_size,
             max_connections,
@@ -127,6 +125,8 @@ StoragePtr TableFunctionS3Cluster::executeImpl(
             ConstraintsDescription{},
             String{},
             context,
+            // No format_settings for S3Cluster
+            std::nullopt,
             compression_method,
             /*distributed_processing=*/true);
     }

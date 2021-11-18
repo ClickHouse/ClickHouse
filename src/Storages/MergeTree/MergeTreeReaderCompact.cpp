@@ -68,23 +68,19 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
 
         /// Do not use max_read_buffer_size, but try to lower buffer size with maximal size of granule to avoid reading much data.
         auto buffer_size = getReadBufferSize(data_part, marks_loader, column_positions, all_mark_ranges);
-        if (!buffer_size || settings.max_read_buffer_size < buffer_size)
-            buffer_size = settings.max_read_buffer_size;
+        if (buffer_size)
+            settings.read_settings = settings.read_settings.adjustBufferSize(buffer_size);
 
         const String full_data_path = data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
         if (uncompressed_cache)
         {
             auto buffer = std::make_unique<CachedCompressedReadBuffer>(
                 fullPath(data_part->volume->getDisk(), full_data_path),
-                [this, full_data_path, buffer_size]()
+                [this, full_data_path]()
                 {
                     return data_part->volume->getDisk()->readFile(
                         full_data_path,
-                        buffer_size,
-                        0,
-                        settings.min_bytes_to_use_direct_io,
-                        settings.min_bytes_to_use_mmap_io,
-                        settings.mmap_cache.get());
+                        settings.read_settings);
                 },
                 uncompressed_cache,
                 /* allow_different_codecs = */ true);
@@ -104,11 +100,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
                 std::make_unique<CompressedReadBufferFromFile>(
                     data_part->volume->getDisk()->readFile(
                         full_data_path,
-                        buffer_size,
-                        0,
-                        settings.min_bytes_to_use_direct_io,
-                        settings.min_bytes_to_use_mmap_io,
-                        settings.mmap_cache.get()),
+                        settings.read_settings),
                     /* allow_different_codecs = */ true);
 
             if (profile_callback_)
@@ -128,7 +120,8 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     }
 }
 
-size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
+size_t MergeTreeReaderCompact::readRows(
+    size_t from_mark, size_t current_task_last_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns)
 {
     if (continue_reading)
         from_mark = next_mark;
@@ -164,12 +157,13 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
                 auto & column = res_columns[pos];
                 size_t column_size_before_reading = column->size();
 
-                readData(column_from_part, column, from_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
+                readData(column_from_part, column, from_mark, current_task_last_mark, *column_positions[pos], rows_to_read, read_only_offsets[pos]);
 
                 size_t read_rows_in_column = column->size() - column_size_before_reading;
-                if (read_rows_in_column < rows_to_read)
-                    throw Exception("Cannot read all data in MergeTreeReaderCompact. Rows read: " + toString(read_rows_in_column) +
-                        ". Rows expected: " + toString(rows_to_read) + ".", ErrorCodes::CANNOT_READ_ALL_DATA);
+                if (read_rows_in_column != rows_to_read)
+                    throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "Cannot read all data in MergeTreeReaderCompact. Rows read: {}. Rows expected: {}.",
+                        read_rows_in_column, rows_to_read);
             }
             catch (Exception & e)
             {
@@ -198,7 +192,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
 
 void MergeTreeReaderCompact::readData(
     const NameAndTypePair & name_and_type, ColumnPtr & column,
-    size_t from_mark, size_t column_position, size_t rows_to_read, bool only_offsets)
+    size_t from_mark, size_t current_task_last_mark, size_t column_position, size_t rows_to_read, bool only_offsets)
 {
     const auto & [name, type] = name_and_type;
 
@@ -210,6 +204,8 @@ void MergeTreeReaderCompact::readData(
         if (only_offsets && (substream_path.size() != 1 || substream_path[0].type != ISerialization::Substream::ArraySizes))
             return nullptr;
 
+        /// For asynchronous reading from remote fs.
+        data_buffer->setReadUntilPosition(marks_loader.getMark(current_task_last_mark).offset_in_compressed_file);
         return data_buffer;
     };
 
@@ -220,13 +216,20 @@ void MergeTreeReaderCompact::readData(
 
     if (name_and_type.isSubcolumn())
     {
-        auto type_in_storage = name_and_type.getTypeInStorage();
+        const auto & type_in_storage = name_and_type.getTypeInStorage();
         ColumnPtr temp_column = type_in_storage->createColumn();
 
         auto serialization = type_in_storage->getDefaultSerialization();
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, state);
         serialization->deserializeBinaryBulkWithMultipleStreams(temp_column, rows_to_read, deserialize_settings, state, nullptr);
-        column = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), *temp_column);
+
+        auto subcolumn = type_in_storage->getSubcolumn(name_and_type.getSubcolumnName(), temp_column);
+
+        /// TODO: Avoid extra copying.
+        if (column->empty())
+            column = subcolumn;
+        else
+            column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
     }
     else
     {

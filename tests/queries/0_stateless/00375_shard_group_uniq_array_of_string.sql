@@ -1,3 +1,5 @@
+-- Tags: shard
+
 DROP TABLE IF EXISTS group_uniq_str;
 CREATE TABLE group_uniq_str ENGINE = Memory AS SELECT number % 10 as id, toString(intDiv((number%10000), 10)) as v FROM system.numbers LIMIT 10000000;
 

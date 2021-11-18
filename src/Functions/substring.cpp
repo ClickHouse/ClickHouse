@@ -36,7 +36,7 @@ class FunctionSubstring : public IFunction
 {
 public:
     static constexpr auto name = is_utf8 ? "substringUTF8" : "substring";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionSubstring>();
     }
@@ -48,6 +48,8 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 

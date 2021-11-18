@@ -11,7 +11,11 @@ def gen_n_digit_number(n):
     return random.randint(10**(n-1), 10**n-1)
 
 
+sum_in_4_column = 0
+
+
 def gen_line():
+    global sum_in_4_column
     columns = 4
 
     row = []
@@ -24,13 +28,16 @@ def gen_line():
     row.append(1)
     for i in range(columns - 1 - columns // 2):
         add_number()
+    sum_in_4_column += row[-1]
 
     line = ",".join(map(str, row)) + "\n"
     return line.encode()
 
 
 random.seed("Unstable server/1.0")
-lines = b"".join((gen_line() for _ in range(500000)))
+
+# Generating some "random" data and append a line which contains sum of numbers in column 4.
+lines = b"".join((gen_line() for _ in range(500000))) + f"0,0,0,{-sum_in_4_column}\n".encode()
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
@@ -40,7 +47,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.end_bytes = len(lines)
             self.size = self.end_bytes
             self.send_block_size = 256
-            self.stop_at = random.randint(900000, 1200000) // self.send_block_size # Block size is 1024**2.
+            self.stop_at = random.randint(900000, 1300000) // self.send_block_size # Block size is 1024**2.
 
             if "Range" in self.headers:
                 cr = self.headers["Range"]

@@ -1,12 +1,12 @@
 #include <Access/RowPolicyCache.h>
 #include <Access/EnabledRowPolicies.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <ext/range.h>
+#include <base/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
 #include <Core/Defines.h>
 
@@ -59,7 +59,7 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
     roles = &policy->to_roles;
     database_and_table_name = std::make_shared<std::pair<String, String>>(policy->getDatabase(), policy->getTableName());
 
-    for (auto type : ext::range(0, MAX_CONDITION_TYPE))
+    for (auto type : collections::range(0, MAX_CONDITION_TYPE))
     {
         parsed_conditions[type] = nullptr;
         const String & condition = policy->conditions[type];
@@ -92,8 +92,8 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
 }
 
 
-RowPolicyCache::RowPolicyCache(const AccessControlManager & access_control_manager_)
-    : access_control_manager(access_control_manager_)
+RowPolicyCache::RowPolicyCache(const AccessControl & access_control_)
+    : access_control(access_control_)
 {
 }
 
@@ -131,7 +131,7 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
         return;
     all_policies_read = true;
 
-    subscription = access_control_manager.subscribeForChanges<RowPolicy>(
+    subscription = access_control.subscribeForChanges<RowPolicy>(
         [&](const UUID & id, const AccessEntityPtr & entity)
         {
             if (entity)
@@ -140,9 +140,9 @@ void RowPolicyCache::ensureAllRowPoliciesRead()
                 rowPolicyRemoved(id);
         });
 
-    for (const UUID & id : access_control_manager.findAll<RowPolicy>())
+    for (const UUID & id : access_control.findAll<RowPolicy>())
     {
-        auto quota = access_control_manager.tryRead<RowPolicy>(id);
+        auto quota = access_control.tryRead<RowPolicy>(id);
         if (quota)
             all_policies.emplace(id, PolicyInfo(quota));
     }
@@ -217,7 +217,7 @@ void RowPolicyCache::mixConditionsFor(EnabledRowPolicies & enabled)
         MixedConditionKey key;
         key.database = info.database_and_table_name->first;
         key.table_name = info.database_and_table_name->second;
-        for (auto type : ext::range(0, MAX_CONDITION_TYPE))
+        for (auto type : collections::range(0, MAX_CONDITION_TYPE))
         {
             if (info.parsed_conditions[type])
             {

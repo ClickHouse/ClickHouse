@@ -165,4 +165,4 @@ SHOW CREATE QUOTA [name | CURRENT]
 SHOW CREATE [SETTINGS] PROFILE name
 ```
 
-[原始文档](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->
+[原始文档](https://clickhouse.com/docs/en/query_language/show/) <!--hide-->

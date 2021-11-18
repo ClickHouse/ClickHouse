@@ -15,7 +15,7 @@ class FunctionIsConstant : public IFunction
 {
 public:
     static constexpr auto name = "isConstant";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionIsConstant>();
     }
@@ -26,6 +26,8 @@ public:
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override
     {

@@ -1,5 +1,5 @@
 
-<yandex>
+<clickhouse>
     <openSSL>
         <server>
             <certificateFile>/etc/clickhouse-server/config.d/server.crt</certificateFile>
@@ -12,4 +12,4 @@
             <preferServerCiphers>true</preferServerCiphers>
         </server>
     </openSSL>
-</yandex>
+</clickhouse>

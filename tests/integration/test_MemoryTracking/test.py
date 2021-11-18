@@ -2,6 +2,17 @@
 # pylint: disable=redefined-outer-name
 # pylint: disable=line-too-long
 
+# This test verifies that memory tracking does not have significant drift,
+# in other words, every allocation should be taken into account at the global
+# memory tracker.
+#
+# So we are running some queries with GROUP BY to make some allocations,
+# and after we are checking MemoryTracking metric from system.metrics,
+# and check that it does not changes too frequently.
+#
+# Also note, that syncing MemoryTracking with RSS had been disabled in
+# asynchronous_metrics_update_period_s.xml.
+
 import logging
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -11,10 +22,9 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance('node', main_configs=[
     'configs/no_system_log.xml',
     'configs/asynchronous_metrics_update_period_s.xml',
+], user_configs=[
+    'configs/users.d/overrides.xml',
 ])
-
-logging.getLogger().setLevel(logging.INFO)
-logging.getLogger().addHandler(logging.StreamHandler())
 
 @pytest.fixture(scope='module', autouse=True)
 def start_cluster():
@@ -26,8 +36,6 @@ def start_cluster():
 
 query_settings = {
     'max_threads': 1,
-    'query_profiler_real_time_period_ns': 0,
-    'query_profiler_cpu_time_period_ns': 0,
     'log_queries': 0,
 }
 sample_query = "SELECT groupArray(repeat('a', 1000)) FROM numbers(10000) GROUP BY number%10 FORMAT JSON"
@@ -49,6 +57,8 @@ def get_MemoryTracking():
     return int(http_query("SELECT value FROM system.metrics WHERE metric = 'MemoryTracking'"))
 
 def check_memory(memory):
+    # bytes -> megabytes
+    memory = [*map(lambda x: int(int(x)/1024/1024), memory)]
     # 3 changes to MemoryTracking is minimum, since:
     # - this is not that high to not detect inacuracy
     # - memory can go like X/X+N due to some background allocations

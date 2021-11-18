@@ -24,12 +24,12 @@ class FunctionCoalesce : public IFunction
 public:
     static constexpr auto name = "coalesce";
 
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionCoalesce>(context);
     }
 
-    explicit FunctionCoalesce(ContextConstPtr context_) : context(context_) {}
+    explicit FunctionCoalesce(ContextPtr context_) : context(context_) {}
 
     std::string getName() const override
     {
@@ -38,6 +38,7 @@ public:
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
     {
@@ -160,7 +161,7 @@ public:
     }
 
 private:
-    ContextConstPtr context;
+    ContextPtr context;
 };
 
 }

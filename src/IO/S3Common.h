@@ -4,9 +4,9 @@
 
 #if USE_AWS_S3
 
-#include <common/types.h>
-#include <aws/core/Aws.h>  // Y_IGNORE
-#include <aws/core/client/ClientConfiguration.h> // Y_IGNORE
+#include <base/types.h>
+#include <aws/core/Aws.h>
+#include <aws/core/client/ClientConfiguration.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <Poco/URI.h>
 
@@ -72,6 +72,8 @@ struct URI
     bool is_virtual_hosted_style;
 
     explicit URI(const Poco::URI & uri_);
+
+    static void validateBucket(const String & bucket, const Poco::URI & uri);
 };
 
 }

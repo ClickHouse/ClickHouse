@@ -4,7 +4,7 @@ option (USE_INTERNAL_GTEST_LIBRARY "Set to FALSE to use system Google Test inste
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest/CMakeLists.txt")
    if (USE_INTERNAL_GTEST_LIBRARY)
-       message (WARNING "submodule contrib/googletest is missing. to fix try run: \n git submodule update --init --recursive")
+       message (WARNING "submodule contrib/googletest is missing. to fix try run: \n git submodule update --init")
        message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal gtest")
        set (USE_INTERNAL_GTEST_LIBRARY 0)
    endif ()

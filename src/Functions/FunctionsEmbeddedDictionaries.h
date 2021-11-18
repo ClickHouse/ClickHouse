@@ -18,9 +18,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/Defines.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 
 namespace DB
@@ -157,6 +155,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -251,6 +250,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -389,6 +389,7 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -483,7 +484,7 @@ struct NameRegionIn                    { static constexpr auto name = "regionIn"
 struct FunctionRegionToCity :
     public FunctionTransformWithDictionary<UInt32, RegionToCityImpl,    RegionsHierarchyGetter,    NameRegionToCity>
 {
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -492,7 +493,7 @@ struct FunctionRegionToCity :
 struct FunctionRegionToArea :
     public FunctionTransformWithDictionary<UInt32, RegionToAreaImpl,    RegionsHierarchyGetter,    NameRegionToArea>
 {
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -501,7 +502,7 @@ struct FunctionRegionToArea :
 struct FunctionRegionToDistrict :
     public FunctionTransformWithDictionary<UInt32, RegionToDistrictImpl, RegionsHierarchyGetter, NameRegionToDistrict>
 {
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -510,7 +511,7 @@ struct FunctionRegionToDistrict :
 struct FunctionRegionToCountry :
     public FunctionTransformWithDictionary<UInt32, RegionToCountryImpl, RegionsHierarchyGetter, NameRegionToCountry>
 {
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -519,7 +520,7 @@ struct FunctionRegionToCountry :
 struct FunctionRegionToContinent :
     public FunctionTransformWithDictionary<UInt32, RegionToContinentImpl, RegionsHierarchyGetter, NameRegionToContinent>
 {
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -528,7 +529,7 @@ struct FunctionRegionToContinent :
 struct FunctionRegionToTopContinent :
     public FunctionTransformWithDictionary<UInt32, RegionToTopContinentImpl, RegionsHierarchyGetter, NameRegionToTopContinent>
 {
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -537,7 +538,7 @@ struct FunctionRegionToTopContinent :
 struct FunctionRegionToPopulation :
     public FunctionTransformWithDictionary<UInt32, RegionToPopulationImpl, RegionsHierarchyGetter, NameRegionToPopulation>
 {
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -546,7 +547,7 @@ struct FunctionRegionToPopulation :
 struct FunctionRegionIn :
     public FunctionIsInWithDictionary<UInt32, RegionInImpl, RegionsHierarchyGetter,    NameRegionIn>
 {
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -555,7 +556,7 @@ struct FunctionRegionIn :
 struct FunctionRegionHierarchy :
     public FunctionHierarchyWithDictionary<UInt32, RegionHierarchyImpl, RegionsHierarchyGetter, NameRegionHierarchy>
 {
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<base_type>(context->getEmbeddedDictionaries().getRegionsHierarchies());
     }
@@ -567,7 +568,7 @@ class FunctionRegionToName : public IFunction
 {
 public:
     static constexpr auto name = "regionToName";
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionRegionToName>(context->getEmbeddedDictionaries().getRegionsNames());
     }
@@ -594,6 +595,8 @@ public:
     /// For the purpose of query optimization, we assume this function to be injective
     ///  even in face of fact that there are many different cities named Moscow.
     bool isInjective(const ColumnsWithTypeAndName &) const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

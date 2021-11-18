@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <def>
+                <type>local</type>
+                <path>/</path>
+            </def>
+        </disks>
+        <policies>
+            <def>
+                <volumes>
+                    <main>
+                        <disk>def</disk>
+                    </main>
+                </volumes>
+            </def>
+        </policies>
+    </storage_configuration>
+</clickhouse>

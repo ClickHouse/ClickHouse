@@ -1,6 +1,7 @@
 #include <Databases/DatabaseReplicatedWorker.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DDLTask.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -59,12 +60,13 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
     /// Check if we need to recover replica.
     /// Invariant: replica is lost if it's log_ptr value is less then max_log_ptr - logs_to_keep.
 
-    String log_ptr_str = current_zookeeper->get(database->replica_path + "/log_ptr");
+    auto zookeeper = getAndSetZooKeeper();
+    String log_ptr_str = zookeeper->get(database->replica_path + "/log_ptr");
     UInt32 our_log_ptr = parse<UInt32>(log_ptr_str);
-    UInt32 max_log_ptr = parse<UInt32>(current_zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
-    logs_to_keep = parse<UInt32>(current_zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
+    UInt32 max_log_ptr = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/max_log_ptr"));
+    logs_to_keep = parse<UInt32>(zookeeper->get(database->zookeeper_path + "/logs_to_keep"));
     if (our_log_ptr == 0 || our_log_ptr + logs_to_keep < max_log_ptr)
-        database->recoverLostReplica(current_zookeeper, our_log_ptr, max_log_ptr);
+        database->recoverLostReplica(zookeeper, our_log_ptr, max_log_ptr);
     else
         last_skipped_entry_name.emplace(DDLTaskBase::getLogEntryName(our_log_ptr));
 }
@@ -72,24 +74,62 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
 String DatabaseReplicatedDDLWorker::enqueueQuery(DDLLogEntry & entry)
 {
     auto zookeeper = getAndSetZooKeeper();
-    const String query_path_prefix = queue_dir + "/query-";
+    return enqueueQueryImpl(zookeeper, entry, database);
+}
+
+String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookeeper, DDLLogEntry & entry,
+                               DatabaseReplicated * const database, bool committed)
+{
+    const String query_path_prefix = database->zookeeper_path + "/log/query-";
 
     /// We cannot create sequential node and it's ephemeral child in a single transaction, so allocate sequential number another way
     String counter_prefix = database->zookeeper_path + "/counter/cnt-";
-    String counter_path = zookeeper->create(counter_prefix, "", zkutil::CreateMode::EphemeralSequential);
+    String counter_lock_path = database->zookeeper_path + "/counter_lock";
+
+    String counter_path;
+    size_t iters = 1000;
+    while (--iters)
+    {
+        Coordination::Requests ops;
+        ops.emplace_back(zkutil::makeCreateRequest(counter_lock_path, database->getFullReplicaName(), zkutil::CreateMode::Ephemeral));
+        ops.emplace_back(zkutil::makeCreateRequest(counter_prefix, "", zkutil::CreateMode::EphemeralSequential));
+        Coordination::Responses res;
+
+        Coordination::Error code = zookeeper->tryMulti(ops, res);
+        if (code == Coordination::Error::ZOK)
+        {
+            counter_path = dynamic_cast<const Coordination::CreateResponse &>(*res.back()).path_created;
+            break;
+        }
+        else if (code != Coordination::Error::ZNODEEXISTS)
+            zkutil::KeeperMultiException::check(code, ops, res);
+    }
+
+    if (iters == 0)
+        throw Exception(ErrorCodes::UNFINISHED,
+                        "Cannot enqueue query, because some replica are trying to enqueue another query. "
+                        "It may happen on high queries rate or, in rare cases, after connection loss. Client should retry.");
+
     String node_path = query_path_prefix + counter_path.substr(counter_prefix.size());
 
+    /// Now create task in queue
     Coordination::Requests ops;
     /// Query is not committed yet, but we have to write it into log to avoid reordering
     ops.emplace_back(zkutil::makeCreateRequest(node_path, entry.toString(), zkutil::CreateMode::Persistent));
     /// '/try' will be replaced with '/committed' or will be removed due to expired session or other error
-    ops.emplace_back(zkutil::makeCreateRequest(node_path + "/try", database->getFullReplicaName(), zkutil::CreateMode::Ephemeral));
+    if (committed)
+        ops.emplace_back(zkutil::makeCreateRequest(node_path + "/committed", database->getFullReplicaName(), zkutil::CreateMode::Persistent));
+    else
+        ops.emplace_back(zkutil::makeCreateRequest(node_path + "/try", database->getFullReplicaName(), zkutil::CreateMode::Ephemeral));
     /// We don't need it anymore
     ops.emplace_back(zkutil::makeRemoveRequest(counter_path, -1));
+    /// Unlock counters
+    ops.emplace_back(zkutil::makeRemoveRequest(counter_lock_path, -1));
     /// Create status dirs
     ops.emplace_back(zkutil::makeCreateRequest(node_path + "/active", "", zkutil::CreateMode::Persistent));
     ops.emplace_back(zkutil::makeCreateRequest(node_path + "/finished", "", zkutil::CreateMode::Persistent));
     zookeeper->multi(ops);
+
 
     return node_path;
 }
@@ -159,7 +199,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         }
     }
 
-    UInt32 our_log_ptr = parse<UInt32>(current_zookeeper->get(fs::path(database->replica_path) / "log_ptr"));
+    UInt32 our_log_ptr = parse<UInt32>(zookeeper->get(fs::path(database->replica_path) / "log_ptr"));
     UInt32 entry_num = DatabaseReplicatedTask::getLogEntryNumber(entry_name);
 
     if (entry_num <= our_log_ptr)
