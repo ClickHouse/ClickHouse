@@ -78,18 +78,18 @@ std::string checkAndGetSuperdigest(const String & user_and_digest)
 }
 
 KeeperServer::KeeperServer(
-    const KeeperSettingsPtr & settings_,
+    const KeeperConfigurationAndSettingsPtr & configuration_and_settings_,
     const Poco::Util::AbstractConfiguration & config,
     ResponsesQueue & responses_queue_,
     SnapshotsQueue & snapshots_queue_)
-    : server_id(settings_->server_id)
-    , coordination_settings(settings_->coordination_settings)
+    : server_id(configuration_and_settings_->server_id)
+    , coordination_settings(configuration_and_settings_->coordination_settings)
     , state_machine(nuraft::cs_new<KeeperStateMachine>(
                         responses_queue_, snapshots_queue_,
-                        settings_->snapshot_storage_path,
+                        configuration_and_settings_->snapshot_storage_path,
                         coordination_settings,
-                        checkAndGetSuperdigest(settings_->super_digest)))
-                        , state_manager(nuraft::cs_new<KeeperStateManager>(server_id, "keeper_server", settings_->log_storage_path, config, coordination_settings))
+                        checkAndGetSuperdigest(configuration_and_settings_->super_digest)))
+    , state_manager(nuraft::cs_new<KeeperStateManager>(server_id, "keeper_server", configuration_and_settings_->log_storage_path, config, coordination_settings))
     , log(&Poco::Logger::get("KeeperServer"))
 {
     if (coordination_settings->quorum_reads)
@@ -285,41 +285,42 @@ bool KeeperServer::isLeader() const
     return raft_instance->is_leader();
 }
 
+
+bool KeeperServer::isObserver() const
+{
+    auto srv_config = state_manager->get_srv_config();
+    return srv_config->is_learner();
+}
+
+
+bool KeeperServer::isFollower() const
+{
+    return !isLeader() && !isObserver();
+}
+
 bool KeeperServer::isLeaderAlive() const
 {
     return raft_instance->is_leader_alive();
 }
 
-String KeeperServer::getRole() const
-{
-    auto srv_config = state_manager->get_srv_config();
-    if (srv_config->is_learner())
-    {
-        /// zookeeper call read only node "observer"
-        return "observer";
-    }
-    return isLeader() ? "leader" : "follower";
-}
-
 /// TODO test whether taking failed peer in count
-UInt64 KeeperServer::getFollowerCount() const
+uint64_t KeeperServer::getFollowerCount() const
 {
     return raft_instance->get_peer_info_all().size();
 }
 
-UInt64 KeeperServer::getSyncedFollowerCount() const
+uint64_t KeeperServer::getSyncedFollowerCount() const
 {
-    UInt64 last_log_idx = raft_instance->get_last_log_idx();
-    auto followers = raft_instance->get_peer_info_all();
+    uint64_t last_log_idx = raft_instance->get_last_log_idx();
+    const auto followers = raft_instance->get_peer_info_all();
 
-    size_t stale_followers = 0;
+    uint64_t stale_followers = 0;
 
+    const uint64_t stale_follower_gap = raft_instance->get_current_params().stale_log_gap_;
     for (auto & fl : followers)
     {
-        if (last_log_idx > fl.last_log_idx_ + raft_instance->get_current_params().stale_log_gap_)
-        {
+        if (last_log_idx > fl.last_log_idx_ + stale_follower_gap)
             stale_followers++;
-        }
     }
     return followers.size() - stale_followers;
 }

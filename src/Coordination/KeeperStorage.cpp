@@ -1223,10 +1223,10 @@ void KeeperStorage::clearDeadWatches(int64_t session_id)
 
 void KeeperStorage::dumpWatches(WriteBufferFromOwnString & buf) const
 {
-    for (const auto & e : sessions_and_watchers)
+    for (const auto & [session_id, watches_paths] : sessions_and_watchers)
     {
-        buf << "0x" << getHexUIntLowercase(e.first) << "\n";
-        for (const String & path : e.second)
+        buf << "0x" << getHexUIntLowercase(session_id) << "\n";
+        for (const String & path : watches_paths)
         {
             buf << "\t" << path << "\n";
         }
@@ -1235,43 +1235,84 @@ void KeeperStorage::dumpWatches(WriteBufferFromOwnString & buf) const
 
 void KeeperStorage::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
 {
-    auto write_int_vec = [&buf](const std::vector<Int64> & objs)
+    auto write_int_vec = [&buf](const std::vector<int64_t> & session_ids)
     {
-        for (Int64 obj : objs)
+        for (int64_t session_id : session_ids)
         {
-            buf << "\t0x" << getHexUIntLowercase(obj) << "\n";
+            buf << "\t0x" << getHexUIntLowercase(session_id) << "\n";
         }
     };
 
-    for (const auto & e : watches)
+    for (const auto & [watch_path, sessions] : watches)
     {
-        buf << e.first << "\n";
-        write_int_vec(e.second);
+        buf << watch_path << "\n";
+        write_int_vec(sessions);
     }
 
-    for (const auto & e : list_watches)
+    for (const auto & [watch_path, sessions] : list_watches)
     {
-        buf << e.first << "\n";
-        write_int_vec(e.second);
+        buf << watch_path << "\n";
+        write_int_vec(sessions);
     }
 }
 
-void KeeperStorage::dumpEphemerals(WriteBufferFromOwnString & buf) const
+void KeeperStorage::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
 {
-    auto write_str_set = [&buf](const std::unordered_set<String> & objs)
+    auto write_str_set = [&buf](const std::unordered_set<String> & ephemeral_paths)
     {
-        for (const String & obj : objs)
+        for (const String & path : ephemeral_paths)
         {
-            buf << "\t" << obj << "\n";
+            buf << "\t" << path << "\n";
         }
     };
 
-    buf << "Sessions with Ephemerals (" << getEphemeralCount() << "):\n";
-    for (const auto & e : ephemerals)
+    buf << "Sessions dump (" << session_and_timeout.size() << "):\n";
+
+    for (const auto & [session_id, _] : session_and_timeout)
     {
-        buf << "0x" << getHexUIntLowercase(e.first) << "\n";
-        write_str_set(e.second);
+        buf << "0x" << getHexUIntLowercase(session_id) << "\n";
+    }
+
+    buf << "Sessions with Ephemerals (" << getSessionWithEphemeralNodesCount() << "):\n";
+    for (const auto & [session_id, ephemeral_paths] : ephemerals)
+    {
+        buf << "0x" << getHexUIntLowercase(session_id) << "\n";
+        write_str_set(ephemeral_paths);
     }
 }
+
+uint64_t KeeperStorage::getTotalWatchesCount() const
+{
+    uint64_t ret = 0;
+    for (const auto & [path, subscribed_sessions] : watches)
+        ret += subscribed_sessions.size();
+
+    for (const auto & [path, subscribed_sessions] : list_watches)
+        ret += subscribed_sessions.size();
+
+    return ret;
+}
+
+uint64_t KeeperStorage::getSessionsWithWatchesCount() const
+{
+    std::unordered_set<int64_t> counter;
+    for (const auto & [path, subscribed_sessions] : watches)
+        counter.insert(subscribed_sessions.begin(), subscribed_sessions.end());
+
+    for (const auto & [path, subscribed_sessions] : list_watches)
+        counter.insert(subscribed_sessions.begin(), subscribed_sessions.end());
+
+    return counter.size();
+}
+
+uint64_t KeeperStorage::getTotalEphemeralNodesCount() const
+{
+    uint64_t ret = 0;
+    for (const auto & [session_id, nodes] : ephemerals)
+        ret += nodes.size();
+
+    return ret;
+}
+
 
 }

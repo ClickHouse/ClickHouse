@@ -29,7 +29,7 @@ private:
     IndexMap map;
     bool snapshot_mode{false};
 
-    UInt64 approximate_data_size{0};
+    uint64_t approximate_data_size{0};
 
     enum OperationType
     {
@@ -50,7 +50,7 @@ private:
     ///    value_size: size of value to add
     ///    old_value_size: size of value to minus
     /// old_value_size=0 means there is no old value with the same key.
-    void inline updateDataSize(OperationType op_type, UInt64 key_size, UInt64 value_size, UInt64 old_value_size)
+    void inline updateDataSize(OperationType op_type, uint64_t key_size, uint64_t value_size, uint64_t old_value_size)
     {
         switch (op_type)
         {
@@ -132,7 +132,7 @@ public:
     void insertOrReplace(const std::string & key, const V & value)
     {
         auto it = map.find(key);
-        UInt64 old_value_size = it == map.end() ? 0 : it->second->value.sizeInBytes();
+        uint64_t old_value_size = it == map.end() ? 0 : it->second->value.sizeInBytes();
 
         if (it == map.end())
         {
@@ -166,7 +166,7 @@ public:
             return false;
 
         auto list_itr = it->second;
-        UInt64 old_data_size = list_itr->value.sizeInBytes();
+        uint64_t old_data_size = list_itr->value.sizeInBytes();
         if (snapshot_mode)
         {
             list_itr->active_in_map = false;
@@ -193,7 +193,7 @@ public:
         assert(it != map.end());
 
         auto list_itr = it->second;
-        UInt64 old_value_size = list_itr->value.sizeInBytes();
+        uint64_t old_value_size = list_itr->value.sizeInBytes();
 
         const_iterator ret;
 
@@ -274,7 +274,7 @@ public:
         return list.size();
     }
 
-    UInt64 getApproximateSataSize() const
+    uint64_t getApproximateSataSize() const
     {
         return approximate_data_size;
     }

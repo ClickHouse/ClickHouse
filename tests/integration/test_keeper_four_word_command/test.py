@@ -13,11 +13,11 @@ import csv
 import re
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance('node1', main_configs=['configs/enable_keeper1.xml', 'configs/use_keeper.xml'],
+node1 = cluster.add_instance('node1', main_configs=['configs/enable_keeper1.xml'],
                              stay_alive=True)
-node2 = cluster.add_instance('node2', main_configs=['configs/enable_keeper2.xml', 'configs/use_keeper.xml'],
+node2 = cluster.add_instance('node2', main_configs=['configs/enable_keeper2.xml'],
                              stay_alive=True)
-node3 = cluster.add_instance('node3', main_configs=['configs/enable_keeper3.xml', 'configs/use_keeper.xml'],
+node3 = cluster.add_instance('node3', main_configs=['configs/enable_keeper3.xml'],
                              stay_alive=True)
 
 from kazoo.client import KazooClient, KazooState
@@ -58,7 +58,6 @@ def wait_node(node):
     for _ in range(100):
         zk = None
         try:
-            node.query("SELECT * FROM system.zookeeper WHERE path = '/'")
             zk = get_fake_zk(node.name, timeout=30.0)
             # zk.create("/test", sequence=True)
             print("node", node.name, "ready")
@@ -206,9 +205,6 @@ def test_cmd_mntr(started_cluster):
         assert int(result["zk_min_latency"]) <= int(result["zk_avg_latency"])
         assert int(result["zk_max_latency"]) >= int(result["zk_avg_latency"])
 
-        assert int(result["zk_packets_received"]) == 31
-        # contains 31 user request response
-        assert int(result["zk_packets_sent"]) == 31
 
         assert int(result["zk_num_alive_connections"]) == 1
         assert int(result["zk_outstanding_requests"]) == 0
@@ -219,7 +215,7 @@ def test_cmd_mntr(started_cluster):
         #   10 nodes created by test
         #   3 nodes created by clickhouse "/clickhouse/task_queue/ddl"
         #   1 root node
-        assert int(result["zk_znode_count"]) == 14
+        assert int(result["zk_znode_count"]) == 11
         assert int(result["zk_watch_count"]) == 2
         assert int(result["zk_ephemerals_count"]) == 2
         assert int(result["zk_approximate_data_size"]) > 0
@@ -230,6 +226,9 @@ def test_cmd_mntr(started_cluster):
         assert int(result["zk_followers"]) == 2
         assert int(result["zk_synced_followers"]) == 2
 
+        # contains 31 user request response and some responses for server startup
+        assert int(result["zk_packets_sent"]) >= 31
+        assert int(result["zk_packets_received"]) >= 31
     finally:
         destroy_zk_client(zk)
 
@@ -353,7 +352,7 @@ def test_cmd_srvr(started_cluster):
         assert int(result['Connections']) == 1
         assert int(result['Zxid']) > 14
         assert result['Mode'] == 'leader'
-        assert result['Node count'] == '14'
+        assert result['Node count'] == '11'
 
     finally:
         destroy_zk_client(zk)
@@ -391,7 +390,7 @@ def test_cmd_stat(started_cluster):
         assert int(result['Connections']) == 1
         assert int(result['Zxid']) > 14
         assert result['Mode'] == 'leader'
-        assert result['Node count'] == '14'
+        assert result['Node count'] == '11'
 
         # filter connection statistics
         cons = [n for n in data.split('\n') if '=' in n]

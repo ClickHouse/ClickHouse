@@ -338,40 +338,46 @@ std::vector<int64_t> KeeperStateMachine::getDeadSessions()
     return storage->getDeadSessions();
 }
 
-UInt64 KeeperStateMachine::getLastProcessedZxid() const
+uint64_t KeeperStateMachine::getLastProcessedZxid() const
 {
     std::lock_guard lock(storage_and_responses_lock);
     return storage->getZXID();
 }
 
-UInt64 KeeperStateMachine::getNodeCount() const
+uint64_t KeeperStateMachine::getNodesCount() const
 {
     std::lock_guard lock(storage_and_responses_lock);
-    return storage->getNodeCount();
+    return storage->getNodesCount();
 }
 
-UInt64 KeeperStateMachine::getWatchCount() const
+uint64_t KeeperStateMachine::getTotalWatchesCount() const
 {
     std::lock_guard lock(storage_and_responses_lock);
-    return storage->getWatchCount();
+    return storage->getTotalWatchesCount();
 }
 
-UInt64 KeeperStateMachine::getWatchPathCount() const
+uint64_t KeeperStateMachine::getWatchedPathsCount() const
 {
     std::lock_guard lock(storage_and_responses_lock);
-    return storage->getWatchPathCount();
+    return storage->getWatchedPathsCount();
 }
 
-UInt64 KeeperStateMachine::getEphemeralCount() const
+uint64_t KeeperStateMachine::getSessionsWithWatchesCount() const
 {
     std::lock_guard lock(storage_and_responses_lock);
-    return storage->getEphemeralCount();
+    return storage->getSessionsWithWatchesCount();
 }
 
-UInt64 KeeperStateMachine::getEphemeralNodeCount() const
+uint64_t KeeperStateMachine::getTotalEphemeralNodesCount() const
 {
     std::lock_guard lock(storage_and_responses_lock);
-    return storage->getEphemeralNodeCount();
+    return storage->getTotalEphemeralNodesCount();
+}
+
+uint64_t KeeperStateMachine::getSessionWithEphemeralNodesCount() const
+{
+    std::lock_guard lock(storage_and_responses_lock);
+    return storage->getSessionWithEphemeralNodesCount();
 }
 
 void KeeperStateMachine::dumpWatches(WriteBufferFromOwnString & buf) const
@@ -386,13 +392,13 @@ void KeeperStateMachine::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
     storage->dumpWatchesByPath(buf);
 }
 
-void KeeperStateMachine::dumpEphemerals(WriteBufferFromOwnString & buf) const
+void KeeperStateMachine::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
 {
     std::lock_guard lock(storage_and_responses_lock);
-    storage->dumpEphemerals(buf);
+    storage->dumpSessionsAndEphemerals(buf);
 }
 
-UInt64 KeeperStateMachine::getApproximateDataSize() const
+uint64_t KeeperStateMachine::getApproximateDataSize() const
 {
     std::lock_guard lock(storage_and_responses_lock);
     return storage->getApproximateDataSize();

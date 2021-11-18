@@ -6,6 +6,7 @@
 #if USE_NURAFT
 
 #include <Poco/Net/TCPServerConnection.h>
+#include <Common/MultiVersion.h>
 #include "IServer.h"
 #include <Common/Stopwatch.h>
 #include <Interpreters/Context.h>
@@ -17,7 +18,7 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <unordered_map>
 #include <Coordination/KeeperInfos.h>
-#include <Coordination/KeeperStats.h>
+#include <Coordination/KeeperConnectionStats.h>
 #include <Poco/Timestamp.h>
 
 namespace DB
@@ -27,10 +28,13 @@ struct SocketInterruptablePollWrapper;
 using SocketInterruptablePollWrapperPtr = std::unique_ptr<SocketInterruptablePollWrapper>;
 
 using ThreadSafeResponseQueue = ConcurrentBoundedQueue<Coordination::ZooKeeperResponsePtr>;
-
 using ThreadSafeResponseQueuePtr = std::unique_ptr<ThreadSafeResponseQueue>;
 
-class KeeperTCPHandler : public Poco::Net::TCPServerConnection, IConnectionInfo
+struct LastOp;
+using LastOpMultiVersion = MultiVersion<LastOp>;
+using LastOpPtr = LastOpMultiVersion::Version;
+
+class KeeperTCPHandler : public Poco::Net::TCPServerConnection
 {
 public:
     static void registerConnection(KeeperTCPHandler * conn);
@@ -48,17 +52,9 @@ public:
     KeeperTCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_);
     void run() override;
 
+    KeeperConnectionStats getConnectionStats() const;
     void dumpStats(WriteBufferFromOwnString & buf, bool brief);
     void resetStats();
-
-    /// statistics methods
-    Int64 getPacketsReceived() const override;
-    Int64 getPacketsSent() const override;
-    Int64 getSessionId() const override;
-    Int64 getSessionTimeout() const override;
-    Poco::Timestamp getEstablished() const override;
-    LastOp getLastOp() const override;
-    KeeperStatsPtr getSessionStats() const override;
 
     ~KeeperTCPHandler() override;
 
@@ -101,10 +97,10 @@ private:
     using Operations = std::map<Coordination::XID, Poco::Timestamp>;
     Operations operations;
 
-    std::mutex last_op_mutex;
-    LastOp last_op;
+    LastOpMultiVersion last_op;
 
-    KeeperStatsPtr conn_stats;
+    mutable std::mutex conn_stats_mutex;
+    KeeperConnectionStats conn_stats;
 
 };
 

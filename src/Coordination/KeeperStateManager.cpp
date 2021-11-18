@@ -80,7 +80,9 @@ KeeperStateManager::KeeperStateManager(
     , configuration_wrapper(parseServersConfiguration(config, false))
     , log_store(nuraft::cs_new<KeeperLogStore>(
                     log_storage_path,
-                    coordination_settings->rotate_log_storage_interval, coordination_settings->force_sync, coordination_settings->compress_logs))
+                    coordination_settings->rotate_log_storage_interval,
+                    coordination_settings->force_sync,
+                    coordination_settings->compress_logs))
 {
 }
 

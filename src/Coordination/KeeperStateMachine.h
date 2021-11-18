@@ -17,7 +17,7 @@ using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 
 /// ClickHouse Keeper state machine. Wrapper for KeeperStorage.
 /// Responsible for entries commit, snapshots creation and so on.
-class KeeperStateMachine : public nuraft::state_machine, public IStateMachineInfo
+class KeeperStateMachine : public nuraft::state_machine
 {
 public:
     KeeperStateMachine(
@@ -77,20 +77,21 @@ public:
     /// Process local read request
     void processReadRequest(const KeeperStorage::RequestForSession & request_for_session);
 
-    std::vector<int64_t> getDeadSessions() override;
-    UInt64 getLastProcessedZxid() const override;
+    std::vector<int64_t> getDeadSessions();
+    uint64_t getLastProcessedZxid() const;
 
-    UInt64 getNodeCount() const override;
-    UInt64 getWatchCount() const override;
-    UInt64 getWatchPathCount() const override;
+    uint64_t getNodesCount() const;
+    uint64_t getTotalWatchesCount() const;
+    uint64_t getWatchedPathsCount() const;
+    uint64_t getSessionsWithWatchesCount() const;
 
-    void dumpWatches(WriteBufferFromOwnString & buf) const override;
-    void dumpWatchesByPath(WriteBufferFromOwnString & buf) const override;
-    void dumpEphemerals(WriteBufferFromOwnString & buf) const override;
+    void dumpWatches(WriteBufferFromOwnString & buf) const;
+    void dumpWatchesByPath(WriteBufferFromOwnString & buf) const;
+    void dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const;
 
-    UInt64 getEphemeralCount() const override;
-    UInt64 getEphemeralNodeCount() const override;
-    UInt64 getApproximateDataSize() const override;
+    uint64_t getSessionWithEphemeralNodesCount() const;
+    uint64_t getTotalEphemeralNodesCount() const;
+    uint64_t getApproximateDataSize() const;
 
     void shutdownStorage();
 

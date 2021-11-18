@@ -6,6 +6,7 @@
 #include <Poco/Path.h>
 #include <Common/hex.h>
 #include <filesystem>
+#include <Common/checkStackSize.h>
 
 namespace fs = std::filesystem;
 
@@ -19,35 +20,10 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
-using Path = fs::path;
-using DirectoryIterator = fs::directory_iterator;
-
-UInt64 getDirSize(Path dir)
-{
-    if (!fs::exists(dir))
-    {
-        return 0;
-    }
-
-    DirectoryIterator it(dir);
-    DirectoryIterator end;
-
-    UInt64 size{0};
-    while (it != end)
-    {
-        if (!it->is_regular_file())
-            size += fs::file_size(*it);
-        else
-            size += getDirSize(it->path());
-        ++it;
-    }
-    return size;
-}
 
 KeeperDispatcher::KeeperDispatcher()
     : responses_queue(std::numeric_limits<size_t>::max())
-    , keeper_stats(std::make_shared<KeeperStats>())
-    , settings(std::make_shared<KeeperSettings>())
+    , configuration_and_settings(std::make_shared<KeeperConfigurationAndSettings>())
     , log(&Poco::Logger::get("KeeperDispatcher"))
 {
 }
@@ -67,8 +43,9 @@ void KeeperDispatcher::requestThread()
     {
         KeeperStorage::RequestForSession request;
 
-        UInt64 max_wait = UInt64(settings->coordination_settings->operation_timeout_ms.totalMilliseconds());
-        uint64_t max_batch_size = settings->coordination_settings->max_requests_batch_size;
+        auto coordination_settings = configuration_and_settings->coordination_settings;
+        uint64_t max_wait = coordination_settings->operation_timeout_ms.totalMilliseconds();
+        uint64_t max_batch_size = coordination_settings->max_requests_batch_size;
 
         /// The code below do a very simple thing: batch all write (quorum) requests into vector until
         /// previous write batch is not finished or max_batch size achieved. The main complexity goes from
@@ -89,7 +66,7 @@ void KeeperDispatcher::requestThread()
 
                 /// If new request is not read request or we must to process it through quorum.
                 /// Otherwise we will process it locally.
-                if (settings->coordination_settings->quorum_reads || !request.request->isReadRequest())
+                if (coordination_settings->quorum_reads || !request.request->isReadRequest())
                 {
                     current_batch.emplace_back(request);
 
@@ -102,7 +79,7 @@ void KeeperDispatcher::requestThread()
                         if (requests_queue->tryPop(request, 1))
                         {
                             /// Don't append read request into batch, we have to process them separately
-                            if (!settings->coordination_settings->quorum_reads && request.request->isReadRequest())
+                            if (!coordination_settings->quorum_reads && request.request->isReadRequest())
                             {
                                 has_read_request = true;
                                 break;
@@ -172,7 +149,7 @@ void KeeperDispatcher::responseThread()
     {
         KeeperStorage::ResponseForSession response_for_session;
 
-        UInt64 max_wait = UInt64(settings->coordination_settings->operation_timeout_ms.totalMilliseconds());
+        uint64_t max_wait = configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds();
 
         if (responses_queue.tryPop(response_for_session, max_wait))
         {
@@ -273,7 +250,7 @@ bool KeeperDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr & requ
         if (!requests_queue->push(std::move(request_info)))
             throw Exception("Cannot push request to queue", ErrorCodes::SYSTEM_ERROR);
     }
-    else if (!requests_queue->tryPush(std::move(request_info), settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
+    else if (!requests_queue->tryPush(std::move(request_info), configuration_and_settings->coordination_settings->operation_timeout_ms.totalMilliseconds()))
     {
         throw Exception("Cannot push request to queue within operation timeout", ErrorCodes::TIMEOUT_EXCEEDED);
     }
@@ -284,14 +261,14 @@ void KeeperDispatcher::initialize(const Poco::Util::AbstractConfiguration & conf
 {
     LOG_DEBUG(log, "Initializing storage dispatcher");
 
-    settings = KeeperSettings::loadFromConfig(config, standalone_keeper);
-    requests_queue = std::make_unique<RequestsQueue>(settings->coordination_settings->max_requests_batch_size);
+    configuration_and_settings = KeeperConfigurationAndSettings::loadFromConfig(config, standalone_keeper);
+    requests_queue = std::make_unique<RequestsQueue>(configuration_and_settings->coordination_settings->max_requests_batch_size);
 
     request_thread = ThreadFromGlobalPool([this] { requestThread(); });
     responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
     snapshot_thread = ThreadFromGlobalPool([this] { snapshotThread(); });
 
-    server = std::make_unique<KeeperServer>(settings, config, responses_queue, snapshots_queue);
+    server = std::make_unique<KeeperServer>(configuration_and_settings, config, responses_queue, snapshots_queue);
 
     try
     {
@@ -438,7 +415,8 @@ void KeeperDispatcher::sessionCleanerTask()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(settings->coordination_settings->dead_session_check_period_ms.totalMilliseconds()));
+        auto time_to_sleep = configuration_and_settings->coordination_settings->dead_session_check_period_ms.totalMilliseconds();
+        std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep));
     }
 }
 
@@ -605,52 +583,71 @@ void KeeperDispatcher::updateConfiguration(const Poco::Util::AbstractConfigurati
     }
 }
 
-void KeeperDispatcher::updateKeeperStat(UInt64 process_time_ms)
+void KeeperDispatcher::updateKeeperStatLatency(uint64_t process_time_ms)
 {
-    keeper_stats->updateLatency(process_time_ms);
+    std::lock_guard lock(keeper_stats_mutex);
+    keeper_stats.updateLatency(process_time_ms);
 }
 
-String KeeperDispatcher::getRole() const
+static uint64_t getDirSize(const fs::path & dir)
 {
-    return server->getRole();
+    checkStackSize();
+    if (!fs::exists(dir))
+        return 0;
+
+    fs::directory_iterator it(dir);
+    fs::directory_iterator end;
+
+    uint64_t size{0};
+    while (it != end)
+    {
+        if (it->is_regular_file())
+            size += fs::file_size(*it);
+        else
+            size += getDirSize(it->path());
+        ++it;
+    }
+    return size;
 }
 
-UInt64 KeeperDispatcher::getOutstandingRequests() const
+uint64_t KeeperDispatcher::getLogDirSize() const
 {
-    std::lock_guard lock(push_request_mutex);
-    return requests_queue->size();
+    return getDirSize(configuration_and_settings->log_storage_path);
 }
 
-UInt64 KeeperDispatcher::getNumAliveConnections() const
+uint64_t KeeperDispatcher::getSnapDirSize() const
 {
-    std::lock_guard lock(session_to_response_callback_mutex);
-    return session_to_response_callback.size();
-}
-
-UInt64 KeeperDispatcher::getDataDirSize() const
-{
-    return getDirSize(Path(settings->log_storage_path));
-}
-
-UInt64 KeeperDispatcher::getSnapDirSize() const
-{
-    return getDirSize(Path(settings->snapshot_storage_path));
+    return getDirSize(configuration_and_settings->snapshot_storage_path);
 }
 
 void KeeperDispatcher::dumpConf(WriteBufferFromOwnString & buf) const
 {
-    settings->dump(buf);
+    configuration_and_settings->dump(buf);
 }
 
-void KeeperDispatcher::dumpSessions(WriteBufferFromOwnString & buf) const
+KeeperInfo KeeperDispatcher::getKeeperInfo() const
 {
-    std::lock_guard lock(session_to_response_callback_mutex);
-    buf << "Sessions dump (" << session_to_response_callback.size() << "):\n";
-
-    for (const auto & e : session_to_response_callback)
+    KeeperInfo result;
+    result.is_leader = isLeader();
+    result.is_observer = server->isObserver();
+    result.is_follower = server->isFollower();
+    result.has_leader = hasLeader();
     {
-        buf << "0x" << getHexUIntLowercase(e.first) << "\n";
+        std::lock_guard lock(push_request_mutex);
+        result.outstanding_requests_count = requests_queue->size();
     }
+    {
+        std::lock_guard lock(session_to_response_callback_mutex);
+        result.alive_connections_count = session_to_response_callback.size();
+    }
+    if (result.is_leader)
+    {
+        result.follower_count = server->getFollowerCount();
+        result.synced_follower_count = server->getSyncedFollowerCount();
+    }
+    result.total_nodes_count = server->getKeeperStateMachine()->getNodesCount();
+    result.last_zxid = server->getKeeperStateMachine()->getLastProcessedZxid();
+    return result;
 }
 
 }

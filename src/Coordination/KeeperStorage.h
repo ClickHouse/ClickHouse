@@ -29,8 +29,6 @@ struct KeeperStorageSnapshot;
 class KeeperStorage
 {
 public:
-    int64_t session_id_counter{1};
-
     struct Node
     {
         String data;
@@ -41,14 +39,13 @@ public:
         ChildrenSet children{};
 
         /// object memory size
-        UInt64 sizeInBytes() const
+        uint64_t sizeInBytes() const
         {
-            UInt64 child_size{0};
+            uint64_t child_size{0};
             for (const auto & child : children)
-            {
                 child_size += child.size();
-            }
-            return data.size() + sizeof (Node) + child_size;
+
+            return data.size() + sizeof(Node) + child_size;
         }
     };
 
@@ -57,7 +54,6 @@ public:
         int64_t session_id;
         Coordination::ZooKeeperResponsePtr response;
     };
-
     using ResponsesForSessions = std::vector<ResponseForSession>;
 
     struct RequestForSession
@@ -87,9 +83,12 @@ public:
     /// Just vector of SHA1 from user:password
     using AuthIDs = std::vector<AuthID>;
     using SessionAndAuth = std::unordered_map<int64_t, AuthIDs>;
-    SessionAndAuth session_and_auth;
-
     using Watches = std::map<String /* path, relative of root_path */, SessionIDs>;
+
+public:
+    int64_t session_id_counter{1};
+
+    SessionAndAuth session_and_auth;
 
     /// Main hashtable with nodes. Contain all information about data.
     /// All other structures expect session_and_timeout can be restored from
@@ -188,53 +187,36 @@ public:
         return session_expiry_queue.getExpiredSessions();
     }
 
-    UInt64 getNodeCount() const
+    /// Introspection functions mostly used in 4-letter commands
+
+    uint64_t getNodesCount() const
     {
         return container.size();
     }
 
-    UInt64 getWatchCount() const
+    uint64_t getApproximateDataSize() const
+    {
+        return container.getApproximateSataSize();
+    }
+
+    uint64_t getTotalWatchesCount() const;
+
+    uint64_t getWatchedPathsCount() const
     {
         return watches.size() + list_watches.size();
     }
 
-    UInt64 getWatchPathCount() const
-    {
-        UInt64 ret{0};
-        for (const auto & watch : watches)
-        {
-            ret += watch.second.size();
-        }
-        for (const auto & watch : list_watches)
-        {
-            ret += watch.second.size();
-        }
-        return ret;
-    }
+    uint64_t getSessionsWithWatchesCount() const;
 
-    UInt64 getEphemeralCount() const
+    uint64_t getSessionWithEphemeralNodesCount() const
     {
         return ephemerals.size();
     }
-
-    UInt64 getEphemeralNodeCount() const
-    {
-        UInt64 ret{0};
-        for (const auto & ephs : ephemerals)
-        {
-            ret += ephs.second.size();
-        }
-        return ret;
-    }
+    uint64_t getTotalEphemeralNodesCount() const;
 
     void dumpWatches(WriteBufferFromOwnString & buf) const;
     void dumpWatchesByPath(WriteBufferFromOwnString & buf) const;
-    void dumpEphemerals(WriteBufferFromOwnString & buf) const;
-
-    UInt64 getApproximateDataSize() const
-    {
-        return container.getApproximateSataSize();
-    }
+    void dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const;
 };
 
 using KeeperStoragePtr = std::unique_ptr<KeeperStorage>;
