@@ -832,8 +832,8 @@ TEST_P(CoordinationTest, ChangelogTestLostFiles)
 struct IntNode
 {
     int value;
-    IntNode(int value_) : value(value_) { }
-    uint64_t sizeInBytes() const { return sizeof value; }
+    IntNode(int value_) : value(value_) { } // NOLINT(google-explicit-constructor)
+    UInt64 sizeInBytes() const { return sizeof value; }
     IntNode & operator=(int rhs)
     {
         this->value = rhs;
