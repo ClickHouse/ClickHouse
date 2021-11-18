@@ -50,7 +50,10 @@ function find_reference_sha
         # Historically there were various path for the performance test package,
         # test all of them.
         unset found
-        for path in "$S3_URL/0/$REF_SHA/$COMMON_BUILD_PREFIX/performance/performance.tgz"
+        declare -a urls_to_try=("https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/clickhouse_build_check_(actions)/performance/performance.tgz"
+                                "https://clickhouse-builds.s3.yandex.net/0/$REF_SHA/clickhouse_build_check/performance/performance.tgz"
+                               )
+        for path in "${urls_to_try[@]}"
         do
             if curl --fail --head "$path"
             then
