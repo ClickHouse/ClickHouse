@@ -2197,7 +2197,7 @@ std::shared_ptr<Clusters> Context::getClusters() const
     return shared->clusters;
 }
 
-void Context::registerNodeForClusterDiscovery()
+void Context::startClusterDiscovery()
 {
     if (!shared->cluster_discovery)
         return;
@@ -2212,7 +2212,7 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
 
     if (enable_discovery && !shared->cluster_discovery)
     {
-        shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, shared_from_this());
+        shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext());
     }
 
     /// Do not update clusters if this part of config wasn't changed.

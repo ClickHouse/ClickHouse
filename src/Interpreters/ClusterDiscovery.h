@@ -27,8 +27,8 @@ class ClusterDiscovery
 public:
     ClusterDiscovery(
         const Poco::Util::AbstractConfiguration & config,
-        ContextMutablePtr context_,
-        const String & config_prefix = "remote_servers_discovery");
+        ContextPtr context_,
+        const String & config_prefix = "remote_servers_discovery"); // TODO(@vdimir) use `remote_servers`
 
     void start();
 
