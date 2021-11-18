@@ -690,54 +690,18 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
             return nullptr;
     }
 
-    auto create_table_query = std::make_shared<ASTCreateQuery>();
-    create_table_query->setTable(table_name);
-    create_table_query->setDatabase(getDatabaseName());
-    create_table_query->attach = false;
-    create_table_query->set(create_table_query->comment, std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly."));
-
     /// setup create table query storage info.
-    {
-        auto ast_engine = std::make_shared<ASTFunction>();
-        ast_engine->name = storage->getName();
-        auto ast_storage = std::make_shared<ASTStorage>();
-        ast_storage->set(ast_storage->engine, ast_engine);
-        create_table_query->set(create_table_query->storage, ast_storage);
-    }
-    /// setup create table query columns info.
-    {
-        auto ast_columns_list = std::make_shared<ASTColumns>();
-        auto ast_expression_list = std::make_shared<ASTExpressionList>();
+    auto ast_engine = std::make_shared<ASTFunction>();
+    ast_engine->name = storage->getName();
+    auto ast_storage = std::make_shared<ASTStorage>();
+    ast_storage->set(ast_storage->engine, ast_engine);
 
-        for (const auto & column_name_and_type: metadata_ptr->columns)
-        {
-            const auto & ast_column_declaration = std::make_shared<ASTColumnDeclaration>();
-            ast_column_declaration->name = column_name_and_type.name;
-            /// parser typename
-            {
-                ASTPtr ast_type;
-                auto type_name = column_name_and_type.type->getName();
-                const auto * string_end = type_name.c_str() + type_name.length();
-                Expected expected;
-                expected.max_parsed_pos = string_end;
-                Tokens tokens(type_name.c_str(), string_end);
-                IParser::Pos pos(tokens, getContext()->getSettingsRef().max_parser_depth);
-                ParserDataType parser;
-                if (!parser.parse(pos, ast_type, expected))
-                {
-                    if (throw_on_error)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parser metadata of {}.{}", backQuote(getDatabaseName()), backQuote(table_name));
-                    else
-                        return nullptr;
-                }
-                ast_column_declaration->type = ast_type;
-            }
-            ast_expression_list->children.emplace_back(ast_column_declaration);
-        }
+    auto create_table_query = DB::getCreateQueryFromStorage(storage, ast_storage, false,
+                                                            getContext()->getSettingsRef().max_parser_depth, throw_on_error);
 
-        ast_columns_list->set(ast_columns_list->columns, ast_expression_list);
-        create_table_query->set(create_table_query->columns_list, ast_columns_list);
-    }
+    create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
+                            std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly."));
+
     return create_table_query;
 }
 
