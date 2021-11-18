@@ -24,6 +24,7 @@ namespace fs = std::filesystem;
 namespace CurrentMetrics
 {
     extern const Metric ReplicatedSend;
+    extern const Metric ReplicatedFetch;
 }
 
 namespace DB
