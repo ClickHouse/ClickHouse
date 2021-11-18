@@ -725,9 +725,8 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, cons
                 ParserDataType parser;
                 if (!parser.parse(pos, ast_type, expected))
                 {
-                    /// this should never occur, shall we change to use assert?
                     if (throw_on_error)
-                        throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot parser metadata of {}.{}", backQuote(getDatabaseName()), backQuote(table_name));
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parser metadata of {}.{}", backQuote(getDatabaseName()), backQuote(table_name));
                     else
                         return nullptr;
                 }
