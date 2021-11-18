@@ -2,6 +2,7 @@
 
 #include <Access/IAccessEntity.h>
 #include <Access/RolesOrUsersSet.h>
+#include <Access/Common/RowPolicyDefs.h>
 #include <Core/Types.h>
 #include <array>
 
@@ -18,30 +19,16 @@ namespace ErrorCodes
   */
 struct RowPolicy : public IAccessEntity
 {
-    struct NameParts
-    {
-        String short_name;
-        String database;
-        String table_name;
-
-        bool empty() const { return short_name.empty(); }
-        String getName() const;
-        String toString() const { return getName(); }
-        auto toTuple() const { return std::tie(short_name, database, table_name); }
-        friend bool operator ==(const NameParts & left, const NameParts & right) { return left.toTuple() == right.toTuple(); }
-        friend bool operator !=(const NameParts & left, const NameParts & right) { return left.toTuple() != right.toTuple(); }
-    };
-
     void setShortName(const String & short_name);
     void setDatabase(const String & database);
     void setTableName(const String & table_name);
-    void setNameParts(const String & short_name, const String & database, const String & table_name);
-    void setNameParts(const NameParts & name_parts);
+    void setFullName(const String & short_name, const String & database, const String & table_name);
+    void setFullName(const RowPolicyName & full_name_);
 
-    const String & getDatabase() const { return name_parts.database; }
-    const String & getTableName() const { return name_parts.table_name; }
-    const String & getShortName() const { return name_parts.short_name; }
-    const NameParts & getNameParts() const { return name_parts; }
+    const String & getDatabase() const { return full_name.database; }
+    const String & getTableName() const { return full_name.table_name; }
+    const String & getShortName() const { return full_name.short_name; }
+    const RowPolicyName & getFullName() const { return full_name; }
 
     /// Filter is a SQL conditional expression used to figure out which rows should be visible
     /// for user or available for modification. If the expression returns NULL or false for some rows
@@ -95,9 +82,9 @@ struct RowPolicy : public IAccessEntity
     RolesOrUsersSet to_roles;
 
 private:
-    void setName(const String & name_) override;
+    void setName(const String &) override;
 
-    NameParts name_parts;
+    RowPolicyName full_name;
     bool restrictive = false;
 };
 
@@ -154,22 +141,6 @@ inline const RowPolicy::ConditionTypeInfo & RowPolicy::ConditionTypeInfo::get(Co
 inline String toString(RowPolicy::ConditionType type)
 {
     return RowPolicy::ConditionTypeInfo::get(type).raw_name;
-}
-
-
-inline String RowPolicy::NameParts::getName() const
-{
-    String name;
-    name.reserve(database.length() + table_name.length() + short_name.length() + 6);
-    name += backQuoteIfNeed(short_name);
-    name += " ON ";
-    if (!database.empty())
-    {
-        name += backQuoteIfNeed(database);
-        name += '.';
-    }
-    name += backQuoteIfNeed(table_name);
-    return name;
 }
 
 }

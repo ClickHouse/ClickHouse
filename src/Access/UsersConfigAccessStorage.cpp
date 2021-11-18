@@ -351,7 +351,7 @@ namespace
                 String filter = (it != user_to_filters.end()) ? it->second : "1";
 
                 auto policy = std::make_shared<RowPolicy>();
-                policy->setNameParts(user_name, database, table_name);
+                policy->setFullName(user_name, database, table_name);
                 policy->conditions[RowPolicy::SELECT_FILTER] = filter;
                 policy->to_roles.add(generateID(EntityType::USER, user_name));
                 policies.push_back(policy);

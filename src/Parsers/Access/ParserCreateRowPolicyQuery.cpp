@@ -253,7 +253,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     while (true)
     {
-        if (alter && new_short_name.empty() && (names->name_parts.size() == 1) && parseRenameTo(pos, expected, new_short_name))
+        if (alter && (names->full_names.size() == 1) && new_short_name.empty() && parseRenameTo(pos, expected, new_short_name))
             continue;
 
         if (!is_restrictive)

@@ -182,7 +182,7 @@ namespace
     {
         auto query = std::make_shared<ASTCreateRowPolicyQuery>();
         query->names = std::make_shared<ASTRowPolicyNames>();
-        query->names->name_parts.emplace_back(policy.getNameParts());
+        query->names->full_names.emplace_back(policy.getFullName());
         query->attach = attach_mode;
 
         if (policy.isRestrictive())

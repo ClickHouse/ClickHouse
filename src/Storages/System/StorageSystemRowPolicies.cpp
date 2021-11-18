@@ -82,7 +82,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
     auto & column_apply_to_except_offsets = assert_cast<ColumnArray &>(*res_columns[column_index++]).getOffsets();
 
     auto add_row = [&](const String & name,
-                       const RowPolicy::NameParts & name_parts,
+                       const RowPolicyName & full_name,
                        const UUID & id,
                        const String & storage_name,
                        const std::array<String, MAX_CONDITION_TYPE> & conditions,
@@ -90,9 +90,9 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
                        const RolesOrUsersSet & apply_to)
     {
         column_name.insertData(name.data(), name.length());
-        column_short_name.insertData(name_parts.short_name.data(), name_parts.short_name.length());
-        column_database.insertData(name_parts.database.data(), name_parts.database.length());
-        column_table.insertData(name_parts.table_name.data(), name_parts.table_name.length());
+        column_short_name.insertData(full_name.short_name.data(), full_name.short_name.length());
+        column_database.insertData(full_name.database.data(), full_name.database.length());
+        column_table.insertData(full_name.table_name.data(), full_name.table_name.length());
         column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
 
@@ -134,7 +134,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
         if (!storage)
             continue;
 
-        add_row(policy->getName(), policy->getNameParts(), id, storage->getStorageName(), policy->conditions, policy->isRestrictive(), policy->to_roles);
+        add_row(policy->getName(), policy->getFullName(), id, storage->getStorageName(), policy->conditions, policy->isRestrictive(), policy->to_roles);
     }
 }
 }
