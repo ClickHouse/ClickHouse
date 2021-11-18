@@ -38,7 +38,7 @@ SeekableReadBufferPtr ReadBufferFromS3Gather::createImplementationBuffer(const S
 SeekableReadBufferPtr ReadBufferFromBlobStorageGather::createImplementationBuffer(const String & path, size_t read_until_position_) const
 {
     return std::make_unique<ReadBufferFromBlobStorage>(blob_container_client, fs::path(metadata.remote_fs_root_path) / path,
-        settings.remote_fs_buffer_size, threadpool_read, read_until_position_);
+        max_single_read_retries, settings.remote_fs_buffer_size, threadpool_read, read_until_position_);
 }
 #endif
 
