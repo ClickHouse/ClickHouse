@@ -2621,6 +2621,12 @@ class ClickHouseInstance:
             shutil.rmtree(self.path)
 
 
+    def get_backuped_s3_objects(self, disk, backup_name):
+        command = ['find', f'/var/lib/clickhouse/disks/{disk}/shadow/{backup_name}/store', '-type', 'f',
+            '-exec', 'grep', '-o', 'r[01]\\{64\\}-file-[[:lower:]]\\{32\\}', '{}', ';']
+        return self.exec_in_container(command).split('\n')
+
+
 class ClickHouseKiller(object):
     def __init__(self, clickhouse_node):
         self.clickhouse_node = clickhouse_node
