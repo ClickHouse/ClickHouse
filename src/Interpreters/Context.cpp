@@ -2210,7 +2210,7 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
 {
     std::lock_guard lock(shared->clusters_mutex);
 
-    if (enable_discovery && !shared->cluster_discovery)
+    if (/* getSettingsRef().allow_experimental_cluster_discovery && */ enable_discovery && !shared->cluster_discovery)
     {
         shared->cluster_discovery = std::make_unique<ClusterDiscovery>(*config, getGlobalContext());
     }
