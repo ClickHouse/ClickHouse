@@ -159,8 +159,11 @@ namespace
             ASTCreateQuotaQuery::Limits create_query_limits;
             create_query_limits.duration = limits.duration;
             create_query_limits.randomize_interval = limits.randomize_interval;
-            for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
-                create_query_limits.max[resource_type] = limits.max[resource_type];
+            for (auto quota_type : collections::range(QuotaType::MAX))
+            {
+                auto quota_type_i = static_cast<size_t>(quota_type);
+                create_query_limits.max[quota_type_i] = limits.max[quota_type_i];
+            }
             query->all_limits.push_back(create_query_limits);
         }
 
