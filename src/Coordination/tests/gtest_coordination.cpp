@@ -832,14 +832,7 @@ TEST_P(CoordinationTest, ChangelogTestLostFiles)
 struct IntNode
 {
     int value;
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wgoogle-explicit-constructor"
-#endif
-    IntNode(int value_) : value(value_) { }
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
+    IntNode(int value_) : value(value_) { } // NOLINT(google-explicit-constructor)
     UInt64 sizeInBytes() const { return sizeof value; }
     IntNode & operator=(int rhs)
     {
