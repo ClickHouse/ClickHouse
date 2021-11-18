@@ -589,8 +589,13 @@ void TCPHandler::processInsertQuery()
 {
     size_t num_threads = state.io.pipeline.getNumThreads();
 
-    auto send_table_columns = [&]()
+    auto run_executor = [&](auto & executor)
     {
+        /// Made above the rest of the lines,
+        /// so that in case of `writePrefix` function throws an exception,
+        /// client receive exception before sending data.
+        executor.start();
+
         /// Send ColumnsDescription for insertion table
         if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
         {
@@ -604,17 +609,6 @@ void TCPHandler::processInsertQuery()
                 }
             }
         }
-    };
-
-    if (num_threads > 1)
-    {
-        PushingAsyncPipelineExecutor executor(state.io.pipeline);
-        /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
-        *  client receive exception before sending data.
-        */
-        executor.start();
-
-        send_table_columns();
 
         /// Send block to the client - table structure.
         sendData(executor.getHeader());
@@ -625,22 +619,17 @@ void TCPHandler::processInsertQuery()
             executor.push(std::move(state.block_for_insert));
 
         executor.finish();
+    };
+
+    if (num_threads > 1)
+    {
+        PushingAsyncPipelineExecutor executor(state.io.pipeline);
+        run_executor(executor);
     }
     else
     {
         PushingPipelineExecutor executor(state.io.pipeline);
-        executor.start();
-
-        send_table_columns();
-
-        sendData(executor.getHeader());
-
-        sendLogs();
-
-        while (readDataNext())
-            executor.push(std::move(state.block_for_insert));
-
-        executor.finish();
+        run_executor(executor);
     }
 }
 
