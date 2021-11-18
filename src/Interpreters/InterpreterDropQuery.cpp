@@ -228,9 +228,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(ContextPtr context_, ASTDropQue
 
             DatabaseCatalog::instance().tryRemoveLoadingDependencies(table_id, getContext()->getSettingsRef().check_table_dependencies,
                                                                      is_drop_or_detach_database);
-            auto inner_context = Context::createCopy(context_);
-            inner_context->setInternalQuery(true);
-            database->dropTable(inner_context, table_id.table_name, query.no_delay);
+            database->dropTable(context_, table_id.table_name, query.no_delay);
         }
 
         db = database;

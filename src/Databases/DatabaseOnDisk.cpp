@@ -185,7 +185,7 @@ void DatabaseOnDisk::createTable(
     {
         /// Metadata already exists, table was detached
         removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, true);
-        attachTable(getContext(), table_name, table, getTableDataPath(create));
+        attachTable(local_context, table_name, table, getTableDataPath(create));
         return;
     }
 
@@ -371,7 +371,7 @@ void DatabaseOnDisk::renameTable(
     String table_metadata_path;
     ASTPtr attach_query;
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
-    StoragePtr table = tryGetTable(table_name, getContext());
+    StoragePtr table = tryGetTable(table_name, local_context);
     detachTable(local_context, table_name);
     UUID prev_uuid = UUIDHelpers::Nil;
     try
