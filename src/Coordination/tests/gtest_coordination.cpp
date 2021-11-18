@@ -829,15 +829,29 @@ TEST_P(CoordinationTest, ChangelogTestLostFiles)
     EXPECT_FALSE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
 }
 
+struct IntNode
+{
+    int value;
+    IntNode(int value_) : value(value_) { }
+    UInt64 sizeInBytes() const { return sizeof value; }
+    IntNode & operator=(int rhs)
+    {
+        this->value = rhs;
+        return *this;
+    }
+    bool operator==(const int & rhs) const { return value == rhs; }
+    bool operator!=(const int & rhs) const { return rhs != this->value; }
+};
+
 TEST_P(CoordinationTest, SnapshotableHashMapSimple)
 {
-    DB::SnapshotableHashTable<int> hello;
+    DB::SnapshotableHashTable<IntNode> hello;
     EXPECT_TRUE(hello.insert("hello", 5));
     EXPECT_TRUE(hello.contains("hello"));
     EXPECT_EQ(hello.getValue("hello"), 5);
     EXPECT_FALSE(hello.insert("hello", 145));
     EXPECT_EQ(hello.getValue("hello"), 5);
-    hello.updateValue("hello", [](int & value) { value = 7; });
+    hello.updateValue("hello", [](IntNode & value) { value = 7; });
     EXPECT_EQ(hello.getValue("hello"), 7);
     EXPECT_EQ(hello.size(), 1);
     EXPECT_TRUE(hello.erase("hello"));
@@ -846,12 +860,12 @@ TEST_P(CoordinationTest, SnapshotableHashMapSimple)
 
 TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
 {
-    DB::SnapshotableHashTable<int> map_snp;
+    DB::SnapshotableHashTable<IntNode> map_snp;
     EXPECT_TRUE(map_snp.insert("/hello", 7));
     EXPECT_FALSE(map_snp.insert("/hello", 145));
     map_snp.enableSnapshotMode();
     EXPECT_FALSE(map_snp.insert("/hello", 145));
-    map_snp.updateValue("/hello", [](int & value) { value = 554; });
+    map_snp.updateValue("/hello", [](IntNode & value) { value = 554; });
     EXPECT_EQ(map_snp.getValue("/hello"), 554);
     EXPECT_EQ(map_snp.snapshotSize(), 2);
     EXPECT_EQ(map_snp.size(), 1);
@@ -924,13 +938,13 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
 TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
 {
     /// int
-    DB::SnapshotableHashTable<int> hello;
+    DB::SnapshotableHashTable<IntNode> hello;
     hello.disableSnapshotMode();
     EXPECT_EQ(hello.getApproximateSataSize(), 0);
 
     hello.insert("hello", 1);
     EXPECT_EQ(hello.getApproximateSataSize(), 9);
-    hello.updateValue("hello", [](int & value) { value = 2; });
+    hello.updateValue("hello", [](IntNode & value) { value = 2; });
     EXPECT_EQ(hello.getApproximateSataSize(), 9);
 
     hello.erase("hello");
@@ -942,7 +956,7 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     hello.enableSnapshotMode();
     hello.insert("hello", 1);
     EXPECT_EQ(hello.getApproximateSataSize(), 9);
-    hello.updateValue("hello", [](int & value) { value = 2; });
+    hello.updateValue("hello", [](IntNode & value) { value = 2; });
     EXPECT_EQ(hello.getApproximateSataSize(), 18);
 
     hello.clearOutdatedNodes();

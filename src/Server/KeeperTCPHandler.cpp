@@ -446,22 +446,31 @@ bool KeeperTCPHandler::isHandShake(Int32 & handshake_length)
     || handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY;
 }
 
-bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(Int32 & four_letter_cmd)
+bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(Int32 & command)
 {
-    if (FourLetterCommandFactory::instance().isKnown(four_letter_cmd)
-        && FourLetterCommandFactory::instance().isEnabled(four_letter_cmd))
+    if (!FourLetterCommandFactory::instance().isKnown(command))
     {
-        auto command = FourLetterCommandFactory::instance().get(four_letter_cmd);
-        LOG_DEBUG(log, "receive four letter command {}", command->name());
+        LOG_WARNING(log, "invalid four letter command {}", std::to_string(command));
+        return false;
+    }
+    else if (!FourLetterCommandFactory::instance().isEnabled(command))
+    {
+        LOG_WARNING(log, "four letter command {} not enabled", IFourLetterCommand::toName(command));
+        return false;
+    }
+    else
+    {
+        auto command_ptr = FourLetterCommandFactory::instance().get(command);
+        LOG_DEBUG(log, "receive four letter command {}", command_ptr->name());
 
         String res;
         try
         {
-            res = command->run();
+            res = command_ptr->run();
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Error when executing four letter command " + command->name());
+            tryLogCurrentException(log, "Error when executing four letter command " + command_ptr->name());
         }
 
         try
@@ -470,16 +479,11 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(Int32 & four_letter_cmd)
         }
         catch (const Exception &)
         {
-            tryLogCurrentException(log, "Error when send 4 letter command response");
+            tryLogCurrentException(log, "Error when send four letter command response");
         }
 
         return true;
     }
-    else
-    {
-        LOG_WARNING(log, "invalid four letter command {}", std::to_string(four_letter_cmd));
-    }
-    return false;
 }
 
 std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveRequest()
