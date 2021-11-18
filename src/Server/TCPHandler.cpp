@@ -352,6 +352,13 @@ void TCPHandler::runImpl()
                     executor.setCancelCallback(callback, interactive_delay / 1000);
                 }
                 executor.execute();
+
+                /// Send final progress
+                ///
+                /// NOTE: we cannot send Progress for regular INSERT (w/ VALUES)
+                /// w/o breaking protocol compatibility, but it can be done
+                /// by increasing revision.
+                sendProgress();
             }
 
             state.io.onFinish();
