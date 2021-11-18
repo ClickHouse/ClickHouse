@@ -33,15 +33,12 @@ namespace ErrorCodes
 
 namespace
 {
-    using EntityType = IAccessStorage::EntityType;
-    using EntityTypeInfo = IAccessStorage::EntityTypeInfo;
-
-    UUID generateID(EntityType type, const String & name)
+    UUID generateID(AccessEntityType type, const String & name)
     {
         Poco::MD5Engine md5;
         md5.update(name);
         char type_storage_chars[] = " USRSXML";
-        type_storage_chars[0] = EntityTypeInfo::get(type).unique_char;
+        type_storage_chars[0] = AccessEntityTypeInfo::get(type).unique_char;
         md5.update(type_storage_chars, strlen(type_storage_chars));
         UUID result;
         memcpy(&result, md5.digest().data(), md5.digestLength());
@@ -114,7 +111,7 @@ namespace
         {
             auto profile_name = config.getString(profile_name_config);
             SettingsProfileElement profile_element;
-            profile_element.parent_profile = generateID(EntityType::SETTINGS_PROFILE, profile_name);
+            profile_element.parent_profile = generateID(AccessEntityType::SETTINGS_PROFILE, profile_name);
             user->settings.push_back(std::move(profile_element));
         }
 
@@ -273,7 +270,7 @@ namespace
         for (const auto & user_name : user_names)
         {
             if (config.has("users." + user_name + ".quota"))
-                quota_to_user_ids[config.getString("users." + user_name + ".quota")].push_back(generateID(EntityType::USER, user_name));
+                quota_to_user_ids[config.getString("users." + user_name + ".quota")].push_back(generateID(AccessEntityType::USER, user_name));
         }
 
         Poco::Util::AbstractConfiguration::Keys quota_names;
@@ -352,7 +349,7 @@ namespace
                 auto policy = std::make_shared<RowPolicy>();
                 policy->setFullName(user_name, database, table_name);
                 policy->filters[static_cast<size_t>(RowPolicyFilterType::SELECT_FILTER)] = filter;
-                policy->to_roles.add(generateID(EntityType::USER, user_name));
+                policy->to_roles.add(generateID(AccessEntityType::USER, user_name));
                 policies.push_back(policy);
             }
         }
@@ -414,7 +411,7 @@ namespace
             {
                 String parent_profile_name = config.getString(profile_config + "." + key);
                 SettingsProfileElement profile_element;
-                profile_element.parent_profile = generateID(EntityType::SETTINGS_PROFILE, parent_profile_name);
+                profile_element.parent_profile = generateID(AccessEntityType::SETTINGS_PROFILE, parent_profile_name);
                 profile->elements.emplace_back(std::move(profile_element));
                 continue;
             }
@@ -551,13 +548,13 @@ void UsersConfigAccessStorage::startPeriodicReloading()
         config_reloader->start();
 }
 
-std::optional<UUID> UsersConfigAccessStorage::findImpl(EntityType type, const String & name) const
+std::optional<UUID> UsersConfigAccessStorage::findImpl(AccessEntityType type, const String & name) const
 {
     return memory_storage.find(type, name);
 }
 
 
-std::vector<UUID> UsersConfigAccessStorage::findAllImpl(EntityType type) const
+std::vector<UUID> UsersConfigAccessStorage::findAllImpl(AccessEntityType type) const
 {
     return memory_storage.findAll(type);
 }
@@ -607,7 +604,7 @@ scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(const UUID & id, c
 }
 
 
-scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
+scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const
 {
     return memory_storage.subscribeForChanges(type, handler);
 }
@@ -619,7 +616,7 @@ bool UsersConfigAccessStorage::hasSubscriptionImpl(const UUID & id) const
 }
 
 
-bool UsersConfigAccessStorage::hasSubscriptionImpl(EntityType type) const
+bool UsersConfigAccessStorage::hasSubscriptionImpl(AccessEntityType type) const
 {
     return memory_storage.hasSubscription(type);
 }

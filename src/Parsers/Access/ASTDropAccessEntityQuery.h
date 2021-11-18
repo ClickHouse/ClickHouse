@@ -2,7 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
-#include <Access/IAccessEntity.h>
+#include <Access/Common/AccessEntityType.h>
 
 
 namespace DB
@@ -18,9 +18,7 @@ class ASTRowPolicyNames;
 class ASTDropAccessEntityQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-    using EntityType = IAccessEntity::Type;
-
-    EntityType type;
+    AccessEntityType type;
     bool if_exists = false;
     Strings names;
     std::shared_ptr<ASTRowPolicyNames> row_policy_names;
