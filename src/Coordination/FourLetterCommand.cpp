@@ -29,7 +29,7 @@ Int32 IFourLetterCommand::code()
 String IFourLetterCommand::toName(Int32 code)
 {
     int reverted_code = __builtin_bswap32(code);
-    return String(reinterpret_cast<char *>(&reverted_code));
+    return String(reinterpret_cast<char *>(&reverted_code), 4);
 }
 
 Int32 IFourLetterCommand::toCode(const String & name)
