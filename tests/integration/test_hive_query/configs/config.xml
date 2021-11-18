@@ -1,0 +1,22 @@
+<clickhouse>
+    <remote_servers  >
+        <!-- Test only shard config for testing distributed storage -->
+        <simple>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </simple>
+    </remote_servers>
+
+    <local_cache_dir>/clickhouse_local_cache</local_cache_dir>
+	<local_cache_quota>207374182400</local_cache_quota>
+	<local_cache_max_threads>1000</local_cache_max_threads>
+    
+    <hdfs>
+	    <libhdfs3_conf>/etc/clickhouse-server/other_conf.d/hdfs-site.xml</libhdfs3_conf>
+    </hdfs>
+
+</clickhouse>
