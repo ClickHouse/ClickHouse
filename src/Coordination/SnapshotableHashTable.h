@@ -15,18 +15,6 @@ struct ListNode
     bool active_in_map;
 };
 
-template <class V>
-struct CanCalculateSize
-{
-private:
-    template <class T>
-        static auto check(int) -> decltype(std::declval<T>().sizeInBytes(), std::true_type());
-    template <class T>
-    static std::false_type check(...);
-
-public:
-    static constexpr bool value = std::is_same<decltype(check<V>(0)), std::true_type>::value;
-};
 
 template <class V>
 class SnapshotableHashTable
@@ -117,20 +105,6 @@ private:
         }
     }
 
-    /// Calculate object memory size.
-    /// @return sizeInBytes(), if T has method sizeInBytes, otherwise return sizeof(T)
-    template <typename T>
-    inline UInt64 sizeOf(const typename std::enable_if<CanCalculateSize<T>::value, T>::type * obj)
-    {
-        return obj->sizeInBytes();
-    }
-
-    template <typename T>
-    inline UInt64 sizeOf(const typename std::enable_if<!CanCalculateSize<T>::value, T>::type *)
-    {
-        return sizeof(T);
-    }
-
 public:
 
     using iterator = typename List::iterator;
@@ -147,7 +121,7 @@ public:
             ListElem elem{key, value, true};
             auto itr = list.insert(list.end(), elem);
             map.emplace(itr->key, itr);
-            updateDataSize(INSERT, key.size(), sizeOf<V>(&value), 0);
+            updateDataSize(INSERT, key.size(), value.sizeInBytes(), 0);
             return true;
         }
 
@@ -158,7 +132,7 @@ public:
     void insertOrReplace(const std::string & key, const V & value)
     {
         auto it = map.find(key);
-        UInt64 old_value_size = it == map.end() ? 0 : sizeOf<V>(&it->second->value);
+        UInt64 old_value_size = it == map.end() ? 0 : it->second->value.sizeInBytes();
 
         if (it == map.end())
         {
@@ -182,7 +156,7 @@ public:
                 list_itr->value = value;
             }
         }
-        updateDataSize(INSERT_OR_REPLACE, key.size(), sizeOf<V>(&value), old_value_size);
+        updateDataSize(INSERT_OR_REPLACE, key.size(), value.sizeInBytes(), old_value_size);
     }
 
     bool erase(const std::string & key)
@@ -192,7 +166,7 @@ public:
             return false;
 
         auto list_itr = it->second;
-        UInt64 old_data_size = sizeOf<V>(&list_itr->value);
+        UInt64 old_data_size = list_itr->value.sizeInBytes();
         if (snapshot_mode)
         {
             list_itr->active_in_map = false;
@@ -219,7 +193,7 @@ public:
         assert(it != map.end());
 
         auto list_itr = it->second;
-        UInt64 old_value_size = sizeOf<V>(&list_itr->value);
+        UInt64 old_value_size = list_itr->value.sizeInBytes();
 
         const_iterator ret;
 
@@ -238,7 +212,7 @@ public:
             updater(list_itr->value);
             ret = list_itr;
         }
-        updateDataSize(UPDATE_VALUE, key.size(), sizeOf<V>(&ret->value), old_value_size);
+        updateDataSize(UPDATE_VALUE, key.size(), ret->value.sizeInBytes(), old_value_size);
         return ret;
     }
 
@@ -265,7 +239,7 @@ public:
         {
             if (!itr->active_in_map)
             {
-                updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size(), sizeOf<V>(&itr->value), 0);
+                updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size(), itr->value.sizeInBytes(), 0);
                 itr = list.erase(itr);
             }
             else
