@@ -523,7 +523,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
         create_ast = database->getCreateTableQuery(replica.table_name, getContext());
 
-        database->detachTable(getContext(), replica.table_name);
+        database->detachTable(system_context, replica.table_name);
     }
     table.reset();
 
