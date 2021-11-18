@@ -32,7 +32,7 @@ public:
     virtual ~IFourLetterCommand();
     Int32 code();
 
-    static inline String toName(Int32 code);
+    static String toName(Int32 code);
     static inline Int32 toCode(const String & name);
 
 protected:
@@ -45,6 +45,7 @@ public:
     using Commands = std::unordered_map<Int32, FourLetterCommandPtr>;
     using WhiteList = std::vector<Int32>;
 
+    ///represent '*' which is used in white list
     static constexpr Int32 WHITE_LIST_ALL = 0;
 
     bool isKnown(Int32 code);
