@@ -37,7 +37,7 @@ Next, you need to download the source files onto your working machine. This is c
 
 In the command line terminal run:
 
-    git clone --recursive git@github.com:your_github_username/ClickHouse.git
+    git clone git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
 Note: please, substitute *your_github_username* with what is appropriate!
@@ -79,7 +79,7 @@ After successfully running this command you will be able to pull updates from th
 
 Working with submodules in git could be painful. Next commands will help to manage it:
 
-    # ! each command accepts --recursive
+    # ! each command accepts
     # Update remote URLs for submodules. Barely rare case
     git submodule sync
     # Add new submodules
@@ -92,16 +92,16 @@ Working with submodules in git could be painful. Next commands will help to mana
 The next commands would help you to reset all submodules to the initial state (!WARNING! - any changes inside will be deleted):
 
     # Synchronizes submodules' remote URL with .gitmodules
-    git submodule sync --recursive
+    git submodule sync
     # Update the registered submodules with initialize not yet initialized
-    git submodule update --init --recursive
+    git submodule update --init
     # Reset all changes done after HEAD
     git submodule foreach git reset --hard
     # Clean files from .gitignore
     git submodule foreach git clean -xfd
     # Repeat last 4 commands for all submodule
-    git submodule foreach git submodule sync --recursive
-    git submodule foreach git submodule update --init --recursive
+    git submodule foreach git submodule sync
+    git submodule foreach git submodule update --init
     git submodule foreach git submodule foreach git reset --hard
     git submodule foreach git submodule foreach git clean -xfd
 
@@ -241,7 +241,7 @@ Adding third-party libraries: https://clickhouse.com/docs/en/development/contrib
 
 Writing tests: https://clickhouse.com/docs/en/development/tests/
 
-List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
+List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3Ahacktoberfest
 
 ## Test Data {#test-data}
 

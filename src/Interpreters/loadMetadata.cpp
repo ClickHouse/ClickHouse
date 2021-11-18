@@ -20,6 +20,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <filesystem>
+#include <base/logger_useful.h>
 
 namespace fs = std::filesystem;
 
@@ -38,7 +39,7 @@ static void executeCreateQuery(
         parser, query.data(), query.data() + query.size(), "in file " + file_name, 0, context->getSettingsRef().max_parser_depth);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
-    ast_create_query.database = database;
+    ast_create_query.setDatabase(database);
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);
@@ -72,6 +73,7 @@ static void loadDatabase(
     }
     else if (fs::exists(fs::path(database_path)))
     {
+        /// TODO Remove this code (it's required for compatibility with versions older than 20.7)
         /// Database exists, but .sql file is absent. It's old-style Ordinary database (e.g. system or default)
         database_attach_query = "ATTACH DATABASE " + backQuoteIfNeed(database) + " ENGINE = Ordinary";
     }
@@ -160,7 +162,7 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
     bool create_default_db_if_not_exists = !default_database_name.empty();
     bool metadata_dir_for_default_db_already_exists = databases.count(default_database_name);
     if (create_default_db_if_not_exists && !metadata_dir_for_default_db_already_exists)
-        databases.emplace(default_database_name, path + "/" + escapeForFileName(default_database_name));
+        databases.emplace(default_database_name, std::filesystem::path(path) / escapeForFileName(default_database_name));
 
     TablesLoader::Databases loaded_databases;
     for (const auto & [name, db_path] : databases)

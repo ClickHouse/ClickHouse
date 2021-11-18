@@ -3,6 +3,7 @@
 
 namespace DB
 {
+
 QueryIdHolder::QueryIdHolder(const String & query_id_, const MergeTreeData & data_) : query_id(query_id_), data(data_)
 {
 }

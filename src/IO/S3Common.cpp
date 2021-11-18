@@ -603,7 +603,7 @@ namespace S3
         /// Case when bucket name represented in domain name of S3 URL.
         /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
-        static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3|cos|obs)([.\-][a-z0-9\-.:]+))");
+        static const RE2 virtual_hosted_style_pattern(R"((.+)\.(s3|cos|obs|oss)([.\-][a-z0-9\-.:]+))");
 
         /// Case when bucket name and key represented in path of S3 URL.
         /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
@@ -614,6 +614,7 @@ namespace S3
         static constexpr auto COSN = "COSN";
         static constexpr auto COS = "COS";
         static constexpr auto OBS = "OBS";
+        static constexpr auto OSS = "OSS";
 
 
         uri = uri_;
@@ -638,7 +639,7 @@ namespace S3
             }
 
             boost::to_upper(name);
-            if (name != S3 && name != COS && name != OBS)
+            if (name != S3 && name != COS && name != OBS && name != OSS)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Object storage system name is unrecognized in virtual hosted style S3 URI: {}", quoteString(name));
             }
@@ -649,6 +650,10 @@ namespace S3
             else if (name == OBS)
             {
                 storage_name = OBS;
+            }
+            else if (name == OSS)
+            {
+                storage_name = OSS;
             }
             else
             {

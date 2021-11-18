@@ -2,9 +2,10 @@
 
 #include "Connection.h"
 #include <Interpreters/Context.h>
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <IO/TimeoutSetter.h>
 #include <Interpreters/Session.h>
+#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
@@ -33,6 +34,7 @@ struct LocalQueryState
 
     /// Current block to be sent next.
     std::optional<Block> block;
+    std::optional<ColumnsDescription> columns_description;
 
     /// Is request cancelled
     bool is_cancelled = false;
@@ -56,6 +58,8 @@ public:
 
     ~LocalConnection() override;
 
+    IServerConnection::Type getConnectionType() const override { return IServerConnection::Type::LOCAL; }
+
     static ServerConnectionPtr createConnection(const ConnectionParameters & connection_parameters, ContextPtr current_context, bool send_progress = false);
 
     void setDefaultDatabase(const String & database) override;
@@ -76,7 +80,7 @@ public:
     void sendQuery(
         const ConnectionTimeouts & timeouts,
         const String & query,
-        const String & query_id_/* = "" */,
+        const String & query_id/* = "" */,
         UInt64 stage/* = QueryProcessingStage::Complete */,
         const Settings * settings/* = nullptr */,
         const ClientInfo * client_info/* = nullptr */,

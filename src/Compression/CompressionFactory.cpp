@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#   include "config_core.h"
-#endif
+#include "config_core.h"
 
 #include <Compression/CompressionFactory.h>
 #include <Parsers/ASTFunction.h>

@@ -58,8 +58,9 @@ public:
         Names deduplicate_by_columns_,
         MergeTreeData::MergingParams merging_params_,
         const IMergeTreeDataPart * parent_part_,
-        String prefix_,
+        String suffix_,
         MergeTreeData * data_,
+        MergeTreeDataMergerMutator * mutator_,
         ActionBlocker * merges_blocker_,
         ActionBlocker * ttl_merges_blocker_)
         {
@@ -78,12 +79,13 @@ public:
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
             global_ctx->parent_part = std::move(parent_part_);
             global_ctx->data = std::move(data_);
+            global_ctx->mutator = std::move(mutator_);
             global_ctx->merges_blocker = std::move(merges_blocker_);
             global_ctx->ttl_merges_blocker = std::move(ttl_merges_blocker_);
 
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
 
-            prepare_stage_ctx->prefix = std::move(prefix_);
+            prepare_stage_ctx->suffix = std::move(suffix_);
             prepare_stage_ctx->merging_params = std::move(merging_params_);
 
             (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
@@ -121,6 +123,7 @@ private:
         std::unique_ptr<MergeListElement> projection_merge_list_element;
         MergeListElement * merge_list_element_ptr{nullptr};
         MergeTreeData * data{nullptr};
+        MergeTreeDataMergerMutator * mutator{nullptr};
         ActionBlocker * merges_blocker{nullptr};
         ActionBlocker * ttl_merges_blocker{nullptr};
         StorageMetadataPtr metadata_snapshot{nullptr};
@@ -170,7 +173,7 @@ private:
     struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext //-V730
     {
         /// Dependencies
-        String prefix;
+        String suffix;
         MergeTreeData::MergingParams merging_params{};
 
         DiskPtr tmp_disk{nullptr};

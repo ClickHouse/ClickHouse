@@ -8,5 +8,4 @@ enum class VariableContext
     User,           /// Group of processes
     Process,        /// For example, a query or a merge
     Thread,         /// A thread of a process
-    Snapshot        /// Does not belong to anybody
 };
