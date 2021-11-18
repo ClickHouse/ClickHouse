@@ -1,13 +1,15 @@
 #pragma once
 
-#include <Access/Quota.h>
+#include <Access/Common/QuotaDefs.h>
 #include <Core/UUID.h>
 #include <Poco/Net/IPAddress.h>
+#include <boost/container/flat_set.hpp>
 #include <boost/noncopyable.hpp>
 #include <boost/smart_ptr/atomic_shared_ptr.hpp>
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <optional>
 
 
 namespace DB

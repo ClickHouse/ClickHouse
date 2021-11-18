@@ -1,7 +1,12 @@
 #include <Access/Common/QuotaDefs.h>
 #include <Common/Exception.h>
+
+#include <base/range.h>
+
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/split.hpp>
 #include <boost/lexical_cast.hpp>
 
 
@@ -11,6 +16,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+
+String toString(QuotaType type)
+{
+    return QuotaTypeInfo::get(type).raw_name;
 }
 
 String QuotaTypeInfo::valueToString(QuotaValue value) const
@@ -99,6 +110,80 @@ const QuotaTypeInfo & QuotaTypeInfo::get(QuotaType type)
         case QuotaType::MAX: break;
     }
     throw Exception("Unexpected quota type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
+}
+
+String toString(QuotaKeyType type)
+{
+    return QuotaKeyTypeInfo::get(type).raw_name;
+}
+
+const QuotaKeyTypeInfo & QuotaKeyTypeInfo::get(QuotaKeyType type)
+{
+    static constexpr auto make_info = [](const char * raw_name_)
+    {
+        String init_name = raw_name_;
+        boost::to_lower(init_name);
+        std::vector<QuotaKeyType> init_base_types;
+        String replaced = boost::algorithm::replace_all_copy(init_name, "_or_", "|");
+        Strings tokens;
+        boost::algorithm::split(tokens, replaced, boost::is_any_of("|"));
+        if (tokens.size() > 1)
+        {
+            for (const auto & token : tokens)
+            {
+                for (auto kt : collections::range(QuotaKeyType::MAX))
+                {
+                    if (QuotaKeyTypeInfo::get(kt).name == token)
+                    {
+                        init_base_types.push_back(kt);
+                        break;
+                    }
+                }
+            }
+        }
+        return QuotaKeyTypeInfo{raw_name_, std::move(init_name), std::move(init_base_types)};
+    };
+
+    switch (type)
+    {
+        case QuotaKeyType::NONE:
+        {
+            static const auto info = make_info("NONE");
+            return info;
+        }
+        case QuotaKeyType::USER_NAME:
+        {
+            static const auto info = make_info("USER_NAME");
+            return info;
+        }
+        case QuotaKeyType::IP_ADDRESS:
+        {
+            static const auto info = make_info("IP_ADDRESS");
+            return info;
+        }
+        case QuotaKeyType::FORWARDED_IP_ADDRESS:
+        {
+            static const auto info = make_info("FORWARDED_IP_ADDRESS");
+            return info;
+        }
+        case QuotaKeyType::CLIENT_KEY:
+        {
+            static const auto info = make_info("CLIENT_KEY");
+            return info;
+        }
+        case QuotaKeyType::CLIENT_KEY_OR_USER_NAME:
+        {
+            static const auto info = make_info("CLIENT_KEY_OR_USER_NAME");
+            return info;
+        }
+        case QuotaKeyType::CLIENT_KEY_OR_IP_ADDRESS:
+        {
+            static const auto info = make_info("CLIENT_KEY_OR_IP_ADDRESS");
+            return info;
+        }
+        case QuotaKeyType::MAX: break;
+    }
+    throw Exception("Unexpected quota key type: " + std::to_string(static_cast<int>(type)), ErrorCodes::LOGICAL_ERROR);
 }
 
 }

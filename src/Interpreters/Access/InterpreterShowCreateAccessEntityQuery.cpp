@@ -14,11 +14,12 @@
 #include <Parsers/parseQuery.h>
 #include <Access/AccessControl.h>
 #include <Access/EnabledQuota.h>
+#include <Access/Quota.h>
 #include <Access/QuotaUsage.h>
-#include <Access/User.h>
 #include <Access/Role.h>
 #include <Access/RowPolicy.h>
 #include <Access/SettingsProfile.h>
+#include <Access/User.h>
 #include <Columns/ColumnString.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Core/Defines.h>
@@ -149,7 +150,7 @@ namespace
         query->names.emplace_back(quota.getName());
         query->attach = attach_mode;
 
-        if (quota.key_type != Quota::KeyType::NONE)
+        if (quota.key_type != QuotaKeyType::NONE)
             query->key_type = quota.key_type;
 
         query->all_limits.reserve(quota.all_limits.size());

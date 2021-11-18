@@ -1,4 +1,5 @@
 #include <Access/EnabledQuota.h>
+#include <Access/Quota.h>
 #include <Access/QuotaCache.h>
 #include <Access/QuotaUsage.h>
 #include <Access/AccessControl.h>
@@ -44,26 +45,25 @@ void QuotaCache::QuotaInfo::setQuota(const QuotaPtr & quota_, const UUID & quota
 String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
 {
     const auto & params = enabled.params;
-    using KeyType = Quota::KeyType;
     switch (quota->key_type)
     {
-        case KeyType::NONE:
+        case QuotaKeyType::NONE:
         {
             return "";
         }
-        case KeyType::USER_NAME:
+        case QuotaKeyType::USER_NAME:
         {
             return params.user_name;
         }
-        case KeyType::IP_ADDRESS:
+        case QuotaKeyType::IP_ADDRESS:
         {
             return params.client_address.toString();
         }
-        case KeyType::FORWARDED_IP_ADDRESS:
+        case QuotaKeyType::FORWARDED_IP_ADDRESS:
         {
             return params.forwarded_address;
         }
-        case KeyType::CLIENT_KEY:
+        case QuotaKeyType::CLIENT_KEY:
         {
             if (!params.client_key.empty())
                 return params.client_key;
@@ -71,19 +71,19 @@ String QuotaCache::QuotaInfo::calculateKey(const EnabledQuota & enabled) const
                 "Quota " + quota->getName() + " (for user " + params.user_name + ") requires a client supplied key.",
                 ErrorCodes::QUOTA_REQUIRES_CLIENT_KEY);
         }
-        case KeyType::CLIENT_KEY_OR_USER_NAME:
+        case QuotaKeyType::CLIENT_KEY_OR_USER_NAME:
         {
             if (!params.client_key.empty())
                 return params.client_key;
             return params.user_name;
         }
-        case KeyType::CLIENT_KEY_OR_IP_ADDRESS:
+        case QuotaKeyType::CLIENT_KEY_OR_IP_ADDRESS:
         {
             if (!params.client_key.empty())
                 return params.client_key;
             return params.client_address.toString();
         }
-        case KeyType::MAX: break;
+        case QuotaKeyType::MAX: break;
     }
     throw Exception("Unexpected quota key type: " + std::to_string(static_cast<int>(quota->key_type)), ErrorCodes::LOGICAL_ERROR);
 }

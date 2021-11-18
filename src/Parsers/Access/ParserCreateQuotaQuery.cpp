@@ -11,7 +11,10 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <base/range.h>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/algorithm/string/replace.hpp>
 
 
 namespace DB
@@ -24,9 +27,6 @@ namespace ErrorCodes
 
 namespace
 {
-    using KeyType = Quota::KeyType;
-    using KeyTypeInfo = Quota::KeyTypeInfo;
-
     bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_name)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -38,13 +38,13 @@ namespace
         });
     }
 
-    bool parseKeyType(IParserBase::Pos & pos, Expected & expected, KeyType & key_type)
+    bool parseKeyType(IParserBase::Pos & pos, Expected & expected, QuotaKeyType & key_type)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             if (ParserKeyword{"NOT KEYED"}.ignore(pos, expected))
             {
-                key_type = KeyType::NONE;
+                key_type = QuotaKeyType::NONE;
                 return true;
             }
 
@@ -59,9 +59,9 @@ namespace
             boost::to_lower(name);
             boost::replace_all(name, " ", "_");
 
-            for (auto kt : collections::range(Quota::KeyType::MAX))
+            for (auto kt : collections::range(QuotaKeyType::MAX))
             {
-                if (KeyTypeInfo::get(kt).name == name)
+                if (QuotaKeyTypeInfo::get(kt).name == name)
                 {
                     key_type = kt;
                     return true;
@@ -69,8 +69,8 @@ namespace
             }
 
             String all_types_str;
-            for (auto kt : collections::range(Quota::KeyType::MAX))
-                all_types_str += String(all_types_str.empty() ? "" : ", ") + "'" + KeyTypeInfo::get(kt).name + "'";
+            for (auto kt : collections::range(QuotaKeyType::MAX))
+                all_types_str += String(all_types_str.empty() ? "" : ", ") + "'" + QuotaKeyTypeInfo::get(kt).name + "'";
             String msg = "Quota cannot be keyed by '" + name + "'. Expected one of the following identifiers: " + all_types_str;
             throw Exception(msg, ErrorCodes::SYNTAX_ERROR);
         });
@@ -278,7 +278,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
 
     String new_name;
-    std::optional<KeyType> key_type;
+    std::optional<QuotaKeyType> key_type;
     std::vector<ASTCreateQuotaQuery::Limits> all_limits;
     String cluster;
 
@@ -289,7 +289,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
         if (!key_type)
         {
-            KeyType new_key_type;
+            QuotaKeyType new_key_type;
             if (parseKeyType(pos, expected, new_key_type))
             {
                 key_type = new_key_type;

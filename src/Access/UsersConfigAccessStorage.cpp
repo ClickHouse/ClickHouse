@@ -223,16 +223,15 @@ namespace
         auto quota = std::make_shared<Quota>();
         quota->setName(quota_name);
 
-        using KeyType = Quota::KeyType;
         String quota_config = "quotas." + quota_name;
         if (config.has(quota_config + ".keyed_by_ip"))
-            quota->key_type = KeyType::IP_ADDRESS;
+            quota->key_type = QuotaKeyType::IP_ADDRESS;
         else if (config.has(quota_config + ".keyed_by_forwarded_ip"))
-            quota->key_type = KeyType::FORWARDED_IP_ADDRESS;
+            quota->key_type = QuotaKeyType::FORWARDED_IP_ADDRESS;
         else if (config.has(quota_config + ".keyed"))
-            quota->key_type = KeyType::CLIENT_KEY_OR_USER_NAME;
+            quota->key_type = QuotaKeyType::CLIENT_KEY_OR_USER_NAME;
         else
-            quota->key_type = KeyType::USER_NAME;
+            quota->key_type = QuotaKeyType::USER_NAME;
 
         Poco::Util::AbstractConfiguration::Keys interval_keys;
         config.keys(quota_config, interval_keys);
