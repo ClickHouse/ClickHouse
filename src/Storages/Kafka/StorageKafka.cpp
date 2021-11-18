@@ -1,7 +1,6 @@
 #include <Storages/Kafka/StorageKafka.h>
 #include <Storages/Kafka/parseSyslogLevel.h>
 
-#include <DataStreams/copyData.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -16,7 +15,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Storages/Kafka/KafkaBlockOutputStream.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaSource.h>
@@ -410,7 +408,7 @@ ConsumerBufferPtr StorageKafka::createReadBuffer(const size_t consumer_number)
     }
     conf.set("client.software.name", VERSION_NAME);
     conf.set("client.software.version", VERSION_DESCRIBE);
-    conf.set("auto.offset.reset", "smallest");     // If no offset stored for this group, read all messages from the start
+    conf.set("auto.offset.reset", "earliest");     // If no offset stored for this group, read all messages from the start
 
     // that allows to prevent fast draining of the librdkafka queue
     // during building of single insert block. Improves performance

@@ -48,21 +48,23 @@ namespace
         {
             if (create.temporary)
             {
-                if (create.table.empty())
+                if (!create.table)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Table name specified in the CREATE TEMPORARY TABLE query must not be empty");
-                create.table = data.renaming_config->getNewTemporaryTableName(create.table);
+                create.setTable(data.renaming_config->getNewTemporaryTableName(create.getTable()));
             }
-            else if (create.table.empty())
+            else if (!create.table)
             {
-                if (create.database.empty())
+                if (!create.database)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name specified in the CREATE DATABASE query must not be empty");
-                create.database = data.renaming_config->getNewDatabaseName(create.database);
+                create.setDatabase(data.renaming_config->getNewDatabaseName(create.getDatabase()));
             }
             else
             {
-                if (create.database.empty())
+                if (!create.database)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name specified in the CREATE TABLE query must not be empty");
-                std::tie(create.database, create.table) = data.renaming_config->getNewTableName({create.database, create.table});
+                auto table_and_database_name = data.renaming_config->getNewTableName({create.getDatabase(), create.getTable()});
+                create.setDatabase(table_and_database_name.first);
+                create.setTable(table_and_database_name.second);
             }
 
             create.uuid = UUIDHelpers::Nil;

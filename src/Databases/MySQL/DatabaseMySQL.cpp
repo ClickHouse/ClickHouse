@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_MYSQL
 #    include <string>
@@ -11,9 +9,9 @@
 #    include <DataTypes/convertMySQLDataType.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
-#    include <Formats/MySQLSource.h>
+#    include <Processors/Sources/MySQLSource.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
-#    include <Processors/QueryPipelineBuilder.h>
+#    include <QueryPipeline/QueryPipelineBuilder.h>
 #    include <IO/Operators.h>
 #    include <Interpreters/Context.h>
 #    include <Parsers/ASTCreateQuery.h>
@@ -131,8 +129,8 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
     {
         /// init create query.
         auto table_id = storage->getStorageID();
-        create_table_query->table = table_id.table_name;
-        create_table_query->database = table_id.database_name;
+        create_table_query->setTable(table_id.table_name);
+        create_table_query->setDatabase(table_id.database_name);
 
         auto metadata_snapshot = storage->getInMemoryMetadataPtr();
         for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())
@@ -194,11 +192,11 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
 ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->database = getDatabaseName();
+    create_query->setDatabase(getDatabaseName());
     create_query->set(create_query->storage, database_engine_define);
 
     if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
-        create_query->storage->set(create_query->storage->comment, std::make_shared<ASTLiteral>(comment_value));
+        create_query->set(create_query->comment, std::make_shared<ASTLiteral>(comment_value));
 
     return create_query;
 }

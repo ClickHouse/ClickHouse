@@ -12,7 +12,7 @@ endif ()
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/${INTERNAL_ZLIB_NAME}/zlib.h")
     if(USE_INTERNAL_ZLIB_LIBRARY)
-        message(WARNING "submodule contrib/${INTERNAL_ZLIB_NAME} is missing. to fix try run: \n git submodule update --init --recursive")
+        message(WARNING "submodule contrib/${INTERNAL_ZLIB_NAME} is missing. to fix try run: \n git submodule update --init")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal zlib library")
     endif()
     set(USE_INTERNAL_ZLIB_LIBRARY 0)

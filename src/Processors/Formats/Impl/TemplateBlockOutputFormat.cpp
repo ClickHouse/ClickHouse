@@ -130,7 +130,7 @@ void TemplateBlockOutputFormat::serializeField(const IColumn & column, const ISe
             serialization.serializeTextXML(column, row_num, out, settings);
             break;
         case ColumnFormat::Raw:
-            serialization.serializeText(column, row_num, out, settings);
+            serialization.serializeTextRaw(column, row_num, out, settings);
             break;
         default:
             __builtin_unreachable();
@@ -147,8 +147,6 @@ template <typename U, typename V> void TemplateBlockOutputFormat::writeValue(U v
 
 void TemplateBlockOutputFormat::consume(Chunk chunk)
 {
-    doWritePrefix();
-
     size_t rows = chunk.getNumRows();
 
     for (size_t i = 0; i < rows; ++i)
@@ -161,21 +159,15 @@ void TemplateBlockOutputFormat::consume(Chunk chunk)
     }
 }
 
-void TemplateBlockOutputFormat::doWritePrefix()
+void TemplateBlockOutputFormat::writePrefix()
 {
-    if (need_write_prefix)
-    {
-        writeString(format.delimiters.front(), out);
-        need_write_prefix = false;
-    }
+    writeString(format.delimiters.front(), out);
 }
 
-void TemplateBlockOutputFormat::finalize()
+void TemplateBlockOutputFormat::finalizeImpl()
 {
     if (finalized)
         return;
-
-    doWritePrefix();
 
     size_t parts = format.format_idx_to_column_idx.size();
 
@@ -227,9 +219,9 @@ void TemplateBlockOutputFormat::finalize()
 }
 
 
-void registerOutputFormatProcessorTemplate(FormatFactory & factory)
+void registerOutputFormatTemplate(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("Template", [](
+    factory.registerOutputFormat("Template", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams &,
@@ -267,7 +259,7 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory)
         return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format, settings.template_settings.row_between_delimiter);
     });
 
-    factory.registerOutputFormatProcessor("CustomSeparated", [](
+    factory.registerOutputFormat("CustomSeparated", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams &,

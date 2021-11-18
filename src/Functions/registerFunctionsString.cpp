@@ -1,7 +1,5 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#    include "config_core.h"
-#endif
+#include "config_functions.h"
+#include "config_core.h"
 
 namespace DB
 {

@@ -23,20 +23,15 @@ class WriteBuffer;
   */
 class IRowOutputFormat : public IOutputFormat
 {
-protected:
-    DataTypes types;
-    Serializations serializations;
-    bool first_row = true;
-
-    void consume(Chunk chunk) override;
-    void consumeTotals(Chunk chunk) override;
-    void consumeExtremes(Chunk chunk) override;
-    void finalize() override;
-
 public:
     using Params = RowOutputFormatParams;
 
+protected:
     IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_);
+    void consume(Chunk chunk) override;
+    void consumeTotals(Chunk chunk) override;
+    void consumeExtremes(Chunk chunk) override;
+    void finalizeImpl() override;
 
     /** Write a row.
       * Default implementation calls methods to write single values and delimiters
@@ -55,7 +50,7 @@ public:
     virtual void writeRowStartDelimiter() {}    /// delimiter before each row
     virtual void writeRowEndDelimiter() {}      /// delimiter after each row
     virtual void writeRowBetweenDelimiter() {}  /// delimiter between rows
-    virtual void writePrefix() {}               /// delimiter before resultset
+    virtual void writePrefix() override {}      /// delimiter before resultset
     virtual void writeSuffix() {}               /// delimiter after resultset
     virtual void writeBeforeTotals() {}
     virtual void writeAfterTotals() {}
@@ -63,20 +58,13 @@ public:
     virtual void writeAfterExtremes() {}
     virtual void writeLastSuffix() {}  /// Write something after resultset, totals end extremes.
 
-private:
-    bool prefix_written = false;
-    bool suffix_written = false;
-
+    DataTypes types;
+    Serializations serializations;
     Params params;
 
-    void writePrefixIfNot()
-    {
-        if (!prefix_written)
-            writePrefix();
+    bool first_row = true;
 
-        prefix_written = true;
-    }
-
+private:
     void writeSuffixIfNot()
     {
         if (!suffix_written)
@@ -85,6 +73,7 @@ private:
         suffix_written = true;
     }
 
+    bool suffix_written = false;
 };
 
 }

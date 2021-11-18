@@ -102,7 +102,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     /// It also calculates checksum of projections.
     auto checksum_file = [&](const String & file_path, const String & file_name)
     {
-        if (disk->isDirectory(file_path) && endsWith(file_name, ".proj") && !startsWith(file_name, "tmp_")) // ignore projection tmp merge dir
+        if (disk->isDirectory(file_path) && endsWith(file_name, ".proj"))
         {
             auto projection_name = file_name.substr(0, file_name.size() - sizeof(".proj") + 1);
             auto pit = data_part->getProjectionParts().find(projection_name);
@@ -124,7 +124,8 @@ IMergeTreeDataPart::Checksums checkDataPart(
                 auto file_buf = disk->readFile(proj_path);
                 HashingReadBuffer hashing_buf(*file_buf);
                 hashing_buf.ignoreAll();
-                projection_checksums_data.files[MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
+                projection_checksums_data.files[MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION]
+                    = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
             }
             else
             {
@@ -141,8 +142,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
                         {
                             String projection_file_name = ISerialization::getFileNameForStream(projection_column, substream_path) + ".bin";
                             checksums_data.files[projection_file_name] = checksum_compressed_file(disk, projection_path + projection_file_name);
-                        },
-                        {});
+                        });
                 }
             }
 
@@ -219,7 +219,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             {
                 String file_name = ISerialization::getFileNameForStream(column, substream_path) + ".bin";
                 checksums_data.files[file_name] = checksum_compressed_file(disk, path + file_name);
-            }, {});
+            });
         }
     }
     else

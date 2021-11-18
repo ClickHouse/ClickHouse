@@ -26,7 +26,7 @@ option(USE_INTERNAL_GRPC_LIBRARY "Set to FALSE to use system gRPC library instea
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/grpc/CMakeLists.txt")
   if(USE_INTERNAL_GRPC_LIBRARY)
-    message(WARNING "submodule contrib/grpc is missing. to fix try run: \n git submodule update --init --recursive")
+    message(WARNING "submodule contrib/grpc is missing. to fix try run: \n git submodule update --init")
     message(${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal grpc")
     set(USE_INTERNAL_GRPC_LIBRARY 0)
   endif()

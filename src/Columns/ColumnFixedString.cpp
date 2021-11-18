@@ -231,24 +231,20 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
     const UInt8 * filt_end = filt_pos + col_size;
     const UInt8 * data_pos = chars.data();
 
-#ifdef __SSE2__
     /** A slightly more optimized version.
         * Based on the assumption that often pieces of consecutive values
         *  completely pass or do not pass the filter.
         * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
         */
-
-    static constexpr size_t SIMD_BYTES = 16;
-    const __m128i zero16 = _mm_setzero_si128();
-    const UInt8 * filt_end_sse = filt_pos + col_size / SIMD_BYTES * SIMD_BYTES;
+    static constexpr size_t SIMD_BYTES = 64;
+    const UInt8 * filt_end_aligned = filt_pos + col_size / SIMD_BYTES * SIMD_BYTES;
     const size_t chars_per_simd_elements = SIMD_BYTES * n;
 
-    while (filt_pos < filt_end_sse)
+    while (filt_pos < filt_end_aligned)
     {
-        UInt16 mask = _mm_movemask_epi8(_mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(filt_pos)), zero16));
-        mask = ~mask;
+        uint64_t mask = Bytes64MaskToBits64Mask(filt_pos);
 
-        if (0xFFFF == mask)
+        if (0xffffffffffffffff == mask)
         {
             res->chars.insert(data_pos, data_pos + chars_per_simd_elements);
         }
@@ -257,17 +253,20 @@ ColumnPtr ColumnFixedString::filter(const IColumn::Filter & filt, ssize_t result
             size_t res_chars_size = res->chars.size();
             while (mask)
             {
-                size_t index = __builtin_ctz(mask);
+                size_t index = __builtin_ctzll(mask);
                 res->chars.resize(res_chars_size + n);
                 memcpySmallAllowReadWriteOverflow15(&res->chars[res_chars_size], data_pos + index * n, n);
                 res_chars_size += n;
-                mask = mask & (mask - 1);
+            #ifdef __BMI__
+                mask = _blsr_u64(mask);
+            #else
+                mask = mask & (mask-1);
+            #endif
             }
         }
         data_pos += chars_per_simd_elements;
         filt_pos += SIMD_BYTES;
     }
-#endif
 
     size_t res_chars_size = res->chars.size();
     while (filt_pos < filt_end)

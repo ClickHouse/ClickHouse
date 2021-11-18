@@ -160,7 +160,10 @@ def generate_cmake_flags_files() -> None:
                            "docs/ru/development/cmake-in-clickhouse.md"]
 
         for lang in other_languages:
-            os.symlink(output_file_name, os.path.join(root_path, lang))
+            other_file_name = os.path.join(root_path, lang)
+            if os.path.exists(other_file_name):
+                os.unlink(other_file_name)    
+            os.symlink(output_file_name, other_file_name)
 
 if __name__ == '__main__':
     generate_cmake_flags_files()
