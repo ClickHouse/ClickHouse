@@ -57,22 +57,13 @@ public:
             flags.emplace(*it, false);
     }
 
-    void set(const T & val)
+    void set(const T & key)
     {
-        auto it = flags.find(val);
-        if (it == flags.end())
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unknown value '{}'", val);
-        it->second = true;
+        setFlag(key, true);
         cv.notify_one();
     }
 
-    void unset(const T & val)
-    {
-        auto it = flags.find(val);
-        if (it == flags.end())
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unknown value '{}'", val);
-        it->second = false;
-    }
+    void unset(const T & key) { setFlag(key, false); }
 
     void wait(std::chrono::milliseconds timeout)
     {
@@ -80,12 +71,18 @@ public:
         cv.wait_for(lk, timeout);
     }
 
-    const std::unordered_map<T, std::atomic_bool> & get()
-    {
-        return flags;
-    }
+    const std::unordered_map<T, std::atomic_bool> & get() { return flags; }
 
 private:
+
+    void setFlag(const T & key, bool value)
+    {
+        auto it = flags.find(key);
+        if (it == flags.end())
+            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unknown value '{}'", key);
+        it->second = value;
+    }
+
     std::condition_variable cv;
     std::mutex mu;
 
@@ -94,9 +91,9 @@ private:
 
 ClusterDiscovery::ClusterDiscovery(
     const Poco::Util::AbstractConfiguration & config,
-    ContextMutablePtr context_,
+    ContextPtr context_,
     const String & config_prefix)
-    : context(context_)
+    : context(Context::createCopy(context_))
     , node_name(toString(ServerUUID::get()))
     , server_port(context->getTCPPort())
     , log(&Poco::Logger::get("ClusterDiscovery"))
@@ -280,26 +277,32 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
 
 void ClusterDiscovery::start()
 {
-    auto zk = context->getZooKeeper();
-
+    if (clusters_info.empty())
+    {
+        LOG_DEBUG(log, "No defined clusters for discovery");
+        return;
+    }
     LOG_TRACE(log, "Starting working thread");
     main_thread = ThreadFromGlobalPool([this] { runMainThread(); });
-
-    for (auto & [_, info] : clusters_info)
-    {
-        registerInZk(zk, info);
-        if (!updateCluster(info))
-        {
-            LOG_WARNING(log, "Error on updating cluster '{}', will retry", info.name);
-            clusters_to_update->set(info.name);
-        }
-    }
 }
 
 void ClusterDiscovery::runMainThread()
 {
-    LOG_TRACE(log, "Worker thread started");
+    LOG_DEBUG(log, "Worker thread started");
     // setThreadName("ClusterDiscovery");
+
+    {
+        auto zk = context->getZooKeeper();
+        for (auto & [_, info] : clusters_info)
+        {
+            registerInZk(zk, info);
+            if (!updateCluster(info))
+            {
+                LOG_WARNING(log, "Error on updating cluster '{}', will retry", info.name);
+                clusters_to_update->set(info.name);
+            }
+        }
+    }
 
     using namespace std::chrono_literals;
 
@@ -316,7 +319,7 @@ void ClusterDiscovery::runMainThread()
                 clusters_to_update->unset(cluster_name);
         }
     }
-    LOG_TRACE(log, "Worker thread stopped");
+    LOG_DEBUG(log, "Worker thread stopped");
 }
 
 void ClusterDiscovery::shutdown()

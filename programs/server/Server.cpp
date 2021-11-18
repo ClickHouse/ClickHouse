@@ -1555,8 +1555,7 @@ if (ThreadFuzzer::instance().isEffective())
             server.start();
         LOG_INFO(log, "Ready for connections.");
 
-        if (has_zookeeper)
-            global_context->registerNodeForClusterDiscovery();
+        global_context->startClusterDiscovery();
 
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
