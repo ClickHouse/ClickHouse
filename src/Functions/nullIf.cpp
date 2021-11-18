@@ -18,16 +18,16 @@ namespace
 class FunctionNullIf : public IFunction
 {
 private:
-    ContextConstPtr context;
+    ContextPtr context;
 public:
     static constexpr auto name = "nullIf";
 
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionNullIf>(context);
     }
 
-    explicit FunctionNullIf(ContextConstPtr context_) : context(context_) {}
+    explicit FunctionNullIf(ContextPtr context_) : context(context_) {}
 
     std::string getName() const override
     {
@@ -37,6 +37,7 @@ public:
     size_t getNumberOfArguments() const override { return 2; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

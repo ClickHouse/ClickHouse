@@ -90,12 +90,13 @@ template <typename Derived>
 class FunctionArrayEnumerateRankedExtended : public IFunction
 {
 public:
-    static FunctionPtr create(ContextConstPtr /* context */) { return std::make_shared<Derived>(); }
+    static FunctionPtr create(ContextPtr /* context */) { return std::make_shared<Derived>(); }
 
     String getName() const override { return Derived::name; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {

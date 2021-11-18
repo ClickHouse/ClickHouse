@@ -4,22 +4,20 @@
 #include <cxxabi.h>
 #include <cstdlib>
 #include <Poco/String.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadBufferFromFile.h>
-#include <common/demangle.h>
-#include <common/errnoToString.h>
+#include <base/demangle.h>
+#include <base/errnoToString.h>
 #include <Common/formatReadable.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/ErrorCodes.h>
 #include <filesystem>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 namespace fs = std::filesystem;
 
@@ -92,6 +90,22 @@ std::string getExceptionStackTraceString(const std::exception & e)
         return db_exception->getStackTraceString();
     return {};
 #endif
+}
+
+std::string getExceptionStackTraceString(std::exception_ptr e)
+{
+    try
+    {
+        std::rethrow_exception(e);
+    }
+    catch (const std::exception & exception)
+    {
+        return getExceptionStackTraceString(exception);
+    }
+    catch (...)
+    {
+        return {};
+    }
 }
 
 
@@ -192,8 +206,8 @@ static void getNoSpaceLeftInfoMessage(std::filesystem::path path, String & msg)
 
     fmt::format_to(std::back_inserter(msg),
         "\nTotal space: {}\nAvailable space: {}\nTotal inodes: {}\nAvailable inodes: {}\nMount point: {}",
-        ReadableSize(fs.f_blocks * fs.f_bsize),
-        ReadableSize(fs.f_bavail * fs.f_bsize),
+        ReadableSize(fs.f_blocks * fs.f_frsize),
+        ReadableSize(fs.f_bavail * fs.f_frsize),
         formatReadableQuantity(fs.f_files),
         formatReadableQuantity(fs.f_favail),
         mount_point);
@@ -313,7 +327,7 @@ std::string getCurrentExceptionMessage(bool with_stacktrace, bool check_embedded
         try
         {
             stream << "Poco::Exception. Code: " << ErrorCodes::POCO_EXCEPTION << ", e.code() = " << e.code()
-                << ", e.displayText() = " << e.displayText()
+                << ", " << e.displayText()
                 << (with_stacktrace ? ", Stack trace (when copying this message, always include the lines below):\n\n" + getExceptionStackTraceString(e) : "")
                 << (with_extra_info ? getExtraExceptionInfo(e) : "")
                 << " (version " << VERSION_STRING << VERSION_OFFICIAL << ")";
@@ -365,6 +379,30 @@ int getCurrentExceptionCode()
     catch (const Exception & e)
     {
         return e.code();
+    }
+    catch (const Poco::Exception &)
+    {
+        return ErrorCodes::POCO_EXCEPTION;
+    }
+    catch (const std::exception &)
+    {
+        return ErrorCodes::STD_EXCEPTION;
+    }
+    catch (...)
+    {
+        return ErrorCodes::UNKNOWN_EXCEPTION;
+    }
+}
+
+int getExceptionErrorCode(std::exception_ptr e)
+{
+    try
+    {
+        std::rethrow_exception(e);
+    }
+    catch (const Exception & exception)
+    {
+        return exception.code();
     }
     catch (const Poco::Exception &)
     {
@@ -433,7 +471,12 @@ std::string getExceptionMessage(const Exception & e, bool with_stacktrace, bool 
             }
         }
 
-        stream << "Code: " << e.code() << ", e.displayText() = " << text;
+        stream << "Code: " << e.code() << ". " << text;
+
+        if (!text.empty() && text.back() != '.')
+            stream << '.';
+
+        stream << " (" << ErrorCodes::getName(e.code()) << ")";
 
         if (with_stacktrace && !has_embedded_stack_trace)
             stream << ", Stack trace (when copying this message, always include the lines below):\n\n" << e.getStackTraceString();
@@ -487,6 +530,13 @@ ExecutionStatus ExecutionStatus::fromCurrentException(const std::string & start_
 {
     String msg = (start_of_message.empty() ? "" : (start_of_message + ": ")) + getCurrentExceptionMessage(false, true);
     return ExecutionStatus(getCurrentExceptionCode(), msg);
+}
+
+ExecutionStatus ExecutionStatus::fromText(const std::string & data)
+{
+    ExecutionStatus status;
+    status.deserializeText(data);
+    return status;
 }
 
 ParsingException::ParsingException() = default;

@@ -22,6 +22,7 @@ set (SRCS
     "${LIBRARY_DIR}/src/transaction.cxx"
     "${LIBRARY_DIR}/src/transaction_base.cxx"
     "${LIBRARY_DIR}/src/row.cxx"
+    "${LIBRARY_DIR}/src/params.cxx"
     "${LIBRARY_DIR}/src/util.cxx"
     "${LIBRARY_DIR}/src/version.cxx"
 )
@@ -31,6 +32,7 @@ set (SRCS
 # conflicts with all includes of <array>.
 set (HDRS
     "${LIBRARY_DIR}/include/pqxx/array.hxx"
+    "${LIBRARY_DIR}/include/pqxx/params.hxx"
     "${LIBRARY_DIR}/include/pqxx/binarystring.hxx"
     "${LIBRARY_DIR}/include/pqxx/composite.hxx"
     "${LIBRARY_DIR}/include/pqxx/connection.hxx"
@@ -64,7 +66,7 @@ set (HDRS
 add_library(libpqxx ${SRCS} ${HDRS})
 
 target_link_libraries(libpqxx PUBLIC ${LIBPQ_LIBRARY})
-target_include_directories (libpqxx PRIVATE "${LIBRARY_DIR}/include")
+target_include_directories (libpqxx SYSTEM PRIVATE "${LIBRARY_DIR}/include")
 
 # crutch
 set(CM_CONFIG_H_IN "${LIBRARY_DIR}/include/pqxx/config.h.in")
@@ -75,4 +77,3 @@ set(CM_CONFIG_PQ "${LIBRARY_DIR}/include/pqxx/config-internal-libpq.h")
 configure_file("${CM_CONFIG_H_IN}" "${CM_CONFIG_INT}" @ONLY)
 configure_file("${CM_CONFIG_H_IN}" "${CM_CONFIG_PUB}" @ONLY)
 configure_file("${CM_CONFIG_H_IN}" "${CM_CONFIG_PQ}" @ONLY)
-

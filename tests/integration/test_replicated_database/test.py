@@ -1,3 +1,5 @@
+import os
+import shutil
 import time
 import re
 import pytest
@@ -16,7 +18,7 @@ snapshot_recovering_node = cluster.add_instance('snapshot_recovering_node', main
 
 all_nodes = [main_node, dummy_node, competing_node, snapshotting_node, snapshot_recovering_node]
 
-uuid_regex = re.compile("[0-9a-f]{8}\-[0-9a-f]{4}\-[0-9a-f]{4}\-[0-9a-f]{4}\-[0-9a-f]{12}")
+uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 def assert_create_query(nodes, table_name, expected):
     replace_uuid = lambda x: re.sub(uuid_regex, "uuid", x)
     query = "show create table {}".format(table_name)
@@ -98,6 +100,102 @@ def test_simple_alter_table(started_cluster, engine):
                "SETTINGS index_granularity = 8192".format(name, full_engine)
 
     assert_create_query([main_node, dummy_node, competing_node], name, expected)
+
+
+def get_table_uuid(database, name):
+    return main_node.query(f"SELECT uuid FROM system.tables WHERE database = '{database}' and name = '{name}'").strip()
+
+
+@pytest.fixture(scope="module", name="attachable_part")
+def fixture_attachable_part(started_cluster):
+    main_node.query(f"CREATE DATABASE testdb_attach_atomic ENGINE = Atomic")
+    main_node.query(f"CREATE TABLE testdb_attach_atomic.test (CounterID UInt32) ENGINE = MergeTree ORDER BY (CounterID)")
+    main_node.query(f"INSERT INTO testdb_attach_atomic.test VALUES (123)")
+    main_node.query(f"ALTER TABLE testdb_attach_atomic.test FREEZE WITH NAME 'test_attach'")
+    table_uuid = get_table_uuid("testdb_attach_atomic", "test")
+    return os.path.join(main_node.path, f"database/shadow/test_attach/store/{table_uuid[:3]}/{table_uuid}/all_1_1_0")
+
+
+
+@pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
+def test_alter_attach(started_cluster, attachable_part, engine):
+    name  = "alter_attach_test_{}".format(engine)
+    main_node.query(f"CREATE TABLE testdb.{name} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)")
+    table_uuid = get_table_uuid("testdb", name)
+    # Provide and attach a part to the main node
+    shutil.copytree(
+        attachable_part, os.path.join(main_node.path, f"database/store/{table_uuid[:3]}/{table_uuid}/detached/all_1_1_0")
+    )
+    main_node.query(f"ALTER TABLE testdb.{name} ATTACH PART 'all_1_1_0'")
+    # On the main node, data is attached
+    assert main_node.query(f"SELECT CounterID FROM testdb.{name}") == "123\n"
+    # On the other node, data is replicated only if using a Replicated table engine
+    if engine == "ReplicatedMergeTree":
+        assert dummy_node.query(f"SELECT CounterID FROM testdb.{name}") == "123\n"
+    else:
+        assert dummy_node.query(f"SELECT CounterID FROM testdb.{name}") == ""
+
+
+@pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
+def test_alter_drop_part(started_cluster, engine):
+    table = f"alter_drop_{engine}"
+    part_name = "all_0_0_0" if engine == "ReplicatedMergeTree" else "all_1_1_0"
+    main_node.query(f"CREATE TABLE testdb.{table} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)")
+    main_node.query(f"INSERT INTO testdb.{table} VALUES (123)")
+    if engine == "MergeTree":
+        dummy_node.query(f"INSERT INTO testdb.{table} VALUES (456)")
+    main_node.query(f"ALTER TABLE testdb.{table} DROP PART '{part_name}'")
+    assert main_node.query(f"SELECT CounterID FROM testdb.{table}") == ""
+    if engine == "ReplicatedMergeTree":
+        # The DROP operation is still replicated at the table engine level
+        assert dummy_node.query(f"SELECT CounterID FROM testdb.{table}") == ""
+    else:
+        assert dummy_node.query(f"SELECT CounterID FROM testdb.{table}") == "456\n"
+
+
+@pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
+def test_alter_detach_part(started_cluster, engine):
+    table = f"alter_detach_{engine}"
+    part_name = "all_0_0_0" if engine == "ReplicatedMergeTree" else "all_1_1_0"
+    main_node.query(f"CREATE TABLE testdb.{table} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)")
+    main_node.query(f"INSERT INTO testdb.{table} VALUES (123)")
+    if engine == "MergeTree":
+        dummy_node.query(f"INSERT INTO testdb.{table} VALUES (456)")
+    main_node.query(f"ALTER TABLE testdb.{table} DETACH PART '{part_name}'")
+    detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='testdb' AND table='{table}'"
+    assert main_node.query(detached_parts_query) == f"{part_name}\n"
+    if engine == "ReplicatedMergeTree":
+        # The detach operation is still replicated at the table engine level
+        assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
+    else:
+        assert dummy_node.query(detached_parts_query) == ""
+
+
+@pytest.mark.parametrize("engine", ["MergeTree", "ReplicatedMergeTree"])
+def test_alter_drop_detached_part(started_cluster, engine):
+    table = f"alter_drop_detached_{engine}"
+    part_name = "all_0_0_0" if engine == "ReplicatedMergeTree" else "all_1_1_0"
+    main_node.query(f"CREATE TABLE testdb.{table} (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)")
+    main_node.query(f"INSERT INTO testdb.{table} VALUES (123)")
+    main_node.query(f"ALTER TABLE testdb.{table} DETACH PART '{part_name}'")
+    if engine == "MergeTree":
+        dummy_node.query(f"INSERT INTO testdb.{table} VALUES (456)")
+        dummy_node.query(f"ALTER TABLE testdb.{table} DETACH PART '{part_name}'")
+    main_node.query(f"ALTER TABLE testdb.{table} DROP DETACHED PART '{part_name}'")
+    detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='testdb' AND table='{table}'"
+    assert main_node.query(detached_parts_query) == ""
+    assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
+
+
+def test_alter_fetch(started_cluster):
+    main_node.query("CREATE TABLE testdb.fetch_source (CounterID UInt32) ENGINE = ReplicatedMergeTree ORDER BY (CounterID)")
+    main_node.query("CREATE TABLE testdb.fetch_target (CounterID UInt32) ENGINE = ReplicatedMergeTree ORDER BY (CounterID)")
+    main_node.query("INSERT INTO testdb.fetch_source VALUES (123)")
+    table_uuid = get_table_uuid("testdb", "fetch_source")
+    main_node.query(f"ALTER TABLE testdb.fetch_target FETCH PART 'all_0_0_0' FROM '/clickhouse/tables/{table_uuid}/{{shard}}' ")
+    detached_parts_query = "SELECT name FROM system.detached_parts WHERE database='testdb' AND table='fetch_target'"
+    assert main_node.query(detached_parts_query) == "all_0_0_0\n"
+    assert dummy_node.query(detached_parts_query) == ""
 
 
 def test_alters_from_different_replicas(started_cluster):
@@ -230,26 +328,27 @@ def test_recover_staled_replica(started_cluster):
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(dummy_node)
         dummy_node.query_and_get_error("RENAME TABLE recover.t1 TO recover.m1")
-        main_node.query("RENAME TABLE recover.t1 TO recover.m1", settings=settings)
-        main_node.query("ALTER TABLE recover.mt1  ADD COLUMN m int", settings=settings)
-        main_node.query("ALTER TABLE recover.rmt1 ADD COLUMN m int", settings=settings)
-        main_node.query("RENAME TABLE recover.rmt3 TO recover.rmt4", settings=settings)
-        main_node.query("DROP TABLE recover.rmt5", settings=settings)
-        main_node.query("DROP DICTIONARY recover.d2", settings=settings)
-        main_node.query("CREATE DICTIONARY recover.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
+
+        main_node.query_with_retry("RENAME TABLE recover.t1 TO recover.m1", settings=settings)
+        main_node.query_with_retry("ALTER TABLE recover.mt1  ADD COLUMN m int", settings=settings)
+        main_node.query_with_retry("ALTER TABLE recover.rmt1 ADD COLUMN m int", settings=settings)
+        main_node.query_with_retry("RENAME TABLE recover.rmt3 TO recover.rmt4", settings=settings)
+        main_node.query_with_retry("DROP TABLE recover.rmt5", settings=settings)
+        main_node.query_with_retry("DROP DICTIONARY recover.d2", settings=settings)
+        main_node.query_with_retry("CREATE DICTIONARY recover.d2 (n int DEFAULT 0, m int DEFAULT 1) PRIMARY KEY n "
                         "SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'rmt1' PASSWORD '' DB 'recover')) "
                         "LIFETIME(MIN 1 MAX 10) LAYOUT(FLAT());", settings=settings)
 
-        inner_table = ".inner_id." + dummy_node.query("SELECT uuid FROM system.tables WHERE database='recover' AND name='mv1'").strip()
-        main_node.query("ALTER TABLE recover.`{}` MODIFY COLUMN n int DEFAULT 42".format(inner_table), settings=settings)
-        main_node.query("ALTER TABLE recover.mv1 MODIFY QUERY SELECT m FROM recover.rmt1".format(inner_table), settings=settings)
-        main_node.query("RENAME TABLE recover.mv2 TO recover.mv3".format(inner_table), settings=settings)
+        inner_table = ".inner_id." + dummy_node.query_with_retry("SELECT uuid FROM system.tables WHERE database='recover' AND name='mv1'").strip()
+        main_node.query_with_retry("ALTER TABLE recover.`{}` MODIFY COLUMN n int DEFAULT 42".format(inner_table), settings=settings)
+        main_node.query_with_retry("ALTER TABLE recover.mv1 MODIFY QUERY SELECT m FROM recover.rmt1".format(inner_table), settings=settings)
+        main_node.query_with_retry("RENAME TABLE recover.mv2 TO recover.mv3".format(inner_table), settings=settings)
 
-        main_node.query("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
-        main_node.query("DROP TABLE recover.tmp", settings=settings)
-        main_node.query("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
-        main_node.query("DROP TABLE recover.tmp", settings=settings)
-        main_node.query("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
+        main_node.query_with_retry("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
+        main_node.query_with_retry("DROP TABLE recover.tmp", settings=settings)
+        main_node.query_with_retry("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
+        main_node.query_with_retry("DROP TABLE recover.tmp", settings=settings)
+        main_node.query_with_retry("CREATE TABLE recover.tmp AS recover.m1", settings=settings)
 
     assert main_node.query("SELECT name FROM system.tables WHERE database='recover' AND name NOT LIKE '.inner_id.%' ORDER BY name") == \
            "d1\nd2\nm1\nmt1\nmt2\nmv1\nmv3\nrmt1\nrmt2\nrmt4\nt2\ntmp\n"
@@ -304,3 +403,12 @@ def test_startup_without_zk(started_cluster):
 
     main_node.query("EXCHANGE TABLES startup.rmt AND startup.m")
     assert main_node.query("SELECT (*,).1 FROM startup.m") == "42\n"
+
+
+def test_server_uuid(started_cluster):
+    uuid1 = main_node.query("select serverUUID()")
+    uuid2 = dummy_node.query("select serverUUID()")
+    assert uuid1 != uuid2
+    main_node.restart_clickhouse()
+    uuid1_after_restart = main_node.query("select serverUUID()")
+    assert uuid1 == uuid1_after_restart

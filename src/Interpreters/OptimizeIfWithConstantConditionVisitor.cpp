@@ -1,6 +1,7 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 #include <IO/WriteHelpers.h>
@@ -29,7 +30,7 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
     /// cast of numeric constant in condition to UInt8
     if (const auto * function = condition->as<ASTFunction>())
     {
-        if (function->name == "CAST")
+        if (isFunctionCast(function))
         {
             if (const auto * expr_list = function->arguments->as<ASTExpressionList>())
             {
@@ -39,9 +40,12 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
                 const ASTPtr & type_ast = expr_list->children.at(1);
                 if (const auto * type_literal = type_ast->as<ASTLiteral>())
                 {
-                    if (type_literal->value.getType() == Field::Types::String &&
-                        type_literal->value.get<std::string>() == "UInt8")
-                        return tryExtractConstValueFromCondition(expr_list->children.at(0), value);
+                    if (type_literal->value.getType() == Field::Types::String)
+                    {
+                        const auto & type_str = type_literal->value.get<std::string>();
+                        if (type_str == "UInt8" || type_str == "Nullable(UInt8)")
+                            return tryExtractConstValueFromCondition(expr_list->children.at(0), value);
+                    }
                 }
             }
         }

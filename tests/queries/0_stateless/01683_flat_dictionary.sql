@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP DATABASE IF EXISTS 01681_database_for_flat_dictionary;
 CREATE DATABASE 01681_database_for_flat_dictionary;
 

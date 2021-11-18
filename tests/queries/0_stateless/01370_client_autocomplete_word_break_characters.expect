@@ -1,7 +1,8 @@
 #!/usr/bin/expect -f
+# Tags: no-unbundled, no-fasttest
 
 log_user 0
-set timeout 1
+set timeout 60
 match_max 100000
 # A default timeout action is to do nothing, change it to fail
 expect_after {

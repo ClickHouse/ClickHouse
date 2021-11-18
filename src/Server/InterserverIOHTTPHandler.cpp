@@ -9,7 +9,7 @@
 #include <Server/HTTP/HTMLForm.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Common/setThreadName.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <Poco/Util/LayeredConfiguration.h>
@@ -50,7 +50,7 @@ std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServer
 
 void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPServerResponse & response, Output & used_output)
 {
-    HTMLForm params(request);
+    HTMLForm params(server.context()->getSettingsRef(), request);
 
     LOG_TRACE(log, "Request URI: {}", request.getURI());
 

@@ -8,8 +8,7 @@
 #include <Common/assert_cast.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <common/logger_useful.h>
-#include <ext/range.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -20,21 +19,23 @@ namespace ErrorCodes
 }
 
 
-ODBCBlockInputStream::ODBCBlockInputStream(
-    nanodbc::ConnectionHolderPtr connection, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size_)
-    : log(&Poco::Logger::get("ODBCBlockInputStream"))
+ODBCSource::ODBCSource(
+    nanodbc::ConnectionHolderPtr connection_holder, const std::string & query_str, const Block & sample_block, const UInt64 max_block_size_)
+    : ISource(sample_block)
+    , log(&Poco::Logger::get("ODBCSource"))
     , max_block_size{max_block_size_}
     , query(query_str)
 {
     description.init(sample_block);
-    result = execute(connection->get(), NANODBC_TEXT(query));
+    result = execute<nanodbc::result>(connection_holder,
+                     [&](nanodbc::connection & connection) { return execute(connection, query); });
 }
 
 
-Block ODBCBlockInputStream::readImpl()
+Chunk ODBCSource::generate()
 {
-    if (finished)
-        return Block();
+    if (is_finished)
+        return {};
 
     MutableColumns columns(description.sample_block.cloneEmptyColumns());
     size_t num_rows = 0;
@@ -43,7 +44,7 @@ Block ODBCBlockInputStream::readImpl()
     {
         if (!result.next())
         {
-            finished = true;
+            is_finished = true;
             break;
         }
 
@@ -75,11 +76,11 @@ Block ODBCBlockInputStream::readImpl()
             break;
     }
 
-    return description.sample_block.cloneWithColumns(std::move(columns));
+    return Chunk(std::move(columns), num_rows);
 }
 
 
-void ODBCBlockInputStream::insertValue(
+void ODBCSource::insertValue(
         IColumn & column, const DataTypePtr data_type, const ValueType type, nanodbc::result & row, size_t idx)
 {
     switch (type)
@@ -115,6 +116,8 @@ void ODBCBlockInputStream::insertValue(
             assert_cast<ColumnFloat64 &>(column).insertValue(row.get<double>(idx));
             break;
         case ValueType::vtFixedString:[[fallthrough]];
+        case ValueType::vtEnum8:
+        case ValueType::vtEnum16:
         case ValueType::vtString:
             assert_cast<ColumnString &>(column).insert(row.get<std::string>(idx));
             break;
@@ -132,7 +135,7 @@ void ODBCBlockInputStream::insertValue(
             auto value = row.get<std::string>(idx);
             ReadBufferFromString in(value);
             time_t time = 0;
-            readDateTimeText(time, in);
+            readDateTimeText(time, in, assert_cast<const DataTypeDateTime *>(data_type.get())->getTimeZone());
             if (time < 0)
                 time = 0;
             assert_cast<ColumnUInt32 &>(column).insertValue(time);

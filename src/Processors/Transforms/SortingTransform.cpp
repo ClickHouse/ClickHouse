@@ -9,19 +9,13 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 
-#include <DataStreams/NativeBlockInputStream.h>
-#include <DataStreams/NativeBlockOutputStream.h>
-
-
-namespace ProfileEvents
-{
-    extern const Event ExternalSortWritePart;
-    extern const Event ExternalSortMerge;
-}
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+
 set -ue
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -10,6 +12,10 @@ ${CLICKHOUSE_CLIENT} -q "create database test_log_queries" "--query_id=01600_log
 ${CLICKHOUSE_CLIENT} -q "create table test_log_queries.logtable(i int, j int, k int) engine MergeTree order by i" "--query_id=01600_log_queries_with_extensive_info_002"
 ${CLICKHOUSE_CLIENT} -q "insert into test_log_queries.logtable values (1,2,3), (4,5,6)" "--query_id=01600_log_queries_with_extensive_info_003"
 ${CLICKHOUSE_CLIENT} -q "select k from test_log_queries.logtable where i = 4" "--query_id=01600_log_queries_with_extensive_info_004"
+
+# exception query should also contain query_kind
+${CLICKHOUSE_CLIENT} -q "select k from test_log_queries.logtable where i > ''" "--query_id=01600_log_queries_with_extensive_info_004_err" 2> /dev/null || true
+
 ${CLICKHOUSE_CLIENT} -q "select k from test_log_queries.logtable where i = 1" "--query_id=01600_log_queries_with_extensive_info_005"
 ${CLICKHOUSE_CLIENT} -q "select * from test_log_queries.logtable where i = 1" "--query_id=01600_log_queries_with_extensive_info_006"
 ${CLICKHOUSE_CLIENT} -q "create table test_log_queries.logtable2 as test_log_queries.logtable" "--query_id=01600_log_queries_with_extensive_info_007"
@@ -26,4 +32,4 @@ ${CLICKHOUSE_CLIENT} -q "drop table if exists test_log_queries.logtable3" "--que
 ${CLICKHOUSE_CLIENT} -q "drop database if exists test_log_queries" "--query_id=01600_log_queries_with_extensive_info_018"
 
 ${CLICKHOUSE_CLIENT} -q "system flush logs"
-${CLICKHOUSE_CLIENT} -q "select columns(query, normalized_query_hash, query_kind, databases, tables, columns) apply (any) from system.query_log where current_database = currentDatabase() AND type = 'QueryFinish' and query_id like '01600_log_queries_with_extensive_info%' group by query_id order by query_id"
+${CLICKHOUSE_CLIENT} -q "select columns(query, normalized_query_hash, query_kind, databases, tables, columns) apply (any) from system.query_log where current_database = currentDatabase() AND type != 'QueryStart' and query_id like '01600_log_queries_with_extensive_info%' group by query_id order by query_id"

@@ -1,18 +1,18 @@
 #include <Storages/System/StorageSystemQuotas.h>
+#include <Access/AccessControl.h>
+#include <Access/Common/AccessFlags.h>
+#include <Access/Quota.h>
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTRolesOrUsersSet.h>
-#include <Access/AccessControlManager.h>
-#include <Access/Quota.h>
-#include <Access/AccessFlags.h>
-#include <ext/range.h>
+#include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <base/range.h>
 
 
 namespace DB
@@ -25,7 +25,7 @@ namespace
     DataTypeEnum8::Values getKeyTypeEnumValues()
     {
         DataTypeEnum8::Values enum_values;
-        for (auto key_type : ext::range(KeyType::MAX))
+        for (auto key_type : collections::range(KeyType::MAX))
         {
             const auto & type_info = KeyTypeInfo::get(key_type);
             if ((key_type != KeyType::NONE) && type_info.base_types.empty())
@@ -55,7 +55,7 @@ NamesAndTypesList StorageSystemQuotas::getNamesAndTypes()
 void StorageSystemQuotas::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
     context->checkAccess(AccessType::SHOW_QUOTAS);
-    const auto & access_control = context->getAccessControlManager();
+    const auto & access_control = context->getAccessControl();
     std::vector<UUID> ids = access_control.findAll<Quota>();
 
     size_t column_index = 0;

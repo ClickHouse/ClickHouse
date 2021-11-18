@@ -20,10 +20,11 @@ class FunctionCaseWithExpression : public IFunction
 {
 public:
     static constexpr auto name = "caseWithExpression";
-    static FunctionPtr create(ContextConstPtr context_) { return std::make_shared<FunctionCaseWithExpression>(context_); }
+    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionCaseWithExpression>(context_); }
 
-    explicit FunctionCaseWithExpression(ContextConstPtr context_) : context(context_) {}
+    explicit FunctionCaseWithExpression(ContextPtr context_) : context(context_) {}
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
     String getName() const override { return name; }
 
@@ -98,7 +99,7 @@ public:
     }
 
 private:
-    ContextConstPtr context;
+    ContextPtr context;
 };
 
 }

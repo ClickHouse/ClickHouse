@@ -1,6 +1,5 @@
 #include "StorageXDBC.h"
 
-#include <DataStreams/IBlockOutputStream.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ConnectionTimeoutsContext.h>
@@ -8,11 +7,11 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTLiteral.h>
 #include <Poco/Net/HTTPRequest.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageURL.h>
 #include <Storages/transformQueryForExternalDatabase.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/escapeForFileName.h>
 
 
@@ -34,7 +33,7 @@ StorageXDBC::StorageXDBC(
     const BridgeHelperPtr bridge_helper_)
     /// Please add support for constraints as soon as StorageODBC or JDBC will support insertion.
     : IStorageURLBase(
-        Poco::URI(),
+        "",
         context_,
         table_id_,
         IXDBCBridgeHelper::DEFAULT_FORMAT,
@@ -46,9 +45,9 @@ StorageXDBC::StorageXDBC(
     , bridge_helper(bridge_helper_)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
+    , log(&Poco::Logger::get("Storage" + bridge_helper->getName()))
 {
-    log = &Poco::Logger::get("Storage" + bridge_helper->getName());
-    uri = bridge_helper->getMainURI();
+    uri = bridge_helper->getMainURI().toString();
 }
 
 std::string StorageXDBC::getReadMethod() const
@@ -81,6 +80,7 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
         remote_database_name,
         remote_table_name,
         local_context);
+    LOG_TRACE(log, "Query: {}", query);
 
     NamesAndTypesList cols;
     for (const String & name : column_names)
@@ -114,11 +114,11 @@ Pipe StorageXDBC::read(
     return IStorageURLBase::read(column_names, metadata_snapshot, query_info, local_context, processed_stage, max_block_size, num_streams);
 }
 
-BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
+SinkToStoragePtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context)
 {
     bridge_helper->startBridgeSync();
 
-    Poco::URI request_uri = uri;
+    auto request_uri = Poco::URI(uri);
     request_uri.setPath("/write");
 
     auto url_params = bridge_helper->getURLParams(65536);
@@ -130,14 +130,14 @@ BlockOutputStreamPtr StorageXDBC::write(const ASTPtr & /*query*/, const StorageM
     request_uri.addQueryParameter("format_name", format_name);
     request_uri.addQueryParameter("sample_block", metadata_snapshot->getSampleBlock().getNamesAndTypesList().toString());
 
-    return std::make_shared<StorageURLBlockOutputStream>(
-        request_uri,
+    return std::make_shared<StorageURLSink>(
+        request_uri.toString(),
         format_name,
         getFormatSettings(local_context),
         metadata_snapshot->getSampleBlock(),
         local_context,
         ConnectionTimeouts::getHTTPTimeouts(local_context),
-        chooseCompressionMethod(uri.toString(), compression_method));
+        chooseCompressionMethod(uri, compression_method));
 }
 
 Block StorageXDBC::getHeaderBlock(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const

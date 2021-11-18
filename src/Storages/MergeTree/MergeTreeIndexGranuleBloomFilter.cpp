@@ -5,7 +5,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/HashTable/Hash.h>
-#include <ext/bit_cast.h>
+#include <base/bit_cast.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <IO/WriteHelpers.h>
 
@@ -84,10 +84,12 @@ bool MergeTreeIndexGranuleBloomFilter::empty() const
     return !total_rows;
 }
 
-void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr)
+void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     if (!empty())
-        throw Exception("Cannot read data to a non-empty bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot read data to a non-empty bloom filter index.");
+    if (version != 1)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
 
     readVarUInt(total_rows, istr);
     for (auto & filter : bloom_filters)
@@ -102,7 +104,7 @@ void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr)
 void MergeTreeIndexGranuleBloomFilter::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception("Attempt to write empty bloom filter index.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty bloom filter index.");
 
     static size_t atom_size = 8;
     writeVarUInt(total_rows, ostr);

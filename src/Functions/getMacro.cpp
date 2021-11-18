@@ -30,7 +30,7 @@ private:
 
 public:
     static constexpr auto name = "getMacro";
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionGetMacro>(context->getMacros());
     }
@@ -43,6 +43,8 @@ public:
     }
 
     bool isDeterministic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     bool isDeterministicInScopeOfQuery() const override
     {

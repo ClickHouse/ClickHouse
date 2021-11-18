@@ -1,5 +1,6 @@
 #pragma once
 #include "config_formats.h"
+
 #if USE_ARROW
 
 #include <Formats/FormatSettings.h>
@@ -11,6 +12,8 @@ namespace arrow::ipc { class RecordBatchWriter; }
 
 namespace DB
 {
+
+class CHColumnToArrowColumn;
 
 class ArrowBlockOutputFormat : public IOutputFormat
 {
@@ -28,6 +31,7 @@ private:
     const FormatSettings format_settings;
     std::shared_ptr<ArrowBufferedOutputStream> arrow_ostream;
     std::shared_ptr<arrow::ipc::RecordBatchWriter> writer;
+    std::unique_ptr<CHColumnToArrowColumn> ch_column_to_arrow_column;
 
     void prepareWriter(const std::shared_ptr<arrow::Schema> & schema);
 };

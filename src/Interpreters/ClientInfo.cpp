@@ -3,13 +3,11 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Core/Defines.h>
-#include <common/getFQDNOrHostName.h>
+#include <Core/ProtocolDefines.h>
+#include <base/getFQDNOrHostName.h>
 #include <unistd.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 
 namespace DB
@@ -33,6 +31,9 @@ void ClientInfo::write(WriteBuffer & out, const UInt64 server_protocol_revision)
     writeBinary(initial_user, out);
     writeBinary(initial_query_id, out);
     writeBinary(initial_address.toString(), out);
+
+    if (server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
+        writeBinary(initial_query_start_time_microseconds, out);
 
     writeBinary(UInt8(interface), out);
 
@@ -108,6 +109,12 @@ void ClientInfo::read(ReadBuffer & in, const UInt64 client_protocol_revision)
     String initial_address_string;
     readBinary(initial_address_string, in);
     initial_address = Poco::Net::SocketAddress(initial_address_string);
+
+    if (client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME)
+    {
+        readBinary(initial_query_start_time_microseconds, in);
+        initial_query_start_time = initial_query_start_time_microseconds / 1000000;
+    }
 
     UInt8 read_interface = 0;
     readBinary(read_interface, in);

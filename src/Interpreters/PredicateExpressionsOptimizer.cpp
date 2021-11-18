@@ -19,8 +19,8 @@ namespace ErrorCodes
 }
 
 PredicateExpressionsOptimizer::PredicateExpressionsOptimizer(
-    ContextConstPtr context_, const TablesWithColumns & tables_with_columns_, const Settings & settings)
-    : WithConstContext(context_)
+    ContextPtr context_, const TablesWithColumns & tables_with_columns_, const Settings & settings)
+    : WithContext(context_)
     , enable_optimize_predicate_expression(settings.enable_optimize_predicate_expression)
     , enable_optimize_predicate_expression_to_final_subquery(settings.enable_optimize_predicate_expression_to_final_subquery)
     , allow_push_predicate_when_subquery_contains_with(settings.allow_push_predicate_when_subquery_contains_with)
@@ -39,7 +39,7 @@ bool PredicateExpressionsOptimizer::optimize(ASTSelectQuery & select_query)
     if (!select_query.tables() || select_query.tables()->children.empty())
         return false;
 
-    if ((!select_query.where() && !select_query.prewhere()) || select_query.arrayJoinExpressionList())
+    if ((!select_query.where() && !select_query.prewhere()) || select_query.arrayJoinExpressionList().first)
         return false;
 
     const auto & tables_predicates = extractTablesPredicates(select_query.where(), select_query.prewhere());
@@ -87,7 +87,7 @@ std::vector<ASTs> PredicateExpressionsOptimizer::extractTablesPredicates(const A
 
     for (const auto & predicate_expression : splitConjunctionPredicate({where, prewhere}))
     {
-        ExpressionInfoVisitor::Data expression_info{WithConstContext{getContext()}, tables_with_columns};
+        ExpressionInfoVisitor::Data expression_info{WithContext{getContext()}, tables_with_columns};
         ExpressionInfoVisitor(expression_info).visit(predicate_expression);
 
         if (expression_info.is_stateful_function
@@ -188,7 +188,7 @@ bool PredicateExpressionsOptimizer::tryMovePredicatesFromHavingToWhere(ASTSelect
     for (const auto & moving_predicate: splitConjunctionPredicate({select_query.having()}))
     {
         TablesWithColumns tables;
-        ExpressionInfoVisitor::Data expression_info{WithConstContext{getContext()}, tables};
+        ExpressionInfoVisitor::Data expression_info{WithContext{getContext()}, tables};
         ExpressionInfoVisitor(expression_info).visit(moving_predicate);
 
         /// TODO: If there is no group by, where, and prewhere expression, we can push down the stateful function

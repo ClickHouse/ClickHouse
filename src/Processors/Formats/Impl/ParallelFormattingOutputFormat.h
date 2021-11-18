@@ -4,7 +4,7 @@
 
 #include <Common/Arena.h>
 #include <Common/ThreadPool.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Common/Exception.h>
 #include "IO/WriteBufferFromString.h"
 #include <Formats/FormatFactory.h>
@@ -172,6 +172,7 @@ private:
     ThreadPool pool;
     // Collecting all memory to original ReadBuffer
     ThreadFromGlobalPool collector_thread;
+    std::mutex collector_thread_mutex;
 
     std::exception_ptr background_exception = nullptr;
 

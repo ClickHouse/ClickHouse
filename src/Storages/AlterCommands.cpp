@@ -180,6 +180,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.if_exists = command_ast->if_exists;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_COMMENT)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = COMMENT_TABLE;
+        const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
+        command.comment = ast_comment.value.get<String>();
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
     {
         AlterCommand command;
@@ -194,6 +203,13 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_SAMPLE_BY;
         command.sample_by = command_ast->sample_by;
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::REMOVE_SAMPLE_BY)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::REMOVE_SAMPLE_BY;
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::ADD_INDEX)
@@ -211,6 +227,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.after_index_name = command_ast->index->as<ASTIdentifier &>().name();
 
         command.if_not_exists = command_ast->if_not_exists;
+        command.first = command_ast->first;
 
         return command;
     }
@@ -311,6 +328,29 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
         return command;
     }
+    else if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::MODIFY_DATABASE_SETTING;
+        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::RESET_SETTING)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::RESET_SETTING;
+        for (const ASTPtr & identifier_ast : command_ast->settings_resets->children)
+        {
+            const auto & identifier = identifier_ast->as<ASTIdentifier &>();
+            auto insertion = command.settings_resets.emplace(identifier.name());
+            if (!insertion.second)
+                throw Exception("Duplicate setting name " + backQuote(identifier.name()),
+                                ErrorCodes::BAD_ARGUMENTS);
+        }
+        return command;
+    }
     else if (command_ast->type == ASTAlterCommand::MODIFY_QUERY)
     {
         AlterCommand command;
@@ -348,7 +388,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             column.comment = *comment;
 
         if (codec)
-            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false);
+            column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type, false, true);
 
         column.ttl = ttl;
 
@@ -389,7 +429,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
             else
             {
                 if (codec)
-                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false);
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(codec, data_type ? data_type : column.type, false, true);
 
                 if (comment)
                     column.comment = *comment;
@@ -430,10 +470,18 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     {
         metadata.sampling_key.recalculateWithNewAST(sample_by, metadata.columns, context);
     }
+    else if (type == REMOVE_SAMPLE_BY)
+    {
+        metadata.sampling_key = {};
+    }
     else if (type == COMMENT_COLUMN)
     {
         metadata.columns.modify(column_name,
             [&](ColumnDescription & column) { column.comment = *comment; });
+    }
+    else if (type == COMMENT_TABLE)
+    {
+        metadata.comment = *comment;
     }
     else if (type == ADD_INDEX)
     {
@@ -453,6 +501,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         }
 
         auto insert_it = metadata.secondary_indices.end();
+
+        /// insert the index in the beginning of the indices list
+        if (first)
+            insert_it = metadata.secondary_indices.begin();
 
         if (!after_index_name.empty())
         {
@@ -570,6 +622,20 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                 settings_from_storage.push_back(change);
         }
     }
+    else if (type == RESET_SETTING)
+    {
+        auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
+        for (const auto & setting_name : settings_resets)
+        {
+            auto finder = [&setting_name](const SettingChange & c) { return c.name == setting_name; };
+            auto it = std::find_if(settings_from_storage.begin(), settings_from_storage.end(), finder);
+
+            if (it != settings_from_storage.end())
+                settings_from_storage.erase(it);
+
+            /// Intentionally ignore if there is no such setting name
+        }
+    }
     else if (type == RENAME_COLUMN)
     {
         metadata.columns.rename(column_name, rename_to);
@@ -645,6 +711,9 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
     while (true)
     {
+        if (from->equals(*to))
+            return true;
+
         auto it_range = ALLOWED_CONVERSIONS.equal_range(typeid(*from));
         for (auto it = it_range.first; it != it_range.second; ++it)
         {
@@ -663,9 +732,9 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
         const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
         const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
-        if (nullable_from && nullable_to)
+        if (nullable_to)
         {
-            from = nullable_from->getNestedType().get();
+            from = nullable_from ? nullable_from->getNestedType().get() : from;
             to = nullable_to->getNestedType().get();
             continue;
         }
@@ -678,7 +747,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
 bool AlterCommand::isSettingsAlter() const
 {
-    return type == MODIFY_SETTING;
+    return type == MODIFY_SETTING || type == RESET_SETTING;
 }
 
 bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metadata) const
@@ -687,7 +756,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
         return false;
 
     /// We remove properties on metadata level
-    if (isRemovingProperty() || type == REMOVE_TTL)
+    if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
         return false;
 
     if (type == DROP_COLUMN || type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN)
@@ -706,7 +775,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
 
 bool AlterCommand::isCommentAlter() const
 {
-    if (type == COMMENT_COLUMN)
+    if (type == COMMENT_COLUMN || type == COMMENT_TABLE)
     {
         return true;
     }
@@ -805,50 +874,6 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
-
-String alterTypeToString(const AlterCommand::Type type)
-{
-    switch (type)
-    {
-    case AlterCommand::Type::ADD_COLUMN:
-        return "ADD COLUMN";
-    case AlterCommand::Type::ADD_CONSTRAINT:
-        return "ADD CONSTRAINT";
-    case AlterCommand::Type::ADD_INDEX:
-        return "ADD INDEX";
-    case AlterCommand::Type::ADD_PROJECTION:
-        return "ADD PROJECTION";
-    case AlterCommand::Type::COMMENT_COLUMN:
-        return "COMMENT COLUMN";
-    case AlterCommand::Type::DROP_COLUMN:
-        return "DROP COLUMN";
-    case AlterCommand::Type::DROP_CONSTRAINT:
-        return "DROP CONSTRAINT";
-    case AlterCommand::Type::DROP_INDEX:
-        return "DROP INDEX";
-    case AlterCommand::Type::DROP_PROJECTION:
-        return "DROP PROJECTION";
-    case AlterCommand::Type::MODIFY_COLUMN:
-        return "MODIFY COLUMN";
-    case AlterCommand::Type::MODIFY_ORDER_BY:
-        return "MODIFY ORDER BY";
-    case AlterCommand::Type::MODIFY_SAMPLE_BY:
-        return "MODIFY SAMPLE BY";
-    case AlterCommand::Type::MODIFY_TTL:
-        return "MODIFY TTL";
-    case AlterCommand::Type::MODIFY_SETTING:
-        return "MODIFY SETTING";
-    case AlterCommand::Type::MODIFY_QUERY:
-        return "MODIFY QUERY";
-    case AlterCommand::Type::RENAME_COLUMN:
-        return "RENAME COLUMN";
-    case AlterCommand::Type::REMOVE_TTL:
-        return "REMOVE TTL";
-    default:
-        throw Exception("Uninitialized ALTER command", ErrorCodes::LOGICAL_ERROR);
-    }
-
-}
 
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
@@ -968,6 +993,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
     prepared = true;
 }
 
+
 void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
     auto all_columns = metadata.columns;
@@ -995,7 +1021,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
                                 ErrorCodes::BAD_ARGUMENTS};
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
 
             all_columns.add(ColumnDescription(column_name, command.data_type));
         }
@@ -1015,7 +1041,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
                                 ErrorCodes::NOT_IMPLEMENTED};
 
             if (command.codec)
-                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs);
+                CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(command.codec, command.data_type, !context->getSettingsRef().allow_suspicious_codecs, context->getSettingsRef().allow_experimental_codecs);
             auto column_default = all_columns.getDefault(column_name);
             if (column_default)
             {
@@ -1123,7 +1149,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
                                     ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
             }
         }
-        else if (command.type == AlterCommand::MODIFY_SETTING)
+        else if (command.type == AlterCommand::MODIFY_SETTING || command.type == AlterCommand::RESET_SETTING)
         {
             if (metadata.settings_changes == nullptr)
                 throw Exception{"Cannot alter settings, because table engine doesn't support settings changes", ErrorCodes::BAD_ARGUMENTS};
@@ -1193,6 +1219,10 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
         {
             throw Exception{"Table doesn't have any table TTL expression, cannot remove", ErrorCodes::BAD_ARGUMENTS};
         }
+        else if (command.type == AlterCommand::REMOVE_SAMPLE_BY && !metadata.hasSamplingKey())
+        {
+            throw Exception{"Table doesn't have SAMPLE BY, cannot remove", ErrorCodes::BAD_ARGUMENTS};
+        }
 
         /// Collect default expressions for MODIFY and ADD comands
         if (command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::ADD_COLUMN)
@@ -1238,6 +1268,11 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
         throw Exception{"Cannot DROP or CLEAR all columns", ErrorCodes::BAD_ARGUMENTS};
 
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
+}
+
+bool AlterCommands::hasSettingsAlterCommand() const
+{
+    return std::any_of(begin(), end(), [](const AlterCommand & c) { return c.isSettingsAlter(); });
 }
 
 bool AlterCommands::isSettingsAlter() const

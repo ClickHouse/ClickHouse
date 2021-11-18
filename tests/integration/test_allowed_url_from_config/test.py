@@ -73,23 +73,23 @@ def test_config_without_allowed_hosts(start_cluster):
 
 
 def test_table_function_remote(start_cluster):
-    assert "not allowed in config.xml" not in node6.query_and_get_error(
+    assert "not allowed in configuration file" not in node6.query_and_get_error(
         "SELECT * FROM remoteSecure('example01-01-{1|2}', system, events)",
         settings={"connections_with_failover_max_tries": 1, "connect_timeout_with_failover_ms": 1000,
                   "connect_timeout_with_failover_secure_ms": 1000, "connect_timeout": 1, "send_timeout": 1})
-    assert "not allowed in config.xml" not in node6.query_and_get_error(
+    assert "not allowed in configuration file" not in node6.query_and_get_error(
         "SELECT * FROM remoteSecure('example01-01-1,example01-02-1', system, events)",
         settings={"connections_with_failover_max_tries": 1, "connect_timeout_with_failover_ms": 1000,
                   "connect_timeout_with_failover_secure_ms": 1000, "connect_timeout": 1, "send_timeout": 1})
-    assert "not allowed in config.xml" not in node6.query_and_get_error(
+    assert "not allowed in configuration file" not in node6.query_and_get_error(
         "SELECT * FROM remote('example01-0{1,2}-1', system, events",
         settings={"connections_with_failover_max_tries": 1, "connect_timeout_with_failover_ms": 1000,
                   "connect_timeout_with_failover_secure_ms": 1000, "connect_timeout": 1, "send_timeout": 1})
-    assert "not allowed in config.xml" not in node6.query_and_get_error(
+    assert "not allowed in configuration file" not in node6.query_and_get_error(
         "SELECT * FROM remote('example01-0{1,2}-{1|2}', system, events)",
         settings={"connections_with_failover_max_tries": 1, "connect_timeout_with_failover_ms": 1000,
                   "connect_timeout_with_failover_secure_ms": 1000, "connect_timeout": 1, "send_timeout": 1})
-    assert "not allowed in config.xml" not in node6.query_and_get_error(
+    assert "not allowed in configuration file" not in node6.query_and_get_error(
         "SELECT * FROM remoteSecure('example01-{01..02}-{1|2}', system, events)",
         settings={"connections_with_failover_max_tries": 1, "connect_timeout_with_failover_ms": 1000,
                   "connect_timeout_with_failover_secure_ms": 1000, "connect_timeout": 1, "send_timeout": 1})
@@ -108,15 +108,17 @@ def test_table_function_remote(start_cluster):
                   "connect_timeout_with_failover_secure_ms": 1000, "connect_timeout": 1, "send_timeout": 1})
     assert node6.query("SELECT * FROM remote('localhost', system, events)") != ""
     assert node6.query("SELECT * FROM remoteSecure('localhost', system, metrics)") != ""
-    assert "URL \"localhost:800\" is not allowed in config.xml" in node6.query_and_get_error(
+    assert "URL \"localhost:800\" is not allowed in configuration file" in node6.query_and_get_error(
         "SELECT * FROM remoteSecure('localhost:800', system, events)")
-    assert "URL \"localhost:800\" is not allowed in config.xml" in node6.query_and_get_error(
+    assert "URL \"localhost:800\" is not allowed in configuration file" in node6.query_and_get_error(
         "SELECT * FROM remote('localhost:800', system, metrics)")
 
 
 def test_redirect(start_cluster):
-    start_cluster.hdfs_api.write_data("/simple_storage", "1\t\n")
-    assert start_cluster.hdfs_api.read_data("/simple_storage") == "1\t\n"
+    hdfs_api = start_cluster.hdfs_api
+
+    hdfs_api.write_data("/simple_storage", "1\t\n")
+    assert hdfs_api.read_data("/simple_storage") == "1\t\n"
     node7.query(
         "CREATE TABLE table_test_7_1 (word String) ENGINE=URL('http://hdfs1:50070/webhdfs/v1/simple_storage?op=OPEN&namenoderpcaddress=hdfs1:9000&offset=0', CSV)")
     assert "not allowed" in node7.query_and_get_error("SET max_http_get_redirects=1; SELECT * from table_test_7_1")

@@ -21,7 +21,7 @@ class FunctionDefaultValueOfTypeName : public IFunction
 {
 public:
     static constexpr auto name = "defaultValueOfTypeName";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionDefaultValueOfTypeName>();
     }
@@ -29,6 +29,11 @@ public:
     String getName() const override
     {
         return name;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
+    {
+        return false;
     }
 
     bool useDefaultImplementationForNulls() const override { return false; }

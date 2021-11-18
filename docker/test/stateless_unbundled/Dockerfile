@@ -1,5 +1,5 @@
-# docker build -t yandex/clickhouse-stateless-unbundled-test .
-FROM yandex/clickhouse-test-base
+# docker build -t clickhouse/stateless-unbundled-test .
+FROM clickhouse/test-base
 
 ARG odbc_driver_url="https://github.com/ClickHouse/clickhouse-odbc/releases/download/v1.1.4.20200302/clickhouse-odbc-1.1.4-Linux.tar.gz"
 
@@ -76,9 +76,6 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && odbcinst -i -d -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbcinst.ini.sample \
    && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
    && rm -rf /tmp/clickhouse-odbc-tmp
-
-ENV TZ=Europe/Moscow
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 COPY run.sh /
 CMD ["/bin/bash", "/run.sh"]

@@ -8,6 +8,8 @@ from testflows.asserts import values, error, snapshot
 
 from helpers.common import *
 
+rounding_precision = 7
+
 @contextmanager
 def allow_experimental_bigint(node):
     """Enable experimental big int setting in Clickhouse.
