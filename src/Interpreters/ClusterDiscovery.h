@@ -28,7 +28,7 @@ public:
     ClusterDiscovery(
         const Poco::Util::AbstractConfiguration & config,
         ContextPtr context_,
-        const String & config_prefix = "remote_servers_discovery"); // TODO(@vdimir) use `remote_servers`
+        const String & config_prefix = "remote_servers");
 
     void start();
 

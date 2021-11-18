@@ -28,6 +28,7 @@ def check_nodes_count_in_cluster(nodes, expected, cluster_name, *, retries=5):
     """
     Check nodes count in system.clusters for specified cluster
     """
+    assert 1 <= retries <= 6
 
     for retry in range(1, retries + 1):
         nodes_cnt = [
@@ -62,3 +63,5 @@ def test_cluster_discovery_startup_and_stop(start_cluster):
 
     nodes[3].start_clickhouse()
     check_nodes_count_in_cluster([nodes[0], nodes[2]], len(nodes), 'test_auto_cluster')
+
+    check_nodes_count_in_cluster([nodes[1], nodes[2]], 2, 'two_shards', retries=1)

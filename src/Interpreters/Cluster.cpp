@@ -327,6 +327,10 @@ void Clusters::updateClusters(const Poco::Util::AbstractConfiguration & new_conf
 
     for (const auto & key : new_config_keys)
     {
+        if (new_config.has(config_prefix + "." + key + ".discovery"))
+            /// Handled in ClusterDiscovery
+            continue;
+
         if (key.find('.') != String::npos)
             throw Exception("Cluster names with dots are not supported: '" + key + "'", ErrorCodes::SYNTAX_ERROR);
 
@@ -488,10 +492,6 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                 std::move(all_replicas_pools),
                 internal_replication
             });
-        }
-        else if (startsWith(key, "discovery"))
-        {
-            continue;
         }
         else
             throw Exception("Unknown element in config: " + key, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
