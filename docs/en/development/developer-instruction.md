@@ -241,7 +241,7 @@ Adding third-party libraries: https://clickhouse.com/docs/en/development/contrib
 
 Writing tests: https://clickhouse.com/docs/en/development/tests/
 
-List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
+List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3Ahacktoberfest
 
 ## Test Data {#test-data}
 

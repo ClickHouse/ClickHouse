@@ -5,6 +5,7 @@ import os
 from github import Github
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
+from commit_status_helper import get_commit
 
 NAME = 'Run Check (actions)'
 
@@ -22,12 +23,6 @@ def filter_statuses(statuses):
     for status in sorted(statuses, key=lambda x: x.updated_at):
         filt[status.context] = status
     return filt
-
-
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
