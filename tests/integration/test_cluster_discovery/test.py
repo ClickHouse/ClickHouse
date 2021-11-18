@@ -9,6 +9,7 @@ nodes = [
     cluster.add_instance(
         f'node{i}',
         main_configs=['config/config.xml'],
+        user_configs=['config/settings.xml'],
         stay_alive=True,
         with_zookeeper=True
     ) for i in range(5)
