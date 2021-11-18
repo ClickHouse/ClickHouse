@@ -405,7 +405,7 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
             output_format = global_context->getOutputFormat(
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
-        output_format->doWritePrefix();
+        output_format->setAutoFlush();
     }
 }
 
@@ -685,7 +685,7 @@ void ClientBase::onEndOfStream()
     progress_indication.clearProgressOutput();
 
     if (output_format)
-        output_format->doWriteSuffix();
+        output_format->finalize();
 
     resetOutput();
 
