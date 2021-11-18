@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Common/quoteString.h>
 #include <IO/Operators.h>
 
 

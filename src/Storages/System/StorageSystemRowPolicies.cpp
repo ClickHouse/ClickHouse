@@ -19,10 +19,6 @@
 
 namespace DB
 {
-using ConditionTypeInfo = RowPolicy::ConditionTypeInfo;
-constexpr auto MAX_CONDITION_TYPE = RowPolicy::MAX_CONDITION_TYPE;
-
-
 NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
 {
     NamesAndTypesList names_and_types{
@@ -34,9 +30,9 @@ NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
         {"storage", std::make_shared<DataTypeString>()},
     };
 
-    for (auto type : collections::range(MAX_CONDITION_TYPE))
+    for (auto filter_type : collections::range(RowPolicyFilterType::MAX))
     {
-        const String & column_name = ConditionTypeInfo::get(type).name;
+        const String & column_name = RowPolicyFilterTypeInfo::get(filter_type).name;
         names_and_types.push_back({column_name, std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())});
     }
 
@@ -66,12 +62,13 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
     auto & column_id = assert_cast<ColumnUUID &>(*res_columns[column_index++]).getData();
     auto & column_storage = assert_cast<ColumnString &>(*res_columns[column_index++]);
 
-    ColumnString * column_condition[MAX_CONDITION_TYPE];
-    NullMap * column_condition_null_map[MAX_CONDITION_TYPE];
-    for (auto condition_type : collections::range(MAX_CONDITION_TYPE))
+    ColumnString * column_filter[static_cast<size_t>(RowPolicyFilterType::MAX)];
+    NullMap * column_filter_null_map[static_cast<size_t>(RowPolicyFilterType::MAX)];
+    for (auto filter_type : collections::range(RowPolicyFilterType::MAX))
     {
-        column_condition[condition_type] = &assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn());
-        column_condition_null_map[condition_type] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
+        auto filter_type_i = static_cast<size_t>(filter_type);
+        column_filter[filter_type_i] = &assert_cast<ColumnString &>(assert_cast<ColumnNullable &>(*res_columns[column_index]).getNestedColumn());
+        column_filter_null_map[filter_type_i] = &assert_cast<ColumnNullable &>(*res_columns[column_index++]).getNullMapData();
     }
 
     auto & column_is_restrictive = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
@@ -85,7 +82,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
                        const RowPolicyName & full_name,
                        const UUID & id,
                        const String & storage_name,
-                       const std::array<String, MAX_CONDITION_TYPE> & conditions,
+                       const std::array<String, static_cast<size_t>(RowPolicyFilterType::MAX)> & filters,
                        bool is_restrictive,
                        const RolesOrUsersSet & apply_to)
     {
@@ -96,18 +93,19 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
         column_id.push_back(id.toUnderType());
         column_storage.insertData(storage_name.data(), storage_name.length());
 
-        for (auto condition_type : collections::range(MAX_CONDITION_TYPE))
+        for (auto filter_type : collections::range(RowPolicyFilterType::MAX))
         {
-            const String & condition = conditions[condition_type];
-            if (condition.empty())
+            auto filter_type_i = static_cast<size_t>(filter_type);
+            const String & filter = filters[filter_type_i];
+            if (filter.empty())
             {
-                column_condition[condition_type]->insertDefault();
-                column_condition_null_map[condition_type]->push_back(true);
+                column_filter[filter_type_i]->insertDefault();
+                column_filter_null_map[filter_type_i]->push_back(true);
             }
             else
             {
-                column_condition[condition_type]->insertData(condition.data(), condition.length());
-                column_condition_null_map[condition_type]->push_back(false);
+                column_filter[filter_type_i]->insertData(filter.data(), filter.length());
+                column_filter_null_map[filter_type_i]->push_back(false);
             }
         }
 
@@ -134,7 +132,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, ContextPtr
         if (!storage)
             continue;
 
-        add_row(policy->getName(), policy->getFullName(), id, storage->getStorageName(), policy->conditions, policy->isRestrictive(), policy->to_roles);
+        add_row(policy->getName(), policy->getFullName(), id, storage->getStorageName(), policy->filters, policy->isRestrictive(), policy->to_roles);
     }
 }
 }

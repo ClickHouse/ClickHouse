@@ -5,6 +5,7 @@
 #include <Parsers/formatAST.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/RowPolicy.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <boost/range/algorithm/sort.hpp>
@@ -30,8 +31,8 @@ namespace
         if (query.is_restrictive)
             policy.setRestrictive(*query.is_restrictive);
 
-        for (const auto & [condition_type, condition] : query.conditions)
-            policy.conditions[condition_type] = condition ? serializeAST(*condition) : String{};
+        for (const auto & [filter_type, filter] : query.filters)
+            policy.filters[static_cast<size_t>(filter_type)] = filter ? serializeAST(*filter) : String{};
 
         if (override_to_roles)
             policy.to_roles = *override_to_roles;

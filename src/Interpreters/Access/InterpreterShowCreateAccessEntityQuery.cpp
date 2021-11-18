@@ -17,6 +17,7 @@
 #include <Access/QuotaUsage.h>
 #include <Access/User.h>
 #include <Access/Role.h>
+#include <Access/RowPolicy.h>
 #include <Access/SettingsProfile.h>
 #include <Columns/ColumnString.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -188,14 +189,14 @@ namespace
         if (policy.isRestrictive())
             query->is_restrictive = policy.isRestrictive();
 
-        for (auto type : collections::range(RowPolicy::MAX_CONDITION_TYPE))
+        for (auto type : collections::range(RowPolicyFilterType::MAX))
         {
-            const auto & condition = policy.conditions[static_cast<size_t>(type)];
-            if (!condition.empty())
+            const auto & filter = policy.filters[static_cast<size_t>(type)];
+            if (!filter.empty())
             {
                 ParserExpression parser;
-                ASTPtr expr = parseQuery(parser, condition, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
-                query->conditions.emplace_back(type, std::move(expr));
+                ASTPtr expr = parseQuery(parser, filter, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+                query->filters.emplace_back(type, std::move(expr));
             }
         }
 

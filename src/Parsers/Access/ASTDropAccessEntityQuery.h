@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <Access/RowPolicy.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
+#include <Access/IAccessEntity.h>
 
 
 namespace DB
