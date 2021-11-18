@@ -103,7 +103,10 @@ ClusterDiscovery::ClusterDiscovery(
 
     for (const auto & key : config_keys)
     {
-        String path = config.getString(config_prefix + "." + key + ".path");
+        String prefix = config_prefix + "." + key + ".discovery";
+        if (!config.has(prefix))
+            continue;
+        String path = config.getString(prefix + ".path");
         trimRight(path, '/');
         clusters_info.emplace(key, ClusterInfo(key, path));
     }
