@@ -15,17 +15,30 @@ WHERE EXISTS(subquery)
 
 **Пример**
 
-Запрос:
+Запрос с подзапросом, возвращающим несколько строк:
 
 ``` sql
-SELECT 'Exists' WHERE EXISTS (SELECT * FROM numbers(10) WHERE number < 2);
-SELECT 'Empty subquery' WHERE EXISTS (SELECT * FROM numbers(10) WHERE number > 12);
+SELECT count() FROM numbers(10) WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 8);
 ```
 
-Первый запрос возвращает одну строку, а второй запрос не возвращает строк, так как результат его подзапроса пустой:
+Результат:
 
 ``` text
-┌─'Exists'─┐
-│ Exists   │
-└──────────┘
+┌─count()─┐
+│      10 │
+└─────────┘
+```
+
+Запрос с подзапросом, возвращающим пустой результат:
+
+``` sql
+SELECT count() FROM numbers(10) WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 11);
+```
+
+Результат:
+
+``` text
+┌─count()─┐
+│       0 │
+└─────────┘
 ```
