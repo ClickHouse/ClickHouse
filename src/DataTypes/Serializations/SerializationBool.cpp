@@ -90,7 +90,7 @@ void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & is
         const char *formatted_true = text_true_arr[bool_format];
         const char *formatted_false = text_false_arr[bool_format];
         String input;
-        readString(input,istr);
+        readString(input, istr);
         if (strcmp(formatted_true, input.c_str()) != 0)
         {
             col->insert(true);
