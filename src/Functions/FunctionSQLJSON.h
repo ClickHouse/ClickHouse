@@ -268,13 +268,15 @@ public:
         out << current_element.getElement();
         auto output_str = out.str();
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
+        ColumnString::Chars & data = col_str.getChars();
+        ColumnString::Offsets & offsets = col_str.getOffsets();
 
         if (current_element.isString())
         {
             ReadBufferFromString buf(output_str);
-            String unquoted_output_str;
-            readJSONString(unquoted_output_str, buf);
-            col_str.insertData(unquoted_output_str.data(), unquoted_output_str.size());
+            readJSONStringInto(data, buf);
+            data.push_back(0);
+            offsets.push_back(data.size());
         }
         else
         {

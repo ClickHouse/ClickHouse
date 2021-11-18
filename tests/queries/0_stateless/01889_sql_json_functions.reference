@@ -98,4 +98,8 @@ SELECT id, JSON_QUERY(json, '$.friends[0 to 2]') FROM 01889_sql_json ORDER BY id
 0	["Vasily", "Kostya"]
 1	["Tihon", "Ernest"]
 2	["Katya", "Anatoliy"]
+SELECT id, JSON_VALUE(json, '$.friends[0]') FROM 01889_sql_json ORDER BY id;
+0	Vasily
+1	Tihon
+2	Katya
 DROP TABLE 01889_sql_json;
