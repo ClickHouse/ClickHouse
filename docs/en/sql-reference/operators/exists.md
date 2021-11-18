@@ -15,17 +15,30 @@ WHERE EXISTS(subquery)
 
 **Example**
 
-Query:
+Query with a subquery returning several rows:
 
 ``` sql
-SELECT 'Exists' WHERE EXISTS (SELECT * FROM numbers(10) WHERE number < 2);
-SELECT 'Empty subquery' WHERE EXISTS (SELECT * FROM numbers(10) WHERE number > 12);
+SELECT count() FROM numbers(10) WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 8);
 ```
 
-The first query returns one row while the second query does not return rows because the result of the subquery is empty:
+Result:
 
 ``` text
-┌─'Exists'─┐
-│ Exists   │
-└──────────┘
+┌─count()─┐
+│      10 │
+└─────────┘
+```
+
+Query with a subquery that returns an empty result:
+
+``` sql
+SELECT count() FROM numbers(10) WHERE EXISTS(SELECT number FROM numbers(10) WHERE number > 11);
+```
+
+Result:
+
+``` text
+┌─count()─┐
+│       0 │
+└─────────┘
 ```
