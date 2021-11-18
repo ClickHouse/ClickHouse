@@ -2,7 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
-#include <Access/Quota.h>
+#include <Access/Common/QuotaDefs.h>
 
 
 namespace DB
@@ -35,11 +35,9 @@ public:
     bool if_not_exists = false;
     bool or_replace = false;
 
-    using KeyType = Quota::KeyType;
-
     Strings names;
     String new_name;
-    std::optional<KeyType> key_type;
+    std::optional<QuotaKeyType> key_type;
 
     struct Limits
     {

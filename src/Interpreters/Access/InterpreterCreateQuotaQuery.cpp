@@ -3,6 +3,7 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/Quota.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <base/range.h>

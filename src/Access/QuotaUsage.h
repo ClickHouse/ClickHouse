@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Access/Quota.h>
+#include <Access/Common/QuotaDefs.h>
 #include <chrono>
+#include <optional>
 
 
 namespace DB

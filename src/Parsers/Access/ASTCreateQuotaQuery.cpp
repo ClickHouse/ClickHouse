@@ -10,13 +10,10 @@ namespace DB
 {
 namespace
 {
-    using KeyType = Quota::KeyType;
-    using KeyTypeInfo = Quota::KeyTypeInfo;
-
-    void formatKeyType(const KeyType & key_type, const IAST::FormatSettings & settings)
+    void formatKeyType(const QuotaKeyType & key_type, const IAST::FormatSettings & settings)
     {
-        const auto & type_info = KeyTypeInfo::get(key_type);
-        if (key_type == KeyType::NONE)
+        const auto & type_info = QuotaKeyTypeInfo::get(key_type);
+        if (key_type == QuotaKeyType::NONE)
         {
             settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NOT KEYED" << (settings.hilite ? IAST::hilite_none : "");
             return;
@@ -31,7 +28,7 @@ namespace
             {
                 if (std::exchange(need_comma, true))
                     settings.ostr << ", ";
-                settings.ostr << KeyTypeInfo::get(base_type).name;
+                settings.ostr << QuotaKeyTypeInfo::get(base_type).name;
             }
             return;
         }

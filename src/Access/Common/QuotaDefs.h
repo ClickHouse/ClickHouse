@@ -5,8 +5,10 @@
 
 namespace DB
 {
+/// We use UInt64 to count used resources.
 using QuotaValue = UInt64;
 
+/// Kinds of resource what we wish to quota.
 enum class QuotaType
 {
     QUERIES,        /// Number of queries.
@@ -22,6 +24,8 @@ enum class QuotaType
     MAX
 };
 
+String toString(QuotaType type);
+
 struct QuotaTypeInfo
 {
     const char * const raw_name = "";
@@ -35,6 +39,29 @@ struct QuotaTypeInfo
     static const QuotaTypeInfo & get(QuotaType type);
 };
 
-String toString(QuotaType type);
+/// Key to share quota consumption.
+/// Users with the same key share the same amount of resource.
+enum class QuotaKeyType
+{
+    NONE,       /// All users share the same quota.
+    USER_NAME,  /// Connections with the same user name share the same quota.
+    IP_ADDRESS, /// Connections from the same IP share the same quota.
+    FORWARDED_IP_ADDRESS, /// Use X-Forwarded-For HTTP header instead of IP address.
+    CLIENT_KEY, /// Client should explicitly supply a key to use.
+    CLIENT_KEY_OR_USER_NAME,  /// Same as CLIENT_KEY, but use USER_NAME if the client doesn't supply a key.
+    CLIENT_KEY_OR_IP_ADDRESS, /// Same as CLIENT_KEY, but use IP_ADDRESS if the client doesn't supply a key.
+
+    MAX
+};
+
+String toString(QuotaKeyType type);
+
+struct QuotaKeyTypeInfo
+{
+    const char * const raw_name;
+    const String name;  /// Lowercased with underscores, e.g. "client_key".
+    const std::vector<QuotaKeyType> base_types; /// For combined types keeps base types, e.g. for CLIENT_KEY_OR_USER_NAME it keeps [KeyType::CLIENT_KEY, KeyType::USER_NAME].
+    static const QuotaKeyTypeInfo & get(QuotaKeyType type);
+};
 
 }
