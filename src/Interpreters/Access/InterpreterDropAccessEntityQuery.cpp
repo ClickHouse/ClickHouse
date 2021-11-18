@@ -2,12 +2,7 @@
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Access/AccessControl.h>
-#include <Access/Common/AccessFlags.h>
-#include <Access/User.h>
-#include <Access/Role.h>
-#include <Access/Quota.h>
-#include <Access/RowPolicy.h>
-#include <Access/SettingsProfile.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 
