@@ -1,38 +1,27 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/NullBlockInputStream.h>
+#include <Storages/WindowView/StorageWindowView.h>
+#include <Processors/Sources/SourceWithProgress.h>
 
 
 namespace DB
 {
-/** Implements WINDOW VIEW table WATCH input stream.
- *  Keeps stream alive by outputting blocks with no rows
- *  based on window interval.
- */
-class WindowViewBlockInputStream : public IBlockInputStream
+
+class WindowViewSource : public SourceWithProgress
 {
 public:
-    WindowViewBlockInputStream(
+    WindowViewSource(
         std::shared_ptr<StorageWindowView> storage_,
         const bool has_limit_,
         const UInt64 limit_,
         const UInt64 heartbeat_interval_sec_)
-        : storage(std::move(storage_))
+        : SourceWithProgress(storage_->getHeader())
+        , storage(std::move(storage_))
         , has_limit(has_limit_)
         , limit(limit_)
         , heartbeat_interval_sec(heartbeat_interval_sec_) {}
 
-    String getName() const override { return "WindowViewBlock"; }
-
-    void cancel(bool kill) override
-    {
-        if (isCancelled() || storage->is_dropped)
-            return;
-        IBlockInputStream::cancel(kill);
-    }
-
-    Block getHeader() const override { return storage->getHeader(); }
+    String getName() const override { return "WindowViewSource"; }
 
     void addBlock(Block block_)
     {
@@ -41,12 +30,15 @@ public:
     }
 
 protected:
-    Block readImpl() override
+    Block getHeader() const { return storage->getHeader(); }
+
+    Chunk generate() override
     {
-        return tryReadImpl();
+        auto block = generateImpl();
+        return Chunk(block.getColumns(), block.rows());
     }
 
-    Block tryReadImpl()
+    Block generateImpl()
     {
         Block res;
 
@@ -56,7 +48,7 @@ protected:
         if (isCancelled() || storage->is_dropped)
             return Block();
 
-        std::unique_lock lock_(blocks_mutex);
+        std::unique_lock lock(blocks_mutex);
         if (blocks.empty())
         {
             if (!end_of_blocks)
@@ -66,7 +58,7 @@ protected:
                 return getHeader();
             }
 
-            storage->fire_condition.wait_for(lock_, std::chrono::seconds(heartbeat_interval_sec));
+            storage->fire_condition.wait_for(lock, std::chrono::seconds(heartbeat_interval_sec));
 
             if (isCancelled() || storage->is_dropped)
             {
@@ -93,7 +85,9 @@ protected:
 
 private:
     std::shared_ptr<StorageWindowView> storage;
+
     BlocksList blocks;
+
     const bool has_limit;
     const UInt64 limit;
     Int64 num_updates = -1;
