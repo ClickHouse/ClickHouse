@@ -983,24 +983,24 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     /// 160 = sizeof Node
     /// 5 = sizeof key
     /// 4 = sizeof value
-    EXPECT_EQ(world.getApproximateDataSize(), 169);
+    EXPECT_EQ(world.getApproximateDataSize(), 158);
     world.updateValue("world", [&](Node & value) { value = n2; });
-    EXPECT_EQ(world.getApproximateDataSize(), 171);
+    EXPECT_EQ(world.getApproximateDataSize(), 160);
 
     world.erase("world");
     EXPECT_EQ(world.getApproximateDataSize(), 0);
 
     world.enableSnapshotMode();
     world.insert("world", n1);
-    EXPECT_EQ(world.getApproximateDataSize(), 169);
+    EXPECT_EQ(world.getApproximateDataSize(), 158);
     world.updateValue("world", [&](Node & value) { value = n2; });
-    EXPECT_EQ(world.getApproximateDataSize(), 340);
+    EXPECT_EQ(world.getApproximateDataSize(), 318);
 
     world.clearOutdatedNodes();
-    EXPECT_EQ(world.getApproximateDataSize(), 171);
+    EXPECT_EQ(world.getApproximateDataSize(), 160);
 
     world.erase("world");
-    EXPECT_EQ(world.getApproximateDataSize(), 171);
+    EXPECT_EQ(world.getApproximateDataSize(), 160);
 
     world.clear();
     EXPECT_EQ(world.getApproximateDataSize(), 0);
