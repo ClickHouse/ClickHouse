@@ -16,7 +16,7 @@
 	<local_cache_max_threads>1000</local_cache_max_threads>
     
     <hdfs>
-	    <libhdfs3_conf>/etc/clickhouse-server/other_conf.d/hdfs-site.xml</libhdfs3_conf>
+	    <libhdfs3_conf>/etc/clickhouse-server/extra_conf.d/hdfs-site.xml</libhdfs3_conf>
     </hdfs>
 
 </clickhouse>
