@@ -133,6 +133,20 @@ static bool fixupACL(
     return valid_found;
 }
 
+uint64_t KeeperStorage::Node::sizeInBytes() const
+{
+    uint64_t total_size{0};
+    for (const auto & child : children)
+        total_size += child.size();
+
+    total_size += data.size();
+    total_size += sizeof(acl_id);
+    total_size += sizeof(is_sequental);
+    total_size += sizeof(stat);
+    total_size += sizeof(seq_num);
+    return total_size;
+}
+
 static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & path, KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches, Coordination::Event event_type)
 {
     KeeperStorage::ResponsesForSessions result;
@@ -1227,9 +1241,7 @@ void KeeperStorage::dumpWatches(WriteBufferFromOwnString & buf) const
     {
         buf << "0x" << getHexUIntLowercase(session_id) << "\n";
         for (const String & path : watches_paths)
-        {
             buf << "\t" << path << "\n";
-        }
     }
 }
 

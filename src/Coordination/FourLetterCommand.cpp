@@ -1,14 +1,16 @@
-#include <unistd.h>
 #include <Coordination/FourLetterCommand.h>
+
 #include <Coordination/KeeperDispatcher.h>
 #include <Server/KeeperTCPHandler.h>
 #include <base/logger_useful.h>
 #include <Poco/Environment.h>
 #include <Poco/Path.h>
-#include <Poco/StringTokenizer.h>
+#include <Common/hex.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
-#include <Common/hex.h>
+#include <Coordination/Keeper4LWInfo.h>
+
+#include <unistd.h>
 
 namespace DB
 {
@@ -51,9 +53,7 @@ FourLetterCommandFactory & FourLetterCommandFactory::instance()
 void FourLetterCommandFactory::checkInitialization() const
 {
     if (!initialized)
-    {
         throw Exception("Four letter command  not initialized", ErrorCodes::LOGICAL_ERROR);
-    }
 }
 
 bool FourLetterCommandFactory::isKnown(int32_t code)
@@ -143,18 +143,17 @@ bool FourLetterCommandFactory::isEnabled(int32_t code)
 
 void FourLetterCommandFactory::initializeWhiteList(KeeperDispatcher & keeper_dispatcher)
 {
-    using Poco::StringTokenizer;
     const auto & keeper_settings = keeper_dispatcher.getKeeperConfigurationAndSettings();
 
     String list_str = keeper_settings->four_letter_word_white_list;
-    StringTokenizer tokenizer(list_str, ",", 2);
+    Strings tokens;
+    splitInto<','>(tokens, list_str);
 
-    for (const String & token : tokenizer)
+    for (const String & token : tokens)
     {
         if (token == "*")
         {
             white_list.clear();
-            white_list.resize(1);
             white_list.push_back(WHITE_LIST_ALL);
             return;
         }
@@ -200,7 +199,7 @@ void print(IFourLetterCommand::StringBuffer & buf, const String & key, uint64_t 
 String MonitorCommand::run()
 {
     KeeperConnectionStats stats = keeper_dispatcher.getKeeperConnectionStats();
-    KeeperInfo keeper_info = keeper_dispatcher.getKeeperInfo();
+    Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
 
     if (!keeper_info.has_leader)
         return "This instance is not currently serving requests";
@@ -240,7 +239,6 @@ String MonitorCommand::run()
     return ret.str();
 }
 
-
 String StatResetCommand::run()
 {
     keeper_dispatcher.resetConnectionStats();
@@ -255,7 +253,7 @@ String NopCommand::run()
 String ConfCommand::run()
 {
     StringBuffer buf;
-    keeper_dispatcher.dumpConf(buf);
+    keeper_dispatcher.getKeeperConfigurationAndSettings()->dump(buf);
     return buf.str();
 }
 
@@ -285,7 +283,7 @@ String ServerStatCommand::run()
     };
 
     KeeperConnectionStats stats = keeper_dispatcher.getKeeperConnectionStats();
-    KeeperInfo keeper_info = keeper_dispatcher.getKeeperInfo();
+    Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
@@ -311,7 +309,7 @@ String StatCommand::run()
     auto write = [&buf] (const String & key, const String & value) { buf << key << ": " << value << '\n'; };
 
     KeeperConnectionStats stats = keeper_dispatcher.getKeeperConnectionStats();
-    KeeperInfo keeper_info = keeper_dispatcher.getKeeperInfo();
+    Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 

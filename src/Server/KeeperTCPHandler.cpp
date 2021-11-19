@@ -465,13 +465,13 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(Int32 & command)
     }
     else if (!FourLetterCommandFactory::instance().isEnabled(command))
     {
-        LOG_WARNING(log, "not enabled four letter command {}", IFourLetterCommand::toName(command));
+        LOG_WARNING(log, "Not enabled four letter command {}", IFourLetterCommand::toName(command));
         return false;
     }
     else
     {
         auto command_ptr = FourLetterCommandFactory::instance().get(command);
-        LOG_DEBUG(log, "receive four letter command {}", command_ptr->name());
+        LOG_DEBUG(log, "Receive four letter command {}", command_ptr->name());
 
         String res;
         try
@@ -531,7 +531,6 @@ void KeeperTCPHandler::packageReceived()
         conn_stats.incrementPacketsReceived();
     }
     keeper_dispatcher->incrementPacketsReceived();
-    LOG_INFO(log, "INCREMENT PACKTEDS RECEIVED VALUE {} SESSION {}", keeper_dispatcher->getKeeperConnectionStats().getPacketsReceived(), session_id);
 }
 
 void KeeperTCPHandler::updateStats(Coordination::ZooKeeperResponsePtr & response)

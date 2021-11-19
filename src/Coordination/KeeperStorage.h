@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -14,7 +13,6 @@
 namespace DB
 {
 
-using namespace DB;
 struct KeeperStorageRequestProcessor;
 using KeeperStorageRequestProcessorPtr = std::shared_ptr<KeeperStorageRequestProcessor>;
 using ResponseCallback = std::function<void(const Coordination::ZooKeeperResponsePtr &)>;
@@ -38,15 +36,8 @@ public:
         int32_t seq_num = 0;
         ChildrenSet children{};
 
-        /// object memory size
-        uint64_t sizeInBytes() const
-        {
-            uint64_t child_size{0};
-            for (const auto & child : children)
-                child_size += child.size();
-
-            return data.size() + sizeof(Node) + child_size;
-        }
+        /// Object memory size
+        uint64_t sizeInBytes() const;
     };
 
     struct ResponseForSession
@@ -188,7 +179,6 @@ public:
     }
 
     /// Introspection functions mostly used in 4-letter commands
-
     uint64_t getNodesCount() const
     {
         return container.size();

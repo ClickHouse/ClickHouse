@@ -17,7 +17,6 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <unordered_map>
-#include <Coordination/KeeperInfos.h>
 #include <Coordination/KeeperConnectionStats.h>
 #include <Poco/Timestamp.h>
 

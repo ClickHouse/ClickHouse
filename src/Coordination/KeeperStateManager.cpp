@@ -1,4 +1,5 @@
 #include <Coordination/KeeperStateManager.h>
+
 #include <Coordination/Defines.h>
 #include <Common/Exception.h>
 #include <filesystem>
@@ -11,7 +12,7 @@ namespace ErrorCodes
     extern const int RAFT_ERROR;
 }
 
-KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
+KeeperStateManager::KeeperConfigurationWrapper KeeperStateManager::parseServersConfiguration(const Poco::Util::AbstractConfiguration & config, bool allow_without_us) const
 {
     KeeperConfigurationWrapper result;
     result.cluster_config = std::make_shared<nuraft::cluster_config>();

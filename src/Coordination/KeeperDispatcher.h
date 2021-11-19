@@ -13,7 +13,7 @@
 #include <functional>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/CoordinationSettings.h>
-#include <Coordination/KeeperInfos.h>
+#include <Coordination/Keeper4LWInfo.h>
 #include <Coordination/KeeperConnectionStats.h>
 
 namespace DB
@@ -165,7 +165,7 @@ public:
         return keeper_stats;
     }
 
-    KeeperInfo getKeeperInfo() const;
+    Keeper4LWInfo getKeeper4LWInfo() const;
 
     const KeeperStateMachine & getStateMachine() const
     {
@@ -194,8 +194,6 @@ public:
         std::lock_guard lock(keeper_stats_mutex);
         keeper_stats.reset();
     }
-
-    void dumpConf(WriteBufferFromOwnString & buf) const;
 };
 
 }

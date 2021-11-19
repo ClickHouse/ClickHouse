@@ -50,7 +50,7 @@ private:
     ///    value_size: size of value to add
     ///    old_value_size: size of value to minus
     /// old_value_size=0 means there is no old value with the same key.
-    void inline updateDataSize(OperationType op_type, uint64_t key_size, uint64_t value_size, uint64_t old_value_size)
+    void updateDataSize(OperationType op_type, uint64_t key_size, uint64_t value_size, uint64_t old_value_size)
     {
         switch (op_type)
         {
@@ -60,7 +60,7 @@ private:
                 break;
             case INSERT_OR_REPLACE:
                 /// replace
-                if (old_value_size)
+                if (old_value_size != 0)
                 {
                     approximate_data_size += key_size;
                     approximate_data_size += value_size;

@@ -1,14 +1,7 @@
 #pragma once
 
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
-#include <IO/WriteBufferFromString.h>
-#include <Poco/DateTime.h>
-#include <Common/Stopwatch.h>
 
-
-/// Contains some useful interfaces which are helpful to get keeper information.
 namespace DB
 {
 
@@ -17,8 +10,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// Keeper server related information
-struct KeeperInfo
+/// Keeper server related information for different 4lw commands
+struct Keeper4LWInfo
 {
     bool is_leader;
     bool is_observer;
