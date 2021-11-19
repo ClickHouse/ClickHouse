@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DataTypes/DataTypeDateTime.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/IStorage.h>
 
 namespace DB
@@ -15,7 +15,6 @@ public:
     , pipe(std::move(pipe_))
     , to_stage(to_stage_)
     {
-        columns_.add(ColumnDescription("____timestamp", std::make_shared<DataTypeDateTime>()));
         StorageInMemoryMetadata storage_metadata;
         storage_metadata.setColumns(columns_);
         setInMemoryMetadata(storage_metadata);
@@ -31,7 +30,7 @@ public:
     }
 
     Pipe read(
-        const Names & ,
+        const Names &,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & /*query_info*/,
         ContextPtr /*context*/,

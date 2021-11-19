@@ -70,7 +70,7 @@ public:
 
         NO_TYPE,
 
-        LIVE_VIEW_REFRESH
+        LIVE_VIEW_REFRESH,
 
         MODIFY_DATABASE_SETTING,
 

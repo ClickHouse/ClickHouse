@@ -885,13 +885,13 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->if_not_exists = if_not_exists;
     query->is_window_view = true;
 
-    StorageID table_id = getTableIdentifier(table);
+    StorageID table_id = table->as<ASTTableIdentifier>()->getTableId();
     query->database = table_id.database_name;
     query->table = table_id.table_name;
     query->cluster = cluster_str;
 
     if (to_table)
-        query->to_table_id = getTableIdentifier(to_table);
+        query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);

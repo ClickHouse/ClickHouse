@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/DateLUT.h>
+#include <base/DateLUT.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <Functions/IFunction.h>
 
@@ -132,12 +132,13 @@ class FunctionWindow : public IFunction
 {
 public:
     static constexpr auto name = WindowImpl<type>::name;
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionWindow>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionWindow>(); }
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3}; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 

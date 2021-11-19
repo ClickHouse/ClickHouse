@@ -5,22 +5,24 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/IStorage.h>
 #include <Poco/Logger.h>
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <mutex>
 
 namespace DB
 {
 class IAST;
-class WindowViewBlockInputStream;
+class WindowViewSource;
 using ASTPtr = std::shared_ptr<IAST>;
 
-class StorageWindowView final : public ext::shared_ptr_helper<StorageWindowView>, public IStorage, WithContext
+/// TODO: move to Chunk.h
+using ChunksPtr = std::shared_ptr<Chunks>;
+
+class StorageWindowView final : public shared_ptr_helper<StorageWindowView>, public IStorage, WithContext
 {
-    friend struct ext::shared_ptr_helper<StorageWindowView>;
+    friend struct shared_ptr_helper<StorageWindowView>;
     friend class TimestampTransformation;
-    friend class WatermarkBlockInputStream;
-    friend class WindowViewBlockInputStream;
+    friend class WindowViewSource;
 
 public:
     ~StorageWindowView() override;
@@ -48,7 +50,7 @@ public:
     void startup() override;
     void shutdown() override;
 
-    BlockInputStreams watch(
+    Pipe watch(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         ContextPtr context,
@@ -56,9 +58,11 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockInputStreamPtr getNewBlocksInputStreamPtr(UInt32 watermark);
+    std::pair<BlocksPtr, Block> getNewBlocks(UInt32 watermark);
 
     static void writeIntoWindowView(StorageWindowView & window_view, const Block & block, ContextPtr context);
+
+    ASTPtr getMergeableQuery() const { return mergeable_query->clone(); }
 
 private:
     ASTPtr mergeable_query;
@@ -82,7 +86,7 @@ private:
     bool allowed_lateness{false};
     UInt32 next_fire_signal;
     std::deque<UInt32> fire_signal;
-    std::list<std::weak_ptr<WindowViewBlockInputStream>> watch_streams;
+    std::list<std::weak_ptr<WindowViewSource>> watch_streams;
     std::condition_variable_any fire_signal_condition;
     std::condition_variable fire_condition;
 
@@ -136,7 +140,6 @@ private:
     void updateMaxWatermark(UInt32 watermark);
     void updateMaxTimestamp(UInt32 timestamp);
 
-    ASTPtr getMergeableQuery() const { return mergeable_query->clone(); }
     ASTPtr getFinalQuery() const { return final_query->clone(); }
     ASTPtr getFetchColumnQuery(UInt32 w_start, UInt32 w_end) const;
 
@@ -147,8 +150,6 @@ private:
     StoragePtr & getTargetStorage() const;
 
     Block & getHeader() const;
-
-    Block & getMergeableHeader() const;
 
     StorageWindowView(
         const StorageID & table_id_,
