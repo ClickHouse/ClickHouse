@@ -194,22 +194,33 @@ ClusterPtr ClusterDiscovery::getCluster(const ClusterInfo & cluster_info)
 {
     Strings replica_adresses;
     replica_adresses.reserve(cluster_info.nodes_info.size());
+
+    std::optional<bool> secure;
     for (const auto & [_, node] : cluster_info.nodes_info)
+    {
+        if (secure && secure.value() != node.secure)
+        {
+            LOG_WARNING(log, "Nodes in cluster '{}' has different 'secure' value", cluster_info.name);
+        }
+
+        secure = node.secure;
         replica_adresses.emplace_back(node.address);
 
+    }
+
+    // TODO(vdimir@) save custom params from config to zookeeper and use here (like secure), split by shards
     std::vector<std::vector<String>> shards = {replica_adresses};
 
-    bool secure = false;
-    auto maybe_secure_port = context->getTCPPortSecure();
+    auto secure_port_opt = context->getTCPPortSecure();
     auto cluster = std::make_shared<Cluster>(
         context->getSettings(),
         shards,
-        context->getUserName(),
-        "",
-        (secure ? (maybe_secure_port ? *maybe_secure_port : DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort()),
-        false /* treat_local_as_remote */,
-        context->getApplicationType() == Context::ApplicationType::LOCAL /* treat_local_port_as_remote */,
-        secure);
+        /* username= */ context->getUserName(),
+        /* password= */ "",
+        /* clickhouse_port= */ (secure.value_or(false) ? secure_port_opt.value_or(DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort()),
+        /* treat_local_as_remote= */ false,
+        /* treat_local_port_as_remote= */ context->getApplicationType() == Context::ApplicationType::LOCAL,
+        secure.value_or(false));
     return cluster;
 }
 
@@ -347,6 +358,7 @@ bool ClusterDiscovery::NodeInfo::parse(const String & data, NodeInfo & result)
         auto json = parser.parse(data).extract<Poco::JSON::Object::Ptr>();
 
         result.address = json->getValue<std::string>("address");
+        result.secure = json->optValue<bool>("secure", false);
     }
     catch (Poco::Exception & e)
     {
