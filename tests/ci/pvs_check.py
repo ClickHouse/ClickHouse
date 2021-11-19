@@ -82,7 +82,8 @@ if __name__ == "__main__":
                 break
 
         if not index_html:
-            commit.create_status(context=NAME, description='PVS report failed to build', state='failure', target_url=f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}")
+            commit.create_status(context=NAME, description='PVS report failed to build', state='failure',
+                                 target_url=f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID')}")
             sys.exit(1)
 
         txt_report = os.path.join(temp_path, TXT_REPORT_NAME)
