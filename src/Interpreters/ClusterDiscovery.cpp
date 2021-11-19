@@ -190,7 +190,7 @@ bool ClusterDiscovery::needUpdate(const Strings & node_uuids, const NodesInfo & 
     return has_difference;
 }
 
-ClusterPtr ClusterDiscovery::getCluster(const ClusterInfo & cluster_info)
+ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
 {
     Strings replica_adresses;
     replica_adresses.reserve(cluster_info.nodes_info.size());
@@ -262,7 +262,7 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
         return false;
     }
 
-    auto cluster = getCluster(cluster_info);
+    auto cluster = makeCluster(cluster_info);
     context->setCluster(cluster_info.name, cluster);
     return true;
 }
@@ -280,6 +280,8 @@ bool ClusterDiscovery::updateCluster(const String & cluster_name)
 
 void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info)
 {
+    LOG_DEBUG(log, "Registering current node {} in cluster {}", node_name, info.name);
+
     String node_path = getShardsListPath(info.zk_root) / node_name;
     zk->createAncestors(node_path);
 
@@ -297,26 +299,35 @@ void ClusterDiscovery::start()
         return;
     }
     LOG_TRACE(log, "Starting working thread");
-    main_thread = ThreadFromGlobalPool([this] { runMainThread(); });
+
+    auto zk = context->getZooKeeper();
+    for (auto & [_, info] : clusters_info)
+    {
+        registerInZk(zk, info);
+        if (!updateCluster(info))
+        {
+            LOG_WARNING(log, "Error on updating cluster '{}', will retry", info.name);
+            clusters_to_update->set(info.name);
+        }
+    }
+
+    main_thread = ThreadFromGlobalPool([this]
+    {
+        try
+        {
+            runMainThread();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception in cluster discovery runMainThread");
+        }
+    });
 }
 
 void ClusterDiscovery::runMainThread()
 {
+    setThreadName("ClusterDiscover");
     LOG_DEBUG(log, "Worker thread started");
-    // setThreadName("ClusterDiscovery");
-
-    {
-        auto zk = context->getZooKeeper();
-        for (auto & [_, info] : clusters_info)
-        {
-            registerInZk(zk, info);
-            if (!updateCluster(info))
-            {
-                LOG_WARNING(log, "Error on updating cluster '{}', will retry", info.name);
-                clusters_to_update->set(info.name);
-            }
-        }
-    }
 
     using namespace std::chrono_literals;
 
