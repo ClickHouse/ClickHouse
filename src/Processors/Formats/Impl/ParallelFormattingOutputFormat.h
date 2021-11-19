@@ -108,7 +108,6 @@ public:
     void onProgress(const Progress & value) override
     {
         statistics.progress.incrementPiecewiseAtomically(value);
-        addChunk(Chunk{}, ProcessingUnitType::ON_PROGRESS, /*can_throw_exception*/ true);
     }
 
     void writeSuffix() override
@@ -131,6 +130,7 @@ private:
     void consumeTotals(Chunk totals) override
     {
         addChunk(std::move(totals), ProcessingUnitType::TOTALS, /*can_throw_exception*/ true);
+        are_totals_written = true;
     }
 
     void consumeExtremes(Chunk extremes) override
@@ -159,7 +159,6 @@ private:
         TOTALS,
         EXTREMES,
         FINALIZE,
-        ON_PROGRESS,
     };
 
     void addChunk(Chunk chunk, ProcessingUnitType type, bool can_throw_exception);

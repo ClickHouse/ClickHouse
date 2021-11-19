@@ -76,26 +76,6 @@ public:
 
     void doNotWritePrefix() { need_write_prefix = false; }
 
-    void setFirstRowNumber(size_t first_row_number_)
-    {
-        first_row_number = first_row_number_;
-        onFirstRowNumberUpdate();
-    }
-
-    struct Statistics
-    {
-        Stopwatch watch;
-        Progress progress;
-        bool applied_limit = false;
-        size_t rows_before_limit = 0;
-    };
-
-    void setOutsideStatistics(const Statistics & statistics) { outside_statistics = statistics; }
-
-    void setTotalsAreWritten() { are_totals_written = true; }
-
-    bool areTotalsWritten() const { return are_totals_written; }
-
 protected:
     friend class ParallelFormattingOutputFormat;
 
@@ -105,11 +85,6 @@ protected:
     virtual void finalizeImpl() {}
     virtual void writePrefix() {}
     virtual void writeSuffix() {}
-
-    virtual void onFirstRowNumberUpdate() {}
-
-    size_t getFirstRowNumber() const { return first_row_number; }
-    std::optional<Statistics> getOutsideStatistics() const { return outside_statistics; }
 
     void writePrefixIfNot()
     {
@@ -129,6 +104,40 @@ protected:
         }
     }
 
+    /// Methods-helpers for parallel formatting.
+
+    /// Set the real number of first row in the first chunk of data.
+    void setFirstRowNumber(size_t first_row_number_)
+    {
+        first_row_number = first_row_number_;
+        onFirstRowNumberUpdate();
+    }
+
+    size_t getFirstRowNumber() const { return first_row_number; }
+
+    /// Update state according to new first_row_number.
+    virtual void onFirstRowNumberUpdate() {}
+
+    /// Some formats outputs some statistics after the data,
+    /// in parallel formatting we collect these statistics outside the
+    /// underling format and then set it to format before finalizing.
+    struct Statistics
+    {
+        Stopwatch watch;
+        Progress progress;
+        bool applied_limit = false;
+        size_t rows_before_limit = 0;
+    };
+
+    void setOutsideStatistics(Statistics statistics) { outside_statistics = std::make_shared<Statistics>(std::move(statistics)); }
+    std::shared_ptr<Statistics> getOutsideStatistics() const { return outside_statistics; }
+
+    /// In some formats the way we print extremes depends on
+    /// were totals printed or not. In this case in parallel formatting
+    /// we should notify underling format if totals were printed.
+    void setTotalsAreWritten() { are_totals_written = true; }
+    bool areTotalsWritten() const { return are_totals_written; }
+
     WriteBuffer & out;
 
     Chunk current_chunk;
@@ -147,7 +156,7 @@ protected:
 
 private:
     size_t first_row_number = 0;
-    std::optional<Statistics> outside_statistics = std::nullopt;
+    std::shared_ptr<Statistics> outside_statistics = nullptr;
     bool are_totals_written = false;
 
     /// Counters for consumed chunks. Are used for QueryLog.

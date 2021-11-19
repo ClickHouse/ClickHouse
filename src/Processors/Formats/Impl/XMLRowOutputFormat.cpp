@@ -207,7 +207,7 @@ void XMLRowOutputFormat::finalizeImpl()
 
     auto outside_statistics = getOutsideStatistics();
     if (outside_statistics)
-        statistics = outside_statistics.value();
+        statistics = std::move(*outside_statistics);
 
     writeRowsBeforeLimitAtLeast();
 
