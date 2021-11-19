@@ -196,7 +196,7 @@ public:
 
     uint64_t getApproximateDataSize() const
     {
-        return container.getApproximateSataSize();
+        return container.getApproximateDataSize();
     }
 
     uint64_t getTotalWatchesCount() const;

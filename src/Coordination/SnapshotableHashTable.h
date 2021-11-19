@@ -274,7 +274,7 @@ public:
         return list.size();
     }
 
-    uint64_t getApproximateSataSize() const
+    uint64_t getApproximateDataSize() const
     {
         return approximate_data_size;
     }
