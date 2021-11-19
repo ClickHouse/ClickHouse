@@ -39,6 +39,8 @@ def get_json_params_dict(check_name, commit_sha, pr_number, docker_images):
         'pr_info': None,
         'docker_images_with_versions': docker_images,
         'shuffle_test_groups': False,
+        'use_tmpfs': False,
+        'disable_net_host': True,
     }
 
 def get_env_for_runner(build_path, repo_path, result_path, work_path):
@@ -141,7 +143,6 @@ if __name__ == "__main__":
                 logging.info("Run tests successfully")
             else:
                 logging.info("Some tests failed")
-
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 

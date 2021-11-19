@@ -30,8 +30,6 @@ public:
         const Params & params_,
         bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
-    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-    void readPrefix() override;
     void resetParser() override;
 
 protected:
@@ -74,6 +72,9 @@ protected:
     bool end_of_stream = false;
 
 private:
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    void readPrefix() override;
+
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
 

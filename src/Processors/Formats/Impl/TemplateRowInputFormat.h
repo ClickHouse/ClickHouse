@@ -22,6 +22,9 @@ public:
 
     String getName() const override { return "TemplateRowInputFormat"; }
 
+    void resetParser() override;
+
+private:
     bool readRow(MutableColumns & columns, RowReadExtension & extra) override;
 
     void readPrefix() override;
@@ -29,9 +32,6 @@ public:
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
 
-    void resetParser() override;
-
-private:
     bool deserializeField(const DataTypePtr & type,
         const SerializationPtr & serialization, IColumn & column, size_t file_column);
 
