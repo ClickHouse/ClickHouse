@@ -7,6 +7,7 @@
 #include <Poco/Path.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Coordination/Keeper4LWInfo.h>
 
 #include <unistd.h>
@@ -148,8 +149,10 @@ void FourLetterCommandFactory::initializeWhiteList(KeeperDispatcher & keeper_dis
     Strings tokens;
     splitInto<','>(tokens, list_str);
 
-    for (const String & token : tokens)
+    for (String token: tokens)
     {
+        trim(token);
+
         if (token == "*")
         {
             white_list.clear();
