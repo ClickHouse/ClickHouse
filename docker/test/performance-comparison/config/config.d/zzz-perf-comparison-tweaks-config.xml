@@ -48,5 +48,11 @@
 
     <asynchronous_metrics_update_period_s>10</asynchronous_metrics_update_period_s>
 
-    <remap_executable replace="replace">true</remap_executable>
+    <!-- Do not enable remap executable with huage pages,
+         since some CPUs has iTLB multihit bug,
+         and the cost to mitigate it in software is page fault [1].
+
+           [1]: https://www.kernel.org/doc/html/latest/admin-guide/hw-vuln/multihit.html
+      -->
+    <!-- <remap_executable replace="replace">true</remap_executable> -->
 </clickhouse>
