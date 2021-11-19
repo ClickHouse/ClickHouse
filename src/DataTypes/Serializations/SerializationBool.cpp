@@ -65,15 +65,13 @@ void SerializationBool::serializeTextEscaped(const IColumn & column, size_t row_
     if (!col)
         throw Exception("Bool type can only serialize columns of type UInt8." + column.getName(),
                         ErrorCodes::ILLEGAL_COLUMN);
-    int bool_format = static_cast<int>(settings.bool_format);
     if (col->getData()[row_num])
     {
-        ostr.write(text_true_arr[bool_format], strlen(text_true_arr[bool_format]));
+        ostr.write(settings.bool_true_representation.c_str(), settings.bool_true_representation.length());
     }
     else
     {
-        ostr.write(text_false_arr[bool_format], strlen(text_false_arr[bool_format]));
-    }
+        ostr.write(settings.bool_false_representation.c_str(), settings.bool_false_representation.length());    }
 }
 
 void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -86,21 +84,21 @@ void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & is
 
     if (!istr.eof())
     {
-        int bool_format = static_cast<int>(settings.bool_format);
-        const char *formatted_true = text_true_arr[bool_format];
-        const char *formatted_false = text_false_arr[bool_format];
+
         String input;
+
         readString(input, istr);
-        if (strcmp(formatted_true, input.c_str()) != 0)
+
+        if (input.compare(settings.bool_true_representation))
         {
             col->insert(true);
         }
-        else if (strcmp(formatted_false, input.c_str()) != 0)
+        else if (input.compare(settings.bool_false_representation))
         {
             col->insert(false);
         }
         else
-            throw Exception("Invalid boolean value, should be " + String(formatted_true) + " or " + String(formatted_false) + ".", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Invalid boolean value, should be " + settings.bool_true_representation + " or " + settings.bool_false_representation + " controlled by setting bool_true_representation and bool_false_representation.", ErrorCodes::ILLEGAL_COLUMN);
     }
     else
         throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
@@ -122,6 +120,16 @@ void SerializationBool::serializeTextCSV(const IColumn & column, size_t row_num,
 }
 
 void SerializationBool::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeTextEscaped(column, istr, settings);
+}
+
+void SerializationBool::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeTextEscaped(column, row_num, ostr, settings);
+}
+
+void SerializationBool::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeTextEscaped(column, istr, settings);
 }

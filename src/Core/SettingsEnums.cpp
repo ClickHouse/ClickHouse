@@ -122,12 +122,4 @@ IMPLEMENT_SETTING_ENUM(EnumComparingMode, ErrorCodes::BAD_ARGUMENTS,
      {"by_values",  FormatSettings::EnumComparingMode::BY_VALUES},
      {"by_names_case_insensitive", FormatSettings::EnumComparingMode::BY_NAMES_CASE_INSENSITIVE}})
 
-IMPLEMENT_SETTING_ENUM(BoolFormat, ErrorCodes::BAD_ARGUMENTS,
-    {{"true_false_lower_case",  FormatSettings::BoolFormat::true_false_lower_case},
-     {"true_false_camel_case",  FormatSettings::BoolFormat::true_false_camel_case},
-     {"T_F",                    FormatSettings::BoolFormat::T_F},
-     {"Yes_No",                 FormatSettings::BoolFormat::Yes_No},
-     {"Y_N",                    FormatSettings::BoolFormat::Y_N},
-     {"On_Off",                 FormatSettings::BoolFormat::On_Off}})
-
 }
