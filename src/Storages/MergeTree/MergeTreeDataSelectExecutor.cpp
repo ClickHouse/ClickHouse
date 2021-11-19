@@ -42,14 +42,6 @@
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <IO/WriteBufferFromOStream.h>
 
-namespace ProfileEvents
-{
-    extern const Event SelectedParts;
-    extern const Event SelectedRanges;
-    extern const Event SelectedMarks;
-}
-
-
 namespace DB
 {
 

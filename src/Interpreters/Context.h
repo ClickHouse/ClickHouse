@@ -346,7 +346,7 @@ public:
     String getUserScriptsPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
-    std::vector<String> getWarnings() const;
+    Strings getWarnings() const;
 
     VolumePtr getTemporaryVolume() const;
 
