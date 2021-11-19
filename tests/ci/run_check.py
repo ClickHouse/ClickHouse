@@ -6,6 +6,7 @@ import logging
 from github import Github
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
+from commit_status_helper import get_commit
 
 NAME = 'Run Check (actions)'
 
@@ -33,6 +34,7 @@ TRUSTED_CONTRIBUTORS = {
     "bharatnc",     # Newbie, but already with many contributions.
     "bobrik",       # Seasoned contributor, CloundFlare
     "BohuTANG",
+    "codyrobert",   # Flickerbox engineer
     "damozhaeva",   # DOCSUP
     "den-crane",
     "gyuton",       # DOCSUP
@@ -100,11 +102,6 @@ def should_run_checks_for_pr(pr_info):
         return False, "Don't try new checks for release/backports/cherry-picks"
 
     return True, "No special conditions apply"
-
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
