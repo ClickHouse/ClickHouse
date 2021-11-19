@@ -940,33 +940,33 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     /// int
     DB::SnapshotableHashTable<IntNode> hello;
     hello.disableSnapshotMode();
-    EXPECT_EQ(hello.getApproximateSataSize(), 0);
+    EXPECT_EQ(hello.getApproximateDataSize(), 0);
 
     hello.insert("hello", 1);
-    EXPECT_EQ(hello.getApproximateSataSize(), 9);
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
     hello.updateValue("hello", [](IntNode & value) { value = 2; });
-    EXPECT_EQ(hello.getApproximateSataSize(), 9);
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
 
     hello.erase("hello");
-    EXPECT_EQ(hello.getApproximateSataSize(), 0);
+    EXPECT_EQ(hello.getApproximateDataSize(), 0);
 
     hello.clear();
-    EXPECT_EQ(hello.getApproximateSataSize(), 0);
+    EXPECT_EQ(hello.getApproximateDataSize(), 0);
 
     hello.enableSnapshotMode();
     hello.insert("hello", 1);
-    EXPECT_EQ(hello.getApproximateSataSize(), 9);
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
     hello.updateValue("hello", [](IntNode & value) { value = 2; });
-    EXPECT_EQ(hello.getApproximateSataSize(), 18);
+    EXPECT_EQ(hello.getApproximateDataSize(), 18);
 
     hello.clearOutdatedNodes();
-    EXPECT_EQ(hello.getApproximateSataSize(), 9);
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
 
     hello.erase("hello");
-    EXPECT_EQ(hello.getApproximateSataSize(), 9);
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
 
     hello.clearOutdatedNodes();
-    EXPECT_EQ(hello.getApproximateSataSize(), 0);
+    EXPECT_EQ(hello.getApproximateDataSize(), 0);
 
     /// Node
     using Node = DB::KeeperStorage::Node;
@@ -983,27 +983,27 @@ TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
     /// 160 = sizeof Node
     /// 5 = sizeof key
     /// 4 = sizeof value
-    EXPECT_EQ(world.getApproximateSataSize(), 169);
+    EXPECT_EQ(world.getApproximateDataSize(), 169);
     world.updateValue("world", [&](Node & value) { value = n2; });
-    EXPECT_EQ(world.getApproximateSataSize(), 171);
+    EXPECT_EQ(world.getApproximateDataSize(), 171);
 
     world.erase("world");
-    EXPECT_EQ(world.getApproximateSataSize(), 0);
+    EXPECT_EQ(world.getApproximateDataSize(), 0);
 
     world.enableSnapshotMode();
     world.insert("world", n1);
-    EXPECT_EQ(world.getApproximateSataSize(), 169);
+    EXPECT_EQ(world.getApproximateDataSize(), 169);
     world.updateValue("world", [&](Node & value) { value = n2; });
-    EXPECT_EQ(world.getApproximateSataSize(), 340);
+    EXPECT_EQ(world.getApproximateDataSize(), 340);
 
     world.clearOutdatedNodes();
-    EXPECT_EQ(world.getApproximateSataSize(), 171);
+    EXPECT_EQ(world.getApproximateDataSize(), 171);
 
     world.erase("world");
-    EXPECT_EQ(world.getApproximateSataSize(), 171);
+    EXPECT_EQ(world.getApproximateDataSize(), 171);
 
     world.clear();
-    EXPECT_EQ(world.getApproximateSataSize(), 0);
+    EXPECT_EQ(world.getApproximateDataSize(), 0);
 }
 
 void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner=0)

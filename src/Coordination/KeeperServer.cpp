@@ -317,7 +317,7 @@ uint64_t KeeperServer::getSyncedFollowerCount() const
     uint64_t stale_followers = 0;
 
     const uint64_t stale_follower_gap = raft_instance->get_current_params().stale_log_gap_;
-    for (auto & fl : followers)
+    for (const auto & fl : followers)
     {
         if (last_log_idx > fl.last_log_idx_ + stale_follower_gap)
             stale_followers++;
