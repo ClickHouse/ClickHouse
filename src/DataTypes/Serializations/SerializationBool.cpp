@@ -67,11 +67,12 @@ void SerializationBool::serializeTextEscaped(const IColumn & column, size_t row_
                         ErrorCodes::ILLEGAL_COLUMN);
     if (col->getData()[row_num])
     {
-        ostr.write(settings.bool_true_representation.c_str(), settings.bool_true_representation.length());
+        writeString(settings.bool_true_representation, ostr);
     }
     else
     {
-        ostr.write(settings.bool_false_representation.c_str(), settings.bool_false_representation.length());    }
+        writeString(settings.bool_false_representation, ostr);
+    }
 }
 
 void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
