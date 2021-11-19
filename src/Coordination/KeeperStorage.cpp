@@ -140,9 +140,6 @@ uint64_t KeeperStorage::Node::sizeInBytes() const
         total_size += child.size();
 
     total_size += data.size();
-    /// Overhead for stroing empty containers
-    total_size += sizeof(data);
-    total_size += sizeof(children);
 
     total_size += sizeof(acl_id);
     total_size += sizeof(is_sequental);
