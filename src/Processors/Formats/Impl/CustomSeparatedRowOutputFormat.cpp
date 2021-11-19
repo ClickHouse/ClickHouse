@@ -29,7 +29,7 @@ void CustomSeparatedRowOutputFormat::writeLine(const std::vector<String> & value
     writeRowEndDelimiter();
 }
 
-void CustomSeparatedRowOutputFormat::doWritePrefix()
+void CustomSeparatedRowOutputFormat::writePrefix()
 {
     writeString(format_settings.custom.result_before_delimiter, out);
 
