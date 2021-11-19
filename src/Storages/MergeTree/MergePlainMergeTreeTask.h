@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTask.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeMutateSelectedEntry.h>
+#include <Storages/MergeTree/TaskObserverMetrics.h>
 
 namespace DB
 {
@@ -34,7 +35,18 @@ public:
             priority += item->getBytesOnDisk();
     }
 
+    bool onResume() override
+    {
+        return observer.doResume();
+    }
+
     bool executeStep() override;
+
+    bool onSuspend() override
+    {
+        return observer.doSuspend();
+    }
+
     void onCompleted() override;
     StorageID getStorageID() override;
     UInt64 getPriority() override { return priority; }
@@ -82,6 +94,8 @@ private:
 
     MergeTreeTransactionHolder txn_holder;
     MergeTreeTransactionPtr txn;
+    
+    TaskObserverMetrics observer;
 };
 
 
