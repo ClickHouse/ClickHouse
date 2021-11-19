@@ -5,12 +5,9 @@
 #include <unordered_map>
 
 #include <Coordination/KeeperDispatcher.h>
-#include <Coordination/KeeperInfos.h>
 #include <IO/WriteBufferFromString.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
 
 namespace DB
 {

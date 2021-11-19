@@ -6,9 +6,7 @@
 #include <Coordination/KeeperStateMachine.h>
 #include <Coordination/KeeperStorage.h>
 #include <Coordination/CoordinationSettings.h>
-#include <unordered_map>
 #include <base/logger_useful.h>
-#include <Coordination/KeeperInfos.h>
 
 namespace DB
 {

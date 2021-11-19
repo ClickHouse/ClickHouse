@@ -54,7 +54,7 @@ using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
 
 /// Coordination settings + some other parts of keeper configuration
 /// which are not stored in settings. Allows to dump configuration
-/// with four letter word commands.
+/// with 4lw commands.
 struct KeeperConfigurationAndSettings
 {
     static constexpr int NOT_EXIST = -1;

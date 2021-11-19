@@ -620,14 +620,9 @@ uint64_t KeeperDispatcher::getSnapDirSize() const
     return getDirSize(configuration_and_settings->snapshot_storage_path);
 }
 
-void KeeperDispatcher::dumpConf(WriteBufferFromOwnString & buf) const
+Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 {
-    configuration_and_settings->dump(buf);
-}
-
-KeeperInfo KeeperDispatcher::getKeeperInfo() const
-{
-    KeeperInfo result;
+    Keeper4LWInfo result;
     result.is_leader = isLeader();
     result.is_observer = server->isObserver();
     result.is_follower = server->isFollower();
