@@ -7,6 +7,7 @@
 #include <IO/ReadBufferFromBlobStorage.h>
 #include <IO/ReadBufferFromString.h>
 #include <base/logger_useful.h>
+#include <base/sleep.h>
 
 
 namespace DB
@@ -25,6 +26,7 @@ ReadBufferFromBlobStorage::ReadBufferFromBlobStorage(
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     const String & path_,
     size_t max_single_read_retries_,
+    size_t max_single_download_retries_,
     size_t tmp_buffer_size_,
     bool use_external_buffer_,
     size_t read_until_position_)
@@ -33,6 +35,7 @@ ReadBufferFromBlobStorage::ReadBufferFromBlobStorage(
     , blob_container_client(blob_container_client_)
     , path(path_)
     , max_single_read_retries(max_single_read_retries_)
+    , max_single_download_retries(max_single_download_retries_)
     , tmp_buffer_size(tmp_buffer_size_) // NOTE: field used only here in the constructor
     , use_external_buffer(use_external_buffer_)
     , read_until_position(read_until_position_)
@@ -71,8 +74,8 @@ bool ReadBufferFromBlobStorage::nextImpl()
     size_t to_read_bytes = std::min(total_size - offset, data_capacity);
     size_t bytes_read = 0;
 
-    auto sleep_time_with_backoff_milliseconds = std::chrono::milliseconds(100);
-    for (size_t i = 0; i < max_single_read_retries; ++i) // TODO: Is this try part necessary with Azure reliable streams?
+    size_t sleep_time_with_backoff_milliseconds = 100;
+    for (size_t i = 0; i < max_single_read_retries; ++i) // TODO: are retries necessary with Azure reliable streams?
     {
         try
         {
@@ -81,9 +84,11 @@ bool ReadBufferFromBlobStorage::nextImpl()
         }
         catch (const Azure::Storage::StorageException & e)
         {
-            LOG_INFO(log, "Exception caught during Azure Read for file {} : {}", path, e.Message);
+            LOG_INFO(log, "Exception caught during Azure Read for file {} at attempt {} : {}", path, i, e.Message);
+            if (i + 1 == max_single_read_retries)
+                throw e;
 
-            std::this_thread::sleep_for(sleep_time_with_backoff_milliseconds);
+            sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
             sleep_time_with_backoff_milliseconds *= 2;
             initialized = false;
             initialize();
@@ -119,9 +124,7 @@ off_t ReadBufferFromBlobStorage::seek(off_t offset_, int whence)
 
 off_t ReadBufferFromBlobStorage::getPosition()
 {
-    // TODO: why is it `return offset - available()` in S3?
-
-    return offset;
+    return offset - available();
 }
 
 
@@ -140,15 +143,24 @@ void ReadBufferFromBlobStorage::initialize()
 
     blob_client = std::make_unique<Azure::Storage::Blobs::BlobClient>(blob_container_client->GetBlobClient(path));
 
-    try
+    size_t sleep_time_with_backoff_milliseconds = 100;
+    for (size_t i = 0; i < max_single_download_retries; ++i)
     {
-        auto download_response = blob_client->Download(download_options);
-        data_stream = std::move(download_response.Value.BodyStream);
-    }
-    catch (const Azure::Storage::StorageException & e)
-    {
-        LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} : {}", path, offset, e.Message);
-        throw e;
+        try
+        {
+            auto download_response = blob_client->Download(download_options);
+            data_stream = std::move(download_response.Value.BodyStream);
+            break;
+        }
+        catch (const Azure::Storage::StorageException & e)
+        {
+            LOG_INFO(log, "Exception caught during Azure Download for file {} at offset {} at attempt {} : {}", path, offset, i, e.Message);
+            if (i + 1 == max_single_download_retries)
+                throw e;
+
+            sleepForMilliseconds(sleep_time_with_backoff_milliseconds);
+            sleep_time_with_backoff_milliseconds *= 2;
+        }
     }
 
     if (data_stream == nullptr)
