@@ -21,11 +21,13 @@ DiskBlobStorageSettings::DiskBlobStorageSettings(
     UInt64 max_single_part_upload_size_,
     UInt64 min_bytes_for_seek_,
     int max_single_read_retries_,
+    int max_single_download_retries_,
     int thread_pool_size_,
     int objects_chunk_size_to_delete_) :
     max_single_part_upload_size(max_single_part_upload_size_),
     min_bytes_for_seek(min_bytes_for_seek_),
     max_single_read_retries(max_single_read_retries_),
+    max_single_download_retries(max_single_download_retries_),
     thread_pool_size(thread_pool_size_),
     objects_chunk_size_to_delete(objects_chunk_size_to_delete_) {}
 
@@ -64,6 +66,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
     const ReadSettings & read_settings,
     std::optional<size_t> /*estimated_size*/) const
 {
+    auto settings = current_settings.get();
     auto metadata = readMeta(path);
 
     LOG_TRACE(log, "Read from file by path: {}", backQuote(metadata_disk->getPath() + path));
@@ -71,7 +74,8 @@ std::unique_ptr<ReadBufferFromFileBase> DiskBlobStorage::readFile(
     bool threadpool_read = read_settings.remote_fs_method == RemoteFSReadMethod::threadpool;
 
     auto reader_impl = std::make_unique<ReadBufferFromBlobStorageGather>(
-        path, blob_container_client, metadata, current_settings.get()->max_single_read_retries, read_settings, threadpool_read);
+        path, blob_container_client, metadata, settings->max_single_read_retries,
+        settings->max_single_download_retries, read_settings, threadpool_read);
 
     if (threadpool_read)
     {

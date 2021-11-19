@@ -50,6 +50,8 @@ target_compile_options(azure_sdk PUBLIC
     -Wno-extra-semi
     -Wno-suggest-destructor-override
     -Wno-inconsistent-missing-destructor-override
+    -Wno-error=unknown-warning-option
+    -Wno-reserved-identifier
 )
 
 # Originally, on Windows azure-core is built with bcrypt and crypt32 by default
