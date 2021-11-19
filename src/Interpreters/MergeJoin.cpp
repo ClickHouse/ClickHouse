@@ -552,10 +552,10 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
 
     LOG_DEBUG(log, "Joining keys: left [{}], right [{}]", fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "));
 
-    /// Temporary disable 'partial_merge_join_left_table_buffer_bytes' without 'partial_merge_join_optimizations'
-    if (table_join->enablePartialMergeJoinOptimizations())
-        if (size_t max_bytes = table_join->maxBytesInLeftBuffer())
-            left_blocks_buffer = std::make_shared<SortedBlocksBuffer>(left_sort_description, max_bytes);
+    if (size_t max_bytes = table_join->maxBytesInLeftBuffer(); max_bytes > 0)
+    {
+        left_blocks_buffer = std::make_shared<SortedBlocksBuffer>(left_sort_description, max_bytes);
+    }
 }
 
 /// Has to be called even if totals are empty
