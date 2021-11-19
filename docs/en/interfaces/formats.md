@@ -1147,7 +1147,7 @@ struct Message {
 }
 ```
 
-To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must switch on the [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested) setting.
+To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must enable the [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested) setting.
 
 You can select data from a ClickHouse table and save them into some file in the CapnProto format by the following command:
 
