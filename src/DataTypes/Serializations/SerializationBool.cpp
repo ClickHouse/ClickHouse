@@ -77,7 +77,7 @@ void SerializationBool::serializeTextEscaped(const IColumn & column, size_t row_
 
 void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    ColumnUInt8 *col = typeid_cast<ColumnUInt8 *>(&column);
+    ColumnUInt8 * col = typeid_cast<ColumnUInt8 *>(&column);
     if (!col)
     {
         throw Exception("Bool type can only deserialize columns of type UInt8." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
