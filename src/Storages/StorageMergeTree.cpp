@@ -412,8 +412,9 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
         version = increment.get();
         entry.commit(version);
         mutation_file_name = entry.file_name;
-        auto insertion = current_mutations_by_id.emplace(mutation_file_name, std::move(entry));
-        current_mutations_by_version.emplace(version, insertion.first->second);
+        bool inserted = current_mutations_by_version.try_emplace(version, std::move(entry)).second;
+        if (!inserted)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
 
         LOG_INFO(log, "Added mutation: {}", mutation_file_name);
     }
@@ -618,16 +619,18 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 {
     LOG_TRACE(log, "Killing mutation {}", mutation_id);
+    UInt64 mutation_version = MergeTreeMutationEntry::tryParseFileName(mutation_id);
+    if (!mutation_version)
+        return CancellationCode::NotFound;
 
     std::optional<MergeTreeMutationEntry> to_kill;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
-        auto it = current_mutations_by_id.find(mutation_id);
-        if (it != current_mutations_by_id.end())
+        auto it = current_mutations_by_version.find(mutation_version);
+        if (it != current_mutations_by_version.end())
         {
             to_kill.emplace(std::move(it->second));
-            current_mutations_by_id.erase(it);
-            current_mutations_by_version.erase(to_kill->block_number);
+            current_mutations_by_version.erase(it);
         }
     }
 
@@ -668,10 +671,11 @@ void StorageMergeTree::loadMutations()
             if (startsWith(it->name(), "mutation_"))
             {
                 MergeTreeMutationEntry entry(disk, path, it->name());
-                Int64 block_number = entry.block_number;
+                UInt64 block_number = entry.block_number;
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands.size());
-                auto insertion = current_mutations_by_id.emplace(it->name(), std::move(entry));
-                current_mutations_by_version.emplace(block_number, insertion.first->second);
+                auto inserted = current_mutations_by_version.try_emplace(block_number, std::move(entry)).second;
+                if (!inserted)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", block_number);
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
@@ -1111,7 +1115,6 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         for (size_t i = 0; i < to_delete_count; ++i)
         {
             mutations_to_delete.push_back(std::move(it->second));
-            current_mutations_by_id.erase(mutations_to_delete.back().file_name);
             it = current_mutations_by_version.erase(it);
         }
     }

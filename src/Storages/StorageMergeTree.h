@@ -131,9 +131,7 @@ private:
     /// This set have to be used with `currently_processing_in_background_mutex`.
     DataParts currently_merging_mutating_parts;
 
-
-    std::map<String, MergeTreeMutationEntry> current_mutations_by_id;
-    std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
+    std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
     std::atomic<bool> shutdown_called {false};
 
