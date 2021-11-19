@@ -84,7 +84,6 @@ void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & is
 
     if (!istr.eof())
     {
-
         String input;
 
         readString(input, istr);
