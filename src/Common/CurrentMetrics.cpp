@@ -12,6 +12,7 @@
     M(BackgroundMergesAndMutationsPoolTask, "Number of active merges and mutations in an associated background pool") \
     M(BackgroundFetchesPoolTask, "Number of active fetches in an associated background pool") \
     M(BackgroundCommonPoolTask, "Number of active tasks in an associated background pool") \
+    M(BackgroundMaintPoolTask, "Number of active tasks in BackgroundProcessingPool (maint)") \
     M(BackgroundMovePoolTask, "Number of active tasks in BackgroundProcessingPool for moves") \
     M(BackgroundSchedulePoolTask, "Number of active tasks in BackgroundSchedulePool. This pool is used for periodic ReplicatedMergeTree tasks, like cleaning old data parts, altering data parts, replica re-initialization, etc.") \
     M(BackgroundBufferFlushSchedulePoolTask, "Number of active tasks in BackgroundBufferFlushSchedulePool. This pool is used for periodic Buffer flushes") \
