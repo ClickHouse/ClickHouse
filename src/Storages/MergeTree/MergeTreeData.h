@@ -383,7 +383,7 @@ public:
         DataPartsVector & normal_parts,
         ContextPtr query_context) const;
 
-    bool getQueryProcessingStageWithAggregateProjection(
+    std::optional<ProjectionCandidate> getQueryProcessingStageWithAggregateProjection(
         ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info) const;
 
     QueryProcessingStage::Enum getQueryProcessingStage(
