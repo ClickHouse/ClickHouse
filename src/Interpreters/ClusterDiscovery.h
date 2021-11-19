@@ -39,6 +39,8 @@ private:
     {
         /// host:port
         String address;
+        /// is secure tcp port user
+        bool secure = false;
 
         NodeInfo() = default;
         explicit NodeInfo(const String & address_) : address(address_) {}
