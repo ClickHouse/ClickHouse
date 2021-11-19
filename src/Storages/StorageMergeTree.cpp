@@ -684,7 +684,7 @@ void StorageMergeTree::loadMutations()
     }
 
     if (!current_mutations_by_version.empty())
-        increment.value = std::max(Int64(increment.value.load()), current_mutations_by_version.rbegin()->first);
+        increment.value = std::max(increment.value.load(), current_mutations_by_version.rbegin()->first);
 }
 
 std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
