@@ -90,12 +90,6 @@ struct ColumnPrice
         return std::tie(compressed_size, uncompressed_size) < std::tie(that.compressed_size, that.uncompressed_size);
     }
 
-    ColumnPrice operator+(ColumnPrice that) const
-    {
-        that += *this;
-        return that;
-    }
-
     ColumnPrice & operator+=(const ColumnPrice & that)
     {
         compressed_size += that.compressed_size;
@@ -156,7 +150,12 @@ ColumnPrice calculatePrice(
 {
     ColumnPrice result(0, 0);
     for (const auto & ident : identifiers)
-        result = result + column_prices.at(ident);
+    {
+        auto it = column_prices.find(ident);
+        if (it != column_prices.end())
+            result += it->second;
+    }
+
     return result;
 }
 

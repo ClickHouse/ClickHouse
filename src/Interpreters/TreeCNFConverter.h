@@ -151,7 +151,7 @@ public:
     /// @max_growth_multipler means that it's allowed to grow size of formula only
     /// in that amount of times. It's needed to avoid exponential explosion of formula.
     /// CNF of boolean formula with N clauses can have 2^N clauses.
-    /// If amout of atomic formulas will be exceded nullopt will be returned.
+    /// If amount of atomic formulas will be exceeded nullopt will be returned.
     /// 0 - means unlimited.
     static std::optional<CNFQuery> tryConvertToCNF(
         const ASTPtr & query, size_t max_growth_multipler = DEFAULT_MAX_GROWTH_MULTIPLIER);

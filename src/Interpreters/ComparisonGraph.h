@@ -116,7 +116,7 @@ private:
         std::vector<std::vector<Edge>> edges;
     };
 
-    /// Recieves graph, in which each vertex corresponds to one expression.
+    /// Receives graph, in which each vertex corresponds to one expression.
     /// Then finds strongly connected components and builds graph on them.
     static Graph buildGraphFromAstsGraph(const Graph & asts_graph);
 

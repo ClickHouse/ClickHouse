@@ -1061,21 +1061,21 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     }
 
     for (const auto & [granularity, index_and_condition] : merged_indices)
-        {
-            const auto & index_name = "Merged";
-            LOG_DEBUG(log, "Index {} has dropped {}/{} granules.",
-                      backQuote(index_name),
-                      index_and_condition->granules_dropped, index_and_condition->total_granules);
+    {
+        const auto & index_name = "Merged";
+        LOG_DEBUG(log, "Index {} has dropped {}/{} granules.",
+                    backQuote(index_name),
+                    index_and_condition->granules_dropped, index_and_condition->total_granules);
 
-            std::string description = "MERGED GRANULARITY " + std::to_string(granularity);
+        std::string description = "MERGED GRANULARITY " + std::to_string(granularity);
 
-            index_stats.emplace_back(ReadFromMergeTree::IndexStat{
-                .type = ReadFromMergeTree::IndexType::Skip,
-                .name = index_name,
-                .description = std::move(description),
-                .num_parts_after = index_and_condition->total_parts - index_and_condition->parts_dropped,
-                .num_granules_after = index_and_condition->total_granules - index_and_condition->granules_dropped});
-        }
+        index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::Skip,
+            .name = index_name,
+            .description = std::move(description), //-V1030
+            .num_parts_after = index_and_condition->total_parts - index_and_condition->parts_dropped,
+            .num_granules_after = index_and_condition->total_granules - index_and_condition->granules_dropped});
+    }
 
     return parts_with_ranges;
 }
