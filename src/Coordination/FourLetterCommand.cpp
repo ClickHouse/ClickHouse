@@ -5,7 +5,6 @@
 #include <base/logger_useful.h>
 #include <Poco/Environment.h>
 #include <Poco/Path.h>
-#include <Common/hex.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Coordination/Keeper4LWInfo.h>
@@ -242,7 +241,7 @@ String MonitorCommand::run()
 String StatResetCommand::run()
 {
     keeper_dispatcher.resetConnectionStats();
-    return "Server stats reset.";
+    return "Server stats reset.\n";
 }
 
 String NopCommand::run()
@@ -267,7 +266,7 @@ String ConsCommand::run()
 String RestConnStatsCommand::run()
 {
     KeeperTCPHandler::resetConnsStats();
-    return "Connection stats reset.";
+    return "Connection stats reset.\n";
 }
 
 String ServerStatCommand::run()
@@ -288,7 +287,7 @@ String ServerStatCommand::run()
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
     StringBuffer latency;
-    latency << stats.getMinLatency() << "/" << stats.getAvgLatency() << "/" << stats.getMaxLatency() << "\n";
+    latency << stats.getMinLatency() << "/" << stats.getAvgLatency() << "/" << stats.getMaxLatency();
     write("Latency min/avg/max", latency.str());
 
     write("Received", toString(stats.getPacketsReceived()));
@@ -318,7 +317,7 @@ String StatCommand::run()
     buf << '\n';
 
     StringBuffer latency;
-    latency << stats.getMinLatency() << "/" << stats.getAvgLatency() << "/" << stats.getMaxLatency() << "\n";
+    latency << stats.getMinLatency() << "/" << stats.getAvgLatency() << "/" << stats.getMaxLatency();
     write("Latency min/avg/max", latency.str());
 
     write("Received", toString(stats.getPacketsReceived()));
@@ -338,7 +337,7 @@ String BriefWatchCommand::run()
     const auto & state_machine = keeper_dispatcher.getStateMachine();
     buf << state_machine.getSessionsWithWatchesCount() << " connections watching "
         << state_machine.getWatchedPathsCount() << " paths\n";
-    buf << "Total watches:" << state_machine.getTotalWatchesCount();
+    buf << "Total watches:" << state_machine.getTotalWatchesCount() << "\n";
     return buf.str();
 }
 
