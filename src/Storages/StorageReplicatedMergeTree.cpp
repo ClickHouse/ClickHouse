@@ -1602,8 +1602,11 @@ bool StorageReplicatedMergeTree::executeLogEntry(LogEntry & entry)
             renameTempPartAndReplace(part, transaction);
             checkPartChecksumsAndCommit(transaction, part);
 
+            auto & thread_status = CurrentThread::get();
+            thread_status.finalizePerformanceCounters();
+            auto profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_status.performance_counters.getPartiallyAtomicSnapshot());
             writePartLog(PartLogElement::Type::NEW_PART, {}, 0 /** log entry is fake so we don't measure the time */,
-                part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr);
+                part->name, part, {} /** log entry is fake so there are no initial parts */, nullptr, profile_counters);
 
             return true;
         }
@@ -4007,9 +4010,12 @@ bool StorageReplicatedMergeTree::fetchPart(
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
+        auto & thread_status = CurrentThread::get();
+        thread_status.finalizePerformanceCounters();
+        auto profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_status.performance_counters.getPartiallyAtomicSnapshot());
         writePartLog(
             PartLogElement::DOWNLOAD_PART, execution_status, stopwatch.elapsed(),
-            part_name, part, replaced_parts, nullptr);
+            part_name, part, replaced_parts, nullptr, profile_counters);
     };
 
     DataPartPtr part_to_clone;
@@ -4243,9 +4249,12 @@ MutableDataPartStoragePtr StorageReplicatedMergeTree::fetchExistsPart(
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
+        auto & thread_status = CurrentThread::get();
+        thread_status.finalizePerformanceCounters();
+        auto profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_status.performance_counters.getPartiallyAtomicSnapshot());
         writePartLog(
             PartLogElement::DOWNLOAD_PART, execution_status, stopwatch.elapsed(),
-            part_name, part, replaced_parts, nullptr);
+            part_name, part, replaced_parts, nullptr, profile_counters);
     };
 
     std::function<MutableDataPartPtr()> get_part;
