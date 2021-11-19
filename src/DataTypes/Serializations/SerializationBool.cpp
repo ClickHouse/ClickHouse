@@ -89,11 +89,11 @@ void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & is
 
         readString(input, istr);
 
-        if (input.compare(settings.bool_true_representation))
+        if (settings.bool_true_representation == input)
         {
             col->insert(true);
         }
-        else if (input.compare(settings.bool_false_representation))
+        else if (settings.bool_false_representation == input)
         {
             col->insert(false);
         }
