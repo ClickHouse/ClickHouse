@@ -4,6 +4,7 @@
 
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
+#include <Storages/MergeTree/TaskObserverMetrics.h>
 
 namespace DB
 {
@@ -33,7 +34,15 @@ public:
     ~ReplicatedMergeMutateTaskBase() override = default;
     void onCompleted() override;
     StorageID getStorageID() override;
+    bool onSuspend() override
+    {
+        return observer.doSuspend();
+    }
     bool executeStep() override;
+    bool onResume() override
+    {
+        return observer.doResume();
+    }
 
 protected:
     using PartLogWriter =  std::function<void(const ExecutionStatus &)>;
@@ -75,6 +84,7 @@ private:
     PartLogWriter part_log_writer{};
     State state{State::NEED_PREPARE};
     IExecutableTask::TaskResultCallback task_result_callback;
+    TaskObserverMetrics observer;
 };
 
 }

@@ -14,6 +14,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/TaskObserverMetrics.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -567,6 +568,11 @@ public:
     StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
+    bool onSuspend() override
+    {
+        return observer.doSuspend();
+    }
+
     bool executeStep() override
     {
         auto & current_level_parts = level_parts[current_level];
@@ -656,6 +662,12 @@ public:
         /// Need execute again
         return true;
     }
+
+    bool onResume() override
+    {
+        return observer.doResume();
+    }
+
 private:
     String name;
     MergeTreeData::MutableDataPartsVector parts;
@@ -671,6 +683,8 @@ private:
 
     /// TODO(nikitamikhaylov): make this constant a setting
     static constexpr size_t max_parts_to_merge_in_one_level = 10;
+
+    TaskObserverMetrics observer;
 };
 
 
@@ -890,6 +904,12 @@ public:
     StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
 
+
+    bool onSuspend() override
+    {
+        return observer.doSuspend();
+    }
+
     bool executeStep() override
     {
         switch (state)
@@ -922,6 +942,11 @@ public:
             }
         }
         return false;
+    }
+
+    bool onResume() override
+    {
+        return observer.doResume();
     }
 
 private:
@@ -1000,6 +1025,8 @@ private:
     MutationContextPtr ctx;
 
     std::unique_ptr<PartMergerWriter> part_merger_writer_task;
+
+    TaskObserverMetrics observer;
 };
 
 class MutateSomePartColumnsTask : public IExecutableTask
@@ -1010,6 +1037,11 @@ public:
     void onCompleted() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     StorageID getStorageID() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
     UInt64 getPriority() override { throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented"); }
+
+    bool onSuspend() override
+    {
+        return observer.doSuspend();
+    }
 
     bool executeStep() override
     {
@@ -1043,6 +1075,11 @@ public:
             }
         }
         return false;
+    }
+
+    bool onResume() override
+    {
+        return observer.doResume();
     }
 
 private:
@@ -1176,6 +1213,7 @@ private:
     MergedColumnOnlyOutputStreamPtr out;
 
     std::unique_ptr<PartMergerWriter> part_merger_writer_task{nullptr};
+    TaskObserverMetrics observer;
 };
 
 
