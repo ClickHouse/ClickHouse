@@ -4539,12 +4539,12 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
 }
 
 
-bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
+std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info) const
 {
     const auto & settings = query_context->getSettingsRef();
     if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query)
-        return false;
+        return std::nullopt;
 
     const auto & query_ptr = query_info.original_query;
 
@@ -4552,16 +4552,16 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     {
         // Currently projections don't support final yet.
         if (select->final())
-            return false;
+            return std::nullopt;
 
         // Currently projections don't support ARRAY JOIN yet.
         if (select->arrayJoinExpressionList().first)
-            return false;
+            return std::nullopt;
     }
 
     // Currently projections don't support sampling yet.
     if (settings.parallel_replicas_count > 1)
-        return false;
+        return std::nullopt;
 
     InterpreterSelectQuery select(
         query_ptr,
@@ -4918,14 +4918,14 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     }
 
     if (!selected_candidate)
-        return false;
+        return std::nullopt;
     else if (min_sum_marks == 0)
     {
         /// If selected_projection indicated an empty result set. Remember it in query_info but
         /// don't use projection to run the query, because projection pipeline with empty result
         /// set will not work correctly with empty_result_for_aggregation_by_empty_set.
         query_info.merge_tree_empty_result = true;
-        return false;
+        return std::nullopt;
     }
 
     if (selected_candidate->desc->type == ProjectionDescription::Type::Aggregate)
@@ -4936,8 +4936,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             = std::make_shared<SubqueriesForSets>(std::move(select.getQueryAnalyzer()->getSubqueriesForSets()));
     }
 
-    query_info.projection = std::move(*selected_candidate);
-    return true;
+    return *selected_candidate;
 }
 
 
@@ -4949,11 +4948,14 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
 {
     if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
     {
-        if (getQueryProcessingStageWithAggregateProjection(query_context, metadata_snapshot, query_info))
+        if (auto projection = getQueryProcessingStageWithAggregateProjection(query_context, metadata_snapshot, query_info))
         {
+            query_info.projection = std::move(projection);
             if (query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
                 return QueryProcessingStage::Enum::WithMergeableState;
         }
+        else
+            query_info.projection = std::nullopt;
     }
 
     return QueryProcessingStage::Enum::FetchColumns;
