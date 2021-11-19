@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int MULTIPLE_STREAMS_REQUIRED;
-    extern const int INCORRECT_DATA;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
