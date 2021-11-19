@@ -27,7 +27,7 @@ class PRInfo:
             self.base_ref = github_event['pull_request']['base']['ref']
             self.base_name = github_event['pull_request']['base']['repo']['full_name']
             self.head_ref = github_event['pull_request']['head']['ref']
-            self.head_name = github_event['pull_request']['base']['head']['full_name']
+            self.head_name = github_event['pull_request']['head']['full_name']
 
             self.labels = { l['name'] for l in github_event['pull_request']['labels'] }
             self.user_login = github_event['pull_request']['user']['login']
