@@ -268,6 +268,7 @@ class ClickHouseCluster:
         self.with_cassandra = False
         self.with_jdbc_bridge = False
         self.with_nginx = False
+        self.with_hive = False
 
         self.with_minio = False
         self.minio_dir = os.path.join(self.instances_dir, "minio")
@@ -767,7 +768,7 @@ class ClickHouseCluster:
                      hostname=None, env_variables=None, image="clickhouse/integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None,
                      zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True,
-                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="clickhouse", other_configs=[]):
+                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="clickhouse", extra_configs=[]):
 
         """Add an instance to the cluster.
 
@@ -777,6 +778,7 @@ class ClickHouseCluster:
         user_configs - a list of config files that will be added to users.d/ directory
         with_zookeeper - if True, add ZooKeeper configuration to configs and ZooKeeper instances to the cluster.
         with_zookeeper_secure - if True, add ZooKeeper Secure configuration to configs and ZooKeeper instances to the cluster.
+        extra_configs - config files cannot put into config.d and users.d
         """
 
         if self.is_up:
@@ -843,7 +845,7 @@ class ClickHouseCluster:
             external_dirs=external_dirs,
             tmpfs=tmpfs or [],
             config_root_name=config_root_name,
-            other_configs = other_configs)
+            extra_configs = extra_configs)
 
         docker_compose_yml_dir = get_docker_compose_path()
 
@@ -1847,7 +1849,7 @@ class ClickHouseInstance:
             main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True,
             hostname=None, env_variables=None,
             image="clickhouse/integration-test", tag="latest",
-            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None, config_root_name="clickhouse", other_configs=[]):
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None, config_root_name="clickhouse", extra_configs=[]):
 
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -1861,7 +1863,7 @@ class ClickHouseInstance:
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
         self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
         self.custom_dictionaries_paths = [p.abspath(p.join(base_path, c)) for c in custom_dictionaries]
-        self.other_custom_config_paths = [p.abspath(p.join(base_path,c)) for c in other_configs]
+        self.custom_extra_config_paths = [p.abspath(p.join(base_path,c)) for c in extra_configs]
         self.clickhouse_path_dir = p.abspath(p.join(base_path, clickhouse_path_dir)) if clickhouse_path_dir else None
         self.kerberos_secrets_dir = p.abspath(p.join(base_path, 'secrets'))
         self.macros = macros if macros is not None else {}
@@ -2395,8 +2397,8 @@ class ClickHouseInstance:
         os.mkdir(users_d_dir)
         dictionaries_dir = p.abspath(p.join(instance_config_dir, 'dictionaries'))
         os.mkdir(dictionaries_dir)
-        other_conf_dir = p.abspath(p.join(instance_config_dir, 'other_conf.d'))
-        os.mkdir(other_conf_dir)
+        extra_conf_dir = p.abspath(p.join(instance_config_dir, 'extra_conf.d'))
+        os.mkdir(extra_conf_dir)
 
         def write_embedded_config(name, dest_dir, fix_log_level=False):
             with open(p.join(HELPERS_DIR, name), 'r') as f:
@@ -2443,8 +2445,8 @@ class ClickHouseInstance:
         # Copy dictionaries configs to configs/dictionaries
         for path in self.custom_dictionaries_paths:
             shutil.copy(path, dictionaries_dir)
-        for path in self.other_custom_config_paths:
-            shutil.copy(path, other_conf_dir)
+        for path in self.custom_extra_config_paths:
+            shutil.copy(path, extra_conf_dir)
 
         db_dir = p.abspath(p.join(self.path, 'database'))
         logging.debug(f"Setup database dir {db_dir}")
