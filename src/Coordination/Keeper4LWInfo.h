@@ -16,6 +16,7 @@ struct Keeper4LWInfo
     bool is_leader;
     bool is_observer;
     bool is_follower;
+    bool is_standalone;
 
     bool has_leader;
 
@@ -30,6 +31,8 @@ struct Keeper4LWInfo
 
     String getRole() const
     {
+        if (is_standalone)
+            return "standalone";
         if (is_leader)
             return "leader";
         if (is_observer)
