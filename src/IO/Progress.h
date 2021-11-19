@@ -117,13 +117,6 @@ struct Progress
     {
         *this = std::move(other);
     }
-
-    Progress & operator=(const Progress & other);
-
-    Progress(const Progress & other)
-    {
-        *this = other;
-    }
 };
 
 

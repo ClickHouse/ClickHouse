@@ -20,7 +20,7 @@ public:
 
     String getName() const override { return "TemplateBlockOutputFormat"; }
 
-    void setRowsBeforeLimit(size_t rows_before_limit_) override { statistics.rows_before_limit = rows_before_limit_; statistics.rows_before_limit = true; }
+    void setRowsBeforeLimit(size_t rows_before_limit_) override { statistics.rows_before_limit = rows_before_limit_; statistics.applied_limit = true; }
     void onProgress(const Progress & progress_) override { statistics.progress.incrementPiecewiseAtomically(progress_); }
 
     enum class ResultsetPart : size_t

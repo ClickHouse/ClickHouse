@@ -42,8 +42,6 @@ void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory)
             sample, params, settings);
     });
 
-    factory.markOutputFormatSupportsParallelFormatting("JSONEachRowWithProgress");
-
     factory.registerOutputFormat("JSONStringsEachRowWithProgress", [](
             WriteBuffer & buf,
             const Block & sample,
@@ -55,8 +53,6 @@ void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory)
         return std::make_shared<JSONEachRowWithProgressRowOutputFormat>(buf,
             sample, params, settings);
     });
-
-    factory.markOutputFormatSupportsParallelFormatting("JSONStringsEachRowWithProgress");
 }
 
 }

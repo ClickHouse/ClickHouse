@@ -53,7 +53,8 @@ namespace DB
         unit.segment.resize(0);
         unit.status = READY_TO_FORMAT;
         unit.type = type;
-        unit.statistics = statistics;
+        if (type == ProcessingUnitType::FINALIZE)
+            unit.statistics = std::move(statistics);
 
         size_t first_row_number = rows_consumed;
         if (unit.type == ProcessingUnitType::PLAIN)
@@ -192,7 +193,6 @@ namespace DB
                 case ProcessingUnitType::TOTALS :
                 {
                     formatter->consumeTotals(std::move(unit.chunk));
-                    are_totals_written = true;
                     break;
                 }
                 case ProcessingUnitType::EXTREMES :
@@ -204,13 +204,8 @@ namespace DB
                 }
                 case ProcessingUnitType::FINALIZE :
                 {
-                    formatter->setOutsideStatistics(unit.statistics);
+                    formatter->setOutsideStatistics(std::move(unit.statistics));
                     formatter->finalizeImpl();
-                    break;
-                }
-                case ProcessingUnitType::ON_PROGRESS :
-                {
-                    formatter->onProgress(unit.statistics.progress);
                     break;
                 }
             }
