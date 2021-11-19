@@ -12,17 +12,6 @@ ClickHouse использует в выражении индексы, если �
 
 Если в секции необходимо проверить [NULL](../../../sql-reference/syntax.md#null-literal), то используйте операторы [IS NULL](../../operators/index.md#operator-is-null) и [IS NOT NULL](../../operators/index.md#is-not-null), а также соответствующие функции `isNull` и `isNotNull`. В противном случае выражение будет считаться всегда не выполненным.
 
-Пример проверки на `NULL`:
-
-``` sql
-SELECT * FROM t_null WHERE y IS NULL
-```
-
-``` text
-┌─x─┬────y─┐
-│ 1 │ ᴺᵁᴸᴸ │
-└───┴──────┘
-```
 
 !!! note "Примечание"
     Существует оптимизация фильтрации под названием [prewhere](prewhere.md).
@@ -43,4 +32,26 @@ SELECT number FROM numbers(20) WHERE (number > 10) AND (number % 3 == 0);
 │     15 │
 │     18 │
 └────────┘
+```
+
+
+Пример проверки на `NULL`:
+
+``` sql
+CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE=MergeTree() ORDER BY x;
+INSERT INTO t_null VALUES (1, NULL), (2, 3);
+
+SELECT * FROM t_null WHERE y IS NULL;
+SELECT * FROM t_null WHERE y != 0;
+```
+
+Результат:
+
+``` text
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+┌─x─┬─y─┐
+│ 2 │ 3 │
+└───┴───┘
 ```
