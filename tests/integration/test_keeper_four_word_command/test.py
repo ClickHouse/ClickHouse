@@ -240,7 +240,7 @@ def test_cmd_srst(started_cluster):
         clear_znodes()
 
         data = send_4lw_cmd(cmd='srst')
-        assert data == "Server stats reset."
+        assert data.strip() == "Server stats reset."
 
         data = send_4lw_cmd(cmd='mntr')
         assert len(data) != 0
