@@ -623,10 +623,10 @@ uint64_t KeeperDispatcher::getSnapDirSize() const
 Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
 {
     Keeper4LWInfo result;
+    result.is_follower = server->isFollower();
     result.is_standalone = !result.is_follower && server->getFollowerCount() == 0;
     result.is_leader = isLeader();
     result.is_observer = server->isObserver();
-    result.is_follower = server->isFollower();
     result.has_leader = hasLeader();
     {
         std::lock_guard lock(push_request_mutex);
