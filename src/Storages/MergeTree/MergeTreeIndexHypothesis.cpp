@@ -104,5 +104,4 @@ void hypothesisIndexValidator(const IndexDescription & index, bool /*attach*/)
         throw Exception("Hypothesis index needs exactly one expression", ErrorCodes::LOGICAL_ERROR);
 }
 
-
 }
