@@ -1555,7 +1555,14 @@ if (ThreadFuzzer::instance().isEffective())
             server.start();
         LOG_INFO(log, "Ready for connections.");
 
-        global_context->startClusterDiscovery();
+        try
+        {
+            global_context->startClusterDiscovery();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Caught exception while starting cluster discovery");
+        }
 
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");

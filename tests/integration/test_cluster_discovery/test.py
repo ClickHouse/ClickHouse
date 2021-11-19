@@ -31,11 +31,11 @@ def check_nodes_count_in_cluster(nodes, expected, cluster_name, *, retries=5):
     assert 1 <= retries <= 6
 
     for retry in range(1, retries + 1):
-        nodes_cnt = [
-            int(node.query(f"SELECT count() FROM system.clusters WHERE cluster = '{cluster_name}'"))
+        nodes_cnt = {
+            node.name: int(node.query(f"SELECT count() FROM system.clusters WHERE cluster = '{cluster_name}'"))
             for node in nodes
-        ]
-        if all(actual == expected for actual in nodes_cnt):
+        }
+        if all(actual == expected for actual in nodes_cnt.values()):
             break
 
         if retry != retries:

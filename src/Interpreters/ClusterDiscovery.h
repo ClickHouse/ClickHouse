@@ -71,7 +71,7 @@ private:
 
     NodesInfo getNodes(zkutil::ZooKeeperPtr & zk, const String & zk_root, const Strings & node_uuids);
 
-    ClusterPtr getCluster(const ClusterInfo & cluster_info);
+    ClusterPtr makeCluster(const ClusterInfo & cluster_info);
 
     bool needUpdate(const Strings & node_uuids, const NodesInfo & nodes);
     bool updateCluster(const String & cluster_name);
