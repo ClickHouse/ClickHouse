@@ -34,6 +34,7 @@ TRUSTED_CONTRIBUTORS = {
     "bharatnc",     # Newbie, but already with many contributions.
     "bobrik",       # Seasoned contributor, CloundFlare
     "BohuTANG",
+    "codyrobert",   # Flickerbox engineer
     "damozhaeva",   # DOCSUP
     "den-crane",
     "gyuton",       # DOCSUP
