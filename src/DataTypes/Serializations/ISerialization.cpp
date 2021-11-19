@@ -16,6 +16,7 @@ namespace ErrorCodes
 {
     extern const int MULTIPLE_STREAMS_REQUIRED;
     extern const int INCORRECT_DATA;
+    extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
 }
 
 String ISerialization::Substream::toString() const
@@ -262,7 +263,7 @@ void ISerialization::throwUnexpectedDataAfterParsedValue(IColumn & column, ReadB
     WriteBufferFromOwnString ostr;
     serializeText(column, column.size() - 1, ostr, settings);
     throw Exception(
-        ErrorCodes::INCORRECT_DATA,
+        ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
         "Unexpected data '{}' after parsed {} value '{}'",
         std::string(istr.position(), std::min(size_t(10), istr.available())),
         type_name,
