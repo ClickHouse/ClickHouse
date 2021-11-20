@@ -514,6 +514,8 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     PullingAsyncPipelineExecutor executor(pipeline);
     Block block;
     BlocksPtr new_blocks = std::make_shared<Blocks>();
+
+    /// TODO: Get rid of this blocks collected in memory...
     while (executor.pull(block))
     {
         if (block.rows() == 0)
@@ -1059,7 +1061,6 @@ ASTPtr StorageWindowView::innerQueryParser(ASTSelectQuery & query)
 
 void StorageWindowView::eventTimeParser(const ASTCreateQuery & query)
 {
-    /// TODO: This is sad that we add a lot of only StorageWindowView related information into ASTCreateQuery... :(
     if (query.is_watermark_strictly_ascending || query.is_watermark_ascending || query.is_watermark_bounded)
     {
         is_proctime = false;
@@ -1119,7 +1120,7 @@ void StorageWindowView::writeIntoWindowView(
                 lateness_bound = watermark_lower_bound;
         }
     }
-    else if (! window_view.is_time_column_func_now)
+    else if (!window_view.is_time_column_func_now)
     {
         lateness_bound = t_max_fired_watermark;
     }

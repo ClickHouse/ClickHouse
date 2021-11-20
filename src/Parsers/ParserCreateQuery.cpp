@@ -805,7 +805,6 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
-
     if (!s_window.ignore(pos, expected))
         return false;
 
@@ -817,7 +816,6 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     if (!table_name_p.parse(pos, table, expected))
         return false;
-
 
     if (ParserKeyword{"ON"}.ignore(pos, expected))
     {
@@ -888,6 +886,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     StorageID table_id = table->as<ASTTableIdentifier>()->getTableId();
     query->database = table_id.database_name;
     query->table = table_id.table_name;
+    query->uuid = table_id.uuid;
     query->cluster = cluster_str;
 
     if (to_table)
