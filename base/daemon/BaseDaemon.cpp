@@ -63,6 +63,9 @@
 #include <Common/Elf.h>
 #include <filesystem>
 
+#include <loggers/OwnFormattingChannel.h>
+#include <loggers/OwnPatternFormatter.h>
+
 #include <Common/config_version.h>
 
 #if defined(OS_DARWIN)
@@ -999,6 +1002,14 @@ void BaseDaemon::setupWatchdog()
             const char * new_process_name = "clickhouse-watchdog";
             memset(argv0, 0, original_process_name.size());
             memcpy(argv0, new_process_name, std::min(strlen(new_process_name), original_process_name.size()));
+        }
+
+        /// If streaming compression of logs is used then we write watchdog logs to cerr
+        if (config().getRawString("logger.stream_compress", "false") == "true")
+        {
+            Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+            Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
+            logger().setChannel(log);
         }
 
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
