@@ -36,6 +36,7 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
+#include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
 #include <filesystem>
