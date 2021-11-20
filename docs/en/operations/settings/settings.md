@@ -4051,7 +4051,7 @@ Default value: `0`.
 
 ## format_capn_proto_enum_comparising_mode {#format-capn-proto-enum-comparising-mode}
 
-Determines how to map ClickHouse `Enum` data type and CapnProto `Enum` data type from schema.
+Determines how to map ClickHouse `Enum` data type and [CapnProto](../../interfaces/formats.md#capnproto) `Enum` data type from schema.
 
 Possible values:
 

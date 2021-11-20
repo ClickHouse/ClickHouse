@@ -3810,7 +3810,7 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 ## format_capn_proto_enum_comparising_mode {#format-capn-proto-enum-comparising-mode}
 
-Определяет, как сопоставить тип данных ClickHouse `Enum` и тип данных `Enum` формата CapnProto из схемы.
+Определяет, как сопоставить тип данных ClickHouse `Enum` и тип данных `Enum` формата [CapnProto](../../interfaces/formats.md#capnproto) из схемы.
 
 Возможные значения:
 
