@@ -225,8 +225,9 @@ namespace detail
 
                     break;
                 }
-                catch (...)
+                catch (const Poco::Exception & e)
                 {
+                    LOG_ERROR(log, "Failed to make HTTP_HEAD request to {}. Error: {}", uri.toString(), e.displayText());
                 }
             }
 
