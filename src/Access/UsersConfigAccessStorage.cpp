@@ -286,14 +286,25 @@ namespace
 
         Poco::Util::AbstractConfiguration::Keys quota_names;
         config.keys("quotas", quota_names);
+
         std::vector<AccessEntityPtr> quotas;
         quotas.reserve(quota_names.size());
+
         for (const auto & quota_name : quota_names)
         {
-            auto it = quota_to_user_ids.find(quota_name);
-            const std::vector<UUID> & quota_users = (it != quota_to_user_ids.end()) ? std::move(it->second) : std::vector<UUID>{};
-            quotas.push_back(parseQuota(config, quota_name, quota_users));
+            try
+            {
+                auto it = quota_to_user_ids.find(quota_name);
+                const std::vector<UUID> & quota_users = (it != quota_to_user_ids.end()) ? std::move(it->second) : std::vector<UUID>{};
+                quotas.push_back(parseQuota(config, quota_name, quota_users));
+            }
+            catch (Exception & e)
+            {
+                e.addMessage(fmt::format("while parsing quota '{}' in users configuration file", quota_name));
+                throw;
+            }
         }
+
         return quotas;
     }
 
@@ -451,11 +462,24 @@ namespace
         const Poco::Util::AbstractConfiguration & config,
         Fn<void(std::string_view)> auto && check_setting_name_function)
     {
-        std::vector<AccessEntityPtr> profiles;
         Poco::Util::AbstractConfiguration::Keys profile_names;
         config.keys("profiles", profile_names);
+
+        std::vector<AccessEntityPtr> profiles;
+        profiles.reserve(profile_names.size());
+
         for (const auto & profile_name : profile_names)
-            profiles.push_back(parseSettingsProfile(config, profile_name, check_setting_name_function));
+        {
+            try
+            {
+                profiles.push_back(parseSettingsProfile(config, profile_name, check_setting_name_function));
+            }
+            catch (Exception & e)
+            {
+                e.addMessage(fmt::format("while parsing profile '{}' in users configuration file", profile_name));
+                throw;
+            }
+        }
 
         return profiles;
     }
@@ -510,16 +534,24 @@ void UsersConfigAccessStorage::setConfig(const Poco::Util::AbstractConfiguration
 
 void UsersConfigAccessStorage::parseFromConfig(const Poco::Util::AbstractConfiguration & config)
 {
-    std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
-    for (const auto & entity : parseUsers(config))
-        all_entities.emplace_back(generateID(*entity), entity);
-    for (const auto & entity : parseQuotas(config))
-        all_entities.emplace_back(generateID(*entity), entity);
-    for (const auto & entity : parseRowPolicies(config))
-        all_entities.emplace_back(generateID(*entity), entity);
-    for (const auto & entity : parseSettingsProfiles(config, check_setting_name_function))
-        all_entities.emplace_back(generateID(*entity), entity);
-    memory_storage.setAll(all_entities);
+    try
+    {
+        std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
+        for (const auto & entity : parseUsers(config))
+            all_entities.emplace_back(generateID(*entity), entity);
+        for (const auto & entity : parseQuotas(config))
+            all_entities.emplace_back(generateID(*entity), entity);
+        for (const auto & entity : parseRowPolicies(config))
+            all_entities.emplace_back(generateID(*entity), entity);
+        for (const auto & entity : parseSettingsProfiles(config, check_setting_name_function))
+            all_entities.emplace_back(generateID(*entity), entity);
+        memory_storage.setAll(all_entities);
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(fmt::format("while loading {}", path.empty() ? "configuration" : ("configuration file " + quoteString(path))));
+        throw;
+    }
 }
 
 void UsersConfigAccessStorage::load(
@@ -528,29 +560,21 @@ void UsersConfigAccessStorage::load(
     const String & preprocessed_dir,
     const zkutil::GetZooKeeper & get_zookeeper_function)
 {
-    try
-    {
-        std::lock_guard lock{load_mutex};
-        path = std::filesystem::path{users_config_path}.lexically_normal();
-        config_reloader.reset();
-        config_reloader = std::make_unique<ConfigReloader>(
-            users_config_path,
-            include_from_path,
-            preprocessed_dir,
-            zkutil::ZooKeeperNodeCache(get_zookeeper_function),
-            std::make_shared<Poco::Event>(),
-            [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, bool /*initial_loading*/)
-            {
-                parseFromConfig(*new_config);
-                Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
-            },
-            /* already_loaded = */ false);
-    }
-    catch (Exception & e)
-    {
-        e.addMessage(fmt::format("while loading configuration file '{}'", users_config_path));
-        throw;
-    }
+    std::lock_guard lock{load_mutex};
+    path = std::filesystem::path{users_config_path}.lexically_normal();
+    config_reloader.reset();
+    config_reloader = std::make_unique<ConfigReloader>(
+        users_config_path,
+        include_from_path,
+        preprocessed_dir,
+        zkutil::ZooKeeperNodeCache(get_zookeeper_function),
+        std::make_shared<Poco::Event>(),
+        [&](Poco::AutoPtr<Poco::Util::AbstractConfiguration> new_config, bool /*initial_loading*/)
+        {
+            parseFromConfig(*new_config);
+            Settings::checkNoSettingNamesAtTopLevel(*new_config, users_config_path);
+        },
+        /* already_loaded = */ false);
 }
 
 void UsersConfigAccessStorage::reload()
