@@ -1,9 +1,6 @@
 #pragma once
 
 #include <Processors/ISimpleTransform.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
-
 
 namespace DB
 {
@@ -18,38 +15,14 @@ public:
         StorageWindowView & storage_,
         const String & window_column_name_,
         UInt32 max_timestamp_,
-        UInt32 lateness_upper_bound_)
-        : ISimpleTransform(header_, header_, true)
-        , block_header(header_)
-        , storage(storage_)
-        , window_column_name(window_column_name_)
-        , max_timestamp(max_timestamp_)
-        , lateness_upper_bound(lateness_upper_bound_)
-        , allowed_lateness(lateness_upper_bound)
-    {
-    }
+        UInt32 lateness_upper_bound_);
 
     String getName() const override { return "WatermarkTransform"; }
 
+    ~WatermarkTransform() override;
+
 protected:
-    void transform(Chunk & chunk) override
-    {
-        auto num_rows = chunk.getNumRows();
-        auto columns = chunk.detachColumns();
-
-        auto column_window_idx = block_header.getPositionByName(window_column_name);
-        const auto & window_column = columns[column_window_idx];
-        const ColumnUInt32::Container & wend_data = static_cast<const ColumnUInt32 &>(*window_column).getData();
-        for (const auto & ts : wend_data)
-        {
-            if (ts > max_watermark)
-                max_watermark = ts;
-            if (allowed_lateness && ts <= lateness_upper_bound)
-                late_signals.insert(ts);
-        }
-
-        chunk.setColumns(std::move(columns), num_rows);
-    }
+    void transform(Chunk & chunk) override;
 
     Block block_header;
 
@@ -63,7 +36,6 @@ protected:
     std::set<UInt32> late_signals;
 
     bool allowed_lateness = false;
-    bool update_timestamp = false;
 };
 
 }

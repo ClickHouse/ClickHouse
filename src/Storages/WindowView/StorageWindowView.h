@@ -15,14 +15,12 @@ class IAST;
 class WindowViewSource;
 using ASTPtr = std::shared_ptr<IAST>;
 
-/// TODO: move to Chunk.h
-using ChunksPtr = std::shared_ptr<Chunks>;
-
 class StorageWindowView final : public shared_ptr_helper<StorageWindowView>, public IStorage, WithContext
 {
     friend struct shared_ptr_helper<StorageWindowView>;
     friend class TimestampTransformation;
     friend class WindowViewSource;
+    friend class WatermarkTransform;
 
 public:
     ~StorageWindowView() override;
@@ -33,6 +31,8 @@ public:
     bool supportsFinal() const override { return true; }
 
     void checkTableCanBeDropped() const override;
+
+    void dropInnerTableIfAny(bool no_delay, ContextPtr context) override;
 
     void drop() override;
 
@@ -65,6 +65,8 @@ public:
     ASTPtr getMergeableQuery() const { return mergeable_query->clone(); }
 
 private:
+    Poco::Logger * log;
+
     ASTPtr mergeable_query;
     ASTPtr final_query;
 
@@ -73,9 +75,10 @@ private:
     bool is_time_column_func_now;
     bool is_tumble; // false if is hop
     std::atomic<bool> shutdown_called{false};
+    bool has_inner_table{true};
     mutable Block sample_block;
     mutable Block mergeable_header;
-    UInt64 clean_interval;
+    UInt64 clean_interval_ms;
     const DateLUTImpl * time_zone = nullptr;
     UInt32 max_timestamp = 0;
     UInt32 max_watermark = 0; // next watermark to fire
@@ -145,9 +148,9 @@ private:
 
     StoragePtr getParentStorage() const;
 
-    StoragePtr & getInnerStorage() const;
+    StoragePtr getInnerStorage() const;
 
-    StoragePtr & getTargetStorage() const;
+    StoragePtr getTargetStorage() const;
 
     Block & getHeader() const;
 
