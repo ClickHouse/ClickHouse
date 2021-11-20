@@ -11,12 +11,12 @@ class WindowViewSource : public SourceWithProgress
 {
 public:
     WindowViewSource(
-        std::shared_ptr<StorageWindowView> storage_,
+        StorageWindowView & storage_,
         const bool has_limit_,
         const UInt64 limit_,
         const UInt64 heartbeat_interval_sec_)
-        : SourceWithProgress(storage_->getHeader())
-        , storage(std::move(storage_))
+        : SourceWithProgress(storage_.getHeader())
+        , storage(storage_)
         , has_limit(has_limit_)
         , limit(limit_)
         , heartbeat_interval_sec(heartbeat_interval_sec_) {}
@@ -30,7 +30,7 @@ public:
     }
 
 protected:
-    Block getHeader() const { return storage->getHeader(); }
+    Block getHeader() const { return storage.getHeader(); }
 
     Chunk generate() override
     {
@@ -45,7 +45,7 @@ protected:
         if (has_limit && num_updates == static_cast<Int64>(limit))
             return Block();
 
-        if (isCancelled() || storage->is_dropped)
+        if (isCancelled() || storage.shutdown_called)
             return Block();
 
         std::unique_lock lock(blocks_mutex);
@@ -58,9 +58,9 @@ protected:
                 return getHeader();
             }
 
-            storage->fire_condition.wait_for(lock, std::chrono::seconds(heartbeat_interval_sec));
+            storage.fire_condition.wait_for(lock, std::chrono::seconds(heartbeat_interval_sec));
 
-            if (isCancelled() || storage->is_dropped)
+            if (isCancelled() || storage.shutdown_called)
             {
                 return Block();
             }
@@ -84,7 +84,7 @@ protected:
     }
 
 private:
-    std::shared_ptr<StorageWindowView> storage;
+    StorageWindowView & storage;
 
     BlocksList blocks;
 
