@@ -62,7 +62,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     getContext()->checkAccess(getRequiredAccess());
     auto table_id = getContext()->resolveStorageID(alter, Context::ResolveOrdinary);
-    query_ptr->as<ASTAlterQuery &>().database = table_id.database_name;
+    query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
 
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (typeid_cast<DatabaseReplicated *>(database.get())
@@ -175,7 +175,7 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 {
     BlockIO res;
     getContext()->checkAccess(getRequiredAccess());
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.database);
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.getDatabase());
     AlterCommands alter_commands;
 
     for (const auto & child : alter.command_list->children)
@@ -215,7 +215,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess() const
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
     for (const auto & child : alter.command_list->children)
-        boost::range::push_back(required_access, getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.database, alter.table));
+        boost::range::push_back(required_access, getRequiredAccessForCommand(child->as<ASTAlterCommand&>(), alter.getDatabase(), alter.getTable()));
     return required_access;
 }
 

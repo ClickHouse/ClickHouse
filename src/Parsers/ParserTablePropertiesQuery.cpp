@@ -24,7 +24,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     ParserKeyword s_view("VIEW");
     ParserKeyword s_dictionary("DICTIONARY");
     ParserToken s_dot(TokenType::Dot);
-    ParserIdentifier name_p;
+    ParserIdentifier name_p(true);
 
     ASTPtr database;
     ASTPtr table;
@@ -110,8 +110,14 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         }
     }
 
-    tryGetIdentifierNameInto(database, query->database);
-    tryGetIdentifierNameInto(table, query->table);
+    query->database = database;
+    query->table = table;
+
+    if (database)
+        query->children.push_back(database);
+
+    if (table)
+        query->children.push_back(table);
 
     node = query;
 
