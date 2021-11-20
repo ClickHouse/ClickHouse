@@ -899,8 +899,8 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->is_window_view = true;
 
     StorageID table_id = table->as<ASTTableIdentifier>()->getTableId();
-    query->database = table_id.database_name;
-    query->table = table_id.table_name;
+    query->setDatabase(table_id.database_name);
+    query->setTable(table_id.table_name);
     query->uuid = table_id.uuid;
     query->cluster = cluster_str;
 
