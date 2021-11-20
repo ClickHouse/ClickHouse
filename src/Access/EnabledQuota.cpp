@@ -20,16 +20,16 @@ struct EnabledQuota::Impl
     [[noreturn]] static void throwQuotaExceed(
         const String & user_name,
         const String & quota_name,
-        ResourceType resource_type,
-        ResourceAmount used,
-        ResourceAmount max,
+        QuotaType quota_type,
+        QuotaValue used,
+        QuotaValue max,
         std::chrono::seconds duration,
         std::chrono::system_clock::time_point end_of_interval)
     {
-        const auto & type_info = Quota::ResourceTypeInfo::get(resource_type);
+        const auto & type_info = QuotaTypeInfo::get(quota_type);
         throw Exception(
             "Quota for user " + backQuote(user_name) + " for " + to_string(duration) + " has been exceeded: "
-                + type_info.outputWithAmount(used) + "/" + type_info.amountToString(max) + ". "
+                + type_info.valueToStringWithName(used) + "/" + type_info.valueToString(max) + ". "
                 + "Interval will end at " + to_string(end_of_interval) + ". " + "Name of quota template: " + backQuote(quota_name),
             ErrorCodes::QUOTA_EXPIRED);
     }
@@ -52,9 +52,7 @@ struct EnabledQuota::Impl
             return end;
         }
 
-        /// We reset counters only if the interval's end has been calculated before.
-        /// If it hasn't we just calculate the interval's end for the first time and don't reset counters yet.
-        bool need_reset_counters = (end_loaded.count() != 0);
+        bool need_reset_counters = false;
 
         do
         {
@@ -66,7 +64,12 @@ struct EnabledQuota::Impl
             UInt64 n = static_cast<UInt64>((current_time - end + duration) / duration);
             end = end + duration * n;
             if (end_of_interval.compare_exchange_strong(end_loaded, end.time_since_epoch()))
+            {
+                /// We reset counters only if the interval's end has been calculated before.
+                /// If it hasn't we just calculate the interval's end for the first time and don't reset counters yet.
+                need_reset_counters = (end_loaded.count() != 0);
                 break;
+            }
             end = std::chrono::system_clock::time_point{end_loaded};
         }
         while (current_time >= end);
@@ -83,15 +86,16 @@ struct EnabledQuota::Impl
     static void used(
         const String & user_name,
         const Intervals & intervals,
-        ResourceType resource_type,
-        ResourceAmount amount,
+        QuotaType quota_type,
+        QuotaValue value,
         std::chrono::system_clock::time_point current_time,
         bool check_exceeded)
     {
         for (const auto & interval : intervals.intervals)
         {
-            ResourceAmount used = (interval.used[resource_type] += amount);
-            ResourceAmount max = interval.max[resource_type];
+            auto quota_type_i = static_cast<size_t>(quota_type);
+            QuotaValue used = (interval.used[quota_type_i] += value);
+            QuotaValue max = interval.max[quota_type_i];
             if (!max)
                 continue;
             if (used > max)
@@ -100,12 +104,12 @@ struct EnabledQuota::Impl
                 auto end_of_interval = getEndOfInterval(interval, current_time, counters_were_reset);
                 if (counters_were_reset)
                 {
-                    used = (interval.used[resource_type] += amount);
+                    used = (interval.used[quota_type_i] += value);
                     if ((used > max) && check_exceeded)
-                        throwQuotaExceed(user_name, intervals.quota_name, resource_type, used, max, interval.duration, end_of_interval);
+                        throwQuotaExceed(user_name, intervals.quota_name, quota_type, used, max, interval.duration, end_of_interval);
                 }
                 else if (check_exceeded)
-                    throwQuotaExceed(user_name, intervals.quota_name, resource_type, used, max, interval.duration, end_of_interval);
+                    throwQuotaExceed(user_name, intervals.quota_name, quota_type, used, max, interval.duration, end_of_interval);
             }
         }
     }
@@ -113,13 +117,14 @@ struct EnabledQuota::Impl
     static void checkExceeded(
         const String & user_name,
         const Intervals & intervals,
-        ResourceType resource_type,
+        QuotaType quota_type,
         std::chrono::system_clock::time_point current_time)
     {
+        auto quota_type_i = static_cast<size_t>(quota_type);
         for (const auto & interval : intervals.intervals)
         {
-            ResourceAmount used = interval.used[resource_type];
-            ResourceAmount max = interval.max[resource_type];
+            QuotaValue used = interval.used[quota_type_i];
+            QuotaValue max = interval.max[quota_type_i];
             if (!max)
                 continue;
             if (used > max)
@@ -127,7 +132,7 @@ struct EnabledQuota::Impl
                 bool counters_were_reset = false;
                 std::chrono::system_clock::time_point end_of_interval = getEndOfInterval(interval, current_time, counters_were_reset);
                 if (!counters_were_reset)
-                    throwQuotaExceed(user_name, intervals.quota_name, resource_type, used, max, interval.duration, end_of_interval);
+                    throwQuotaExceed(user_name, intervals.quota_name, quota_type, used, max, interval.duration, end_of_interval);
             }
         }
     }
@@ -137,18 +142,19 @@ struct EnabledQuota::Impl
         const Intervals & intervals,
         std::chrono::system_clock::time_point current_time)
     {
-        for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
-            checkExceeded(user_name, intervals, resource_type, current_time);
+        for (auto quota_type : collections::range(QuotaType::MAX))
+            checkExceeded(user_name, intervals, quota_type, current_time);
     }
 };
 
 
 EnabledQuota::Interval::Interval()
 {
-    for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
+    for (auto quota_type : collections::range(QuotaType::MAX))
     {
-        used[resource_type].store(0);
-        max[resource_type] = 0;
+        auto quota_type_i = static_cast<size_t>(quota_type);
+        used[quota_type_i].store(0);
+        max[quota_type_i] = 0;
     }
 }
 
@@ -161,10 +167,11 @@ EnabledQuota::Interval & EnabledQuota::Interval::operator =(const Interval & src
     randomize_interval = src.randomize_interval;
     duration = src.duration;
     end_of_interval.store(src.end_of_interval.load());
-    for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
+    for (auto quota_type : collections::range(QuotaType::MAX))
     {
-        max[resource_type] = src.max[resource_type];
-        used[resource_type].store(src.used[resource_type].load());
+        auto quota_type_i = static_cast<size_t>(quota_type);
+        max[quota_type_i] = src.max[quota_type_i];
+        used[quota_type_i].store(src.used[quota_type_i].load());
     }
     return *this;
 }
@@ -187,11 +194,12 @@ std::optional<QuotaUsage> EnabledQuota::Intervals::getUsage(std::chrono::system_
         out.randomize_interval = in.randomize_interval;
         bool counters_were_reset = false;
         out.end_of_interval = Impl::getEndOfInterval(in, current_time, counters_were_reset);
-        for (auto resource_type : collections::range(MAX_RESOURCE_TYPE))
+        for (auto quota_type : collections::range(QuotaType::MAX))
         {
-            if (in.max[resource_type])
-                out.max[resource_type] = in.max[resource_type];
-            out.used[resource_type] = in.used[resource_type];
+            auto quota_type_i = static_cast<size_t>(quota_type);
+            if (in.max[quota_type_i])
+                out.max[quota_type_i] = in.max[quota_type_i];
+            out.used[quota_type_i] = in.used[quota_type_i];
         }
     }
     return usage;
@@ -205,45 +213,45 @@ EnabledQuota::EnabledQuota(const Params & params_) : params(params_)
 EnabledQuota::~EnabledQuota() = default;
 
 
-void EnabledQuota::used(ResourceType resource_type, ResourceAmount amount, bool check_exceeded) const
+void EnabledQuota::used(QuotaType quota_type, QuotaValue value, bool check_exceeded) const
 {
-    used({resource_type, amount}, check_exceeded);
+    used({quota_type, value}, check_exceeded);
 }
 
 
-void EnabledQuota::used(const std::pair<ResourceType, ResourceAmount> & resource, bool check_exceeded) const
+void EnabledQuota::used(const std::pair<QuotaType, QuotaValue> & usage1, bool check_exceeded) const
 {
     auto loaded = intervals.load();
     auto current_time = std::chrono::system_clock::now();
-    Impl::used(getUserName(), *loaded, resource.first, resource.second, current_time, check_exceeded);
+    Impl::used(getUserName(), *loaded, usage1.first, usage1.second, current_time, check_exceeded);
 }
 
 
-void EnabledQuota::used(const std::pair<ResourceType, ResourceAmount> & resource1, const std::pair<ResourceType, ResourceAmount> & resource2, bool check_exceeded) const
+void EnabledQuota::used(const std::pair<QuotaType, QuotaValue> & usage1, const std::pair<QuotaType, QuotaValue> & usage2, bool check_exceeded) const
 {
     auto loaded = intervals.load();
     auto current_time = std::chrono::system_clock::now();
-    Impl::used(getUserName(), *loaded, resource1.first, resource1.second, current_time, check_exceeded);
-    Impl::used(getUserName(), *loaded, resource2.first, resource2.second, current_time, check_exceeded);
+    Impl::used(getUserName(), *loaded, usage1.first, usage1.second, current_time, check_exceeded);
+    Impl::used(getUserName(), *loaded, usage2.first, usage2.second, current_time, check_exceeded);
 }
 
 
-void EnabledQuota::used(const std::pair<ResourceType, ResourceAmount> & resource1, const std::pair<ResourceType, ResourceAmount> & resource2, const std::pair<ResourceType, ResourceAmount> & resource3, bool check_exceeded) const
+void EnabledQuota::used(const std::pair<QuotaType, QuotaValue> & usage1, const std::pair<QuotaType, QuotaValue> & usage2, const std::pair<QuotaType, QuotaValue> & usage3, bool check_exceeded) const
 {
     auto loaded = intervals.load();
     auto current_time = std::chrono::system_clock::now();
-    Impl::used(getUserName(), *loaded, resource1.first, resource1.second, current_time, check_exceeded);
-    Impl::used(getUserName(), *loaded, resource2.first, resource2.second, current_time, check_exceeded);
-    Impl::used(getUserName(), *loaded, resource3.first, resource3.second, current_time, check_exceeded);
+    Impl::used(getUserName(), *loaded, usage1.first, usage1.second, current_time, check_exceeded);
+    Impl::used(getUserName(), *loaded, usage2.first, usage2.second, current_time, check_exceeded);
+    Impl::used(getUserName(), *loaded, usage3.first, usage3.second, current_time, check_exceeded);
 }
 
 
-void EnabledQuota::used(const std::vector<std::pair<ResourceType, ResourceAmount>> & resources, bool check_exceeded) const
+void EnabledQuota::used(const std::vector<std::pair<QuotaType, QuotaValue>> & usages, bool check_exceeded) const
 {
     auto loaded = intervals.load();
     auto current_time = std::chrono::system_clock::now();
-    for (const auto & resource : resources)
-        Impl::used(getUserName(), *loaded, resource.first, resource.second, current_time, check_exceeded);
+    for (const auto & usage : usages)
+        Impl::used(getUserName(), *loaded, usage.first, usage.second, current_time, check_exceeded);
 }
 
 
@@ -254,10 +262,10 @@ void EnabledQuota::checkExceeded() const
 }
 
 
-void EnabledQuota::checkExceeded(ResourceType resource_type) const
+void EnabledQuota::checkExceeded(QuotaType quota_type) const
 {
     auto loaded = intervals.load();
-    Impl::checkExceeded(getUserName(), *loaded, resource_type, std::chrono::system_clock::now());
+    Impl::checkExceeded(getUserName(), *loaded, quota_type, std::chrono::system_clock::now());
 }
 
 
