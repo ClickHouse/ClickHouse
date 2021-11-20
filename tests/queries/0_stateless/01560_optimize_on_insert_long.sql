@@ -1,5 +1,3 @@
--- Tags: long
-
 SELECT 'Replacing Merge Tree';
 DROP TABLE IF EXISTS replacing_merge_tree;
 CREATE TABLE replacing_merge_tree (key UInt32, date Datetime) ENGINE=ReplacingMergeTree() PARTITION BY date ORDER BY key;

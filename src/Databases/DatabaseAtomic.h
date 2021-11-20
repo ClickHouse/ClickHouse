@@ -25,7 +25,7 @@ public:
     String getEngineName() const override { return "Atomic"; }
     UUID getUUID() const override { return db_uuid; }
 
-    void renameDatabase(ContextPtr query_context, const String & new_name) override;
+    void renameDatabase(const String & new_name) override;
 
     void renameTable(
             ContextPtr context,
@@ -45,13 +45,9 @@ public:
 
     void drop(ContextPtr /*context*/) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
 
-    void loadStoredObjects(ContextMutablePtr context, bool force_restore, bool force_attach, bool skip_startup_tables) override;
-
-    void beforeLoadingMetadata(ContextMutablePtr context, bool force_restore, bool force_attach) override;
-
-    void startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach) override;
+    void loadStoredObjects(ContextMutablePtr context, bool has_force_restore_data_flag, bool force_attach) override;
 
     /// Atomic database cannot be detached if there is detached table which still in use
     void assertCanBeDetached(bool cleanup) override;

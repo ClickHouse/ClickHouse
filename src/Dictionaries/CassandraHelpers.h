@@ -1,9 +1,11 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
+#endif
 
 #if USE_CASSANDRA
-#include <cassandra.h>
+#include <cassandra.h> // Y_IGNORE
 #include <utility>
 #include <memory>
 

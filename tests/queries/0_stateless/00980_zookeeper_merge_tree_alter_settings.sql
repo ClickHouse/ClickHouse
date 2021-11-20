@@ -1,6 +1,3 @@
--- Tags: zookeeper, no-replicated-database, no-parallel
--- Tag no-replicated-database: Unsupported type of ALTER query
-
 DROP TABLE IF EXISTS replicated_table_for_alter1;
 DROP TABLE IF EXISTS replicated_table_for_alter2;
 

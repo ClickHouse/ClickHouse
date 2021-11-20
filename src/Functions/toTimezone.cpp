@@ -66,8 +66,7 @@ public:
 
     Monotonicity getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const override
     {
-        const bool b = is_constant_timezone;
-        return { .is_monotonic = b, .is_positive = b, .is_always_monotonic = b };
+        return {is_constant_timezone, is_constant_timezone, is_constant_timezone};
     }
 
 private:

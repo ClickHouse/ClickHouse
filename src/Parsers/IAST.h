@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
@@ -156,8 +156,6 @@ public:
         else
             set(field, child);
     }
-
-    void reset(IAST *& field);
 
     /// Convert to a string.
 

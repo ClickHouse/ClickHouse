@@ -93,7 +93,14 @@ void ColumnFunction::expand(const Filter & mask, bool inverted)
 
 ColumnPtr ColumnFunction::permute(const Permutation & perm, size_t limit) const
 {
-    limit = getLimitForPermutation(size(), perm.size(), limit);
+    if (limit == 0)
+        limit = size_;
+    else
+        limit = std::min(size_, limit);
+
+    if (perm.size() < limit)
+        throw Exception("Size of permutation (" + toString(perm.size()) + ") is less than required ("
+                        + toString(limit) + ")", ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH);
 
     ColumnsWithTypeAndName capture = captured_columns;
     for (auto & column : capture)

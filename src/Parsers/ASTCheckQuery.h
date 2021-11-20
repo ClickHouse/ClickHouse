@@ -12,14 +12,13 @@ struct ASTCheckQuery : public ASTQueryWithTableAndOutput
     ASTPtr partition;
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override { return "CheckQuery" + (delim + getDatabase()) + delim + getTable(); }
+    String getID(char delim) const override { return "CheckQuery" + (delim + database) + delim + table; }
 
     ASTPtr clone() const override
     {
         auto res = std::make_shared<ASTCheckQuery>(*this);
         res->children.clear();
         cloneOutputOptions(*res);
-        cloneTableOptions(*res);
         return res;
     }
 
@@ -33,14 +32,14 @@ protected:
 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "CHECK TABLE " << (settings.hilite ? hilite_none : "");
 
-        if (table)
+        if (!table.empty())
         {
-            if (database)
+            if (!database.empty())
             {
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << backQuoteIfNeed(getDatabase()) << (settings.hilite ? hilite_none : "");
+                settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << backQuoteIfNeed(database) << (settings.hilite ? hilite_none : "");
                 settings.ostr << ".";
             }
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << backQuoteIfNeed(getTable()) << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << backQuoteIfNeed(table) << (settings.hilite ? hilite_none : "");
         }
 
         if (partition)

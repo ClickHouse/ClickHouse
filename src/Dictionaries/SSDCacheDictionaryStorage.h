@@ -11,22 +11,16 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 
-#include <base/unaligned.h>
+#include <common/unaligned.h>
 #include <Common/randomSeed.h>
 #include <Common/Arena.h>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/MemorySanitizer.h>
 #include <Common/HashTable/HashMap.h>
 #include <IO/AIO.h>
-#include <IO/BufferWithOwnMemory.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/ICacheDictionaryStorage.h>
 #include <Dictionaries/DictionaryHelpers.h>
-
-namespace CurrentMetrics
-{
-    extern const Metric Write;
-}
 
 namespace ProfileEvents
 {
@@ -547,13 +541,8 @@ public:
                 file_path,
                 std::to_string(bytes_written));
 
-        #if defined(OS_DARWIN)
         if (::fsync(file.fd) < 0)
             throwFromErrnoWithPath("Cannot fsync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
-        #else
-        if (::fdatasync(file.fd) < 0)
-            throwFromErrnoWithPath("Cannot fdatasync " + file_path, file_path, ErrorCodes::CANNOT_FSYNC);
-        #endif
 
         current_block_index += buffer_size_in_blocks;
 
