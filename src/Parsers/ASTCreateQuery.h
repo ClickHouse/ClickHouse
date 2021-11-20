@@ -65,10 +65,7 @@ public:
     bool is_window_view{false};
     bool is_populate{false};
     bool replace_view{false}; /// CREATE OR REPLACE VIEW
-    bool is_watermark_strictly_ascending{false}; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
-    bool is_watermark_ascending{false}; /// ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
-    bool is_watermark_bounded{false}; /// BOUNDED OUT OF ORDERNESS WATERMARK STRATEGY FOR WINDOW VIEW
-    bool allowed_lateness{false}; /// ALLOWED LATENESS FOR WINDOW VIEW
+
     ASTColumns * columns_list = nullptr;
     ASTExpressionList * tables = nullptr;
 
@@ -89,6 +86,11 @@ public:
 
     std::optional<UInt64> live_view_timeout;    /// For CREATE LIVE VIEW ... WITH TIMEOUT ...
     std::optional<UInt64> live_view_periodic_refresh;    /// For CREATE LIVE VIEW ... WITH [PERIODIC] REFRESH ...
+
+    bool is_watermark_strictly_ascending{false}; /// STRICTLY ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
+    bool is_watermark_ascending{false}; /// ASCENDING WATERMARK STRATEGY FOR WINDOW VIEW
+    bool is_watermark_bounded{false}; /// BOUNDED OUT OF ORDERNESS WATERMARK STRATEGY FOR WINDOW VIEW
+    bool allowed_lateness{false}; /// ALLOWED LATENESS FOR WINDOW VIEW
 
     bool attach_short_syntax{false};
 
