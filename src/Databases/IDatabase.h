@@ -279,7 +279,7 @@ public:
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }
 
-    virtual void renameDatabase(const String & /*new_name*/)
+    virtual void renameDatabase(ContextPtr, const String & /*new_name*/)
     {
         throw Exception(getEngineName() + ": RENAME DATABASE is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
