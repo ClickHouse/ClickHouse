@@ -119,7 +119,7 @@ std::optional<Elf::Section> Elf::findSectionByName(const char * name) const
 
 String Elf::getBuildID() const
 {
-    /// Section headers are the first choice for a not loaded file
+    /// Section headers are the first choice for a debuginfo file
     if (String build_id; iterateSections([&build_id](const Section & section, size_t)
     {
         if (section.header.sh_type == SHT_NOTE)
