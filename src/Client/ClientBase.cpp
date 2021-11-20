@@ -56,6 +56,8 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/CompressionMethod.h>
 #include <Client/InternalTextLogs.h>
+#include <boost/algorithm/string/replace.hpp>
+
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -1328,6 +1330,12 @@ bool ClientBase::processQueryText(const String & text)
     }
 
     return executeMultiQuery(text);
+}
+
+
+String ClientBase::prompt() const
+{
+    return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
 }
 
 
