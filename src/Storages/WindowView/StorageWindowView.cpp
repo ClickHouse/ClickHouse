@@ -362,8 +362,8 @@ ASTPtr StorageWindowView::getCleanupQuery()
     function_equal = makeASTFunction("less", std::make_shared<ASTIdentifier>(window_id_name), std::make_shared<ASTLiteral>(getCleanupBound()));
 
     auto alter_query = std::make_shared<ASTAlterQuery>();
-    alter_query->database = inner_table_id.database_name;
-    alter_query->table = inner_table_id.table_name;
+    alter_query->setDatabase(inner_table_id.database_name);
+    alter_query->setTable(inner_table_id.table_name);
     alter_query->set(alter_query->command_list, std::make_shared<ASTExpressionList>());
     alter_query->alter_object = ASTAlterQuery::AlterObjectType::TABLE;
 
@@ -391,8 +391,8 @@ static void executeDropQuery(ASTDropQuery::Kind kind, ContextPtr global_context,
     if (DatabaseCatalog::instance().tryGetTable(target_table_id, current_context))
     {
         auto drop_query = std::make_shared<ASTDropQuery>();
-        drop_query->database = target_table_id.database_name;
-        drop_query->table = target_table_id.table_name;
+        drop_query->setDatabase(target_table_id.database_name);
+        drop_query->setTable(target_table_id.table_name);
         drop_query->kind = kind;
         drop_query->no_delay = no_delay;
         ASTPtr ast_drop_query = drop_query;
@@ -565,8 +565,8 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(cons
     // std::cerr << fmt::format("getInnerCreateTableQuery. inner_query: {}\n", inner_query->dumpTree());
     /// We will create a query to create an internal table.
     auto inner_create_query = std::make_shared<ASTCreateQuery>();
-    inner_create_query->database = database_name;
-    inner_create_query->table = table_name;
+    inner_create_query->setDatabase(database_name);
+    inner_create_query->setTable(table_name);
 
     auto inner_select_query = std::static_pointer_cast<ASTSelectQuery>(inner_query);
 
@@ -987,7 +987,7 @@ StorageWindowView::StorageWindowView(
         InterpreterCreateQuery create_interpreter(inner_create_query, window_view_context);
         create_interpreter.setInternal(true);
         create_interpreter.execute();
-        inner_storage = DatabaseCatalog::instance().getTable(StorageID(inner_create_query->database, inner_create_query->table), getContext());
+        inner_storage = DatabaseCatalog::instance().getTable(StorageID(inner_create_query->getDatabase(), inner_create_query->getTable()), getContext());
         inner_table_id = inner_storage->getStorageID();
     }
 
