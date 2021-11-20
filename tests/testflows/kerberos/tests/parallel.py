@@ -1,6 +1,12 @@
 from testflows.core import *
 from kerberos.tests.common import *
 from kerberos.requirements.requirements import *
+from multiprocessing.dummy import Pool
+
+import time
+import datetime
+import itertools
+
 
 @TestScenario
 @Requirements(
@@ -22,17 +28,17 @@ def valid_requests_same_credentials(self):
         return cmd(test_select_query(node=ch_nodes[0]))
 
     for i in range(15):
+        pool = Pool(2)
         tasks = []
-        with Pool(2) as pool:
-            with When("I try simultaneous authentication"):
-                tasks.append(pool.submit(helper, (ch_nodes[1].cmd, )))
-                tasks.append(pool.submit(helper, (ch_nodes[2].cmd, )))
-                tasks[0].result(timeout=200)
-                tasks[1].result(timeout=200)
+        with When("I try simultaneous authentication"):
+            tasks.append(pool.apply_async(helper, (ch_nodes[1].cmd, )))
+            tasks.append(pool.apply_async(helper, (ch_nodes[2].cmd, )))
+            tasks[0].wait(timeout=200)
+            tasks[1].wait(timeout=200)
 
-            with Then(f"I expect requests to success"):
-                assert tasks[0].result(timeout=300).output == "kerberos_user", error()
-                assert tasks[1].result(timeout=300).output == "kerberos_user", error()
+        with Then(f"I expect requests to success"):
+            assert tasks[0].get(timeout=300).output == "kerberos_user", error()
+            assert tasks[1].get(timeout=300).output == "kerberos_user", error()
 
 
 @TestScenario
@@ -55,26 +61,26 @@ def valid_requests_different_credentials(self):
         return cmd(test_select_query(node=ch_nodes[0]))
 
     for i in range(15):
-
+        pool = Pool(2)
         tasks = []
-        with Pool(2) as pool:
-            with And("add 2 kerberos users via RBAC"):
-                ch_nodes[0].query("CREATE USER krb1 IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'")
-                ch_nodes[0].query("CREATE USER krb2 IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'")
 
-            with When("I try simultaneous authentication for valid and invalid"):
-                tasks.append(pool.submit(helper, (ch_nodes[1].cmd, )))
-                tasks.append(pool.submit(helper, (ch_nodes[2].cmd, )))
-                tasks[0].result(timeout=200)
-                tasks[1].result(timeout=200)
+        with And("add 2 kerberos users via RBAC"):
+            ch_nodes[0].query("CREATE USER krb1 IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'")
+            ch_nodes[0].query("CREATE USER krb2 IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'")
 
-            with Then(f"I expect have auth failure"):
-                assert tasks[1].result(timeout=300).output == "krb2", error()
-                assert tasks[0].result(timeout=300).output == "krb1", error()
+        with When("I try simultaneous authentication for valid and invalid"):
+            tasks.append(pool.apply_async(helper, (ch_nodes[1].cmd, )))
+            tasks.append(pool.apply_async(helper, (ch_nodes[2].cmd, )))
+            tasks[0].wait(timeout=200)
+            tasks[1].wait(timeout=200)
 
-            with Finally("I make sure both users are removed"):
-                ch_nodes[0].query("DROP USER krb1", no_checks=True)
-                ch_nodes[0].query("DROP USER krb2", no_checks=True)
+        with Then(f"I expect have auth failure"):
+            assert tasks[1].get(timeout=300).output == "krb2", error()
+            assert tasks[0].get(timeout=300).output == "krb1", error()
+
+        with Finally("I make sure both users are removed"):
+            ch_nodes[0].query("DROP USER krb1", no_checks=True)
+            ch_nodes[0].query("DROP USER krb2", no_checks=True)
 
 
 @TestScenario
@@ -97,15 +103,15 @@ def valid_invalid(self):
         return cmd(test_select_query(node=ch_nodes[0]), no_checks=True)
 
     for i in range(15):
+        pool = Pool(2)
         tasks = []
-        with Pool(2) as pool:
-            with When("I try simultaneous authentication for valid and invalid"):
-                tasks.append(pool.submit(helper, (ch_nodes[1].cmd,)))     # invalid
-                tasks.append(pool.submit(helper, (ch_nodes[2].cmd,)))     # valid
+        with When("I try simultaneous authentication for valid and invalid"):
+            tasks.append(pool.apply_async(helper, (ch_nodes[1].cmd, )))     # invalid
+            tasks.append(pool.apply_async(helper, (ch_nodes[2].cmd, )))     # valid
 
-            with Then(f"I expect have auth failure"):
-                assert tasks[1].result(timeout=300).output == "kerberos_user", error()
-                assert tasks[0].result(timeout=300).output != "kerberos_user", error()
+        with Then(f"I expect have auth failure"):
+            assert tasks[1].get(timeout=300).output == "kerberos_user", error()
+            assert tasks[0].get(timeout=300).output != "kerberos_user", error()
 
 
 @TestScenario
@@ -128,27 +134,28 @@ def deletion(self):
         return cmd(test_select_query(node=ch_nodes[0], req=f"DROP USER {todel}"), no_checks=True)
 
     for i in range(15):
+        pool = Pool(2)
         tasks = []
-        with Pool(2) as pool:
-            with And("add 2 kerberos users via RBAC"):
-                ch_nodes[0].query("CREATE USER krb1 IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'")
-                ch_nodes[0].query("CREATE USER krb2 IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'")
-                ch_nodes[0].query("GRANT ACCESS MANAGEMENT ON *.* TO krb1")
-                ch_nodes[0].query("GRANT ACCESS MANAGEMENT ON *.* TO krb2")
+
+        with And("add 2 kerberos users via RBAC"):
+            ch_nodes[0].query("CREATE USER krb1 IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'")
+            ch_nodes[0].query("CREATE USER krb2 IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'")
+            ch_nodes[0].query("GRANT ACCESS MANAGEMENT ON *.* TO krb1")
+            ch_nodes[0].query("GRANT ACCESS MANAGEMENT ON *.* TO krb2")
 
 
-            with When("I try simultaneous authentication for valid and invalid"):
-                tasks.append(pool.submit(helper, (ch_nodes[1].cmd, "krb2")))
-                tasks.append(pool.submit(helper, (ch_nodes[2].cmd, "krb1")))
-                tasks[0].result(timeout=200)
-                tasks[1].result(timeout=200)
+        with When("I try simultaneous authentication for valid and invalid"):
+            tasks.append(pool.apply_async(helper, (ch_nodes[1].cmd, "krb2")))
+            tasks.append(pool.apply_async(helper, (ch_nodes[2].cmd, "krb1")))
+            tasks[0].wait(timeout=200)
+            tasks[1].wait(timeout=200)
 
-            with Then(f"I check CH is alive"):
-                assert ch_nodes[0].query("SELECT 1").output == "1", error()
+        with Then(f"I check CH is alive"):
+            assert ch_nodes[0].query("SELECT 1").output == "1", error()
 
-            with Finally("I make sure both users are removed"):
-                ch_nodes[0].query("DROP USER krb1", no_checks=True)
-                ch_nodes[0].query("DROP USER krb2", no_checks=True)
+        with Finally("I make sure both users are removed"):
+            ch_nodes[0].query("DROP USER krb1", no_checks=True)
+            ch_nodes[0].query("DROP USER krb2", no_checks=True)
 
 
 @TestScenario
@@ -170,15 +177,15 @@ def kerberos_and_nonkerberos(self):
         return cmd(test_select_query(node=ch_nodes[0], krb_auth=krb_auth), no_checks=True)
 
     for i in range(15):
+        pool = Pool(2)
         tasks = []
-        with Pool(2) as pool:
-            with When("I try simultaneous authentication for valid and invalid"):
-                tasks.append(pool.submit(helper, (ch_nodes[1].cmd, False)))  # non-kerberos
-                tasks.append(pool.submit(helper, (ch_nodes[2].cmd, True)))  # kerberos
+        with When("I try simultaneous authentication for valid and invalid"):
+            tasks.append(pool.apply_async(helper, (ch_nodes[1].cmd, False)))  # non-kerberos
+            tasks.append(pool.apply_async(helper, (ch_nodes[2].cmd, True)))  # kerberos
 
-            with Then(f"I expect have auth failure"):
-                assert tasks[1].result(timeout=300).output == "kerberos_user", error()
-                assert tasks[0].result(timeout=300).output == "default", error()
+        with Then(f"I expect have auth failure"):
+            assert tasks[1].get(timeout=300).output == "kerberos_user", error()
+            assert tasks[0].get(timeout=300).output == "default", error()
 
 
 @TestFeature

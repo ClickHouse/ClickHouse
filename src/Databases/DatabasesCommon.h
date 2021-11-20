@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/IAST.h>
 #include <Storages/IStorage_fwd.h>
@@ -12,9 +12,6 @@
 
 namespace DB
 {
-
-void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata);
-ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary, uint32_t max_parser_depth, bool throw_on_error);
 
 class Context;
 
@@ -32,7 +29,7 @@ public:
 
     StoragePtr detachTable(const String & table_name) override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
+    DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) override;
 
     void shutdown() override;
 

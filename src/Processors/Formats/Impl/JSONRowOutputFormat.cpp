@@ -266,9 +266,9 @@ void JSONRowOutputFormat::onProgress(const Progress & value)
 }
 
 
-void registerOutputFormatJSON(FormatFactory & factory)
+void registerOutputFormatProcessorJSON(FormatFactory & factory)
 {
-    factory.registerOutputFormat("JSON", [](
+    factory.registerOutputFormatProcessor("JSON", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -277,7 +277,7 @@ void registerOutputFormatJSON(FormatFactory & factory)
         return std::make_shared<JSONRowOutputFormat>(buf, sample, params, format_settings, false);
     });
 
-    factory.registerOutputFormat("JSONStrings", [](
+    factory.registerOutputFormatProcessor("JSONStrings", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,

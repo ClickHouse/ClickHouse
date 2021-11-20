@@ -1,4 +1,4 @@
-# docker build -t clickhouse/integration-tests-runner .
+# docker build -t yandex/clickhouse-integration-tests-runner .
 FROM ubuntu:20.04
 
 RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
@@ -60,7 +60,7 @@ RUN dockerd --version; docker --version
 RUN python3 -m pip install \
     PyMySQL \
     aerospike==4.0.0 \
-    avro==1.10.2 \
+    avro \
     cassandra-driver \
     confluent-kafka==1.5.0 \
     dict2xml \
@@ -78,7 +78,6 @@ RUN python3 -m pip install \
     pytest \
     pytest-timeout \
     pytest-xdist \
-    pytest-repeat \
     pytz \
     redis \
     tzlocal==2.1 \
@@ -97,8 +96,6 @@ RUN set -x \
   && adduser dockremap dockremap \
   && echo 'dockremap:165536:65536' >> /etc/subuid \
     && echo 'dockremap:165536:65536' >> /etc/subgid
-
-RUN echo '127.0.0.1 localhost test.com' >> /etc/hosts
 
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]

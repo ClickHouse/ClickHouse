@@ -161,9 +161,9 @@ void VerticalRowOutputFormat::writeSpecialRow(const Columns & columns, size_t ro
     }
 }
 
-void registerOutputFormatVertical(FormatFactory & factory)
+void registerOutputFormatProcessorVertical(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Vertical", [](
+    factory.registerOutputFormatProcessor("Vertical", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,

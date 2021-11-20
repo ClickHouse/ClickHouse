@@ -19,17 +19,17 @@ Table array int avg
 0
 2
 Table array decimal min
-1
-0
-1
+1.00000000
+0.00000000
+1.00000000
 Table array decimal max
-6
-0
-3
+6.00000000
+0.00000000
+3.00000000
 Table array decimal sum
-21
-0
-6
+21.00000000
+0.00000000
+6.00000000
 Table array decimal avg
 3.5
 0

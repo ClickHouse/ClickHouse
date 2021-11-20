@@ -1045,7 +1045,6 @@ a
 
 mapPopulateSeries_with_Int128_on_a_table = r"""
 a
-([1,2,3,4,5],[1,2,3,0,0])
 """
 
 mapContains_with_Int128_on_a_table = r"""
@@ -1576,7 +1575,6 @@ a
 
 mapPopulateSeries_with_Int256_on_a_table = r"""
 a
-([1,2,3,4,5],[1,2,3,0,0])
 """
 
 mapContains_with_Int256_on_a_table = r"""
@@ -2107,7 +2105,6 @@ a
 
 mapPopulateSeries_with_UInt128_on_a_table = r"""
 a
-([1,2,3,4,5],[1,2,3,0,0])
 """
 
 mapContains_with_UInt128_on_a_table = r"""
@@ -2638,7 +2635,6 @@ a
 
 mapPopulateSeries_with_UInt256_on_a_table = r"""
 a
-([1,2,3,4,5],[1,2,3,0,0])
 """
 
 mapContains_with_UInt256_on_a_table = r"""

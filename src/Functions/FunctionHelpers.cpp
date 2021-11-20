@@ -224,17 +224,12 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments)
     return {nested_columns, offsets->data()};
 }
 
-bool areTypesEqual(const IDataType & lhs, const IDataType & rhs)
-{
-    const auto & lhs_name = lhs.getName();
-    const auto & rhs_name = rhs.getName();
-
-    return lhs_name == rhs_name;
-}
-
 bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs)
 {
-    return areTypesEqual(*lhs, *rhs);
+    const auto & lhs_name = lhs->getName();
+    const auto & rhs_name = rhs->getName();
+
+    return lhs_name == rhs_name;
 }
 
 ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count)
@@ -306,16 +301,6 @@ NullPresence getNullPresense(const ColumnsWithTypeAndName & args)
     }
 
     return res;
-}
-
-bool isDecimalOrNullableDecimal(const DataTypePtr & type)
-{
-    WhichDataType which(type);
-    if (which.isDecimal())
-        return true;
-    if (!which.isNullable())
-        return false;
-    return isDecimal(assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
 }
 
 }

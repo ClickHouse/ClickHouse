@@ -36,7 +36,7 @@ is_blocked:            1
 error_count:           0
 data_files:            1
 data_compressed_bytes: 499
-last_exception:
+last_exception:        
 ```
 
 **Смотрите также**

@@ -55,9 +55,9 @@ void MarkdownRowOutputFormat::writeField(const IColumn & column, const ISerializ
     serialization.serializeTextEscaped(column, row_num, out, format_settings);
 }
 
-void registerOutputFormatMarkdown(FormatFactory & factory)
+void registerOutputFormatProcessorMarkdown(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Markdown", [](
+    factory.registerOutputFormatProcessor("Markdown", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,

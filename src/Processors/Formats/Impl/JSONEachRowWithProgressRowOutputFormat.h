@@ -9,12 +9,11 @@ class JSONEachRowWithProgressRowOutputFormat : public JSONEachRowRowOutputFormat
 public:
     using JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat;
 
+    void writeRowStartDelimiter() override;
+    void writeRowEndDelimiter() override;
     void onProgress(const Progress & value) override;
 
 private:
-    void writeRowStartDelimiter() override;
-    void writeRowEndDelimiter() override;
-
     Progress progress;
 };
 

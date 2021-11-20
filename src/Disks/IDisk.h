@@ -1,14 +1,12 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/Context.h>
 #include <Core/Defines.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Disks/Executor.h>
 #include <Disks/DiskType.h>
-#include <IO/ReadSettings.h>
 
 #include <memory>
 #include <mutex>
@@ -16,21 +14,17 @@
 #include <boost/noncopyable.hpp>
 #include <Poco/Timestamp.h>
 #include <filesystem>
-
+#include "Poco/Util/AbstractConfiguration.h"
 
 namespace fs = std::filesystem;
 
-namespace Poco
+namespace CurrentMetrics
 {
-    namespace Util
-    {
-        class AbstractConfiguration;
-    }
+extern const Metric DiskSpaceReservedForMerge;
 }
 
 namespace DB
 {
-
 class IDiskDirectoryIterator;
 using DiskDirectoryIteratorPtr = std::unique_ptr<IDiskDirectoryIterator>;
 
@@ -160,8 +154,11 @@ public:
     /// Open the file for read and return ReadBufferFromFileBase object.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        const ReadSettings & settings = ReadSettings{},
-        std::optional<size_t> size = {}) const = 0;
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        size_t estimated_size = 0,
+        size_t aio_threshold = 0,
+        size_t mmap_threshold = 0,
+        MMappedFileCache * mmap_cache = nullptr) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
@@ -212,16 +209,7 @@ public:
     virtual void truncateFile(const String & path, size_t size);
 
     /// Return disk type - "local", "s3", etc.
-    virtual DiskType getType() const = 0;
-
-    /// Involves network interaction.
-    virtual bool isRemote() const = 0;
-
-    /// Whether this disk support zero-copy replication.
-    /// Overrode in remote fs disks.
-    virtual bool supportZeroCopyReplication() const = 0;
-
-    virtual bool isReadOnly() const { return false; }
+    virtual DiskType::Type getType() const = 0;
 
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
@@ -229,13 +217,13 @@ public:
     /// Performs action on disk startup.
     virtual void startup() {}
 
-    /// Return some uniq string for file, overrode for IDiskRemote
-    /// Required for distinguish different copies of the same part on remote disk
+    /// Return some uniq string for file, overrode for S3
+    /// Required for distinguish different copies of the same part on S3
     virtual String getUniqueId(const String & path) const { return path; }
 
     /// Check file exists and ClickHouse has an access to it
-    /// Overrode in remote FS disks (s3/hdfs)
-    /// Required for remote disk to ensure that replica has access to data written by other node
+    /// Overrode in DiskS3
+    /// Required for S3 to ensure that replica has access to data written by other node
     virtual bool checkUniqueId(const String & id) const { return exists(id); }
 
     /// Invoked on partitions freeze query.
@@ -245,18 +233,13 @@ public:
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
 
     /// Applies new settings for disk in runtime.
-    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) {}
+    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr) {}
 
 protected:
     friend class DiskDecorator;
 
     /// Returns executor to perform asynchronous operations.
     virtual Executor & getExecutor() { return *executor; }
-
-    /// Base implementation of the function copy().
-    /// It just opens two files, reads data by portions from the first file, and writes it to the second one.
-    /// A derived class may override copy() to provide a faster implementation.
-    void copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path);
 
 private:
     std::unique_ptr<Executor> executor;

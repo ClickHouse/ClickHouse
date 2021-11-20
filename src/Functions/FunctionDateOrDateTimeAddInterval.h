@@ -1,8 +1,7 @@
 #pragma once
-#include <base/DateLUTImpl.h>
+#include <common/DateLUTImpl.h>
 
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 
@@ -51,11 +50,7 @@ struct AddSecondsImpl
     {
         return t + delta;
     }
-    static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
-    {
-        // use default datetime64 scale
-        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta) * 1000;
-    }
+
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.fromDayNum(ExtendedDayNum(d)) + delta;
@@ -76,11 +71,7 @@ struct AddMinutesImpl
     {
         return t + delta * 60;
     }
-    static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
-    {
-        // use default datetime64 scale
-        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 60) * 1000;
-    }
+
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 60;
@@ -100,11 +91,7 @@ struct AddHoursImpl
     {
         return t + delta * 3600;
     }
-    static inline NO_SANITIZE_UNDEFINED Int64 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
-    {
-        // use default datetime64 scale
-        return (time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 3600) * 1000;
-    }
+
     static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.fromDayNum(ExtendedDayNum(d)) + delta * 3600;
@@ -130,11 +117,6 @@ struct AddDaysImpl
     {
         return d + delta;
     }
-
-    static inline NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int64 delta, const DateLUTImpl &)
-    {
-        return d + delta;
-    }
 };
 
 struct AddWeeksImpl
@@ -142,22 +124,17 @@ struct AddWeeksImpl
     static constexpr auto name = "addWeeks";
 
     static inline NO_SANITIZE_UNDEFINED DecimalUtils::DecimalComponents<DateTime64>
-    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int32 delta, const DateLUTImpl & time_zone)
+    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl & time_zone)
     {
         return {time_zone.addWeeks(t.whole, delta), t.fractional};
     }
 
-    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int32 delta, const DateLUTImpl & time_zone)
+    static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.addWeeks(t, delta);
     }
 
-    static inline NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int32 delta, const DateLUTImpl &)
-    {
-        return d + delta * 7;
-    }
-
-    static inline NO_SANITIZE_UNDEFINED Int32 execute(Int32 d, Int32 delta, const DateLUTImpl &)
+    static inline NO_SANITIZE_UNDEFINED UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl &)
     {
         return d + delta * 7;
     }
@@ -182,11 +159,6 @@ struct AddMonthsImpl
     {
         return time_zone.addMonths(ExtendedDayNum(d), delta);
     }
-
-    static inline Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
-    {
-        return time_zone.addMonths(ExtendedDayNum(d), delta);
-    }
 };
 
 struct AddQuartersImpl
@@ -194,22 +166,17 @@ struct AddQuartersImpl
     static constexpr auto name = "addQuarters";
 
     static inline DecimalUtils::DecimalComponents<DateTime64>
-    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int32 delta, const DateLUTImpl & time_zone)
+    execute(DecimalUtils::DecimalComponents<DateTime64> t, Int64 delta, const DateLUTImpl & time_zone)
     {
         return {time_zone.addQuarters(t.whole, delta), t.fractional};
     }
 
-    static inline UInt32 execute(UInt32 t, Int32 delta, const DateLUTImpl & time_zone)
+    static inline UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.addQuarters(t, delta);
     }
 
-    static inline UInt16 execute(UInt16 d, Int32 delta, const DateLUTImpl & time_zone)
-    {
-        return time_zone.addQuarters(ExtendedDayNum(d), delta);
-    }
-
-    static inline Int32 execute(Int32 d, Int32 delta, const DateLUTImpl & time_zone)
+    static inline UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.addQuarters(ExtendedDayNum(d), delta);
     }
@@ -231,11 +198,6 @@ struct AddYearsImpl
     }
 
     static inline UInt16 execute(UInt16 d, Int64 delta, const DateLUTImpl & time_zone)
-    {
-        return time_zone.addYears(ExtendedDayNum(d), delta);
-    }
-
-    static inline Int32 execute(Int32 d, Int64 delta, const DateLUTImpl & time_zone)
     {
         return time_zone.addYears(ExtendedDayNum(d), delta);
     }
@@ -380,7 +342,7 @@ template <typename FieldType> struct ResultDataTypeMap {};
 template <> struct ResultDataTypeMap<UInt16>     { using ResultDataType = DataTypeDate; };
 template <> struct ResultDataTypeMap<Int16>      { using ResultDataType = DataTypeDate; };
 template <> struct ResultDataTypeMap<UInt32>     { using ResultDataType = DataTypeDateTime; };
-template <> struct ResultDataTypeMap<Int32>      { using ResultDataType = DataTypeDate32; };
+template <> struct ResultDataTypeMap<Int32>      { using ResultDataType = DataTypeDateTime; };
 template <> struct ResultDataTypeMap<DateTime64> { using ResultDataType = DataTypeDateTime64; };
 template <> struct ResultDataTypeMap<Int64>      { using ResultDataType = DataTypeDateTime64; };
 }
@@ -399,7 +361,6 @@ public:
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -414,7 +375,7 @@ public:
 
         if (arguments.size() == 2)
         {
-            if (!isDate(arguments[0].type) && !isDate32(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
+            if (!isDate(arguments[0].type) && !isDateTime(arguments[0].type) && !isDateTime64(arguments[0].type))
                 throw Exception{"Illegal type " + arguments[0].type->getName() + " of first argument of function " + getName() +
                     ". Should be a date or a date with time", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT};
         }
@@ -437,8 +398,6 @@ public:
         {
             case TypeIndex::Date:
                 return resolveReturnType<DataTypeDate>(arguments);
-            case TypeIndex::Date32:
-                return resolveReturnType<DataTypeDate32>(arguments);
             case TypeIndex::DateTime:
                 return resolveReturnType<DataTypeDateTime>(arguments);
             case TypeIndex::DateTime64:
@@ -478,23 +437,16 @@ public:
 
         if constexpr (std::is_same_v<ResultDataType, DataTypeDate>)
             return std::make_shared<DataTypeDate>();
-        else if constexpr (std::is_same_v<ResultDataType, DataTypeDate32>)
-            return std::make_shared<DataTypeDate32>();
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
         {
             return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
         }
         else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
         {
-            if (typeid_cast<const DataTypeDateTime64 *>(arguments[0].type.get()))
-            {
-                const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type);
-                return std::make_shared<DataTypeDateTime64>(datetime64_type.getScale(), extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
-            }
-            else
-            {
-                return std::make_shared<DataTypeDateTime64>(DataTypeDateTime64::default_scale, extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
-            }
+            // TODO (vnemkov): what if there is an overload of Transform::execute() that returns DateTime64 from DateTime or Date ?
+            // Shall we use the default scale or one from optional argument ?
+            const auto & datetime64_type = assert_cast<const DataTypeDateTime64 &>(*arguments[0].type);
+            return std::make_shared<DataTypeDateTime64>(datetime64_type.getScale(), extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
         }
         else
         {
@@ -516,11 +468,6 @@ public:
         if (which.isDate())
         {
             return DateTimeAddIntervalImpl<DataTypeDate, TransformResultDataType<DataTypeDate>, Transform>::execute(
-                Transform{}, arguments, result_type);
-        }
-        else if (which.isDate32())
-        {
-            return DateTimeAddIntervalImpl<DataTypeDate32, TransformResultDataType<DataTypeDate32>, Transform>::execute(
                 Transform{}, arguments, result_type);
         }
         else if (which.isDateTime())

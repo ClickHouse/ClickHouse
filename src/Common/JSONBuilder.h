@@ -33,7 +33,7 @@ using ItemPtr = std::unique_ptr<IItem>;
 class JSONString : public IItem
 {
 public:
-    JSONString(std::string_view value_) : value(value_) {}
+    explicit JSONString(std::string value_) : value(std::move(value_)) {}
     void format(const FormatSettings & settings, FormatContext & context) override;
 
 private:
@@ -94,10 +94,9 @@ class JSONMap : public IItem
     };
 
 public:
-    void add(std::string key, ItemPtr value) { values.emplace_back(Pair{.key = std::move(key), .value = std::move(value)}); } //-V1030
+    void add(std::string key, ItemPtr value) { values.emplace_back(Pair{.key = std::move(key), .value = std::move(value)}); }
     void add(std::string key, std::string value) { add(std::move(key), std::make_unique<JSONString>(std::move(value))); }
     void add(std::string key, const char * value) { add(std::move(key), std::make_unique<JSONString>(value)); }
-    void add(std::string key, std::string_view value) { add(std::move(key), std::make_unique<JSONString>(value)); }
     void add(std::string key, bool value) { add(std::move(key), std::make_unique<JSONBool>(std::move(value))); }
 
     template <typename T, std::enable_if_t<std::is_arithmetic<T>::value, bool> = true>

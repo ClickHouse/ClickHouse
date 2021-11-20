@@ -31,8 +31,13 @@ void MySQLOutputFormat::setContext(ContextPtr context_)
     context = context_;
 }
 
-void MySQLOutputFormat::writePrefix()
+void MySQLOutputFormat::initialize()
 {
+    if (initialized)
+        return;
+
+    initialized = true;
+
     const auto & header = getPort(PortKind::Main).getHeader();
     data_types = header.getDataTypes();
 
@@ -59,8 +64,11 @@ void MySQLOutputFormat::writePrefix()
     }
 }
 
+
 void MySQLOutputFormat::consume(Chunk chunk)
 {
+    initialize();
+
     for (size_t i = 0; i < chunk.getNumRows(); i++)
     {
         ProtocolText::ResultSetRow row_packet(serializations, chunk.getColumns(), i);
@@ -68,7 +76,7 @@ void MySQLOutputFormat::consume(Chunk chunk)
     }
 }
 
-void MySQLOutputFormat::finalizeImpl()
+void MySQLOutputFormat::finalize()
 {
     size_t affected_rows = 0;
     std::string human_readable_info;
@@ -98,9 +106,9 @@ void MySQLOutputFormat::flush()
     packet_endpoint->out->next();
 }
 
-void registerOutputFormatMySQLWire(FormatFactory & factory)
+void registerOutputFormatProcessorMySQLWire(FormatFactory & factory)
 {
-    factory.registerOutputFormat(
+    factory.registerOutputFormatProcessor(
         "MySQLWire",
         [](WriteBuffer & buf,
            const Block & sample,

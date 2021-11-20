@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-tsan, no-asan, no-ubsan, no-msan, no-parallel, no-fasttest
-# Tag no-tsan: requires jemalloc to track small allocations
-# Tag no-asan: requires jemalloc to track small allocations
-# Tag no-ubsan: requires jemalloc to track small allocations
-# Tag no-msan: requires jemalloc to track small allocations
 
 #
 # Regression for INSERT SELECT, that abnormally terminates the server

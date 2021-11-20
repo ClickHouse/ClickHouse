@@ -12,11 +12,6 @@
 #include <unistd.h>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric DiskSpaceReservedForMerge;
-}
-
 namespace DB
 {
 
@@ -35,56 +30,6 @@ std::mutex DiskLocal::reservation_mutex;
 
 
 using DiskLocalPtr = std::shared_ptr<DiskLocal>;
-
-static void loadDiskLocalConfig(const String & name,
-                      const Poco::Util::AbstractConfiguration & config,
-                      const String & config_prefix,
-                      ContextPtr context,
-                      String & path,
-                      UInt64 & keep_free_space_bytes)
-{
-    path = config.getString(config_prefix + ".path", "");
-    if (name == "default")
-    {
-        if (!path.empty())
-            throw Exception(
-                "\"default\" disk path should be provided in <path> not it <storage_configuration>",
-                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-        path = context->getPath();
-    }
-    else
-    {
-        if (path.empty())
-            throw Exception("Disk path can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-        if (path.back() != '/')
-            throw Exception("Disk path must end with /. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-    }
-
-    if (!FS::canRead(path) || !FS::canWrite(path))
-        throw Exception("There is no RW access to the disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
-
-    bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
-
-    if (config.has(config_prefix + ".keep_free_space_bytes") && has_space_ratio)
-        throw Exception(
-            "Only one of 'keep_free_space_bytes' and 'keep_free_space_ratio' can be specified",
-            ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-
-    keep_free_space_bytes = config.getUInt64(config_prefix + ".keep_free_space_bytes", 0);
-
-    if (has_space_ratio)
-    {
-        auto ratio = config.getDouble(config_prefix + ".keep_free_space_ratio");
-        if (ratio < 0 || ratio > 1)
-            throw Exception("'keep_free_space_ratio' have to be between 0 and 1", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
-        String tmp_path = path;
-        if (tmp_path.empty())
-            tmp_path = context->getPath();
-
-        // Create tmp disk for getting total disk space.
-        keep_free_space_bytes = static_cast<UInt64>(DiskLocal("tmp", tmp_path, 0).getTotalSpace() * ratio);
-    }
-}
 
 class DiskLocalReservation : public IReservation
 {
@@ -111,11 +56,10 @@ private:
 };
 
 
-class DiskLocalDirectoryIterator final : public IDiskDirectoryIterator
+class DiskLocalDirectoryIterator : public IDiskDirectoryIterator
 {
 public:
-    DiskLocalDirectoryIterator() = default;
-    DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_)
+    explicit DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_)
         : dir_path(dir_path_), entry(fs::path(disk_path_) / dir_path_)
     {
     }
@@ -178,7 +122,7 @@ UInt64 DiskLocal::getTotalSpace() const
         fs = getStatVFS((fs::path(disk_path) / "data/").string());
     else
         fs = getStatVFS(disk_path);
-    UInt64 total_size = fs.f_blocks * fs.f_frsize;
+    UInt64 total_size = fs.f_blocks * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
     return total_size - keep_free_space_bytes;
@@ -193,7 +137,7 @@ UInt64 DiskLocal::getAvailableSpace() const
         fs = getStatVFS((fs::path(disk_path) / "data/").string());
     else
         fs = getStatVFS(disk_path);
-    UInt64 total_size = fs.f_bavail * fs.f_frsize;
+    UInt64 total_size = fs.f_bavail * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
     return total_size - keep_free_space_bytes;
@@ -250,11 +194,7 @@ void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
 
 DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 {
-    fs::path meta_path = fs::path(disk_path) / path;
-    if (fs::exists(meta_path) && fs::is_directory(meta_path))
-        return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
-    else
-        return std::make_unique<DiskLocalDirectoryIterator>();
+    return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
 }
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)
@@ -269,9 +209,11 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
     fs::rename(from_file, to_file);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> size) const
+std::unique_ptr<ReadBufferFromFileBase>
+DiskLocal::readFile(
+    const String & path, size_t buf_size, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, MMappedFileCache * mmap_cache) const
 {
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, size);
+    return createReadBufferFromFileBase(fs::path(disk_path) / path, estimated_size, aio_threshold, mmap_threshold, mmap_cache, buf_size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -367,27 +309,12 @@ void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to
         fs::copy(from, to, fs::copy_options::recursive | fs::copy_options::overwrite_existing); /// Use more optimal way.
     }
     else
-        copyThroughBuffers(from_path, to_disk, to_path); /// Base implementation.
+        IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
 }
 
 SyncGuardPtr DiskLocal::getDirectorySyncGuard(const String & path) const
 {
     return std::make_unique<LocalDirectorySyncGuard>(fs::path(disk_path) / path);
-}
-
-
-void DiskLocal::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap &)
-{
-    String new_disk_path;
-    UInt64 new_keep_free_space_bytes;
-
-    loadDiskLocalConfig(name, config, config_prefix, context, new_disk_path, new_keep_free_space_bytes);
-
-    if (disk_path != new_disk_path)
-        throw Exception("Disk path can't be updated from config " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
-
-    if (keep_free_space_bytes != new_keep_free_space_bytes)
-        keep_free_space_bytes = new_keep_free_space_bytes;
 }
 
 DiskPtr DiskLocalReservation::getDisk(size_t i) const
@@ -406,6 +333,7 @@ void DiskLocalReservation::update(UInt64 new_size)
     size = new_size;
     disk->reserved_bytes += size;
 }
+
 
 DiskLocalReservation::~DiskLocalReservation()
 {
@@ -439,11 +367,49 @@ void registerDiskLocal(DiskFactory & factory)
     auto creator = [](const String & name,
                       const Poco::Util::AbstractConfiguration & config,
                       const String & config_prefix,
-                      ContextPtr context,
-                      const DisksMap & /*map*/) -> DiskPtr {
-        String path;
-        UInt64 keep_free_space_bytes;
-        loadDiskLocalConfig(name, config, config_prefix, context, path, keep_free_space_bytes);
+                      ContextPtr context) -> DiskPtr {
+        String path = config.getString(config_prefix + ".path", "");
+        if (name == "default")
+        {
+            if (!path.empty())
+                throw Exception(
+                    "\"default\" disk path should be provided in <path> not it <storage_configuration>",
+                    ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            path = context->getPath();
+        }
+        else
+        {
+            if (path.empty())
+                throw Exception("Disk path can not be empty. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            if (path.back() != '/')
+                throw Exception("Disk path must end with /. Disk " + name, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        }
+
+        if (!FS::canRead(path) || !FS::canWrite(path))
+            throw Exception("There is no RW access to the disk " + name + " (" + path + ")", ErrorCodes::PATH_ACCESS_DENIED);
+
+        bool has_space_ratio = config.has(config_prefix + ".keep_free_space_ratio");
+
+        if (config.has(config_prefix + ".keep_free_space_bytes") && has_space_ratio)
+            throw Exception(
+                "Only one of 'keep_free_space_bytes' and 'keep_free_space_ratio' can be specified",
+                ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+
+        UInt64 keep_free_space_bytes = config.getUInt64(config_prefix + ".keep_free_space_bytes", 0);
+
+        if (has_space_ratio)
+        {
+            auto ratio = config.getDouble(config_prefix + ".keep_free_space_ratio");
+            if (ratio < 0 || ratio > 1)
+                throw Exception("'keep_free_space_ratio' have to be between 0 and 1", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
+            String tmp_path = path;
+            if (tmp_path.empty())
+                tmp_path = context->getPath();
+
+            // Create tmp disk for getting total disk space.
+            keep_free_space_bytes = static_cast<UInt64>(DiskLocal("tmp", tmp_path, 0).getTotalSpace() * ratio);
+        }
+
         return std::make_shared<DiskLocal>(name, path, keep_free_space_bytes);
     };
     factory.registerDiskType("local", creator);
