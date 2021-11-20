@@ -12,7 +12,6 @@ Example of a polygon dictionary configuration:
 
 ``` xml
 <dictionary>
-    ...
     <structure>
         <key>
             <name>key</name>
@@ -38,6 +37,7 @@ Example of a polygon dictionary configuration:
         </polygon>
     </layout>
 
+    ...
 </dictionary>
 ```
 
