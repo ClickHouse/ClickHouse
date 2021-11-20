@@ -12,7 +12,6 @@ toc_title: Cловари полигонов
 
 ``` xml
 <dictionary>
-    ...
     <structure>
         <key>
             <name>key</name>
@@ -39,6 +38,7 @@ toc_title: Cловари полигонов
         </polygon>
     </layout>
 
+    ...
 </dictionary>
 ```
 
