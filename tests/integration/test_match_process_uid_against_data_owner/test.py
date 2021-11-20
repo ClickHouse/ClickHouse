@@ -1,38 +1,40 @@
 import os
 import pwd
 import re
+
+import docker
 import pytest
-from helpers.cluster import ClickHouseCluster
-
-cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', stay_alive=True)
-other_user_id = pwd.getpwnam('nobody').pw_uid
-current_user_id = os.getuid()
-
-@pytest.fixture(scope="module", autouse=True)
-def started_cluster():
-    try:
-        if current_user_id != 0:
-            return
-
-        cluster.start()
-        yield cluster
-
-    finally:
-        cluster.shutdown(ignore_fatal=True)
+from helpers.cluster import ClickHouseCluster, CLICKHOUSE_START_COMMAND
 
 
-def test_different_user(started_cluster):
-    with pytest.raises(Exception):
-        node.stop_clickhouse()
-        node.exec_in_container(["bash", "-c", f"chown {other_user_id} /var/lib/clickhouse"], privileged=True)
-        node.start_clickhouse(start_wait_sec=3)
+def test_different_user():
+    current_user_id = os.getuid()
 
-    log = node.grep_in_log("Effective")
-    expected_message = "Effective user of the process \(.*\) does not match the owner of the data \(.*\)\. Run under 'sudo -u .*'\."
-    if re.search(expected_message, log) is None:
-        pytest.fail(
-            'Expected the server to fail with a message "{}", but the last message is "{}"'.format(expected_message, log))
-    node.exec_in_container(["bash", "-c", f"chown {current_user_id} /var/lib/clickhouse"], privileged=True)
-    node.start_clickhouse()
-    node.rotate_logs()
+    if current_user_id != 0:
+        return
+
+    other_user_id = pwd.getpwnam('nobody').pw_uid
+
+    cluster = ClickHouseCluster(__file__)
+    node = cluster.add_instance('node')
+
+    cluster.start()
+
+    docker_api = cluster.docker_client.api
+    container = node.get_docker_handle()
+    container.stop()
+    container.start()
+    container.exec_run('chown {} /var/lib/clickhouse'.format(other_user_id), privileged=True)
+    container.exec_run(CLICKHOUSE_START_COMMAND)
+
+    cluster.shutdown()  # cleanup
+
+    with open(os.path.join(node.path, 'logs/clickhouse-server.err.log')) as log:
+        expected_message = "Effective user of the process \(.*\) does not match the owner of the data \(.*\)\. Run under 'sudo -u .*'\."
+
+        last_message = [row for row in log.readlines() if "Effective" in row][-1]
+
+        if re.search(expected_message, last_message) is None:
+            pytest.fail(
+                'Expected the server to fail with a message "{}", but the last message is "{}"'.format(expected_message,
+                                                                                                       last_message))

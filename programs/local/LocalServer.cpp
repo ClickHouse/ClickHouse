@@ -4,7 +4,6 @@
 #include <Poco/String.h>
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
-#include <Poco/SimpleFileChannel.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
@@ -36,7 +35,6 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
-#include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
 #include <filesystem>
@@ -183,6 +181,23 @@ void LocalServer::initialize(Poco::Util::Application & self)
         config_processor.setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
+    }
+
+    if (config().has("logger.console") || config().has("logger.level") || config().has("logger.log"))
+    {
+        // force enable logging
+        config().setString("logger", "logger");
+        // sensitive data rules are not used here
+        buildLoggers(config(), logger(), "clickhouse-local");
+    }
+    else
+    {
+        // Turn off server logging to stderr
+        if (!config().has("verbose"))
+        {
+            Poco::Logger::root().setLevel("none");
+            Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
+        }
     }
 }
 
@@ -407,10 +422,7 @@ try
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
-    is_interactive = stdin_is_a_tty
-        && (config().hasOption("interactive")
-            || (!config().has("query") && !config().has("table-structure") && queries_files.empty()));
-
+    is_interactive = stdin_is_a_tty && !config().has("query") && !config().has("table-structure") && queries_files.empty();
     if (!is_interactive)
     {
         /// We will terminate process on error
@@ -429,26 +441,19 @@ try
 
     processConfig();
     applyCmdSettings(global_context);
+    connect();
 
     if (is_interactive)
     {
         clearTerminal();
         showClientVersion();
         std::cerr << std::endl;
-    }
 
-    connect();
-
-    if (is_interactive && !delayed_interactive)
-    {
         runInteractive();
     }
     else
     {
         runNonInteractive();
-
-        if (delayed_interactive)
-            runInteractive();
     }
 
     cleanup();
@@ -473,8 +478,7 @@ catch (...)
 
 void LocalServer::processConfig()
 {
-    delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
-    if (is_interactive && !delayed_interactive)
+    if (is_interactive)
     {
         if (config().has("query") && config().has("queries-file"))
             throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
@@ -486,46 +490,12 @@ void LocalServer::processConfig()
     }
     else
     {
-        if (delayed_interactive)
-        {
-            load_suggestions = true;
-        }
-
         need_render_progress = config().getBool("progress", false);
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
         is_multiquery = true;
     }
     print_stack_trace = config().getBool("stacktrace", false);
-
-    auto logging = (config().has("logger.console")
-                    || config().has("logger.level")
-                    || config().has("log-level")
-                    || config().has("logger.log"));
-
-    auto file_logging = config().has("server_logs_file");
-    if (is_interactive && logging && !file_logging)
-        throw Exception("For interactive mode logging is allowed only with --server_logs_file option",
-                        ErrorCodes::BAD_ARGUMENTS);
-
-    if (file_logging)
-    {
-        auto level = Poco::Logger::parseLevel(config().getString("log-level", "trace"));
-        Poco::Logger::root().setLevel(level);
-        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::SimpleFileChannel>(new Poco::SimpleFileChannel(server_logs_file)));
-    }
-    else if (logging)
-    {
-        // force enable logging
-        config().setString("logger", "logger");
-        // sensitive data rules are not used here
-        buildLoggers(config(), logger(), "clickhouse-local");
-    }
-    else
-    {
-        Poco::Logger::root().setLevel("none");
-        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
-    }
 
     shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());

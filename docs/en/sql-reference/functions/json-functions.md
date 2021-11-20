@@ -216,44 +216,6 @@ Example:
 SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
 ```
 
-## JSONExtractKeys {#jsonextractkeysjson-indices-or-keys}
-
-Parses a JSON string and extracts the keys.
-
-**Syntax**
-
-``` sql
-JSONExtractKeys(json[, a, b, c...])
-```
-
-**Arguments**
-
--   `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
--   `a, b, c...` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [String](../../sql-reference/data-types/string.md) to get the field by the key or an [Integer](../../sql-reference/data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
-
-**Returned value**
-
-Array with the keys of the JSON.
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
-**Example**
-
-Query:
-
-```sql
-SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}');
-```
-
-Result:
-
-```
-text
-┌─JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}')─┐
-│ ['a','b']                                                  │
-└────────────────────────────────────────────────────────────┘
-```
-
 ## JSONExtractRaw(json\[, indices_or_keys\]…) {#jsonextractrawjson-indices-or-keys}
 
 Returns a part of JSON as unparsed string.

@@ -231,7 +231,6 @@ public:
     template <typename Mapped>
     struct MapsTemplate
     {
-        using MappedType = Mapped;
         std::unique_ptr<FixedHashMap<UInt8, Mapped>>                  key8;
         std::unique_ptr<FixedHashMap<UInt16, Mapped>>                 key16;
         std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>   key32;
@@ -412,7 +411,7 @@ private:
 
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
-    static Type chooseMethod(ASTTableJoin::Kind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes);
+    static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     bool empty() const;
     bool overDictionary() const;

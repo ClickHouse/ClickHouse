@@ -1,21 +1,60 @@
 #!/usr/bin/env python3
+
+#!/usr/bin/env python3
 import logging
 import subprocess
 import os
+import time
 import json
 import sys
-
 from github import Github
-
+from report import create_test_html_report
 from s3_helper import S3Helper
 from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from ssh import SSHKey
-from upload_result_helper import upload_results
-from docker_pull_helper import get_image_with_version
-from commit_status_helper import get_commit
 
 NAME = "Docs Release (actions)"
+
+def process_logs(s3_client, additional_logs, s3_path_prefix):
+    additional_urls = []
+    for log_path in additional_logs:
+        if log_path:
+            additional_urls.append(
+                s3_client.upload_test_report_to_s3(
+                    log_path,
+                    s3_path_prefix + "/" + os.path.basename(log_path)))
+
+    return additional_urls
+
+def upload_results(s3_client, pr_number, commit_sha, test_results, additional_files):
+    s3_path_prefix = f"{pr_number}/{commit_sha}/docs_release"
+    additional_urls = process_logs(s3_client, additional_files, s3_path_prefix)
+
+    branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
+    branch_name = "master"
+    if pr_number != 0:
+        branch_name = f"PR #{pr_number}"
+        branch_url = f"https://github.com/ClickHouse/ClickHouse/pull/{pr_number}"
+    commit_url = f"https://github.com/ClickHouse/ClickHouse/commit/{commit_sha}"
+
+    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
+
+    raw_log_url = additional_urls[0]
+    additional_urls.pop(0)
+
+    html_report = create_test_html_report(NAME, test_results, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls)
+    with open('report.html', 'w', encoding='utf-8') as f:
+        f.write(html_report)
+
+    url = s3_client.upload_test_report_to_s3('report.html', s3_path_prefix + ".html")
+    logging.info("Search result in url %s", url)
+    return url
+
+def get_commit(gh, commit_sha):
+    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
+    commit = repo.get_commit(commit_sha)
+    return commit
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -40,7 +79,27 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    docker_image = get_image_with_version(temp_path, 'clickhouse/docs-release')
+    images_path = os.path.join(temp_path, 'changed_images.json')
+
+    docker_image = 'clickhouse/docs-release'
+    if os.path.exists(images_path):
+        logging.info("Images file exists")
+        with open(images_path, 'r', encoding='utf-8') as images_fd:
+            images = json.load(images_fd)
+            logging.info("Got images %s", images)
+            if 'clickhouse/docs-release' in images:
+                docker_image += ':' + images['clickhouse/docs-release']
+
+    logging.info("Got docker image %s", docker_image)
+    for i in range(10):
+        try:
+            subprocess.check_output(f"docker pull {docker_image}", shell=True)
+            break
+        except Exception as ex:
+            time.sleep(i * 3)
+            logging.info("Got execption pulling docker %s", ex)
+    else:
+        raise Exception(f"Cannot pull dockerhub for image {docker_image}")
 
     test_output = os.path.join(temp_path, 'docs_release_log')
     if not os.path.exists(test_output):
@@ -90,7 +149,7 @@ if __name__ == "__main__":
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
 
-    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, lines, additional_files, NAME)
+    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, lines, additional_files)
     print("::notice ::Report url: {report_url}")
     commit = get_commit(gh, pr_info.sha)
     commit.create_status(context=NAME, description=description, state=status, target_url=report_url)

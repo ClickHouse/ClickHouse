@@ -53,7 +53,7 @@ void DropPartsRanges::removeDropRange(const ReplicatedMergeTreeLogEntryPtr & ent
 
 bool DropPartsRanges::hasDropRange(const MergeTreePartInfo & new_drop_range_info) const
 {
-    for (const auto & [_, drop_range] : drop_ranges)
+    for (const auto & [znode_name, drop_range] : drop_ranges)
     {
         if (drop_range.contains(new_drop_range_info))
             return true;

@@ -861,12 +861,12 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (alter_object_type == ASTAlterQuery::AlterObjectType::DATABASE)
     {
-        if (!parseDatabaseAsAST(pos, expected, query->database))
+        if (!parseDatabase(pos, expected, query->database))
             return false;
     }
     else
     {
-        if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
+        if (!parseDatabaseAndTableName(pos, expected, query->database, query->table))
             return false;
 
         String cluster_str;
@@ -885,12 +885,6 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     query->set(query->command_list, command_list);
     query->alter_object = alter_object_type;
-
-    if (query->database)
-        query->children.push_back(query->database);
-
-    if (query->table)
-        query->children.push_back(query->table);
 
     return true;
 }

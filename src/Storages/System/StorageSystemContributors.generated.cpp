@@ -548,7 +548,6 @@ const char * auto_contributors[] {
     "l1tsolaiki",
     "lalex",
     "Latysheva Alexandra",
-    "laurieliyang",
     "lehasm",
     "Léo Ercolanelli",
     "Leonardo Cecchi",

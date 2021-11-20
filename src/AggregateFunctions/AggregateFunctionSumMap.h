@@ -377,17 +377,7 @@ public:
         assertNoParameters(getName(), params_);
     }
 
-    String getName() const override
-    {
-        if constexpr (overflow)
-        {
-            return "sumMapWithOverflow";
-        }
-        else
-        {
-            return "sumMap";
-        }
-    }
+    String getName() const override { return "sumMap"; }
 
     bool keepKey(const T &) const { return true; }
 };

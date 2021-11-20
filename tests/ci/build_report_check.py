@@ -9,7 +9,6 @@ from report import create_build_html_report
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from pr_info import PRInfo
-from commit_status_helper import  get_commit
 
 class BuildResult():
     def __init__(self, compiler, build_type, sanitizer, bundled, splitted, status, elapsed_seconds, with_coverage):
@@ -37,11 +36,16 @@ def group_by_artifacts(build_urls):
             groups['binary'].append(url)
     return groups
 
+def get_commit(gh, commit_sha):
+    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
+    commit = repo.get_commit(commit_sha)
+    return commit
+
 def process_report(build_report):
     build_config = build_report['build_config']
     build_result = BuildResult(
         compiler=build_config['compiler'],
-        build_type=build_config['build_type'],
+        build_type=build_config['build-type'],
         sanitizer=build_config['sanitizer'],
         bundled=build_config['bundled'],
         splitted=build_config['splitted'],
@@ -110,13 +114,13 @@ if __name__ == "__main__":
 
     pr_info = PRInfo(event)
 
-    branch_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/commits/master"
+    branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
     branch_name = "master"
     if pr_info.number != 0:
         branch_name = "PR #{}".format(pr_info.number)
-        branch_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/pull/{pr_info.number}"
-    commit_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/commit/{pr_info.sha}"
-    task_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID', '0')}"
+        branch_url = "https://github.com/ClickHouse/ClickHouse/pull/" + str(pr_info.number)
+    commit_url = f"https://github.com/ClickHouse/ClickHouse/commit/{pr_info.sha}"
+    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID', '0')}"
     report = create_build_html_report(
         build_check_name,
         build_results,

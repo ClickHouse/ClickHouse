@@ -38,7 +38,7 @@ class PRInfo:
             self.labels = {}
             if need_changed_files:
                 commit_before = github_event['before']
-                response = requests.get(f"{os.getenv('GITHUB_SERVER_URL')}/repos/{os.getenv('GITHUB_REPOSITORY')}/compare/{commit_before}...{self.sha}")
+                response = requests.get(f'https://api.github.com/repos/ClickHouse/ClickHouse/compare/{commit_before}...{self.sha}')
                 response.raise_for_status()
                 diff = response.json()
 

@@ -41,9 +41,18 @@
 
 #include <boost/algorithm/string/replace.hpp>
 
+namespace ProfileEvents
+{
+    extern const Event MergedRows;
+    extern const Event MergedUncompressedBytes;
+    extern const Event MergesTimeMilliseconds;
+    extern const Event Merge;
+}
+
 namespace CurrentMetrics
 {
     extern const Metric BackgroundMergesAndMutationsPoolTask;
+    extern const Metric PartMutation;
 }
 
 namespace DB

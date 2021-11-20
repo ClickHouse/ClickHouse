@@ -48,8 +48,7 @@ def test_cleanup_dir_after_bad_zk_conn(start_cluster):
     node1.query_with_retry(query_create)
     node1.query_with_retry('''INSERT INTO replica.test VALUES (1, now())''')
     assert "1\n" in node1.query('''SELECT count() from replica.test FORMAT TSV''')
-    node1.query("DROP TABLE replica.test SYNC")
-    node1.query("DROP DATABASE replica")
+
 
 def test_cleanup_dir_after_wrong_replica_name(start_cluster):
     node1.query_with_retry(
@@ -69,8 +68,7 @@ def test_cleanup_dir_after_wrong_zk_path(start_cluster):
     assert "Cannot create" in error
     node1.query(
         "CREATE TABLE test3_r2 (n UInt64) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test3/', 'r2') ORDER BY n")
-    node1.query("DROP TABLE test3_r1 SYNC")
-    node1.query("DROP TABLE test3_r2 SYNC")
+
 
 def test_attach_without_zk(start_cluster):
     node1.query_with_retry(
@@ -84,4 +82,3 @@ def test_attach_without_zk(start_cluster):
             pass
     node1.query("ATTACH TABLE IF NOT EXISTS test4_r1")
     node1.query("SELECT * FROM test4_r1")
-    node1.query("DROP TABLE test4_r1 SYNC")

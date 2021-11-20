@@ -355,7 +355,7 @@ void DatabasePostgreSQL::shutdown()
 ASTPtr DatabasePostgreSQL::getCreateDatabaseQuery() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(getDatabaseName());
+    create_query->database = getDatabaseName();
     create_query->set(create_query->storage, database_engine_define);
 
     if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
@@ -388,8 +388,8 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
 
     /// init create query.
     auto table_id = storage->getStorageID();
-    create_table_query->setTable(table_id.table_name);
-    create_table_query->setDatabase(table_id.database_name);
+    create_table_query->table = table_id.table_name;
+    create_table_query->database = table_id.database_name;
 
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
     for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())

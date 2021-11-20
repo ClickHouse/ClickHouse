@@ -401,7 +401,7 @@ void PrettyBlockOutputFormat::writeSuffix()
     }
 }
 
-void PrettyBlockOutputFormat::finalizeImpl()
+void PrettyBlockOutputFormat::finalize()
 {
     writeSuffixIfNot();
 }

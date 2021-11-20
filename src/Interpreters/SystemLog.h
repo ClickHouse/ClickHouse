@@ -595,8 +595,8 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
 {
     auto create = std::make_shared<ASTCreateQuery>();
 
-    create->setDatabase(table_id.database_name);
-    create->setTable(table_id.table_name);
+    create->database = table_id.database_name;
+    create->table = table_id.table_name;
 
     auto ordinary_columns = LogElement::getNamesAndTypes();
     auto alias_columns = LogElement::getNamesAndAliases();

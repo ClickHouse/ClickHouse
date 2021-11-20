@@ -4,7 +4,7 @@
 
 namespace DB
 {
-    void ParallelFormattingOutputFormat::finalizeImpl()
+    void ParallelFormattingOutputFormat::finalize()
     {
         need_flush = true;
         IOutputFormat::finalized = true;
@@ -171,7 +171,7 @@ namespace DB
             {
                 case ProcessingUnitType::START :
                 {
-                    formatter->writePrefix();
+                    formatter->doWritePrefix();
                     break;
                 }
                 case ProcessingUnitType::PLAIN :
@@ -191,7 +191,7 @@ namespace DB
                 }
                 case ProcessingUnitType::FINALIZE :
                 {
-                    formatter->finalizeImpl();
+                    formatter->doWriteSuffix();
                     break;
                 }
             }

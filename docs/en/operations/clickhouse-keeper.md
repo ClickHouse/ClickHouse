@@ -21,7 +21,7 @@ By default, ClickHouse Keeper provides the same guarantees as ZooKeeper (lineari
 ClickHouse Keeper can be used as a standalone replacement for ZooKeeper or as an internal part of the ClickHouse server, but in both cases configuration is almost the same `.xml` file. The main ClickHouse Keeper configuration tag is `<keeper_server>`. Keeper configuration has the following parameters:
 
 -    `tcp_port` — Port for a client to connect (default for ZooKeeper is `2181`).
--    `tcp_port_secure` — Secure port for an SSL connection between client and keeper-server.
+-    `tcp_port_secure` — Secure port for a client to connect.
 -    `server_id` — Unique server id, each participant of the ClickHouse Keeper cluster must have a unique number (1, 2, 3, and so on).
 -    `log_storage_path` — Path to coordination logs, better to store logs on the non-busy device (same for ZooKeeper).
 -    `snapshot_storage_path` — Path to coordination snapshots.
@@ -50,11 +50,7 @@ Internal coordination settings are located in `<keeper_server>.<coordination_set
 -    `shutdown_timeout` — Wait to finish internal connections and shutdown (ms) (default: 5000).
 -    `startup_timeout` — If the server doesn't connect to other quorum participants in the specified timeout it will terminate (ms) (default: 30000).
 
-Quorum configuration is located in `<keeper_server>.<raft_configuration>` section and contain servers description.
-
-The only parameter for the whole quorum is `secure`, which enables encrypted connection for communication between quorum participants. The parameter can be set `true` if SSL connection is required for internal communication between nodes, or left unspecified otherwise.
-
-The main parameters for each `<server>` are:
+Quorum configuration is located in `<keeper_server>.<raft_configuration>` section and contain servers description. The only parameter for the whole quorum is `secure`, which enables encrypted connection for communication between quorum participants. The main parameters for each `<server>` are:
 
 -    `id` — Server identifier in a quorum.
 -    `hostname` — Hostname where this server is placed.

@@ -7,10 +7,10 @@ CREATE TABLE test_data (
 
 INSERT INTO test_data VALUES ('val1', NULL, 'val3');
 
-SELECT '# format_csv_null_representation should initially be \\N';
+SELECT '# output_format_csv_null_representation should initially be \\N';
 SELECT * FROM test_data FORMAT CSV;
 
-SELECT '# Changing format_csv_null_representation';
-SET format_csv_null_representation = '∅';
+SELECT '# Changing output_format_csv_null_representation';
+SET output_format_csv_null_representation = '∅';
 SELECT * FROM test_data FORMAT CSV;
-SET format_csv_null_representation = '\\N';
+SET output_format_csv_null_representation = '\\N';

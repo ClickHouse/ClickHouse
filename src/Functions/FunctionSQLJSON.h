@@ -18,8 +18,6 @@
 #include <Interpreters/Context.h>
 #include <Parsers/IParser.h>
 #include <Parsers/Lexer.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <base/range.h>
 
 #include "config_functions.h"
@@ -262,26 +260,15 @@ public:
         }
 
         if (status == VisitorStatus::Exhausted)
+        {
             return false;
+        }
 
         std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         out << current_element.getElement();
         auto output_str = out.str();
         ColumnString & col_str = assert_cast<ColumnString &>(dest);
-        ColumnString::Chars & data = col_str.getChars();
-        ColumnString::Offsets & offsets = col_str.getOffsets();
-
-        if (current_element.isString())
-        {
-            ReadBufferFromString buf(output_str);
-            readJSONStringInto(data, buf);
-            data.push_back(0);
-            offsets.push_back(data.size());
-        }
-        else
-        {
-            col_str.insertData(output_str.data(), output_str.size());
-        }
+        col_str.insertData(output_str.data(), output_str.size());
         return true;
     }
 };

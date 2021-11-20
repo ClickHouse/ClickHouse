@@ -259,7 +259,6 @@ void URLBasedDataSourceConfiguration::set(const URLBasedDataSourceConfiguration 
     format = conf.format;
     compression_method = conf.compression_method;
     structure = conf.structure;
-    http_method = conf.http_method;
 }
 
 
@@ -286,18 +285,6 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
             if (key == "url")
             {
                 configuration.url = config.getString(config_prefix + ".url", "");
-            }
-            else if (key == "method")
-            {
-                configuration.http_method = config.getString(config_prefix + ".method", "");
-            }
-            else if (key == "format")
-            {
-                configuration.format = config.getString(config_prefix + ".format", "");
-            }
-            else if (key == "structure")
-            {
-                configuration.structure = config.getString(config_prefix + ".structure", "");
             }
             else if (key == "headers")
             {
@@ -332,8 +319,6 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
 
                 if (arg_name == "url")
                     configuration.url = arg_value.safeGet<String>();
-                else if (arg_name == "method")
-                    configuration.http_method = arg_value.safeGet<String>();
                 else if (arg_name == "format")
                     configuration.format = arg_value.safeGet<String>();
                 else if (arg_name == "compression_method")

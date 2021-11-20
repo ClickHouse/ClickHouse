@@ -13,21 +13,7 @@
 #  and then to run formatter only for the specified files.
 
 ROOT_PATH=$(git rev-parse --show-toplevel)
-EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|memcpy/|consistent-hashing'
-
-# From [1]:
-#     But since array_to_string_internal() in array.c still loops over array
-#     elements and concatenates them into a string, it's probably not more
-#     efficient than the looping solutions proposed, but it's more readable.
-#
-#  [1]: https://stackoverflow.com/a/15394738/328260
-function in_array()
-{
-    local IFS="|"
-    local value=$1 && shift
-
-    [[ "${IFS}${*}${IFS}" =~ "${IFS}${value}${IFS}" ]]
-}
+EXCLUDE_DIRS='build/|integration/|widechar_width/|glibc-compatibility/|memcpy/|consistent-hashing/|Parsers/New'
 
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/null |
     grep -vP $EXCLUDE_DIRS |
@@ -54,78 +40,24 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
     grep -vP $EXCLUDE_DIRS |
     while read i; do $ROOT_PATH/utils/check-style/double-whitespaces.pl < $i || echo -e "^ File $i contains double whitespaces\n"; done
 
-# Unused/Undefined/Duplicates ErrorCodes/ProfileEvents/CurrentMetrics
-declare -A EXTERN_TYPES
-EXTERN_TYPES[ErrorCodes]=int
-EXTERN_TYPES[ProfileEvents]=Event
-EXTERN_TYPES[CurrentMetrics]=Metric
-declare -A EXTERN_ALLOWED_CHARS
-EXTERN_ALLOWED_CHARS[ErrorCodes]='_A-Z'
-EXTERN_ALLOWED_CHARS[ProfileEvents]='_A-Za-z'
-EXTERN_ALLOWED_CHARS[CurrentMetrics]='_A-Za-z'
-EXTERN_TYPES_EXCLUDES=(
-    ProfileEvents::global_counters
-    ProfileEvents::Event
-    ProfileEvents::Count
-    ProfileEvents::Counters
-    ProfileEvents::end
-    ProfileEvents::increment
-    ProfileEvents::getName
-    ProfileEvents::Type
-    ProfileEvents::TypeEnum
-    ProfileEvents::dumpToMapColumn
-    ProfileEvents::LOCAL_NAME
+# Unused ErrorCodes
+# NOTE: to fix automatically, replace echo with:
+# sed -i "/extern const int $code/d" $file
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -l -P 'extern const int [_A-Z]+' | while read file; do grep -P 'extern const int [_A-Z]+;' $file | sed -r -e 's/^.*?extern const int ([_A-Z]+);.*?$/\1/' | while read code; do grep -q "ErrorCodes::$code" $file || echo "ErrorCode $code is defined but not used in file $file"; done; done
 
-    CurrentMetrics::add
-    CurrentMetrics::sub
-    CurrentMetrics::set
-    CurrentMetrics::end
-    CurrentMetrics::Increment
-    CurrentMetrics::Metric
-    CurrentMetrics::values
-)
-for extern_type in ${!EXTERN_TYPES[@]}; do
-    type_of_extern=${EXTERN_TYPES[$extern_type]}
-    allowed_chars=${EXTERN_ALLOWED_CHARS[$extern_type]}
+# Undefined ErrorCodes
+# NOTE: to fix automatically, replace echo with:
+# ( grep -q -F 'namespace ErrorCodes' $file && sed -i -r "0,/(\s*)extern const int [_A-Z]+/s//\1extern const int $code;\n&/" $file || awk '{ print; if (ns == 1) { ns = 2 }; if (ns == 2) { ns = 0; print "namespace ErrorCodes\n{\n    extern const int '$code';\n}" } }; /namespace DB/ { ns = 1; };' < $file > ${file}.tmp && mv ${file}.tmp $file )
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -l -P 'ErrorCodes::[_A-Z]+' | while read file; do grep -P 'ErrorCodes::[_A-Z]+' $file | sed -r -e 's/^.*?ErrorCodes::([_A-Z]+).*?$/\1/' | while read code; do grep -q "extern const int $code" $file || echo "ErrorCode $code is used in file $file but not defined"; done; done
 
-    # Unused
-    # NOTE: to fix automatically, replace echo with:
-    # sed -i "/extern const $type_of_extern $val/d" $file
-    find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "extern const $type_of_extern [$allowed_chars]+"
-    } | while read file; do
-        grep -P "extern const $type_of_extern [$allowed_chars]+;" $file | sed -r -e "s/^.*?extern const $type_of_extern ([$allowed_chars]+);.*?$/\1/" | while read val; do
-            if ! grep -q "$extern_type::$val" $file; then
-                # Excludes for SOFTWARE_EVENT/HARDWARE_EVENT/CACHE_EVENT in ThreadProfileEvents.cpp
-                if [[ ! $extern_type::$val =~ ProfileEvents::Perf.* ]]; then
-                    echo "$extern_type::$val is defined but not used in file $file"
-                fi
-            fi
-        done
-    done
-
-    # Undefined
-    # NOTE: to fix automatically, replace echo with:
-    # ( grep -q -F 'namespace $extern_type' $file && sed -i -r "0,/(\s*)extern const $type_of_extern [$allowed_chars]+/s//\1extern const $type_of_extern $val;\n&/" $file || awk '{ print; if (ns == 1) { ns = 2 }; if (ns == 2) { ns = 0; print "namespace $extern_type\n{\n    extern const $type_of_extern '$val';\n}" } }; /namespace DB/ { ns = 1; };' < $file > ${file}.tmp && mv ${file}.tmp $file )
-    find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::[$allowed_chars]+"
-    } | while read file; do
-        grep -P "$extern_type::[$allowed_chars]+" $file | sed -r -e "s/^.*?$extern_type::([$allowed_chars]+).*?$/\1/" | while read val; do
-            if ! grep -q "extern const $type_of_extern $val" $file; then
-                if ! in_array "$extern_type::$val" "${EXTERN_TYPES_EXCLUDES[@]}"; then
-                    echo "$extern_type::$val is used in file $file but not defined"
-                fi
-            fi
-        done
-    done
-
-    # Duplicates
-    find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | {
-        grep -vP $EXCLUDE_DIRS | xargs grep -l -P "$extern_type::[$allowed_chars]+"
-    } | while read file; do
-        grep -P "extern const $type_of_extern [$allowed_chars]+;" $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate $extern_type in file $file"
-    done
-done
+# Duplicate ErrorCodes
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
+    grep -vP $EXCLUDE_DIRS |
+    xargs grep -l -P 'ErrorCodes::[_A-Z]+' | while read file; do grep -P 'extern const int [_A-Z]+;' $file | sort | uniq -c | grep -v -P ' +1 ' && echo "Duplicate ErrorCode in file $file"; done
 
 # Three or more consecutive empty lines
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |

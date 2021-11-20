@@ -41,7 +41,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_with("WITH");
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
-    ParserIdentifier name_p(true);
+    ParserIdentifier name_p;
     ParserList columns_p(std::make_unique<ParserInsertElement>(), std::make_unique<ParserToken>(TokenType::Comma), false);
     ParserFunction table_function_p{false};
     ParserStringLiteral infile_name_p;
@@ -244,13 +244,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        query->database = database;
-        query->table = table;
-
-        if (database)
-            query->children.push_back(database);
-        if (table)
-            query->children.push_back(table);
+        tryGetIdentifierNameInto(database, query->table_id.database_name);
+        tryGetIdentifierNameInto(table, query->table_id.table_name);
     }
 
     query->columns = columns;

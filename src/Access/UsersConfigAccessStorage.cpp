@@ -33,12 +33,15 @@ namespace ErrorCodes
 
 namespace
 {
-    UUID generateID(AccessEntityType type, const String & name)
+    using EntityType = IAccessStorage::EntityType;
+    using EntityTypeInfo = IAccessStorage::EntityTypeInfo;
+
+    UUID generateID(EntityType type, const String & name)
     {
         Poco::MD5Engine md5;
         md5.update(name);
         char type_storage_chars[] = " USRSXML";
-        type_storage_chars[0] = AccessEntityTypeInfo::get(type).unique_char;
+        type_storage_chars[0] = EntityTypeInfo::get(type).unique_char;
         md5.update(type_storage_chars, strlen(type_storage_chars));
         UUID result;
         memcpy(&result, md5.digest().data(), md5.digestLength());
@@ -72,18 +75,18 @@ namespace
 
         if (has_password_plaintext)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::PLAINTEXT_PASSWORD};
-            user->auth_data.setPassword(config.getString(user_config + ".password"));
+            user->authentication = Authentication{Authentication::PLAINTEXT_PASSWORD};
+            user->authentication.setPassword(config.getString(user_config + ".password"));
         }
         else if (has_password_sha256_hex)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::SHA256_PASSWORD};
-            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
+            user->authentication = Authentication{Authentication::SHA256_PASSWORD};
+            user->authentication.setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
         }
         else if (has_password_double_sha1_hex)
         {
-            user->auth_data = AuthenticationData{AuthenticationType::DOUBLE_SHA1_PASSWORD};
-            user->auth_data.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
+            user->authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
+            user->authentication.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
         }
         else if (has_ldap)
         {
@@ -95,15 +98,15 @@ namespace
             if (ldap_server_name.empty())
                 throw Exception("LDAP server name cannot be empty for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
 
-            user->auth_data = AuthenticationData{AuthenticationType::LDAP};
-            user->auth_data.setLDAPServerName(ldap_server_name);
+            user->authentication = Authentication{Authentication::LDAP};
+            user->authentication.setLDAPServerName(ldap_server_name);
         }
         else if (has_kerberos)
         {
             const auto realm = config.getString(user_config + ".kerberos.realm", "");
 
-            user->auth_data = AuthenticationData{AuthenticationType::KERBEROS};
-            user->auth_data.setKerberosRealm(realm);
+            user->authentication = Authentication{Authentication::KERBEROS};
+            user->authentication.setKerberosRealm(realm);
         }
 
         const auto profile_name_config = user_config + ".profile";
@@ -111,7 +114,7 @@ namespace
         {
             auto profile_name = config.getString(profile_name_config);
             SettingsProfileElement profile_element;
-            profile_element.parent_profile = generateID(AccessEntityType::SETTINGS_PROFILE, profile_name);
+            profile_element.parent_profile = generateID(EntityType::SETTINGS_PROFILE, profile_name);
             user->settings.push_back(std::move(profile_element));
         }
 
@@ -220,15 +223,16 @@ namespace
         auto quota = std::make_shared<Quota>();
         quota->setName(quota_name);
 
+        using KeyType = Quota::KeyType;
         String quota_config = "quotas." + quota_name;
         if (config.has(quota_config + ".keyed_by_ip"))
-            quota->key_type = QuotaKeyType::IP_ADDRESS;
+            quota->key_type = KeyType::IP_ADDRESS;
         else if (config.has(quota_config + ".keyed_by_forwarded_ip"))
-            quota->key_type = QuotaKeyType::FORWARDED_IP_ADDRESS;
+            quota->key_type = KeyType::FORWARDED_IP_ADDRESS;
         else if (config.has(quota_config + ".keyed"))
-            quota->key_type = QuotaKeyType::CLIENT_KEY_OR_USER_NAME;
+            quota->key_type = KeyType::CLIENT_KEY_OR_USER_NAME;
         else
-            quota->key_type = QuotaKeyType::USER_NAME;
+            quota->key_type = KeyType::USER_NAME;
 
         Poco::Util::AbstractConfiguration::Keys interval_keys;
         config.keys(quota_config, interval_keys);
@@ -248,12 +252,12 @@ namespace
             limits.duration = duration;
             limits.randomize_interval = config.getBool(interval_config + ".randomize", false);
 
-            for (auto quota_type : collections::range(QuotaType::MAX))
+            for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
             {
-                const auto & type_info = QuotaTypeInfo::get(quota_type);
+                const auto & type_info = Quota::ResourceTypeInfo::get(resource_type);
                 auto value = config.getString(interval_config + "." + type_info.name, "0");
                 if (value != "0")
-                    limits.max[static_cast<size_t>(quota_type)] = type_info.stringToValue(value);
+                    limits.max[resource_type] = type_info.amountFromString(value);
             }
         }
 
@@ -270,7 +274,7 @@ namespace
         for (const auto & user_name : user_names)
         {
             if (config.has("users." + user_name + ".quota"))
-                quota_to_user_ids[config.getString("users." + user_name + ".quota")].push_back(generateID(AccessEntityType::USER, user_name));
+                quota_to_user_ids[config.getString("users." + user_name + ".quota")].push_back(generateID(EntityType::USER, user_name));
         }
 
         Poco::Util::AbstractConfiguration::Keys quota_names;
@@ -347,9 +351,9 @@ namespace
                 String filter = (it != user_to_filters.end()) ? it->second : "1";
 
                 auto policy = std::make_shared<RowPolicy>();
-                policy->setFullName(user_name, database, table_name);
-                policy->filters[static_cast<size_t>(RowPolicyFilterType::SELECT_FILTER)] = filter;
-                policy->to_roles.add(generateID(AccessEntityType::USER, user_name));
+                policy->setNameParts(user_name, database, table_name);
+                policy->conditions[RowPolicy::SELECT_FILTER] = filter;
+                policy->to_roles.add(generateID(EntityType::USER, user_name));
                 policies.push_back(policy);
             }
         }
@@ -411,7 +415,7 @@ namespace
             {
                 String parent_profile_name = config.getString(profile_config + "." + key);
                 SettingsProfileElement profile_element;
-                profile_element.parent_profile = generateID(AccessEntityType::SETTINGS_PROFILE, parent_profile_name);
+                profile_element.parent_profile = generateID(EntityType::SETTINGS_PROFILE, parent_profile_name);
                 profile->elements.emplace_back(std::move(profile_element));
                 continue;
             }
@@ -548,13 +552,13 @@ void UsersConfigAccessStorage::startPeriodicReloading()
         config_reloader->start();
 }
 
-std::optional<UUID> UsersConfigAccessStorage::findImpl(AccessEntityType type, const String & name) const
+std::optional<UUID> UsersConfigAccessStorage::findImpl(EntityType type, const String & name) const
 {
     return memory_storage.find(type, name);
 }
 
 
-std::vector<UUID> UsersConfigAccessStorage::findAllImpl(AccessEntityType type) const
+std::vector<UUID> UsersConfigAccessStorage::findAllImpl(EntityType type) const
 {
     return memory_storage.findAll(type);
 }
@@ -604,7 +608,7 @@ scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(const UUID & id, c
 }
 
 
-scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const
+scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
 {
     return memory_storage.subscribeForChanges(type, handler);
 }
@@ -616,7 +620,7 @@ bool UsersConfigAccessStorage::hasSubscriptionImpl(const UUID & id) const
 }
 
 
-bool UsersConfigAccessStorage::hasSubscriptionImpl(AccessEntityType type) const
+bool UsersConfigAccessStorage::hasSubscriptionImpl(EntityType type) const
 {
     return memory_storage.hasSubscription(type);
 }

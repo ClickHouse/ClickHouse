@@ -238,7 +238,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingCha
     auto * alter = query->as<ASTAlterQuery>();
 
     alter->alter_object = ASTAlterQuery::AlterObjectType::DATABASE;
-    alter->setDatabase(database_name);
+    alter->database = database_name;
     alter->set(alter->command_list, command_list);
 
     return query;

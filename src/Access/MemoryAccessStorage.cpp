@@ -13,7 +13,7 @@ MemoryAccessStorage::MemoryAccessStorage(const String & storage_name_)
 }
 
 
-std::optional<UUID> MemoryAccessStorage::findImpl(AccessEntityType type, const String & name) const
+std::optional<UUID> MemoryAccessStorage::findImpl(EntityType type, const String & name) const
 {
     std::lock_guard lock{mutex};
     const auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
@@ -26,7 +26,7 @@ std::optional<UUID> MemoryAccessStorage::findImpl(AccessEntityType type, const S
 }
 
 
-std::vector<UUID> MemoryAccessStorage::findAllImpl(AccessEntityType type) const
+std::vector<UUID> MemoryAccessStorage::findAllImpl(EntityType type) const
 {
     std::lock_guard lock{mutex};
     std::vector<UUID> result;
@@ -77,7 +77,7 @@ UUID MemoryAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool re
 void MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, Notifications & notifications)
 {
     const String & name = new_entity->getName();
-    AccessEntityType type = new_entity->getType();
+    EntityType type = new_entity->getType();
 
     /// Check that we can insert.
     auto it = entries_by_id.find(id);
@@ -125,7 +125,7 @@ void MemoryAccessStorage::removeNoLock(const UUID & id, Notifications & notifica
 
     Entry & entry = it->second;
     const String & name = entry.entity->getName();
-    AccessEntityType type = entry.entity->getType();
+    EntityType type = entry.entity->getType();
 
     prepareNotifications(entry, true, notifications);
 
@@ -266,7 +266,7 @@ void MemoryAccessStorage::prepareNotifications(const Entry & entry, bool remove,
 }
 
 
-scope_guard MemoryAccessStorage::subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const
+scope_guard MemoryAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
 {
     std::lock_guard lock{mutex};
     auto & handlers = handlers_by_type[static_cast<size_t>(type)];
@@ -317,7 +317,7 @@ bool MemoryAccessStorage::hasSubscriptionImpl(const UUID & id) const
 }
 
 
-bool MemoryAccessStorage::hasSubscriptionImpl(AccessEntityType type) const
+bool MemoryAccessStorage::hasSubscriptionImpl(EntityType type) const
 {
     std::lock_guard lock{mutex};
     const auto & handlers = handlers_by_type[static_cast<size_t>(type)];

@@ -662,7 +662,7 @@ void DDLWorker::processTask(DDLTaskBase & task, const ZooKeeperPtr & zookeeper)
             StoragePtr storage;
             if (auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(task.query.get()); query_with_table)
             {
-                if (query_with_table->table)
+                if (!query_with_table->table.empty())
                 {
                     /// It's not CREATE DATABASE
                     auto table_id = context->tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
@@ -1154,7 +1154,8 @@ void DDLWorker::runMainThread()
             cleanup_event->set();
             scheduleTasks(reinitialized);
 
-            LOG_DEBUG(log, "Waiting for queue updates");
+            LOG_DEBUG(log, "Waiting for queue updates (stat: {}, {}, {}, {})",
+                      queue_node_stat.version, queue_node_stat.cversion, queue_node_stat.numChildren, queue_node_stat.pzxid);
             queue_updated_event->wait();
         }
         catch (const Coordination::Exception & e)

@@ -87,6 +87,7 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric DelayedInserts;
+    extern const Metric BackgroundMovePoolTask;
 }
 
 
@@ -1344,18 +1345,16 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
 }
 
 
-size_t MergeTreeData::clearOldTemporaryDirectories(const MergeTreeDataMergerMutator & merger_mutator, size_t custom_directories_lifetime_seconds)
+void MergeTreeData::clearOldTemporaryDirectories(const MergeTreeDataMergerMutator & merger_mutator, size_t custom_directories_lifetime_seconds)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
     if (!lock.try_lock())
-        return 0;
+        return;
 
     const auto settings = getSettings();
     time_t current_time = time(nullptr);
     ssize_t deadline = current_time - custom_directories_lifetime_seconds;
-
-    size_t cleared_count = 0;
 
     /// Delete temporary directories older than a day.
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
@@ -1368,22 +1367,18 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const MergeTreeDataMergerMuta
                 continue;
             }
             const std::string & full_path = fullPath(disk, it->path());
+            if (merger_mutator.hasTemporaryPart(basename))
+            {
+                LOG_WARNING(log, "{} is an active destination for one of merge/mutation (consider increasing temporary_directories_lifetime setting)", full_path);
+                continue;
+            }
 
             try
             {
                 if (disk->isDirectory(it->path()) && isOldPartDirectory(disk, it->path(), deadline))
                 {
-                    if (merger_mutator.hasTemporaryPart(basename))
-                    {
-                        LOG_WARNING(log, "{} is an active destination for one of merge/mutation (consider increasing temporary_directories_lifetime setting)", full_path);
-                        continue;
-                    }
-                    else
-                    {
-                        LOG_WARNING(log, "Removing temporary directory {}", full_path);
-                        disk->removeRecursive(it->path());
-                        ++cleared_count;
-                    }
+                    LOG_WARNING(log, "Removing temporary directory {}", full_path);
+                    disk->removeRecursive(it->path());
                 }
             }
             /// see getModificationTime()
@@ -1407,8 +1402,6 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const MergeTreeDataMergerMuta
             }
         }
     }
-
-    return cleared_count;
 }
 
 
@@ -1522,7 +1515,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
     }
 }
 
-size_t MergeTreeData::clearOldPartsFromFilesystem(bool force)
+void MergeTreeData::clearOldPartsFromFilesystem(bool force)
 {
     DataPartsVector parts_to_remove = grabOldParts(force);
     clearPartsFromFilesystem(parts_to_remove);
@@ -1532,8 +1525,6 @@ size_t MergeTreeData::clearOldPartsFromFilesystem(bool force)
     /// NOTE: we can drop files from cache more selectively but this is good enough.
     if (!parts_to_remove.empty())
         getContext()->dropMMappedFileCache();
-
-    return parts_to_remove.size();
 }
 
 void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_remove)
@@ -1575,7 +1566,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
     }
 }
 
-size_t MergeTreeData::clearOldWriteAheadLogs()
+void MergeTreeData::clearOldWriteAheadLogs()
 {
     DataPartsVector parts = getDataPartsVector();
     std::vector<std::pair<Int64, Int64>> all_block_numbers_on_disk;
@@ -1586,7 +1577,7 @@ size_t MergeTreeData::clearOldWriteAheadLogs()
             all_block_numbers_on_disk.emplace_back(part->info.min_block, part->info.max_block);
 
     if (all_block_numbers_on_disk.empty())
-        return 0;
+        return;
 
     std::sort(all_block_numbers_on_disk.begin(), all_block_numbers_on_disk.end());
     block_numbers_on_disk.push_back(all_block_numbers_on_disk[0]);
@@ -1614,7 +1605,6 @@ size_t MergeTreeData::clearOldWriteAheadLogs()
         return false;
     };
 
-    size_t cleared_count = 0;
     auto disks = getStoragePolicy()->getDisks();
     for (auto disk_it = disks.rbegin(); disk_it != disks.rend(); ++disk_it)
     {
@@ -1626,30 +1616,22 @@ size_t MergeTreeData::clearOldWriteAheadLogs()
             {
                 LOG_DEBUG(log, "Removing from filesystem the outdated WAL file " + it->name());
                 disk_ptr->removeFile(relative_data_path + it->name());
-                ++cleared_count;
             }
         }
     }
-
-    return cleared_count;
 }
 
-size_t MergeTreeData::clearEmptyParts()
+void MergeTreeData::clearEmptyParts()
 {
     if (!getSettings()->remove_empty_parts)
-        return 0;
+        return;
 
-    size_t cleared_count = 0;
     auto parts = getDataPartsVector();
     for (const auto & part : parts)
     {
         if (part->rows_count == 0)
-        {
             dropPartNoWaitNoThrow(part->name);
-            ++cleared_count;
-        }
     }
-    return cleared_count;
 }
 
 void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
@@ -3518,7 +3500,7 @@ Pipe MergeTreeData::alterPartition(
 }
 
 
-BackupEntries MergeTreeData::backup(const ASTs & partitions, ContextPtr local_context)
+BackupEntries MergeTreeData::backup(const ASTs & partitions, ContextPtr local_context) const
 {
     DataPartsVector data_parts;
     if (partitions.empty())
@@ -3540,7 +3522,7 @@ BackupEntries MergeTreeData::backupDataParts(const DataPartsVector & data_parts)
 
         auto temp_dir_it = temp_dirs.find(disk);
         if (temp_dir_it == temp_dirs.end())
-            temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/backup_")).first;
+            temp_dir_it = temp_dirs.emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp_backup_")).first;
         auto temp_dir_owner = temp_dir_it->second;
         fs::path temp_dir = temp_dir_owner->getPath();
 
@@ -3576,7 +3558,7 @@ RestoreDataTasks MergeTreeData::restoreDataPartsFromBackup(const BackupPtr & bac
 {
     RestoreDataTasks restore_tasks;
 
-    Strings part_names = backup->listFiles(data_path_in_backup);
+    Strings part_names = backup->list(data_path_in_backup);
     for (const String & part_name : part_names)
     {
         const auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
@@ -3588,9 +3570,9 @@ RestoreDataTasks MergeTreeData::restoreDataPartsFromBackup(const BackupPtr & bac
             continue;
 
         UInt64 total_size_of_part = 0;
-        Strings filenames = backup->listFiles(data_path_in_backup + part_name + "/", "");
+        Strings filenames = backup->list(data_path_in_backup + part_name + "/", "");
         for (const String & filename : filenames)
-            total_size_of_part += backup->getFileSize(data_path_in_backup + part_name + "/" + filename);
+            total_size_of_part += backup->getSize(data_path_in_backup + part_name + "/" + filename);
 
         std::shared_ptr<IReservation> reservation = getStoragePolicy()->reserveAndCheck(total_size_of_part);
 
@@ -3614,7 +3596,7 @@ RestoreDataTasks MergeTreeData::restoreDataPartsFromBackup(const BackupPtr & bac
 
             for (const String & filename : filenames)
             {
-                auto backup_entry = backup->readFile(data_path_in_backup + part_name + "/" + filename);
+                auto backup_entry = backup->read(data_path_in_backup + part_name + "/" + filename);
                 auto read_buffer = backup_entry->getReadBuffer();
                 auto write_buffer = disk->writeFile(temp_part_dir + "/" + filename);
                 copyData(*read_buffer, *write_buffer);

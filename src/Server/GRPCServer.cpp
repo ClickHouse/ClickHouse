@@ -28,7 +28,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -40,7 +39,6 @@
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/range.h>
-#include <base/logger_useful.h>
 #include <grpc++/security/server_credentials.h>
 #include <grpc++/server.h>
 #include <grpc++/server_builder.h>
@@ -958,18 +956,7 @@ namespace
         {
             if (insert_query)
             {
-                auto table_id = StorageID::createEmpty();
-
-                if (insert_query->table_id)
-                {
-                    table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
-                }
-                else
-                {
-                    StorageID local_table_id(insert_query->getDatabase(), insert_query->getTable());
-                    table_id = query_context->resolveStorageID(local_table_id, Context::ResolveOrdinary);
-                }
-
+                auto table_id = query_context->resolveStorageID(insert_query->table_id, Context::ResolveOrdinary);
                 if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields && table_id)
                 {
                     StoragePtr storage = DatabaseCatalog::instance().getTable(table_id, query_context);
@@ -1103,6 +1090,7 @@ namespace
 
         write_buffer.emplace(*result.mutable_output());
         output_format_processor = query_context->getOutputFormat(output_format, *write_buffer, header);
+        output_format_processor->doWritePrefix();
         Stopwatch after_send_progress;
 
         /// Unless the input() function is used we are not going to receive input data anymore.
@@ -1181,7 +1169,7 @@ namespace
             executor->execute();
         }
 
-        output_format_processor->finalize();
+        output_format_processor->doWriteSuffix();
     }
 
     void Call::finishQuery()
@@ -1392,8 +1380,9 @@ namespace
 
         WriteBufferFromString buf{*result.mutable_totals()};
         auto format = query_context->getOutputFormat(output_format, buf, totals);
+        format->doWritePrefix();
         format->write(materializeBlock(totals));
-        format->finalize();
+        format->doWriteSuffix();
     }
 
     void Call::addExtremesToResult(const Block & extremes)
@@ -1403,8 +1392,9 @@ namespace
 
         WriteBufferFromString buf{*result.mutable_extremes()};
         auto format = query_context->getOutputFormat(output_format, buf, extremes);
+        format->doWritePrefix();
         format->write(materializeBlock(extremes));
-        format->finalize();
+        format->doWriteSuffix();
     }
 
     void Call::addProfileInfoToResult(const ProfileInfo & info)

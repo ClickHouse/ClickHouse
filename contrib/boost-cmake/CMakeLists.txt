@@ -196,12 +196,6 @@ if (NOT EXTERNAL_BOOST_FOUND)
             "${LIBRARY_DIR}/libs/context/src/asm/make_ppc64_sysv_elf_gas.S"
             "${LIBRARY_DIR}/libs/context/src/asm/ontop_ppc64_sysv_elf_gas.S"
         )
-    elseif (ARCH_RISCV64)
-        set (SRCS_CONTEXT ${SRCS_CONTEXT}
-            "${LIBRARY_DIR}/libs/context/src/asm/jump_riscv64_sysv_elf_gas.S"
-            "${LIBRARY_DIR}/libs/context/src/asm/make_riscv64_sysv_elf_gas.S"
-            "${LIBRARY_DIR}/libs/context/src/asm/ontop_riscv64_sysv_elf_gas.S"
-        )
     elseif(OS_DARWIN)
         set (SRCS_CONTEXT ${SRCS_CONTEXT}
             "${LIBRARY_DIR}/libs/context/src/asm/jump_x86_64_sysv_macho_gas.S"

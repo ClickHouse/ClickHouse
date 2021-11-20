@@ -11,6 +11,7 @@ def cluster():
         cluster.add_instance("node1", main_configs=["configs/storage_conf.xml"], with_nginx=True)
         cluster.add_instance("node2", main_configs=["configs/storage_conf_web.xml"], with_nginx=True)
         cluster.add_instance("node3", main_configs=["configs/storage_conf_web.xml"], with_nginx=True)
+        cluster.add_instance("node_async_read", main_configs=["configs/storage_conf_web.xml"], user_configs=["configs/async_read.xml"], with_nginx=True)
         cluster.start()
 
         node1 = cluster.instances["node1"]
@@ -37,7 +38,7 @@ def cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("node_name", ["node2"])
+@pytest.mark.parametrize("node_name", ["node2", "node_async_read"])
 def test_usage(cluster, node_name):
     node1 = cluster.instances["node1"]
     node2 = cluster.instances[node_name]

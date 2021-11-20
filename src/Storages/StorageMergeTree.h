@@ -183,7 +183,7 @@ private:
         const DataPartPtr & part,
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
-    size_t clearOldMutations(bool truncate = false);
+    void clearOldMutations(bool truncate = false);
 
     // Partition helpers
     void dropPartNoWaitNoThrow(const String & part_name) override;

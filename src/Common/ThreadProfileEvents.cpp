@@ -24,45 +24,6 @@
 #include <base/errnoToString.h>
 
 
-namespace ProfileEvents
-{
-#if defined(__linux__)
-    extern const Event OSIOWaitMicroseconds;
-    extern const Event OSCPUWaitMicroseconds;
-    extern const Event OSCPUVirtualTimeMicroseconds;
-    extern const Event OSReadChars;
-    extern const Event OSWriteChars;
-    extern const Event OSReadBytes;
-    extern const Event OSWriteBytes;
-
-    extern const Event PerfCpuCycles;
-    extern const Event PerfInstructions;
-    extern const Event PerfCacheReferences;
-    extern const Event PerfCacheMisses;
-    extern const Event PerfBranchInstructions;
-    extern const Event PerfBranchMisses;
-    extern const Event PerfBusCycles;
-    extern const Event PerfStalledCyclesFrontend;
-    extern const Event PerfStalledCyclesBackend;
-    extern const Event PerfRefCpuCycles;
-
-    extern const Event PerfCpuClock;
-    extern const Event PerfTaskClock;
-    extern const Event PerfContextSwitches;
-    extern const Event PerfCpuMigrations;
-    extern const Event PerfAlignmentFaults;
-    extern const Event PerfEmulationFaults;
-    extern const Event PerfMinEnabledTime;
-    extern const Event PerfMinEnabledRunningTime;
-    extern const Event PerfDataTLBReferences;
-    extern const Event PerfDataTLBMisses;
-    extern const Event PerfInstructionTLBReferences;
-    extern const Event PerfInstructionTLBMisses;
-    extern const Event PerfLocalMemoryReferences;
-    extern const Event PerfLocalMemoryMisses;
-#endif
-}
-
 namespace DB
 {
 

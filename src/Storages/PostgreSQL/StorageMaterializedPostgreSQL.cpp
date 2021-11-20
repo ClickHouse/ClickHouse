@@ -369,8 +369,8 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(PostgreSQLTableS
     auto create_table_query = std::make_shared<ASTCreateQuery>();
 
     auto table_id = getStorageID();
-    create_table_query->setTable(getNestedTableName());
-    create_table_query->setDatabase(table_id.database_name);
+    create_table_query->table = getNestedTableName();
+    create_table_query->database = table_id.database_name;
     if (is_materialized_postgresql_database)
         create_table_query->uuid = table_id.uuid;
 

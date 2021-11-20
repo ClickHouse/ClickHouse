@@ -1,5 +1,5 @@
 ---
-toc_priority: 72
+toc_priority: 71
 toc_title: "Навигация по коду ClickHouse"
 ---
 

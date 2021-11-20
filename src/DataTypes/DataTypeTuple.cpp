@@ -29,7 +29,6 @@ namespace ErrorCodes
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
-    extern const int ILLEGAL_INDEX;
 }
 
 
@@ -192,14 +191,6 @@ size_t DataTypeTuple::getPositionByName(const String & name) const
         if (names[i] == name)
             return i;
     throw Exception("Tuple doesn't have element with name '" + name + "'", ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-}
-
-String DataTypeTuple::getNameByPosition(size_t i) const
-{
-    if (i == 0 || i > names.size())
-        throw Exception(ErrorCodes::ILLEGAL_INDEX, "Index of tuple element ({}) if out range ([1, {}])", i, names.size());
-
-    return names[i - 1];
 }
 
 
