@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # The protobuf compiler protoc doesn't support encoding or decoding length-delimited protobuf message.
-# To do that this script has been written.
+# To do that this script has been written. 
 
 import argparse
 import os.path
@@ -69,8 +69,7 @@ def decode(input, output, format_schema):
         msg = input.read(sz)
         if len(msg) < sz:
             raise EOFError('Unexpected end of file')
-        protoc = os.getenv('PROTOC_BINARY', 'protoc')
-        with subprocess.Popen([protoc,
+        with subprocess.Popen(["protoc",
                                 "--decode", format_schema.message_type, format_schema.schemaname],
                               cwd=format_schema.schemadir,
                               stdin=subprocess.PIPE,
@@ -99,8 +98,7 @@ def encode(input, output, format_schema):
             if line.startswith(b"MESSAGE #") or len(line) == 0:
                 break
             msg += line
-        protoc = os.getenv('PROTOC_BINARY', 'protoc')
-        with subprocess.Popen([protoc,
+        with subprocess.Popen(["protoc",
                                 "--encode", format_schema.message_type, format_schema.schemaname],
                               cwd=format_schema.schemadir,
                               stdin=subprocess.PIPE,
@@ -157,7 +155,7 @@ if __name__ == "__main__":
     group.add_argument('--decode_and_check', action='store_true', help='The same as --decode, and the utility will then encode '
                        ' the decoded data back to the binary form to check that the result of that encoding is the same as the input was.')
     args = parser.parse_args()
-
+    
     custom_input_file = None
     custom_output_file = None
     try:

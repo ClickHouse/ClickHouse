@@ -2,7 +2,7 @@
 
 #include <Common/PODArray.h>
 #include <Common/Stopwatch.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromMemory.h>
@@ -35,6 +35,29 @@
 
 using namespace DB;
 
+namespace std
+{
+template <typename T>
+std::ostream & operator<<(std::ostream & ostr, const std::optional<T> & opt)
+{
+    if (!opt)
+    {
+        return ostr << "<empty optional>";
+    }
+
+    return ostr << *opt;
+}
+
+template <typename T>
+std::vector<T> operator+(std::vector<T> && left, std::vector<T> && right)
+{
+    std::vector<T> result(std::move(left));
+    std::move(std::begin(right), std::end(right), std::back_inserter(result));
+
+    return result;
+}
+
+}
 
 namespace
 {
@@ -314,14 +337,6 @@ CodecTestSequence operator+(CodecTestSequence && left, const CodecTestSequence &
     return left.append(right);
 }
 
-std::vector<CodecTestSequence> operator+(const std::vector<CodecTestSequence> & left, const std::vector<CodecTestSequence> & right)
-{
-    std::vector<CodecTestSequence> result(std::move(left));
-    std::move(std::begin(right), std::end(right), std::back_inserter(result));
-
-    return result;
-}
-
 template <typename T>
 CodecTestSequence operator*(CodecTestSequence && left, T times)
 {
@@ -345,12 +360,10 @@ CodecTestSequence operator*(CodecTestSequence && left, T times)
 
 std::ostream & operator<<(std::ostream & ostr, const Codec & codec)
 {
-    ostr << "Codec{"
-         << "name: " << codec.codec_statement;
-    if (codec.expected_compression_ratio)
-        return ostr << ", expected_compression_ratio: " << *codec.expected_compression_ratio << "}";
-    else
-        return ostr << "}";
+    return ostr << "Codec{"
+                << "name: " << codec.codec_statement
+                << ", expected_compression_ratio: " << codec.expected_compression_ratio
+                << "}";
 }
 
 std::ostream & operator<<(std::ostream & ostr, const CodecTestSequence & seq)
@@ -685,7 +698,7 @@ auto SequentialGenerator = [](auto stride = 1)
 template <typename T>
 using uniform_distribution =
 typename std::conditional_t<std::is_floating_point_v<T>, std::uniform_real_distribution<T>,
-        typename std::conditional_t<is_integer<T>, std::uniform_int_distribution<T>, void>>;
+        typename std::conditional_t<is_integer_v<T>, std::uniform_int_distribution<T>, void>>;
 
 
 template <typename T = Int32>
@@ -736,7 +749,7 @@ auto RandomishGenerator = [](auto i)
 {
     using T = decltype(i);
     double sin_value = sin(static_cast<double>(i * i)) * i;
-    if (sin_value < std::numeric_limits<T>::lowest() || sin_value > static_cast<double>(std::numeric_limits<T>::max()))
+    if (sin_value < std::numeric_limits<T>::lowest() || sin_value > std::numeric_limits<T>::max())
         return T{};
     return T(sin_value);
 };
@@ -762,13 +775,15 @@ auto FFand0Generator = []()
     return [step = 0](auto i) mutable
     {
         decltype(i) result;
-
-        if (step % 2 == 0)
+        if (step++ % 2 == 0)
+        {
             memset(&result, 0, sizeof(result));
+        }
         else
+        {
             memset(&result, 0xFF, sizeof(result));
+        }
 
-        ++step;
         return result;
     };
 };
@@ -1114,7 +1129,7 @@ template <typename ValueType>
 auto DDCompatibilityTestSequence()
 {
     // Generates sequences with double delta in given range.
-    auto dd_generator = [prev_delta = static_cast<Int64>(0), prev = static_cast<Int64>(0)](auto dd) mutable //-V788
+    auto dd_generator = [prev_delta = static_cast<Int64>(0), prev = static_cast<Int64>(0)](auto dd) mutable
     {
         const auto curr = dd + prev + prev_delta;
         prev = curr;

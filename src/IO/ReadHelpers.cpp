@@ -6,10 +6,9 @@
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/BufferWithOwnMemory.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 #include <stdlib.h>
 
 #ifdef __SSE2__
@@ -80,6 +79,11 @@ void parseUUIDWithoutSeparator(const UInt8 * src36, std::reverse_iterator<UInt8 
 
     parseHex(&src36[0], dst16 + 8, 8);
     parseHex(&src36[16], dst16, 8);
+}
+
+UInt128 stringToUUID(const String & str)
+{
+    return parseFromString<UUID>(str);
 }
 
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
@@ -328,7 +332,6 @@ static void parseComplexEscapeSequence(Vector & s, ReadBuffer & buf)
             && decoded_char != '"'
             && decoded_char != '`'  /// MySQL style identifiers
             && decoded_char != '/'  /// JavaScript in HTML
-            && decoded_char != '='  /// Yandex's TSKV
             && !isControlASCII(decoded_char))
         {
             s.push_back('\\');
@@ -353,11 +356,8 @@ static ReturnType parseJSONEscapeSequence(Vector & s, ReadBuffer & buf)
     };
 
     ++buf.position();
-
     if (buf.eof())
         return error("Cannot parse escape sequence", ErrorCodes::CANNOT_PARSE_ESCAPE_SEQUENCE);
-
-    assert(buf.hasPendingData());
 
     switch (*buf.position())
     {
@@ -768,6 +768,17 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
         return ReturnType(false);
     };
 
+    auto ignore_delimiter = [&]
+    {
+        if (!buf.eof())
+        {
+            ++buf.position();
+            return true;
+        }
+        else
+            return false;
+    };
+
     auto append_digit = [&](auto & x)
     {
         if (!buf.eof() && isNumericASCII(*buf.position()))
@@ -781,44 +792,27 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
     };
 
     UInt16 year = 0;
-    UInt8 month = 0;
-    UInt8 day = 0;
-
     if (!append_digit(year)
         || !append_digit(year) // NOLINT
         || !append_digit(year) // NOLINT
         || !append_digit(year)) // NOLINT
         return error();
 
-    if (buf.eof())
+    if (!ignore_delimiter())
         return error();
 
-    if (isNumericASCII(*buf.position()))
-    {
-        /// YYYYMMDD
-        if (!append_digit(month)
-            || !append_digit(month) // NOLINT
-            || !append_digit(day)
-            || !append_digit(day)) // NOLINT
-            return error();
-    }
-    else
-    {
-        ++buf.position();
+    UInt8 month = 0;
+    if (!append_digit(month))
+        return error();
+    append_digit(month);
 
-        if (!append_digit(month))
-            return error();
-        append_digit(month);
+    if (!ignore_delimiter())
+        return error();
 
-        if (!buf.eof() && !isNumericASCII(*buf.position()))
-            ++buf.position();
-        else
-            return error();
-
-        if (!append_digit(day))
-            return error();
-        append_digit(day);
-    }
+    UInt8 day = 0;
+    if (!append_digit(day))
+        return error();
+    append_digit(day);
 
     date = LocalDate(year, month, day);
     return ReturnType(true);
@@ -1127,7 +1121,7 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
     }
 }
 
-void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
+void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
 {
     assert(current >= in.position());
     assert(current <= in.buffer().end());
@@ -1135,19 +1129,16 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current)
     const size_t old_bytes = memory.size();
     const size_t additional_bytes = current - in.position();
     const size_t new_bytes = old_bytes + additional_bytes;
-
     /// There are no new bytes to add to memory.
     /// No need to do extra stuff.
     if (new_bytes == 0)
         return;
-
-    assert(in.position() + additional_bytes <= in.buffer().end());
     memory.resize(new_bytes);
     memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
     in.position() = current;
 }
 
-bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current)
+bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current)
 {
     assert(current <= in.buffer().end());
 

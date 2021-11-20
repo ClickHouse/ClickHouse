@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
-#include <base/types.h>
+#include <common/types.h>
 
 namespace DB
 {
@@ -20,7 +20,7 @@ public:
     bool second_with_brackets;
 
 public:
-    explicit ASTPair(bool second_with_brackets_)
+    ASTPair(bool second_with_brackets_)
         : second_with_brackets(second_with_brackets_)
     {
     }
@@ -49,7 +49,7 @@ public:
     /// Has brackets around arguments
     bool has_brackets;
 
-    explicit ASTFunctionWithKeyValueArguments(bool has_brackets_ = true)
+    ASTFunctionWithKeyValueArguments(bool has_brackets_ = true)
         : has_brackets(has_brackets_)
     {
     }

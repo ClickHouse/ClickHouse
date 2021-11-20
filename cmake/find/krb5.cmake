@@ -1,12 +1,12 @@
 OPTION(ENABLE_KRB5 "Enable krb5" ${ENABLE_LIBRARIES})
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/krb5/README")
-    message (WARNING "submodule contrib/krb5 is missing. to fix try run: \n git submodule update --init")
+    message (WARNING "submodule contrib/krb5 is missing. to fix try run: \n git submodule update --init --recursive")
     set (ENABLE_KRB5 0)
 endif ()
 
-if (NOT CMAKE_SYSTEM_NAME MATCHES "Linux" AND NOT (CMAKE_SYSTEM_NAME MATCHES "Darwin" AND NOT CMAKE_CROSSCOMPILING))
-    message (WARNING "krb5 disabled in non-Linux and non-native-Darwin environments")
+if (NOT CMAKE_SYSTEM_NAME MATCHES "Linux")
+    message (WARNING "krb5 disabled in non-Linux environments")
     set (ENABLE_KRB5 0)
 endif ()
 

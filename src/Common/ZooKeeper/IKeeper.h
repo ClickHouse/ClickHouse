@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 
 #include <vector>
@@ -116,7 +116,6 @@ struct Request
     virtual ~Request() = default;
     virtual String getPath() const = 0;
     virtual void addRootPath(const String & /* root_path */) {}
-    virtual size_t bytesSize() const { return 0; }
 };
 
 struct Response;
@@ -132,7 +131,6 @@ struct Response
     Response & operator=(const Response &) = default;
     virtual ~Response() = default;
     virtual void removeRootPath(const String & /* root_path */) {}
-    virtual size_t bytesSize() const { return 0; }
 };
 
 struct WatchResponse : virtual Response
@@ -142,45 +140,9 @@ struct WatchResponse : virtual Response
     String path;
 
     void removeRootPath(const String & root_path) override;
-
-    size_t bytesSize() const override { return path.size() + sizeof(type) + sizeof(state); }
 };
 
 using WatchCallback = std::function<void(const WatchResponse &)>;
-
-struct SetACLRequest : virtual Request
-{
-    String path;
-    ACLs acls;
-    int32_t version = -1;
-
-    void addRootPath(const String & root_path) override;
-    String getPath() const override { return path; }
-    size_t bytesSize() const override { return path.size() + sizeof(version) + acls.size() * sizeof(ACL); }
-};
-
-struct SetACLResponse : virtual Response
-{
-    Stat stat;
-
-    size_t bytesSize() const override { return sizeof(Stat); }
-};
-
-struct GetACLRequest : virtual Request
-{
-    String path;
-
-    void addRootPath(const String & root_path) override;
-    String getPath() const override { return path; }
-    size_t bytesSize() const override { return path.size(); }
-};
-
-struct GetACLResponse : virtual Response
-{
-    ACLs acl;
-    Stat stat;
-    size_t bytesSize() const override { return sizeof(Stat) + acl.size() * sizeof(ACL); }
-};
 
 struct CreateRequest : virtual Request
 {
@@ -192,9 +154,6 @@ struct CreateRequest : virtual Request
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
-
-    size_t bytesSize() const override { return path.size() + data.size()
-            + sizeof(is_ephemeral) + sizeof(is_sequential) + acls.size() * sizeof(ACL); }
 };
 
 struct CreateResponse : virtual Response
@@ -202,8 +161,6 @@ struct CreateResponse : virtual Response
     String path_created;
 
     void removeRootPath(const String & root_path) override;
-
-    size_t bytesSize() const override { return path_created.size(); }
 };
 
 struct RemoveRequest : virtual Request
@@ -213,8 +170,6 @@ struct RemoveRequest : virtual Request
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
-
-    size_t bytesSize() const override { return path.size() + sizeof(version); }
 };
 
 struct RemoveResponse : virtual Response
@@ -227,15 +182,11 @@ struct ExistsRequest : virtual Request
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
-
-    size_t bytesSize() const override { return path.size(); }
 };
 
 struct ExistsResponse : virtual Response
 {
     Stat stat;
-
-    size_t bytesSize() const override { return sizeof(Stat); }
 };
 
 struct GetRequest : virtual Request
@@ -244,16 +195,12 @@ struct GetRequest : virtual Request
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
-
-    size_t bytesSize() const override { return path.size(); }
 };
 
 struct GetResponse : virtual Response
 {
     String data;
     Stat stat;
-
-    size_t bytesSize() const override { return data.size() + sizeof(stat); }
 };
 
 struct SetRequest : virtual Request
@@ -264,15 +211,11 @@ struct SetRequest : virtual Request
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
-
-    size_t bytesSize() const override { return data.size() + data.size() + sizeof(version); }
 };
 
 struct SetResponse : virtual Response
 {
     Stat stat;
-
-    size_t bytesSize() const override { return sizeof(stat); }
 };
 
 struct ListRequest : virtual Request
@@ -281,22 +224,12 @@ struct ListRequest : virtual Request
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
-
-    size_t bytesSize() const override { return path.size(); }
 };
 
 struct ListResponse : virtual Response
 {
     std::vector<String> names;
     Stat stat;
-
-    size_t bytesSize() const override
-    {
-        size_t size = sizeof(stat);
-        for (const auto & name : names)
-            size += name.size();
-        return size;
-    }
 };
 
 struct CheckRequest : virtual Request
@@ -306,8 +239,6 @@ struct CheckRequest : virtual Request
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }
-
-    size_t bytesSize() const override { return path.size() + sizeof(version); }
 };
 
 struct CheckResponse : virtual Response
@@ -320,14 +251,6 @@ struct MultiRequest : virtual Request
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return {}; }
-
-    size_t bytesSize() const override
-    {
-        size_t size = 0;
-        for (const auto & request : requests)
-            size += request->bytesSize();
-        return size;
-    }
 };
 
 struct MultiResponse : virtual Response
@@ -335,14 +258,6 @@ struct MultiResponse : virtual Response
     Responses responses;
 
     void removeRootPath(const String & root_path) override;
-
-    size_t bytesSize() const override
-    {
-        size_t size = 0;
-        for (const auto & response : responses)
-            size += response->bytesSize();
-        return size;
-    }
 };
 
 /// This response may be received only as an element of responses in MultiResponse.
@@ -411,7 +326,7 @@ public:
   * - whenever you receive exception with ZSESSIONEXPIRED code or method isExpired returns true,
   *   the ZooKeeper instance is no longer usable - you may only destroy it and probably create another.
   * - whenever session is expired or ZooKeeper instance is destroying, all callbacks are notified with special event.
-  * - data for callbacks must be alive when ZooKeeper instance is alive, so try to avoid capturing references in callbacks, it's error-prone.
+  * - data for callbacks must be alive when ZooKeeper instance is alive.
   */
 class IKeeper
 {
@@ -428,9 +343,6 @@ public:
     ///
     /// After the method is executed successfully, you must wait for callbacks
     ///  (don't destroy callback data before it will be called).
-    /// TODO: The above line is the description of an error-prone interface. It's better
-    ///  to replace callbacks with std::future results, so the caller shouldn't think about
-    ///  lifetime of the callback data.
     ///
     /// All callbacks are executed sequentially (the execution of callbacks is serialized).
     ///
@@ -481,7 +393,7 @@ public:
         MultiCallback callback) = 0;
 
     /// Expire session and finish all pending requests
-    virtual void finalize(const String & reason) = 0;
+    virtual void finalize() = 0;
 };
 
 }

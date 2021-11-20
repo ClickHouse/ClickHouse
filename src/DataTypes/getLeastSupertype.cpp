@@ -8,7 +8,6 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -163,36 +162,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
         }
     }
 
-    /// For maps
-    {
-        bool have_maps = false;
-        bool all_maps = true;
-        DataTypes key_types;
-        DataTypes value_types;
-        key_types.reserve(types.size());
-        value_types.reserve(types.size());
-
-        for (const auto & type : types)
-        {
-            if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(type.get()))
-            {
-                have_maps = true;
-                key_types.emplace_back(type_map->getKeyType());
-                value_types.emplace_back(type_map->getValueType());
-            }
-            else
-                all_maps = false;
-        }
-
-        if (have_maps)
-        {
-            if (!all_maps)
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Maps and some of them are not", ErrorCodes::NO_COMMON_TYPE);
-
-            return std::make_shared<DataTypeMap>(getLeastSupertype(key_types), getLeastSupertype(value_types));
-        }
-    }
-
     /// For LowCardinality. This is above Nullable, because LowCardinality can contain Nullable but cannot be inside Nullable.
     {
         bool have_low_cardinality = false;
@@ -277,18 +246,17 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
     /// For Date and DateTime/DateTime64, the common type is DateTime/DateTime64. No other types are compatible.
     {
         UInt32 have_date = type_ids.count(TypeIndex::Date);
-        UInt32 have_date32 = type_ids.count(TypeIndex::Date32);
         UInt32 have_datetime = type_ids.count(TypeIndex::DateTime);
         UInt32 have_datetime64 = type_ids.count(TypeIndex::DateTime64);
 
-        if (have_date || have_date32 || have_datetime || have_datetime64)
+        if (have_date || have_datetime || have_datetime64)
         {
-            bool all_date_or_datetime = type_ids.size() == (have_date + have_date32 + have_datetime + have_datetime64);
+            bool all_date_or_datetime = type_ids.size() == (have_date + have_datetime + have_datetime64);
             if (!all_date_or_datetime)
-                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Date/Date32/DateTime/DateTime64 and some of them are not",
+                throw Exception(getExceptionMessagePrefix(types) + " because some of them are Date/DateTime/DateTime64 and some of them are not",
                     ErrorCodes::NO_COMMON_TYPE);
 
-            if (have_datetime64 == 0 && have_date32 == 0)
+            if (have_datetime64 == 0)
             {
                 for (const auto & type : types)
                 {
@@ -297,22 +265,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 }
 
                 return std::make_shared<DataTypeDateTime>();
-            }
-
-            /// For Date and Date32, the common type is Date32
-            if (have_datetime == 0 && have_datetime64 == 0)
-            {
-                for (const auto & type : types)
-                {
-                    if (isDate32(type))
-                        return type;
-                }
-            }
-
-            /// For Datetime and Date32, the common type is Datetime64
-            if (have_datetime == 1 && have_date32 == 1 && have_datetime64 == 0)
-            {
-                return std::make_shared<DataTypeDateTime64>(0);
             }
 
             UInt8 max_scale = 0;
@@ -421,8 +373,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 maximize(max_bits_of_unsigned_integer, 32);
             else if (typeid_cast<const DataTypeUInt64 *>(type.get()))
                 maximize(max_bits_of_unsigned_integer, 64);
-            else if (typeid_cast<const DataTypeUInt128 *>(type.get()))
-                maximize(max_bits_of_unsigned_integer, 128);
             else if (typeid_cast<const DataTypeUInt256 *>(type.get()))
                 maximize(max_bits_of_unsigned_integer, 256);
             else if (typeid_cast<const DataTypeInt8 *>(type.get()) || typeid_cast<const DataTypeEnum8 *>(type.get()))
@@ -456,7 +406,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             size_t min_bit_width_of_integer = std::max(max_bits_of_signed_integer, max_bits_of_unsigned_integer);
 
             /// If unsigned is not covered by signed.
-            if (max_bits_of_signed_integer && max_bits_of_unsigned_integer >= max_bits_of_signed_integer) //-V1051
+            if (max_bits_of_signed_integer && max_bits_of_unsigned_integer >= max_bits_of_signed_integer)
             {
                 // Because 128 and 256 bit integers are significantly slower, we should not promote to them.
                 // But if we already have wide numbers, promotion is necessary.
@@ -515,8 +465,6 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                     return std::make_shared<DataTypeUInt32>();
                 else if (min_bit_width_of_integer <= 64)
                     return std::make_shared<DataTypeUInt64>();
-                else if (min_bit_width_of_integer <= 128)
-                    return std::make_shared<DataTypeUInt128>();
                 else if (min_bit_width_of_integer <= 256)
                     return std::make_shared<DataTypeUInt256>();
                 else

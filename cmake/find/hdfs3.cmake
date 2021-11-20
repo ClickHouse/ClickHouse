@@ -1,4 +1,4 @@
-if(NOT ARCH_ARM AND NOT OS_FREEBSD AND NOT APPLE AND USE_PROTOBUF AND NOT ARCH_PPC64LE)
+if(NOT ARCH_ARM AND NOT OS_FREEBSD AND NOT APPLE AND USE_PROTOBUF)
     option(ENABLE_HDFS "Enable HDFS" ${ENABLE_LIBRARIES})
 elseif(ENABLE_HDFS OR USE_INTERNAL_HDFS3_LIBRARY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use HDFS3 with current configuration")
@@ -16,7 +16,7 @@ option(USE_INTERNAL_HDFS3_LIBRARY "Set to FALSE to use system HDFS3 instead of b
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libhdfs3/include/hdfs/hdfs.h")
     if(USE_INTERNAL_HDFS3_LIBRARY)
-        message(WARNING "submodule contrib/libhdfs3 is missing. to fix try run: \n git submodule update --init")
+        message(WARNING "submodule contrib/libhdfs3 is missing. to fix try run: \n git submodule update --init --recursive")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot use internal HDFS3 library")
         set(USE_INTERNAL_HDFS3_LIBRARY 0)
     endif()

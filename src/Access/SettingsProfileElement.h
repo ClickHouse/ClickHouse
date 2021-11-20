@@ -13,7 +13,7 @@ class SettingsChanges;
 class SettingsConstraints;
 class ASTSettingsProfileElement;
 class ASTSettingsProfileElements;
-class AccessControl;
+class AccessControlManager;
 
 
 struct SettingsProfileElement
@@ -35,14 +35,14 @@ struct SettingsProfileElement
 
     SettingsProfileElement() {}
 
-    /// The constructor from AST requires the AccessControl if `ast.id_mode == false`.
+    /// The constructor from AST requires the AccessControlManager if `ast.id_mode == false`.
     SettingsProfileElement(const ASTSettingsProfileElement & ast);
-    SettingsProfileElement(const ASTSettingsProfileElement & ast, const AccessControl & access_control);
+    SettingsProfileElement(const ASTSettingsProfileElement & ast, const AccessControlManager & manager);
     std::shared_ptr<ASTSettingsProfileElement> toAST() const;
-    std::shared_ptr<ASTSettingsProfileElement> toASTWithNames(const AccessControl & access_control) const;
+    std::shared_ptr<ASTSettingsProfileElement> toASTWithNames(const AccessControlManager & manager) const;
 
 private:
-    void init(const ASTSettingsProfileElement & ast, const AccessControl * access_control);
+    void init(const ASTSettingsProfileElement & ast, const AccessControlManager * manager);
 };
 
 
@@ -51,18 +51,17 @@ class SettingsProfileElements : public std::vector<SettingsProfileElement>
 public:
     SettingsProfileElements() {}
 
-    /// The constructor from AST requires the AccessControl if `ast.id_mode == false`.
+    /// The constructor from AST requires the AccessControlManager if `ast.id_mode == false`.
     SettingsProfileElements(const ASTSettingsProfileElements & ast);
-    SettingsProfileElements(const ASTSettingsProfileElements & ast, const AccessControl & access_control);
+    SettingsProfileElements(const ASTSettingsProfileElements & ast, const AccessControlManager & manager);
     std::shared_ptr<ASTSettingsProfileElements> toAST() const;
-    std::shared_ptr<ASTSettingsProfileElements> toASTWithNames(const AccessControl & access_control) const;
+    std::shared_ptr<ASTSettingsProfileElements> toASTWithNames(const AccessControlManager & manager) const;
 
     void merge(const SettingsProfileElements & other);
 
     Settings toSettings() const;
     SettingsChanges toSettingsChanges() const;
-    SettingsConstraints toSettingsConstraints(const AccessControl & access_control) const;
-    std::vector<UUID> toProfileIDs() const;
+    SettingsConstraints toSettingsConstraints(const AccessControlManager & manager) const;
 };
 
 }

@@ -1,7 +1,7 @@
 #include <Storages/System/StorageSystemZeros.h>
 
 #include <Processors/Sources/SourceWithProgress.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
@@ -94,7 +94,7 @@ Pipe StorageSystemZeros::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo &,
-    ContextPtr /*context*/,
+    const Context & /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)

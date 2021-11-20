@@ -21,9 +21,9 @@ TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, Writ
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
-    serializations.resize(columns);
+    types.resize(columns);
     for (size_t i = 0; i < columns; ++i)
-        serializations[i] = sample.safeGetByPosition(i).type->getDefaultSerialization();
+        types[i] = sample.safeGetByPosition(i).type;
 
     /// Validate format string for whole output
     size_t data_idx = format.format_idx_to_column_idx.size() + 1;
@@ -105,32 +105,32 @@ void TemplateBlockOutputFormat::writeRow(const Chunk & chunk, size_t row_num)
         writeString(row_format.delimiters[j], out);
 
         size_t col_idx = *row_format.format_idx_to_column_idx[j];
-        serializeField(*chunk.getColumns()[col_idx], *serializations[col_idx], row_num, row_format.formats[j]);
+        serializeField(*chunk.getColumns()[col_idx], *types[col_idx], row_num, row_format.formats[j]);
     }
     writeString(row_format.delimiters[columns], out);
 }
 
-void TemplateBlockOutputFormat::serializeField(const IColumn & column, const ISerialization & serialization, size_t row_num, ColumnFormat col_format)
+void TemplateBlockOutputFormat::serializeField(const IColumn & column, const IDataType & type, size_t row_num, ColumnFormat col_format)
 {
     switch (col_format)
     {
         case ColumnFormat::Escaped:
-            serialization.serializeTextEscaped(column, row_num, out, settings);
+            type.serializeAsTextEscaped(column, row_num, out, settings);
             break;
         case ColumnFormat::Quoted:
-            serialization.serializeTextQuoted(column, row_num, out, settings);
+            type.serializeAsTextQuoted(column, row_num, out, settings);
             break;
         case ColumnFormat::Csv:
-            serialization.serializeTextCSV(column, row_num, out, settings);
+            type.serializeAsTextCSV(column, row_num, out, settings);
             break;
         case ColumnFormat::Json:
-            serialization.serializeTextJSON(column, row_num, out, settings);
+            type.serializeAsTextJSON(column, row_num, out, settings);
             break;
         case ColumnFormat::Xml:
-            serialization.serializeTextXML(column, row_num, out, settings);
+            type.serializeAsTextXML(column, row_num, out, settings);
             break;
         case ColumnFormat::Raw:
-            serialization.serializeTextRaw(column, row_num, out, settings);
+            type.serializeAsText(column, row_num, out, settings);
             break;
         default:
             __builtin_unreachable();
@@ -142,11 +142,13 @@ template <typename U, typename V> void TemplateBlockOutputFormat::writeValue(U v
     auto type = std::make_unique<V>();
     auto col = type->createColumn();
     col->insert(value);
-    serializeField(*col, *type->getDefaultSerialization(), 0, col_format);
+    serializeField(*col, *type, 0, col_format);
 }
 
 void TemplateBlockOutputFormat::consume(Chunk chunk)
 {
+    doWritePrefix();
+
     size_t rows = chunk.getNumRows();
 
     for (size_t i = 0; i < rows; ++i)
@@ -159,15 +161,21 @@ void TemplateBlockOutputFormat::consume(Chunk chunk)
     }
 }
 
-void TemplateBlockOutputFormat::writePrefix()
+void TemplateBlockOutputFormat::doWritePrefix()
 {
-    writeString(format.delimiters.front(), out);
+    if (need_write_prefix)
+    {
+        writeString(format.delimiters.front(), out);
+        need_write_prefix = false;
+    }
 }
 
-void TemplateBlockOutputFormat::finalizeImpl()
+void TemplateBlockOutputFormat::finalize()
 {
     if (finalized)
         return;
+
+    doWritePrefix();
 
     size_t parts = format.format_idx_to_column_idx.size();
 
@@ -219,9 +227,9 @@ void TemplateBlockOutputFormat::finalizeImpl()
 }
 
 
-void registerOutputFormatTemplate(FormatFactory & factory)
+void registerOutputFormatProcessorTemplate(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Template", [](
+    factory.registerOutputFormatProcessor("Template", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams &,
@@ -259,7 +267,7 @@ void registerOutputFormatTemplate(FormatFactory & factory)
         return std::make_shared<TemplateBlockOutputFormat>(sample, buf, settings, resultset_format, row_format, settings.template_settings.row_between_delimiter);
     });
 
-    factory.registerOutputFormat("CustomSeparated", [](
+    factory.registerOutputFormatProcessor("CustomSeparated", [](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams &,

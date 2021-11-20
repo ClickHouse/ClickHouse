@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <background_move_processing_pool_thread_sleep_seconds>0.5</background_move_processing_pool_thread_sleep_seconds>
     <background_move_processing_pool_task_sleep_seconds_when_no_work_max>0.5</background_move_processing_pool_task_sleep_seconds_when_no_work_max>
-</clickhouse>
+</yandex>

@@ -16,13 +16,17 @@ NamesAndTypesList StorageSystemBuildOptions::getNamesAndTypes()
     };
 }
 
-void StorageSystemBuildOptions::fillData(MutableColumns & res_columns, ContextPtr, const SelectQueryInfo &) const
+void StorageSystemBuildOptions::fillData(MutableColumns & res_columns, const Context &, const SelectQueryInfo &) const
 {
+#if !defined(ARCADIA_BUILD)
     for (auto * it = auto_config_build; *it; it += 2)
     {
         res_columns[0]->insert(it[0]);
         res_columns[1]->insert(it[1]);
     }
+#else
+    UNUSED(res_columns);
+#endif
 }
 
 }

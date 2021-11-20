@@ -1,5 +1,16 @@
 # Third-party libraries may have substandard code.
 
+# Put all targets defined here and in added subfolders under "contrib/" folder in GUI-based IDEs by default.
+# Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they will
+# appear not in "contrib/" as originally planned here.
+get_filename_component (_current_dir_name "${CMAKE_CURRENT_LIST_DIR}" NAME)
+if (CMAKE_FOLDER)
+    set (CMAKE_FOLDER "${CMAKE_FOLDER}/${_current_dir_name}")
+else ()
+    set (CMAKE_FOLDER "${_current_dir_name}")
+endif ()
+unset (_current_dir_name)
+
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
@@ -21,12 +32,12 @@ endif()
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
 
-add_subdirectory (abseil-cpp-cmake)
-add_subdirectory (magic-enum-cmake)
+add_subdirectory (antlr4-runtime-cmake)
 add_subdirectory (boost-cmake)
 add_subdirectory (cctz-cmake)
 add_subdirectory (consistent-hashing)
 add_subdirectory (dragonbox-cmake)
+add_subdirectory (FastMemcpy)
 add_subdirectory (hyperscan-cmake)
 add_subdirectory (jemalloc-cmake)
 add_subdirectory (libcpuid-cmake)
@@ -36,26 +47,11 @@ add_subdirectory (lz4-cmake)
 add_subdirectory (murmurhash)
 add_subdirectory (replxx-cmake)
 add_subdirectory (unixodbc-cmake)
-add_subdirectory (nanodbc-cmake)
-
-if (USE_INTERNAL_CAPNP_LIBRARY AND NOT MISSING_INTERNAL_CAPNP_LIBRARY)
-    add_subdirectory(capnproto-cmake)
-endif ()
-
-if (ENABLE_FUZZING)
-    add_subdirectory (libprotobuf-mutator-cmake)
-endif()
-
-if (USE_YAML_CPP)
-    add_subdirectory (yaml-cpp-cmake)
-endif()
-
-if (USE_INTERNAL_XZ_LIBRARY)
-    add_subdirectory (xz)
-endif()
+add_subdirectory (xz)
 
 add_subdirectory (poco-cmake)
 add_subdirectory (croaring-cmake)
+
 
 # TODO: refactor the contrib libraries below this comment.
 
@@ -97,8 +93,14 @@ if (USE_INTERNAL_ZLIB_LIBRARY)
     add_subdirectory (${INTERNAL_ZLIB_NAME})
     # We should use same defines when including zlib.h as used when zlib compiled
     target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
+    if (TARGET zlibstatic)
+        target_compile_definitions (zlibstatic PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
+    endif ()
     if (ARCH_AMD64 OR ARCH_AARCH64)
         target_compile_definitions (zlib PUBLIC X86_64 UNALIGNED_OK)
+        if (TARGET zlibstatic)
+            target_compile_definitions (zlibstatic PUBLIC X86_64 UNALIGNED_OK)
+        endif ()
     endif ()
 endif ()
 
@@ -160,7 +162,7 @@ endif ()
 if(USE_INTERNAL_SNAPPY_LIBRARY)
     set(SNAPPY_BUILD_TESTS 0 CACHE INTERNAL "")
 
-    add_subdirectory(snappy-cmake)
+    add_subdirectory(snappy)
 
     set (SNAPPY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/snappy")
 endif()
@@ -204,28 +206,25 @@ elseif(GTEST_SRC_DIR)
     target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
 endif()
 
-function(add_llvm)
+if (USE_EMBEDDED_COMPILER AND USE_INTERNAL_LLVM_LIBRARY)
     # ld: unknown option: --color-diagnostics
     if (APPLE)
         set (LINKER_SUPPORTS_COLOR_DIAGNOSTICS 0 CACHE INTERNAL "")
     endif ()
-
-    # Do not adjust RPATH in llvm, since then it will not be able to find libcxx/libcxxabi/libunwind
-    set (CMAKE_INSTALL_RPATH "ON")
-    set (LLVM_COMPILER_CHECKED 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_EH 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_RTTI 1 CACHE INTERNAL "")
     set (LLVM_ENABLE_PIC 0 CACHE INTERNAL "")
     set (LLVM_TARGETS_TO_BUILD "X86;AArch64" CACHE STRING "")
-
-    # Need to use C++17 since the compilation is not possible with C++20 currently, due to ambiguous operator != etc.
-    # LLVM project will set its default value for the -std=... but our global setting from CMake will override it.
-    set (CMAKE_CXX_STANDARD 17)
-
+    # Yes it is set globally, but this is not enough, since llvm will add -std=c++11 after default
+    # And c++2a cannot be used, due to ambiguous operator !=
+    if (COMPILER_GCC OR COMPILER_CLANG)
+        set (_CXX_STANDARD "gnu++17")
+    else()
+        set (_CXX_STANDARD "c++17")
+    endif()
+    set (LLVM_CXX_STD ${_CXX_STANDARD} CACHE STRING "" FORCE)
     add_subdirectory (llvm/llvm)
-endfunction()
-if (USE_EMBEDDED_COMPILER)
-    add_llvm()
+    target_include_directories(LLVMSupport SYSTEM BEFORE PRIVATE ${ZLIB_INCLUDE_DIR})
 endif ()
 
 if (USE_INTERNAL_LIBGSASL_LIBRARY)
@@ -275,20 +274,13 @@ if (USE_FASTOPS)
 endif()
 
 if (USE_AMQPCPP OR USE_CASSANDRA)
-    add_subdirectory (libuv-cmake)
+    add_subdirectory (libuv)
 endif()
 if (USE_AMQPCPP)
     add_subdirectory (amqpcpp-cmake)
 endif()
 if (USE_CASSANDRA)
-    # Need to use C++17 since the compilation is not possible with C++20 currently.
-    set (CMAKE_CXX_STANDARD_bak ${CMAKE_CXX_STANDARD})
-    set (CMAKE_CXX_STANDARD 17)
-
     add_subdirectory (cassandra)
-
-    set (CMAKE_CXX_STANDARD ${CMAKE_CXX_STANDARD_bak})
-    unset (CMAKE_CXX_STANDARD_bak)
 endif()
 
 # Should go before:
@@ -328,93 +320,3 @@ endif()
 
 add_subdirectory(fast_float)
 
-if (USE_NLP)
-    add_subdirectory(libstemmer-c-cmake)
-    add_subdirectory(wordnet-blast-cmake)
-    add_subdirectory(lemmagen-c-cmake)
-endif()
-
-if (USE_BZIP2)
-    add_subdirectory(bzip2-cmake)
-endif()
-
-if (USE_SQLITE)
-    add_subdirectory(sqlite-cmake)
-endif()
-
-if (USE_S2_GEOMETRY)
-    add_subdirectory(s2geometry-cmake)
-endif()
-
-# Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
-# Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
-# in "contrib/..." as originally planned, so we workaround this by fixing FOLDER properties of all targets manually,
-# instead of controlling it via CMAKE_FOLDER.
-
-function (ensure_target_rooted_in _target _folder)
-    # Skip INTERFACE library targets, since FOLDER property is not available for them.
-    get_target_property (_target_type "${_target}" TYPE)
-    if (_target_type STREQUAL "INTERFACE_LIBRARY")
-        return ()
-    endif ()
-
-    # Read the original FOLDER property value, if any.
-    get_target_property (_folder_prop "${_target}" FOLDER)
-
-    # Normalize that value, so we avoid possible repetitions in folder names.
-
-    if (NOT _folder_prop)
-        set (_folder_prop "")
-    endif ()
-
-    if (CMAKE_FOLDER AND _folder_prop MATCHES "^${CMAKE_FOLDER}/(.*)\$")
-        set (_folder_prop "${CMAKE_MATCH_1}")
-    endif ()
-
-    if (_folder AND _folder_prop MATCHES "^${_folder}/(.*)\$")
-        set (_folder_prop "${CMAKE_MATCH_1}")
-    endif ()
-
-    if (_folder)
-        set (_folder_prop "${_folder}/${_folder_prop}")
-    endif ()
-
-    if (CMAKE_FOLDER)
-        set (_folder_prop "${CMAKE_FOLDER}/${_folder_prop}")
-    endif ()
-
-    # Set the updated FOLDER property value back.
-    set_target_properties ("${_target}" PROPERTIES FOLDER "${_folder_prop}")
-endfunction ()
-
-function (ensure_own_targets_are_rooted_in _dir _folder)
-    get_directory_property (_targets DIRECTORY "${_dir}" BUILDSYSTEM_TARGETS)
-    foreach (_target IN LISTS _targets)
-        ensure_target_rooted_in ("${_target}" "${_folder}")
-    endforeach ()
-endfunction ()
-
-function (ensure_all_targets_are_rooted_in _dir _folder)
-    ensure_own_targets_are_rooted_in ("${_dir}" "${_folder}")
-
-    get_property (_sub_dirs DIRECTORY "${_dir}" PROPERTY SUBDIRECTORIES)
-    foreach (_sub_dir IN LISTS _sub_dirs)
-        ensure_all_targets_are_rooted_in ("${_sub_dir}" "${_folder}")
-    endforeach ()
-endfunction ()
-
-function (organize_ide_folders_2_level _dir)
-    get_filename_component (_dir_name "${_dir}" NAME)
-    ensure_own_targets_are_rooted_in ("${_dir}" "${_dir_name}")
-
-    # Note, that we respect only first two levels of nesting, we don't want to
-    # reorganize target folders further within each third-party dir.
-
-    get_property (_sub_dirs DIRECTORY "${_dir}" PROPERTY SUBDIRECTORIES)
-    foreach (_sub_dir IN LISTS _sub_dirs)
-        get_filename_component (_sub_dir_name "${_sub_dir}" NAME)
-        ensure_all_targets_are_rooted_in ("${_sub_dir}" "${_dir_name}/${_sub_dir_name}")
-    endforeach ()
-endfunction ()
-
-organize_ide_folders_2_level ("${CMAKE_CURRENT_LIST_DIR}")

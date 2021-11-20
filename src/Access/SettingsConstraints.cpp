@@ -1,7 +1,7 @@
 #include <Access/SettingsConstraints.h>
-#include <Access/AccessControl.h>
+#include <Access/AccessControlManager.h>
 #include <Core/Settings.h>
-#include <Common/FieldVisitorToString.h>
+#include <Common/FieldVisitors.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -18,7 +18,9 @@ namespace ErrorCodes
 }
 
 
-SettingsConstraints::SettingsConstraints(const AccessControl & access_control_) : access_control(&access_control_)
+SettingsConstraints::SettingsConstraints() = default;
+
+SettingsConstraints::SettingsConstraints(const AccessControlManager & manager_) : manager(&manager_)
 {
 }
 
@@ -199,10 +201,13 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings, SettingCh
         }
     };
 
-    if (reaction == THROW_ON_VIOLATION)
-        access_control->checkSettingNameIsAllowed(setting_name);
-    else if (!access_control->isSettingNameAllowed(setting_name))
-        return false;
+    if (manager)
+    {
+        if (reaction == THROW_ON_VIOLATION)
+            manager->checkSettingNameIsAllowed(setting_name);
+        else if (!manager->isSettingNameAllowed(setting_name))
+            return false;
+    }
 
     Field current_value, new_value;
     if (current_settings.tryGet(setting_name, current_value))

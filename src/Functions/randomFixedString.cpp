@@ -2,15 +2,15 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/PerformanceAdaptors.h>
 #include <Functions/FunctionsRandom.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
-#include <base/arithmeticOverflow.h>
-#include <base/unaligned.h>
+#include <common/arithmeticOverflow.h>
+#include <common/unaligned.h>
 
-#include <base/defines.h>
+#include <common/defines.h>
 
 namespace DB
 {
@@ -34,8 +34,6 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return false; }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override { return 1; }
 
@@ -79,7 +77,7 @@ public:
 class FunctionRandomFixedString : public FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>
 {
 public:
-    explicit FunctionRandomFixedString(ContextPtr context) : selector(context)
+    explicit FunctionRandomFixedString(const Context & context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             FunctionRandomFixedStringImpl<TargetSpecific::Default::RandImpl>>();
@@ -95,7 +93,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionRandomFixedString>(context);
     }

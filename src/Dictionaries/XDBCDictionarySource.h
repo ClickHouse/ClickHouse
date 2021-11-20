@@ -3,7 +3,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/Data/SessionPool.h>
 #include <Poco/URI.h>
-#include <Bridge/XDBCBridgeHelper.h>
+#include <Common/XDBCBridgeHelper.h>
 #include "DictionaryStructure.h"
 #include "ExternalQueryBuilder.h"
 #include "IDictionarySource.h"
@@ -23,40 +23,28 @@ class Logger;
 namespace DB
 {
 /// Allows loading dictionaries from a XDBC source via bridges
-class XDBCDictionarySource final : public IDictionarySource, WithContext
+class XDBCDictionarySource final : public IDictionarySource
 {
 public:
-
-    struct Configuration
-    {
-        const std::string db;
-        const std::string schema;
-        const std::string table;
-        const std::string query;
-        const std::string where;
-        const std::string invalidate_query;
-        const std::string update_field;
-        const UInt64 update_lag;
-    };
-
     XDBCDictionarySource(
         const DictionaryStructure & dict_struct_,
-        const Configuration & configuration_,
+        const Poco::Util::AbstractConfiguration & config_,
+        const std::string & config_prefix_,
         const Block & sample_block_,
-        ContextPtr context_,
+        const Context & context_,
         BridgeHelperPtr bridge);
 
     /// copy-constructor is provided in order to support cloneability
     XDBCDictionarySource(const XDBCDictionarySource & other);
     XDBCDictionarySource & operator=(const XDBCDictionarySource &) = delete;
 
-    Pipe loadAll() override;
+    BlockInputStreamPtr loadAll() override;
 
-    Pipe loadUpdatedAll() override;
+    BlockInputStreamPtr loadUpdatedAll() override;
 
-    Pipe loadIds(const std::vector<UInt64> & ids) override;
+    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
-    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -74,22 +62,27 @@ private:
     // execute invalidate_query. expects single cell in result
     std::string doInvalidateQuery(const std::string & request) const;
 
-    Pipe loadFromQuery(const Poco::URI & url, const Block & required_sample_block, const std::string & query) const;
+    BlockInputStreamPtr loadBase(const std::string & query) const;
 
     Poco::Logger * log;
 
     std::chrono::time_point<std::chrono::system_clock> update_time;
     const DictionaryStructure dict_struct;
-    const Configuration configuration;
+    const std::string db;
+    const std::string schema;
+    const std::string table;
+    const std::string where;
+    const std::string update_field;
     Block sample_block;
     ExternalQueryBuilder query_builder;
     const std::string load_all_query;
+    std::string invalidate_query;
     mutable std::string invalidate_query_response;
 
     BridgeHelperPtr bridge_helper;
     Poco::URI bridge_url;
     ConnectionTimeouts timeouts;
-    Poco::Net::HTTPBasicCredentials credentials{};
+    const Context & global_context;
 };
 
 }

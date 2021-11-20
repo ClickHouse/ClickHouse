@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
   <profiles>
     <default>
         <max_query_size from_zk="/setting/max_query_size" />
@@ -10,8 +10,5 @@
           <profile>default</profile>
           <quota>default</quota>
       </default>
-
-      <include from_zk="/users_from_zk_1" />
-      <include from_zk="/users_from_zk_2" />
   </users>
-</clickhouse>
+</yandex>

@@ -4,9 +4,8 @@
 
 #include <Common/Arena.h>
 #include <Common/ThreadPool.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/Exception.h>
-#include "IO/WriteBufferFromString.h"
 #include <Formats/FormatFactory.h>
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -95,7 +94,7 @@ public:
         need_flush = true;
     }
 
-    void writePrefix() override
+    void doWritePrefix() override
     {
         addChunk(Chunk{}, ProcessingUnitType::START, /*can_throw_exception*/ true);
     }
@@ -105,16 +104,7 @@ public:
         finishAndWait();
     }
 
-    /// There are no formats which support parallel formatting and progress writing at the same time
-    void onProgress(const Progress &) override {}
-
-    String getContentType() const override
-    {
-        WriteBufferFromOwnString buffer;
-        return internal_formatter_creator(buffer)->getContentType();
-    }
-
-private:
+protected:
     void consume(Chunk chunk) override final
     {
         addChunk(std::move(chunk), ProcessingUnitType::PLAIN, /*can_throw_exception*/ true);
@@ -130,8 +120,9 @@ private:
         addChunk(std::move(extremes), ProcessingUnitType::EXTREMES, /*can_throw_exception*/ true);
     }
 
-    void finalizeImpl() override;
+    void finalize() override;
 
+private:
     InternalFormatterCreator internal_formatter_creator;
 
     /// Status to synchronize multiple threads.

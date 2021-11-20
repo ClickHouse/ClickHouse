@@ -28,7 +28,7 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
         MutableColumns && columns_);
 
     void serializeBinary(WriteBuffer & ostr) const override;
-    void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    void deserializeBinary(ReadBuffer & istr) override;
 
     size_t size() const { return block.rows(); }
     bool empty() const override { return !size(); }
@@ -87,7 +87,7 @@ public:
         const Block & index_sample_block_,
         size_t max_rows_,
         const SelectQueryInfo & query,
-        ContextPtr context);
+        const Context & context);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -129,7 +129,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const SelectQueryInfo & query, ContextPtr context) const override;
+            const SelectQueryInfo & query, const Context & context) const override;
 
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 

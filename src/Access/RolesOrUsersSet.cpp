@@ -1,9 +1,9 @@
 #include <Access/RolesOrUsersSet.h>
-#include <Parsers/Access/ASTRolesOrUsersSet.h>
-#include <Parsers/formatAST.h>
-#include <Access/AccessControl.h>
+#include <Access/AccessControlManager.h>
 #include <Access/User.h>
 #include <Access/Role.h>
+#include <Parsers/ASTRolesOrUsersSet.h>
+#include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <boost/range/algorithm/set_algorithm.hpp>
@@ -53,40 +53,40 @@ RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const std::opti
     init(ast, nullptr, current_user_id);
 }
 
-RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControl & access_control)
+RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControlManager & manager)
 {
-    init(ast, &access_control);
+    init(ast, &manager);
 }
 
-RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControl & access_control, const std::optional<UUID> & current_user_id)
+RolesOrUsersSet::RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControlManager & manager, const std::optional<UUID> & current_user_id)
 {
-    init(ast, &access_control, current_user_id);
+    init(ast, &manager, current_user_id);
 }
 
-void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl * access_control, const std::optional<UUID> & current_user_id)
+void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControlManager * manager, const std::optional<UUID> & current_user_id)
 {
     all = ast.all;
 
-    auto name_to_id = [&ast, access_control](const String & name) -> UUID
+    auto name_to_id = [&ast, manager](const String & name) -> UUID
     {
         if (ast.id_mode)
             return parse<UUID>(name);
-        assert(access_control);
-        if (ast.allow_users && ast.allow_roles)
+        assert(manager);
+        if (ast.allow_user_names && ast.allow_role_names)
         {
-            auto id = access_control->find<User>(name);
+            auto id = manager->find<User>(name);
             if (id)
                 return *id;
-            return access_control->getID<Role>(name);
+            return manager->getID<Role>(name);
         }
-        else if (ast.allow_users)
+        else if (ast.allow_user_names)
         {
-            return access_control->getID<User>(name);
+            return manager->getID<User>(name);
         }
         else
         {
-            assert(ast.allow_roles);
-            return access_control->getID<Role>(name);
+            assert(ast.allow_role_names);
+            return manager->getID<Role>(name);
         }
     };
 
@@ -106,8 +106,8 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
     if (!ast.except_names.empty())
     {
         except_ids.reserve(ast.except_names.size());
-        for (const String & name : ast.except_names)
-            except_ids.insert(name_to_id(name));
+        for (const String & except_name : ast.except_names)
+            except_ids.insert(name_to_id(except_name));
     }
 
     if (ast.except_current_user)
@@ -116,8 +116,8 @@ void RolesOrUsersSet::init(const ASTRolesOrUsersSet & ast, const AccessControl *
         except_ids.insert(*current_user_id);
     }
 
-    for (const UUID & id : except_ids)
-        ids.erase(id);
+    for (const UUID & except_id : except_ids)
+        ids.erase(except_id);
 }
 
 
@@ -127,7 +127,7 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
     ast->id_mode = true;
     ast->all = all;
 
-    if (!ids.empty() && !all)
+    if (!ids.empty())
     {
         ast->names.reserve(ids.size());
         for (const UUID & id : ids)
@@ -147,17 +147,17 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toAST() const
 }
 
 
-std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const AccessControl & access_control) const
+std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const AccessControlManager & manager) const
 {
     auto ast = std::make_shared<ASTRolesOrUsersSet>();
     ast->all = all;
 
-    if (!ids.empty() && !all)
+    if (!ids.empty())
     {
         ast->names.reserve(ids.size());
         for (const UUID & id : ids)
         {
-            auto name = access_control.tryReadName(id);
+            auto name = manager.tryReadName(id);
             if (name)
                 ast->names.emplace_back(std::move(*name));
         }
@@ -169,7 +169,7 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const Access
         ast->except_names.reserve(except_ids.size());
         for (const UUID & except_id : except_ids)
         {
-            auto except_name = access_control.tryReadName(except_id);
+            auto except_name = manager.tryReadName(except_id);
             if (except_name)
                 ast->except_names.emplace_back(std::move(*except_name));
         }
@@ -187,10 +187,48 @@ String RolesOrUsersSet::toString() const
 }
 
 
-String RolesOrUsersSet::toStringWithNames(const AccessControl & access_control) const
+String RolesOrUsersSet::toStringWithNames(const AccessControlManager & manager) const
 {
-    auto ast = toASTWithNames(access_control);
+    auto ast = toASTWithNames(manager);
     return serializeAST(*ast);
+}
+
+
+Strings RolesOrUsersSet::toStringsWithNames(const AccessControlManager & manager) const
+{
+    if (!all && ids.empty())
+        return {};
+
+    Strings res;
+    res.reserve(ids.size() + except_ids.size());
+
+    if (all)
+        res.emplace_back("ALL");
+    else
+    {
+        for (const UUID & id : ids)
+        {
+            auto name = manager.tryReadName(id);
+            if (name)
+                res.emplace_back(std::move(*name));
+        }
+        std::sort(res.begin(), res.end());
+    }
+
+    if (!except_ids.empty())
+    {
+        res.emplace_back("EXCEPT");
+        size_t old_size = res.size();
+        for (const UUID & id : except_ids)
+        {
+            auto name = manager.tryReadName(id);
+            if (name)
+                res.emplace_back(std::move(*name));
+        }
+        std::sort(res.begin() + old_size, res.end());
+    }
+
+    return res;
 }
 
 
@@ -210,18 +248,14 @@ void RolesOrUsersSet::clear()
 
 void RolesOrUsersSet::add(const UUID & id)
 {
-    if (!all)
-        ids.insert(id);
-    except_ids.erase(id);
+    ids.insert(id);
 }
 
 
 void RolesOrUsersSet::add(const std::vector<UUID> & ids_)
 {
-    if (!all)
-        ids.insert(ids_.begin(), ids_.end());
     for (const auto & id : ids_)
-        except_ids.erase(id);
+        add(id);
 }
 
 
@@ -253,25 +287,25 @@ bool RolesOrUsersSet::match(const UUID & user_id, const boost::container::flat_s
 std::vector<UUID> RolesOrUsersSet::getMatchingIDs() const
 {
     if (all)
-        throw Exception("getAllMatchingIDs() can't get ALL ids without access_control", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("getAllMatchingIDs() can't get ALL ids without manager", ErrorCodes::LOGICAL_ERROR);
     std::vector<UUID> res;
     boost::range::set_difference(ids, except_ids, std::back_inserter(res));
     return res;
 }
 
 
-std::vector<UUID> RolesOrUsersSet::getMatchingIDs(const AccessControl & access_control) const
+std::vector<UUID> RolesOrUsersSet::getMatchingIDs(const AccessControlManager & manager) const
 {
     if (!all)
         return getMatchingIDs();
 
     std::vector<UUID> res;
-    for (const UUID & id : access_control.findAll<User>())
+    for (const UUID & id : manager.findAll<User>())
     {
         if (match(id))
             res.push_back(id);
     }
-    for (const UUID & id : access_control.findAll<Role>())
+    for (const UUID & id : manager.findAll<Role>())
     {
         if (match(id))
             res.push_back(id);

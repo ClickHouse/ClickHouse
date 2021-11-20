@@ -14,7 +14,8 @@ struct NameMultiFuzzyMatchAny
 };
 
 using FunctionMultiFuzzyMatchAny = FunctionsMultiStringFuzzySearch<
-    MultiMatchAnyImpl<NameMultiFuzzyMatchAny, UInt8, true, false, true>,
+    MultiMatchAnyImpl<UInt8, true, false, true>,
+    NameMultiFuzzyMatchAny,
     std::numeric_limits<UInt32>::max()>;
 
 }

@@ -3,88 +3,46 @@ toc_priority: 65
 toc_title: Build on Mac OS X
 ---
 
-# You don't have to build ClickHouse
-
-You can install ClickHouse as follows: https://clickhouse.com/#quick-start
-Choose Mac x86 or M1.
-
 # How to Build ClickHouse on Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
-Build should work on x86_64 (Intel) and arm64 (Apple Silicon) based macOS 10.15 (Catalina) and higher with Homebrew's vanilla Clang.
-It is always recommended to use `clang` compiler. It is possible to use XCode's `AppleClang` or `gcc` but it's strongly discouraged.
+Build should work on Mac OS X 10.15 (Catalina).
 
 ## Install Homebrew {#install-homebrew}
 
 ``` bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-# ...and follow the printed instructions on any additional steps required to complete the installation.
+$ /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 ```
-
-## Install Xcode and Command Line Tools {#install-xcode-and-command-line-tools}
-
-Install the latest [Xcode](https://apps.apple.com/am/app/xcode/id497799835?mt=12) from App Store.
-
-Open it at least once to accept the end-user license agreement and automatically install the required components.
-
-Then, make sure that the latest Command Line Tools are installed and selected in the system:
-
-``` bash
-sudo rm -rf /Library/Developer/CommandLineTools
-sudo xcode-select --install
-```
-
-Reboot.
 
 ## Install Required Compilers, Tools, and Libraries {#install-required-compilers-tools-and-libraries}
 
 ``` bash
-brew update
-brew install cmake ninja libtool gettext llvm gcc binutils
+$ brew install cmake ninja libtool gettext llvm
 ```
 
 ## Checkout ClickHouse Sources {#checkout-clickhouse-sources}
 
 ``` bash
-git clone --recursive git@github.com:ClickHouse/ClickHouse.git
-# ...alternatively, you can use https://github.com/ClickHouse/ClickHouse.git as the repo URL.
+$ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
+```
+
+or
+
+``` bash
+$ git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+
+$ cd ClickHouse
 ```
 
 ## Build ClickHouse {#build-clickhouse}
 
-To build using Homebrew's vanilla Clang compiler:
+> Please note: ClickHouse doesn't support build with native Apple Clang compiler, we need use clang from LLVM.
 
 ``` bash
-cd ClickHouse
-rm -rf build
-mkdir build
-cd build
-cmake -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
-cmake --build . --config RelWithDebInfo
-cd ..
-```
-
-To build using Xcode's native AppleClang compiler (this option is strongly not recommended; use the option above):
-
-``` bash
-cd ClickHouse
-rm -rf build
-mkdir build
-cd build
-cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
-cmake --build . --config RelWithDebInfo
-cd ..
-```
-
-To build using Homebrew's vanilla GCC compiler (this option is absolutely not recommended, I'm wondering why do we ever have it):
-
-``` bash
-cd ClickHouse
-rm -rf build
-mkdir build
-cd build
-cmake -DCMAKE_C_COMPILER=$(brew --prefix gcc)/bin/gcc-11 -DCMAKE_CXX_COMPILER=$(brew --prefix gcc)/bin/g++-11 -DCMAKE_BUILD_TYPE=RelWithDebInfo ..
-cmake --build . --config RelWithDebInfo
-cd ..
+$ mkdir build
+$ cd build
+$ cmake .. -DCMAKE_C_COMPILER=`brew --prefix llvm`/bin/clang -DCMAKE_CXX_COMPILER=`brew --prefix llvm`/bin/clang++ -DCMAKE_PREFIX_PATH=`brew --prefix llvm`
+$ ninja
+$ cd ..
 ```
 
 ## Caveats {#caveats}
@@ -120,31 +78,14 @@ To do so, create the `/Library/LaunchDaemons/limit.maxfiles.plist` file with the
 </plist>
 ```
 
-Give the file correct permissions:
+Execute the following command:
 
 ``` bash
-sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
+$ sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 ```
 
-Validate that the file is correct:
+Reboot.
 
-``` bash
-plutil /Library/LaunchDaemons/limit.maxfiles.plist
-```
+To check if it’s working, you can use `ulimit -n` command.
 
-Load the file (or reboot):
-
-``` bash
-sudo launchctl load -w /Library/LaunchDaemons/limit.maxfiles.plist
-```
-
-To check if it’s working, use the `ulimit -n` or `launchctl limit maxfiles` commands.
-
-## Run ClickHouse server:
-
-```
-cd ClickHouse
-./build/programs/clickhouse-server --config-file ./programs/server/config.xml
-```
-
-[Original article](https://clickhouse.com/docs/en/development/build_osx/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->

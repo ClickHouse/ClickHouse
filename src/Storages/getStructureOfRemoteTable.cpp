@@ -3,7 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <DataStreams/RemoteBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
@@ -29,7 +29,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     const Cluster & cluster,
     const Cluster::ShardInfo & shard_info,
     const StorageID & table_id,
-    ContextPtr context,
+    const Context & context,
     const ASTPtr & table_func_ptr)
 {
     String query;
@@ -59,7 +59,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 
     ColumnsDescription res;
 
-    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context->getSettingsRef());
+    auto new_context = ClusterProxy::updateSettingsForCluster(cluster, context, context.getSettingsRef());
 
     /// Expect only needed columns from the result of DESC TABLE. NOTE 'comment' column is ignored for compatibility reasons.
     Block sample_block
@@ -71,16 +71,17 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     };
 
     /// Execute remote query without restrictions (because it's not real user query, but part of implementation)
-    RemoteQueryExecutor executor(shard_info.pool, query, sample_block, new_context);
-    executor.setPoolMode(PoolMode::GET_ONE);
+    auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, sample_block, *new_context);
+    input->setPoolMode(PoolMode::GET_ONE);
     if (!table_func_ptr)
-        executor.setMainTable(table_id);
+        input->setMainTable(table_id);
+    input->readPrefix();
 
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
     ParserExpression expr_parser;
 
-    while (Block current = executor.read())
+    while (Block current = input->read())
     {
         ColumnPtr name = current.getByName("name").column;
         ColumnPtr type = current.getByName("type").column;
@@ -103,21 +104,20 @@ ColumnsDescription getStructureOfRemoteTableInShard(
                 column.default_desc.kind = columnDefaultKindFromString(kind_name);
                 String expr_str = (*default_expr)[i].get<const String &>();
                 column.default_desc.expression = parseQuery(
-                    expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression", 0, context->getSettingsRef().max_parser_depth);
+                    expr_parser, expr_str.data(), expr_str.data() + expr_str.size(), "default expression", 0, context.getSettingsRef().max_parser_depth);
             }
 
             res.add(column);
         }
     }
 
-    executor.finish();
     return res;
 }
 
 ColumnsDescription getStructureOfRemoteTable(
     const Cluster & cluster,
     const StorageID & table_id,
-    ContextPtr context,
+    const Context & context,
     const ASTPtr & table_func_ptr)
 {
     const auto & shards_info = cluster.getShardsInfo();

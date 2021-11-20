@@ -9,7 +9,7 @@
 using namespace DB;
 using namespace DB::MySQLParser;
 
-static inline ASTPtr tryParserQuery(IParser & parser, const String & query)  // -V1071
+static inline ASTPtr tryParserQuery(IParser & parser, const String & query)
 {
     return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0);
 }

@@ -9,8 +9,6 @@
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
@@ -35,9 +33,9 @@ public:
     {
         const DataTypeAggregateFunction * data_type = typeid_cast<const DataTypeAggregateFunction *>(argument.get());
 
-        if (!data_type || !nested_func->haveSameStateRepresentation(*data_type->getFunction()))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}, "
-                            "expected {} or equivalent type", argument->getName(), getName(), getStateType()->getName());
+        if (!data_type || data_type->getFunctionName() != nested_func->getName())
+            throw Exception("Illegal type " + argument->getName() + " of argument for aggregate function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
     String getName() const override
@@ -48,11 +46,6 @@ public:
     DataTypePtr getReturnType() const override
     {
         return nested_func->getReturnType();
-    }
-
-    DataTypePtr getStateType() const override
-    {
-        return nested_func->getStateType();
     }
 
     void create(AggregateDataPtr __restrict place) const override

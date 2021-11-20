@@ -1,7 +1,7 @@
-if(NOT OS_FREEBSD)
+if(NOT OS_FREEBSD AND NOT APPLE AND NOT ARCH_ARM)
     option(ENABLE_S3 "Enable S3" ${ENABLE_LIBRARIES})
 elseif(ENABLE_S3 OR USE_INTERNAL_AWS_S3_LIBRARY)
-    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use S3 on FreeBSD")
+    message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use S3 on ARM, Apple or FreeBSD")
 endif()
 
 if(NOT ENABLE_S3)
@@ -23,7 +23,7 @@ if (NOT USE_INTERNAL_AWS_S3_LIBRARY)
 endif()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/aws/aws-cpp-sdk-s3")
-    message (WARNING "submodule contrib/aws is missing. to fix try run: \n git submodule update --init")
+    message (WARNING "submodule contrib/aws is missing. to fix try run: \n git submodule update --init --recursive")
     if (USE_INTERNAL_AWS_S3_LIBRARY)
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal S3 library")
     endif ()

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <IO/ReadBufferFromFile.h>
+#include <Poco/File.h>
 
 #include <utility>
 
@@ -63,7 +64,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     if (!index_granularity_info.is_adaptive)
     {
         /// Read directly to marks.
-        auto buffer = disk->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size);
+        auto buffer = disk->readFile(mrk_path, file_size);
         buffer->readStrict(reinterpret_cast<char *>(res->data()), file_size);
 
         if (!buffer->eof())
@@ -72,7 +73,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     }
     else
     {
-        auto buffer = disk->readFile(mrk_path, ReadSettings().adjustBufferSize(file_size), file_size);
+        auto buffer = disk->readFile(mrk_path, file_size);
         size_t i = 0;
         while (!buffer->eof())
         {

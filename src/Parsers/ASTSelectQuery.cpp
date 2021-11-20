@@ -95,7 +95,7 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (tables())
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FROM" << (s.hilite ? hilite_none : "");
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FROM " << (s.hilite ? hilite_none : "");
         tables()->formatImpl(s, state, frame);
     }
 
@@ -137,8 +137,8 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
     if (window())
     {
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str <<
-            "WINDOW" << (s.hilite ? hilite_none : "");
-        window()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
+            "WINDOW " << (s.hilite ? hilite_none : "");
+        window()->formatImpl(s, state, frame);
     }
 
     if (orderBy())
@@ -319,15 +319,23 @@ bool ASTSelectQuery::withFill() const
 }
 
 
-std::pair<ASTPtr, bool> ASTSelectQuery::arrayJoinExpressionList() const
+ASTPtr ASTSelectQuery::arrayJoinExpressionList(bool & is_left) const
 {
     const ASTArrayJoin * array_join = getFirstArrayJoin(*this);
     if (!array_join)
         return {};
 
-    bool is_left = (array_join->kind == ASTArrayJoin::Kind::Left);
-    return {array_join->expression_list, is_left};
+    is_left = (array_join->kind == ASTArrayJoin::Kind::Left);
+    return array_join->expression_list;
 }
+
+
+ASTPtr ASTSelectQuery::arrayJoinExpressionList() const
+{
+    bool is_left;
+    return arrayJoinExpressionList(is_left);
+}
+
 
 const ASTTablesInSelectQueryElement * ASTSelectQuery::join() const
 {
@@ -368,7 +376,7 @@ void ASTSelectQuery::replaceDatabaseAndTable(const StorageID & table_id)
     }
 
     String table_alias = getTableExpressionAlias(table_expression);
-    table_expression->database_and_table_name = std::make_shared<ASTTableIdentifier>(table_id);
+    table_expression->database_and_table_name = createTableIdentifier(table_id);
 
     if (!table_alias.empty())
         table_expression->database_and_table_name->setAlias(table_alias);
@@ -428,21 +436,6 @@ ASTPtr & ASTSelectQuery::getExpression(Expression expr)
     if (!positions.count(expr))
         throw Exception("Get expression before set", ErrorCodes::LOGICAL_ERROR);
     return children[positions[expr]];
-}
-
-void ASTSelectQuery::setFinal() // NOLINT method can be made const
-{
-    auto & tables_in_select_query = tables()->as<ASTTablesInSelectQuery &>();
-
-    if (tables_in_select_query.children.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Tables list is empty, it's a bug");
-
-    auto & tables_element = tables_in_select_query.children[0]->as<ASTTablesInSelectQueryElement &>();
-
-    if (!tables_element.table_expression)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "There is no table expression, it's a bug");
-
-    tables_element.table_expression->as<ASTTableExpression &>().final = true;
 }
 
 }

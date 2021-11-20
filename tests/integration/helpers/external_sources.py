@@ -9,7 +9,6 @@ import cassandra.cluster
 import pymongo
 import pymysql.cursors
 import redis
-import logging
 from tzlocal import get_localzone
 
 
@@ -60,7 +59,6 @@ class SourceMySQL(ExternalSource):
     }
 
     def create_mysql_conn(self):
-        logging.debug(f"pymysql connect {self.user}, {self.password}, {self.internal_hostname}, {self.internal_port}")
         self.connection = pymysql.connect(
             user=self.user,
             password=self.password,
@@ -100,11 +98,8 @@ class SourceMySQL(ExternalSource):
         )
 
     def prepare(self, structure, table_name, cluster):
-        if self.internal_hostname is None:
-            self.internal_hostname = cluster.mysql_ip
         self.create_mysql_conn()
         self.execute_mysql_query("create database if not exists test default character set 'utf8'")
-        self.execute_mysql_query("drop table if exists test.{}".format(table_name))
         fields_strs = []
         for field in structure.keys + structure.ordinary_fields + structure.range_fields:
             fields_strs.append(field.name + ' ' + self.TYPE_MAPPING[field.field_type])
@@ -462,9 +457,6 @@ class SourceCassandra(ExternalSource):
         )
 
     def prepare(self, structure, table_name, cluster):
-        if self.internal_hostname is None:
-            self.internal_hostname = cluster.cassandra_ip
-
         self.client = cassandra.cluster.Cluster([self.internal_hostname], port=self.internal_port)
         self.session = self.client.connect()
         self.session.execute(

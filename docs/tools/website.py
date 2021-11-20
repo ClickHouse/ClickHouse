@@ -104,7 +104,7 @@ def adjust_markdown_html(content):
         for p in div.find_all('p'):
             p_class = p.attrs.get('class')
             if is_admonition and p_class and ('admonition-title' in p_class):
-                p.attrs['class'] = p_class + ['alert-heading', 'display-4', 'text-reset', 'mb-2']
+                p.attrs['class'] = p_class + ['alert-heading', 'display-6', 'mb-2']
 
         if is_admonition:
             div.attrs['role'] = 'alert'
@@ -144,7 +144,6 @@ def build_website(args):
             'docs',
             'public',
             'node_modules',
-            'src',
             'templates',
             'locale',
             '.gitkeep'
@@ -156,10 +155,9 @@ def build_website(args):
         os.path.join(args.src_dir, 'utils', 'list-versions', 'version_date.tsv'),
         os.path.join(args.output_dir, 'data', 'version_date.tsv'))
 
-    # This file can be requested to install ClickHouse.
     shutil.copy2(
-        os.path.join(args.src_dir, 'docs', '_includes', 'install', 'universal.sh'),
-        os.path.join(args.output_dir, 'data', 'install.sh'))
+        os.path.join(args.website_dir, 'js', 'embedd.min.js'),
+        os.path.join(args.output_dir, 'js', 'embedd.min.js'))
 
     for root, _, filenames in os.walk(args.output_dir):
         for filename in filenames:
@@ -187,8 +185,7 @@ def get_css_in(args):
         f"'{args.website_dir}/css/base.css'",
         f"'{args.website_dir}/css/blog.css'",
         f"'{args.website_dir}/css/docs.css'",
-        f"'{args.website_dir}/css/highlight.css'",
-        f"'{args.website_dir}/css/main.css'"
+        f"'{args.website_dir}/css/highlight.css'"
     ]
 
 
@@ -201,8 +198,7 @@ def get_js_in(args):
         f"'{args.website_dir}/js/base.js'",
         f"'{args.website_dir}/js/index.js'",
         f"'{args.website_dir}/js/docsearch.js'",
-        f"'{args.website_dir}/js/docs.js'",
-        f"'{args.website_dir}/js/main.js'"
+        f"'{args.website_dir}/js/docs.js'"
     ]
 
 
@@ -220,23 +216,15 @@ def minify_file(path, css_digest, js_digest):
         content = minify_html(content)
         content = content.replace('base.css?css_digest', f'base.css?{css_digest}')
         content = content.replace('base.js?js_digest', f'base.js?{js_digest}')
-# TODO: restore cssmin
-#     elif path.endswith('.css'):
-#         content = cssmin.cssmin(content)
-# TODO: restore jsmin
-#     elif path.endswith('.js'):
-#         content = jsmin.jsmin(content)
+    elif path.endswith('.css'):
+        content = cssmin.cssmin(content)
+    elif path.endswith('.js'):
+        content = jsmin.jsmin(content)
     with open(path, 'wb') as f:
         f.write(content.encode('utf-8'))
 
 
 def minify_website(args):
-    # Output greenhouse css separately from main bundle to be included via the greenhouse iframe
-    command = f"cat '{args.website_dir}/css/greenhouse.css' > '{args.output_dir}/css/greenhouse.css'"
-    logging.info(command)
-    output = subprocess.check_output(command, shell=True)
-    logging.debug(output)
-
     css_in = ' '.join(get_css_in(args))
     css_out = f'{args.output_dir}/css/base.css'
     if args.minify:
@@ -253,7 +241,7 @@ def minify_website(args):
 
     js_in = get_js_in(args)
     js_out = f'{args.output_dir}/js/base.js'
-    if args.minify and False:  # TODO: return closure
+    if args.minify:
         js_in = [js[1:-1] for js in js_in]
         closure_args = [
             '--js', *js_in, '--js_output_file', js_out,

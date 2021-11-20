@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 SELECT
     'абвгдеёжзийклмнопрстуфхцчшщъыьэюяАБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ' AS orig,
     hex(convertCharset(orig, 'utf-8', 'cp1251') AS cp1251) AS cp1251_hex,

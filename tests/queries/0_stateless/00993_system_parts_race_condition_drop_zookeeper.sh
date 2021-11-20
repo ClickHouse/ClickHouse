@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
-# shellcheck source=./replication.lib
-. "$CURDIR"/replication.lib
 
 set -e
 
 function thread1()
 {
-    # NOTE: database = $CLICKHOUSE_DATABASE is unwanted
-    while true; do
+    while true; do 
         $CLICKHOUSE_CLIENT --query "SELECT * FROM system.parts FORMAT Null";
     done
 }
@@ -56,7 +52,7 @@ function thread6()
     while true; do
         REPLICA=$(($RANDOM % 10))
         $CLICKHOUSE_CLIENT -n -q "DROP TABLE IF EXISTS alter_table_$REPLICA;
-            CREATE TABLE alter_table_$REPLICA (a UInt8, b Int16, c Float32, d String, e Array(UInt8), f Nullable(UUID), g Tuple(UInt8, UInt16)) ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/alter_table', 'r_$REPLICA') ORDER BY a PARTITION BY b % 10 SETTINGS old_parts_lifetime = 1, cleanup_delay_period = 0, cleanup_delay_period_random_add = 0;";
+            CREATE TABLE alter_table_$REPLICA (a UInt8, b Int16, c Float32, d String, e Array(UInt8), f Nullable(UUID), g Tuple(UInt8, UInt16)) ENGINE = ReplicatedMergeTree('/clickhouse/tables/test_00993/alter_table', 'r_$REPLICA') ORDER BY a PARTITION BY b % 10 SETTINGS old_parts_lifetime = 1, cleanup_delay_period = 0, cleanup_delay_period_random_add = 0;";
         sleep 0.$RANDOM;
         done
 }
@@ -101,8 +97,6 @@ timeout $TIMEOUT bash -c thread5 2> /dev/null &
 timeout $TIMEOUT bash -c thread6 2>&1 | grep "was not completely removed from ZooKeeper" &
 
 wait
-
-check_replication_consistency "alter_table_" "count(), sum(a), sum(b), round(sum(c))"
 
 for i in {0..9}; do
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS alter_table_$i" 2>&1 | grep "was not completely removed from ZooKeeper" &

@@ -7,6 +7,7 @@
 namespace DB
 {
 
+class Context;
 class AccessRightsElements;
 class DDLGuard;
 
@@ -31,8 +32,7 @@ struct RenameDescription
             from_database_name(elem.from.database.empty() ? current_database : elem.from.database),
             from_table_name(elem.from.table),
             to_database_name(elem.to.database.empty() ? current_database : elem.to.database),
-            to_table_name(elem.to.table),
-            if_exists(elem.if_exists)
+            to_table_name(elem.to.table)
     {}
 
     String from_database_name;
@@ -40,7 +40,6 @@ struct RenameDescription
 
     String to_database_name;
     String to_table_name;
-    bool if_exists;
 };
 
 using RenameDescriptions = std::vector<RenameDescription>;
@@ -50,23 +49,21 @@ using TableGuards = std::map<UniqueTableName, std::unique_ptr<DDLGuard>>;
 /** Rename one table
   *  or rename many tables at once.
   */
-class InterpreterRenameQuery : public IInterpreter, WithContext
+class InterpreterRenameQuery : public IInterpreter
 {
 public:
-    InterpreterRenameQuery(const ASTPtr & query_ptr_, ContextPtr context_);
+    InterpreterRenameQuery(const ASTPtr & query_ptr_, Context & context_);
     BlockIO execute() override;
-    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr) const override;
-
-    bool renamedInsteadOfExchange() const { return renamed_instead_of_exchange; }
+    void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, const Context &) const override;
 
 private:
     BlockIO executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards);
-    BlockIO executeToDatabase(const ASTRenameQuery & rename, const RenameDescriptions & descriptions);
+    static BlockIO executeToDatabase(const ASTRenameQuery & rename, const RenameDescriptions & descriptions);
 
     AccessRightsElements getRequiredAccess() const;
 
     ASTPtr query_ptr;
-    bool renamed_instead_of_exchange{false};
+    Context & context;
 };
 
 }
