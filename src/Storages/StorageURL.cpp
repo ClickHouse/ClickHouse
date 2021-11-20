@@ -229,18 +229,12 @@ StorageURLSink::StorageURLSink(
 
 void StorageURLSink::consume(Chunk chunk)
 {
-    if (is_first_chunk)
-    {
-        writer->doWritePrefix();
-        is_first_chunk = false;
-    }
-
     writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
 void StorageURLSink::onFinish()
 {
-    writer->doWriteSuffix();
+    writer->finalize();
     writer->flush();
     write_buf->finalize();
 }

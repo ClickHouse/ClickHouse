@@ -110,13 +110,13 @@ if __name__ == "__main__":
 
     pr_info = PRInfo(event)
 
-    branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
+    branch_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/commits/master"
     branch_name = "master"
     if pr_info.number != 0:
         branch_name = "PR #{}".format(pr_info.number)
-        branch_url = "https://github.com/ClickHouse/ClickHouse/pull/" + str(pr_info.number)
-    commit_url = f"https://github.com/ClickHouse/ClickHouse/commit/{pr_info.sha}"
-    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID', '0')}"
+        branch_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/pull/{pr_info.number}"
+    commit_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/commit/{pr_info.sha}"
+    task_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID', '0')}"
     report = create_build_html_report(
         build_check_name,
         build_results,
