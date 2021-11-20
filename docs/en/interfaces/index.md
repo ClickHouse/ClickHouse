@@ -10,7 +10,7 @@ ClickHouse provides three network interfaces (they can be optionally wrapped in 
 
 -   [HTTP](http.md), which is documented and easy to use directly.
 -   [Native TCP](../interfaces/tcp.md), which has less overhead.
--   [gRPC protocol](grpc.md).
+-   [gRPC](grpc.md).
 
 In most cases it is recommended to use appropriate tool or library instead of interacting with those directly. Officially supported by Yandex are the following:
 
