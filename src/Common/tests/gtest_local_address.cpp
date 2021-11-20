@@ -10,15 +10,10 @@ TEST(LocalAddress, SmokeTest)
     DB::ShellCommand::Config config("/bin/hostname");
     config.arguments = {"-i"};
     auto cmd = DB::ShellCommand::executeDirect(config);
-
     std::string address_str;
     DB::readString(address_str, cmd->out);
     cmd->wait();
     std::cerr << "Got Address: " << address_str << std::endl;
-
-    /// hostname -i can return more than one address: "2001:db8:1::242:ac11:2 172.17.0.2"
-    if (auto space_pos = address_str.find(' '); space_pos != std::string::npos)
-        address_str = address_str.substr(0, space_pos);
 
     Poco::Net::IPAddress address(address_str);
 

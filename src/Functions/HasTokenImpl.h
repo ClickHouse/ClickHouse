@@ -14,14 +14,13 @@ namespace ErrorCodes
 
 /** Token search the string, means that needle must be surrounded by some separator chars, like whitespace or puctuation.
   */
-template <typename Name, typename TokenSearcher, bool negate_result = false>
+template <typename TokenSearcher, bool negate_result = false>
 struct HasTokenImpl
 {
     using ResultType = UInt8;
 
     static constexpr bool use_default_implementation_for_constants = true;
     static constexpr bool supports_start_pos = false;
-    static constexpr auto name = Name::name;
 
     static void vectorConstant(
         const ColumnString::Chars & data,
@@ -31,7 +30,7 @@ struct HasTokenImpl
         PaddedPODArray<UInt8> & res)
     {
         if (start_pos != nullptr)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function '{}' does not support start_pos argument", name);
+            throw Exception("Function 'hasToken' does not support start_pos argument", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         if (offsets.empty())
             return;
@@ -73,20 +72,20 @@ struct HasTokenImpl
     template <typename... Args>
     static void vectorVector(Args &&...)
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support non-constant needle argument", name);
+        throw Exception("Function 'hasToken' does not support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     /// Search different needles in single haystack.
     template <typename... Args>
     static void constantVector(Args &&...)
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support non-constant needle argument", name);
+        throw Exception("Function 'hasToken' does not support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <typename... Args>
     static void vectorFixedConstant(Args &&...)
     {
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Function '{}' doesn't support FixedString haystack argument", name);
+        throw Exception("Functions 'hasToken' don't support FixedString haystack argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 

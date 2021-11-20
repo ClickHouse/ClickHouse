@@ -1,0 +1,14 @@
+OWNER(g:clickhouse)
+
+LIBRARY()
+
+PEERDIR(
+    clickhouse/src/Common
+)
+
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F examples | grep -v -F 'PostgreSQL' | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

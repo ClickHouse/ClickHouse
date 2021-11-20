@@ -1,5 +1,5 @@
 User-agent: *
 Disallow: /cdn-cgi/
 Allow: /
-Host: https://clickhouse.com
-Sitemap: https://clickhouse.com/sitemap-index.xml
+Host: https://clickhouse.tech
+Sitemap: https://clickhouse.tech/sitemap-index.xml

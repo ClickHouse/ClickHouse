@@ -334,7 +334,7 @@ void RestoreQualifiedNamesMatcher::Data::changeTable(ASTIdentifier & identifier)
     {
         case IdentifierSemantic::ColumnMatch::AliasedTableName:
         case IdentifierSemantic::ColumnMatch::TableName:
-        case IdentifierSemantic::ColumnMatch::DBAndTable:
+        case IdentifierSemantic::ColumnMatch::DbAndTable:
             IdentifierSemantic::setColumnLongName(identifier, remote_table);
             break;
         default:

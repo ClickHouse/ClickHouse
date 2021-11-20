@@ -61,7 +61,6 @@ protected:
 private:
     using ASTWithAlias::children; /// ASTIdentifier is child free
 
-    friend class ASTTableIdentifier;
     friend class ReplaceQueryParameterVisitor;
     friend struct IdentifierSemantic;
     friend void setIdentifierSpecial(ASTPtr & ast);
@@ -83,9 +82,6 @@ public:
 
     StorageID getTableId() const;
     String getDatabaseName() const;
-
-    ASTPtr getTable() const;
-    ASTPtr getDatabase() const;
 
     // FIXME: used only when it's needed to rewrite distributed table name to real remote table name.
     void resetTable(const String & database_name, const String & table_name);  // TODO(ilezhankin): get rid of this

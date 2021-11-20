@@ -1,6 +1,8 @@
 #include <IO/LZMADeflatingWriteBuffer.h>
 #include <Common/MemoryTracker.h>
 
+#if !defined(ARCADIA_BUILD)
+
 namespace DB
 {
 namespace ErrorCodes
@@ -144,3 +146,4 @@ void LZMADeflatingWriteBuffer::finishImpl()
 }
 }
 
+#endif
