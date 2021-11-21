@@ -29,10 +29,8 @@ if(ARCH_AARCH64)
 
     list(APPEND ZLIB_ARCH_HDRS ${ARCHDIR}/arm.h)
     list(APPEND ZLIB_ARCH_SRCS ${ARCHDIR}/armfeature.c)
-    add_definitions(-DARM_ACLE_CRC_HASH)
     set(ACLE_SRCS ${ARCHDIR}/crc32_acle.c ${ARCHDIR}/insert_string_acle.c)
     list(APPEND ZLIB_ARCH_SRCS ${ACLE_SRCS})
-    add_definitions(-DARM_NEON_ADLER32 -DARM_NEON_CHUNKSET -DARM_NEON_SLIDEHASH)
     set(NEON_SRCS ${ARCHDIR}/adler32_neon.c ${ARCHDIR}/chunkset_neon.c ${ARCHDIR}/slide_neon.c)
     list(APPEND ZLIB_ARCH_SRCS ${NEON_SRCS})
 
