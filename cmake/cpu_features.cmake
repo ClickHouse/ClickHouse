@@ -29,7 +29,7 @@ if (ARCH_NATIVE)
     set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=native")
 
 elseif (ARCH_AARCH64)
-    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8+crc")
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8-a+crc")
 
 else ()
     set (TEST_FLAG "-mssse3")
