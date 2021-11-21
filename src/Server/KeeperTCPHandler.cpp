@@ -450,13 +450,13 @@ void KeeperTCPHandler::runImpl()
     }
 }
 
-bool KeeperTCPHandler::isHandShake(Int32 & handshake_length)
+bool KeeperTCPHandler::isHandShake(int32_t handshake_length)
 {
     return handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH
     || handshake_length == Coordination::CLIENT_HANDSHAKE_LENGTH_WITH_READONLY;
 }
 
-bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(Int32 & command)
+bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
 {
     if (!FourLetterCommandFactory::instance().isKnown(command))
     {
@@ -473,23 +473,14 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(Int32 & command)
         auto command_ptr = FourLetterCommandFactory::instance().get(command);
         LOG_DEBUG(log, "Receive four letter command {}", command_ptr->name());
 
-        String res;
         try
         {
-            res = command_ptr->run();
+            String res = command_ptr->run();
+            out->write(res.data(), res.size());
         }
         catch (...)
         {
             tryLogCurrentException(log, "Error when executing four letter command " + command_ptr->name());
-        }
-
-        try
-        {
-            out->write(res.data(), res.size());
-        }
-        catch (const Exception &)
-        {
-            tryLogCurrentException(log, "Error when send four letter command response");
         }
 
         return true;
