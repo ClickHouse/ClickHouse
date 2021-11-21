@@ -7,7 +7,7 @@ if (NOT ENABLE_CAPNP)
     return()
 endif()
 
-option (USE_INTERNAL_CAPNP_LIBRARY "Set to FALSE to use system capnproto library instead of bundled" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_CAPNP_LIBRARY "Set to FALSE to use system capnproto library instead of bundled" ON)
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/capnproto/c++")
     if(USE_INTERNAL_CAPNP_LIBRARY)

@@ -1,4 +1,4 @@
-option (USE_INTERNAL_RE2_LIBRARY "Set to FALSE to use system re2 library instead of bundled [slower]" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_RE2_LIBRARY "Set to FALSE to use system re2 library instead of bundled [slower]" ON)
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/re2/re2")
     if(USE_INTERNAL_RE2_LIBRARY)

@@ -11,7 +11,7 @@ if (NOT ENABLE_ROCKSDB)
     return()
 endif()
 
-option(USE_INTERNAL_ROCKSDB_LIBRARY "Set to FALSE to use system ROCKSDB library instead of bundled" ${NOT_UNBUNDLED})
+option(USE_INTERNAL_ROCKSDB_LIBRARY "Set to FALSE to use system ROCKSDB library instead of bundled" ON)
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/rocksdb/include")
     if (USE_INTERNAL_ROCKSDB_LIBRARY)
