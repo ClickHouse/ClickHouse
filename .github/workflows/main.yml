@@ -250,7 +250,7 @@ jobs:
           REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH: ${{runner.temp}}/../ccaches
           CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NUMBER: 9
+          BUILD_NUMBER: 8
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
