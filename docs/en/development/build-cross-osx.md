@@ -52,12 +52,10 @@ tar xJf MacOSX10.15.sdk.tar.xz -C build-darwin/cmake/toolchain/darwin-x86_64 --s
 
 ``` bash
 cd ClickHouse
-mkdir build-osx
-CC=clang-13 CXX=clang++-13 cmake . -Bbuild-osx -DCMAKE_TOOLCHAIN_FILE=cmake/darwin/toolchain-x86_64.cmake \
-    -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ar \
-    -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ranlib \
-    -DLINKER_NAME=${CCTOOLS}/bin/x86_64-apple-darwin-ld
-ninja -C build-osx
+mkdir build-darwin
+cd build-darwin
+CC=clang-13 CXX=clang++-13 cmake -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/aarch64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=${CCTOOLS}/bin/aarch64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/aarch64-apple-darwin-ranlib -DLINKER_NAME=${CCTOOLS}/bin/aarch64-apple-darwin-ld -DCMAKE_TOOLCHAIN_FILE=cmake/darwin/toolchain-x86_64.cmake ..
+ninja
 ```
 
 The resulting binary will have a Mach-O executable format and can’t be run on Linux.
