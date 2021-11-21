@@ -154,7 +154,7 @@ void ReplicatedMergeTreeSink::consume(Chunk chunk)
         {
             /// We add the hash from the data and partition identifier to deduplication ID.
             /// That is, do not insert the same data to the same partition twice.
-            block_id = part->getZeroLevelPartBlockID();
+            block_id = part->getZeroLevelPartBlockID(context->getSettingsRef().insert_deduplication_token);
 
             LOG_DEBUG(log, "Wrote block with ID '{}', {} rows", block_id, current_block.block.rows());
         }
