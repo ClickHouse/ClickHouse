@@ -51,7 +51,7 @@ if (USE_YAML_CPP)
 endif()
 
 if (USE_INTERNAL_XZ_LIBRARY)
-    add_subdirectory (xz)
+    add_subdirectory (xz-cmake)
 endif()
 
 add_subdirectory (poco-cmake)
