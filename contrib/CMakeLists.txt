@@ -286,7 +286,7 @@ if (USE_NURAFT)
   add_subdirectory(nuraft-cmake)
 endif()
 
-add_subdirectory(fast_float)
+add_subdirectory(fast_float-cmake)
 
 if (USE_NLP)
     add_subdirectory(libstemmer-c-cmake)
