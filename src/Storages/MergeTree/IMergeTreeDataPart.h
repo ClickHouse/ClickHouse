@@ -170,7 +170,8 @@ public:
     bool isEmpty() const { return rows_count == 0; }
 
     /// Compute part block id for zero level part. Otherwise throws an exception.
-    String getZeroLevelPartBlockID() const;
+    /// If token is not empty, block id is calculated based on it instead of block data
+    String getZeroLevelPartBlockID(const String & token = String()) const;
 
     const MergeTreeData & storage;
 
