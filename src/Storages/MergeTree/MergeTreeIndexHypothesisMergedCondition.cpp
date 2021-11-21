@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeIndexMergedCondition.h>
+#include <Storages/MergeTree/MergeTreeIndexHypothesisMergedCondition.h>
 
 #include <Storages/MergeTree/MergeTreeIndexHypothesis.h>
 #include <Interpreters/TreeCNFConverter.h>
@@ -15,13 +15,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeTreeIndexMergedCondition::MergeTreeIndexMergedCondition(
-    const SelectQueryInfo & query_,
-    ContextPtr /*context_*/,
-    const size_t granularity_)
-    : granularity(granularity_)
+MergeTreeIndexhypothesisMergedCondition::MergeTreeIndexhypothesisMergedCondition(
+    const SelectQueryInfo & query, const ConstraintsDescription & constraints, size_t granularity_)
+    : IMergeTreeIndexMergedCondition(granularity_)
 {
-    const auto & select = query_.query->as<ASTSelectQuery &>();
+    const auto & select = query.query->as<ASTSelectQuery &>();
 
     if (select.where() && select.prewhere())
         expression_ast = makeASTFunction(
@@ -35,26 +33,26 @@ MergeTreeIndexMergedCondition::MergeTreeIndexMergedCondition(
 
     expression_cnf = std::make_unique<CNFQuery>(
         expression_ast ? TreeCNFConverter::toCNF(expression_ast) : CNFQuery::AndGroup{});
+
+    addConstraints(constraints);
 }
 
-void MergeTreeIndexMergedCondition::addIndex(const MergeTreeIndexPtr & index)
+void MergeTreeIndexhypothesisMergedCondition::addIndex(const MergeTreeIndexPtr & index)
 {
     if (!index->isMergeable() || index->getGranularity() != granularity)
-        throw Exception("Index can not be merged",
-                        ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Index {} can not be merged", index->index.type);
 
     const auto hypothesis_index = std::dynamic_pointer_cast<const MergeTreeIndexHypothesis>(index);
     if (!hypothesis_index)
-        throw Exception(
-            "Only hypothesis index is supported here.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Only hypothesis index is supported here");
 
-    static const std::set<std::string> relations = {
-        "equals", "notEquals", "less", "lessOrEquals", "greaterOrEquals", "greater"};
+    static const NameSet relations = { "equals", "notEquals", "less", "lessOrEquals", "greaterOrEquals", "greater"};
 
     // TODO: move to index hypothesis
     std::vector<ASTPtr> compare_hypotheses_data;
     std::vector<CNFQuery::OrGroup> hypotheses_data;
     const auto cnf = TreeCNFConverter::toCNF(hypothesis_index->index.expression_list_ast->children.front()).pullNotOutFunctions();
+
     for (const auto & group : cnf.getStatements())
     {
         if (group.size() == 1)
@@ -63,19 +61,19 @@ void MergeTreeIndexMergedCondition::addIndex(const MergeTreeIndexPtr & index)
             CNFQuery::AtomicFormula atomic_formula = *group.begin();
             CNFQuery::AtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
             pushNotIn(atom);
-            if (atom.negative)
-                throw Exception("negative atom", ErrorCodes::LOGICAL_ERROR);
+            assert(!atom.negative);
 
-            auto * func = atom.ast->as<ASTFunction>();
+            const auto * func = atom.ast->as<ASTFunction>();
             if (func && relations.count(func->name))
                 compare_hypotheses_data.push_back(atom.ast);
         }
     }
+
     index_to_compare_atomic_hypotheses.push_back(compare_hypotheses_data);
     index_to_atomic_hypotheses.push_back(hypotheses_data);
 }
 
-void MergeTreeIndexMergedCondition::addConstraints(const ConstraintsDescription & constraints_description)
+void MergeTreeIndexhypothesisMergedCondition::addConstraints(const ConstraintsDescription & constraints_description)
 {
     auto atomic_constraints_data = constraints_description.getAtomicConstraintData();
     for (const auto & atomic_formula : atomic_constraints_data)
@@ -87,7 +85,7 @@ void MergeTreeIndexMergedCondition::addConstraints(const ConstraintsDescription 
 }
 
 /// Replaces < -> <=, > -> >= and assumes that all hypotheses are true then checks if path exists
-bool MergeTreeIndexMergedCondition::alwaysUnknownOrTrue() const
+bool MergeTreeIndexhypothesisMergedCondition::alwaysUnknownOrTrue() const
 {
     std::vector<ASTPtr> active_atomic_formulas(atomic_constraints);
     for (const auto & hypothesis : index_to_compare_atomic_hypotheses)
@@ -119,6 +117,7 @@ bool MergeTreeIndexMergedCondition::alwaysUnknownOrTrue() const
             {
                 CNFQuery::AtomicFormula atom{atomic_formula.negative, atomic_formula.ast->clone()};
                 pushNotIn(atom);
+
                 const auto * func = atom.ast->as<ASTFunction>();
                 if (func && func->arguments->children.size() == 2)
                 {
@@ -135,7 +134,7 @@ bool MergeTreeIndexMergedCondition::alwaysUnknownOrTrue() const
     return useless;
 }
 
-bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranules & granules) const
+bool MergeTreeIndexhypothesisMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranules & granules) const
 {
     std::vector<bool> values;
     for (const auto & index_granule : granules)
@@ -146,7 +145,7 @@ bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranu
         values.push_back(granule->met);
     }
 
-    if (const auto it = answerCache.find(values); it != std::end(answerCache))
+    if (const auto it = answer_cache.find(values); it != std::end(answer_cache))
         return it->second;
 
     const auto & graph = getGraph(values);
@@ -177,11 +176,11 @@ bool MergeTreeIndexMergedCondition::mayBeTrueOnGranule(const MergeTreeIndexGranu
             always_false = true;
        });
 
-    answerCache[values] = !always_false;
+    answer_cache[values] = !always_false;
     return !always_false;
 }
 
-std::unique_ptr<ComparisonGraph> MergeTreeIndexMergedCondition::buildGraph(const std::vector<bool> & values) const
+std::unique_ptr<ComparisonGraph> MergeTreeIndexhypothesisMergedCondition::buildGraph(const std::vector<bool> & values) const
 {
     std::vector<ASTPtr> active_atomic_formulas(atomic_constraints);
     for (size_t i = 0; i < values.size(); ++i)
@@ -194,12 +193,12 @@ std::unique_ptr<ComparisonGraph> MergeTreeIndexMergedCondition::buildGraph(const
     }
     return std::make_unique<ComparisonGraph>(active_atomic_formulas);
 }
-// something strange))
-const ComparisonGraph & MergeTreeIndexMergedCondition::getGraph(const std::vector<bool> & values) const
+
+const ComparisonGraph & MergeTreeIndexhypothesisMergedCondition::getGraph(const std::vector<bool> & values) const
 {
-    if (!graphCache.contains(values))
-        graphCache[values] = buildGraph(values);
-    return *graphCache.at(values);
+    if (!graph_cache.contains(values))
+        graph_cache[values] = buildGraph(values);
+    return *graph_cache.at(values);
 }
 
 }

@@ -89,6 +89,31 @@ public:
 using MergeTreeIndexConditionPtr = std::shared_ptr<IMergeTreeIndexCondition>;
 using MergeTreeIndexConditions = std::vector<MergeTreeIndexConditionPtr>;
 
+struct IMergeTreeIndex;
+using MergeTreeIndexPtr = std::shared_ptr<const IMergeTreeIndex>;
+
+/// IndexCondition that checks several indexes at the same time.
+class IMergeTreeIndexMergedCondition
+{
+public:
+    explicit IMergeTreeIndexMergedCondition(size_t granularity_)
+        : granularity(granularity_)
+    {
+    }
+
+    virtual ~IMergeTreeIndexMergedCondition() = default;
+
+    virtual void addIndex(const MergeTreeIndexPtr & index) = 0;
+    virtual bool alwaysUnknownOrTrue() const = 0;
+    virtual bool mayBeTrueOnGranule(const MergeTreeIndexGranules & granules) const = 0;
+
+protected:
+    const size_t granularity;
+};
+
+using MergeTreeIndexMergedConditionPtr = std::shared_ptr<IMergeTreeIndexMergedCondition>;
+using MergeTreeIndexMergedConditions = std::vector<IMergeTreeIndexMergedCondition>;
+
 
 struct IMergeTreeIndex
 {
@@ -130,7 +155,14 @@ struct IMergeTreeIndex
     virtual MergeTreeIndexAggregatorPtr createIndexAggregator() const = 0;
 
     virtual MergeTreeIndexConditionPtr createIndexCondition(
-            const SelectQueryInfo & query_info, ContextPtr context) const = 0;
+        const SelectQueryInfo & query_info, ContextPtr context) const = 0;
+
+    virtual MergeTreeIndexMergedConditionPtr createIndexMergedCondtition(
+        const SelectQueryInfo & /*query_info*/, StorageMetadataPtr /*storage_metadata*/) const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "MergedCondition is not implemented for index of type {}", index.type);
+    }
 
     Names getColumnsRequiredForIndexCalc() const { return index.expression->getRequiredColumns(); }
 
