@@ -269,6 +269,9 @@ public:
 
     virtual bool lowCardinality() const { return false; }
 
+    /// Checks if this type is LowCardinality(Nullable(...))
+    virtual bool isLowCardinalityNullable() const { return false; }
+
     /// Strings, Numbers, Date, DateTime, Nullable
     virtual bool canBeInsideLowCardinality() const { return false; }
 

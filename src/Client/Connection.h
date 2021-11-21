@@ -4,9 +4,7 @@
 
 #include <Poco/Net/StreamSocket.h>
 
-#if !defined(ARCADIA_BUILD)
-#   include <Common/config.h>
-#endif
+#include <Common/config.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 

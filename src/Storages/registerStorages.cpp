@@ -1,16 +1,13 @@
 #include <Storages/registerStorages.h>
 #include <Storages/StorageFactory.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#    include "config_core.h"
-#endif
+#include <Common/config.h>
+#include "config_core.h"
 
 namespace DB
 {
 
 void registerStorageLog(StorageFactory & factory);
-void registerStorageTinyLog(StorageFactory & factory);
 void registerStorageStripeLog(StorageFactory & factory);
 void registerStorageMergeTree(StorageFactory & factory);
 void registerStorageNull(StorageFactory & factory);
@@ -68,6 +65,10 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 void registerStorageExternalDistributed(StorageFactory & factory);
 #endif
 
+#if USE_FILELOG
+void registerStorageFileLog(StorageFactory & factory);
+#endif
+
 #if USE_SQLITE
 void registerStorageSQLite(StorageFactory & factory);
 #endif
@@ -78,7 +79,6 @@ void registerStorages()
     auto & factory = StorageFactory::instance();
 
     registerStorageLog(factory);
-    registerStorageTinyLog(factory);
     registerStorageStripeLog(factory);
     registerStorageMergeTree(factory);
     registerStorageNull(factory);
@@ -119,7 +119,11 @@ void registerStorages()
     registerStorageKafka(factory);
     #endif
 
-    #if USE_AMQPCPP
+#if USE_FILELOG
+    registerStorageFileLog(factory);
+#endif
+
+#if USE_AMQPCPP
     registerStorageRabbitMQ(factory);
     #endif
 

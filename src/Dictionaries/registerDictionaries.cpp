@@ -14,9 +14,7 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & source_factory)
 void registerDictionarySourceRedis(DictionarySourceFactory & source_factory);
 void registerDictionarySourceXDBC(DictionarySourceFactory & source_factory);
 void registerDictionarySourceJDBC(DictionarySourceFactory & source_factory);
-#if !defined(ARCADIA_BUILD)
 void registerDictionarySourcePostgreSQL(DictionarySourceFactory & source_factory);
-#endif
 void registerDictionarySourceExecutable(DictionarySourceFactory & source_factory);
 void registerDictionarySourceExecutablePool(DictionarySourceFactory & source_factory);
 void registerDictionarySourceHTTP(DictionarySourceFactory & source_factory);
@@ -46,9 +44,7 @@ void registerDictionaries()
         registerDictionarySourceCassandra(source_factory);
         registerDictionarySourceXDBC(source_factory);
         registerDictionarySourceJDBC(source_factory);
-#if !defined(ARCADIA_BUILD)
         registerDictionarySourcePostgreSQL(source_factory);
-#endif
         registerDictionarySourceExecutable(source_factory);
         registerDictionarySourceExecutablePool(source_factory);
         registerDictionarySourceHTTP(source_factory);

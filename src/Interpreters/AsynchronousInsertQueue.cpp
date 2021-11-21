@@ -19,8 +19,9 @@
 #include <Storages/IStorage.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorHash.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Formats/FormatFactory.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -407,13 +408,19 @@ try
     }
 
     StreamingFormatExecutor executor(header, format, std::move(on_error), std::move(adding_defaults_transform));
-    std::unique_ptr<ReadBuffer> buffer;
+    std::unique_ptr<ReadBuffer> last_buffer;
     for (const auto & entry : data->entries)
     {
-        buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
+        auto buffer = std::make_unique<ReadBufferFromString>(entry->bytes);
         current_entry = entry;
         total_rows += executor.execute(*buffer);
+
+        /// Keep buffer, because it still can be used
+        /// in destructor, while resetting buffer at next iteration.
+        last_buffer = std::move(buffer);
     }
+
+    format->addBuffer(std::move(last_buffer));
 
     auto chunk = Chunk(executor.getResultColumns(), total_rows);
     size_t total_bytes = chunk.bytes();

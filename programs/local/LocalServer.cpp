@@ -4,6 +4,7 @@
 #include <Poco/String.h>
 #include <Poco/Logger.h>
 #include <Poco/NullChannel.h>
+#include <Poco/SimpleFileChannel.h>
 #include <Databases/DatabaseMemory.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
@@ -18,7 +19,9 @@
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/ThreadStatus.h>
+#include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
+#include <Common/randomSeed.h>
 #include <loggers/Loggers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -33,9 +36,9 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
+#include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
-#include <Common/randomSeed.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -62,7 +65,6 @@ void LocalServer::processError(const String &) const
         String message;
         if (server_exception)
         {
-            bool print_stack_trace = config().getBool("stacktrace", false);
             message = getExceptionMessage(*server_exception, print_stack_trace, true);
         }
         else if (client_exception)
@@ -131,9 +133,12 @@ bool LocalServer::executeMultiQuery(const String & all_queries_text)
                 }
                 catch (...)
                 {
+                    if (!is_interactive && !ignore_error)
+                        throw;
+
                     // Surprisingly, this is a client error. A server error would
                     // have been reported w/o throwing (see onReceiveSeverException()).
-                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(true), getCurrentExceptionCode());
+                    client_exception = std::make_unique<Exception>(getCurrentExceptionMessage(print_stack_trace), getCurrentExceptionCode());
                     have_error = true;
                 }
 
@@ -177,25 +182,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
         ConfigProcessor config_processor(config_path, false, true);
         config_processor.setConfigPath(fs::path(config_path).parent_path());
         auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config, loaded_config.configuration->getString("path", "."));
         config().add(loaded_config.configuration.duplicate(), PRIO_DEFAULT, false);
-    }
-
-    if (config().has("logger.console") || config().has("logger.level") || config().has("logger.log"))
-    {
-        // force enable logging
-        config().setString("logger", "logger");
-        // sensitive data rules are not used here
-        buildLoggers(config(), logger(), "clickhouse-local");
-    }
-    else
-    {
-        // Turn off server logging to stderr
-        if (!config().has("verbose"))
-        {
-            Poco::Logger::root().setLevel("none");
-            Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
-        }
     }
 }
 
@@ -282,28 +269,40 @@ void LocalServer::tryInitPath()
     global_context->setFlagsPath(path + "flags");
 
     global_context->setUserFilesPath(""); // user's files are everywhere
+
+    /// top_level_domains_lists
+    const std::string & top_level_domains_path = config().getString("top_level_domains_path", path + "top_level_domains/");
+    if (!top_level_domains_path.empty())
+        TLDListsHolder::getInstance().parseConfig(fs::path(top_level_domains_path) / "", config());
 }
 
 
 void LocalServer::cleanup()
 {
-    connection.reset();
-
-    if (global_context)
+    try
     {
-        global_context->shutdown();
-        global_context.reset();
+        connection.reset();
+
+        if (global_context)
+        {
+            global_context->shutdown();
+            global_context.reset();
+        }
+
+        status.reset();
+
+        // Delete the temporary directory if needed.
+        if (temporary_directory_to_delete)
+        {
+            const auto dir = *temporary_directory_to_delete;
+            temporary_directory_to_delete.reset();
+            LOG_DEBUG(&logger(), "Removing temporary directory: {}", dir.string());
+            remove_all(dir);
+        }
     }
-
-    status.reset();
-
-    // Delete the temporary directory if needed.
-    if (temporary_directory_to_delete)
+    catch (...)
     {
-        const auto dir = *temporary_directory_to_delete;
-        temporary_directory_to_delete.reset();
-        LOG_DEBUG(&logger(), "Removing temporary directory: {}", dir.string());
-        remove_all(dir);
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
@@ -345,7 +344,7 @@ static ConfigurationPtr getConfigurationFromXMLString(const char * xml_data)
 void LocalServer::setupUsers()
 {
     static const char * minimal_default_user_xml =
-        "<yandex>"
+        "<clickhouse>"
         "    <profiles>"
         "        <default></default>"
         "    </profiles>"
@@ -362,7 +361,7 @@ void LocalServer::setupUsers()
         "    <quotas>"
         "        <default></default>"
         "    </quotas>"
-        "</yandex>";
+        "</clickhouse>";
 
     ConfigurationPtr users_config;
 
@@ -371,7 +370,6 @@ void LocalServer::setupUsers()
         const auto users_config_path = config().getString("users_config", config().getString("config-file", "config.xml"));
         ConfigProcessor config_processor(users_config_path);
         const auto loaded_config = config_processor.loadConfig();
-        config_processor.savePreprocessedConfig(loaded_config, config().getString("path", DBMS_DEFAULT_PATH));
         users_config = loaded_config.configuration;
     }
     else
@@ -409,7 +407,10 @@ try
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
-    is_interactive = stdin_is_a_tty && !config().has("query") && !config().has("table-structure") && queries_files.empty();
+    is_interactive = stdin_is_a_tty
+        && (config().hasOption("interactive")
+            || (!config().has("query") && !config().has("table-structure") && queries_files.empty()));
+
     if (!is_interactive)
     {
         /// We will terminate process on error
@@ -428,47 +429,52 @@ try
 
     processConfig();
     applyCmdSettings(global_context);
-    connect();
 
     if (is_interactive)
     {
         clearTerminal();
         showClientVersion();
         std::cerr << std::endl;
+    }
 
+    connect();
+
+    if (is_interactive && !delayed_interactive)
+    {
         runInteractive();
     }
     else
     {
         runNonInteractive();
+
+        if (delayed_interactive)
+            runInteractive();
     }
 
     cleanup();
     return Application::EXIT_OK;
 }
+catch (const DB::Exception & e)
+{
+    cleanup();
+
+    bool need_print_stack_trace = config().getBool("stacktrace", false);
+    std::cerr << getExceptionMessage(e, need_print_stack_trace, true) << std::endl;
+    return e.code() ? e.code() : -1;
+}
 catch (...)
 {
-    try
-    {
-        cleanup();
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    cleanup();
 
-    if (!ignore_error)
-        std::cerr << getCurrentExceptionMessage(config().hasOption("stacktrace")) << '\n';
-
-    auto code = getCurrentExceptionCode();
-    /// If exception code isn't zero, we should return non-zero return code anyway.
-    return code ? code : -1;
+    std::cerr << getCurrentExceptionMessage(false) << std::endl;
+    return getCurrentExceptionCode();
 }
 
 
 void LocalServer::processConfig()
 {
-    if (is_interactive)
+    delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
+    if (is_interactive && !delayed_interactive)
     {
         if (config().has("query") && config().has("queries-file"))
             throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
@@ -480,10 +486,45 @@ void LocalServer::processConfig()
     }
     else
     {
+        if (delayed_interactive)
+        {
+            load_suggestions = true;
+        }
+
         need_render_progress = config().getBool("progress", false);
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
         is_multiquery = true;
+    }
+    print_stack_trace = config().getBool("stacktrace", false);
+
+    auto logging = (config().has("logger.console")
+                    || config().has("logger.level")
+                    || config().has("log-level")
+                    || config().has("logger.log"));
+
+    auto file_logging = config().has("server_logs_file");
+    if (is_interactive && logging && !file_logging)
+        throw Exception("For interactive mode logging is allowed only with --server_logs_file option",
+                        ErrorCodes::BAD_ARGUMENTS);
+
+    if (file_logging)
+    {
+        auto level = Poco::Logger::parseLevel(config().getString("log-level", "trace"));
+        Poco::Logger::root().setLevel(level);
+        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::SimpleFileChannel>(new Poco::SimpleFileChannel(server_logs_file)));
+    }
+    else if (logging)
+    {
+        // force enable logging
+        config().setString("logger", "logger");
+        // sensitive data rules are not used here
+        buildLoggers(config(), logger(), "clickhouse-local");
+    }
+    else
+    {
+        Poco::Logger::root().setLevel("none");
+        Poco::Logger::root().setChannel(Poco::AutoPtr<Poco::NullChannel>(new Poco::NullChannel()));
     }
 
     shared_context = Context::createShared();
@@ -666,6 +707,7 @@ void LocalServer::addOptions(OptionsDescription & options_description)
 
         ("no-system-tables", "do not attach system tables (better startup time)")
         ("path", po::value<std::string>(), "Storage path")
+        ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
         ;
 }
 

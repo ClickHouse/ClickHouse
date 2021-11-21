@@ -9,6 +9,7 @@ RUN apt-get update -y \
 
 COPY s3downloader /s3downloader
 
+ENV S3_URL="https://clickhouse-datasets.s3.yandex.net"
 ENV DATASETS="hits visits"
 
 COPY run.sh /

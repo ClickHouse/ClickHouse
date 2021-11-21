@@ -149,8 +149,6 @@ if (ENABLE_FUZZING)
     set (ENABLE_JEMALLOC 0)
     set (ENABLE_CHECK_HEAVY_BUILDS 1)
     set (GLIBC_COMPATIBILITY OFF)
-    set (ENABLE_PROTOBUF ON)
-    set (USE_INTERNAL_PROTOBUF_LIBRARY ON)
 endif()
 
 # Global libraries
@@ -581,6 +579,7 @@ include (cmake/find/yaml-cpp.cmake)
 include (cmake/find/s2geometry.cmake)
 include (cmake/find/nlp.cmake)
 include (cmake/find/bzip2.cmake)
+include (cmake/find/filelog.cmake)
 
 if(NOT USE_INTERNAL_PARQUET_LIBRARY)
     set (ENABLE_ORC OFF CACHE INTERNAL "")
@@ -625,7 +624,7 @@ macro (add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
     # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
-    if (GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
+    if (ARCH_AMD64 AND GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
         _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
     else ()
         _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)

@@ -32,6 +32,9 @@ table {{ border: 0; }}
 .main {{ margin-left: 10%; }}
 p.links a {{ padding: 5px; margin: 3px; background: #FFF; line-height: 2; white-space: nowrap; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 25px -5px rgba(0, 0, 0, 0.1); }}
 th {{ cursor: pointer; }}
+.failed {{ cursor: pointer; }}
+.failed-content.open {{}}
+.failed-content {{ display: none; }}
 
   </style>
   <title>{title}</title>
@@ -51,7 +54,13 @@ th {{ cursor: pointer; }}
 <script type="text/javascript">
     /// Straight from https://stackoverflow.com/questions/14267781/sorting-html-table-with-javascript
 
-    const getCellValue = (tr, idx) => tr.children[idx].innerText || tr.children[idx].textContent;
+    const getCellValue = (tr, idx) => {{
+        var classes = tr.classList;
+        var elem = tr;
+        if (classes.contains("failed-content") || classes.contains("failed-content.open"))
+            elem = tr.previousElementSibling;
+        return elem.children[idx].innerText || elem.children[idx].textContent;
+    }}
 
     const comparer = (idx, asc) => (a, b) => ((v1, v2) =>
         v1 !== '' && v2 !== '' && !isNaN(v1) && !isNaN(v2) ? v1 - v2 : v1.toString().localeCompare(v2)
@@ -64,6 +73,12 @@ th {{ cursor: pointer; }}
             .sort(comparer(Array.from(th.parentNode.children).indexOf(th), this.asc = !this.asc))
             .forEach(tr => table.appendChild(tr) );
     }})));
+
+    Array.from(document.getElementsByClassName("failed")).forEach(tr => tr.addEventListener('click', function() {{
+        var content = this.nextElementSibling;
+        content.classList.toggle("failed-content.open");
+        content.classList.toggle("failed-content");
+    }}));
 </script>
 </html>
 """
@@ -107,13 +122,16 @@ def _get_status_style(status):
 
 def _get_html_url(url):
     if isinstance(url, str):
-        return '<a href="{url}">{name}</a>'.format(url=url, name=os.path.basename(url))
+        return '<a href="{url}">{name}</a>'.format(url=url, name=os.path.basename(url).replace('%2B', '+').replace('%20', ' '))
     if isinstance(url, tuple):
-        return '<a href="{url}">{name}</a>'.format(url=url[0], name=url[1])
+        return '<a href="{url}">{name}</a>'.format(url=url[0], name=url[1].replace('%2B', '+').replace('%20', ' '))
     return ''
 
 
-def create_test_html_report(header, test_result, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls=[]):
+def create_test_html_report(header, test_result, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls=None, with_raw_logs=False):
+    if additional_urls is None:
+        additional_urls = []
+
     if test_result:
         rows_part = ""
         num_fails = 0
@@ -134,11 +152,13 @@ def create_test_html_report(header, test_result, raw_log_url, task_url, branch_u
                 has_test_logs = True
 
             row = "<tr>"
+            is_fail = test_status in ('FAIL', 'FLAKY')
+            if is_fail and with_raw_logs and test_logs is not None:
+                row = "<tr class=\"failed\">"
             row += "<td>" + test_name + "</td>"
             style = _get_status_style(test_status)
 
             # Allow to quickly scroll to the first failure.
-            is_fail = test_status == "FAIL" or test_status == 'FLAKY'
             is_fail_id = ""
             if is_fail:
                 num_fails = num_fails + 1
@@ -149,17 +169,23 @@ def create_test_html_report(header, test_result, raw_log_url, task_url, branch_u
             if test_time is not None:
                 row += "<td>" + test_time + "</td>"
 
-            if test_logs is not None:
+            if test_logs is not None and not with_raw_logs:
                 test_logs_html = "<br>".join([_get_html_url(url) for url in test_logs])
                 row += "<td>" + test_logs_html + "</td>"
 
             row += "</tr>"
             rows_part += row
+            if test_logs is not None and with_raw_logs:
+                row = "<tr class=\"failed-content\">"
+                # TODO: compute colspan too
+                row += "<td colspan=\"3\"><pre>" + test_logs + "</pre></td>"
+                row += "</tr>"
+                rows_part += row
 
         headers = BASE_HEADERS
         if has_test_time:
             headers.append('Test time, sec.')
-        if has_test_logs:
+        if has_test_logs and not with_raw_logs:
             headers.append('Logs')
 
         headers = ''.join(['<th>' + h + '</th>' for h in headers])
@@ -235,7 +261,7 @@ tr:hover td {{filter: brightness(95%);}}
 </table>
 <p class="links">
 <a href="{commit_url}">Commit</a>
-<a href="{task_url}">Task (private network)</a>
+<a href="{task_url}">Task (github actions)</a>
 </p>
 </body>
 </html>
@@ -281,7 +307,7 @@ def create_build_html_report(header, build_results, build_logs_urls, artifact_ur
         link_separator = "<br/>"
         if artifact_urls:
             for artifact_url in artifact_urls:
-                links += LINK_TEMPLATE.format(text=os.path.basename(artifact_url), url=artifact_url)
+                links += LINK_TEMPLATE.format(text=os.path.basename(artifact_url.replace('%2B', '+').replace('%20', ' ')), url=artifact_url)
                 links += link_separator
             if links:
                 links = links[:-len(link_separator)]
