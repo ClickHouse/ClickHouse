@@ -159,11 +159,7 @@ if (USE_INTERNAL_AVRO_LIBRARY)
 endif()
 
 if(USE_INTERNAL_GTEST_LIBRARY)
-    set(GOOGLETEST_VERSION 1.10.0) # master
-    # Google Test from sources
-    add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
-    # avoid problems with <regexp.h>
-    target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
+    add_subdirectory(googletest-cmake)
 elseif(GTEST_SRC_DIR)
     add_subdirectory(${GTEST_SRC_DIR}/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
     target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
