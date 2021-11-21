@@ -18,6 +18,11 @@ constexpr auto INDEX_FILE_PREFIX = "skp_idx_";
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 using MergeTreeIndexVersion = uint8_t;
 struct MergeTreeIndexFormat
 {
