@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexHypothesis.h>
+#include <Storages/MergeTree/MergeTreeIndexHypothesisMergedCondition.h>
 
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -86,6 +87,13 @@ MergeTreeIndexConditionPtr MergeTreeIndexHypothesis::createIndexCondition(
     const SelectQueryInfo &, ContextPtr) const
 {
     throw Exception("Not supported", ErrorCodes::LOGICAL_ERROR);
+}
+
+MergeTreeIndexMergedConditionPtr MergeTreeIndexHypothesis::createIndexMergedCondtition(
+    const SelectQueryInfo & query_info, StorageMetadataPtr storage_metadata) const
+{
+    return std::make_shared<MergeTreeIndexhypothesisMergedCondition>(
+        query_info, storage_metadata->getConstraints(), index.granularity);
 }
 
 bool MergeTreeIndexHypothesis::mayBenefitFromIndexForIn(const ASTPtr &) const

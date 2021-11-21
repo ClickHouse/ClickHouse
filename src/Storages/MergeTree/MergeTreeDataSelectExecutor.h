@@ -6,7 +6,6 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Storages/MergeTree/MergeTreeIndexMergedCondition.h>
 
 
 namespace DB

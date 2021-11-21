@@ -70,6 +70,9 @@ public:
     MergeTreeIndexConditionPtr createIndexCondition(
         const SelectQueryInfo & query, ContextPtr context) const override;
 
+    MergeTreeIndexMergedConditionPtr createIndexMergedCondtition(
+        const SelectQueryInfo & query_info, StorageMetadataPtr storage_metadata) const override;
+
     bool mayBenefitFromIndexForIn(const ASTPtr & node) const override;
 
     size_t max_rows = 0;
