@@ -69,15 +69,26 @@ add_compile_definitions(
     _TANDEM_SOURCE
     _ALL_SOURCE
 
-    TUKLIB_CPUCORES_SCHED_GETAFFINITY
-    TUKLIB_PHYSMEM_SYSCONF
-
     HAVE_CLOCK_GETTIME=1
     HAVE_DECL_CLOCK_MONOTONIC=1
 
     HAVE_PTHREAD_CONDATTR_SETCLOCK
     MYTHREAD_POSIX
 )
+
+if (OS_LINUX)
+    add_compile_definitions(
+        TUKLIB_CPUCORES_SCHED_GETAFFINITY
+        TUKLIB_PHYSMEM_SYSCONF)
+elseif (OS_FREEBSD)
+    add_compile_definitions(
+        TUKLIB_CPUCORES_CPUSET
+        TUKLIB_PHYSMEM_SYSCTL)
+elseif (OS_DARWIN)
+    add_compile_definitions(
+        TUKLIB_CPUCORES_SYSCTL
+        TUKLIB_PHYSMEM_SYSCTL)
+endif ()
 
 if (ARCH_AMD64 OR ARCH_AARCH64)
     add_compile_definitions(TUKLIB_FAST_UNALIGNED_ACCESS=1)

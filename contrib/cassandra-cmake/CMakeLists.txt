@@ -15,7 +15,6 @@ set(CASS_USE_LIBSSH2 0)
 set(CASS_USE_OPENSSL 1)
 set(CASS_USE_STD_ATOMIC 1)
 set(CASS_USE_ZLIB 1)
-set(CASS_USE_TIMERFD 0)
 
 
 file(GLOB SOURCES ${CASS_SRC_DIR}/*.cpp)
@@ -80,20 +79,17 @@ configure_file("${CASS_SRC_DIR}/third_party/sparsehash/config.h.cmake" "${CMAKE_
 
 
 # Determine random availability
-if(CMAKE_SYSTEM_NAME MATCHES "Linux")
-  check_symbol_exists(GRND_NONBLOCK "linux/random.h" HAVE_GETRANDOM)
-  if(CASS_USE_TIMERFD)
-    check_symbol_exists(timerfd_create "sys/timerfd.h" HAVE_TIMERFD)
-  endif()
-else()
-  check_symbol_exists(arc4random_buf "stdlib.h" HAVE_ARC4RANDOM)
-endif()
+if (OS_LINUX)
+  set (HAVE_GETRANDOM 1)
+elseif (OS_FREEBSD OR OS_DARWIN)
+  set (HAVE_ARC4RANDOM 1)
+endif ()
 
 # Determine if sigpipe is available
-check_symbol_exists(SO_NOSIGPIPE "sys/socket.h;sys/types.h" HAVE_NOSIGPIPE)
-check_symbol_exists(sigtimedwait "signal.h" HAVE_SIGTIMEDWAIT)
-if (NOT WIN32 AND NOT HAVE_NOSIGPIPE AND NOT HAVE_SIGTIMEDWAIT)
-  message(WARNING "Unable to handle SIGPIPE on your platform")
+if (OS_LINUX)
+    set (HAVE_SIGTIMEDWAIT 1)
+else (OS_FREEBSD OR OS_DARWIN)
+    set (HAVE_NOSIGPIPE 1)
 endif()
 
 set (HAVE_BUILTIN_BSWAP32 1)
@@ -121,7 +117,7 @@ add_library(cassandra
 
 target_link_libraries(cassandra zlib)
 add_library(cassandra_static ALIAS cassandra)
-target_include_directories(cassandra PRIVATE ${INCLUDE_DIRS} ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories(cassandra PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${INCLUDE_DIRS})
 target_compile_definitions(cassandra PRIVATE CASS_BUILDING)
 
 target_link_libraries(cassandra uv)
