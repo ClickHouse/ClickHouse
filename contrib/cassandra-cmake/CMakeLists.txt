@@ -80,7 +80,7 @@ configure_file("${CASS_SRC_DIR}/third_party/sparsehash/config.h.cmake" "${CMAKE_
 
 # Determine random availability
 if (OS_LINUX)
-  set (HAVE_GETRANDOM 1)
+  #set (HAVE_GETRANDOM 1) - not on every Linux kernel
 elseif (OS_FREEBSD OR OS_DARWIN)
   set (HAVE_ARC4RANDOM 1)
 endif ()
