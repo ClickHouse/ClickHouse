@@ -78,15 +78,11 @@ if __name__ == "__main__":
 
     docker_image = get_image_with_version(reports_path, IMAGE_NAME)
 
-    workspace_path = os.path.join(temp_path, 'workspace')
-    if not os.path.exists(workspace_path):
-        os.makedirs(workspace_path)
-
     result_path = os.path.join(temp_path, 'result_path')
     if not os.path.exists(result_path):
         os.makedirs(result_path)
 
-    run_command = get_run_command(workspace_path, result_path, pr_info.number, pr_info.sha, docker_env, docker_image)
+    run_command = get_run_command(result_path, result_path, pr_info.number, pr_info.sha, docker_env, docker_image)
     logging.info("Going to run command %s", run_command)
     run_log_path = os.path.join(temp_path, "runlog.log")
     with open(run_log_path, 'w', encoding='utf-8') as log:
