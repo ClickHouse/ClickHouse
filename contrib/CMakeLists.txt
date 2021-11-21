@@ -254,7 +254,7 @@ endif()
 add_subdirectory (curl-cmake)
 
 if (USE_SENTRY)
-    add_subdirectory (sentry-native)
+    add_subdirectory (sentry-native-cmake)
 endif()
 
 add_subdirectory (fmtlib-cmake)
