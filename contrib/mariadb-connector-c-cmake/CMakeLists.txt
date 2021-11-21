@@ -117,17 +117,12 @@ CONFIGURE_FILE(${CC_SOURCE_DIR}/include/ma_config.h.in
 CONFIGURE_FILE(${CC_SOURCE_DIR}/include/mariadb_version.h.in
                ${CC_BINARY_DIR}/include/mariadb_version.h)
 
-include_directories(${CC_BINARY_DIR}/include)
-
 if(WITH_SSL)
   set(SYSTEM_LIBS ${SYSTEM_LIBS} ${SSL_LIBRARIES})
 endif()
 
 INCLUDE(${CC_SOURCE_DIR}/plugins/CMakeLists.txt)
 
-
-include_directories(${CC_SOURCE_DIR}/include
-                    ${CC_SOURCE_DIR}/libmariadb)
 
 add_definitions(-D HAVE_COMPRESS)
 add_definitions(-D LIBMARIADB)
@@ -185,7 +180,6 @@ if(ZLIB_FOUND AND WITH_EXTERNAL_ZLIB)
 endif()
 
 if(WITH_DYNCOL)
-  set(MARIADB_LIB_SYMBOLS ${MARIADB_LIB_SYMBOLS} ${MARIADB_DYNCOL_SYMBOLS})
   set(LIBMARIADB_SOURCES ${LIBMARIADB_SOURCES} ${CC_SOURCE_DIR}/libmariadb/mariadb_dyncol.c)
 endif()
 
@@ -195,7 +189,8 @@ set(LIBMARIADB_SOURCES ${LIBMARIADB_SOURCES} ${CC_SOURCE_DIR}/libmariadb/mariadb
 add_library(mariadbclient STATIC ${LIBMARIADB_SOURCES})
 target_link_libraries(mariadbclient ${SYSTEM_LIBS})
 
-target_include_directories(mariadbclient PUBLIC ${CC_BINARY_DIR}/include ${CC_SOURCE_DIR}/include ${CC_SOURCE_DIR}/libmariadb)
-
+target_include_directories(mariadbclient
+    PRIVATE ${CC_BINARY_DIR}/include
+    PUBLIC ${CC_SOURCE_DIR}/include ${CC_SOURCE_DIR}/libmariadb)
 
 set_target_properties(mariadbclient PROPERTIES IMPORTED_INTERFACE_LINK_LIBRARIES "${SYSTEM_LIBS}")
