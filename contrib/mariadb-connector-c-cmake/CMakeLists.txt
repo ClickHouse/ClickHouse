@@ -111,11 +111,11 @@ set(TLS_LIBRARY_VERSION "OpenSSL ${OPENSSL_VERSION}")
 set(ENABLED_LOCAL_INFILE OFF)
 
 CONFIGURE_FILE(${CC_SOURCE_DIR}/include/ma_config.h.in
-               ${CC_BINARY_DIR}/include/ma_config.h)
+               ${CC_BINARY_DIR}/include-private/ma_config.h)
 CONFIGURE_FILE(${CC_SOURCE_DIR}/include/ma_config.h.in
-               ${CC_BINARY_DIR}/include/config.h)
+               ${CC_BINARY_DIR}/include-private/config.h)
 CONFIGURE_FILE(${CC_SOURCE_DIR}/include/mariadb_version.h.in
-               ${CC_BINARY_DIR}/include/mariadb_version.h)
+               ${CC_BINARY_DIR}/include-public/mariadb_version.h)
 
 if(WITH_SSL)
   set(SYSTEM_LIBS ${SYSTEM_LIBS} ${SSL_LIBRARIES})
@@ -190,7 +190,7 @@ add_library(mariadbclient STATIC ${LIBMARIADB_SOURCES})
 target_link_libraries(mariadbclient ${SYSTEM_LIBS})
 
 target_include_directories(mariadbclient
-    PRIVATE ${CC_BINARY_DIR}/include
-    PUBLIC ${CC_SOURCE_DIR}/include ${CC_SOURCE_DIR}/libmariadb)
+    PRIVATE ${CC_BINARY_DIR}/include-private
+    PUBLIC ${CC_BINARY_DIR}/include-public ${CC_SOURCE_DIR}/include ${CC_SOURCE_DIR}/libmariadb)
 
 set_target_properties(mariadbclient PROPERTIES IMPORTED_INTERFACE_LINK_LIBRARIES "${SYSTEM_LIBS}")
