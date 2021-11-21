@@ -17,6 +17,18 @@ class PRInfo:
             else:
                 self.sha = github_event['pull_request']['head']['sha']
 
+            repo_prefix = f"{os.getenv('GITHUB_SERVER_URL', 'https://github.com')}/{os.getenv('GITHUB_REPOSITORY', 'ClickHouse/ClickHouse')}"
+            self.task_url = f"{repo_prefix}/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
+
+            self.repo_full_name = os.getenv('GITHUB_REPOSITORY', 'ClickHouse/ClickHouse')
+            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.pr_html_url = f"{repo_prefix}/pull/{self.number}"
+
+            self.base_ref = github_event['pull_request']['base']['ref']
+            self.base_name = github_event['pull_request']['base']['repo']['full_name']
+            self.head_ref = github_event['pull_request']['head']['ref']
+            self.head_name = github_event['pull_request']['head']['repo']['full_name']
+
             self.labels = { l['name'] for l in github_event['pull_request']['labels'] }
             self.user_login = github_event['pull_request']['user']['login']
             self.user_orgs = set([])
@@ -32,10 +44,21 @@ class PRInfo:
                 diff = urllib.request.urlopen(diff_url)
                 diff_object = PatchSet(diff, diff.headers.get_charsets()[0])
                 self.changed_files = { f.path for f in diff_object }
+
         elif 'commits' in github_event:
             self.number = 0
             self.sha = github_event['after']
             self.labels = {}
+            self.repo_full_name = os.getenv('GITHUB_REPOSITORY', 'ClickHouse/ClickHouse')
+            repo_prefix = f"{os.getenv('GITHUB_SERVER_URL', 'https://github.com')}/{os.getenv('GITHUB_REPOSITORY', 'ClickHouse/ClickHouse')}"
+            self.task_url = f"{repo_prefix}/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
+            self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
+            self.pr_html_url = f"{repo_prefix}/commits/master"
+            self.base_ref = "master"
+            self.base_name = self.repo_full_name
+            self.head_ref = "master"
+            self.head_name = self.repo_full_name
+
             if need_changed_files:
                 commit_before = github_event['before']
                 response = requests.get(f"{os.getenv('GITHUB_SERVER_URL')}/repos/{os.getenv('GITHUB_REPOSITORY')}/compare/{commit_before}...{self.sha}")
