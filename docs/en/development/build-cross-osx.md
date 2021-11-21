@@ -25,6 +25,7 @@ Let’s remember the path where we install `cctools` as ${CCTOOLS}
 
 ``` bash
 mkdir ${CCTOOLS}
+cd ${CCTOOLS}
 
 git clone https://github.com/tpoechtrager/apple-libtapi.git
 cd apple-libtapi
@@ -34,7 +35,7 @@ cd ..
 
 git clone https://github.com/tpoechtrager/cctools-port.git
 cd cctools-port/cctools
-./configure --prefix=${CCTOOLS} --with-libtapi=${CCTOOLS} --target=x86_64-apple-darwin
+./configure --prefix=$(readlink -f ${CCTOOLS}) --with-libtapi=$(readlink -f ${CCTOOLS}) --target=x86_64-apple-darwin
 make install
 ```
 
