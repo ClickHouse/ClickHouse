@@ -24,12 +24,12 @@ toc_title: Adopters
 | <a href="https://arenadata.tech/" class="favicon">ArenaData</a> | Data Platform | Main product | — | — | [Slides in Russian, December 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup38/indexes.pdf) |
 | <a href="https://www.argedor.com/en/clickhouse/" class="favicon">Argedor</a> | ClickHouse support | — | — | — | [Official website](https://www.argedor.com/en/clickhouse/) |
 | <a href="https://avito.ru/" class="favicon">Avito</a> | Classifieds | Monitoring | — | — | [Meetup, April 2020](https://www.youtube.com/watch?v=n1tm4j4W8ZQ) |
-| <a href="https://badoo.com" class="favicon">Badoo</a> | Dating | Timeseries | — | — | [Slides in Russian, December 2019](https://presentations.clickhouse.com/meetup38/forecast.pdf) |
+| <a href="https://badoo.com" class="favicon">Badoo</a> | Dating | Timeseries | — | 1.6 mln events/sec (2018) | [Slides in Russian, December 2019](https://presentations.clickhouse.com/meetup38/forecast.pdf) |
 | <a href="https://beeline.ru/" class="favicon">Beeline</a> | Telecom | Data Platform | — | — | [Blog post, July 2021](https://habr.com/en/company/beeline/blog/567508/) |
 | <a href="https://www.benocs.com/" class="favicon">Benocs</a> | Network Telemetry and Analytics | Main Product | — | — | [Slides in English, October 2017](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup9/lpm.pdf) |
 | <a href="https://www.bigo.sg/" class="favicon">BIGO</a> | Video | Computing Platform | — | — | [Blog Article, August 2020](https://www.programmersought.com/article/44544895251/) |
 | <a href="https://www.bilibili.com/" class="favicon">BiliBili</a> | Video sharing | — | — | — | [Blog post, June 2021](https://chowdera.com/2021/06/20210622012241476b.html) |
-| <a href="https://www.bloomberg.com/">Bloomberg</a> | Finance, Media | Monitoring | — | — | [Slides, May 2018](https://www.slideshare.net/Altinity/http-analytics-for-6m-requests-per-second-using-clickhouse-by-alexander-bocharov) |
+| <a href="https://www.bloomberg.com/">Bloomberg</a> | Finance, Media | Monitoring | — | — | [Job opening, September 2021](https://careers.bloomberg.com/job/detail/94913), [slides, May 2018](https://www.slideshare.net/Altinity/http-analytics-for-6m-requests-per-second-using-clickhouse-by-alexander-bocharov) |
 | <a href="https://bloxy.info" class="favicon">Bloxy</a> | Blockchain | Analytics | — | — | [Slides in Russian, August 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup17/4_bloxy.pptx) |
 | <a href="https://www.bytedance.com" class="favicon">Bytedance</a> | Social platforms | — | — | — | [The ClickHouse Meetup East, October 2020](https://www.youtube.com/watch?v=ckChUkC3Pns) |
 | <a href="https://cardsmobile.ru/" class="favicon">CardsMobile</a> | Finance | Analytics | — | — | [VC.ru](https://vc.ru/s/cardsmobile/143449-rukovoditel-gruppy-analiza-dannyh) |
@@ -78,7 +78,8 @@ toc_title: Adopters
 | <a href="https://ippon.tech" class="favicon">Ippon Technologies</a> | Technology Consulting | — | — | — | [Talk in English, July 2020](https://youtu.be/GMiXCMFDMow?t=205) |
 | <a href="https://www.ivi.ru/" class="favicon">Ivi</a> | Online Cinema | Analytics, Monitoring | — | — | [Article in Russian, Jan 2018](https://habr.com/en/company/ivi/blog/347408/) |
 | <a href="https://jinshuju.net" class="favicon">Jinshuju 金数据</a> | BI Analytics | Main product | — | — | [Slides in Chinese, October 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup24/3.%20金数据数据架构调整方案Public.pdf) |
-| <a href="https://www.kakaocorp.com/" class="favicon">kakaocorp</a> | Internet company | — | — | — | [if(kakao)2020 conference](https://if.kakao.com/session/117) |
+| <a href="https://jitsu.com" class="favicon">Jitsu</a> | Cloud Software | Data Pipeline | — | — | [Documentation](https://jitsu.com/docs/destinations-configuration/clickhouse-destination), [Hacker News](https://news.ycombinator.com/item?id=29106082) |
+| <a href="https://www.kakaocorp.com/" class="favicon">kakaocorp</a> | Internet company | — | — | — | [if(kakao)2020](https://tv.kakao.com/channel/3693125/cliplink/414129353), [if(kakao)2021](https://if.kakao.com/session/24) |
 | <a href="https://www.kodiakdata.com/" class="favicon">Kodiak Data</a> | Clouds | Main product | — | — | [Slides in Engish, April 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup13/kodiak_data.pdf) |
 | <a href="https://kontur.ru" class="favicon">Kontur</a> | Software Development | Metrics | — | — | [Talk in Russian, November 2018](https://www.youtube.com/watch?v=U4u4Bd0FtrY) |
 | <a href="https://www.kuaishou.com/" class="favicon">Kuaishou</a> | Video | — | — | — | [ClickHouse Meetup, October 2018](https://clickhouse.com/blog/en/2018/clickhouse-community-meetup-in-beijing-on-october-28-2018/) |
@@ -101,11 +102,13 @@ toc_title: Adopters
 | <a href="https://www.nuna.com/" class="favicon">Nuna Inc.</a> | Health Data Analytics | — | — | — | [Talk in English, July 2020](https://youtu.be/GMiXCMFDMow?t=170) |
 | <a href="https://ok.ru" class="favicon">Ok.ru</a> | Social Network | — | 72 servers | 810 TB compressed, 50bn rows/day, 1.5 TB/day | [SmartData conference, Oct 2021](https://assets.ctfassets.net/oxjq45e8ilak/4JPHkbJenLgZhBGGyyonFP/57472ec6987003ec4078d0941740703b/____________________ClickHouse_______________________.pdf) |
 | <a href="https://omnicomm.ru/" class="favicon">Omnicomm</a> | Transportation Monitoring | — | — | — | [Facebook post, Oct 2021](https://www.facebook.com/OmnicommTeam/posts/2824479777774500) |
-| <a href="https://www.oneapm.com/" class="favicon">OneAPM</a> | Monitorings and Data Analysis | Main product | — | — | [Slides in Chinese, October 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup19/8.%20clickhouse在OneAPM的应用%20杜龙.pdf) |
+| <a href="https://www.oneapm.com/" class="favicon">OneAPM</a> | Monitoring and Data Analysis | Main product | — | — | [Slides in Chinese, October 2018](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup19/8.%20clickhouse在OneAPM的应用%20杜龙.pdf) |
+| <a href="https://www.opentargets.org/" class="favicon">Open Targets</a> | Genome Research | Genome Search | — | — | [Tweet, Oct 2021](https://twitter.com/OpenTargets/status/1452570865342758913?s=20), [Blog](https://blog.opentargets.org/graphql/) |
 | <a href="https://corp.ozon.com/" class="favicon">OZON</a> | E-commerce | — | — | — | [Official website](https://job.ozon.ru/vacancy/razrabotchik-clickhouse-ekspluatatsiya-40991870/) |
 | <a href="https://panelbear.com/" class="favicon">Panelbear | Analytics | Monitoring and Analytics | — | — | [Tech Stack, November 2020](https://panelbear.com/blog/tech-stack/) |
 | <a href="https://www.percent.cn/" class="favicon">Percent 百分点</a> | Analytics | Main Product | — | — | [Slides in Chinese, June 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup24/4.%20ClickHouse万亿数据双中心的设计与实践%20.pdf) |
 | <a href="https://www.percona.com/" class="favicon">Percona</a> | Performance analysis | Percona Monitoring and Management | — | — | [Official website, Mar 2020](https://www.percona.com/blog/2020/03/30/advanced-query-analysis-in-percona-monitoring-and-management-with-direct-clickhouse-access/) |
+| <a href="https://piwik.pro/" class="favicon">Piwik PRO</a> | Web Analytics | Main Product | — | — | [Official website, Dec 2018](https://piwik.pro/blog/piwik-pro-clickhouse-faster-efficient-reports/) |
 | <a href="https://plausible.io/" class="favicon">Plausible</a> | Analytics | Main Product | — | — | [Blog post, June 2020](https://twitter.com/PlausibleHQ/status/1273889629087969280) |
 | <a href="https://posthog.com/" class="favicon">PostHog</a> | Product Analytics | Main Product | — | — | [Release Notes, Oct 2020](https://posthog.com/blog/the-posthog-array-1-15-0) |
 | <a href="https://postmates.com/" class="favicon">Postmates</a> | Delivery | — | — | — | [Talk in English, July 2020](https://youtu.be/GMiXCMFDMow?t=188) |
@@ -121,7 +124,7 @@ toc_title: Adopters
 | <a href="https://rspamd.com/" class="favicon">Rspamd</a> | Antispam | Analytics | — | — | [Official Website](https://rspamd.com/doc/modules/clickhouse.html) |
 | <a href="https://rusiem.com/en" class="favicon">RuSIEM</a> | SIEM | Main Product | — | — | [Official Website](https://rusiem.com/en/products/architecture) |
 | <a href="https://www.s7.ru" class="favicon">S7 Airlines</a> | Airlines | Metrics, Logging | — | — | [Talk in Russian, March 2019](https://www.youtube.com/watch?v=nwG68klRpPg&t=15s) |
-| <a href="https://www.sberbank.com/index" class="favicon">Sber</a> | Banking, Fintech, Retail, Cloud, Media | — | — | — | [Job advertisement, March 2021](https://career.habr.com/vacancies/1000073536) |
+| <a href="https://www.sberbank.com/index" class="favicon">Sber</a> | Banking, Fintech, Retail, Cloud, Media | — | 128 servers | >1 PB | [Job advertisement, March 2021](https://career.habr.com/vacancies/1000073536) |
 | <a href="https://www.scireum.de/" class="favicon">scireum GmbH</a> | e-Commerce | Main product | — | — | [Talk in German, February 2020](https://www.youtube.com/watch?v=7QWAn5RbyR4) |
 | <a href="https://segment.com/" class="favicon">Segment</a> | Data processing | Main product | 9 * i3en.3xlarge nodes 7.5TB NVME SSDs, 96GB Memory, 12 vCPUs | — | [Slides, 2019](https://slides.com/abraithwaite/segment-clickhouse) |
 | <a href="https://sembot.io/" class="favicon">sembot.io</a> | Shopping Ads | — | — | — | A comment on LinkedIn, 2020 |
@@ -170,5 +173,9 @@ toc_title: Adopters
 | <a href="https://cft.ru/" class="favicon">ЦФТ</a> | Banking, Financial products, Payments | — | — | — | [Meetup in Russian, April 2020](https://team.cft.ru/events/162) |
 | <a href="https://promo.croc.ru/digitalworker" class="favicon">Цифровой Рабочий</a> | Industrial IoT, Analytics | — | — | — | [Blog post in Russian, March 2021](https://habr.com/en/company/croc/blog/548018/) |
 | <a href="https://shop.okraina.ru/" class="favicon">ООО «МПЗ Богородский»</a> | Agriculture | — | — | — | [Article in Russian, November 2020](https://cloud.yandex.ru/cases/okraina) |
+| <a href="https://domclick.ru/" class="favicon">ДомКлик</a> | Real Estate | — | — | — | [Article in Russian, October 2021](https://habr.com/ru/company/domclick/blog/585936/) |
+| <a href="https://www.deepl.com/" class="favicon">Deepl</a> | Machine Learning | — | — | — | [Video, October 2021](https://www.youtube.com/watch?v=WIYJiPwxXdM&t=1182s) |
+| <a href="https://vercel.com/" class="favicon">Vercel</a> | Traffic and Performance Analytics | — | — | — | Direct reference, October 2021 |
+| <a href="https://www.your-analytics.org/" class="favicon">YourAnalytics</a> | Web Analytics | — | — | — | [Tweet, Nov 2021](https://twitter.com/mikenikles/status/1460860140249235461) |
 
 [Original article](https://clickhouse.com/docs/en/introduction/adopters/) <!--hide-->

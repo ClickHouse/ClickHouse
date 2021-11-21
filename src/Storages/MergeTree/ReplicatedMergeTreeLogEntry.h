@@ -77,6 +77,7 @@ struct ReplicatedMergeTreeLogEntryData
     String toString() const;
 
     String znode_name;
+    String log_entry_id;
 
     Type type = EMPTY;
     String source_replica; /// Empty string means that this entry was added to the queue immediately, and not copied from the log.

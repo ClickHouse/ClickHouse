@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 import logging
-from github import Github
-from pr_info import PRInfo
 import json
 import os
+from github import Github
+from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
+from commit_status_helper import get_commit
 
 NAME = 'Run Check (actions)'
 
@@ -23,12 +24,6 @@ def filter_statuses(statuses):
         filt[status.context] = status
     return filt
 
-
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
@@ -38,7 +33,7 @@ if __name__ == "__main__":
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
 
-    url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
+    url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
     statuses = filter_statuses(list(commit.get_statuses()))
     if NAME in statuses and statuses[NAME].state == "pending":
         commit.create_status(context=NAME, description="All checks finished", state="success", target_url=url)

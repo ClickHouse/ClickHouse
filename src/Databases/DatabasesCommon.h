@@ -13,6 +13,9 @@
 namespace DB
 {
 
+void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata);
+ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary, uint32_t max_parser_depth, bool throw_on_error);
+
 class Context;
 
 /// A base class for databases that manage their own list of tables.

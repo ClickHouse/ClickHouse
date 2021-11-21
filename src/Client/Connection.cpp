@@ -30,11 +30,10 @@
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <pcg_random.hpp>
+#include <base/scope_guard.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#    include <Common/config.h>
-#endif
+#include <Common/config_version.h>
+#include <Common/config.h>
 
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
