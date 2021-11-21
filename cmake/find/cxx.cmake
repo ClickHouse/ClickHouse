@@ -1,4 +1,4 @@
-option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++" ${NOT_UNBUNDLED})
+option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++" ON)
 
 if (NOT USE_LIBCXX)
     if (USE_INTERNAL_LIBCXX_LIBRARY)
@@ -10,7 +10,7 @@ if (NOT USE_LIBCXX)
     return()
 endif()
 
-set(USE_INTERNAL_LIBCXX_LIBRARY_DEFAULT ${NOT_UNBUNDLED})
+set(USE_INTERNAL_LIBCXX_LIBRARY_DEFAULT ON)
 
 option (USE_INTERNAL_LIBCXX_LIBRARY "Disable to use system libcxx and libcxxabi libraries instead of bundled"
     ${USE_INTERNAL_LIBCXX_LIBRARY_DEFAULT})

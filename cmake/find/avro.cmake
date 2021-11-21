@@ -8,8 +8,7 @@ if (NOT ENABLE_AVRO)
     return()
 endif()
 
-option (USE_INTERNAL_AVRO_LIBRARY
-        "Set to FALSE to use system avro library instead of bundled" ON) # TODO: provide unbundled support
+option (USE_INTERNAL_AVRO_LIBRARY "Set to FALSE to use system avro library instead of bundled" ON)
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/avro/lang")
     if (USE_INTERNAL_AVRO_LIBRARY)

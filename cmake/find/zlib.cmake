@@ -1,4 +1,4 @@
-option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ON)
 
 if (NOT MSVC)
     set (INTERNAL_ZLIB_NAME "zlib-ng" CACHE INTERNAL "")

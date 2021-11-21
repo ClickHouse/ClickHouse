@@ -7,7 +7,7 @@ if (NOT ENABLE_RDKAFKA)
     return()
 endif()
 
-option (USE_INTERNAL_RDKAFKA_LIBRARY "Set to FALSE to use system librdkafka instead of the bundled" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_RDKAFKA_LIBRARY "Set to FALSE to use system librdkafka instead of the bundled" ON)
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/cppkafka/src")
     if(USE_INTERNAL_RDKAFKA_LIBRARY)
@@ -40,7 +40,7 @@ if (NOT USE_INTERNAL_RDKAFKA_LIBRARY)
            message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find system sasl2 library needed for static librdkafka")
        endif()
     endif ()
-    set (CPPKAFKA_LIBRARY cppkafka) # TODO: try to use unbundled version.
+    set (CPPKAFKA_LIBRARY cppkafka)
 endif ()
 
 if (RDKAFKA_LIB AND RDKAFKA_INCLUDE_DIR)

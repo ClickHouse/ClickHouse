@@ -7,7 +7,7 @@ if (NOT ENABLE_CURL)
     return()
 endif()
 
-option (USE_INTERNAL_CURL "Use internal curl library" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_CURL "Use internal curl library" ON)
 
 if (NOT USE_INTERNAL_CURL)
     find_package (CURL)
