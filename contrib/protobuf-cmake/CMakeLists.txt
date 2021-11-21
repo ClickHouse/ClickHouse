@@ -46,7 +46,7 @@ set(libprotobuf_lite_files
 )
 
 add_library(libprotobuf-lite ${libprotobuf_lite_files})
-target_link_libraries(libprotobuf-lite ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(libprotobuf-lite pthread)
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
     target_link_libraries(libprotobuf-lite log)
 endif()
@@ -110,10 +110,8 @@ set(libprotobuf_files
 )
 
 add_library(libprotobuf ${libprotobuf_lite_files} ${libprotobuf_files})
-target_link_libraries(libprotobuf ${CMAKE_THREAD_LIBS_INIT})
-if(protobuf_WITH_ZLIB)
-  target_link_libraries(libprotobuf ${ZLIB_LIBRARIES})
-endif()
+target_link_libraries(libprotobuf pthread)
+target_link_libraries(libprotobuf ${ZLIB_LIBRARIES})
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
     target_link_libraries(libprotobuf log)
 endif()
@@ -214,7 +212,7 @@ add_library(protobuf::libprotoc ALIAS libprotoc)
 set(protoc_files ${protobuf_source_dir}/src/google/protobuf/compiler/main.cc)
 
 if (NOT CMAKE_CROSSCOMPILING)
-    add_executable(protoc ${protoc_files} ${protoc_rc_files})
+    add_executable(protoc ${protoc_files})
     target_link_libraries(protoc libprotoc libprotobuf pthread)
     add_executable(protobuf::protoc ALIAS protoc)
 
