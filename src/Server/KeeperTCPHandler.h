@@ -81,8 +81,8 @@ private:
     void sendHandshake(bool has_leader);
     Poco::Timespan receiveHandshake(int32_t handshake_length);
 
-    static bool isHandShake(Int32 & handshake_length) ;
-    bool tryExecuteFourLetterWordCmd(Int32 & command);
+    static bool isHandShake(int32_t handshake_length);
+    bool tryExecuteFourLetterWordCmd(int32_t command);
 
     std::pair<Coordination::OpNum, Coordination::XID> receiveRequest();
 
