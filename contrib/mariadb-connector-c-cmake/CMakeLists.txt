@@ -1,11 +1,3 @@
-set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC)
-set(CLIENT_PLUGIN_SHA256_PASSWORD STATIC)
-set(CLIENT_PLUGIN_REMOTE_IO OFF)
-set(CLIENT_PLUGIN_DIALOG OFF)
-set(CLIENT_PLUGIN_AUTH_GSSAPI_CLIENT OFF)
-set(CLIENT_PLUGIN_CLIENT_ED25519 OFF)
-set(CLIENT_PLUGIN_MYSQL_CLEAR_PASSWORD OFF)
-
 if (GLIBC_COMPATIBILITY)
     set(LIBM glibc-compatibility)
 endif()
@@ -18,8 +10,6 @@ set(CC_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
 set(WITH_SSL ON)
 
 set(MARIADB_CONNECTOR_C_COPYRIGHT "2013-2017 MariaDB Corporation Ab")
-
-INCLUDE(${CC_SOURCE_DIR}/cmake/plugins.cmake)
 
 set(PROTOCOL_VERSION 10) # we adapted new password option from PHP's mysqlnd !
 
@@ -103,7 +93,6 @@ set(HAVE_THREADS 1)
 set(DEFAULT_CHARSET "utf8mb4")
 
 add_definitions(-DHAVE_OPENSSL -DHAVE_TLS)
-set(SSL_SOURCES "${CC_SOURCE_DIR}/libmariadb/secure/openssl.c")
 set(SSL_LIBRARIES ${OPENSSL_SSL_LIBRARY} ${OPENSSL_CRYPTO_LIBRARY})
 include_directories(BEFORE ${OPENSSL_INCLUDE_DIR})
 set(TLS_LIBRARY_VERSION "OpenSSL ${OPENSSL_VERSION}")
@@ -121,7 +110,64 @@ if(WITH_SSL)
   set(SYSTEM_LIBS ${SYSTEM_LIBS} ${SSL_LIBRARIES})
 endif()
 
-INCLUDE(${CC_SOURCE_DIR}/plugins/CMakeLists.txt)
+
+function(REGISTER_PLUGIN)
+
+  SET(one_value_keywords TARGET TYPE)
+  SET(multi_value_keywords SOURCES)
+
+  cmake_parse_arguments(CC_PLUGIN
+                        "${options}"
+                        "${one_value_keywords}"
+                        "${multi_value_keywords}"
+                        ${ARGN})
+
+  # overwrite default if it was specified with cmake option
+  string(TOUPPER ${CC_PLUGIN_TARGET} cc_plugin)
+  if(NOT "${CLIENT_PLUGIN_${cc_plugin}}" STREQUAL "")
+    SET(CC_PLUGIN_DEFAULT ${CLIENT_PLUGIN_${cc_plugin}})
+  endif()
+
+  # use uppercase
+  string(TOUPPER ${CC_PLUGIN_TARGET} target_name)
+  string(TOUPPER "${CC_PLUGIN_CONFIGURATIONS}" CC_PLUGIN_CONFIGURATIONS)
+
+  if(NOT ${PLUGIN_${target_name}} STREQUAL "")
+    string(TOUPPER ${PLUGIN_${target_name}} PLUGIN_${target_name})
+    set(CC_PLUGIN_DEFAULT ${PLUGIN_${target_name}})
+  endif()
+
+  set(PLUGINS_STATIC ${PLUGINS_STATIC} ${CC_PLUGIN_TARGET} PARENT_SCOPE)
+  set(LIBMARIADB_PLUGIN_CFLAGS ${LIBMARIADB_PLUGIN_CFLAGS} ${CC_PLUGIN_COMPILE_OPTIONS} PARENT_SCOPE)
+  set(LIBMARIADB_PLUGIN_INCLUDES ${LIBMARIADB_PLUGIN_INCLUDES} ${CC_PLUGIN_INCLUDES} PARENT_SCOPE)
+  set(LIBMARIADB_PLUGIN_SOURCES ${LIBMARIADB_PLUGIN_SOURCES} ${CC_PLUGIN_SOURCES} PARENT_SCOPE)
+  set(LIBMARIADB_PLUGIN_LIBS ${LIBMARIADB_PLUGIN_LIBS} ${CC_PLUGIN_LIBRARIES} PARENT_SCOPE)
+endfunction()
+
+SET(PLUGIN_EXTRA_FILES ${CC_SOURCE_DIR}/libmariadb/ma_errmsg.c)
+
+#native password
+REGISTER_PLUGIN(TARGET pvio_socket
+                TYPE MARIADB_CLIENT_PLUGIN_PVIO
+                SOURCES "${CC_SOURCE_DIR}/plugins/pvio/pvio_socket.c")
+
+# SHA256 caching plugin for MySQL 8.0 connection
+REGISTER_PLUGIN(TARGET caching_sha2_password
+                TYPE MARIADB_CLIENT_PLUGIN_AUTH
+                SOURCES "${CC_SOURCE_DIR}/plugins/auth/caching_sha2_pw.c")
+
+REGISTER_PLUGIN(TARGET sha256_password
+                TYPE MARIADB_CLIENT_PLUGIN_AUTH
+                SOURCES "${CC_SOURCE_DIR}/plugins/auth/sha256_pw.c")
+
+#native password
+REGISTER_PLUGIN(TARGET mysql_native_password
+                TYPE MARIADB_CLIENT_PLUGIN_AUTH
+                SOURCES "${CC_SOURCE_DIR}/plugins/auth/my_auth.c")
+
+REGISTER_PLUGIN(TARGET aurora
+                TYPE MARIADB_CLIENT_PLUGIN_CONNECTION
+                SOURCES "${CC_SOURCE_DIR}/plugins/connection/aurora.c")
 
 
 add_definitions(-D HAVE_COMPRESS)
@@ -166,8 +212,9 @@ ${CC_SOURCE_DIR}/libmariadb/ma_string.c
 ${CC_SOURCE_DIR}/libmariadb/ma_dtoa.c
 ${CC_SOURCE_DIR}/libmariadb/mariadb_rpl.c
 ${CC_SOURCE_DIR}/libmariadb/ma_io.c
+${CC_SOURCE_DIR}/libmariadb/secure/openssl.c
+${CC_SOURCE_DIR}/libmariadb/secure/openssl_crypt.c
 ${CC_BINARY_DIR}/libmariadb/ma_client_plugin.c
-${SSL_SOURCES}
 )
 
 if(ICONV_INCLUDE_DIR)
