@@ -102,7 +102,7 @@ if __name__ == "__main__":
             logging.info("Exception uploading file %s text %s", f, ex)
             paths[f] = ''
 
-    report_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
+    report_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
     if paths['runlog.log']:
         report_url = paths['runlog.log']
     if paths['main.log']:
