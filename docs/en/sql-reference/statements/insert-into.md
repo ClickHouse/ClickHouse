@@ -5,12 +5,13 @@ toc_title: INSERT INTO
 
 ## INSERT INTO Statement {#insert}
 
-Adding data.
+Inserts data into a table.
 
-Basic query format:
+**Syntax**
 
 ``` sql
-INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
+INSERT INTO [db.]table [(c1, c2, c3)] [FORMAT format_name] VALUES (v11, v12, v13), (v21, v22, v23), ... 
+INSERT INTO [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] FORMAT format_name
 ```
 
 You can specify a list of columns to insert using  the `(c1, c2, c3)`. You can also use an expression with column [matcher](../../sql-reference/statements/select/index.md#asterisk) such as `*` and/or [modifiers](../../sql-reference/statements/select/index.md#select-modifiers) such as [APPLY](../../sql-reference/statements/select/index.md#apply-modifier), [EXCEPT](../../sql-reference/statements/select/index.md#except-modifier), [REPLACE](../../sql-reference/statements/select/index.md#replace-modifier).
@@ -106,6 +107,34 @@ However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
 `FORMAT` clause must be specified in the end of query if `SELECT` clause contains table function [input()](../../sql-reference/table-functions/input.md).
 
 To insert a default value instead of `NULL` into a column with not nullable data type, enable [insert_null_as_default](../../operations/settings/settings.md#insert_null_as_default) setting.
+
+### Inserting Data from a File {#inserting-data-from-a-file}
+
+Use `FROM INFILE file_name [COMPRESSION type] FORMAT input_format` to insert data from a file stored on a **client** side. This functionality is available in the [command-line client](../../interfaces/cli.md) and [clickhouse-local](../../operations/utilities/clickhouse-local.md).
+
+`filename` and `type` are string literals. Input file [format](../../interfaces/formats.md) is set in the `FORMAT` clause.
+
+Compressed files may be used. File compression is detected by the extension of the file name or it can be explicitly specified in a `COMPRESSION` clause. Supported compression types are: `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+
+**Example**
+
+Execute queries in the [command-line client](../../interfaces/cli.md):
+
+```bash
+echo 1,A > input.csv ; echo 2,B >> input.csv
+clickhouse-client --query="CREATE TABLE table_from_file (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;"
+clickhouse-client --query="INSERT INTO table_from_file FROM INFILE 'input.csv' FORMAT CSV;"
+clickhouse-client --query="SELECT * FROM table_from_file FORMAT PrettyCompact;"
+```
+
+Result:
+
+```text
+┌─id─┬─text─┐
+│  1 │ A    │
+│  2 │ B    │
+└────┴──────┘
+```
 
 ### Performance Considerations {#performance-considerations}
 
