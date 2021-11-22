@@ -211,6 +211,8 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
 {
     auto old_table_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
+    bool move_between_db_engines = old_table_id.uuid == UUIDHelpers::Nil || new_table_id.uuid == UUIDHelpers::Nil;
+    assert(!(old_table_id.uuid == UUIDHelpers::Nil && new_table_id.uuid == UUIDHelpers::Nil));
 
     bool has_configuration = false;
     {
@@ -221,10 +223,28 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
             has_configuration = true;
             configuration->setString("dictionary.database", new_table_id.database_name);
             configuration->setString("dictionary.name", new_table_id.table_name);
+            if (move_between_db_engines)
+            {
+                if (new_table_id.uuid == UUIDHelpers::Nil)
+                    configuration->remove("dictionary.uuid");
+                else
+                    configuration->setString("dictionary.uuid", toString(new_table_id.uuid));
+            }
         }
     }
 
-    if (has_configuration)
+    if (!has_configuration)
+        return;
+
+    if (move_between_db_engines)
+    {
+        /// It's too hard to update both name and uuid, better to reload dictionary with new name
+        removeDictionaryConfigurationFromRepository();
+        auto repository = std::make_unique<ExternalLoaderDictionaryStorageConfigRepository>(*this);
+        remove_repository_callback = getContext()->getExternalDictionariesLoader().addConfigRepository(std::move(repository));
+        /// Dictionary will be reloaded lazily to avoid exceptions in the middle of renaming
+    }
+    else
     {
         const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
         auto result = external_dictionaries_loader.getLoadResult(old_table_id.getInternalDictionaryName());
