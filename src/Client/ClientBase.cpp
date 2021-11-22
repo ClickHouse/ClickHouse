@@ -56,6 +56,8 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/CompressionMethod.h>
 #include <Client/InternalTextLogs.h>
+#include <boost/algorithm/string/replace.hpp>
+
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -405,7 +407,7 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
             output_format = global_context->getOutputFormat(
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
-        output_format->doWritePrefix();
+        output_format->setAutoFlush();
     }
 }
 
@@ -685,7 +687,7 @@ void ClientBase::onEndOfStream()
     progress_indication.clearProgressOutput();
 
     if (output_format)
-        output_format->doWriteSuffix();
+        output_format->finalize();
 
     resetOutput();
 
@@ -1328,6 +1330,12 @@ bool ClientBase::processQueryText(const String & text)
     }
 
     return executeMultiQuery(text);
+}
+
+
+String ClientBase::prompt() const
+{
+    return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
 }
 
 

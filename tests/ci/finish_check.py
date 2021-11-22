@@ -33,7 +33,7 @@ if __name__ == "__main__":
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
 
-    url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
+    url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
     statuses = filter_statuses(list(commit.get_statuses()))
     if NAME in statuses and statuses[NAME].state == "pending":
         commit.create_status(context=NAME, description="All checks finished", state="success", target_url=url)

@@ -10,6 +10,7 @@
 #include <Common/setThreadName.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <boost/algorithm/string/trim.hpp>
 
 
 namespace DB
