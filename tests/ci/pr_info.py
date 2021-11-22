@@ -8,7 +8,7 @@ from unidiff import PatchSet
 
 DIFF_IN_DOCUMENTATION_EXT = [".html", ".md", ".yml", ".txt", ".css", ".js", ".xml", ".ico", ".conf", ".svg", ".png", ".jpg", ".py", ".sh"]
 
-def get_pr_for_commit(sha):
+def get_pr_for_commit(sha, ref):
     try_get_pr_url = f"https://api.github.com/repos/{os.getenv('GITHUB_REPOSITORY', 'ClickHouse/ClickHouse')}/commits/{sha}/pulls"
     try:
         response = requests.get(try_get_pr_url)
@@ -17,8 +17,11 @@ def get_pr_for_commit(sha):
         if len(data) > 1:
             print("Got more than one pr for commit", sha)
         for pr in data:
-            if 'release' in {label['name'] for label in pr['labels']}:
+            # refs for pushes looks like refs/head/XX
+            # refs for RPs looks like XX
+            if pr['head']['ref'] in ref:
                 return pr
+        print ("Cannot find PR with required ref", ref, "returning first one")
         first_pr = data[0]
         return first_pr
     except Exception as ex:
@@ -64,7 +67,7 @@ class PRInfo:
 
         elif 'commits' in github_event:
             self.sha = github_event['after']
-            pull_request = get_pr_for_commit(self.sha)
+            pull_request = get_pr_for_commit(self.sha, github_event['ref'])
             repo_prefix = f"{os.getenv('GITHUB_SERVER_URL', 'https://github.com')}/{os.getenv('GITHUB_REPOSITORY', 'ClickHouse/ClickHouse')}"
             self.task_url = f"{repo_prefix}/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
             self.commit_html_url = f"{repo_prefix}/commits/{self.sha}"
