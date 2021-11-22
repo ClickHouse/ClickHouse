@@ -10,7 +10,7 @@ toc_title: "\u8A2D\u5B9A\u30D5\u30A1\u30A4\u30EB"
 ClickHouseは複数のファイル構成管理をサポートします。 主サーバ設定ファイルで指定することがで `/etc/clickhouse-server/config.xml`. その他のファイルは `/etc/clickhouse-server/config.d` ディレクトリ。
 
 !!! note "注"
-    すべての構成ファイルはXML形式である必要があります。 また、通常は同じルート要素を持つ必要があります `<yandex>`.
+    すべての構成ファイルはXML形式である必要があります。 また、通常は同じルート要素を持つ必要があります `<clickhouse>`.
 
 メイン構成ファイルで指定された一部の設定は、他の構成ファイルで上書きできます。 その `replace` または `remove` これらの構成ファイルの要素に属性を指定できます。
 
@@ -36,7 +36,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 ```
 
 ``` xml
-<yandex>
+<clickhouse>
     <users>
       <alice>
           <profile>analytics</profile>
@@ -47,7 +47,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
           <quota>analytics</quota>
       </alice>
     </users>
-</yandex>
+</clickhouse>
 ```
 
 各設定ファイルでは、サーバともある `file-preprocessed.xml` 起動時のファイル。 これらのファイルには、完了したすべての置換と上書きが含まれており、情報提供を目的としています。 設定ファイルでZooKeeperの置換が使用されていても、サーバーの起動時にZooKeeperが使用できない場合、サーバーは前処理されたファイルから設定をロードします。

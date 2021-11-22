@@ -15,6 +15,7 @@
 namespace ProfileEvents
 {
     extern const Event QueryProfilerSignalOverruns;
+    extern const Event QueryProfilerRuns;
 }
 
 namespace DB
@@ -60,6 +61,7 @@ namespace
         const StackTrace stack_trace(signal_context);
 
         TraceCollector::collect(trace_type, stack_trace, 0);
+        ProfileEvents::increment(ProfileEvents::QueryProfilerRuns);
 
         errno = saved_errno;
     }
@@ -124,11 +126,13 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
         sev.sigev_notify = SIGEV_THREAD_ID;
         sev.sigev_signo = pause_signal;
 
-#   if defined(OS_FREEBSD)
+#if defined(OS_FREEBSD)
         sev._sigev_un._threadid = thread_id;
-#   else
+#elif defined(USE_MUSL)
+        sev.sigev_notify_thread_id = thread_id;
+#else
         sev._sigev_un._tid = thread_id;
-#   endif
+#endif
         if (timer_create(clock_type, &sev, &timer_id))
         {
             /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.

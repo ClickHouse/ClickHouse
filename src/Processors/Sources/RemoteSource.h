@@ -2,7 +2,7 @@
 
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/RowsBeforeLimitCounter.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <atomic>
 
 namespace DB

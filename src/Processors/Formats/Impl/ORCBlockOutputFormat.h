@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include "config_formats.h"
-#endif
 
 #if USE_ORC
 #include <IO/WriteBuffer.h>
@@ -39,10 +37,11 @@ public:
     ORCBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
 
     String getName() const override { return "ORCBlockOutputFormat"; }
-    void consume(Chunk chunk) override;
-    void finalize() override;
 
 private:
+    void consume(Chunk chunk) override;
+    void finalizeImpl() override;
+
     ORC_UNIQUE_PTR<orc::Type> getORCType(const DataTypePtr & type, const std::string & column_name);
 
     /// ConvertFunc is needed for type UInt8, because firstly UInt8 (char8_t) must be

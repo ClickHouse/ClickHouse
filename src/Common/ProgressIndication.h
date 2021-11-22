@@ -60,13 +60,21 @@ public:
 
     void updateThreadEventData(HostToThreadTimesMap & new_thread_data);
 
+    bool print_hardware_utilization = false;
+
 private:
 
     size_t getUsedThreadsCount() const;
 
     UInt64 getApproximateCoresNumber() const;
 
-    UInt64 getMemoryUsage() const;
+    struct MemoryUsage
+    {
+        UInt64 total = 0;
+        UInt64 max   = 0;
+    };
+
+    MemoryUsage getMemoryUsage() const;
 
     /// This flag controls whether to show the progress bar. We start showing it after
     /// the query has been executing for 0.5 seconds, and is still less than half complete.

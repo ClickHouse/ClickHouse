@@ -29,7 +29,7 @@ namespace ErrorCodes
 }
 
 MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
-    : IRowInputFormat(header_, in_, std::move(params_)), buf(*in), parser(visitor), data_types(header_.getDataTypes())  {}
+    : IRowInputFormat(header_, buf, std::move(params_)), buf(in_), parser(visitor), data_types(header_.getDataTypes())  {}
 
 void MsgPackRowInputFormat::resetParser()
 {
@@ -363,9 +363,9 @@ bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     return true;
 }
 
-void registerInputFormatProcessorMsgPack(FormatFactory & factory)
+void registerInputFormatMsgPack(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("MsgPack", [](
+    factory.registerInputFormat("MsgPack", [](
             ReadBuffer & buf,
             const Block & sample,
             const RowInputFormatParams & params,
@@ -382,7 +382,7 @@ void registerInputFormatProcessorMsgPack(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatProcessorMsgPack(FormatFactory &)
+void registerInputFormatMsgPack(FormatFactory &)
 {
 }
 }

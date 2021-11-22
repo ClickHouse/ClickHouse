@@ -19,6 +19,7 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/UUID.h>
 
+#include <Common/Allocator.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Arena.h>
@@ -29,7 +30,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/BufferWithOwnMemory.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/VarInt.h>
 
 #include <DataTypes/DataTypeDateTime.h>
@@ -40,6 +41,9 @@ static constexpr auto DEFAULT_MAX_STRING_SIZE = 1_GiB;
 
 namespace DB
 {
+
+template <typename Allocator>
+struct Memory;
 
 namespace ErrorCodes
 {
@@ -276,29 +280,39 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
         {
             case '+':
             {
-                if (has_sign || has_number)
+                /// 123+ or +123+, just stop after 123 or +123.
+                if (has_number)
+                    goto end;
+
+                /// No digits read yet, but we already read sign, like ++, -+.
+                if (has_sign)
                 {
                     if constexpr (throw_exception)
                         throw ParsingException(
-                            "Cannot parse number with multiple sign (+/-) characters or intermediate sign character",
+                            "Cannot parse number with multiple sign (+/-) characters",
                             ErrorCodes::CANNOT_PARSE_NUMBER);
                     else
                         return ReturnType(false);
                 }
+
                 has_sign = true;
                 break;
             }
             case '-':
             {
-                if (has_sign || has_number)
+                if (has_number)
+                    goto end;
+
+                if (has_sign)
                 {
                     if constexpr (throw_exception)
                         throw ParsingException(
-                            "Cannot parse number with multiple sign (+/-) characters or intermediate sign character",
+                            "Cannot parse number with multiple sign (+/-) characters",
                             ErrorCodes::CANNOT_PARSE_NUMBER);
                     else
                         return ReturnType(false);
                 }
+
                 if constexpr (is_signed_v<T>)
                     negative = true;
                 else
@@ -584,35 +598,45 @@ inline ReturnType readDateTextImpl(LocalDate & date, ReadBuffer & buf)
         /// YYYY-MM-D
         /// YYYY-M-DD
         /// YYYY-M-D
+        /// YYYYMMDD
 
         /// The delimiters can be arbitrary characters, like YYYY/MM!DD, but obviously not digits.
 
         UInt16 year = (pos[0] - '0') * 1000 + (pos[1] - '0') * 100 + (pos[2] - '0') * 10 + (pos[3] - '0');
+        UInt8 month;
+        UInt8 day;
         pos += 5;
 
         if (isNumericASCII(pos[-1]))
-            return ReturnType(false);
-
-        UInt8 month = pos[0] - '0';
-        if (isNumericASCII(pos[1]))
         {
-            month = month * 10 + pos[1] - '0';
+            /// YYYYMMDD
+            month = (pos[-1] - '0') * 10 + (pos[0] - '0');
+            day = (pos[1] - '0') * 10 + (pos[2] - '0');
             pos += 3;
         }
         else
-            pos += 2;
-
-        if (isNumericASCII(pos[-1]))
-            return ReturnType(false);
-
-        UInt8 day = pos[0] - '0';
-        if (isNumericASCII(pos[1]))
         {
-            day = day * 10 + pos[1] - '0';
-            pos += 2;
+            month = pos[0] - '0';
+            if (isNumericASCII(pos[1]))
+            {
+                month = month * 10 + pos[1] - '0';
+                pos += 3;
+            }
+            else
+                pos += 2;
+
+            if (isNumericASCII(pos[-1]))
+                return ReturnType(false);
+
+            day = pos[0] - '0';
+            if (isNumericASCII(pos[1]))
+            {
+                day = day * 10 + pos[1] - '0';
+                pos += 2;
+            }
+            else
+                pos += 1;
         }
-        else
-            pos += 1;
 
         buf.position() = pos;
         date = LocalDate(year, month, day);
@@ -1290,7 +1314,7 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 /** This function just copies the data from buffer's internal position (in.position())
   * to current position (from arguments) into memory.
   */
-void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current);
+void saveUpToPosition(ReadBuffer & in, Memory<Allocator<false>> & memory, char * current);
 
 /** This function is negative to eof().
   * In fact it returns whether the data was loaded to internal ReadBuffers's buffer or not.
@@ -1299,8 +1323,11 @@ void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current);
   * of our buffer and the current cursor in the end of the buffer. When we call eof() it calls next().
   * And this function can fill the buffer with new data, so we will lose the data from previous buffer state.
   */
-bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current);
+bool loadAtPosition(ReadBuffer & in, Memory<Allocator<false>> & memory, char * & current);
 
+/// Skip data until start of the next row or eof (the end of row is determined by two delimiters:
+/// row_after_delimiter and row_between_delimiter).
+void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delimiter, const String & row_between_delimiter, bool skip_spaces);
 
 struct PcgDeserializer
 {

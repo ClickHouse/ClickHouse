@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include "config_core.h"
 
 #include <Functions/FunctionFactory.h>
 
@@ -37,7 +35,7 @@ void registerFunctionsStringArray(FunctionFactory &);
 void registerFunctionsStringSearch(FunctionFactory &);
 void registerFunctionsStringRegexp(FunctionFactory &);
 void registerFunctionsStringSimilarity(FunctionFactory &);
-void registerFunctionNgrams(FunctionFactory &);
+void registerFunctionsStringTokenExtractor(FunctionFactory &);
 void registerFunctionsURL(FunctionFactory &);
 void registerFunctionsVisitParam(FunctionFactory &);
 void registerFunctionsMath(FunctionFactory &);
@@ -54,9 +52,6 @@ void registerFunctionTupleHammingDistance(FunctionFactory & factory);
 void registerFunctionsStringHash(FunctionFactory & factory);
 void registerFunctionValidateNestedArraySizes(FunctionFactory & factory);
 void registerFunctionsSnowflake(FunctionFactory & factory);
-#if !defined(ARCADIA_BUILD)
-void registerFunctionBayesAB(FunctionFactory &);
-#endif
 void registerFunctionTid(FunctionFactory & factory);
 void registerFunctionLogTrace(FunctionFactory & factory);
 
@@ -76,9 +71,7 @@ void registerFunctions()
     registerFunctionsArray(factory);
     registerFunctionsTuple(factory);
     registerFunctionsMap(factory);
-#if !defined(ARCADIA_BUILD)
     registerFunctionsBitmap(factory);
-#endif
     registerFunctionsBinaryRepr(factory);
     registerFunctionsCoding(factory);
     registerFunctionsCodingUUID(factory);
@@ -104,7 +97,7 @@ void registerFunctions()
     registerFunctionsStringSearch(factory);
     registerFunctionsStringRegexp(factory);
     registerFunctionsStringSimilarity(factory);
-    registerFunctionNgrams(factory);
+    registerFunctionsStringTokenExtractor(factory);
     registerFunctionsURL(factory);
     registerFunctionsVisitParam(factory);
     registerFunctionsMath(factory);
@@ -121,10 +114,6 @@ void registerFunctions()
     registerFunctionsStringHash(factory);
     registerFunctionValidateNestedArraySizes(factory);
     registerFunctionsSnowflake(factory);
-
-#if !defined(ARCADIA_BUILD)
-    registerFunctionBayesAB(factory);
-#endif
 
 #if USE_SSL
     registerFunctionEncrypt(factory);
