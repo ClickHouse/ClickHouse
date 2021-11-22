@@ -76,7 +76,7 @@ void SerializationBool::serializeTextEscaped(const IColumn & column, size_t row_
     }
 }
 
-void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationBool::deserializeFromString(IColumn & column, String & input, const FormatSettings & settings) const
 {
     ColumnUInt8 * col = typeid_cast<ColumnUInt8 *>(&column);
     if (!col)
@@ -84,25 +84,25 @@ void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & is
         throw Exception("Bool type can only deserialize columns of type UInt8." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    if (!istr.eof())
+    if (settings.bool_true_representation == input)
     {
-        String input;
-
-        readString(input, istr);
-
-        if (settings.bool_true_representation == input)
-        {
-            col->insert(true);
-        }
-        else if (settings.bool_false_representation == input)
-        {
-            col->insert(false);
-        }
-        else
-            throw Exception("Invalid boolean value, should be " + settings.bool_true_representation + " or " + settings.bool_false_representation + " controlled by setting bool_true_representation and bool_false_representation.", ErrorCodes::ILLEGAL_COLUMN);
+        col->insert(true);
+    }
+    else if (settings.bool_false_representation == input)
+    {
+        col->insert(false);
     }
     else
+        throw Exception("Invalid boolean value, should be " + settings.bool_true_representation + " or " + settings.bool_false_representation + " controlled by setting bool_true_representation and bool_false_representation.", ErrorCodes::ILLEGAL_COLUMN);
+}
+
+void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    if (istr.eof())
         throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
+    String input;
+    readEscapedString(input, istr);
+    deserializeFromString(column, input, settings);
 }
 
 void SerializationBool::serializeTextJSON(const IColumn &column, size_t row_num, WriteBuffer &ostr, const FormatSettings &settings) const
@@ -122,7 +122,11 @@ void SerializationBool::serializeTextCSV(const IColumn & column, size_t row_num,
 
 void SerializationBool::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextEscaped(column, istr, settings);
+    if (istr.eof())
+        throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
+    String input;
+    readCSVString(input, istr, settings.csv);
+    deserializeFromString(column, input, settings);
 }
 
 void SerializationBool::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -132,7 +136,11 @@ void SerializationBool::serializeTextRaw(const IColumn & column, size_t row_num,
 
 void SerializationBool::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
-    deserializeTextEscaped(column, istr, settings);
+    if (istr.eof())
+        throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
+    String input;
+    readString(input, istr);
+    deserializeFromString(column, input, settings);
 }
 
 }
