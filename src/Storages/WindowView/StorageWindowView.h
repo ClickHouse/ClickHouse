@@ -15,6 +15,90 @@ class IAST;
 class WindowViewSource;
 using ASTPtr = std::shared_ptr<IAST>;
 
+/**
+ * StorageWindowView.
+ *
+ * CREATE WINDOW VIEW [IF NOT EXISTS] [db.]name [TO [db.]name]
+ * [ENGINE [db.]name]
+ * [WATERMARK strategy] [ALLOWED_LATENESS interval_function]
+ * AS SELECT ...
+ * GROUP BY [TUBLE/HOP(...)]
+ *
+ * - only stores data that has not been triggered yet;
+ * - fire_task checks if there is a window ready to be fired
+ *   (each window result is fired in one output at the end of TUMBLE/HOP window interval);
+ * - intermidiate data is stored in inner table with
+ *   AggregatingMergeTree engine by default, but any other -MergeTree
+ *   engine might be used as inner table engine;
+ * - WATCH query is supported (WATCH [db.]name [LIMIT n]);
+ *
+ *   Here function in GROUP BY clause results in a "window_id"
+ *   represented as Tuple(DateTime, DateTime) - lower and upper bounds of the window.
+ *   Function might be one of the following:
+ *     1. TUMBLE(time_attr, interval [, timezone])
+ *        - non-overlapping, continuous windows with a fixed duration (interval);
+ *        - example:
+ *            SELECT TUMBLE(toDateTime('2021-01-01 00:01:45'), INTERVAL 10 SECOND)
+ *            results in ('2021-01-01 00:01:40','2021-01-01 00:01:50')
+ *     2. HOP(time_attr, hop_interval, window_interval [, timezone])
+ *        - sliding window;
+ *        - has a fixed duration (window_interval parameter) and hops by a
+ *          specified hop interval (hop_interval parameter);
+ *          If the hop_interval is smaller than the window_interval, hopping windows
+ *          are overlapping. Thus, records can be assigned to multiple windows.
+ *        - example:
+ *            SELECT HOP(toDateTime('2021-01-01 00:00:45'), INTERVAL 3 SECOND, INTERVAL 10 SECOND)
+ *            results in ('2021-01-01 00:00:38','2021-01-01 00:00:48')
+ *
+ *   Result window_id can be used with the following functions to find out start/end of the window:
+ *     - TUMPLE_START(window_id), TUMPLE_END(window_id)
+ *     - HOP_START(window_id), HOP_END(window_id)
+ *
+ *
+ * Time processing options.
+ *
+ *   1. (default) processing time
+ *      - produces results based on the time of the local machine;
+ *      - example:
+ *          CREATE WINDOW VIEW test.wv TO test.dst
+ *          AS SELECT count(number), TUMBLE_START(w_id) as w_start FROM test.mt
+ *          GROUP BY TUMBLE(now(), INTERVAL '5' SECOND) as w_id
+ *
+ *   2. event time
+ *      - produces results based on the time that is contained in every record;
+ *      - event time processing is implemented by using WATERMARK:
+ *         a. STRICTLY_ASCENDING
+ *            - emits a watermark of the maximum observed timestamp so far;
+ *            - rows that have a timestamp < max timestamp are not late.
+ *         b. ASCENDING
+ *            - rows that have a timestamp <= max timestamp are not late.
+ *         c. BOUNDED (WATERMARK = INTERVAL)
+ *            - emits watermarks, which are the maximum observed timestamp minus
+ *              the specified delay.
+ *      - example:
+ *          CREATE WINDOW VIEW test.wv TO test.dst
+ *          WATERMARK=STRICTLY_ASCENDING
+ *          AS SELECT count(number) FROM test.mt
+ *          GROUP BY TUMBLE(timestamp, INTERVAL '5' SECOND);
+ *        (where `timestamp` is a DateTime column in test.mt)
+ *
+ *
+ * Lateness.
+ *   - By default, the allowed lateness is set to off, that is, elements that arrive
+ *     behind the watermark will be dropped.
+ *
+ *   - Can be enabled by using ALLOWED_LATENESS=INTERVAL, like this:
+ *       CREATE WINDOW VIEW test.wv TO test.dst
+ *       WATERMARK=ASCENDING ALLOWED_LATENESS=INTERVAL '2' SECOND
+ *       AS SELECT count(a) AS count, TUMBLE_END(wid) AS w_end FROM test.mt
+ *       GROUP BY TUMBLE(timestamp, INTERVAL '5' SECOND) AS wid;
+ *
+ *   - Instead of firing at the end of windows, WINDOW VIEW will fire
+ *     immediately when encountering late events;
+ *     Thus, it will result in multiple outputs for the same window.
+ *     Users need to take these duplicated results into account.
+ */
+
 class StorageWindowView final : public shared_ptr_helper<StorageWindowView>, public IStorage, WithContext
 {
     friend struct shared_ptr_helper<StorageWindowView>;
