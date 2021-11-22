@@ -1017,8 +1017,6 @@ CapnProto — формат бинарных сообщений, похож на 
 
 Сообщения формата CapnProto строго типизированы и не самоописывающиеся, т.е. нуждаются во внешнем описании схемы. Схема применяется "на лету" и кешируется между запросами.
 
-Десериализация эффективна и обычно не повышает нагрузку на систему.
-
 См. также [схема формата](#formatschema).
 
 ### Соответствие типов данных {#data_types-matching-capnproto}
@@ -1047,16 +1045,12 @@ CapnProto — формат бинарных сообщений, похож на 
 
 Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`. Тип `Tuple` также может быть вложенным.
 
-Неподдерживаемые типы данных: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`.
-
-Типы данных столбцов в таблицах ClickHouse могут отличаться от типов данных для соответствующих полей CapnProto. При вставке данных ClickHouse интерпретирует типы данных CapnProto согласно таблице соответствия, а затем [приводит](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) данные к типу, установленному для столбца таблицы ClickHouse.
-
 ### Вставка и вывод данных {#inserting-and-selecting-data-capnproto}
 
 Чтобы вставить в ClickHouse данные из файла в формате CapnProto, выполните команду следующего вида:
 
 ``` bash
-$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO {some_table} FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
+$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
 ```
 
 Где `schema.capnp` выглядит следующим образом:
@@ -1068,12 +1062,10 @@ struct Message {
 }
 ```
 
-Чтобы вставить данные в столбцы типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) в виде массива структур, нужно включить настройку [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested).
-
 Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата CapnProto, используйте команду следующего вида:
 
 ``` bash
-$ clickhouse-client --query = "SELECT * FROM capnp_tuples FORMAT CapnProto SETTINGS format_schema = '$CLIENT_SCHEMADIR/02030_capnp_tuples:Message'"
+$ clickhouse-client --query = "SELECT * FROM test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
 ```
 
 ## Protobuf {#protobuf}

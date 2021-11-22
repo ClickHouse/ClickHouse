@@ -1096,8 +1096,6 @@ CapnProto is a binary message format similar to [Protocol Buffers](https://devel
 
 CapnProto messages are strictly typed and not self-describing, meaning they need an external schema description. The schema is applied on the fly and cached for each query.
 
-Deserialization is effective and usually does not increase the system load.
-
 See also [Format Schema](#formatschema).
 
 ### Data Types Matching {#data_types-matching-capnproto}
@@ -1126,16 +1124,12 @@ For working with `Enum` in CapnProto format use the [format_capn_proto_enum_comp
 
 Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` type also can be nested.
 
-Unsupported CapnProto data types: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`.
-
-Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [cast](../sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
-
 ### Inserting and Selecting Data {#inserting-and-selecting-data-capnproto}
 
 You can insert CapnProto data from a file into ClickHouse table by the following command:
 
 ``` bash
-$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO {some_table} FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
+$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
 ```
 
 Where `schema.capnp` looks like this:
@@ -1147,12 +1141,10 @@ struct Message {
 }
 ```
 
-To insert data into [Nested](../sql-reference/data-types/nested-data-structures/nested.md) columns as an array of structs values you must enable the [input_format_parquet_import_nested](../operations/settings/settings.md#input_format_parquet_import_nested) setting.
-
 You can select data from a ClickHouse table and save them into some file in the CapnProto format by the following command:
 
 ``` bash
-$ clickhouse-client --query = "SELECT * FROM capnp_tuples FORMAT CapnProto SETTINGS format_schema = '$CLIENT_SCHEMADIR/02030_capnp_tuples:Message'"
+$ clickhouse-client --query = "SELECT * FROM test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
 ```
 
 ## Protobuf {#protobuf}
