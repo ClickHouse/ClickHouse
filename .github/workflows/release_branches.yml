@@ -1,17 +1,16 @@
 name: ReleaseCI
 on: # yamllint disable-line rule:truthy
   pull_request:
+    types:
+      - synchronize
+      - reopened
+      - opened
     branches:
       - '21.**'
       - '22.**'
       - '23.**'
       - '24.**'
-  push:
-    branches:
-      - '21.**'
-      - '22.**'
-      - '23.**'
-      - '24.**'
+      - 'backport/**'
 jobs:
   DockerHubPush:
     runs-on: [self-hosted, style-checker]
