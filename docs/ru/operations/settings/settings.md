@@ -1146,6 +1146,9 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
 
+!!! note "Note"
+    60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8). 
+
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
 Ограничивает максимальную скорость обмена данными в сети (в байтах в секунду) для [репликационных](../../engines/table-engines/mergetree-family/replication.md) отправок. Применяется только при запуске сервера. Можно также ограничить скорость для конкретной таблицы с помощью настройки [max_replicated_sends_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth).
@@ -1162,6 +1165,9 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 **Использование**
 
 Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
+
+!!! note "Note"
+    60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8). 
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
@@ -3802,3 +3808,13 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 Значение по умолчанию: `0`.
 
+## min_bytes_to_use_mmap_io {#min-bytes-to-use-mmap-io}
+
+Это экспериментальная настройка. Устанавливает минимальный объем памяти для чтения больших файлов без копирования данных из ядра в пространство пользователей. Рекомендуемый лимит составляет около 64 MB, поскольку [mmap/munmap](https://en.wikipedia.org/wiki/Mmap) работает медленно. Это имеет смысл только для больших файлов и помогает только в том случае, если данные находятся в кеше страниц.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — большие файлы считываются только с копированием данных из ядра в пространство пользователей.
+
+Значение по умолчанию: `0`.

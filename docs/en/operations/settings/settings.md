@@ -1236,6 +1236,9 @@ Default value: `0`.
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
+!!! note "Note"
+    60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
 Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) sends for the server. Only has meaning at server startup.  You can also limit the speed for a particular table with [max_replicated_sends_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth) setting.
@@ -1252,6 +1255,9 @@ Default value: `0`.
 **Usage**
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
+
+!!! note "Note"
+    60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
@@ -4040,5 +4046,16 @@ Possible values:
 
 -   Positive integer.
 -   0 — Timeout disabled.
+
+Default value: `0`.
+
+## min_bytes_to_use_mmap_io {#min-bytes-to-use-mmap-io}
+
+This is an experimental setting. Sets the minimum amount of memory for reading large files without copying data from the kernel to userspace. Recommended threshold is about 64 MB, because [mmap/munmap](https://en.wikipedia.org/wiki/Mmap) is slow. It makes sense only for large files and helps only if data reside in the page cache.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Big files read with only copying data from kernel to userspace.
 
 Default value: `0`.

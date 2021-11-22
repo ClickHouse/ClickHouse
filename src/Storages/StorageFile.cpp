@@ -620,25 +620,20 @@ public:
             naked_buffer = std::make_unique<WriteBufferFromFile>(paths[0], DBMS_DEFAULT_BUFFER_SIZE, flags);
         }
 
-        /// In case of CSVWithNames we have already written prefix.
-        if (naked_buffer->size())
-            prefix_written = true;
+        /// In case of formats with prefixes if file is not empty we have already written prefix.
+        bool do_not_write_prefix = naked_buffer->size();
 
         write_buf = wrapWriteBufferWithCompressionMethod(std::move(naked_buffer), compression_method, 3);
 
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
             *write_buf, metadata_snapshot->getSampleBlock(), context,
             {}, format_settings);
+
+        if (do_not_write_prefix)
+            writer->doNotWritePrefix();
     }
 
     String getName() const override { return "StorageFileSink"; }
-
-    void onStart() override
-    {
-        if (!prefix_written)
-            writer->doWritePrefix();
-        prefix_written = true;
-    }
 
     void consume(Chunk chunk) override
     {
@@ -647,7 +642,7 @@ public:
 
     void onFinish() override
     {
-        writer->doWriteSuffix();
+        writer->finalize();
     }
 
     // void flush() override
@@ -661,7 +656,6 @@ private:
 
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
-    bool prefix_written{false};
 
     int table_fd;
     bool use_table_fd;

@@ -30,6 +30,7 @@ public:
         unsigned num_streams) override;
 
     bool hasEvenlyDistributedRead() const override { return true; }
+    bool isSystemStorage() const override { return true; }
 
 private:
     bool multithreaded;

@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 JSONAsRowInputFormat::JSONAsRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_)
-    : IRowInputFormat(header_, in_, std::move(params_)), buf(*in)
+    : IRowInputFormat(header_, buf, std::move(params_)), buf(in_)
 {
     if (header_.columns() > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,

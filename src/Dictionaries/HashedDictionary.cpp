@@ -11,6 +11,7 @@
 #include <Dictionaries//DictionarySource.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/HierarchyDictionariesUtils.h>
+#include <base/logger_useful.h>
 
 namespace
 {
