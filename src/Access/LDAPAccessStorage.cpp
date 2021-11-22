@@ -514,6 +514,9 @@ UUID LDAPAccessStorage::loginImpl(const Credentials & credentials, const Poco::N
         if (!isAddressAllowedImpl(*user, address))
             throwAddressNotAllowed(address);
 
+        if (typeid_cast<const AlwaysAllowCredentials *>(&credentials))
+            return *id;
+
         if (!areLDAPCredentialsValidNoLock(*user, credentials, external_authenticators, external_roles))
             throwInvalidCredentials();
 
@@ -533,34 +536,15 @@ UUID LDAPAccessStorage::loginImpl(const Credentials & credentials, const Poco::N
         if (!isAddressAllowedImpl(*user, address))
             throwAddressNotAllowed(address);
 
+        if (typeid_cast<const AlwaysAllowCredentials *>(&credentials))
+        {
+            // TODO: mapped external roles are not available here. Without a password we can't authenticate and retrieve roles from LDAP server.
+            assignRolesNoLock(*user, external_roles);
+            return memory_storage.insert(user);
+        }
+
         if (!areLDAPCredentialsValidNoLock(*user, credentials, external_authenticators, external_roles))
             throwInvalidCredentials();
-
-        assignRolesNoLock(*user, external_roles);
-
-        return memory_storage.insert(user);
-    }
-}
-
-UUID LDAPAccessStorage::getIDOfLoggedUserImpl(const String & user_name) const
-{
-    std::scoped_lock lock(mutex);
-    auto id = memory_storage.find<User>(user_name);
-    if (id)
-    {
-        return *id;
-    }
-    else
-    {
-        // User does not exist, so we create one, and add it pretending that the authentication is successful.
-        auto user = std::make_shared<User>();
-        user->setName(user_name);
-        user->auth_data = AuthenticationData(AuthenticationType::LDAP);
-        user->auth_data.setLDAPServerName(ldap_server_name);
-
-        LDAPClient::SearchResultsList external_roles;
-
-        // TODO: mapped external roles are not available here. Without a password we can't authenticate and retrieve roles from LDAP server.
 
         assignRolesNoLock(*user, external_roles);
 
