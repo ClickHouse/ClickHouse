@@ -51,7 +51,6 @@ class TableJoin
     const bool join_use_nulls = false;
     const size_t max_joined_block_rows = 0;
     JoinAlgorithm join_algorithm = JoinAlgorithm::AUTO;
-    const bool partial_merge_join_optimizations = false;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
@@ -119,7 +118,6 @@ public:
     size_t maxBytesInLeftBuffer() const { return partial_merge_join_left_table_buffer_bytes; }
     size_t maxFilesToMerge() const { return max_files_to_merge; }
     const String & temporaryFilesCodec() const { return temporary_files_codec; }
-    bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
     bool needStreamWithNonJoinedRows() const;
 
     void resetCollected();
