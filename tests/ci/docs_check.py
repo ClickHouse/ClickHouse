@@ -11,12 +11,16 @@ from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status, get_commit
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from stopwatch import Stopwatch
 
 
 NAME = "Docs Check (actions)"
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+
+    stopwatch = Stopwatch()
 
     temp_path = os.path.join(os.getenv("TEMP_PATH"))
     repo_path = os.path.join(os.getenv("REPO_COPY"))
@@ -85,7 +89,11 @@ if __name__ == "__main__":
             lines.append(("Non zero exit code", "FAIL"))
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
+    ch_helper = ClickHouseHelper()
 
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, lines, additional_files, NAME)
     print("::notice ::Report url: {report_url}")
     post_commit_status(gh, pr_info.sha, NAME, description, status, report_url)
+
+    prepared_events = prepare_tests_results_for_clickhouse(pr_info, lines, status, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, NAME)
+    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
