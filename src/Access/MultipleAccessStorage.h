@@ -21,6 +21,7 @@ public:
     ~MultipleAccessStorage() override;
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
+    bool isReadOnly() const override;
 
     void setStorages(const std::vector<StoragePtr> & storages);
     void addStorage(const StoragePtr & new_storage);
@@ -43,7 +44,6 @@ protected:
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id) const override;
     String readNameImpl(const UUID &id) const override;
-    bool canInsertImpl(const AccessEntityPtr & entity) const override;
     UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;

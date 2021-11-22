@@ -34,6 +34,9 @@ public:
     /// Returns a JSON with the parameters of the storage. It's up to the storage type to fill the JSON.
     virtual String getStorageParamsJSON() const { return "{}"; }
 
+    /// Returns true if this storage is readonly.
+    virtual bool isReadOnly() const { return false; }
+
     /// Returns the identifiers of all the entities of a specified type contained in the storage.
     std::vector<UUID> findAll(AccessEntityType type) const;
 
@@ -84,10 +87,6 @@ public:
     Strings readNames(const std::vector<UUID> & ids) const;
     std::optional<String> tryReadName(const UUID & id) const;
     Strings tryReadNames(const std::vector<UUID> & ids) const;
-
-    /// Returns true if a specified entity can be inserted into this storage.
-    /// This function doesn't check whether there are no entities with such name in the storage.
-    bool canInsert(const AccessEntityPtr & entity) const { return canInsertImpl(entity); }
 
     /// Inserts an entity to the storage. Returns ID of a new entry in the storage.
     /// Throws an exception if the specified name already exists.
@@ -151,7 +150,6 @@ protected:
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
     virtual AccessEntityPtr readImpl(const UUID & id) const = 0;
     virtual String readNameImpl(const UUID & id) const = 0;
-    virtual bool canInsertImpl(const AccessEntityPtr & entity) const = 0;
     virtual UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) = 0;
     virtual void removeImpl(const UUID & id) = 0;
     virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) = 0;

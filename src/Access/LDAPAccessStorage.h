@@ -40,6 +40,7 @@ public:
 public: // IAccessStorage implementations.
     virtual const char * getStorageType() const override;
     virtual String getStorageParamsJSON() const override;
+    virtual bool isReadOnly() const override { return true; }
     virtual bool exists(const UUID & id) const override;
     virtual bool hasSubscription(const UUID & id) const override;
     virtual bool hasSubscription(AccessEntityType type) const override;
@@ -49,7 +50,6 @@ private: // IAccessStorage implementations.
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     virtual AccessEntityPtr readImpl(const UUID & id) const override;
     virtual String readNameImpl(const UUID & id) const override;
-    virtual bool canInsertImpl(const AccessEntityPtr &) const override;
     virtual UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
     virtual void removeImpl(const UUID & id) override;
     virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) override;

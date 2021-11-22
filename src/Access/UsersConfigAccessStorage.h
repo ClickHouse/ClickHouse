@@ -27,6 +27,7 @@ public:
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
     String getStorageParamsJSON() const override;
+    bool isReadOnly() const override { return true; }
 
     String getPath() const;
     bool isPathEqual(const String & path_) const;
@@ -51,7 +52,6 @@ private:
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id) const override;
     String readNameImpl(const UUID & id) const override;
-    bool canInsertImpl(const AccessEntityPtr &) const override { return false; }
     UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
