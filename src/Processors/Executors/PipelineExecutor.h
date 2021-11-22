@@ -2,6 +2,7 @@
 
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
+#include <QueryPipeline/ExecutionSpeedLimits.h>
 #include <Common/EventCounter.h>
 #include <base/logger_useful.h>
 
@@ -43,6 +44,9 @@ public:
     /// Cancel execution. May be called from another thread.
     void cancel();
 
+    /// Checks the query time limits (cancelled or timeout)
+    bool checkTimeLimit();
+
 private:
     ExecutingGraphPtr graph;
 
@@ -71,6 +75,9 @@ private:
     void finish();
 
     String dumpPipeline() const;
+
+    ExecutionSpeedLimits limits;
+    OverflowMode overflow_mode;
 };
 
 using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;

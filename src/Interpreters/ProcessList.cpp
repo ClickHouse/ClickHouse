@@ -295,7 +295,6 @@ QueryStatus::QueryStatus(
     , query(query_)
     , client_info(client_info_)
     , priority_handle(std::move(priority_handle_))
-    , num_queries_increment{CurrentMetrics::Query}
 {
 }
 
