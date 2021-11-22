@@ -20,7 +20,7 @@ timeout -s KILL 5 $CLICKHOUSE_CLIENT --max_execution_time 1 -q \
         GROUP BY n
     )
     LIMIT 20
-    FORMAT Null" 2>&1 | grep -o "Code: 159"
+    FORMAT Null" 2>&1 | grep -o "Code: 159" | sort | uniq
 
 ### Should stop pulling data and return what has been generated already (return code 0)
 timeout -s KILL 5 $CLICKHOUSE_CLIENT -q \
@@ -54,7 +54,7 @@ ${CLICKHOUSE_CURL} -q --max-time 5 -sS "$CLICKHOUSE_URL&max_execution_time=1" -d
         GROUP BY n
     )
     LIMIT 20
-    FORMAT Null" 2>&1 | grep -o "Code: 159"
+    FORMAT Null" 2>&1 | grep -o "Code: 159" | sort | uniq
 
 
 ### Should stop pulling data and return what has been generated already (return code 0)
