@@ -624,7 +624,7 @@
                 "compiler": "clang-13",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
-                "sanitizer": "thread",
+                "sanitizer": "undefined",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
                 "clang-tidy": "disable",
