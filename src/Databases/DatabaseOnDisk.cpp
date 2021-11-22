@@ -374,7 +374,7 @@ void DatabaseOnDisk::renameTable(
     ASTPtr attach_query;
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
     StoragePtr table = tryGetTable(table_name, local_context);
-    if (table->isDictionary() && !allow_rename_dictionary)
+    if (table && table->isDictionary() && !allow_rename_dictionary)
         throw Exception("Dictionaries can be renamed only in Atomic databases", ErrorCodes::NOT_IMPLEMENTED);
 
     detachTable(local_context, table_name);
