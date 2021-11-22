@@ -50,9 +50,9 @@ using ASTPtr = std::shared_ptr<IAST>;
  *            SELECT HOP(toDateTime('2021-01-01 00:00:45'), INTERVAL 3 SECOND, INTERVAL 10 SECOND)
  *            results in ('2021-01-01 00:00:38','2021-01-01 00:00:48')
  *
- *   Result window_id can be used with the following functions to find out start/end of the window:
- *     - TUMPLE_START(window_id), TUMPLE_END(window_id)
- *     - HOP_START(window_id), HOP_END(window_id)
+ *   DateTime value can be used with the following functions to find out start/end of the window:
+ *     - TUMPLE_START(time_attr, interval [, timezone]), TUMPLE_END(time_attr, interval [, timezone])
+ *     - HOP_START(time_attr, hop_interval, window_interval [, timezone]), HOP_END(time_attr, hop_interval, window_interval [, timezone])
  *
  *
  * Time processing options.
@@ -107,7 +107,6 @@ class StorageWindowView final : public shared_ptr_helper<StorageWindowView>, pub
     friend class WatermarkTransform;
 
 public:
-    ~StorageWindowView() override;
     String getName() const override { return "WindowView"; }
 
     bool isView() const override { return true; }

@@ -19,7 +19,6 @@ WatermarkTransform::WatermarkTransform(
     , window_column_name(window_column_name_)
     , max_timestamp(max_timestamp_)
     , lateness_upper_bound(lateness_upper_bound_)
-    , allowed_lateness(lateness_upper_bound)
 {
 }
 
@@ -28,9 +27,9 @@ WatermarkTransform::~WatermarkTransform()
     /// TODO: try move this to storage, shouldn't be in desctructor.
     if (max_timestamp)
         storage.updateMaxTimestamp(max_timestamp);
-    if (max_watermark > 0)
+    if (max_watermark != 0)
         storage.updateMaxWatermark(max_watermark);
-    if (allowed_lateness)
+    if (lateness_upper_bound != 0)
         storage.addFireSignal(late_signals);
 }
 
@@ -46,7 +45,7 @@ void WatermarkTransform::transform(Chunk & chunk)
     {
         if (ts > max_watermark)
             max_watermark = ts;
-        if (allowed_lateness && ts <= lateness_upper_bound)
+        if (lateness_upper_bound != 0 && ts <= lateness_upper_bound)
             late_signals.insert(ts);
     }
 

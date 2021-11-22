@@ -34,8 +34,6 @@ protected:
     UInt32 max_watermark = 0;
 
     std::set<UInt32> late_signals;
-
-    bool allowed_lateness = false;
 };
 
 }
