@@ -2,7 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/NamePrompter.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/StringUtils/StringUtils.h>
 
 #include <unordered_map>
@@ -100,7 +100,7 @@ public:
     {
         if (auto it = aliases.find(name); it != aliases.end())
             return it->second;
-        else if (auto jt = case_insensitive_aliases.find(toLower(name)); jt != case_insensitive_aliases.end())
+        else if (auto jt = case_insensitive_aliases.find(Poco::toLower(name)); jt != case_insensitive_aliases.end())
             return jt->second;
 
         throw Exception(getFactoryName() + ": name '" + name + "' is not alias", ErrorCodes::LOGICAL_ERROR);
@@ -119,7 +119,7 @@ public:
     /// Return the canonical name (the name used in registration) if it's different from `name`.
     const String & getCanonicalNameIfAny(const String & name) const
     {
-        auto it = case_insensitive_name_mapping.find(toLower(name));
+        auto it = case_insensitive_name_mapping.find(Poco::toLower(name));
         if (it != case_insensitive_name_mapping.end())
             return it->second;
         return name;
