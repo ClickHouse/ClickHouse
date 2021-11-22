@@ -65,8 +65,6 @@ public:
     {
         size_t all_replicas_count{0};
         size_t number_of_current_replica{0};
-
-        auto operator<=>(const ReplicaInfo&) const = default;
     };
 
     /// This is needed in max_parallel_replicas case.

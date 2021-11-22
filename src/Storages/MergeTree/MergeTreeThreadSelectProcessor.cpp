@@ -51,7 +51,7 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
                 continue;
             auto size = it->second;
 
-            if (size == ColumnSize{} || size.marks == 0)
+            if (size.data_compressed == 0 || size.data_uncompressed == 0 || size.marks == 0)
                 continue;
 
             sum_average_marks_size += size.data_uncompressed / size.marks;

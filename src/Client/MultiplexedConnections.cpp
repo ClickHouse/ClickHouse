@@ -137,7 +137,6 @@ void MultiplexedConnections::sendQuery(
 
         if (settings.parallel_reading_from_replicas)
         {
-            assert(replica_info != ReplicaInfo{});
             client_info.collaborate_with_initiator = true;
             client_info.count_participating_replicas = replica_info.all_replicas_count;
             client_info.number_of_current_replica = replica_info.number_of_current_replica;

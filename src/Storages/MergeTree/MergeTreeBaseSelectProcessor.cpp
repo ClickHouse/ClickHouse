@@ -647,7 +647,6 @@ void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * curren
         {
             auto size = task->data_part->getColumnSize(name);
 
-            assert(size != ColumnSize{});
             assert(size.marks != 0);
             average_mark_size_bytes.emplace_back(size.data_uncompressed / size.marks);
             sum_average_marks_size += average_mark_size_bytes.back();

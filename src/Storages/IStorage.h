@@ -85,8 +85,6 @@ struct ColumnSize
         data_compressed += other.data_compressed;
         data_uncompressed += other.data_uncompressed;
     }
-
-    auto operator<=>(const ColumnSize&) const = default;
 };
 
 using IndexSize = ColumnSize;
