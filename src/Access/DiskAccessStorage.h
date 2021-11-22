@@ -24,7 +24,7 @@ public:
     bool isPathEqual(const String & directory_path_) const;
 
     void setReadOnly(bool readonly_) { readonly = readonly_; }
-    bool isReadOnly() const { return readonly; }
+    bool isReadOnly() const override { return readonly; }
 
     bool exists(const UUID & id) const override;
     bool hasSubscription(const UUID & id) const override;
@@ -35,7 +35,6 @@ private:
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id) const override;
     String readNameImpl(const UUID & id) const override;
-    bool canInsertImpl(const AccessEntityPtr & entity) const override;
     UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;

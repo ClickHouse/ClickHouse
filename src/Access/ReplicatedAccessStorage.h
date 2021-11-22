@@ -77,7 +77,6 @@ private:
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id) const override;
     String readNameImpl(const UUID & id) const override;
-    bool canInsertImpl(const AccessEntityPtr &) const override { return true; }
 
     void prepareNotifications(const Entry & entry, bool remove, Notifications & notifications) const;
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;

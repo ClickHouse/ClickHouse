@@ -192,15 +192,15 @@ String MultipleAccessStorage::readNameImpl(const UUID & id) const
 }
 
 
-bool MultipleAccessStorage::canInsertImpl(const AccessEntityPtr & entity) const
+bool MultipleAccessStorage::isReadOnly() const
 {
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
     {
-        if (storage->canInsert(entity))
-            return true;
+        if (!storage->isReadOnly())
+            return false;
     }
-    return false;
+    return true;
 }
 
 
@@ -211,7 +211,7 @@ UUID MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool repl
     std::shared_ptr<IAccessStorage> storage_for_insertion;
     for (const auto & storage : *storages)
     {
-        if (storage->canInsert(entity) ||
+        if (!storage->isReadOnly() ||
             storage->find(entity->getType(), entity->getName()))
         {
             storage_for_insertion = storage;

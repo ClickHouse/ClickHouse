@@ -457,12 +457,6 @@ String DiskAccessStorage::readNameImpl(const UUID & id) const
 }
 
 
-bool DiskAccessStorage::canInsertImpl(const AccessEntityPtr &) const
-{
-    return !readonly;
-}
-
-
 UUID DiskAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists)
 {
     Notifications notifications;

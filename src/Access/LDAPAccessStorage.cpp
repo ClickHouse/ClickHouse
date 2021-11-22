@@ -447,12 +447,6 @@ String LDAPAccessStorage::readNameImpl(const UUID & id) const
 }
 
 
-bool LDAPAccessStorage::canInsertImpl(const AccessEntityPtr &) const
-{
-    return false;
-}
-
-
 UUID LDAPAccessStorage::insertImpl(const AccessEntityPtr & entity, bool)
 {
     throwReadonlyCannotInsert(entity->getType(), entity->getName());
