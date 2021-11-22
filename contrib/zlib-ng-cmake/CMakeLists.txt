@@ -133,6 +133,9 @@ set(ZLIB_ALL_SRCS ${ZLIB_SRCS} ${ZLIB_ARCH_SRCS})
 add_library(zlib ${ZLIB_ALL_SRCS})
 add_library(zlibstatic ALIAS zlib)
 
+# https://github.com/zlib-ng/zlib-ng/pull/733
+# This is disabed by default
+add_compile_definitions(Z_TLS=__thread)
 
 if(HAVE_UNISTD_H)
   SET(ZCONF_UNISTD_LINE "#if 1    /* was set to #if 1 by configure/cmake/etc */")

@@ -18,8 +18,6 @@ if (NOT OS_FREEBSD AND NOT SPLIT_SHARED_LIBRARIES AND NOT (OS_DARWIN AND COMPILE
     set (SENTRY_PIC OFF CACHE BOOL "")
     set (BUILD_SHARED_LIBS OFF)
     message (STATUS "Using sentry=${USE_SENTRY}: ${SENTRY_LIBRARY}")
-
-    include_directories("${SENTRY_INCLUDE_DIR}")
 elseif (USE_SENTRY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Sentry is not supported in current configuration")
 endif ()
