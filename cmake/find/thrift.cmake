@@ -31,4 +31,4 @@ else()
     endif()
 endif ()
 
-message (STATUS "Using_THRIFT=${USE_THRIFT}: ${THRIFT_INCLUDE_DIR} : ${THRIFT_LIBRARY}")
+message (STATUS "Using thrift=${USE_THRIFT}: ${THRIFT_INCLUDE_DIR} : ${THRIFT_LIBRARY}")
