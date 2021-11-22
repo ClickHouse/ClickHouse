@@ -84,7 +84,7 @@ void DatabaseAtomic::drop(ContextPtr)
     fs::remove_all(getMetadataPath());
 }
 
-void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
+void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
 {
     assert(relative_table_path != data_path && !relative_table_path.empty());
     DetachedTables not_in_use;
@@ -96,7 +96,7 @@ void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, 
     table_name_to_path.emplace(std::make_pair(name, relative_table_path));
 }
 
-StoragePtr DatabaseAtomic::detachTable(const String & name)
+StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & name)
 {
     DetachedTables not_in_use;
     std::unique_lock lock(mutex);
