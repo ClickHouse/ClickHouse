@@ -549,7 +549,6 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     makeSortAndMerge(key_names_left, left_sort_description, left_merge_description);
     makeSortAndMerge(key_names_right, right_sort_description, right_merge_description);
 
-    LOG_DEBUG(log, "Joining keys: left [{}], right [{}]", fmt::join(key_names_left, ", "), fmt::join(key_names_right, ", "));
 
     if (size_t max_bytes = table_join->maxBytesInLeftBuffer(); max_bytes > 0)
     {
