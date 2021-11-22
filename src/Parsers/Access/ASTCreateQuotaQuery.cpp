@@ -10,17 +10,10 @@ namespace DB
 {
 namespace
 {
-    using KeyType = Quota::KeyType;
-    using KeyTypeInfo = Quota::KeyTypeInfo;
-    using ResourceType = Quota::ResourceType;
-    using ResourceTypeInfo = Quota::ResourceTypeInfo;
-    using ResourceAmount = Quota::ResourceAmount;
-
-
-    void formatKeyType(const KeyType & key_type, const IAST::FormatSettings & settings)
+    void formatKeyType(const QuotaKeyType & key_type, const IAST::FormatSettings & settings)
     {
-        const auto & type_info = KeyTypeInfo::get(key_type);
-        if (key_type == KeyType::NONE)
+        const auto & type_info = QuotaKeyTypeInfo::get(key_type);
+        if (key_type == QuotaKeyType::NONE)
         {
             settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NOT KEYED" << (settings.hilite ? IAST::hilite_none : "");
             return;
@@ -35,7 +28,7 @@ namespace
             {
                 if (std::exchange(need_comma, true))
                     settings.ostr << ", ";
-                settings.ostr << KeyTypeInfo::get(base_type).name;
+                settings.ostr << QuotaKeyTypeInfo::get(base_type).name;
             }
             return;
         }
@@ -64,10 +57,10 @@ namespace
     }
 
 
-    void formatLimit(ResourceType resource_type, ResourceAmount max, const IAST::FormatSettings & settings)
+    void formatLimit(QuotaType quota_type, QuotaValue max_value, const IAST::FormatSettings & settings)
     {
-        const auto & type_info = ResourceTypeInfo::get(resource_type);
-        settings.ostr << " " << type_info.name << " = " << type_info.amountToString(max);
+        const auto & type_info = QuotaTypeInfo::get(quota_type);
+        settings.ostr << " " << type_info.name << " = " << type_info.valueToString(max_value);
     }
 
 
@@ -93,22 +86,24 @@ namespace
         else
         {
             bool limit_found = false;
-            for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
+            for (auto quota_type : collections::range(QuotaType::MAX))
             {
-                if (limits.max[resource_type])
+                auto quota_type_i = static_cast<size_t>(quota_type);
+                if (limits.max[quota_type_i])
                     limit_found = true;
             }
             if (limit_found)
             {
                 settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MAX" << (settings.hilite ? IAST::hilite_none : "");
                 bool need_comma = false;
-                for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
+                for (auto quota_type : collections::range(QuotaType::MAX))
                 {
-                    if (limits.max[resource_type])
+                    auto quota_type_i = static_cast<size_t>(quota_type);
+                    if (limits.max[quota_type_i])
                     {
                         if (std::exchange(need_comma, true))
                             settings.ostr << ",";
-                        formatLimit(resource_type, *limits.max[resource_type], settings);
+                        formatLimit(quota_type, *limits.max[quota_type_i], settings);
                     }
                 }
             }
