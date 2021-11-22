@@ -525,7 +525,7 @@ std::vector<UUID> ReplicatedAccessStorage::findAllImpl(AccessEntityType type) co
 }
 
 
-bool ReplicatedAccessStorage::existsImpl(const UUID & id) const
+bool ReplicatedAccessStorage::exists(const UUID & id) const
 {
     std::lock_guard lock{mutex};
     return entries_by_id.count(id);
@@ -598,7 +598,7 @@ scope_guard ReplicatedAccessStorage::subscribeForChangesImpl(const UUID & id, co
 }
 
 
-bool ReplicatedAccessStorage::hasSubscriptionImpl(const UUID & id) const
+bool ReplicatedAccessStorage::hasSubscription(const UUID & id) const
 {
     std::lock_guard lock{mutex};
     const auto & it = entries_by_id.find(id);
@@ -611,7 +611,7 @@ bool ReplicatedAccessStorage::hasSubscriptionImpl(const UUID & id) const
 }
 
 
-bool ReplicatedAccessStorage::hasSubscriptionImpl(AccessEntityType type) const
+bool ReplicatedAccessStorage::hasSubscription(AccessEntityType type) const
 {
     std::lock_guard lock{mutex};
     const auto & handlers = handlers_by_type[static_cast<size_t>(type)];

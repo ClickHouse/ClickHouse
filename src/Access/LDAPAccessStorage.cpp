@@ -426,7 +426,7 @@ std::vector<UUID> LDAPAccessStorage::findAllImpl(AccessEntityType type) const
 }
 
 
-bool LDAPAccessStorage::existsImpl(const UUID & id) const
+bool LDAPAccessStorage::exists(const UUID & id) const
 {
     std::scoped_lock lock(mutex);
     return memory_storage.exists(id);
@@ -489,20 +489,20 @@ scope_guard LDAPAccessStorage::subscribeForChangesImpl(AccessEntityType type, co
 }
 
 
-bool LDAPAccessStorage::hasSubscriptionImpl(const UUID & id) const
+bool LDAPAccessStorage::hasSubscription(const UUID & id) const
 {
     std::scoped_lock lock(mutex);
     return memory_storage.hasSubscription(id);
 }
 
 
-bool LDAPAccessStorage::hasSubscriptionImpl(AccessEntityType type) const
+bool LDAPAccessStorage::hasSubscription(AccessEntityType type) const
 {
     std::scoped_lock lock(mutex);
     return memory_storage.hasSubscription(type);
 }
 
-UUID LDAPAccessStorage::loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
+UUID LDAPAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
 {
     std::scoped_lock lock(mutex);
     LDAPClient::SearchResultsList external_roles;
@@ -511,7 +511,7 @@ UUID LDAPAccessStorage::loginImpl(const Credentials & credentials, const Poco::N
     {
         auto user = memory_storage.read<User>(*id);
 
-        if (!isAddressAllowedImpl(*user, address))
+        if (!isAddressAllowed(*user, address))
             throwAddressNotAllowed(address);
 
         if (typeid_cast<const AlwaysAllowCredentials *>(&credentials))
@@ -533,7 +533,7 @@ UUID LDAPAccessStorage::loginImpl(const Credentials & credentials, const Poco::N
         user->auth_data = AuthenticationData(AuthenticationType::LDAP);
         user->auth_data.setLDAPServerName(ldap_server_name);
 
-        if (!isAddressAllowedImpl(*user, address))
+        if (!isAddressAllowed(*user, address))
             throwAddressNotAllowed(address);
 
         if (typeid_cast<const AlwaysAllowCredentials *>(&credentials))

@@ -32,6 +32,10 @@ public:
     virtual void startup();
     virtual void shutdown();
 
+    bool exists(const UUID & id) const override;
+    bool hasSubscription(const UUID & id) const override;
+    bool hasSubscription(AccessEntityType type) const override;
+
 private:
     String zookeeper_path;
     zkutil::GetZooKeeper get_zookeeper;
@@ -71,7 +75,6 @@ private:
 
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
-    bool existsImpl(const UUID & id) const override;
     AccessEntityPtr readImpl(const UUID & id) const override;
     String readNameImpl(const UUID & id) const override;
     bool canInsertImpl(const AccessEntityPtr &) const override { return true; }
@@ -79,8 +82,6 @@ private:
     void prepareNotifications(const Entry & entry, bool remove, Notifications & notifications) const;
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
     scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
-    bool hasSubscriptionImpl(const UUID & id) const override;
-    bool hasSubscriptionImpl(AccessEntityType type) const override;
 
     mutable std::mutex mutex;
     std::unordered_map<UUID, Entry> entries_by_id;

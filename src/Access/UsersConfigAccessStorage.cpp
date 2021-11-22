@@ -603,7 +603,7 @@ std::vector<UUID> UsersConfigAccessStorage::findAllImpl(AccessEntityType type) c
 }
 
 
-bool UsersConfigAccessStorage::existsImpl(const UUID & id) const
+bool UsersConfigAccessStorage::exists(const UUID & id) const
 {
     return memory_storage.exists(id);
 }
@@ -653,13 +653,13 @@ scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(AccessEntityType t
 }
 
 
-bool UsersConfigAccessStorage::hasSubscriptionImpl(const UUID & id) const
+bool UsersConfigAccessStorage::hasSubscription(const UUID & id) const
 {
     return memory_storage.hasSubscription(id);
 }
 
 
-bool UsersConfigAccessStorage::hasSubscriptionImpl(AccessEntityType type) const
+bool UsersConfigAccessStorage::hasSubscription(AccessEntityType type) const
 {
     return memory_storage.hasSubscription(type);
 }
