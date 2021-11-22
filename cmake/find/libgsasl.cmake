@@ -30,7 +30,7 @@ if (LIBGSASL_LIBRARY AND LIBGSASL_INCLUDE_DIR)
 elseif (NOT MISSING_INTERNAL_LIBGSASL_LIBRARY)
     set (LIBGSASL_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/libgsasl/src" "${ClickHouse_SOURCE_DIR}/contrib/libgsasl/linux_x86_64/include")
     set (USE_INTERNAL_LIBGSASL_LIBRARY 1)
-    set (LIBGSASL_LIBRARY libgsasl)
+    set (LIBGSASL_LIBRARY gsasl)
 endif ()
 
 if(LIBGSASL_LIBRARY AND LIBGSASL_INCLUDE_DIR)
