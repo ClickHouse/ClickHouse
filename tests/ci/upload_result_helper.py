@@ -40,14 +40,14 @@ def upload_results(s3_client, pr_number, commit_sha, test_results, additional_fi
     s3_path_prefix = f"{pr_number}/{commit_sha}/" + check_name.lower().replace(' ', '_').replace('(', '_').replace(')', '_').replace(',', '_')
     additional_urls = process_logs(s3_client, additional_files, s3_path_prefix, test_results, with_raw_logs)
 
-    branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
+    branch_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/commits/master"
     branch_name = "master"
     if pr_number != 0:
         branch_name = f"PR #{pr_number}"
-        branch_url = f"https://github.com/ClickHouse/ClickHouse/pull/{pr_number}"
-    commit_url = f"https://github.com/ClickHouse/ClickHouse/commit/{commit_sha}"
+        branch_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/pull/{pr_number}"
+    commit_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/commit/{commit_sha}"
 
-    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
+    task_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
 
     if additional_urls:
         raw_log_url = additional_urls[0]
