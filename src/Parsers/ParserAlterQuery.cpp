@@ -104,6 +104,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_ttl("TTL");
 
     ParserKeyword s_remove_ttl("REMOVE TTL");
+    ParserKeyword s_remove_sample_by("REMOVE SAMPLE BY");
 
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
@@ -669,6 +670,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 command->type = ASTAlterCommand::MODIFY_SAMPLE_BY;
             }
+            else if (s_remove_sample_by.ignore(pos, expected))
+            {
+                command->type = ASTAlterCommand::REMOVE_SAMPLE_BY;
+            }
             else if (s_delete.ignore(pos, expected))
             {
                 if (s_in_partition.ignore(pos, expected))
@@ -856,12 +861,12 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (alter_object_type == ASTAlterQuery::AlterObjectType::DATABASE)
     {
-        if (!parseDatabase(pos, expected, query->database))
+        if (!parseDatabaseAsAST(pos, expected, query->database))
             return false;
     }
     else
     {
-        if (!parseDatabaseAndTableName(pos, expected, query->database, query->table))
+        if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
             return false;
 
         String cluster_str;
@@ -880,6 +885,12 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     query->set(query->command_list, command_list);
     query->alter_object = alter_object_type;
+
+    if (query->database)
+        query->children.push_back(query->database);
+
+    if (query->table)
+        query->children.push_back(query->table);
 
     return true;
 }

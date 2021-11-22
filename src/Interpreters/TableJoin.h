@@ -7,8 +7,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/join_common.h>
 #include <Interpreters/asof.h>
-#include <DataStreams/IBlockStream_fwd.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Storages/IStorage_fwd.h>
 #include <Common/Exception.h>
@@ -49,7 +48,6 @@ enum class JoinTableSide
 
 class TableJoin
 {
-
 public:
     using NameToTypeMap = std::unordered_map<String, DataTypePtr>;
 
@@ -110,7 +108,6 @@ private:
     const bool join_use_nulls = false;
     const size_t max_joined_block_rows = 0;
     JoinAlgorithm join_algorithm = JoinAlgorithm::AUTO;
-    const bool partial_merge_join_optimizations = false;
     const size_t partial_merge_join_rows_in_right_blocks = 0;
     const size_t partial_merge_join_left_table_buffer_bytes = 0;
     const size_t max_files_to_merge = 0;
@@ -207,7 +204,6 @@ public:
     size_t maxBytesInLeftBuffer() const { return partial_merge_join_left_table_buffer_bytes; }
     size_t maxFilesToMerge() const { return max_files_to_merge; }
     const String & temporaryFilesCodec() const { return temporary_files_codec; }
-    bool enablePartialMergeJoinOptimizations() const { return partial_merge_join_optimizations; }
     bool needStreamWithNonJoinedRows() const;
 
     bool oneDisjunct() const;
@@ -286,6 +282,10 @@ public:
     Block getRequiredRightKeys(const Block & right_table_keys, std::vector<String> & keys_sources) const;
 
     String renamedRightColumnName(const String & name) const;
+
+    void resetKeys();
+    void resetToCross();
+
     std::unordered_map<String, String> leftToRightKeyRemap() const;
 
     void setStorageJoin(std::shared_ptr<StorageJoin> storage);

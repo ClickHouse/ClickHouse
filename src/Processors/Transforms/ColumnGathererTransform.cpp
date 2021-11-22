@@ -127,7 +127,7 @@ ColumnGathererTransform::ColumnGathererTransform(
     ReadBuffer & row_sources_buf_,
     size_t block_preferred_size_)
     : IMergingTransform<ColumnGathererStream>(
-        num_inputs, header, header, /*have_all_inputs_=*/ true, /*has_limit_below_one_block_=*/ false,
+        num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0,
         num_inputs, row_sources_buf_, block_preferred_size_)
     , log(&Poco::Logger::get("ColumnGathererStream"))
 {

@@ -1,10 +1,9 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 
-#include <DataStreams/NativeReader.h>
+#include <Formats/NativeReader.h>
 #include <Processors/ISource.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
-#include <DataStreams/materializeBlock.h>
 #include <Core/ProtocolDefines.h>
 
 namespace ProfileEvents

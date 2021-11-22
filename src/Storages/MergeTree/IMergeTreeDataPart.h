@@ -97,6 +97,8 @@ public:
 
     virtual bool isStoredOnDisk() const = 0;
 
+    virtual bool isStoredOnRemoteDisk() const = 0;
+
     virtual bool supportsVerticalMerge() const { return false; }
 
     /// NOTE: Returns zeros if column files are not found in checksums.
@@ -184,6 +186,7 @@ public:
 
     /// A directory path (relative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
+    /// NOTE: Cannot have trailing slash.
     mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;
 

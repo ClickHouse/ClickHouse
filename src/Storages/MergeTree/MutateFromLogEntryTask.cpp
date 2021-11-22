@@ -81,9 +81,13 @@ std::pair<bool, ReplicatedMergeMutateTaskBase::PartLogWriter> MutateFromLogEntry
 
     stopwatch_ptr = std::make_unique<Stopwatch>();
 
+    fake_query_context = Context::createCopy(storage.getContext());
+    fake_query_context->makeQueryContext();
+    fake_query_context->setCurrentQueryId("");
+
     mutate_task = storage.merger_mutator.mutatePartToTemporaryPart(
             future_mutated_part, metadata_snapshot, commands, merge_mutate_entry.get(),
-            entry.create_time, storage.getContext(), reserved_space, table_lock_holder);
+            entry.create_time, fake_query_context, reserved_space, table_lock_holder);
 
     /// Adjust priority
     for (auto & item : future_mutated_part->parts)

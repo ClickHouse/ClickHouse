@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/CSVRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/registerWithNamesAndTypes.h>
 
 #include <IO/WriteHelpers.h>
 
@@ -8,8 +9,8 @@ namespace DB
 {
 
 
-CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, const Block & header_, bool with_names_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, params_), with_names(with_names_), format_settings(format_settings_)
+CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, const Block & header_, bool with_names_, bool with_types_, const RowOutputFormatParams & params_, const FormatSettings & format_settings_)
+    : IRowOutputFormat(header_, out_, params_), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
@@ -18,25 +19,27 @@ CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, const Block & header_
         data_types[i] = sample.safeGetByPosition(i).type;
 }
 
+void CSVRowOutputFormat::writeLine(const std::vector<String> & values)
+{
+    for (size_t i = 0; i < values.size(); ++i)
+    {
+        writeCSVString(values[i], out);
+        if (i + 1 == values.size())
+            writeRowEndDelimiter();
+        else
+            writeFieldDelimiter();
+    }
+}
 
-void CSVRowOutputFormat::doWritePrefix()
+void CSVRowOutputFormat::writePrefix()
 {
     const auto & sample = getPort(PortKind::Main).getHeader();
-    size_t columns = sample.columns();
 
     if (with_names)
-    {
-        for (size_t i = 0; i < columns; ++i)
-        {
-            writeCSVString(sample.safeGetByPosition(i).name, out);
+        writeLine(sample.getNames());
 
-            char delimiter = format_settings.csv.delimiter;
-            if (i + 1 == columns)
-                delimiter = '\n';
-
-            writeChar(delimiter, out);
-        }
-    }
+    if (with_types)
+        writeLine(sample.getDataTypeNames());
 }
 
 
@@ -70,20 +73,22 @@ void CSVRowOutputFormat::writeBeforeExtremes()
 }
 
 
-void registerOutputFormatProcessorCSV(FormatFactory & factory)
+void registerOutputFormatCSV(FormatFactory & factory)
 {
-    for (bool with_names : {false, true})
+    auto register_func = [&](const String & format_name, bool with_names, bool with_types)
     {
-        factory.registerOutputFormatProcessor(with_names ? "CSVWithNames" : "CSV", [=](
-            WriteBuffer & buf,
-            const Block & sample,
-            const RowOutputFormatParams & params,
-            const FormatSettings & format_settings)
+        factory.registerOutputFormat(format_name, [with_names, with_types](
+                   WriteBuffer & buf,
+                   const Block & sample,
+                   const RowOutputFormatParams & params,
+                   const FormatSettings & format_settings)
         {
-                return std::make_shared<CSVRowOutputFormat>(buf, sample, with_names, params, format_settings);
+            return std::make_shared<CSVRowOutputFormat>(buf, sample, with_names, with_types, params, format_settings);
         });
-        factory.markOutputFormatSupportsParallelFormatting(with_names ? "CSVWithNames" : "CSV");
-    }
+        factory.markOutputFormatSupportsParallelFormatting(format_name);
+    };
+
+    registerWithNamesAndTypes("CSV", register_func);
 }
 
 }

@@ -41,6 +41,7 @@ class TaskStatsInfoGetter;
 class InternalTextLogsQueue;
 struct ViewRuntimeData;
 class QueryViewsLog;
+class MemoryTrackerThreadSwitcher;
 using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 
@@ -165,6 +166,13 @@ protected:
 
     /// It is used to avoid enabling the query profiler when you have multiple ThreadStatus in the same thread
     bool query_profiled_enabled = true;
+
+    /// Requires access to query_id.
+    friend class MemoryTrackerThreadSwitcher;
+    void setQueryId(const String & query_id_)
+    {
+        query_id = query_id_;
+    }
 
 public:
     ThreadStatus();
