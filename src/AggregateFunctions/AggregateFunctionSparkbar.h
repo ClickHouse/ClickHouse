@@ -20,9 +20,6 @@ struct AggregateFunctionSparkbarData
     using Points = HashMap<X, Y>;
     Points points;
 
-    X min_x = std::numeric_limits<X>::max();
-    X max_x = std::numeric_limits<X>::lowest();
-
     Y min_y = std::numeric_limits<Y>::max();
     Y max_y = std::numeric_limits<Y>::lowest();
 
@@ -36,8 +33,6 @@ struct AggregateFunctionSparkbarData
     void add(X x, Y y)
     {
         insert(x, y);
-        min_x = std::min(x, min_x);
-        max_x = std::max(x, max_x);
         min_y = std::min(y, min_y);
         max_y = std::max(y, max_y);
     }
@@ -50,16 +45,12 @@ struct AggregateFunctionSparkbarData
         for (auto & point : other.points)
             insert(point.getKey(), point.getMapped());
 
-        min_x = std::min(other.min_x, min_x);
-        max_x = std::max(other.max_x, max_x);
         min_y = std::min(other.min_y, min_y);
         max_y = std::max(other.max_y, max_y);
     }
 
     void serialize(WriteBuffer & buf) const
     {
-        writeBinary(min_x, buf);
-        writeBinary(max_x, buf);
         writeBinary(min_y, buf);
         writeBinary(max_y, buf);
         writeVarUInt(points.size(), buf);
@@ -73,8 +64,6 @@ struct AggregateFunctionSparkbarData
 
     void deserialize(ReadBuffer & buf)
     {
-        readBinary(min_x, buf);
-        readBinary(max_x, buf);
         readBinary(min_y, buf);
         readBinary(max_y, buf);
         size_t size;
@@ -100,8 +89,9 @@ class AggregateFunctionSparkbar final
 
 private:
     size_t width;
-    X min_x;
-    X max_x;
+    mutable X min_x;
+    mutable X max_x;
+    bool specified_min_max_x;
 
     String getBar(const UInt8 value) const
     {
@@ -136,9 +126,8 @@ private:
         String value;
         if (data.points.empty() || !width)
             return value;
-        X local_min_x = data.min_x;
-        X local_max_x = data.max_x;
-        size_t diff_x = local_max_x - local_min_x;
+
+        size_t diff_x = max_x - min_x;
         if ((diff_x + 1) <= width)
         {
             Y min_y = data.min_y;
@@ -149,7 +138,7 @@ private:
             {
                 for (size_t i = 0; i <= diff_x; ++i)
                 {
-                    auto it = data.points.find(local_min_x + i);
+                    auto it = data.points.find(min_x + i);
                     bool found = it != data.points.end();
                     value += getBar(found ? static_cast<UInt8>(std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1) : 0);
                 }
@@ -157,7 +146,7 @@ private:
             else
             {
                 for (size_t i = 0; i <= diff_x; ++i)
-                    value += getBar(data.points.has(local_min_x + i) ? 1 : 0);
+                    value += getBar(data.points.has(min_x + i) ? 1 : 0);
             }
         }
         else
@@ -186,9 +175,9 @@ private:
                 if (i == bound.first) // is bound
                 {
                     Float64 proportion = bound.second - bound.first;
-                    auto it = data.points.find(local_min_x + i);
+                    auto it = data.points.find(min_x + i);
                     bool found = (it != data.points.end());
-                    if (found)
+                    if (found && proportion > 0)
                         new_y = new_y.value_or(0) + it->getMapped() * proportion;
 
                     if (new_y)
@@ -213,7 +202,7 @@ private:
                 }
                 else
                 {
-                    auto it = data.points.find(local_min_x + i);
+                    auto it = data.points.find(min_x + i);
                     if (it != data.points.end())
                         new_y = new_y.value_or(0) + it->getMapped();
                 }
@@ -250,13 +239,15 @@ public:
         width = params.at(0).safeGet<UInt64>();
         if (params.size() == 3)
         {
+            specified_min_max_x = true;
             min_x = params.at(1).safeGet<X>();
             max_x = params.at(2).safeGet<X>();
         }
         else
         {
-            min_x = std::numeric_limits<X>::min();
-            max_x = std::numeric_limits<X>::max();
+            specified_min_max_x = false;
+            min_x = std::numeric_limits<X>::max();
+            max_x = std::numeric_limits<X>::min();
         }
     }
 
@@ -273,8 +264,15 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * /*arena*/) const override
     {
         X x = assert_cast<const ColumnVector<X> *>(columns[0])->getData()[row_num];
-        if (min_x <= x && x <= max_x)
+        if (specified_min_max_x && min_x <= x && x <= max_x)
         {
+            Y y = assert_cast<const ColumnVector<Y> *>(columns[1])->getData()[row_num];
+            this->data(place).add(x, y);
+        }
+        else if (!specified_min_max_x)
+        {
+            min_x = std::min(x, min_x);
+            max_x = std::max(x, max_x);
             Y y = assert_cast<const ColumnVector<Y> *>(columns[1])->getData()[row_num];
             this->data(place).add(x, y);
         }
