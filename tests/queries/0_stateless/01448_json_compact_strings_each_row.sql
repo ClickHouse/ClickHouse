@@ -23,12 +23,12 @@ DROP TABLE IF EXISTS test_table;
 SELECT 5;
 /* Check JSONCompactStringsEachRow Input */
 CREATE TABLE test_table (v1 String, v2 UInt8, v3 DEFAULT v2 * 16, v4 UInt8 DEFAULT 8) ENGINE = MergeTree() ORDER BY v2;
+SET input_format_null_as_default = 1;
 INSERT INTO test_table FORMAT JSONCompactStringsEachRow ["first", "1", "2", "NULL"] ["second", "2", "null", "6"];
 SELECT * FROM test_table FORMAT JSONCompactStringsEachRow;
 TRUNCATE TABLE test_table;
 SELECT 6;
 /* Check input_format_null_as_default = 1 */
-SET input_format_null_as_default = 1;
 INSERT INTO test_table FORMAT JSONCompactStringsEachRow ["first", "1", "2", "ᴺᵁᴸᴸ"] ["second", "2", "null", "6"];
 SELECT * FROM test_table FORMAT JSONCompactStringsEachRow;
 TRUNCATE TABLE test_table;
