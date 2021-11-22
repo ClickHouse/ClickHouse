@@ -594,6 +594,7 @@ include (cmake/find/sentry.cmake)
 include (cmake/find/stats.cmake)
 include (cmake/find/datasketches.cmake)
 include (cmake/find/libprotobuf-mutator.cmake)
+include (cmake/find/hive-metastore.cmake)
 
 set (USE_INTERNAL_CITYHASH_LIBRARY ON CACHE INTERNAL "")
 find_contrib_lib(cityhash)
