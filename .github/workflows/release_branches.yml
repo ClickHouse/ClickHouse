@@ -1,17 +1,12 @@
 name: ReleaseCI
 on: # yamllint disable-line rule:truthy
-  pull_request:
-    branches:
-      - '21.**'
-      - '22.**'
-      - '23.**'
-      - '24.**'
   push:
     branches:
       - '21.**'
       - '22.**'
       - '23.**'
       - '24.**'
+      - 'backport/**'
 jobs:
   DockerHubPush:
     runs-on: [self-hosted, style-checker]
@@ -94,7 +89,6 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-
   BuilderDebAsan:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
