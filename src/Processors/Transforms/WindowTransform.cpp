@@ -1511,7 +1511,7 @@ namespace recurrent_detail
 {
     template<typename T> T getLastValueFromInputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/, size_t /*column_index*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getLastValueFromInputColumn() is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getLastValueFromInputColumn() is not implemented for {} type", typeid(T).name());
     }
 
     template<> Float64 getLastValueFromInputColumn<Float64>(const WindowTransform * transform, size_t function_index, size_t column_index)
@@ -1523,14 +1523,14 @@ namespace recurrent_detail
         {
             if (current_row.block > 0)
             {
-                const auto & column = transform->blockAt(current_row.block-1).input_columns[workspace.argument_column_indices[column_index]];
-                return column->getFloat64(column->size()-1);
+                const auto & column = transform->blockAt(current_row.block - 1).input_columns[workspace.argument_column_indices[column_index]];
+                return column->getFloat64(column->size() - 1);
             }
         }
         else
         {
             const auto & column = transform->blockAt(current_row.block).input_columns[workspace.argument_column_indices[column_index]];
-            return column->getFloat64(current_row.row-1);
+            return column->getFloat64(current_row.row - 1);
         }
 
         return 0;
@@ -1538,7 +1538,7 @@ namespace recurrent_detail
 
     template<typename T> T getLastValueFromState(const WindowTransform * /*transform*/, size_t /*function_index*/, size_t /*data_index*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getLastValueFromInputColumn() is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getLastValueFromInputColumn() is not implemented for {} type", typeid(T).name());
     }
 
     template<> Float64 getLastValueFromState<Float64>(const WindowTransform * transform, size_t function_index, size_t data_index)
@@ -1556,7 +1556,7 @@ namespace recurrent_detail
 
     template<typename T> void setValueToState(const WindowTransform * /*transform*/, size_t /*function_index*/, T /*value*/, size_t /*data_index*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setValueToState() is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setValueToState() is not implemented for {} type", typeid(T).name());
     }
 
     template<> void setValueToState<Float64>(const WindowTransform * transform, size_t function_index, Float64 value, size_t data_index)
@@ -1567,7 +1567,7 @@ namespace recurrent_detail
 
     template<typename T> void setValueToOutputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/, T /*value*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setValueToOutputColumn() is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "setValueToOutputColumn() is not implemented for {} type", typeid(T).name());
     }
 
     template<> void setValueToOutputColumn<Float64>(const WindowTransform * transform, size_t function_index, Float64 value)
@@ -1581,7 +1581,7 @@ namespace recurrent_detail
 
     template<typename T> T getCurrentValueFromInputColumn(const WindowTransform * /*transform*/, size_t /*function_index*/, size_t /*column_index*/)
     {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCurrentValueFromInputColumn() is not implemented");
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getCurrentValueFromInputColumn() is not implemented for {} type", typeid(T).name());
     }
 
     template<> Float64 getCurrentValueFromInputColumn<Float64>(const WindowTransform * transform, size_t function_index, size_t column_index)
