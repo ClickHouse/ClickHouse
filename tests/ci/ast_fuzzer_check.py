@@ -15,6 +15,8 @@ from ci_config import build_config_to_string
 from build_download_helper import get_build_config_for_check, get_build_urls
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from stopwatch import Stopwatch
 
 IMAGE_NAME = 'clickhouse/fuzzer'
 
@@ -31,6 +33,9 @@ def get_commit(gh, commit_sha):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+
+    stopwatch = Stopwatch()
+
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
     reports_path = os.getenv("REPORTS_PATH", "./reports")
@@ -124,6 +129,15 @@ if __name__ == "__main__":
     except:
         status = 'failure'
         description = 'Task failed: $?=' + str(retcode)
+
+    if 'fail' in status:
+        test_result = [(description, 'FAIL')]
+    else:
+        test_result = [(description, 'OK')]
+
+    ch_helper = ClickHouseHelper()
+
+    prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_result, status, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, check_name)
 
     logging.info("Result: '%s', '%s', '%s'", status, description, report_url)
     print(f"::notice ::Report url: {report_url}")
