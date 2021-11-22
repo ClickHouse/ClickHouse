@@ -1,181 +1,183 @@
-{
+#!/usr/bin/env python3
+
+CI_CONFIG = {
     "build_config": [
         {
             "compiler": "clang-13",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "deb",
+            "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
-            "alien_pkgs": true,
+            "alien_pkgs": True,
             "tidy": "disable",
-            "with_coverage": false
+            "with_coverage": False
         },
         {
             "compiler": "clang-13",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "performance",
+            "package_type": "performance",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": false
+            "with_coverage": False
         },
         {
             "compiler": "gcc-11",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "binary",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": false
+            "with_coverage": False
         },
         {
             "compiler": "clang-13",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "address",
-            "package-type": "deb",
+            "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": false
+            "with_coverage": False
         },
         {
             "compiler": "clang-13",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "undefined",
-            "package-type": "deb",
+            "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": false
+            "with_coverage": False
         },
         {
             "compiler": "clang-13",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "thread",
-            "package-type": "deb",
+            "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": false
+            "with_coverage": False
         },
         {
             "compiler": "clang-13",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "memory",
-            "package-type": "deb",
+            "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": false
+            "with_coverage": False
         },
         {
             "compiler": "clang-13",
-            "build-type": "debug",
+            "build_type": "debug",
             "sanitizer": "",
-            "package-type": "deb",
+            "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": false
+            "with_coverage": False
         },
         {
             "compiler": "gcc-11",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "deb",
+            "package_type": "deb",
             "bundled": "unbundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": false
+            "with_coverage": False
         },
         {
             "compiler": "clang-13",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "binary",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": false
+            "with_coverage": False
         }
     ],
     "special_build_config": [
         {
             "compiler": "clang-13",
-            "build-type": "debug",
+            "build_type": "debug",
             "sanitizer": "",
-            "package-type": "deb",
+            "package_type": "deb",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "enable",
-            "with_coverage": false
+            "with_coverage": False
         },
         {
             "compiler": "clang-13",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "binary",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "splitted",
             "tidy": "disable",
-            "with_coverage": false
+            "with_coverage": False
         },
         {
             "compiler": "clang-13-darwin",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "binary",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": false
+            "with_coverage": False
         },
         {
             "compiler": "clang-13-aarch64",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "binary",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": false
+            "with_coverage": False
         },
         {
             "compiler": "clang-13-freebsd",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "binary",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": false
+            "with_coverage": False
         },
         {
             "compiler": "clang-13-darwin-aarch64",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "binary",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": false
+            "with_coverage": False
         },
         {
             "compiler": "clang-13-ppc64le",
-            "build-type": "",
+            "build_type": "",
             "sanitizer": "",
-            "package-type": "binary",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "disable",
-            "with_coverage": false
+            "with_coverage": False
         }
     ],
     "tests_config": {
-        "Functional stateful tests (address)": {
+        "Stateful tests (address, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -183,11 +185,11 @@
                 "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateful tests (thread)": {
+        "Stateful tests (thread, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -195,11 +197,11 @@
                 "sanitizer": "thread",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateful tests (memory)": {
+        "Stateful tests (memory, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -207,11 +209,11 @@
                 "sanitizer": "memory",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateful tests (ubsan)": {
+        "Stateful tests (ubsan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -219,11 +221,11 @@
                 "sanitizer": "undefined",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateful tests (debug)": {
+        "Stateful tests (debug, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -231,11 +233,11 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateful tests (release)": {
+        "Stateful tests (release, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -243,11 +245,11 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateful tests (release, DatabaseOrdinary)": {
+        "Stateful tests (release, DatabaseOrdinary, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -255,11 +257,11 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateful tests (release, DatabaseReplicated)": {
+        "Stateful tests (release, DatabaseReplicated, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -267,11 +269,11 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateless tests (address)": {
+        "Stateless tests (address, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -279,11 +281,11 @@
                 "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateless tests (thread)": {
+        "Stateless tests (thread, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -291,11 +293,11 @@
                 "sanitizer": "thread",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateless tests (memory)": {
+        "Stateless tests (memory, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -303,11 +305,11 @@
                 "sanitizer": "memory",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateless tests (ubsan)": {
+        "Stateless tests (ubsan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -315,11 +317,11 @@
                 "sanitizer": "undefined",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateless tests (debug)": {
+        "Stateless tests (debug, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -327,11 +329,11 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateless tests (release)": {
+        "Stateless tests (release, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -339,23 +341,11 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateless tests (pytest)": {
-            "required_build_properties": {
-                "compiler": "clang-13",
-                "package_type": "deb",
-                "build_type": "relwithdebuginfo",
-                "sanitizer": "none",
-                "bundled": "bundled",
-                "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
-            }
-        },
-        "Functional stateless tests (unbundled)": {
+        "Stateless tests (unbundled, actions)": {
             "required_build_properties": {
                 "compiler": "gcc-11",
                 "package_type": "deb",
@@ -363,11 +353,11 @@
                 "sanitizer": "none",
                 "bundled": "unbundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateless tests (release, wide parts enabled)": {
+        "Stateless tests (release, wide parts enabled, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -375,11 +365,11 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateless tests (release, DatabaseOrdinary)": {
+        "Stateless tests (release, DatabaseOrdinary, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -387,11 +377,11 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateless tests (release, DatabaseReplicated)": {
+        "Stateless tests (release, DatabaseReplicated, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -399,11 +389,11 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Stress test (address)": {
+        "Stress test (address, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -411,11 +401,11 @@
                 "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Stress test (thread)": {
+        "Stress test (thread, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -423,11 +413,11 @@
                 "sanitizer": "thread",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Stress test (undefined)": {
+        "Stress test (undefined, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -435,11 +425,11 @@
                 "sanitizer": "undefined",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Stress test (memory)": {
+        "Stress test (memory, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -447,11 +437,11 @@
                 "sanitizer": "memory",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Stress test (debug)": {
+        "Stress test (debug, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -459,11 +449,11 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Integration tests (asan)": {
+        "Integration tests (asan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -471,11 +461,11 @@
                 "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Integration tests (thread)": {
+        "Integration tests (thread, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -483,11 +473,11 @@
                 "sanitizer": "thread",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Integration tests (release)": {
+        "Integration tests (release, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -495,11 +485,11 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Integration tests (memory)": {
+        "Integration tests (memory, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -507,11 +497,11 @@
                 "sanitizer": "memory",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Integration tests flaky check (asan)": {
+        "Integration tests flaky check (asan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -519,11 +509,11 @@
                 "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Compatibility check": {
+        "Compatibility check (actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -531,11 +521,11 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Split build smoke test": {
+        "Split build smoke test (actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "binary",
@@ -543,11 +533,11 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "splitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Testflows check": {
+        "Testflows check (actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -555,23 +545,23 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Unit tests release gcc": {
+        "Unit tests (release-gcc, actions)": {
             "required_build_properties": {
                 "compiler": "gcc-11",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Unit tests release clang": {
+        "Unit tests (release-clang, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "binary",
@@ -579,119 +569,119 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Unit tests ASAN": {
+        "Unit tests (asan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Unit tests MSAN": {
+        "Unit tests (msan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "memory",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Unit tests TSAN": {
+        "Unit tests (tsan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Unit tests UBSAN": {
+        "Unit tests (ubsan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "AST fuzzer (debug)": {
+        "AST fuzzer (debug, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "debug",
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "AST fuzzer (ASan)": {
+        "AST fuzzer (ASan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "AST fuzzer (MSan)": {
+        "AST fuzzer (MSan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "memory",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "AST fuzzer (TSan)": {
+        "AST fuzzer (TSan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "AST fuzzer (UBSan)": {
+        "AST fuzzer (UBSan, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
-                "package_type": "binary",
+                "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "undefined",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Release": {
+        "Release (actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -699,11 +689,11 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "Functional stateless tests flaky check (address)": {
+        "Stateless tests flaky check (address, actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "deb",
@@ -711,11 +701,11 @@
                 "sanitizer": "address",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         },
-        "ClickHouse Keeper Jepsen": {
+        "ClickHouse Keeper Jepsen (actions)": {
             "required_build_properties": {
                 "compiler": "clang-13",
                 "package_type": "binary",
@@ -723,9 +713,24 @@
                 "sanitizer": "none",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
-                "clang-tidy": "disable",
-                "with_coverage": false
+                "clang_tidy": "disable",
+                "with_coverage": False
             }
         }
     }
 }
+
+def build_config_to_string(build_config):
+    if build_config["package_type"] == "performance":
+        return "performance"
+
+    return "_".join([
+        build_config['compiler'],
+        build_config['build_type'] if build_config['build_type'] else "relwithdebuginfo",
+        build_config['sanitizer'] if build_config['sanitizer'] else "none",
+        build_config['bundled'],
+        build_config['splitted'],
+        'tidy' if 'tidy' in build_config and build_config['tidy'] == 'enable' else 'notidy',
+        'with_coverage' if 'with_coverage' in build_config and build_config['with_coverage'] else 'without_coverage',
+        build_config['package_type'],
+    ])
