@@ -21,7 +21,7 @@ def check_query(clickhouse_node, query, result_set, retry_count=10, interval_sec
             if result_set == lastest_result:
                 return
 
-            logging.debug(f"latest_result{lastest_result}")
+            logging.debug(f"latest_result {lastest_result}")
             time.sleep(interval_seconds)
         except Exception as e:
             logging.debug(f"check_query retry {i+1} exception {e}")

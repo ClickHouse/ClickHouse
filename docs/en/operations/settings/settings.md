@@ -4048,3 +4048,14 @@ Possible values:
 -   0 — Timeout disabled.
 
 Default value: `0`.
+
+## min_bytes_to_use_mmap_io {#min-bytes-to-use-mmap-io}
+
+This is an experimental setting. Sets the minimum amount of memory for reading large files without copying data from the kernel to userspace. Recommended threshold is about 64 MB, because [mmap/munmap](https://en.wikipedia.org/wiki/Mmap) is slow. It makes sense only for large files and helps only if data reside in the page cache.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Big files read with only copying data from kernel to userspace.
+
+Default value: `0`.
