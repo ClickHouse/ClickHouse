@@ -160,7 +160,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   BuilderBinRelease:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -392,7 +392,7 @@ jobs:
 ##################################### SPECIAL BUILDS #####################################
 ##########################################################################################
   BuilderDebSplitted:
-    needs: [DockerHubPush, FastTest]
+    needs: [DockerHubPush]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
