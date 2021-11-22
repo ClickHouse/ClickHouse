@@ -504,18 +504,6 @@ bool IAccessStorage::isAddressAllowedImpl(const User & user, const Poco::Net::IP
 }
 
 
-UUID IAccessStorage::getIDOfLoggedUser(const String & user_name) const
-{
-    return getIDOfLoggedUserImpl(user_name);
-}
-
-
-UUID IAccessStorage::getIDOfLoggedUserImpl(const String & user_name) const
-{
-    return getID<User>(user_name);
-}
-
-
 UUID IAccessStorage::generateRandomID()
 {
     static Poco::UUIDGenerator generator;

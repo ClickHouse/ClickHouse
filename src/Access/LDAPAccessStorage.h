@@ -56,7 +56,6 @@ private: // IAccessStorage implementations.
     virtual bool hasSubscriptionImpl(const UUID & id) const override;
     virtual bool hasSubscriptionImpl(AccessEntityType type) const override;
     virtual UUID loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const override;
-    virtual UUID getIDOfLoggedUserImpl(const String & user_name) const override;
 
 private:
     void setConfiguration(AccessControl * access_control_, const Poco::Util::AbstractConfiguration & config, const String & prefix);
