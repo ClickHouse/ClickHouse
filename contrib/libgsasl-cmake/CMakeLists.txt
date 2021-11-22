@@ -97,7 +97,7 @@ target_include_directories(libgsasl PUBLIC ${SRC_DIR})
 target_include_directories(libgsasl PUBLIC ${SRC_DIR}/gl)
 target_include_directories(libgsasl PUBLIC ${SRC_DIR}/src)
 target_include_directories(libgsasl PUBLIC ${SRC_DIR}/digest-md5)
-target_include_directories(libgsasl PRIVATE linux_x86_64/include)
+target_include_directories(libgsasl PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/libgsasl-cmake/linux_x86_64/include")
 
 if (USE_KRB5)
     target_link_libraries(libgsasl PUBLIC ${KRB5_LIBRARY})
