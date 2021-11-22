@@ -10,6 +10,119 @@
 
 using namespace DB;
 
+
+TEST(HalfIntervals, Simple)
+{
+    ASSERT_TRUE((
+        HalfIntervals{{{1, 2}, {3, 4}}}.negate() ==
+        HalfIntervals{{{0, 1}, {2, 3}, {4, 18446744073709551615UL}}}
+    ));
+
+    {
+        auto left = HalfIntervals{{{0, 2}, {4, 6}}}.negate();
+        ASSERT_TRUE((
+            left ==
+            HalfIntervals{{{2, 4}, {6, 18446744073709551615UL}}}
+        ));
+    }
+
+    {
+        auto left = HalfIntervals{{{0, 2}, {4, 6}}};
+        auto right = HalfIntervals{{{1, 5}}}.negate();
+        auto intersection = left.intersect(right);
+
+        ASSERT_TRUE((
+            intersection ==
+            HalfIntervals{{{0, 1}, {5, 6}}}
+        ));
+    }
+
+    {
+        auto left = HalfIntervals{{{1, 2}, {2, 3}}};
+        auto right = HalfIntervals::initializeWithEntireSpace();
+        auto intersection = right.intersect(left.negate());
+
+        ASSERT_TRUE((
+            intersection ==
+            HalfIntervals{{{0, 1}, {3, 18446744073709551615UL}}}
+        ));
+    }
+
+    {
+        auto left = HalfIntervals{{{1, 2}, {2, 3}, {3, 4}, {4, 5}}};
+
+        ASSERT_EQ(getIntersection(left, HalfIntervals{{{1, 4}}}).convertToMarkRangesFinal().size(), 3);
+        ASSERT_EQ(getIntersection(left, HalfIntervals{{{1, 5}}}).convertToMarkRangesFinal().size(), 4);
+    }
+
+    {
+        auto left = HalfIntervals{{{1, 3}, {3, 5}, {5, 7}}};
+
+        ASSERT_EQ(getIntersection(left, HalfIntervals{{{3, 5}}}).convertToMarkRangesFinal().size(), 1);
+        ASSERT_EQ(getIntersection(left, HalfIntervals{{{3, 7}}}).convertToMarkRangesFinal().size(), 2);
+        ASSERT_EQ(getIntersection(left, HalfIntervals{{{4, 6}}}).convertToMarkRangesFinal().size(), 2);
+        ASSERT_EQ(getIntersection(left, HalfIntervals{{{1, 7}}}).convertToMarkRangesFinal().size(), 3);
+    }
+
+    {
+        auto left = HalfIntervals{{{1, 3}}};
+
+        ASSERT_EQ(getIntersection(left, HalfIntervals{{{3, 4}}}).convertToMarkRangesFinal().size(), 0);
+    }
+
+    {
+        auto left = HalfIntervals{{{1, 2}, {3, 4}, {5, 6}}};
+
+        ASSERT_EQ(getIntersection(left, HalfIntervals{{{2, 3}}}).convertToMarkRangesFinal().size(), 0);
+        ASSERT_EQ(getIntersection(left, HalfIntervals{{{4, 5}}}).convertToMarkRangesFinal().size(), 0);
+        ASSERT_EQ(getIntersection(left, HalfIntervals{{{1, 6}}}).convertToMarkRangesFinal().size(), 3);
+    }
+}
+
+TEST(HalfIntervals, TwoRequests)
+{
+    auto left = HalfIntervals{{{1, 2}, {2, 3}}};
+    auto right = HalfIntervals{{{2, 3}, {3, 4}}};
+    auto intersection = left.intersect(right);
+
+    ASSERT_TRUE((
+        intersection ==
+        HalfIntervals{{{2, 3}}}
+    ));
+
+    /// With negation
+    left = HalfIntervals{{{1, 2}, {2, 3}}}.negate();
+    right = HalfIntervals{{{2, 3}, {3, 4}}};
+    intersection = left.intersect(right);
+
+
+    ASSERT_TRUE((
+        intersection ==
+        HalfIntervals{{{3, 4}}}
+    ));
+}
+
+TEST(HalfIntervals, SelfIntersection)
+{
+    auto left = HalfIntervals{{{1, 2}, {2, 3}, {4, 5}}};
+    auto right = left;
+    auto intersection = left.intersect(right);
+
+    ASSERT_TRUE((
+        intersection == right
+    ));
+
+    left = HalfIntervals{{{1, 2}, {2, 3}, {4, 5}}};
+    right = left;
+    right.negate();
+    intersection = left.intersect(right);
+
+    ASSERT_TRUE((
+        intersection == HalfIntervals{}
+    ));
+}
+
+
 TEST(Coordinator, Simple)
 {
     PartitionReadRequest request;
@@ -64,107 +177,66 @@ TEST(Coordinator, TwoRequests)
 }
 
 
-
-TEST(Coordinator, Boundaries)
+TEST(Coordinator, PartIntersections)
 {
     {
-        PartRangesIntersectionsIndex boundaries;
+        PartSegments boundaries;
 
         boundaries.addPart(PartToRead{{1, 1}, "Test"});
         boundaries.addPart(PartToRead{{2, 2}, "Test"});
         boundaries.addPart(PartToRead{{3, 3}, "Test"});
         boundaries.addPart(PartToRead{{4, 4}, "Test"});
 
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({1, 4}), 4);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({1, 5}), 4);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({0, 5}), 4);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({1, 1}), 1);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({1, 2}), 2);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 4}, "Test"}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{0, 5}, "Test"}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, "Test"}), PartSegments::IntersectionResult::EXACTLY_ONE_INTERSECTION);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, "ClickHouse"}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 2}, "Test"}), PartSegments::IntersectionResult::REJECT);
 
         boundaries.addPart(PartToRead{{5, 5}, "Test"});
         boundaries.addPart(PartToRead{{0, 0}, "Test"});
 
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({0, 5}), 6);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({1, 1}), 1);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({1, 2}), 2);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({0, 3}), 4);
+        ASSERT_EQ(boundaries.getIntersectionResult({{0, 5}, "Test"}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, "Test"}), PartSegments::IntersectionResult::EXACTLY_ONE_INTERSECTION);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, "ClickHouse"}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 2}, "Test"}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{0, 3}, "Test"}), PartSegments::IntersectionResult::REJECT);
     }
 
     {
-        PartRangesIntersectionsIndex boundaries;
+        PartSegments boundaries;
         boundaries.addPart(PartToRead{{1, 3}, "Test"});
         boundaries.addPart(PartToRead{{3, 5}, "Test"});
 
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({2, 4}), 2);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({0, 6}), 2);
+        ASSERT_EQ(boundaries.getIntersectionResult({{2, 4}, "Test"}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{0, 6}, "Test"}), PartSegments::IntersectionResult::REJECT);
     }
 
     {
-        PartRangesIntersectionsIndex boundaries;
+        PartSegments boundaries;
         boundaries.addPart(PartToRead{{1, 3}, "Test"});
         boundaries.addPart(PartToRead{{4, 6}, "Test"});
         boundaries.addPart(PartToRead{{7, 9}, "Test"});
 
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({2, 8}), 3);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({4, 6}), 1);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({3, 7}), 3);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({5, 7}), 2);
+        ASSERT_EQ(boundaries.getIntersectionResult({{2, 8}, "Test"}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{4, 6}, "Test"}), PartSegments::IntersectionResult::EXACTLY_ONE_INTERSECTION);
+        ASSERT_EQ(boundaries.getIntersectionResult({{3, 7}, "Test"}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{5, 7}, "Test"}), PartSegments::IntersectionResult::REJECT);
     }
 
     {
-        PartRangesIntersectionsIndex boundaries;
+        PartSegments boundaries;
 
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({1, 1}), 0);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({1, 3}), 0);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({0, 100500}), 0);
-    }
-}
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, "Test"}), PartSegments::IntersectionResult::NO_INTERSECTION);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 3}, "Test"}), PartSegments::IntersectionResult::NO_INTERSECTION);
+        ASSERT_EQ(boundaries.getIntersectionResult({{0, 100500}, "Test"}), PartSegments::IntersectionResult::NO_INTERSECTION);
 
+        boundaries.addPart(PartToRead{{1, 1}, "Test"});
+        boundaries.addPart(PartToRead{{2, 2}, "Test"});
+        boundaries.addPart(PartToRead{{3, 3}, "Test"});
 
-TEST(Coordinator, MarkBoundaries)
-{
-    {
-        MarkRangesIntersectionsIndex boundaries;
-
-        boundaries.addRange({1, 2});
-        boundaries.addRange({2, 3});
-        boundaries.addRange({3, 4});
-        boundaries.addRange({4, 5});
-
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({1, 4}), 3);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({1, 5}), 4);
-    }
-
-    {
-        MarkRangesIntersectionsIndex boundaries;
-        boundaries.addRange({1, 3});
-        boundaries.addRange({3, 5});
-
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({3, 5}), 1);
-
-        boundaries.addRange({5, 7});
-
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({3, 5}), 1);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({3, 7}), 2);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({4, 6}), 2);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({1, 7}), 3);
-    }
-
-    {
-        MarkRangesIntersectionsIndex boundaries;
-        boundaries.addRange({1, 3});
-
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({3, 4}), 0);
-    }
-
-    {
-        MarkRangesIntersectionsIndex boundaries;
-        boundaries.addRange({1, 2});
-        boundaries.addRange({3, 4});
-        boundaries.addRange({5, 6});
-
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({2, 3}), 0);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({4, 5}), 0);
-        ASSERT_EQ(boundaries.numberOfIntersectionsWith({1, 6}), 3);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, "Test"}), PartSegments::IntersectionResult::EXACTLY_ONE_INTERSECTION);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 3}, "Test"}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{100, 100500}, "Test"}), PartSegments::IntersectionResult::NO_INTERSECTION);
     }
 }

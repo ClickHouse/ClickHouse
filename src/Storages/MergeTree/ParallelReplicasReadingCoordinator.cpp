@@ -28,11 +28,11 @@ public:
 
     using PartitionReadRequestPtr = std::unique_ptr<PartitionReadRequest>;
 
-    using PartToMarkRanges = std::map<String, MarkRangesIntersectionsIndex>;
+    using PartToMarkRanges = std::map<String, HalfIntervals>;
 
     struct PartitionReading
     {
-        PartRangesIntersectionsIndex part_ranges;
+        PartSegments part_ranges;
         PartToMarkRanges mark_ranges_in_part;
     };
 
@@ -42,23 +42,7 @@ public:
     std::mutex mutex;
 
     PartitionReadResponse handleRequest(PartitionReadRequest request);
-
-private:
-
-    void checkConsistencyOrThrow();
-
 };
-
-
-void ParallelReplicasReadingCoordinator::Impl::checkConsistencyOrThrow()
-{
-    for (const auto & partition : partitions)
-    {
-        partition.second.part_ranges.checkConsistencyOrThrow();
-        for (const auto & ranges : partition.second.mark_ranges_in_part)
-            ranges.second.checkConsistencyOrThrow();
-    }
-}
 
 
 PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(PartitionReadRequest request)
@@ -69,13 +53,12 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
     auto partition_it = partitions.find(request.partition_id);
 
     SCOPE_EXIT({
-        LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Time for handling request: {}ms", watch.elapsed());
+        LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Time for handling request: {}ns", watch.elapsed());
     });
 
     /// We are the first who wants to process parts in partition
     if (partition_it == partitions.end())
     {
-        // LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "First to process partition");
         auto part_and_projection = request.part_name + "#" + request.projection_name;
 
         PartitionReading partition_reading;
@@ -86,15 +69,17 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
 
         partition_reading.part_ranges.addPart(std::move(part_to_read));
 
-        MarkRangesIntersectionsIndex mark_ranges_index;
-        mark_ranges_index.addRanges(request.mark_ranges);
+        /// As this query is first in partition, we will accept all ranges from it.
+        /// We need just to update our state.
+        auto request_ranges = HalfIntervals::initializeFromMarkRanges(request.mark_ranges);
+        auto mark_ranges_index = HalfIntervals::initializeWithEntireSpace();
+        mark_ranges_index.intersect(request_ranges.negate());
 
         partition_reading.mark_ranges_in_part.insert({part_and_projection, std::move(mark_ranges_index)});
         partitions.insert({request.partition_id, std::move(partition_reading)});
 
         return {.denied = false, .mark_ranges = std::move(request.mark_ranges)};
     }
-
 
     auto & partition_reading = partition_it->second;
 
@@ -103,84 +88,41 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
     part_to_read.range = request.block_range;
     part_to_read.name = part_and_projection;
 
-    auto number_of_part_intersection = partition_reading.part_ranges.numberOfIntersectionsWith(part_to_read.range);
+    auto part_intersection_res = partition_reading.part_ranges.getIntersectionResult(part_to_read);
 
-    /// We are intersecting with another parts, probably replicas have different sets of parts
-    /// Or maybe there is a bug in merges assigning...
-    /// Nothing to update in our state
-    if (number_of_part_intersection >= 2)
+    switch (part_intersection_res)
     {
-        return {.denied = true, .mark_ranges = {}};
-    }
-
-
-    if (number_of_part_intersection == 1)
-    {
-        if (!partition_reading.part_ranges.checkPartIsSuitable(part_to_read))
+        case PartSegments::IntersectionResult::REJECT:
         {
             return {.denied = true, .mark_ranges = {}};
         }
-
-
-        auto marks_it = partition_reading.mark_ranges_in_part.find(part_and_projection);
-
-        /// FIXME
-        if (marks_it == partition_reading.mark_ranges_in_part.end())
-            throw std::runtime_error("aaa");
-
-        MarkRanges result;
-        for (auto & range : request.mark_ranges)
+        case PartSegments::IntersectionResult::EXACTLY_ONE_INTERSECTION:
         {
-            auto number_of_mark_intersection = marks_it->second.numberOfIntersectionsWith(range);
-            if (number_of_mark_intersection == 0)
-                result.push_back(range);
-            else
-            {
-                auto new_ranges = marks_it->second.getNewRanges(range);
+            auto marks_it = partition_reading.mark_ranges_in_part.find(part_and_projection);
 
-                for (const auto & new_range : new_ranges)
-                    result.push_back(new_range);
-            }
+            auto & intervals_to_do = marks_it->second;
+            auto result = HalfIntervals::initializeFromMarkRanges(request.mark_ranges);
+            result.intersect(intervals_to_do);
+
+            /// Update intervals_to_do
+            intervals_to_do.intersect(HalfIntervals::initializeFromMarkRanges(std::move(request.mark_ranges)).negate());
+
+            auto result_ranges = result.convertToMarkRangesFinal();
+            return {.denied = result_ranges.empty(), .mark_ranges = std::move(result_ranges)};
         }
-
-        if (result.empty())
+        case PartSegments::IntersectionResult::NO_INTERSECTION:
         {
-            return {.denied = true, .mark_ranges = {}};
+            partition_reading.part_ranges.addPart(std::move(part_to_read));
+
+            auto mark_ranges_index = HalfIntervals::initializeWithEntireSpace().intersect(
+            HalfIntervals::initializeFromMarkRanges(request.mark_ranges).negate()
+            );
+            partition_reading.mark_ranges_in_part.insert({part_and_projection, std::move(mark_ranges_index)});
+
+            return {.denied = false, .mark_ranges = std::move(request.mark_ranges)};
         }
-
-
-        marks_it->second.addRanges(result);
-
-        return {.denied = false, .mark_ranges = std::move(result)};
     }
-
-
-    partition_reading.part_ranges.addPart(std::move(part_to_read));
-
-    MarkRangesIntersectionsIndex mark_ranges_index;
-    mark_ranges_index.addRanges(request.mark_ranges);
-    partition_reading.mark_ranges_in_part.insert({part_and_projection, std::move(mark_ranges_index)});
-
-    return {.denied = false, .mark_ranges = std::move(request.mark_ranges)};
 }
-
-
-
-/**
- *
- *
- *  [..)  [.......) [..) [...) [......) [.......)       [....) [.......) [........)
- *  |                                           |       |                         |
- *  |     ^ mark ranges                         |       |                         |
- *  |                                           |       |                         |
- *  |                                           |       |                         |
- *  [        part_name#projection_name          ]  ...  [part_name#projection_name]
- *
- *  ^ boundary (Left)           boundary(Right) ^       ^ boundary (Left)
- *
- *  [                              partition                                      ]
- */
-
 
 PartitionReadResponse ParallelReplicasReadingCoordinator::handleRequest(PartitionReadRequest request)
 {

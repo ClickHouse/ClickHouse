@@ -22,255 +22,253 @@ struct PartToRead
         return range == rhs.range && name == rhs.name;
     }
 
-    struct FindByBegin : std::binary_function<bool, Int64, PartToRead>
+    bool operator<(const PartToRead & rhs) const
     {
-        bool operator()(Int64 value, const PartToRead & rhs) const
-        {
-            return value < rhs.range.begin;
-        }
-    };
-
-    struct FindByEndGreater : std::binary_function<bool, Int64, PartToRead>
-    {
-        bool operator()(Int64 value, const PartToRead & lhs) const
-        {
-            return value > lhs.range.end;
-        }
-    };
-
-    struct CompareByBegin : std::binary_function<bool, PartToRead, PartToRead>
-    {
-        bool operator()(const PartToRead & lhs, const PartToRead & rhs) const
-        {
-            return lhs.range.begin < rhs.range.begin;
-        }
-    };
-
-
-    struct CompareByEnd : std::binary_function<bool, PartToRead, PartToRead>
-    {
-        bool operator()(const PartToRead & lhs, const PartToRead & rhs) const
-        {
-            return lhs.range.end < rhs.range.end;
-        }
-    };
+        /// We allow only consecutive non-intersecting ranges
+        if (rhs.range.begin > range.begin && rhs.range.begin < range.end)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Bad ranges");
+        return range.begin < rhs.range.begin && range.end <= rhs.range.begin;
+    }
 };
 
 
-class PartRangesIntersectionsIndex
+struct PartSegments
 {
-public:
-    void addPart(PartToRead part)
+    enum class IntersectionResult
     {
-        by_begin.insert(part);
-        by_end.insert(part);
-    }
+        NO_INTERSECTION,
+        EXACTLY_ONE_INTERSECTION,
+        REJECT
+    };
 
-    size_t numberOfIntersectionsWith(PartBlockRange range)
+    void addPart(PartToRead part) { segments.insert(std::move(part)); }
+
+    IntersectionResult getIntersectionResult(PartToRead part)
     {
-        /// Find the first one that starts with a larger coordinate
-        auto right_iter = std::upper_bound(by_begin.begin(), by_begin.end(), range.end, PartToRead::FindByBegin());
-
-        /// Find the last that ends with a lower coordinate
-        auto left_iter = std::upper_bound(by_end.rbegin(), by_end.rend(), range.begin, PartToRead::FindByEndGreater());
-
-        size_t result = by_begin.size();
-        result -= std::distance(left_iter, by_end.rend());
-        result -= std::distance(right_iter, by_begin.end());
-
-        return result;
-    }
-
-    bool checkPartIsSuitable(PartToRead part)
-    {
-        auto number = numberOfIntersectionsWith(part.range);
-        if (number == 0)
-            return true;
-        if (number == 1)
+        bool intersected_before = false;
+        for (const auto & segment: segments)
         {
-            auto it = by_begin.find(part);
-            if (it != by_begin.end() && it->name == part.name)
-                return true;
+            auto are_intersect = [](auto & x, auto & y)
+            {
+                /// <= is important here, because we are working with segments [a, b]
+                if ((x.begin <= y.begin) && (y.begin <= x.end))
+                    return true;
+                if ((y.begin <= x.begin) && (x.begin <= y.end))
+                    return true;
+                return false;
+            };
+
+            if (are_intersect(segment.range, part.range))
+            {
+                /// We have two or possibly more intersections
+                if (intersected_before)
+                    return IntersectionResult::REJECT;
+
+                /// We have intersection with part with different name
+                /// It could happens if we have merged part on one replica
+                /// but not on another.
+                if (segment.name != part.name)
+                    return IntersectionResult::REJECT;
+
+                intersected_before = true;
+            }
         }
 
-        return false;
+        return intersected_before ? IntersectionResult::EXACTLY_ONE_INTERSECTION : IntersectionResult::NO_INTERSECTION;
     }
 
-    String describe() const
-    {
-        String result = "[";
-        for (const auto & it : by_begin)
-            result += fmt::format("({} {} {}), ", it.name, it.range.begin, it.range.end);
-        result += "]";
-        return result;
-    }
-
-
-    void checkConsistencyOrThrow() const
-    {
-        Int64 prev_end = std::numeric_limits<Int64>::min();
-        for (const auto & it : by_begin)
-        {
-            if (it.range.begin < prev_end)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting marks");
-            prev_end = it.range.end;
-        }
-    }
-
-private:
-    std::multiset<PartToRead, PartToRead::CompareByBegin> by_begin;
-    std::multiset<PartToRead, PartToRead::CompareByEnd> by_end;
+    using OrderedSegments = std::set<PartToRead>;
+    OrderedSegments segments;
 };
 
 
+// class PartRangesIntersectionsIndex
+// {
+// public:
+//     void addPart(PartToRead part)
+//     {
+//         by_begin.insert(part);
+//         by_end.insert(part);
+//     }
 
-struct MarkRangesIntersectionsIndex
+//     size_t numberOfIntersectionsWith(PartBlockRange range)
+//     {
+//         /// Find the first one that starts with a larger coordinate
+//         auto right_iter = std::upper_bound(by_begin.begin(), by_begin.end(), range.end, PartToRead::FindByBegin());
+
+//         /// Find the last that ends with a lower coordinate
+//         auto left_iter = std::upper_bound(by_end.rbegin(), by_end.rend(), range.begin, PartToRead::FindByEndGreater());
+
+//         size_t result = by_begin.size();
+//         result -= std::distance(left_iter, by_end.rend());
+//         result -= std::distance(right_iter, by_begin.end());
+
+//         return result;
+//     }
+
+//     bool checkPartIsSuitable(PartToRead part)
+//     {
+//         auto number = numberOfIntersectionsWith(part.range);
+//         if (number == 0)
+//             return true;
+//         if (number == 1)
+//         {
+//             auto it = by_begin.find(part);
+//             if (it != by_begin.end() && it->name == part.name)
+//                 return true;
+//         }
+
+//         return false;
+//     }
+
+//     String describe() const
+//     {
+//         String result = "[";
+//         for (const auto & it : by_begin)
+//             result += fmt::format("({} {} {}), ", it.name, it.range.begin, it.range.end);
+//         result += "]";
+//         return result;
+//     }
+
+
+//     void checkConsistencyOrThrow() const
+//     {
+//         Int64 prev_end = std::numeric_limits<Int64>::min();
+//         for (const auto & it : by_begin)
+//         {
+//             if (it.range.begin < prev_end)
+//                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting marks");
+//             prev_end = it.range.end;
+//         }
+//     }
+
+// private:
+//     std::multiset<PartToRead, PartToRead::CompareByBegin> by_begin;
+//     std::multiset<PartToRead, PartToRead::CompareByEnd> by_end;
+// };
+
+
+
+struct HalfIntervals
 {
-    void addRange(MarkRange range)
+    static HalfIntervals initializeWithEntireSpace()
     {
-        by_begin.insert(range);
-        // by_end.insert(range);
+        auto left_inf = std::numeric_limits<decltype(MarkRange::begin)>::min();
+        auto right_inf = std::numeric_limits<decltype(MarkRange::end)>::max();
+        return HalfIntervals{{{left_inf, right_inf}}};
     }
 
-    void addRanges(MarkRanges ranges)
+    static HalfIntervals initializeFromMarkRanges(MarkRanges ranges)
     {
-        for (auto & range : ranges)
-            addRange(std::move(range));
+        OrderedRanges new_intervals;
+        for (const auto & range : ranges)
+            new_intervals.insert(range);
+
+        return HalfIntervals{std::move(new_intervals)};
     }
 
-    size_t numberOfIntersectionsWith(MarkRange range)
+    MarkRanges convertToMarkRangesFinal()
     {
-        /// Find the first one that starts with a larger coordinate
-        /// In terms of std::upper_bound we will find an iterator since which the predicate is true
-        auto right_iter = std::upper_bound(by_begin.begin(), by_begin.end(), range.end, MarkRangesIntersectionsIndex::StartsInCoordinateGreaterOrEqualThanValue());
-
-        /// Find the last that ends with a lower coordinate
-        auto left_iter = std::upper_bound(by_begin.rbegin(), by_begin.rend(), range.begin, MarkRangesIntersectionsIndex::EndsInCoordinateLessOrEqualThanValue());
-
-        size_t result = by_begin.size();
-        result -= std::distance(left_iter, by_begin.rend());
-        result -= std::distance(right_iter, by_begin.end());
-
+        MarkRanges result;
+        std::move(intervals.begin(), intervals.end(), std::back_inserter(result));
         return result;
     }
 
-    std::vector<MarkRange> getIntersectingRanges(MarkRange range)
+    HalfIntervals & intersect(const HalfIntervals & rhs)
     {
-        /// Find the first one that starts with a larger coordinate
-        auto right_iter = std::upper_bound(by_begin.begin(), by_begin.end(), range.end,
-            MarkRangesIntersectionsIndex::StartsInCoordinateGreaterOrEqualThanValue());
+        /**
+         * first   [   ) [   ) [   ) [  ) [  )
+         * second    [       ) [ ) [   )  [    )
+         */
+        OrderedRanges intersected;
 
-        /// Find the last that ends with a lower coordinate
-        auto left_iter = std::upper_bound(by_begin.rbegin(), by_begin.rend(), range.begin,
-            MarkRangesIntersectionsIndex::EndsInCoordinateLessOrEqualThanValue());
+        const auto & first_intervals = intervals;
+        auto first = first_intervals.begin();
+        const auto & second_intervals = rhs.intervals;
+        auto second = second_intervals.begin();
 
-        std::vector<MarkRange> result;
-        for (auto it = left_iter.base(); it != right_iter; ++it)
-            result.push_back(*it);
+        while (first != first_intervals.end() && second != second_intervals.end())
+        {
+            auto are_intersect = [](auto & x, auto & y)
+            {
+                if ((x->begin <= y->begin) && (y->begin < x->end))
+                    return true;
+                if ((y->begin <= x->begin) && (x->begin < y->end))
+                    return true;
+                return false;
+            };
 
-        return result;
+            if (are_intersect(first, second))
+            {
+                intersected.insert(MarkRange{
+                    std::max(second->begin, first->begin),
+                    std::min(second->end, first->end)
+                });
+            }
+
+            if (first->end <= second->end)
+                ++first;
+            else
+                ++second;
+        }
+
+        std::swap(intersected, intervals);
+
+        return *this;
     }
 
-    std::vector<MarkRange> getNewRanges(MarkRange range)
+    HalfIntervals & negate()
     {
-        auto ranges = getIntersectingRanges(range);
-        std::sort(ranges.begin(), ranges.end(), CompareByBegin());
+        auto left_inf = std::numeric_limits<decltype(MarkRange::begin)>::min();
+        auto right_inf = std::numeric_limits<decltype(MarkRange::end)>::max();
+        OrderedRanges new_ranges;
 
-        std::vector<MarkRange> gaps;
+        /// Possibly add (-inf; begin)
+        if (!intervals.empty())
+            if (auto begin = intervals.begin()->begin; begin != left_inf)
+                new_ranges.insert(MarkRange{left_inf, begin});
 
-        if (range.begin < ranges.front().begin)
-            gaps.push_back(MarkRange{range.begin, ranges.front().begin});
-
-        auto prev_end = ranges.front().end;
-        for (auto it = std::next(ranges.begin()); it != ranges.end(); ++it)
+        auto prev = intervals.begin();
+        for (auto it = std::next(intervals.begin()); it != intervals.end(); ++it)
         {
-            /// Do not add empty gaps
-            if (prev_end != it->begin)
-                gaps.push_back(MarkRange{prev_end, it->begin});
-            prev_end = it->end;
+            if (prev->end != it->begin)
+                new_ranges.insert(MarkRange{prev->end, it->begin});
+            prev = it;
         }
 
-        if (range.end > ranges.back().end)
-            gaps.push_back(MarkRange{ranges.back().end, range.end});
+        /// Try to add (end; +inf)
+        if (!intervals.empty())
+            if (auto end = intervals.rbegin()->end; end != right_inf)
+                new_ranges.insert(MarkRange{end, right_inf});
 
-        return gaps;
+        std::swap(new_ranges, intervals);
+
+        return *this;
     }
 
-    /// Mark range is represented by a half-opened interval, the predicate checks the equility of boundaries
-    struct StartsInCoordinateGreaterOrEqualThanValue
+    bool operator==(const HalfIntervals & rhs) const
     {
-        bool operator()(size_t value, const MarkRange & rhs) const
-        {
-            return rhs.begin >= value;
-        }
-    };
-
-    struct EndsInCoordinateLessOrEqualThanValue
-    {
-        bool operator()(size_t value, const MarkRange & lhs) const
-        {
-            return lhs.end <= value;
-        }
-    };
-
-    struct CompareByBegin
-    {
-        bool operator()(const MarkRange & lhs, const MarkRange & rhs) const
-        {
-            if (lhs.begin < rhs.begin)
-                return true;
-            return lhs.end < rhs.end;
-        }
-    };
-
-
-    struct CompareByEnd
-    {
-        bool operator()(const MarkRange & lhs, const MarkRange & rhs) const
-        {
-            if (lhs.end < rhs.end)
-                return true;
-            return lhs.begin < rhs.begin;
-        }
-    };
-
-
-    String describe() const
-    {
-        String result = "Mark ranges: ";
-        for (const auto & it : by_begin)
-            result += fmt::format("({}, {}) ", it.begin, it.end);
-        result += "End! ";
-        return result;
+        return intervals == rhs.intervals;
     }
 
-
-    void checkConsistencyOrThrow() const
-    {
-        UInt64 prev_end = 0;
-        for (const auto & it : by_begin)
-        {
-            if (it.begin < prev_end)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting marks");
-            prev_end = it.end;
-        }
-
-        std::multiset<MarkRange, CompareByEnd> by_end;
-        for (const auto & it : by_begin)
-            by_end.insert(it);
-
-        auto it = by_end.begin();
-        for (const auto & begin_it: by_begin)
-        {
-            if (*it  != begin_it)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Intersecting marks");
-            ++it;
-        }
-    }
-
-private:
-    std::multiset<MarkRange, CompareByBegin> by_begin;
+    using OrderedRanges = std::set<MarkRange>;
+    OrderedRanges intervals;
 };
 
+
+[[ maybe_unused ]] static std::ostream & operator<< (std::ostream & out, const HalfIntervals & ranges)
+{
+  for (const auto & range: ranges.intervals)
+    out << fmt::format("({}, {}) ", range.begin, range.end);
+  return out;
+}
+
+/// This is needed for tests where we don't need to modify objects
+[[ maybe_unused ]] static HalfIntervals getIntersection(const HalfIntervals & first, const HalfIntervals & second)
+{
+    auto result = first;
+    result.intersect(second);
+    return result;
+}
 
 }
