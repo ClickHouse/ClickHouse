@@ -491,7 +491,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     {
         /// Disabled due to https://github.com/ClickHouse/ClickHouse/issues/31009
         // left_blocks_buffer = std::make_shared<SortedBlocksBuffer>(left_sort_description, max_bytes);
-        LOG_WARNING(log, "`partial_merge_join_left_table_buffer_bytes` is disabled in current version of ClickHouse");
+        LOG_WARNING(&Poco::Logger::get("MergeJoin"), "`partial_merge_join_left_table_buffer_bytes` is disabled in current version of ClickHouse");
         UNUSED(left_blocks_buffer);
     }
 }
