@@ -1,10 +1,6 @@
 name: ReleaseCI
 on: # yamllint disable-line rule:truthy
-  pull_request:
-    types:
-      - synchronize
-      - reopened
-      - opened
+  push:
     branches:
       - '21.**'
       - '22.**'
@@ -93,7 +89,6 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-
   BuilderDebAsan:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
