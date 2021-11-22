@@ -3,6 +3,7 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 
 #include <cassert>
+#include <iostream>
 #include <type_traits>
 
 #include <Poco/Util/Application.h>
@@ -319,7 +320,7 @@ template class ThreadPoolImpl<ThreadFromGlobalPool>;
 
 std::unique_ptr<GlobalThreadPool> GlobalThreadPool::the_instance;
 
-void GlobalThreadPool::initialize(size_t max_threads)
+void GlobalThreadPool::initialize(size_t max_threads, size_t max_free_threads, size_t queue_size)
 {
     if (the_instance)
     {
@@ -327,9 +328,7 @@ void GlobalThreadPool::initialize(size_t max_threads)
             "The global thread pool is initialized twice");
     }
 
-    the_instance.reset(new GlobalThreadPool(max_threads,
-        1000 /*max_free_threads*/, 10000 /*max_queue_size*/,
-        false /*shutdown_on_exception*/));
+    the_instance.reset(new GlobalThreadPool(max_threads, max_free_threads, queue_size, false /*shutdown_on_exception*/));
 }
 
 GlobalThreadPool & GlobalThreadPool::instance()

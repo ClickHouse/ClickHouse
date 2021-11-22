@@ -4,8 +4,8 @@
 #include <iostream>
 #include <Core/Defines.h>
 #include <Common/Stopwatch.h>
-#include <common/types.h>
-#include <common/unaligned.h>
+#include <base/types.h>
+#include <base/unaligned.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -70,7 +70,7 @@ inline void copyOverlap8(UInt8 * op, const UInt8 *& match, size_t offset)
 }
 
 
-#if defined(__x86_64__) || defined(__PPC__)
+#if defined(__x86_64__) || defined(__PPC__) || defined(__riscv)
 
 /** We use 'xmm' (128bit SSE) registers here to shuffle 16 bytes.
   *
@@ -261,7 +261,7 @@ inline void copyOverlap16(UInt8 * op, const UInt8 *& match, const size_t offset)
 }
 
 
-#if defined(__x86_64__) || defined(__PPC__)
+#if defined(__x86_64__) || defined(__PPC__) || defined (__riscv)
 
 inline void copyOverlap16Shuffle(UInt8 * op, const UInt8 *& match, const size_t offset)
 {

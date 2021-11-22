@@ -5,7 +5,7 @@ toc_title: Playground
 
 # ClickHouse Playground {#clickhouse-playground}
 
-[ClickHouse Playground](https://play.clickhouse.tech) позволяет пользователям экспериментировать с ClickHouse, мгновенно выполняя запросы без настройки своего сервера или кластера.
+[ClickHouse Playground](https://play.clickhouse.com) позволяет пользователям экспериментировать с ClickHouse, мгновенно выполняя запросы без настройки своего сервера или кластера.
 В Playground доступны несколько тестовых массивов данных, а также примеры запросов, которые показывают возможности ClickHouse. Кроме того, вы можете выбрать LTS релиз ClickHouse, который хотите протестировать.
 
 ClickHouse Playground дает возможность поработать с  [Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse) в конфигурации m2.small (4 vCPU, 32 ГБ ОЗУ), которую предосталяет [Яндекс.Облако](https://cloud.yandex.com/). Дополнительную информацию об облачных провайдерах читайте в разделе [Поставщики облачных услуг ClickHouse](../commercial/cloud.md).
@@ -16,15 +16,15 @@ ClickHouse Playground дает возможность поработать с  [
 
 | Параметр            | Значение                                |
 |:--------------------|:----------------------------------------|
-| Конечная точка HTTPS| `https://play-api.clickhouse.tech:8443` |
-| Конечная точка TCP  | `play-api.clickhouse.tech:9440`         |
+| Конечная точка HTTPS| `https://play-api.clickhouse.com:8443` |
+| Конечная точка TCP  | `play-api.clickhouse.com:9440`         |
 | Пользователь        | `playground`                            |
 | Пароль              | `clickhouse`                            |
 
 Также можно подключаться к ClickHouse определённых релизов, чтобы протестировать их различия (порты и пользователь / пароль остаются неизменными):
 
--   20.3 LTS: `play-api-v20-3.clickhouse.tech`
--   19.14 LTS: `play-api-v19-14.clickhouse.tech`
+-   20.3 LTS: `play-api-v20-3.clickhouse.com`
+-   19.14 LTS: `play-api-v19-14.clickhouse.com`
 
 !!! note "Примечание"
     Для всех этих конечных точек требуется безопасное соединение TLS.
@@ -46,13 +46,13 @@ ClickHouse Playground дает возможность поработать с  [
 Пример конечной точки HTTPS с `curl`:
 
 ``` bash
-curl "https://play-api.clickhouse.tech:8443/?query=SELECT+'Play+ClickHouse\!';&user=playground&password=clickhouse&database=datasets"
+curl "https://play-api.clickhouse.com:8443/?query=SELECT+'Play+ClickHouse\!';&user=playground&password=clickhouse&database=datasets"
 ```
 
 Пример конечной точки TCP с [CLI](../interfaces/cli.md):
 
 ``` bash
-clickhouse client --secure -h play-api.clickhouse.tech --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse\!'"
+clickhouse client --secure -h play-api.clickhouse.com --port 9440 -u playground --password clickhouse -q "SELECT 'Play ClickHouse\!'"
 ```
 
 ## Детали реализации {#implementation-details}

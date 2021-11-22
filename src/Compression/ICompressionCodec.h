@@ -3,7 +3,7 @@
 #include <memory>
 #include <boost/noncopyable.hpp>
 #include <Compression/CompressionInfo.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Parsers/IAST.h>
 #include <Common/SipHash.h>
 
@@ -76,7 +76,7 @@ public:
     virtual bool isGenericCompression() const = 0;
 
     /// If it is a post-processing codec such as encryption. Usually it does not make sense to apply non-post-processing codecs after this.
-    virtual bool isPostProcessing() const { return false; }
+    virtual bool isEncryption() const { return false; }
 
     /// It is a codec available only for evaluation purposes and not meant to be used in production.
     /// It will not be allowed to use unless the user will turn off the safety switch.

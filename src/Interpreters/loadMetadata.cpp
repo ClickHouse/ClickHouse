@@ -11,6 +11,7 @@
 #include <Interpreters/loadMetadata.h>
 
 #include <Databases/DatabaseOrdinary.h>
+#include <Databases/TablesLoader.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -19,6 +20,7 @@
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <filesystem>
+#include <base/logger_useful.h>
 
 namespace fs = std::filesystem;
 
@@ -37,13 +39,13 @@ static void executeCreateQuery(
         parser, query.data(), query.data() + query.size(), "in file " + file_name, 0, context->getSettingsRef().max_parser_depth);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
-    ast_create_query.database = database;
+    ast_create_query.setDatabase(database);
 
     InterpreterCreateQuery interpreter(ast, context);
     interpreter.setInternal(true);
     interpreter.setForceAttach(true);
     interpreter.setForceRestoreData(has_force_restore_data_flag);
-    interpreter.setSkipStartupTables(true);
+    interpreter.setLoadDatabaseWithoutTables(true);
     interpreter.execute();
 }
 
@@ -71,6 +73,7 @@ static void loadDatabase(
     }
     else if (fs::exists(fs::path(database_path)))
     {
+        /// TODO Remove this code (it's required for compatibility with versions older than 20.7)
         /// Database exists, but .sql file is absent. It's old-style Ordinary database (e.g. system or default)
         database_attach_query = "ATTACH DATABASE " + backQuoteIfNeed(database) + " ENGINE = Ordinary";
     }
@@ -159,10 +162,18 @@ void loadMetadata(ContextMutablePtr context, const String & default_database_nam
     bool create_default_db_if_not_exists = !default_database_name.empty();
     bool metadata_dir_for_default_db_already_exists = databases.count(default_database_name);
     if (create_default_db_if_not_exists && !metadata_dir_for_default_db_already_exists)
-        databases.emplace(default_database_name, path + "/" + escapeForFileName(default_database_name));
+        databases.emplace(default_database_name, std::filesystem::path(path) / escapeForFileName(default_database_name));
 
+    TablesLoader::Databases loaded_databases;
     for (const auto & [name, db_path] : databases)
+    {
         loadDatabase(context, name, db_path, has_force_restore_data_flag);
+        loaded_databases.insert({name, DatabaseCatalog::instance().getDatabase(name)});
+    }
+
+    TablesLoader loader{context, std::move(loaded_databases), has_force_restore_data_flag, /* force_attach */ true};
+    loader.loadTables();
+    loader.startupTables();
 
     if (has_force_restore_data_flag)
     {
@@ -197,11 +208,28 @@ static void loadSystemDatabaseImpl(ContextMutablePtr context, const String & dat
     }
 }
 
+
+void startupSystemTables()
+{
+    ThreadPool pool;
+    DatabaseCatalog::instance().getSystemDatabase()->startupTables(pool, /* force_restore */ true, /* force_attach */ true);
+}
+
 void loadMetadataSystem(ContextMutablePtr context)
 {
     loadSystemDatabaseImpl(context, DatabaseCatalog::SYSTEM_DATABASE, "Atomic");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA, "Memory");
     loadSystemDatabaseImpl(context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, "Memory");
+
+    TablesLoader::Databases databases =
+    {
+        {DatabaseCatalog::SYSTEM_DATABASE, DatabaseCatalog::instance().getSystemDatabase()},
+        {DatabaseCatalog::INFORMATION_SCHEMA, DatabaseCatalog::instance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA)},
+        {DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE, DatabaseCatalog::instance().getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE)},
+    };
+    TablesLoader loader{context, databases, /* force_restore */ true, /* force_attach */ true};
+    loader.loadTables();
+    /// Will startup tables in system database after all databases are loaded.
 }
 
 }

@@ -19,4 +19,4 @@ Create queries make a new entity of one of the following kinds:
 -   [QUOTA](../../../sql-reference/statements/create/quota.md)
 -   [SETTINGS PROFILE](../../../sql-reference/statements/create/settings-profile.md)
 
-[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/create/) <!--hide-->
+[Original article](https://clickhouse.com/docs/en/sql-reference/statements/create/) <!--hide-->

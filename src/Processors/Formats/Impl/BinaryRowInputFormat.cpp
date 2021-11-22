@@ -2,79 +2,96 @@
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/BinaryRowInputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/registerWithNamesAndTypes.h>
+#include <DataTypes/DataTypeFactory.h>
 
 
 namespace DB
 {
 
-BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params_, bool with_names_, bool with_types_)
-    : IRowInputFormat(std::move(header), in_, params_), with_names(with_names_), with_types(with_types_)
+namespace ErrorCodes
+{
+    extern const int CANNOT_SKIP_UNKNOWN_FIELD;
+}
+
+BinaryRowInputFormat::BinaryRowInputFormat(ReadBuffer & in_, Block header, Params params_, bool with_names_, bool with_types_, const FormatSettings & format_settings_)
+    : RowInputFormatWithNamesAndTypes(std::move(header), in_, std::move(params_), with_names_, with_types_, format_settings_)
 {
 }
 
-
-bool BinaryRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
+std::vector<String> BinaryRowInputFormat::readHeaderRow()
 {
-    if (in.eof())
-        return false;
+    std::vector<String> fields;
+    String field;
+    for (size_t i = 0; i < read_columns; ++i)
+    {
+        readStringBinary(field, *in);
+        fields.push_back(field);
+    }
+    return fields;
+}
 
-    size_t num_columns = columns.size();
-    for (size_t i = 0; i < num_columns; ++i)
-        serializations[i]->deserializeBinary(*columns[i], in);
+std::vector<String> BinaryRowInputFormat::readNames()
+{
+    readVarUInt(read_columns, *in);
+    return readHeaderRow();
+}
 
+std::vector<String> BinaryRowInputFormat::readTypes()
+{
+    auto types = readHeaderRow();
+    for (const auto & type_name : types)
+        read_data_types.push_back(DataTypeFactory::instance().get(type_name));
+    return types;
+}
+
+bool BinaryRowInputFormat::readField(IColumn & column, const DataTypePtr & /*type*/, const SerializationPtr & serialization, bool /*is_last_file_column*/, const String & /*column_name*/)
+{
+    serialization->deserializeBinary(column, *in);
     return true;
 }
 
-
-void BinaryRowInputFormat::readPrefix()
+void BinaryRowInputFormat::skipHeaderRow()
 {
-    /// NOTE: The header is completely ignored. This can be easily improved.
-
-    UInt64 columns = 0;
     String tmp;
-
-    if (with_names || with_types)
-    {
-        readVarUInt(columns, in);
-    }
-
-    if (with_names)
-    {
-        for (size_t i = 0; i < columns; ++i)
-        {
-            readStringBinary(tmp, in);
-        }
-    }
-
-    if (with_types)
-    {
-        for (size_t i = 0; i < columns; ++i)
-        {
-            readStringBinary(tmp, in);
-        }
-    }
+    for (size_t i = 0; i < read_columns; ++i)
+        readStringBinary(tmp, *in);
 }
 
-
-void registerInputFormatProcessorRowBinary(FormatFactory & factory)
+void BinaryRowInputFormat::skipNames()
 {
-    factory.registerInputFormatProcessor("RowBinary", [](
-        ReadBuffer & buf,
-        const Block & sample,
-        const IRowInputFormat::Params & params,
-        const FormatSettings &)
-    {
-        return std::make_shared<BinaryRowInputFormat>(buf, sample, params, false, false);
-    });
+    readVarUInt(read_columns, *in);
+    skipHeaderRow();
+}
 
-    factory.registerInputFormatProcessor("RowBinaryWithNamesAndTypes", [](
-        ReadBuffer & buf,
-        const Block & sample,
-        const IRowInputFormat::Params & params,
-        const FormatSettings &)
+void BinaryRowInputFormat::skipTypes()
+{
+    skipHeaderRow();
+}
+
+void BinaryRowInputFormat::skipField(size_t file_column)
+{
+    if (file_column >= read_data_types.size())
+        throw Exception(ErrorCodes::CANNOT_SKIP_UNKNOWN_FIELD, "Cannot skip unknown field in RowBinaryWithNames format, because it's type is unknown");
+    Field field;
+    read_data_types[file_column]->getDefaultSerialization()->deserializeBinary(field, *in);
+}
+
+void registerInputFormatRowBinary(FormatFactory & factory)
+{
+    auto register_func = [&](const String & format_name, bool with_names, bool with_types)
     {
-        return std::make_shared<BinaryRowInputFormat>(buf, sample, params, true, true);
-    });
+        factory.registerInputFormat(format_name, [with_names, with_types](
+            ReadBuffer & buf,
+            const Block & sample,
+            const IRowInputFormat::Params & params,
+            const FormatSettings & settings)
+        {
+            return std::make_shared<BinaryRowInputFormat>(buf, sample, params, with_names, with_types, settings);
+        });
+    };
+
+    registerWithNamesAndTypes("RowBinary", register_func);
 }
 
 }

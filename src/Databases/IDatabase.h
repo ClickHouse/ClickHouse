@@ -1,10 +1,11 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/Exception.h>
+#include <Common/ThreadPool.h>
 #include <Core/UUID.h>
 
 #include <ctime>
@@ -24,12 +25,17 @@ struct IndicesDescription;
 struct StorageInMemoryMetadata;
 struct StorageID;
 class ASTCreateQuery;
+class AlterCommands;
+class SettingsChanges;
 using DictionariesWithID = std::vector<std::pair<String, UUID>>;
+struct ParsedTablesMetadata;
+struct QualifiedTableName;
 
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int LOGICAL_ERROR;
 }
 
 class IDatabaseTablesIterator
@@ -125,13 +131,32 @@ public:
     /// You can call only once, right after the object is created.
     virtual void loadStoredObjects(
         ContextMutablePtr /*context*/,
-        bool /*has_force_restore_data_flag*/,
+        bool /*force_restore*/,
         bool /*force_attach*/ = false,
         bool /* skip_startup_tables */ = false)
     {
     }
 
-    virtual void startupTables() {}
+    virtual bool supportsLoadingInTopologicalOrder() const { return false; }
+
+    virtual void beforeLoadingMetadata(
+        ContextMutablePtr /*context*/,
+        bool /*force_restore*/,
+        bool /*force_attach*/)
+    {
+    }
+
+    virtual void loadTablesMetadata(ContextPtr /*local_context*/, ParsedTablesMetadata & /*metadata*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    }
+
+    virtual void loadTableFromMetadata(ContextMutablePtr /*local_context*/, const String & /*file_path*/, const QualifiedTableName & /*name*/, const ASTPtr & /*ast*/, bool /*force_restore*/)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not implemented");
+    }
+
+    virtual void startupTables(ThreadPool & /*thread_pool*/, bool /*force_restore*/, bool /*force_attach*/) {}
 
     /// Check the existence of the table.
     virtual bool isTableExist(const String & name, ContextPtr context) const = 0;
@@ -172,13 +197,13 @@ public:
     /// Add a table to the database, but do not add it to the metadata. The database may not support this method.
     ///
     /// Note: ATTACH TABLE statement actually uses createTable method.
-    virtual void attachTable(const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {})
+    virtual void attachTable(ContextPtr /* context */, const String & /*name*/, const StoragePtr & /*table*/, [[maybe_unused]] const String & relative_table_path = {})
     {
         throw Exception("There is no ATTACH TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /// Forget about the table without deleting it, and return it. The database may not support this method.
-    virtual StoragePtr detachTable(const String & /*name*/)
+    virtual StoragePtr detachTable(ContextPtr /* context */, const String & /*name*/)
     {
         throw Exception("There is no DETACH TABLE query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -234,6 +259,17 @@ public:
     /// Get the CREATE DATABASE query for current database.
     virtual ASTPtr getCreateDatabaseQuery() const = 0;
 
+    String getDatabaseComment() const
+    {
+        std::lock_guard lock{mutex};
+        return comment;
+    }
+    void setDatabaseComment(String new_comment)
+    {
+        std::lock_guard lock{mutex};
+        comment = std::move(new_comment);
+    }
+
     /// Get name of database.
     String getDatabaseName() const
     {
@@ -243,7 +279,7 @@ public:
     /// Get UUID of database.
     virtual UUID getUUID() const { return UUIDHelpers::Nil; }
 
-    virtual void renameDatabase(const String & /*new_name*/)
+    virtual void renameDatabase(ContextPtr, const String & /*new_name*/)
     {
         throw Exception(getEngineName() + ": RENAME DATABASE is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -280,6 +316,20 @@ public:
     /// Delete data and metadata stored inside the database, if exists.
     virtual void drop(ContextPtr /*context*/) {}
 
+    virtual void applySettingsChanges(const SettingsChanges &, ContextPtr)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Database engine {} either does not support settings, or does not support altering settings",
+                        getEngineName());
+    }
+
+    virtual bool hasReplicationThread() const { return false; }
+
+    virtual void stopReplication()
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database engine {} does not run a replication thread!", getEngineName());
+    }
+
     virtual ~IDatabase() = default;
 
 protected:
@@ -292,6 +342,7 @@ protected:
 
     mutable std::mutex mutex;
     String database_name;
+    String comment;
 };
 
 using DatabasePtr = std::shared_ptr<IDatabase>;

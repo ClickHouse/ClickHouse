@@ -1,11 +1,14 @@
-#include "RangeHashedDictionary.h"
+#include <Dictionaries/RangeHashedDictionary.h>
+
 #include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
-#include <Common/TypeList.h>
 #include <Interpreters/castColumn.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDate32.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <Dictionaries/DictionaryFactory.h>
-#include <Dictionaries/RangeDictionarySource.h>
+#include <Dictionaries/DictionarySource.h>
 
 
 namespace
@@ -219,6 +222,7 @@ ColumnUInt8::Ptr RangeHashedDictionary<dictionary_key_type>::hasKeys(const Colum
         key_types_copy.pop_back();
         dict_struct.validateKeyTypes(key_types_copy);
     }
+
     auto range_column_storage_type = std::make_shared<DataTypeInt64>();
     auto range_storage_column = key_columns.back();
     ColumnWithTypeAndName column_to_cast = {range_storage_column->convertToFullColumnIfConst(), key_types.back(), ""};
@@ -303,8 +307,7 @@ void RangeHashedDictionary<dictionary_key_type>::createAttributes()
 template <DictionaryKeyType dictionary_key_type>
 void RangeHashedDictionary<dictionary_key_type>::loadData()
 {
-    QueryPipeline pipeline;
-    pipeline.init(source_ptr->loadAll());
+    QueryPipeline pipeline(source_ptr->loadAll());
 
     PullingPipelineExecutor executor(pipeline);
     Block block;
@@ -568,7 +571,7 @@ void RangeHashedDictionary<dictionary_key_type>::getKeysAndDates(
 {
     const auto & attribute = attributes.front();
 
-    auto type_call = [&](const auto &dictionary_attribute_type)
+    auto type_call = [&](const auto & dictionary_attribute_type)
     {
         using Type = std::decay_t<decltype(dictionary_attribute_type)>;
         using AttributeType = typename Type::AttributeType;
@@ -612,28 +615,6 @@ void RangeHashedDictionary<dictionary_key_type>::getKeysAndDates(
 }
 
 template <DictionaryKeyType dictionary_key_type>
-template <typename RangeType>
-Pipe RangeHashedDictionary<dictionary_key_type>::readImpl(const Names & column_names, size_t max_block_size) const
-{
-    PaddedPODArray<KeyType> keys;
-    PaddedPODArray<RangeType> start_dates;
-    PaddedPODArray<RangeType> end_dates;
-    getKeysAndDates(keys, start_dates, end_dates);
-
-    using RangeDictionarySourceType = RangeDictionarySource<dictionary_key_type, RangeType>;
-
-    auto source_data = RangeDictionarySourceData<dictionary_key_type, RangeType>(
-        shared_from_this(),
-        column_names,
-        std::move(keys),
-        std::move(start_dates),
-        std::move(end_dates));
-    auto source = std::make_shared<RangeDictionarySourceType>(std::move(source_data), max_block_size);
-
-    return Pipe(source);
-}
-
-template <DictionaryKeyType dictionary_key_type>
 StringRef RangeHashedDictionary<dictionary_key_type>::copyKeyInArena(StringRef key)
 {
     size_t key_size = key.size;
@@ -644,40 +625,86 @@ StringRef RangeHashedDictionary<dictionary_key_type>::copyKeyInArena(StringRef k
 }
 
 template <DictionaryKeyType dictionary_key_type>
-struct RangeHashedDictionaryCallGetSourceImpl
+template <typename RangeType>
+PaddedPODArray<Int64> RangeHashedDictionary<dictionary_key_type>::makeDateKeys(
+    const PaddedPODArray<RangeType> & block_start_dates,
+    const PaddedPODArray<RangeType> & block_end_dates) const
 {
-    Pipe pipe;
-    const RangeHashedDictionary<dictionary_key_type> * dict;
-    const Names * column_names;
-    size_t max_block_size;
+    PaddedPODArray<Int64> keys(block_start_dates.size());
 
-    template <typename RangeType, size_t>
-    void operator()()
+    for (size_t i = 0; i < keys.size(); ++i)
     {
-        const auto & type = dict->dict_struct.range_min->type;
-        if (pipe.empty() && dynamic_cast<const DataTypeNumberBase<RangeType> *>(type.get()))
-            pipe = dict->template readImpl<RangeType>(*column_names, max_block_size);
+        if (Range::isCorrectDate(block_start_dates[i]))
+            keys[i] = block_start_dates[i]; // NOLINT
+        else
+            keys[i] = block_end_dates[i]; // NOLINT
     }
-};
+
+    return keys;
+}
 
 template <DictionaryKeyType dictionary_key_type>
-Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size) const
+Pipe RangeHashedDictionary<dictionary_key_type>::read(const Names & column_names, size_t max_block_size, size_t num_streams) const
 {
-    using ListType = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Int128, Float32, Float64>;
+    auto type = dict_struct.range_min->type;
 
-    RangeHashedDictionaryCallGetSourceImpl<dictionary_key_type> callable;
-    callable.dict = this;
-    callable.column_names = &column_names;
-    callable.max_block_size = max_block_size;
+    ColumnsWithTypeAndName key_columns;
+    ColumnWithTypeAndName range_min_column;
+    ColumnWithTypeAndName range_max_column;
 
-    ListType::forEach(callable);
+    auto type_call = [&](const auto & types) mutable -> bool
+    {
+        using Types = std::decay_t<decltype(types)>;
+        using LeftDataType = typename Types::LeftType;
 
-    if (callable.pipe.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Unexpected range type for RangeHashed dictionary: {}",
-            dict_struct.range_min->type->getName());
+        if constexpr (IsDataTypeNumber<LeftDataType> ||
+            std::is_same_v<LeftDataType, DataTypeDate> ||
+            std::is_same_v<LeftDataType, DataTypeDate32> ||
+            std::is_same_v<LeftDataType, DataTypeDateTime>)
+        {
+            using RangeType = typename LeftDataType::FieldType;
 
-    return std::move(callable.pipe);
+            PaddedPODArray<KeyType> keys;
+            PaddedPODArray<RangeType> start_dates;
+            PaddedPODArray<RangeType> end_dates;
+            getKeysAndDates(keys, start_dates, end_dates);
+
+            range_min_column = ColumnWithTypeAndName{getColumnFromPODArray(start_dates), dict_struct.range_min->type, dict_struct.range_min->name};
+            range_max_column = ColumnWithTypeAndName{getColumnFromPODArray(end_dates), dict_struct.range_max->type, dict_struct.range_max->name};
+
+            if constexpr (dictionary_key_type == DictionaryKeyType::Simple)
+                key_columns = {ColumnWithTypeAndName(getColumnFromPODArray(keys), std::make_shared<DataTypeUInt64>(), dict_struct.id->name)};
+            else
+                key_columns = deserializeColumnsWithTypeAndNameFromKeys(dict_struct, keys, 0, keys.size());
+
+            auto date_column = getColumnFromPODArray(makeDateKeys(start_dates, end_dates));
+            key_columns.emplace_back(ColumnWithTypeAndName{std::move(date_column), std::make_shared<DataTypeInt64>(), ""});
+
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    };
+
+    if (!callOnIndexAndDataType<void>(type->getTypeId(), type_call))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "RangeHashedDictionary min max range type should be numeric");
+
+    ColumnsWithTypeAndName data_columns = {std::move(range_min_column), std::move(range_max_column)};
+
+    std::shared_ptr<const IDictionary> dictionary = shared_from_this();
+    auto coordinator = std::make_shared<DictionarySourceCoordinator>(dictionary, column_names, std::move(key_columns), std::move(data_columns), max_block_size);
+
+    Pipes pipes;
+
+    for (size_t i = 0; i < num_streams; ++i)
+    {
+        auto source = std::make_shared<DictionarySource>(coordinator);
+        pipes.emplace_back(Pipe(std::move(source)));
+    }
+
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 

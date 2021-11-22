@@ -1,3 +1,7 @@
+#ifdef HAS_RESERVED_IDENTIFIER
+#pragma clang diagnostic ignored "-Wreserved-identifier"
+#endif
+
 #include "ArrowBufferedStreams.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET

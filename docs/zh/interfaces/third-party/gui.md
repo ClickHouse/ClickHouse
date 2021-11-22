@@ -72,6 +72,22 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 
     [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) 是一个可视化的专业工具`system.trace_log`如[flamegraph](http://www.brendangregg.com/flamegraphs.html).
 
+### DBM {#dbm}
+
+[DBM](https://dbm.incubator.edurt.io/) DBM是一款ClickHouse可视化管理工具!
+
+特征：
+
+-   支持查询历史（分页、全部清除等）
+-   支持选中的sql子句查询(多窗口等)
+-   支持终止查询
+-   支持表管理
+-   支持数据库管理
+-   支持自定义查询
+-   支持多数据源管理（连接测试、监控）
+-   支持监控（处理进程、连接、查询）
+-   支持迁移数据
+
 ## 商业 {#shang-ye}
 
 ### Holistics {#holistics-software}
@@ -99,20 +115,4 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 -   重构。
 -   搜索和导航。
 
-### DBM {#dbm}
-
-[DBM](https://dbm.incubator.edurt.io/) DBM是一款ClickHouse可视化管理工具!
-
-特征：
-
--   支持查询历史（分页、全部清除等）
--   支持选中的sql子句查询(多窗口等)
--   支持终止查询
--   支持表管理
--   支持数据库管理
--   支持自定义查询
--   支持多数据源管理（连接测试、监控）
--   支持监控（处理进程、连接、查询）
--   支持迁移数据
-
-[来源文章](https://clickhouse.tech/docs/zh/interfaces/third-party/gui/) <!--hide-->
+[来源文章](https://clickhouse.com/docs/zh/interfaces/third-party/gui/) <!--hide-->

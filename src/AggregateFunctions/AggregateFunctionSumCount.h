@@ -8,8 +8,6 @@
 namespace DB
 {
 template <typename T>
-using DecimalOrNumberDataType = std::conditional_t<IsDecimalNumber<T>, DataTypeDecimal<AvgFieldType<T>>, DataTypeNumber<AvgFieldType<T>>>;
-template <typename T>
 class AggregateFunctionSumCount final : public AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionSumCount<T>>
 {
 public:
@@ -20,20 +18,13 @@ public:
 
     DataTypePtr getReturnType() const override
     {
-        DataTypes types;
-        if constexpr (IsDecimalNumber<T>)
-            types.emplace_back(std::make_shared<DecimalOrNumberDataType<T>>(DecimalOrNumberDataType<T>::maxPrecision(), scale));
-        else
-            types.emplace_back(std::make_shared<DecimalOrNumberDataType<T>>());
-
-        types.emplace_back(std::make_shared<DataTypeUInt64>());
-
-        return std::make_shared<DataTypeTuple>(types);
+        auto second_elem = std::make_shared<DataTypeUInt64>();
+        return std::make_shared<DataTypeTuple>(DataTypes{getReturnTypeFirstElement(), std::move(second_elem)});
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const final
     {
-        assert_cast<DecimalOrVectorCol<AvgFieldType<T>> &>((assert_cast<ColumnTuple &>(to)).getColumn(0)).getData().push_back(
+        assert_cast<ColumnVectorOrDecimal<AvgFieldType<T>> &>((assert_cast<ColumnTuple &>(to)).getColumn(0)).getData().push_back(
             this->data(place).numerator);
 
         assert_cast<ColumnUInt64 &>((assert_cast<ColumnTuple &>(to)).getColumn(1)).getData().push_back(
@@ -42,7 +33,7 @@ public:
 
     void NO_SANITIZE_UNDEFINED add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const final
     {
-        this->data(place).numerator += static_cast<const DecimalOrVectorCol<T> &>(*columns[0]).getData()[row_num];
+        this->data(place).numerator += static_cast<const ColumnVectorOrDecimal<T> &>(*columns[0]).getData()[row_num];
         ++this->data(place).denominator;
     }
 
@@ -59,6 +50,19 @@ public:
 
 private:
     UInt32 scale;
+
+    auto getReturnTypeFirstElement() const
+    {
+        using FieldType = AvgFieldType<T>;
+
+        if constexpr (!is_decimal<T>)
+            return std::make_shared<DataTypeNumber<FieldType>>();
+        else
+        {
+            using DataType = DataTypeDecimal<FieldType>;
+            return std::make_shared<DataType>(DataType::maxPrecision(), scale);
+        }
+    }
 };
 
 }

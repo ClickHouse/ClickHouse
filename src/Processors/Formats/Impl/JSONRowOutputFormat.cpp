@@ -26,8 +26,10 @@ JSONRowOutputFormat::JSONRowOutputFormat(
             need_validate_utf8 = true;
 
         WriteBufferFromOwnString buf;
-        writeJSONString(fields[i].name, buf, settings);
-
+        {
+            WriteBufferValidUTF8 validating_buf(buf);
+            writeJSONString(fields[i].name, validating_buf, settings);
+        }
         fields[i].name = buf.str();
     }
 
@@ -266,9 +268,9 @@ void JSONRowOutputFormat::onProgress(const Progress & value)
 }
 
 
-void registerOutputFormatProcessorJSON(FormatFactory & factory)
+void registerOutputFormatJSON(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("JSON", [](
+    factory.registerOutputFormat("JSON", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -277,7 +279,7 @@ void registerOutputFormatProcessorJSON(FormatFactory & factory)
         return std::make_shared<JSONRowOutputFormat>(buf, sample, params, format_settings, false);
     });
 
-    factory.registerOutputFormatProcessor("JSONStrings", [](
+    factory.registerOutputFormat("JSONStrings", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,

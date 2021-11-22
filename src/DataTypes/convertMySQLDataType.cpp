@@ -1,7 +1,7 @@
 #include "convertMySQLDataType.h"
 
 #include <Core/Field.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/MultiEnum.h>
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTFunction.h>
@@ -20,15 +20,6 @@
 
 namespace DB
 {
-ASTPtr dataTypeConvertToQuery(const DataTypePtr & data_type)
-{
-    WhichDataType which(data_type);
-
-    if (!which.isNullable())
-        return std::make_shared<ASTIdentifier>(data_type->getName());
-
-    return makeASTFunction("Nullable", dataTypeConvertToQuery(typeid_cast<const DataTypeNullable *>(data_type.get())->getNestedType()));
-}
 
 DataTypePtr convertMySQLDataType(MultiEnum<MySQLDataTypesSupport> type_support,
         const std::string & mysql_data_type,

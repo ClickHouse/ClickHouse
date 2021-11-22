@@ -16,7 +16,7 @@ option (USE_INTERNAL_ICU_LIBRARY "Set to FALSE to use system ICU library instead
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/icu/icu4c/LICENSE")
     if (USE_INTERNAL_ICU_LIBRARY)
-        message (WARNING "submodule contrib/icu is missing. to fix try run: \n git submodule update --init --recursive")
+        message (WARNING "submodule contrib/icu is missing. to fix try run: \n git submodule update --init")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal ICU")
         set (USE_INTERNAL_ICU_LIBRARY 0)
     endif ()

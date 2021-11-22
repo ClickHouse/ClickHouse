@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT -q "select x + 1 from (select y + 2 as x from (select dummy +
 echo "> sipHash should be calculated after filtration"
 $CLICKHOUSE_CLIENT -q "explain actions = 1 select sum(x), sum(y) from (select sipHash64(number) as x, bitAnd(number, 1024) as y from numbers_mt(1000000000) limit 1000000000) where y = 0" | grep -o "FUNCTION sipHash64\|Filter column: equals"
 echo "> sorting steps should know about limit"
-$CLICKHOUSE_CLIENT -q "explain actions = 1 select number from (select number from numbers(500000000) order by -number) limit 10" | grep -o "MergingSorted\|MergeSorting\|PartialSorting\|Limit 10"
+$CLICKHOUSE_CLIENT -q "explain actions = 1 select number from (select number from numbers(500000000) order by -number) limit 10" | grep -o "Sorting\|Limit 10"
 
 echo "-- filter push down --"
 echo "> filter should be pushed down after aggregating"
@@ -132,7 +132,7 @@ $CLICKHOUSE_CLIENT -q "
         select number % 2 as x, number % 3 as y from numbers(6) order by y desc
     ) where x != 0 and y != 0
     settings enable_optimize_predicate_expression = 0" |
-    grep -o "MergingSorted\|MergeSorting\|PartialSorting\|Filter column: and(notEquals(x, 0), notEquals(y, 0))"
+    grep -o "Sorting\|Filter column: and(notEquals(x, 0), notEquals(y, 0))"
 $CLICKHOUSE_CLIENT -q "
     select x, y from (
         select number % 2 as x, number % 3 as y from numbers(6) order by y desc

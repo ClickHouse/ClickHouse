@@ -56,7 +56,7 @@ InterpreterSelectIntersectExceptQuery::InterpreterSelectIntersectExceptQuery(
     ASTSelectIntersectExceptQuery * ast = query_ptr->as<ASTSelectIntersectExceptQuery>();
     final_operator = ast->final_operator;
 
-    const auto & children = ast->children;
+    const auto & children = ast->getListOfSelects();
     size_t num_children = children.size();
 
     /// AST must have been changed by the visitor.
@@ -133,8 +133,10 @@ BlockIO InterpreterSelectIntersectExceptQuery::execute()
         QueryPlanOptimizationSettings::fromContext(context),
         BuildQueryPipelineSettings::fromContext(context));
 
-    res.pipeline = std::move(*pipeline);
-    res.pipeline.addInterpreterContext(context);
+    pipeline->addInterpreterContext(context);
+
+    res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*query_plan.buildQueryPipeline(
+    QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context))));
 
     return res;
 }

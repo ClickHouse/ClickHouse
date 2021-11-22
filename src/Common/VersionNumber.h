@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {

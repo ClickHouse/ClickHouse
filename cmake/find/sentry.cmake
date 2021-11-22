@@ -2,7 +2,7 @@ set (SENTRY_LIBRARY "sentry")
 
 set (SENTRY_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/sentry-native/include")
 if (NOT EXISTS "${SENTRY_INCLUDE_DIR}/sentry.h")
-    message (WARNING "submodule contrib/sentry-native is missing. to fix try run: \n git submodule update --init --recursive")
+    message (WARNING "submodule contrib/sentry-native is missing. to fix try run: \n git submodule update --init")
     if (USE_SENTRY)
          message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal sentry library")
     endif()

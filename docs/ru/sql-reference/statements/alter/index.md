@@ -14,7 +14,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 В запросе указывается список из одного или более действий через запятую.
 Каждое действие — операция над столбцом.
 
-Большинство запросов `ALTER` изменяют настройки таблицы или данные:
+Большинство запросов `ALTER TABLE` изменяют настройки таблицы или данные:
 
 -   [COLUMN](../../../sql-reference/statements/alter/column.md)
 -   [PARTITION](../../../sql-reference/statements/alter/partition.md)
@@ -26,7 +26,12 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 -   [TTL](../../../sql-reference/statements/alter/ttl.md)
 
 !!! note "Note"
-    Запрос `ALTER` поддерживается только для таблиц типа `*MergeTree`, а также `Merge` и `Distributed`. Запрос имеет несколько вариантов.
+    Запрос `ALTER TABLE` поддерживается только для таблиц типа `*MergeTree`, а также `Merge` и `Distributed`. Запрос имеет несколько вариантов.
+
+Следующие запросы `ALTER` управляют представлениями:
+
+-   [ALTER TABLE ... MODIFY QUERY](../../../sql-reference/statements/alter/view.md) — изменяет структуру [Materialized view](../create/view.md#materialized).
+-   [ALTER LIVE VIEW](../../../sql-reference/statements/alter/view.md#alter-live-view) — обновляет [Live view](../create/view.md#live-view).
 
 Следующие запросы `ALTER` изменяют сущности, связанные с управлением доступом на основе ролей:
 
@@ -35,6 +40,8 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 -   [QUOTA](../../../sql-reference/statements/alter/quota.md)
 -   [ROW POLICY](../../../sql-reference/statements/alter/row-policy.md)
 -   [SETTINGS PROFILE](../../../sql-reference/statements/alter/settings-profile.md)
+
+Выражение [ALTER TABLE ... MODIFY COMMENT](../../../sql-reference/statements/alter/comment.md) добавляет, изменяет или удаляет комментарий к таблице, независимо от того, был ли он установлен раньше или нет.
 
 ### Мутации {#mutations}
 
