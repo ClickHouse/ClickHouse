@@ -10,6 +10,7 @@ DIFF_IN_DOCUMENTATION_EXT = [".html", ".md", ".yml", ".txt", ".css", ".js", ".xm
 
 class PRInfo:
     def __init__(self, github_event, need_orgs=False, need_changed_files=False):
+        print("EVENT", github_event)
         if 'pull_request' in github_event: # pull request and other similar events
             self.number = github_event['number']
             if 'after' in github_event:
