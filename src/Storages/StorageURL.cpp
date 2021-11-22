@@ -21,11 +21,13 @@
 #include <Storages/PartitionedSink.h>
 
 #include <Poco/Net/HTTPRequest.h>
+#include <Poco/Base64Encoder.h>
 #include <Processors/Sources/SourceWithProgress.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <base/logger_useful.h>
 #include <algorithm>
+#include <sstream>
 
 
 namespace DB
@@ -128,6 +130,16 @@ namespace
 
                     try
                     {
+                        std::ostringstream ostr;
+                        std::string userInfo = request_uri.getUserInfo();
+                        if ("" != userInfo)
+                        {
+                            Poco::Base64Encoder encoder(ostr);
+                            encoder.rdbuf()->setLineLength(0);
+                            encoder << userInfo;
+                            encoder.close();
+                        }
+
                         read_buf = wrapReadBufferWithCompressionMethod(
                             std::make_unique<ReadWriteBufferFromHTTP>(
                                 request_uri,
@@ -135,7 +147,7 @@ namespace
                                 callback,
                                 timeouts,
                                 context->getSettingsRef().max_http_get_redirects,
-                                Poco::Net::HTTPBasicCredentials{},
+                                userInfo.length() == 0 ? Poco::Net::HTTPBasicCredentials{} : Poco::Net::HTTPBasicCredentials(ostr.str()),
                                 DBMS_DEFAULT_BUFFER_SIZE,
                                 context->getReadSettings(),
                                 headers,
