@@ -601,24 +601,24 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
 
     AtomicStopwatch stop;
 
-    auto Response = extension.value().callback(std::move(request));
+    auto response = extension.value().callback(std::move(request));
 
     LOG_TRACE(log, "Elapsed time to perform request: {}ns", stop.elapsed());
 
-    auto dump_mark_ranges = [&] (MarkRanges ranges) {
+    auto dump_mark_ranges = [&] (MarkRanges ranges)
+    {
         String result;
-        for (const auto & range: ranges) {
+        for (const auto & range: ranges)
             result += fmt::format("[{} {}], ", range.begin, range.end);
-        }
         result += '\n';
         return result;
     };
 
-    LOG_TRACE(log, (Response.denied ? "denied" : "accepted"), dump_mark_ranges(Response.mark_ranges));
+    LOG_TRACE(log, (response.denied ? "denied" : "accepted"), dump_mark_ranges(response.mark_ranges));
 
-    task->mark_ranges = std::move(Response.mark_ranges);
+    task->mark_ranges = std::move(response.mark_ranges);
 
-    if (Response.denied)
+    if (response.denied)
         return Status::Denied;
 
     if (task->mark_ranges.empty())

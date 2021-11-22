@@ -190,9 +190,9 @@ struct HalfIntervals
 
 [[ maybe_unused ]] static std::ostream & operator<< (std::ostream & out, const HalfIntervals & ranges)
 {
-  for (const auto & range: ranges.intervals)
-    out << fmt::format("({}, {}) ", range.begin, range.end);
-  return out;
+    for (const auto & range: ranges.intervals)
+        out << fmt::format("({}, {}) ", range.begin, range.end);
+    return out;
 }
 
 /// This is needed for tests where we don't need to modify objects

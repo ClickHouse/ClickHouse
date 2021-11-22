@@ -39,7 +39,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
 {
     /// Actually it means that parallel reading from replicas enabled
     /// and we have to collaborate with initiator.
-    /// In this case we won't set approximate rows, bacause it will be accounted multiple times
+    /// In this case we won't set approximate rows, because it will be accounted multiple times
     if (!extension_.has_value())
         addTotalRowsApprox(total_rows);
     ordered_names = header_without_virtual_columns.getNames();

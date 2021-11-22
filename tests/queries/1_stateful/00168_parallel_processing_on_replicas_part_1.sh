@@ -12,20 +12,18 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SETTINGS="--max_parallel_replicas=3 --prefer_localhost_replica=false --use_hedged_requests=false --async_socket_for_remote=false  --parallel_reading_from_replicas=true"
 
 # Prepare tables
-
 $CLICKHOUSE_CLIENT $SETTINGS -nm -q '''
     drop table if exists test.dist_hits SYNC;
     drop table if exists test.dist_visits SYNC;
 
-    create table test.dist_hits as test.hits engine = Distributed('test_cluster_one_shard_three_replicas_localhost', test, hits, rand());
-    create table test.dist_visits as test.visits engine = Distributed('test_cluster_one_shard_three_replicas_localhost', test, visits, rand());
+    create table test.dist_hits as test.hits engine = Distributed("test_cluster_one_shard_three_replicas_localhost", test, hits, rand());
+    create table test.dist_visits as test.visits engine = Distributed("test_cluster_one_shard_three_replicas_localhost", test, visits, rand());
 ''';
-
 
 FAILED=()
 
-PreviouslyFailed=(
-)
+# PreviouslyFailed=(
+# )
 
 SkipList=(
     "00061_storage_buffer.sql"
@@ -44,11 +42,11 @@ SkipList=(
 )
 
 # for TESTPATH in "${PreviouslyFailed[@]}"
-for TESTPATH in $CURDIR/*.sql;
+for TESTPATH in "$CURDIR"/*.sql;
 do
     TESTNAME=$(basename $TESTPATH)
 
-    if [[ " ${SkipList[*]} " =~ " ${TESTNAME} " ]]; then
+    if [[ " ${SkipList[*]} " =~ ${TESTNAME} ]]; then
         echo  "Skipping $TESTNAME "
         continue
     fi
@@ -69,8 +67,8 @@ do
     expected=$(cat $TESTNAME_RESULT | md5sum)
     actual=$(cat $NEW_TESTNAME_RESULT | md5sum)
 
-    if [[ $expected != $actual ]]; then
-        FAILED+=($TESTNAME)
+    if [[ "$expected" != "$actual" ]]; then
+        FAILED+=("$TESTNAME")
         echo "Failed! ❌ "
         echo "Plain:"
         cat $TESTNAME_RESULT

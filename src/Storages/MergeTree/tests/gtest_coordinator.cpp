@@ -139,9 +139,8 @@ TEST(Coordinator, Simple)
 
     ASSERT_EQ(response.mark_ranges.size(), request.mark_ranges.size());
 
-    for (int i = 0; i < response.mark_ranges.size(); ++i) {
+    for (int i = 0; i < response.mark_ranges.size(); ++i)
         EXPECT_EQ(response.mark_ranges[i], request.mark_ranges[i]);
-    }
 
     response = coordinator.handleRequest(request);
     ASSERT_TRUE(response.denied) << "Process the same request second time";
@@ -166,9 +165,8 @@ TEST(Coordinator, TwoRequests)
     ASSERT_FALSE(response.denied) << "First request must me accepted";
 
     ASSERT_EQ(response.mark_ranges.size(), first.mark_ranges.size());
-    for (int i = 0; i < response.mark_ranges.size(); ++i) {
+    for (int i = 0; i < response.mark_ranges.size(); ++i)
         EXPECT_EQ(response.mark_ranges[i], first.mark_ranges[i]);
-    }
 
     response = coordinator.handleRequest(second);
     ASSERT_FALSE(response.denied);

@@ -6,8 +6,6 @@
 #include <IO/Operators.h>
 #include <Interpreters/ClientInfo.h>
 
-
-
 namespace DB
 {
 
@@ -203,7 +201,6 @@ void MultiplexedConnections::sendMergeTreeReadTaskResponse(PartitionReadResponse
         return;
     current_connection->sendMergeTreeReadTaskResponse(response);
 }
-
 
 
 Packet MultiplexedConnections::receivePacket()

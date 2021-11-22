@@ -120,7 +120,8 @@ protected:
 private:
     Poco::Logger * log = &Poco::Logger::get("MergeTreeBaseSelectProcessor");
 
-    enum class Status {
+    enum class Status
+    {
         Accepted,
         Denied
     };
