@@ -430,7 +430,11 @@ void DatabaseOnDisk::renameTable(
 ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
 {
     ASTPtr ast;
-    bool has_table = tryGetTable(table_name, getContext()) != nullptr;
+    StoragePtr storage = tryGetTable(table_name, getContext());
+    bool has_table = storage != nullptr;
+    bool is_system_storage = false;
+    if (has_table)
+        is_system_storage = storage->isSystemStorage();
     auto table_metadata_path = getObjectMetadataPath(table_name);
     try
     {
@@ -441,6 +445,8 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
         if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
             throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
                             ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
+        else if (is_system_storage)
+            ast = getCreateQueryFromStorage(table_name, storage, throw_on_error);
         else if (throw_on_error)
             throw;
     }
@@ -671,6 +677,32 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metada
     }
 
     return ast;
+}
+
+ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, const StoragePtr & storage, bool throw_on_error) const
+{
+    auto metadata_ptr = storage->getInMemoryMetadataPtr();
+    if (metadata_ptr == nullptr)
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot get metadata of {}.{}", backQuote(getDatabaseName()), backQuote(table_name));
+        else
+            return nullptr;
+    }
+
+    /// setup create table query storage info.
+    auto ast_engine = std::make_shared<ASTFunction>();
+    ast_engine->name = storage->getName();
+    auto ast_storage = std::make_shared<ASTStorage>();
+    ast_storage->set(ast_storage->engine, ast_engine);
+
+    auto create_table_query = DB::getCreateQueryFromStorage(storage, ast_storage, false,
+                                                            getContext()->getSettingsRef().max_parser_depth, throw_on_error);
+
+    create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
+                            std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly."));
+
+    return create_table_query;
 }
 
 void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context)
