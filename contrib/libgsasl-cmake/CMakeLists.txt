@@ -101,5 +101,5 @@ target_include_directories(libgsasl PRIVATE "${ClickHouse_SOURCE_DIR}/contrib/li
 
 if (USE_KRB5)
     target_link_libraries(libgsasl PUBLIC ${KRB5_LIBRARY})
-    target_compile_definitions (libgsasl PRIVATE HAVE_GSSAPI_H=1 USE_GSSAPI=1 USE_KERBEROS_V5=1)
+    target_compile_definitions (libgsasl PRIVATE WITH_KRB5=1 HAVE_GSSAPI_H=1 USE_GSSAPI=1 USE_KERBEROS_V5=1)
 endif()
