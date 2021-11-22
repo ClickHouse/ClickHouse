@@ -23,7 +23,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 
