@@ -190,7 +190,7 @@ if (USE_EMBEDDED_COMPILER)
 endif ()
 
 if (USE_INTERNAL_LIBGSASL_LIBRARY)
-    add_subdirectory(libgsasl-cmake)
+    add_subdirectory(libgsasl)
 endif()
 
 if (USE_INTERNAL_LIBXML2_LIBRARY)
