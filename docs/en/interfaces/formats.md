@@ -61,7 +61,7 @@ The supported formats are:
 | [Native](#native)                                                                       | ✔     | ✔      |
 | [Null](#null)                                                                           | ✗     | ✔      |
 | [XML](#xml)                                                                             | ✗     | ✔      |
-| [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
+| [CapnProto](#capnproto)                                                                 | ✔     | ✔      |
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
 | [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
@@ -1095,12 +1095,44 @@ Arrays are output as `<array><elem>Hello</elem><elem>World</elem>...</array>`,an
 
 ## CapnProto {#capnproto}
 
-Cap’n Proto is a binary message format similar to Protocol Buffers and Thrift, but not like JSON or MessagePack.
+CapnProto is a binary message format similar to [Protocol Buffers](https://developers.google.com/protocol-buffers/) and [Thrift](https://en.wikipedia.org/wiki/Apache_Thrift), but not like [JSON](#json) or [MessagePack](https://msgpack.org/).
 
-Cap’n Proto messages are strictly typed and not self-describing, meaning they need an external schema description. The schema is applied on the fly and cached for each query.
+CapnProto messages are strictly typed and not self-describing, meaning they need an external schema description. The schema is applied on the fly and cached for each query.
+
+See also [Format Schema](#formatschema).
+
+### Data Types Matching {#data_types-matching-capnproto}
+
+The table below shows supported data types and how they match ClickHouse [data types](../sql-reference/data-types/index.md) in `INSERT` and `SELECT` queries.
+
+| CapnProto data type (`INSERT`) | ClickHouse data type                                      | CapnProto data type (`SELECT`) |
+|--------------------------------|-----------------------------------------------------------|--------------------------------|
+| `UINT8`, `BOOL`                | [UInt8](../sql-reference/data-types/int-uint.md)          | `UINT8`                        |
+| `INT8`                         | [Int8](../sql-reference/data-types/int-uint.md)           | `INT8`                         |
+| `UINT16`                       | [UInt16](../sql-reference/data-types/int-uint.md), [Date](../sql-reference/data-types/date.md)         | `UINT16`                       |
+| `INT16`                        | [Int16](../sql-reference/data-types/int-uint.md)          | `INT16`                        |
+| `UINT32`                       | [UInt32](../sql-reference/data-types/int-uint.md), [DateTime](../sql-reference/data-types/datetime.md)         | `UINT32`                       |
+| `INT32`                        | [Int32](../sql-reference/data-types/int-uint.md)          | `INT32`                        |
+| `UINT64`                       | [UInt64](../sql-reference/data-types/int-uint.md)         | `UINT64`                       |
+| `INT64`                        | [Int64](../sql-reference/data-types/int-uint.md), [DateTime64](../sql-reference/data-types/datetime.md)          | `INT64`                        |
+| `FLOAT32`                      | [Float32](../sql-reference/data-types/float.md)           | `FLOAT32`                      |
+| `FLOAT64`                      | [Float64](../sql-reference/data-types/float.md)           | `FLOAT64`                      |
+| `TEXT, DATA`                   | [String](../sql-reference/data-types/string.md), [FixedString](../sql-reference/data-types/fixedstring.md)               | `TEXT, DATA`                       |
+| `union(T, Void), union(Void, T)`          | [Nullable(T)](../sql-reference/data-types/date.md)       | `union(T, Void), union(Void, T)`                       |
+| `ENUM`                         | [Enum(8\|16)](../sql-reference/data-types/enum.md)        | `ENUM`                         |
+| `LIST`                         | [Array](../sql-reference/data-types/array.md)             | `LIST`                         |
+| `STRUCT`                       | [Tuple](../sql-reference/data-types/tuple.md)             | `STRUCT`                       |
+
+For working with `Enum` in CapnProto format use the [format_capn_proto_enum_comparising_mode](../operations/settings/settings.md#format-capn-proto-enum-comparising-mode) setting.
+
+Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` type also can be nested.
+
+### Inserting and Selecting Data {#inserting-and-selecting-data-capnproto}
+
+You can insert CapnProto data from a file into ClickHouse table by the following command:
 
 ``` bash
-$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
+$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
 ```
 
 Where `schema.capnp` looks like this:
@@ -1112,9 +1144,11 @@ struct Message {
 }
 ```
 
-Deserialization is effective and usually does not increase the system load.
+You can select data from a ClickHouse table and save them into some file in the CapnProto format by the following command:
 
-See also [Format Schema](#formatschema).
+``` bash
+$ clickhouse-client --query = "SELECT * FROM test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
+```
 
 ## Protobuf {#protobuf}
 
