@@ -24,7 +24,7 @@ WriteBufferFromEncryptedFile::~WriteBufferFromEncryptedFile()
     finalize();
 }
 
-void WriteBufferFromEncryptedFile::finalizeBeforeNestedFinalize()
+void WriteBufferFromEncryptedFile::finalizeBefore()
 {
     /// If buffer has pending data - write it.
     next();

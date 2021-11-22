@@ -22,7 +22,7 @@ public:
 private:
     void nextImpl() override;
 
-    void finalizeBeforeNestedFinalize() override;
+    void finalizeBefore() override;
 
     class BrotliStateWrapper;
     std::unique_ptr<BrotliStateWrapper> brotli;

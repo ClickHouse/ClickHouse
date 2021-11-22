@@ -22,7 +22,7 @@ public:
 private:
     void nextImpl() override;
 
-    void finalizeBeforeNestedFinalize() override;
+    void finalizeBefore() override;
 
     class Bzip2StateWrapper;
     std::unique_ptr<Bzip2StateWrapper> bz;

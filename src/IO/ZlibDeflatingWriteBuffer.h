@@ -32,8 +32,8 @@ private:
     /// Flush all pending data and write zlib footer to the underlying buffer.
     /// After the first call to this function, subsequent calls will have no effect and
     /// an attempt to write to this buffer will result in exception.
-    virtual void finalizeBeforeNestedFinalize() override;
-    virtual void finalizeAfterNestedFinalize() override;
+    virtual void finalizeBefore() override;
+    virtual void finalizeAfter() override;
 
     z_stream zstr;
 };

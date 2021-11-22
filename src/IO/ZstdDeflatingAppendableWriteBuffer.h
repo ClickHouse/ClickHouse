@@ -50,8 +50,8 @@ private:
     /// After the first call to this function, subsequent calls will have no effect and
     /// an attempt to write to this buffer will result in exception.
     void finalizeImpl() override;
-    void finalizeBeforeNestedFinalize() override;
-    void finalizeAfterNestedFinalize() override;
+    void finalizeBefore() override;
+    void finalizeAfter() override;
     /// Adding zstd empty block to out.working_buffer
     void addEmptyBlock();
 

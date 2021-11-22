@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/config.h>
+#include <Common/assert_cast.h>
 
 #if USE_SSL
 #include <IO/WriteBufferFromFileBase.h>
@@ -27,12 +28,12 @@ public:
 
     void sync() override;
 
-    std::string getFileName() const override { return dynamic_cast<WriteBufferFromFileBase *>(out.get())->getFileName(); }
+    std::string getFileName() const override { return assert_cast<WriteBufferFromFileBase *>(out.get())->getFileName(); }
 
 private:
     void nextImpl() override;
 
-    void finalizeBeforeNestedFinalize() override;
+    void finalizeBefore() override;
 
     FileEncryption::Header header;
     bool flush_header = false;
