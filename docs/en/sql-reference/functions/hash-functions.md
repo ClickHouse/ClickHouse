@@ -103,7 +103,7 @@ The function takes a variable number of input parameters. Arguments can be any o
 
 **Returned value**
 
-A 128-bit [SipHash](https://131002.net/siphash/) hash value.
+A 128-bit `SipHash` hash value.
 
 Type: [FixedString(16)](../../sql-reference/data-types/fixedstring.md).
 
