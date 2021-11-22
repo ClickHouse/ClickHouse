@@ -122,6 +122,8 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
             return {.denied = false, .mark_ranges = std::move(request.mark_ranges)};
         }
     }
+
+    __builtin_unreachable();
 }
 
 PartitionReadResponse ParallelReplicasReadingCoordinator::handleRequest(PartitionReadRequest request)

@@ -86,7 +86,7 @@ public:
         const String & query,
         const String & query_id,
         UInt64 stage,
-        const ClientInfo & client_info,
+        ClientInfo & client_info,
         bool with_pending_data) override;
 
     void sendReadTaskResponse(const String &) override

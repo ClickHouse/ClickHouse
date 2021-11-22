@@ -129,6 +129,7 @@ Pipe ReadFromMergeTree::readFromPool(
     }
 
     const auto & settings = context->getSettingsRef();
+    const auto & client_info = context->getClientInfo();
     MergeTreeReadPool::BackoffSettings backoff_settings(settings);
 
     auto pool = std::make_shared<MergeTreeReadPool>(
@@ -155,8 +156,8 @@ Pipe ReadFromMergeTree::readFromPool(
             extension = ParallelReadingExtension
             {
                 .callback = read_task_callback.value(),
-                .count_participating_replicas = context->getSettingsRef().count_participating_replicas,
-                .number_of_current_replica = context->getSettingsRef().number_of_current_replica,
+                .count_participating_replicas = client_info.count_participating_replicas,
+                .number_of_current_replica = client_info.number_of_current_replica,
                 .colums_to_read = required_columns
             };
         }
@@ -171,7 +172,7 @@ Pipe ReadFromMergeTree::readFromPool(
         /// In case of parallel processing on replicas do not set approximate rows at all.
         /// Because the value will be identical on every replicas and will be accounted
         /// multiple times (settings.max_parallel_replicas times more)
-        if (i == 0 && !settings.collaborate_with_initiator)
+        if (i == 0 && !client_info.collaborate_with_initiator)
             source->addTotalRowsApprox(total_rows);
 
         pipes.emplace_back(std::move(source));
@@ -187,14 +188,15 @@ ProcessorPtr ReadFromMergeTree::createSource(
     bool use_uncompressed_cache,
     bool has_limit_below_one_block)
 {
+    const auto & client_info = context->getClientInfo();
     std::optional<ParallelReadingExtension> extension;
     if (read_task_callback)
     {
         extension = ParallelReadingExtension
         {
             .callback = read_task_callback.value(),
-            .count_participating_replicas = context->getSettingsRef().count_participating_replicas,
-            .number_of_current_replica = context->getSettingsRef().number_of_current_replica,
+            .count_participating_replicas = client_info.count_participating_replicas,
+            .number_of_current_replica = client_info.number_of_current_replica,
             .colums_to_read = required_columns
         };
     }

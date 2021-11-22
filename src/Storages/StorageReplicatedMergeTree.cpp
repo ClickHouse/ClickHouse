@@ -4251,7 +4251,9 @@ void StorageReplicatedMergeTree::read(
     const unsigned num_streams)
 {
     /// If true, then we will ask initiator if we can read chosen ranges
-    const bool enable_parallel_reading = local_context->getSettingsRef().collaborate_with_initiator;
+    const bool enable_parallel_reading = local_context->getClientInfo().collaborate_with_initiator;
+
+    
 
     /** The `select_sequential_consistency` setting has two meanings:
     * 1. To throw an exception if on a replica there are not all parts which have been written down on quorum of remaining replicas.

@@ -169,7 +169,9 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::IStreamFacto
                 max_remote_delay = std::max(try_result.staleness, max_remote_delay);
         }
 
-        if (!current_settings.collaborate_with_initiator && (try_results.empty() || local_delay < max_remote_delay))
+        /// We disable this branch in case of parallel reading from replicas, because createLocalPlan will call
+        /// InterpreterSelectQuery directly and it will be too ugly to pass ParallelReplicasCoordinator or some callback there.
+        if (!context->getClientInfo().collaborate_with_initiator && (try_results.empty() || local_delay < max_remote_delay))
         {
             auto plan = createLocalPlan(query, header, context, stage, shard_num, shard_count);
 
@@ -255,11 +257,12 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
 {
     Pipes pipes;
 
+    const auto & settings = context->getSettingsRef();
+    const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && !settings.parallel_reading_from_replicas;
+
     /// We have to create a pipe for each replica
     /// FIXME: The second condition is only for tests to work, because hedged connections enabled by default.
-    if (context->getSettingsRef().max_parallel_replicas > 0 &&
-        !context->getSettingsRef().enable_sample_offset_parallel_processing &&
-        !context->getSettingsRef().use_hedged_requests)
+    if (settings.max_parallel_replicas > 1 && !enable_sample_offset_parallel_processing && !context->getSettingsRef().use_hedged_requests)
     {
         const Settings & current_settings = context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);

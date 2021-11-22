@@ -1,8 +1,11 @@
 #include <Client/MultiplexedConnections.h>
+
+#include <Common/thread_local_rng.h>
+#include <Core/Protocol.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/Operators.h>
-#include <Common/thread_local_rng.h>
-#include "Core/Protocol.h"
+#include <Interpreters/ClientInfo.h>
+
 
 
 namespace DB
@@ -110,7 +113,7 @@ void MultiplexedConnections::sendQuery(
     const String & query,
     const String & query_id,
     UInt64 stage,
-    const ClientInfo & client_info,
+    ClientInfo & client_info,
     bool with_pending_data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -135,23 +138,24 @@ void MultiplexedConnections::sendQuery(
         if (settings.parallel_reading_from_replicas)
         {
             assert(replica_info != ReplicaInfo{});
-            modified_settings.collaborate_with_initiator = true;
-            modified_settings.count_participating_replicas = replica_info.all_replicas_count;
-            modified_settings.number_of_current_replica = replica_info.number_of_current_replica;
+            client_info.collaborate_with_initiator = true;
+            client_info.count_participating_replicas = replica_info.all_replicas_count;
+            client_info.number_of_current_replica = replica_info.number_of_current_replica;
         }
-
     }
+
+    const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && !settings.parallel_reading_from_replicas;
 
     size_t num_replicas = replica_states.size();
     if (num_replicas > 1)
     {
-        if (settings.enable_sample_offset_parallel_processing)
+        if (enable_sample_offset_parallel_processing)
             /// Use multiple replicas for parallel query processing.
             modified_settings.parallel_replicas_count = num_replicas;
 
         for (size_t i = 0; i < num_replicas; ++i)
         {
-            if (settings.enable_sample_offset_parallel_processing)
+            if (enable_sample_offset_parallel_processing)
                 modified_settings.parallel_replica_offset = i;
 
             replica_states[i].connection->sendQuery(timeouts, query, query_id,

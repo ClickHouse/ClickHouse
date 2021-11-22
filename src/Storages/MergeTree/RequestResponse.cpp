@@ -1,10 +1,16 @@
 #include <Storages/MergeTree/RequestResponse.h>
 
+#include <Core/ProtocolDefines.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int PARALLEL_REPLICAS_PROTOCOL_VERSION_DIFFER;
+}
 
 static void readMarkRangesBinary(MarkRanges & ranges, ReadBuffer & buf, size_t MAX_RANGES_SIZE = DEFAULT_MAX_STRING_SIZE)
 {
@@ -12,7 +18,7 @@ static void readMarkRangesBinary(MarkRanges & ranges, ReadBuffer & buf, size_t M
     readVarUInt(size, buf);
 
     if (size > MAX_RANGES_SIZE)
-        throw Poco::Exception("Too large vector size.");
+        throw Poco::Exception("Too large ranges size.");
 
     ranges.resize(size);
     for (size_t i = 0; i < size; ++i)
@@ -37,6 +43,9 @@ static void writeMarkRangesBinary(const MarkRanges & ranges, WriteBuffer & buf)
 
 void PartitionReadRequest::serialize(WriteBuffer & out) const
 {
+    /// Must be the first
+    writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, out);
+
     writeStringBinary(partition_id, out);
     writeStringBinary(part_name, out);
     writeStringBinary(projection_name, out);
@@ -64,6 +73,13 @@ void PartitionReadRequest::describe(WriteBuffer & out) const
 
 void PartitionReadRequest::deserialize(ReadBuffer & in)
 {
+    UInt64 version;
+    readVarUInt(version, in);
+    if (version != DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION)
+        throw Exception(ErrorCodes::PARALLEL_REPLICAS_PROTOCOL_VERSION_DIFFER, "Protocol versions for parallel reading \
+            from replicas differ. Got: {}, supported version: {}",
+            version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+
     readStringBinary(partition_id, in);
     readStringBinary(part_name, in);
     readStringBinary(projection_name, in);
@@ -77,6 +93,9 @@ void PartitionReadRequest::deserialize(ReadBuffer & in)
 
 void PartitionReadResponse::serialize(WriteBuffer & out) const
 {
+    /// Must be the first
+    writeVarUInt(DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION, out);
+
     writeVarUInt(static_cast<UInt64>(denied), out);
     writeMarkRangesBinary(mark_ranges, out);
 }
@@ -84,6 +103,13 @@ void PartitionReadResponse::serialize(WriteBuffer & out) const
 
 void PartitionReadResponse::deserialize(ReadBuffer & in)
 {
+    UInt64 version;
+    readVarUInt(version, in);
+    if (version != DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION)
+        throw Exception(ErrorCodes::PARALLEL_REPLICAS_PROTOCOL_VERSION_DIFFER, "Protocol versions for parallel reading \
+            from replicas differ. Got: {}, supported version: {}",
+            version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
+
     UInt64 value;
     readVarUInt(value, in);
     denied = static_cast<bool>(value);

@@ -192,7 +192,7 @@ void StorageMergeTree::read(
     unsigned num_streams)
 {
     /// If true, then we will ask initiator if we can read chosen ranges
-    bool enable_parallel_reading = local_context->getSettingsRef().collaborate_with_initiator;
+    bool enable_parallel_reading = local_context->getClientInfo().collaborate_with_initiator;
 
     if (enable_parallel_reading)
         LOG_TRACE(log, "Parallel reading from replicas enabled {}", enable_parallel_reading);
