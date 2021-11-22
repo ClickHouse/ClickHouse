@@ -1,6 +1,6 @@
 #include <Storages/Hive/StorageHive.h>
 
-#if USE_HDFS && USE_ORC && USE_PARQUET
+#if USE_HIVE
 
 #include <boost/algorithm/string/join.hpp>
 #include <Columns/IColumn.h>

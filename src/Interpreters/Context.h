@@ -18,7 +18,6 @@
 #include <base/types.h>
 
 #include "config_core.h"
-#include "config_formats.h"
 
 #include <functional>
 #include <memory>
@@ -175,7 +174,7 @@ private:
     std::unique_ptr<ContextSharedPart> shared;
 };
 
-#if USE_HDFS && USE_ORC && USE_PARQUET
+#if USE_HIVE
 class HMSClient;
 using HMSClientPtr = std::shared_ptr<HMSClient>;
 #endif
@@ -691,7 +690,7 @@ public:
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 
-#if USE_HDFS && USE_ORC && USE_PARQUET
+#if USE_HIVE
     HMSClientPtr getHMSClient(const String & name) const;
 #endif
 

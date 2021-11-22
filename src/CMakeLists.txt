@@ -108,10 +108,10 @@ endif()
 if (USE_HDFS)
     add_headers_and_sources(dbms Storages/HDFS)
     add_headers_and_sources(dbms Disks/HDFS)
+endif()
 
-    if (USE_ORC AND USE_PARQUET)
-        add_headers_and_sources(dbms Storages/Hive)
-    endif()
+if (USE_HIVE)
+    add_headers_and_sources(dbms Storages/Hive)
 endif()
 
 if(USE_FILELOG)
@@ -447,12 +447,13 @@ endif()
 if (USE_HDFS)
     dbms_target_link_libraries(PRIVATE ${HDFS3_LIBRARY})
     dbms_target_include_directories (SYSTEM BEFORE PUBLIC ${HDFS3_INCLUDE_DIR})
-
-    if (USE_ORC AND USE_PARQUET)
-        dbms_target_link_libraries(PRIVATE hivemetastore)
-        dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/hive-metastore)
-    endif()
 endif()
+
+if (USE_HIVE)
+    dbms_target_link_libraries(PRIVATE hivemetastore)
+    dbms_target_include_directories(SYSTEM BEFORE PUBLIC ${ClickHouse_SOURCE_DIR}/contrib/hive-metastore)
+endif()
+
 
 if (USE_AWS_S3)
     target_link_libraries (clickhouse_common_io PUBLIC ${AWS_S3_LIBRARY})

@@ -186,8 +186,6 @@ function clone_submodules
             contrib/dragonbox
             contrib/fast_float
             contrib/NuRaft
-            contrib/thrift
-	    contrib/hive-metastore
         )
 
         git submodule sync

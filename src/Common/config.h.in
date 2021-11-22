@@ -21,3 +21,4 @@
 #cmakedefine01 CLICKHOUSE_SPLIT_BINARY
 #cmakedefine01 USE_BZIP2
 #cmakedefine01 USE_SNAPPY
+#cmakedefine01 USE_HIVE

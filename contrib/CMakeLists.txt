@@ -349,7 +349,9 @@ if (USE_S2_GEOMETRY)
     add_subdirectory(s2geometry-cmake)
 endif()
 
-add_subdirectory (hive-metastore-cmake)
+if (USE_HIVE)
+    add_subdirectory (hive-metastore-cmake)
+endif()
 
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
