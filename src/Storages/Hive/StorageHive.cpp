@@ -3,6 +3,7 @@
 #if USE_HIVE
 
 #include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/case_conv.hpp>
 #include <Columns/IColumn.h>
 #include <base/logger_useful.h>
 #include <Common/parseAddress.h>
