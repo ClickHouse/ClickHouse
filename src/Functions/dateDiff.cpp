@@ -14,7 +14,7 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 #include <Common/StringUtils/StringUtils.h>
 
 #include <type_traits>
@@ -268,4 +268,3 @@ void registerFunctionDateDiff(FunctionFactory & factory)
 }
 
 }
-
