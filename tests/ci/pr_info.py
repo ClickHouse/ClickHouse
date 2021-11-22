@@ -91,15 +91,21 @@ class PRInfo:
                 self.pr_html_url = pull_request['html_url']
 
             if need_changed_files:
-                commit_before = github_event['before']
-                response = requests.get(f"https://api.github.com/repos/{os.getenv('GITHUB_REPOSITORY')}/compare/{commit_before}...{self.sha}")
-                response.raise_for_status()
-                diff = response.json()
+                if self.number == 0:
+                    commit_before = github_event['before']
+                    response = requests.get(f"https://api.github.com/repos/{os.getenv('GITHUB_REPOSITORY')}/compare/{commit_before}...{self.sha}")
+                    response.raise_for_status()
+                    diff = response.json()
 
-                if 'files' in diff:
-                    self.changed_files = [f['filename'] for f in diff['files']]
+                    if 'files' in diff:
+                        self.changed_files = [f['filename'] for f in diff['files']]
+                    else:
+                        self.changed_files = set([])
                 else:
-                    self.changed_files = set([])
+                    diff_url = github_event['pull_request']['diff_url']
+                    diff = urllib.request.urlopen(diff_url)
+                    diff_object = PatchSet(diff, diff.headers.get_charsets()[0])
+                    self.changed_files = { f.path for f in diff_object }
             else:
                 self.changed_files = set([])
         else:
