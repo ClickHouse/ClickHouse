@@ -13,10 +13,6 @@
             "docker/test/codebrowser"
         ]
     },
-    "docker/packager/unbundled": {
-        "name": "yandex/clickhouse-unbundled-builder",
-        "dependent": []
-    },
     "docker/test/compatibility/centos": {
         "name": "yandex/clickhouse-test-old-centos",
         "dependent": []
