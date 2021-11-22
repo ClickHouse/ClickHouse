@@ -334,7 +334,11 @@ int Keeper::main(const std::vector<std::string> & /*args*/)
 
     std::string include_from_path = config().getString("include_from", "/etc/metrika.xml");
 
-    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 100));
+    GlobalThreadPool::initialize(
+        config().getUInt("max_thread_pool_size", 100),
+        config().getUInt("max_thread_pool_free_size", 1000),
+        config().getUInt("thread_pool_queue_size", 10000)
+    );
 
     static ServerErrorHandler error_handler;
     Poco::ErrorHandler::set(&error_handler);
