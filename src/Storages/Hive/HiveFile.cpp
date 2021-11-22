@@ -1,6 +1,6 @@
 #include <Storages/Hive/HiveFile.h>
 
-#if USE_HDFS && USE_ORC && USE_PARQUET
+#if USE_HIVE
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/classification.hpp>

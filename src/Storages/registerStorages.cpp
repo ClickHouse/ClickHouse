@@ -35,7 +35,7 @@ void registerStorageCOS(StorageFactory & factory);
 #if USE_HDFS
 void registerStorageHDFS(StorageFactory & factory);
 
-#if USE_ORC && USE_PARQUET
+#if USE_HIVE
 void registerStorageHive(StorageFactory & factory);
 #endif
 
@@ -111,7 +111,7 @@ void registerStorages()
     #if USE_HDFS
     registerStorageHDFS(factory);
 
-    #if USE_ORC && USE_PARQUET
+    #if USE_HIVE
     registerStorageHive(factory);
     #endif
 

@@ -1,6 +1,6 @@
 #include <Storages/Hive/HiveSettings.h>
 
-#if USE_HDFS && USE_ORC && USE_PARQUET
+#if USE_HIVE
 
 #include <Common/Exception.h>
 #include <Parsers/ASTSetQuery.h>

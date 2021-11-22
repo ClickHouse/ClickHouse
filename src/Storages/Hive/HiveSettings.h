@@ -1,9 +1,8 @@
 #pragma once
 
 #include <Common/config.h>
-#include "config_formats.h"
 
-#if USE_HDFS && USE_ORC && USE_PARQUET
+#if USE_HIVE
 
 #include <Core/BaseSettings.h>
 #include <Core/Settings.h>

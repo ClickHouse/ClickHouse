@@ -88,7 +88,7 @@
 #include <Interpreters/Lemmatizers.h>
 #include <filesystem>
 
-#if USE_HDFS && USE_ORC && USE_PARQUET
+#if USE_HIVE
 #include <ThriftHiveMetastore.h>
 #include <thrift/protocol/TBinaryProtocol.h>
 #include <thrift/transport/TBufferTransports.h>
@@ -157,7 +157,7 @@ struct ContextSharedPart
     mutable std::mutex storage_policies_mutex;
     /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
-#if USE_HDFS && USE_ORC && USE_PARQUET
+#if USE_HIVE
     /// Separate mutex for re-initialization of hive metastore client. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex hive_metastore_mutex;
 #endif
@@ -173,7 +173,7 @@ struct ContextSharedPart
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
 
-#if USE_HDFS && USE_ORC && USE_PARQUET
+#if USE_HIVE
     mutable std::map<String, HMSClientPtr> hive_metastore_clients; /// Map for hive metastore clients
 #endif
 
@@ -1818,7 +1818,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
     return shared->zookeeper;
 }
 
-#if USE_HDFS && USE_ORC && USE_PARQUET
+#if USE_HIVE
 HMSClientPtr Context::getHMSClient(const String & name) const
 {
     using namespace apache::thrift;
