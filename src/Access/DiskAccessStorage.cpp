@@ -426,7 +426,7 @@ std::vector<UUID> DiskAccessStorage::findAllImpl(AccessEntityType type) const
     return res;
 }
 
-bool DiskAccessStorage::existsImpl(const UUID & id) const
+bool DiskAccessStorage::exists(const UUID & id) const
 {
     std::lock_guard lock{mutex};
     return entries_by_id.count(id);
@@ -675,7 +675,7 @@ scope_guard DiskAccessStorage::subscribeForChangesImpl(AccessEntityType type, co
     };
 }
 
-bool DiskAccessStorage::hasSubscriptionImpl(const UUID & id) const
+bool DiskAccessStorage::hasSubscription(const UUID & id) const
 {
     std::lock_guard lock{mutex};
     auto it = entries_by_id.find(id);
@@ -687,7 +687,7 @@ bool DiskAccessStorage::hasSubscriptionImpl(const UUID & id) const
     return false;
 }
 
-bool DiskAccessStorage::hasSubscriptionImpl(AccessEntityType type) const
+bool DiskAccessStorage::hasSubscription(AccessEntityType type) const
 {
     std::lock_guard lock{mutex};
     const auto & handlers = handlers_by_type[static_cast<size_t>(type)];

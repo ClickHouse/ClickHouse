@@ -175,12 +175,6 @@ std::vector<UUID> IAccessStorage::getIDs(AccessEntityType type, const Strings & 
 }
 
 
-bool IAccessStorage::exists(const UUID & id) const
-{
-    return existsImpl(id);
-}
-
-
 AccessEntityPtr IAccessStorage::tryReadBase(const UUID & id) const
 {
     AccessEntityPtr entity;
@@ -421,18 +415,6 @@ scope_guard IAccessStorage::subscribeForChanges(const std::vector<UUID> & ids, c
 }
 
 
-bool IAccessStorage::hasSubscription(AccessEntityType type) const
-{
-    return hasSubscriptionImpl(type);
-}
-
-
-bool IAccessStorage::hasSubscription(const UUID & id) const
-{
-    return hasSubscriptionImpl(id);
-}
-
-
 void IAccessStorage::notify(const Notifications & notifications)
 {
     for (const auto & [fn, id, new_entity] : notifications)
@@ -440,7 +422,7 @@ void IAccessStorage::notify(const Notifications & notifications)
 }
 
 
-UUID IAccessStorage::login(
+UUID IAccessStorage::authenticate(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
@@ -448,7 +430,7 @@ UUID IAccessStorage::login(
 {
     try
     {
-        return loginImpl(credentials, address, external_authenticators);
+        return authenticateImpl(credentials, address, external_authenticators);
     }
     catch (...)
     {
@@ -461,7 +443,7 @@ UUID IAccessStorage::login(
 }
 
 
-UUID IAccessStorage::loginImpl(
+UUID IAccessStorage::authenticateImpl(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators) const
@@ -470,10 +452,10 @@ UUID IAccessStorage::loginImpl(
     {
         if (auto user = tryRead<User>(*id))
         {
-            if (!isAddressAllowedImpl(*user, address))
+            if (!isAddressAllowed(*user, address))
                 throwAddressNotAllowed(address);
 
-            if (!areCredentialsValidImpl(*user, credentials, external_authenticators))
+            if (!areCredentialsValid(*user, credentials, external_authenticators))
                 throwInvalidCredentials();
 
             return *id;
@@ -483,7 +465,7 @@ UUID IAccessStorage::loginImpl(
 }
 
 
-bool IAccessStorage::areCredentialsValidImpl(
+bool IAccessStorage::areCredentialsValid(
     const User & user,
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators) const
@@ -498,7 +480,7 @@ bool IAccessStorage::areCredentialsValidImpl(
 }
 
 
-bool IAccessStorage::isAddressAllowedImpl(const User & user, const Poco::Net::IPAddress & address) const
+bool IAccessStorage::isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const
 {
     return user.allowed_client_hosts.contains(address);
 }

@@ -38,7 +38,7 @@ std::vector<UUID> MemoryAccessStorage::findAllImpl(AccessEntityType type) const
 }
 
 
-bool MemoryAccessStorage::existsImpl(const UUID & id) const
+bool MemoryAccessStorage::exists(const UUID & id) const
 {
     std::lock_guard lock{mutex};
     return entries_by_id.count(id);
@@ -304,7 +304,7 @@ scope_guard MemoryAccessStorage::subscribeForChangesImpl(const UUID & id, const 
 }
 
 
-bool MemoryAccessStorage::hasSubscriptionImpl(const UUID & id) const
+bool MemoryAccessStorage::hasSubscription(const UUID & id) const
 {
     std::lock_guard lock{mutex};
     auto it = entries_by_id.find(id);
@@ -317,7 +317,7 @@ bool MemoryAccessStorage::hasSubscriptionImpl(const UUID & id) const
 }
 
 
-bool MemoryAccessStorage::hasSubscriptionImpl(AccessEntityType type) const
+bool MemoryAccessStorage::hasSubscription(AccessEntityType type) const
 {
     std::lock_guard lock{mutex};
     const auto & handlers = handlers_by_type[static_cast<size_t>(type)];

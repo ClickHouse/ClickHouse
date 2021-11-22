@@ -129,7 +129,7 @@ std::vector<UUID> MultipleAccessStorage::findAllImpl(AccessEntityType type) cons
 }
 
 
-bool MultipleAccessStorage::existsImpl(const UUID & id) const
+bool MultipleAccessStorage::exists(const UUID & id) const
 {
     return findStorage(id) != nullptr;
 }
@@ -275,7 +275,7 @@ scope_guard MultipleAccessStorage::subscribeForChangesImpl(const UUID & id, cons
 }
 
 
-bool MultipleAccessStorage::hasSubscriptionImpl(const UUID & id) const
+bool MultipleAccessStorage::hasSubscription(const UUID & id) const
 {
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
@@ -307,7 +307,7 @@ scope_guard MultipleAccessStorage::subscribeForChangesImpl(AccessEntityType type
 }
 
 
-bool MultipleAccessStorage::hasSubscriptionImpl(AccessEntityType type) const
+bool MultipleAccessStorage::hasSubscription(AccessEntityType type) const
 {
     std::lock_guard lock{mutex};
     const auto & handlers = handlers_by_type[static_cast<size_t>(type)];
@@ -405,14 +405,14 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
 }
 
 
-UUID MultipleAccessStorage::loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
+UUID MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
 {
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
     {
         try
         {
-            auto id = storage->login(credentials, address, external_authenticators, /* replace_exception_with_cannot_authenticate = */ false);
+            auto id = storage->authenticate(credentials, address, external_authenticators, /* replace_exception_with_cannot_authenticate = */ false);
             std::lock_guard lock{mutex};
             ids_cache.set(id, storage);
             return id;

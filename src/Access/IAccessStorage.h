@@ -63,7 +63,7 @@ public:
     std::vector<UUID> getIDs(const Strings & names) const { return getIDs(EntityClassT::TYPE, names); }
 
     /// Returns whether there is an entity with such identifier in the storage.
-    bool exists(const UUID & id) const;
+    virtual bool exists(const UUID & id) const = 0;
 
     /// Reads an entity. Throws an exception if not found.
     template <typename EntityClassT = IAccessEntity>
@@ -139,17 +139,16 @@ public:
     scope_guard subscribeForChanges(const UUID & id, const OnChangedHandler & handler) const;
     scope_guard subscribeForChanges(const std::vector<UUID> & ids, const OnChangedHandler & handler) const;
 
-    bool hasSubscription(AccessEntityType type) const;
-    bool hasSubscription(const UUID & id) const;
+    virtual bool hasSubscription(AccessEntityType type) const = 0;
+    virtual bool hasSubscription(const UUID & id) const = 0;
 
     /// Finds a user, check the provided credentials and returns the ID of the user if they are valid.
     /// Throws an exception if no such user or credentials are invalid.
-    UUID login(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool replace_exception_with_cannot_authenticate = true) const;
+    UUID authenticate(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool replace_exception_with_cannot_authenticate = true) const;
 
 protected:
     virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name) const = 0;
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
-    virtual bool existsImpl(const UUID & id) const = 0;
     virtual AccessEntityPtr readImpl(const UUID & id) const = 0;
     virtual String readNameImpl(const UUID & id) const = 0;
     virtual bool canInsertImpl(const AccessEntityPtr & entity) const = 0;
@@ -158,11 +157,9 @@ protected:
     virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) = 0;
     virtual scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const = 0;
     virtual scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const = 0;
-    virtual bool hasSubscriptionImpl(const UUID & id) const = 0;
-    virtual bool hasSubscriptionImpl(AccessEntityType type) const = 0;
-    virtual UUID loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
-    virtual bool areCredentialsValidImpl(const User & user, const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const;
-    virtual bool isAddressAllowedImpl(const User & user, const Poco::Net::IPAddress & address) const;
+    virtual UUID authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
+    virtual bool areCredentialsValid(const User & user, const Credentials & credentials, const ExternalAuthenticators & external_authenticators) const;
+    virtual bool isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const;
 
     static UUID generateRandomID();
     Poco::Logger * getLogger() const;
