@@ -50,6 +50,8 @@ void registerInputFormatAvro(FormatFactory & factory);
 void registerOutputFormatAvro(FormatFactory & factory);
 void registerInputFormatRawBLOB(FormatFactory & factory);
 void registerOutputFormatRawBLOB(FormatFactory & factory);
+void registerInputFormatCustomSeparated(FormatFactory & factory);
+void registerOutputFormatCustomSeparated(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -115,6 +117,8 @@ void registerFormats()
     registerOutputFormatMsgPack(factory);
     registerInputFormatRawBLOB(factory);
     registerOutputFormatRawBLOB(factory);
+    registerInputFormatCustomSeparated(factory);
+    registerOutputFormatCustomSeparated(factory);
 
     registerInputFormatORC(factory);
     registerOutputFormatORC(factory);

@@ -358,7 +358,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
     if (storage)
-        row_policy_filter = context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
+        row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
 
     StorageView * view = nullptr;
     if (storage)
@@ -878,52 +878,44 @@ static bool hasWithTotalsInAnySubqueryInFromClause(const ASTSelectQuery & query)
         return true;
 
     /** NOTE You can also check that the table in the subquery is distributed, and that it only looks at one shard.
-      * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
-      */
-
+     * In other cases, totals will be computed on the initiating server of the query, and it is not necessary to read the data to the end.
+     */
     if (auto query_table = extractTableExpression(query, 0))
     {
         if (const auto * ast_union = query_table->as<ASTSelectWithUnionQuery>())
         {
-            for (const auto & elem : ast_union->list_of_selects->children)
+            /** NOTE
+            * 1. For ASTSelectWithUnionQuery after normalization for union child node the height of the AST tree is at most 2.
+            * 2. For ASTSelectIntersectExceptQuery after normalization in case there are intersect or except nodes,
+            * the height of the AST tree can have any depth (each intersect/except adds a level), but the
+            * number of children in those nodes is always 2.
+            */
+            std::function<bool(ASTPtr)> traverse_recursively = [&](ASTPtr child_ast) -> bool
             {
-                /// After normalization for union child node the height of the AST tree is at most 2.
-                if (const auto * child_union = elem->as<ASTSelectWithUnionQuery>())
+                if (const auto * select_child = child_ast->as <ASTSelectQuery>())
                 {
-                    for (const auto & child_elem : child_union->list_of_selects->children)
-                        if (hasWithTotalsInAnySubqueryInFromClause(child_elem->as<ASTSelectQuery &>()))
+                    if (hasWithTotalsInAnySubqueryInFromClause(select_child->as<ASTSelectQuery &>()))
+                        return true;
+                }
+                else if (const auto * union_child = child_ast->as<ASTSelectWithUnionQuery>())
+                {
+                    for (const auto & subchild : union_child->list_of_selects->children)
+                        if (traverse_recursively(subchild))
                             return true;
                 }
-                /// After normalization in case there are intersect or except nodes, the height of
-                /// the AST tree can have any depth (each intersect/except adds a level), but the
-                /// number of children in those nodes is always 2.
-                else if (elem->as<ASTSelectIntersectExceptQuery>())
+                else if (const auto * intersect_child = child_ast->as<ASTSelectIntersectExceptQuery>())
                 {
-                    std::function<bool(ASTPtr)> traverse_recursively = [&](ASTPtr child_ast) -> bool
-                    {
-                        if (const auto * child = child_ast->as <ASTSelectQuery>())
-                            return hasWithTotalsInAnySubqueryInFromClause(child->as<ASTSelectQuery &>());
-
-                        if (const auto * child = child_ast->as<ASTSelectWithUnionQuery>())
-                            for (const auto & subchild : child->list_of_selects->children)
-                                if (traverse_recursively(subchild))
-                                    return true;
-
-                        if (const auto * child = child_ast->as<ASTSelectIntersectExceptQuery>())
-                            for (const auto & subchild : child->children)
-                                if (traverse_recursively(subchild))
-                                    return true;
-                        return false;
-                    };
-                    if (traverse_recursively(elem))
-                        return true;
+                    auto selects = intersect_child->getListOfSelects();
+                    for (const auto & subchild : selects)
+                        if (traverse_recursively(subchild))
+                            return true;
                 }
-                else
-                {
-                    if (hasWithTotalsInAnySubqueryInFromClause(elem->as<ASTSelectQuery &>()))
-                        return true;
-                }
-            }
+                return false;
+            };
+
+            for (const auto & elem : ast_union->list_of_selects->children)
+                if (traverse_recursively(elem))
+                    return true;
         }
     }
 

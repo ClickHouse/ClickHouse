@@ -47,6 +47,17 @@ struct FormatSettings
         UnixTimestamp
     };
 
+    enum class EscapingRule
+    {
+        None,
+        Escaped,
+        Quoted,
+        CSV,
+        JSON,
+        XML,
+        Raw
+    };
+
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
     UInt64 input_allow_errors_num = 0;
@@ -89,7 +100,7 @@ struct FormatSettings
         std::string row_after_delimiter;
         std::string row_between_delimiter;
         std::string field_delimiter;
-        std::string escaping_rule;
+        EscapingRule escaping_rule = EscapingRule::Escaped;
     } custom;
 
     struct
@@ -148,7 +159,7 @@ struct FormatSettings
     struct
     {
         std::string regexp;
-        std::string escaping_rule;
+        EscapingRule escaping_rule = EscapingRule::Raw;
         bool skip_unmatched = false;
     } regexp;
 

@@ -4060,3 +4060,14 @@ Possible values:
 -   `'by_name_case_insensitive'` — Names in enums should be the same case-insensitive, values can be different.
 
 Default value: `'by_values'`.
+
+## min_bytes_to_use_mmap_io {#min-bytes-to-use-mmap-io}
+
+This is an experimental setting. Sets the minimum amount of memory for reading large files without copying data from the kernel to userspace. Recommended threshold is about 64 MB, because [mmap/munmap](https://en.wikipedia.org/wiki/Mmap) is slow. It makes sense only for large files and helps only if data reside in the page cache.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Big files read with only copying data from kernel to userspace.
+
+Default value: `0`.
