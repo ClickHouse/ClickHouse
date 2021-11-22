@@ -614,7 +614,7 @@ CI_CONFIG = {
                 "compiler": "clang-13",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
-                "sanitizer": "thread",
+                "sanitizer": "undefined",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
                 "clang_tidy": "disable",
