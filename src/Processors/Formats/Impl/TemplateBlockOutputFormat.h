@@ -12,7 +12,7 @@ namespace DB
 
 class TemplateBlockOutputFormat : public IOutputFormat
 {
-    using ColumnFormat = ParsedTemplateFormatString::ColumnFormat;
+    using EscapingRule = FormatSettings::EscapingRule;
 public:
     TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_,
                               ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
@@ -46,8 +46,7 @@ private:
     void finalizeImpl() override;
 
     void writeRow(const Chunk & chunk, size_t row_num);
-    void serializeField(const IColumn & column, const ISerialization & serialization, size_t row_num, ColumnFormat format);
-    template <typename U, typename V> void writeValue(U value, ColumnFormat col_format);
+    template <typename U, typename V> void writeValue(U value, EscapingRule escaping_rule);
 
     const FormatSettings settings;
     Serializations serializations;

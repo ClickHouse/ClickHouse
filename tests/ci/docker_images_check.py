@@ -11,6 +11,8 @@ from pr_info import PRInfo
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from upload_result_helper import upload_results
 from commit_status_helper import get_commit
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from stopwatch import Stopwatch
 
 NAME = "Push to Dockerhub (actions)"
 
@@ -37,13 +39,17 @@ def get_changed_docker_images(pr_info, repo_path, image_file_path):
         if image_description['name'].startswith('clickhouse/'):
             dockerhub_repo_name = 'clickhouse'
 
-        for f in files_changed:
-            if f.startswith(dockerfile_dir):
-                logging.info(
-                    "Found changed file '%s' which affects docker image '%s' with path '%s'",
-                    f, image_description['name'], dockerfile_dir)
-                changed_images.append(dockerfile_dir)
-                break
+        if 'release' in pr_info.labels:
+            logging.info("Release PR, will rebuild all images from branch, including %s", dockerfile_dir)
+            changed_images.append(dockerfile_dir)
+        else:
+            for f in files_changed:
+                if f.startswith(dockerfile_dir):
+                    logging.info(
+                        "Found changed file '%s' which affects docker image '%s' with path '%s'",
+                        f, image_description['name'], dockerfile_dir)
+                    changed_images.append(dockerfile_dir)
+                    break
 
     # The order is important: dependents should go later than bases, so that
     # they are built with updated base versions.
@@ -152,6 +158,9 @@ def process_test_results(s3_client, test_results, s3_path_prefix):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+
+    stopwatch = Stopwatch()
+
     repo_path = os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../"))
     temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'docker_images_check')
     dockerhub_password = get_parameter_from_ssm('dockerhub_robot_password')
@@ -195,6 +204,7 @@ if __name__ == "__main__":
     s3_path_prefix = str(pr_info.number) + "/" + pr_info.sha + "/" + NAME.lower().replace(' ', '_')
     status, test_results = process_test_results(s3_helper, images_processing_result, s3_path_prefix)
 
+    ch_helper = ClickHouseHelper()
     url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [], NAME)
 
     with open(os.path.join(temp_path, 'changed_images.json'), 'w') as images_file:
@@ -205,3 +215,6 @@ if __name__ == "__main__":
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
     commit.create_status(context=NAME, description=description, state=status, target_url=url)
+
+    prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_results, status, stopwatch.duration_seconds, stopwatch.start_time_str, url, NAME)
+    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
