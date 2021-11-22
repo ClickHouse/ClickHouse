@@ -18,8 +18,10 @@ class JSONAsRowInputFormat : public IRowInputFormat
 public:
     JSONAsRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
 
-    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     void resetParser() override;
+
+private:
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
     void readPrefix() override;
     void readSuffix() override;

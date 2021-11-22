@@ -38,6 +38,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
@@ -90,7 +91,6 @@ namespace ProfileEvents
 namespace CurrentMetrics
 {
     extern const Metric DelayedInserts;
-    extern const Metric BackgroundMovePoolTask;
 }
 
 
@@ -1348,16 +1348,18 @@ static bool isOldPartDirectory(const DiskPtr & disk, const String & directory_pa
 }
 
 
-void MergeTreeData::clearOldTemporaryDirectories(const MergeTreeDataMergerMutator & merger_mutator, size_t custom_directories_lifetime_seconds)
+size_t MergeTreeData::clearOldTemporaryDirectories(const MergeTreeDataMergerMutator & merger_mutator, size_t custom_directories_lifetime_seconds)
 {
     /// If the method is already called from another thread, then we don't need to do anything.
     std::unique_lock lock(clear_old_temporary_directories_mutex, std::defer_lock);
     if (!lock.try_lock())
-        return;
+        return 0;
 
     const auto settings = getSettings();
     time_t current_time = time(nullptr);
     ssize_t deadline = current_time - custom_directories_lifetime_seconds;
+
+    size_t cleared_count = 0;
 
     /// Delete temporary directories older than a day.
     for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
@@ -1370,18 +1372,22 @@ void MergeTreeData::clearOldTemporaryDirectories(const MergeTreeDataMergerMutato
                 continue;
             }
             const std::string & full_path = fullPath(disk, it->path());
-            if (merger_mutator.hasTemporaryPart(basename))
-            {
-                LOG_WARNING(log, "{} is an active destination for one of merge/mutation (consider increasing temporary_directories_lifetime setting)", full_path);
-                continue;
-            }
 
             try
             {
                 if (disk->isDirectory(it->path()) && isOldPartDirectory(disk, it->path(), deadline))
                 {
-                    LOG_WARNING(log, "Removing temporary directory {}", full_path);
-                    disk->removeRecursive(it->path());
+                    if (merger_mutator.hasTemporaryPart(basename))
+                    {
+                        LOG_WARNING(log, "{} is an active destination for one of merge/mutation (consider increasing temporary_directories_lifetime setting)", full_path);
+                        continue;
+                    }
+                    else
+                    {
+                        LOG_WARNING(log, "Removing temporary directory {}", full_path);
+                        disk->removeRecursive(it->path());
+                        ++cleared_count;
+                    }
                 }
             }
             /// see getModificationTime()
@@ -1405,6 +1411,8 @@ void MergeTreeData::clearOldTemporaryDirectories(const MergeTreeDataMergerMutato
             }
         }
     }
+
+    return cleared_count;
 }
 
 
@@ -1518,7 +1526,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
     }
 }
 
-void MergeTreeData::clearOldPartsFromFilesystem(bool force)
+size_t MergeTreeData::clearOldPartsFromFilesystem(bool force)
 {
     DataPartsVector parts_to_remove = grabOldParts(force);
     clearPartsFromFilesystem(parts_to_remove);
@@ -1528,6 +1536,8 @@ void MergeTreeData::clearOldPartsFromFilesystem(bool force)
     /// NOTE: we can drop files from cache more selectively but this is good enough.
     if (!parts_to_remove.empty())
         getContext()->dropMMappedFileCache();
+
+    return parts_to_remove.size();
 }
 
 void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_remove)
@@ -1569,7 +1579,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
     }
 }
 
-void MergeTreeData::clearOldWriteAheadLogs()
+size_t MergeTreeData::clearOldWriteAheadLogs()
 {
     DataPartsVector parts = getDataPartsVector();
     std::vector<std::pair<Int64, Int64>> all_block_numbers_on_disk;
@@ -1580,7 +1590,7 @@ void MergeTreeData::clearOldWriteAheadLogs()
             all_block_numbers_on_disk.emplace_back(part->info.min_block, part->info.max_block);
 
     if (all_block_numbers_on_disk.empty())
-        return;
+        return 0;
 
     std::sort(all_block_numbers_on_disk.begin(), all_block_numbers_on_disk.end());
     block_numbers_on_disk.push_back(all_block_numbers_on_disk[0]);
@@ -1608,6 +1618,7 @@ void MergeTreeData::clearOldWriteAheadLogs()
         return false;
     };
 
+    size_t cleared_count = 0;
     auto disks = getStoragePolicy()->getDisks();
     for (auto disk_it = disks.rbegin(); disk_it != disks.rend(); ++disk_it)
     {
@@ -1619,22 +1630,30 @@ void MergeTreeData::clearOldWriteAheadLogs()
             {
                 LOG_DEBUG(log, "Removing from filesystem the outdated WAL file " + it->name());
                 disk_ptr->removeFile(relative_data_path + it->name());
+                ++cleared_count;
             }
         }
     }
+
+    return cleared_count;
 }
 
-void MergeTreeData::clearEmptyParts()
+size_t MergeTreeData::clearEmptyParts()
 {
     if (!getSettings()->remove_empty_parts)
-        return;
+        return 0;
 
+    size_t cleared_count = 0;
     auto parts = getDataPartsVector();
     for (const auto & part : parts)
     {
         if (part->rows_count == 0)
+        {
             dropPartNoWaitNoThrow(part->name);
+            ++cleared_count;
+        }
     }
+    return cleared_count;
 }
 
 void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
@@ -3561,7 +3580,7 @@ RestoreDataTasks MergeTreeData::restoreDataPartsFromBackup(const BackupPtr & bac
 {
     RestoreDataTasks restore_tasks;
 
-    Strings part_names = backup->list(data_path_in_backup);
+    Strings part_names = backup->listFiles(data_path_in_backup);
     for (const String & part_name : part_names)
     {
         const auto part_info = MergeTreePartInfo::tryParsePartName(part_name, format_version);
@@ -3573,9 +3592,9 @@ RestoreDataTasks MergeTreeData::restoreDataPartsFromBackup(const BackupPtr & bac
             continue;
 
         UInt64 total_size_of_part = 0;
-        Strings filenames = backup->list(data_path_in_backup + part_name + "/", "");
+        Strings filenames = backup->listFiles(data_path_in_backup + part_name + "/", "");
         for (const String & filename : filenames)
-            total_size_of_part += backup->getSize(data_path_in_backup + part_name + "/" + filename);
+            total_size_of_part += backup->getFileSize(data_path_in_backup + part_name + "/" + filename);
 
         std::shared_ptr<IReservation> reservation = getStoragePolicy()->reserveAndCheck(total_size_of_part);
 
@@ -3599,7 +3618,7 @@ RestoreDataTasks MergeTreeData::restoreDataPartsFromBackup(const BackupPtr & bac
 
             for (const String & filename : filenames)
             {
-                auto backup_entry = backup->read(data_path_in_backup + part_name + "/" + filename);
+                auto backup_entry = backup->readFile(data_path_in_backup + part_name + "/" + filename);
                 auto read_buffer = backup_entry->getReadBuffer();
                 auto write_buffer = disk->writeFile(temp_part_dir + "/" + filename);
                 copyData(*read_buffer, *write_buffer);
@@ -4397,8 +4416,13 @@ static void selectBestProjection(
         if (normal_result_ptr->error())
             return;
 
-        sum_marks += normal_result_ptr->marks();
-        candidate.merge_tree_normal_select_result_ptr = normal_result_ptr;
+        if (normal_result_ptr->marks() == 0)
+            candidate.complete = true;
+        else
+        {
+            sum_marks += normal_result_ptr->marks();
+            candidate.merge_tree_normal_select_result_ptr = normal_result_ptr;
+        }
     }
     candidate.merge_tree_projection_select_result_ptr = projection_result_ptr;
 
@@ -4433,7 +4457,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             required_columns.begin(), required_columns.end(), [&](const auto & name) { return primary_key_max_column_name == name; });
     }
 
-    auto minmax_count_columns = block.mutateColumns();
+    auto partition_minmax_count_columns = block.mutateColumns();
     auto insert = [](ColumnAggregateFunction & column, const Field & value)
     {
         auto func = column.getAggregateFunction();
@@ -4478,11 +4502,18 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         }
 
         size_t pos = 0;
+        for (size_t i : metadata_snapshot->minmax_count_projection->partition_value_indices)
+        {
+            if (i >= part->partition.value.size())
+                throw Exception("Partition value index is out of boundary. It's a bug", ErrorCodes::LOGICAL_ERROR);
+            partition_minmax_count_columns[pos++]->insert(part->partition.value[i]);
+        }
+
         size_t minmax_idx_size = part->minmax_idx->hyperrectangle.size();
         for (size_t i = 0; i < minmax_idx_size; ++i)
         {
-            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
-            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
+            auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos++]);
+            auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos++]);
             const auto & range = part->minmax_idx->hyperrectangle[i];
             insert(min_column, range.left);
             insert(max_column, range.right);
@@ -4491,15 +4522,14 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         if (!primary_key_max_column_name.empty())
         {
             const auto & primary_key_column = *part->index[0];
-            auto primary_key_column_size = primary_key_column.size();
-            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
-            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
+            auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos++]);
+            auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos++]);
             insert(min_column, primary_key_column[0]);
-            insert(max_column, primary_key_column[primary_key_column_size - 1]);
+            insert(max_column, primary_key_column[primary_key_column.size() - 1]);
         }
 
         {
-            auto & column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns.back());
+            auto & column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns.back());
             auto func = column.getAggregateFunction();
             Arena & arena = column.createOrGetArena();
             size_t size_of_state = func->sizeOfData();
@@ -4511,7 +4541,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             column.insertFrom(place);
         }
     }
-    block.setColumns(std::move(minmax_count_columns));
+    block.setColumns(std::move(partition_minmax_count_columns));
 
     Block res;
     for (const auto & name : required_columns)
@@ -4530,13 +4560,13 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
 }
 
 
-bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
+std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, SelectQueryInfo & query_info) const
 {
     const auto & metadata_snapshot = storage_snapshot->metadata;
     const auto & settings = query_context->getSettingsRef();
     if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query)
-        return false;
+        return std::nullopt;
 
     const auto & query_ptr = query_info.original_query;
 
@@ -4544,16 +4574,16 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     {
         // Currently projections don't support final yet.
         if (select->final())
-            return false;
+            return std::nullopt;
 
         // Currently projections don't support ARRAY JOIN yet.
         if (select->arrayJoinExpressionList().first)
-            return false;
+            return std::nullopt;
     }
 
     // Currently projections don't support sampling yet.
     if (settings.parallel_replicas_count > 1)
-        return false;
+        return std::nullopt;
 
     InterpreterSelectQuery select(
         query_ptr,
@@ -4781,6 +4811,25 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         query_info.minmax_count_projection_block = getMinMaxCountProjectionBlock(
             metadata_snapshot, minmax_conut_projection_candidate->required_columns, query_info, parts, normal_parts, query_context);
 
+        if (minmax_conut_projection_candidate->prewhere_info)
+        {
+            const auto & prewhere_info = minmax_conut_projection_candidate->prewhere_info;
+            if (prewhere_info->alias_actions)
+                ExpressionActions(prewhere_info->alias_actions, actions_settings).execute(query_info.minmax_count_projection_block);
+
+            if (prewhere_info->row_level_filter)
+            {
+                ExpressionActions(prewhere_info->row_level_filter, actions_settings).execute(query_info.minmax_count_projection_block);
+                query_info.minmax_count_projection_block.erase(prewhere_info->row_level_column_name);
+            }
+
+            if (prewhere_info->prewhere_actions)
+                ExpressionActions(prewhere_info->prewhere_actions, actions_settings).execute(query_info.minmax_count_projection_block);
+
+            if (prewhere_info->remove_prewhere_column)
+                query_info.minmax_count_projection_block.erase(prewhere_info->prewhere_column_name);
+        }
+
         if (normal_parts.empty())
         {
             selected_candidate = &*minmax_conut_projection_candidate;
@@ -4891,14 +4940,14 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     }
 
     if (!selected_candidate)
-        return false;
+        return std::nullopt;
     else if (min_sum_marks == 0)
     {
         /// If selected_projection indicated an empty result set. Remember it in query_info but
         /// don't use projection to run the query, because projection pipeline with empty result
         /// set will not work correctly with empty_result_for_aggregation_by_empty_set.
         query_info.merge_tree_empty_result = true;
-        return false;
+        return std::nullopt;
     }
 
     if (selected_candidate->desc->type == ProjectionDescription::Type::Aggregate)
@@ -4909,8 +4958,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             = std::make_shared<SubqueriesForSets>(std::move(select.getQueryAnalyzer()->getSubqueriesForSets()));
     }
 
-    query_info.projection = std::move(*selected_candidate);
-    return true;
+    return *selected_candidate;
 }
 
 
@@ -4922,11 +4970,14 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
 {
     if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
     {
-        if (getQueryProcessingStageWithAggregateProjection(query_context, storage_snapshot, query_info))
+        if (auto projection = getQueryProcessingStageWithAggregateProjection(query_context, storage_snapshot, query_info))
         {
+            query_info.projection = std::move(projection);
             if (query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
                 return QueryProcessingStage::Enum::WithMergeableState;
         }
+        else
+            query_info.projection = std::nullopt;
     }
 
     return QueryProcessingStage::Enum::FetchColumns;

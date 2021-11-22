@@ -16,6 +16,8 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <boost/algorithm/string/replace.hpp>
+
 
 namespace CurrentMetrics
 {
