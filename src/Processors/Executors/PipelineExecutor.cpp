@@ -23,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -46,6 +47,13 @@ PipelineExecutor::PipelineExecutor(Processors & processors, QueryStatus * elem)
 
         throw;
     }
+    if (process_list_element)
+    {
+        auto settings = process_list_element->context.lock()->getSettings();
+        limits.max_execution_time = settings.max_execution_time;
+        overflow_mode = settings.timeout_overflow_mode;
+    }
+    checkTimeLimit();
 }
 
 PipelineExecutor::~PipelineExecutor()
@@ -73,6 +81,7 @@ void PipelineExecutor::finish()
 
 void PipelineExecutor::execute(size_t num_threads)
 {
+    checkTimeLimit();
     if (num_threads < 1)
         num_threads = 1;
 
@@ -101,6 +110,7 @@ void PipelineExecutor::execute(size_t num_threads)
 
 bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 {
+    checkTimeLimit();
     if (!is_execution_initialized)
     {
         initializeExecution(1);
@@ -124,10 +134,25 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
     return false;
 }
 
+bool PipelineExecutor::checkTimeLimit()
+{
+    if (process_list_element)
+    {
+        if (process_list_element->isKilled())
+            throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+
+        bool cont = limits.checkTimeLimit(process_list_element->watch, overflow_mode);
+        if (!cont)
+            cancel();
+        return cont;
+    }
+
+    return true;
+}
+
 void PipelineExecutor::finalizeExecution()
 {
-    if (process_list_element && process_list_element->isKilled())
-        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+    checkTimeLimit();
 
     if (cancelled)
         return;
@@ -189,6 +214,8 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 
             if (tasks.isFinished())
                 break;
+
+            checkTimeLimit();
 
 #ifndef NDEBUG
             Stopwatch processing_time_watch;

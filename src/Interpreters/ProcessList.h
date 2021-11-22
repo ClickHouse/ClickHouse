@@ -79,6 +79,7 @@ protected:
     friend class ThreadStatus;
     friend class CurrentThread;
     friend class ProcessListEntry;
+    friend class PipelineExecutor;
 
     String query;
     ClientInfo client_info;
@@ -94,8 +95,6 @@ protected:
     Progress progress_out;
 
     QueryPriorities::Handle priority_handle;
-
-    CurrentMetrics::Increment num_queries_increment{CurrentMetrics::Query};
 
     std::atomic<bool> is_killed { false };
 

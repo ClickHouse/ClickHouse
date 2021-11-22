@@ -7,6 +7,8 @@
 #include <QueryPipeline/Pipe.h>
 #include <Processors/LimitTransform.h>
 
+#include <Interpreters/Context.h>
+
 namespace DB
 {
 
