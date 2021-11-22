@@ -80,7 +80,7 @@ ZlibDeflatingWriteBuffer::~ZlibDeflatingWriteBuffer()
     finalize();
 }
 
-void ZlibDeflatingWriteBuffer::finalizeBeforeNestedFinalize()
+void ZlibDeflatingWriteBuffer::finalizeBefore()
 {
     next();
 
@@ -118,7 +118,7 @@ void ZlibDeflatingWriteBuffer::finalizeBeforeNestedFinalize()
     }
 }
 
-void ZlibDeflatingWriteBuffer::finalizeAfterNestedFinalize()
+void ZlibDeflatingWriteBuffer::finalizeAfter()
 {
     try
     {

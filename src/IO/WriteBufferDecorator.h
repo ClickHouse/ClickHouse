@@ -10,7 +10,8 @@ namespace DB
 
 class WriteBuffer;
 
-/// WriteBuffer that works with another WriteBuffer.
+/// WriteBuffer that decorates data and delegates it to underlying buffer.
+/// It's used for writing compressed and encrypted data
 template <class Base>
 class WriteBufferDecorator : public Base
 {
@@ -25,9 +26,9 @@ public:
     {
         try
         {
-            finalizeBeforeNestedFinalize();
+            finalizeBefore();
             out->finalize();
-            finalizeAfterNestedFinalize();
+            finalizeAfter();
         }
         catch (...)
         {
@@ -40,8 +41,11 @@ public:
     WriteBuffer * getNestedBuffer() { return out.get(); }
 
 protected:
-    virtual void finalizeBeforeNestedFinalize() {}
-    virtual void finalizeAfterNestedFinalize() {}
+    /// Do some finalization before finalization of underlying buffer.
+    virtual void finalizeBefore() {}
+
+    /// Do some finalization after finalization of underlying buffer.
+    virtual void finalizeAfter() {}
 
     std::unique_ptr<WriteBuffer> out;
 };

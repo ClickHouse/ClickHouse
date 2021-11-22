@@ -89,7 +89,7 @@ void Bzip2WriteBuffer::nextImpl()
     }
 }
 
-void Bzip2WriteBuffer::finalizeBeforeNestedFinalize()
+void Bzip2WriteBuffer::finalizeBefore()
 {
     next();
 

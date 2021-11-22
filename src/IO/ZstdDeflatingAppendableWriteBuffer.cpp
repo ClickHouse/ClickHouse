@@ -91,7 +91,7 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeImpl()
     WriteBufferDecorator::finalizeImpl();
 }
 
-void ZstdDeflatingAppendableWriteBuffer::finalizeBeforeNestedFinalize()
+void ZstdDeflatingAppendableWriteBuffer::finalizeBefore()
 {
     next();
 
@@ -116,7 +116,7 @@ void ZstdDeflatingAppendableWriteBuffer::finalizeBeforeNestedFinalize()
     out->position() = out->buffer().begin() + output.pos;
 }
 
-void ZstdDeflatingAppendableWriteBuffer::finalizeAfterNestedFinalize()
+void ZstdDeflatingAppendableWriteBuffer::finalizeAfter()
 {
     try
     {

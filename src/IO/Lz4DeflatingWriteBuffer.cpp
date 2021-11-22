@@ -116,7 +116,7 @@ void Lz4DeflatingWriteBuffer::nextImpl()
     }
 }
 
-void Lz4DeflatingWriteBuffer::finalizeBeforeNestedFinalize()
+void Lz4DeflatingWriteBuffer::finalizeBefore()
 {
     next();
 
@@ -141,7 +141,7 @@ void Lz4DeflatingWriteBuffer::finalizeBeforeNestedFinalize()
     out->position() = out->buffer().end() - out_capacity;
 }
 
-void Lz4DeflatingWriteBuffer::finalizeAfterNestedFinalize()
+void Lz4DeflatingWriteBuffer::finalizeAfter()
 {
     LZ4F_freeCompressionContext(ctx);
 }

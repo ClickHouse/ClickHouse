@@ -89,7 +89,7 @@ void LZMADeflatingWriteBuffer::nextImpl()
     }
 }
 
-void LZMADeflatingWriteBuffer::finalizeBeforeNestedFinalize()
+void LZMADeflatingWriteBuffer::finalizeBefore()
 {
     next();
 
@@ -117,7 +117,7 @@ void LZMADeflatingWriteBuffer::finalizeBeforeNestedFinalize()
     } while (lstr.avail_out == 0);
 }
 
-void LZMADeflatingWriteBuffer::finalizeAfterNestedFinalize()
+void LZMADeflatingWriteBuffer::finalizeAfter()
 {
     lzma_end(&lstr);
 }

@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -73,6 +74,9 @@ public:
 
     void write(const char * from, size_t n)
     {
+        if (finalized)
+            throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
+
         size_t bytes_copied = 0;
 
         /// Produces endless loop
@@ -91,6 +95,9 @@ public:
 
     inline void write(char x)
     {
+        if (finalized)
+            throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
+
         nextIfAtEnd();
         *pos = x;
         ++pos;
@@ -109,8 +116,17 @@ public:
 
         /// finalize() is often called from destructors.
         MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-        finalized = true;
-        finalizeImpl();
+        try
+        {
+            finalizeImpl();
+            finalized = true;
+        }
+        catch (...)
+        {
+            pos = working_buffer.begin();
+            finalized = true;
+            throw;
+        }
     }
 
 protected:

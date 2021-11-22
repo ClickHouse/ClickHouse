@@ -26,8 +26,8 @@ public:
 private:
     void nextImpl() override;
 
-    void finalizeBeforeNestedFinalize() override;
-    void finalizeAfterNestedFinalize() override;
+    void finalizeBefore() override;
+    void finalizeAfter() override;
 
     LZ4F_preferences_t kPrefs;
     LZ4F_compressionContext_t ctx;
