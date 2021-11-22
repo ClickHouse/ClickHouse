@@ -16,11 +16,6 @@
 #include <chrono>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric Query;
-}
-
 namespace DB
 {
 
