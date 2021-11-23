@@ -61,7 +61,7 @@ exponentialMovingAverage(x)(value, timestamp)
 Запрос: 
 
 ```sql
-exponentialMovingAverage(5)(temperature, timestamp)
+SELECT exponentialMovingAverage(5)(temperature, timestamp);
 ```
 
 Результат:
