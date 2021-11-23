@@ -7,9 +7,7 @@
 # - sometimes warnings from 3rd party libraries may come from macro substitutions in our code
 #   and we have to wrap them with #pragma GCC/clang diagnostic ignored
 
-if (NOT MSVC)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
-endif ()
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
 
 # Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
 # Intended for exploration of new compiler warnings that may be found useful.
