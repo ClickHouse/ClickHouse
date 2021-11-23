@@ -25,7 +25,7 @@ Each `value` corresponds to the determinate `timestamp`. The half-life `x` is th
 
 **Returned values**
 
-- Returnes an [exponentially smoothed moving average](https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average) of the values for the past `x` time at the latest point of time (https://en.wikipedia.org/wiki/Unix_time).
+- Returnes an [exponentially smoothed moving average](https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average) of the values for the past `x` time at the latest point of time.
 
 Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
 
