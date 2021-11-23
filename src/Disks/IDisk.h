@@ -247,6 +247,26 @@ public:
     /// Applies new settings for disk in runtime.
     virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) {}
 
+    /// Open the local file for read and return ReadBufferFromFileBase object.
+    /// Overriden in IDiskRemote.
+    /// Used for work with custom metadata.
+    virtual std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
+        const String & path,
+        const ReadSettings & settings = ReadSettings{},
+        std::optional<size_t> size = {}) const;
+
+    /// Open the local file for write and return WriteBufferFromFileBase object.
+    /// Overriden in IDiskRemote.
+    /// Used for work with custom metadata.
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeMetaFile(
+        const String & path,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        WriteMode mode = WriteMode::Rewrite);
+
+    /// Return reference count for remote FS.
+    /// Overriden in IDiskRemote.
+    virtual UInt32 getRefCount(const String &) const { return 0; }
+
 protected:
     friend class DiskDecorator;
 

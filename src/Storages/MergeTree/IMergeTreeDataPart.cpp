@@ -1561,6 +1561,12 @@ String IMergeTreeDataPart::getUniqueId() const
 }
 
 
+UInt32 IMergeTreeDataPart::getRefCount() const
+{
+    return volume->getDisk()->getRefCount(fs::path(getFullRelativePath()) / "checksums.txt");
+}
+
+
 String IMergeTreeDataPart::getZeroLevelPartBlockID() const
 {
     if (info.level != 0)

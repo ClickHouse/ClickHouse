@@ -871,6 +871,8 @@ public:
     /// Overridden in StorageReplicatedMergeTree
     virtual bool tryToFetchIfShared(const IMergeTreeDataPart &, const DiskPtr &, const String &) { return false; }
 
+    virtual String getZooKeeperName() const { return ""; }
+
     /// Parts that currently submerging (merging to bigger parts) or emerging
     /// (to be appeared after merging finished). These two variables have to be used
     /// with `currently_submerging_emerging_mutex`.
