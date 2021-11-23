@@ -17,7 +17,7 @@ public:
         const Block & input_header,
         const Block & output_header,
         bool have_all_inputs_,
-        bool has_limit_below_one_block_);
+        UInt64 limit_hint_);
 
     OutputPort & getOutputPort() { return outputs.front(); }
 
@@ -67,7 +67,7 @@ private:
     std::vector<InputState> input_states;
     std::atomic<bool> have_all_inputs;
     bool is_initialized = false;
-    bool has_limit_below_one_block = false;
+    UInt64 limit_hint = 0;
 
     IProcessor::Status prepareInitializeInputs();
 };
@@ -83,9 +83,9 @@ public:
         const Block & input_header,
         const Block & output_header,
         bool have_all_inputs_,
-        bool has_limit_below_one_block_,
+        UInt64 limit_hint_,
         Args && ... args)
-        : IMergingTransformBase(num_inputs, input_header, output_header, have_all_inputs_, has_limit_below_one_block_)
+        : IMergingTransformBase(num_inputs, input_header, output_header, have_all_inputs_, limit_hint_)
         , algorithm(std::forward<Args>(args) ...)
     {
     }
@@ -107,7 +107,7 @@ public:
 
         IMergingAlgorithm::Status status = algorithm.merge();
 
-        if (status.chunk && status.chunk.hasRows())
+        if ((status.chunk && status.chunk.hasRows()) || status.chunk.hasChunkInfo())
         {
             // std::cerr << "Got chunk with " << status.chunk.getNumRows() << " rows" << std::endl;
             state.output_chunk = std::move(status.chunk);

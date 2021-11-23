@@ -1,6 +1,5 @@
 #include <Poco/UTF8Encoding.h>
 #include <IO/WriteBufferValidUTF8.h>
-#include <Common/MemoryTracker.h>
 #include <base/types.h>
 
 #ifdef __SSE2__
@@ -123,8 +122,12 @@ void WriteBufferValidUTF8::nextImpl()
     output_buffer.next();
 }
 
+WriteBufferValidUTF8::~WriteBufferValidUTF8()
+{
+    finalize();
+}
 
-void WriteBufferValidUTF8::finish()
+void WriteBufferValidUTF8::finalizeImpl()
 {
     /// Write all complete sequences from buffer.
     nextImpl();
@@ -132,14 +135,6 @@ void WriteBufferValidUTF8::finish()
     /// If unfinished sequence at end, then write replacement.
     if (working_buffer.begin() != memory.data())
         putReplacement();
-}
-
-
-WriteBufferValidUTF8::~WriteBufferValidUTF8()
-{
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finish();
 }
 
 }

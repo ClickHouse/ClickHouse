@@ -768,17 +768,6 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
         return ReturnType(false);
     };
 
-    auto ignore_delimiter = [&]
-    {
-        if (!buf.eof() && !isNumericASCII(*buf.position()))
-        {
-            ++buf.position();
-            return true;
-        }
-        else
-            return false;
-    };
-
     auto append_digit = [&](auto & x)
     {
         if (!buf.eof() && isNumericASCII(*buf.position()))
@@ -792,27 +781,44 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
     };
 
     UInt16 year = 0;
+    UInt8 month = 0;
+    UInt8 day = 0;
+
     if (!append_digit(year)
         || !append_digit(year) // NOLINT
         || !append_digit(year) // NOLINT
         || !append_digit(year)) // NOLINT
         return error();
 
-    if (!ignore_delimiter())
+    if (buf.eof())
         return error();
 
-    UInt8 month = 0;
-    if (!append_digit(month))
-        return error();
-    append_digit(month);
+    if (isNumericASCII(*buf.position()))
+    {
+        /// YYYYMMDD
+        if (!append_digit(month)
+            || !append_digit(month) // NOLINT
+            || !append_digit(day)
+            || !append_digit(day)) // NOLINT
+            return error();
+    }
+    else
+    {
+        ++buf.position();
 
-    if (!ignore_delimiter())
-        return error();
+        if (!append_digit(month))
+            return error();
+        append_digit(month);
 
-    UInt8 day = 0;
-    if (!append_digit(day))
-        return error();
-    append_digit(day);
+        if (!buf.eof() && !isNumericASCII(*buf.position()))
+            ++buf.position();
+        else
+            return error();
+
+        if (!append_digit(day))
+            return error();
+        append_digit(day);
+    }
 
     date = LocalDate(year, month, day);
     return ReturnType(true);
@@ -1158,6 +1164,52 @@ bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current)
     current = in.position();
 
     return loaded_more;
+}
+
+/// Searches for delimiter in input stream and sets buffer position after delimiter (if found) or EOF (if not)
+static void findAndSkipNextDelimiter(PeekableReadBuffer & buf, const String & delimiter)
+{
+    if (delimiter.empty())
+        return;
+
+    while (!buf.eof())
+    {
+        void * pos = memchr(buf.position(), delimiter[0], buf.available());
+        if (!pos)
+        {
+            buf.position() += buf.available();
+            continue;
+        }
+
+        buf.position() = static_cast<ReadBuffer::Position>(pos);
+
+        PeekableReadBufferCheckpoint checkpoint{buf};
+        if (checkString(delimiter, buf))
+            return;
+
+        buf.rollbackToCheckpoint();
+        ++buf.position();
+    }
+}
+
+void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delimiter, const String & row_between_delimiter, bool skip_spaces)
+{
+    if (row_after_delimiter.empty())
+    {
+        findAndSkipNextDelimiter(buf, row_between_delimiter);
+        return;
+    }
+
+    while (true)
+    {
+        findAndSkipNextDelimiter(buf, row_after_delimiter);
+
+        if (skip_spaces)
+            skipWhitespaceIfAny(buf);
+
+        if (checkString(row_between_delimiter, buf))
+            break;
+    }
 }
 
 }

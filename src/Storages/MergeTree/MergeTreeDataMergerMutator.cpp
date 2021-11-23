@@ -15,8 +15,8 @@
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTask.h>
 
-#include <DataStreams/TTLBlockInputStream.h>
-#include <DataStreams/TTLCalcInputStream.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -41,18 +41,9 @@
 
 #include <boost/algorithm/string/replace.hpp>
 
-namespace ProfileEvents
-{
-    extern const Event MergedRows;
-    extern const Event MergedUncompressedBytes;
-    extern const Event MergesTimeMilliseconds;
-    extern const Event Merge;
-}
-
 namespace CurrentMetrics
 {
     extern const Metric BackgroundMergesAndMutationsPoolTask;
-    extern const Metric PartMutation;
 }
 
 namespace DB

@@ -15,6 +15,8 @@ Let's highlight some of these new exciting new capabilities in 21.10:
 * Instead of logging every query (which can be a lot of logs!), you can now log a random sample of your queries. The number of queries logged is determined by defining a specified probability between 0.0 (no queries logged) and 1.0 (all queries logged) using the new `log_queries_probability` setting.
 * Positional arguments are now available in your GROUP BY, ORDER BY and LIMIT BY clauses. For example, `SELECT foo, bar, baz FROM my_table ORDER BY 2,3` orders the results by whatever the bar and baz columns (no need to specify column names twice!)
 
+We're also thrilled to announce some new free training available to you in our Learn ClickHouse portal: [https://clickhouse.com/learn/lessons/whatsnew-clickhouse-21.10/](https://clickhouse.com/learn/lessons/whatsnew-clickhouse-21.10/)
+
 We're always listening for new ideas, and we're happy to welcome new contributors to the ClickHouse project. Whether for submitting code or improving our documentation and examples, please get involved by sending us a pull request or submitting an issue. Our beginner developers contribution guide will help you get started: [https://clickhouse.com/docs/en/development/developer-instruction/](https://clickhouse.com/docs/en/development/developer-instruction/)
 
 
@@ -22,6 +24,6 @@ We're always listening for new ideas, and we're happy to welcome new contributor
 
 Release 21.10
 
-Release Date: 2021-10-21
+Release Date: 2021-10-17
 
 Release Notes: [21.10](https://github.com/ClickHouse/ClickHouse/blob/master/CHANGELOG.md)

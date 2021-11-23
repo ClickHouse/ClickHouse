@@ -157,6 +157,10 @@ void ASTAlterCommand::formatImpl(const FormatSettings & settings, FormatState & 
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "MODIFY SAMPLE BY " << (settings.hilite ? hilite_none : "");
         sample_by->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::REMOVE_SAMPLE_BY)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "REMOVE SAMPLE BY" << (settings.hilite ? hilite_none : "");
+    }
     else if (type == ASTAlterCommand::ADD_INDEX)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADD INDEX " << (if_not_exists ? "IF NOT EXISTS " : "")
@@ -462,10 +466,26 @@ bool ASTAlterQuery::isFreezeAlter() const
         || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_ALL);
 }
 
+bool ASTAlterQuery::isAttachAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::ATTACH_PARTITION);
+}
+
+bool ASTAlterQuery::isFetchAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::FETCH_PARTITION);
+}
+
+bool ASTAlterQuery::isDropPartitionAlter() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::DROP_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::DROP_DETACHED_PARTITION);
+}
+
+
 /** Get the text that identifies this element. */
 String ASTAlterQuery::getID(char delim) const
 {
-    return "AlterQuery" + (delim + database) + delim + table;
+    return "AlterQuery" + (delim + getDatabase()) + delim + getTable();
 }
 
 ASTPtr ASTAlterQuery::clone() const
@@ -503,18 +523,18 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 
     settings.ostr << (settings.hilite ? hilite_none : "");
 
-    if (!table.empty())
+    if (table)
     {
-        if (!database.empty())
+        if (database)
         {
-            settings.ostr << indent_str << backQuoteIfNeed(database);
+            settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
             settings.ostr << ".";
         }
-        settings.ostr << indent_str << backQuoteIfNeed(table);
+        settings.ostr << indent_str << backQuoteIfNeed(getTable());
     }
-    else if (alter_object == AlterObjectType::DATABASE && !database.empty())
+    else if (alter_object == AlterObjectType::DATABASE && database)
     {
-        settings.ostr << indent_str << backQuoteIfNeed(database);
+        settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
     }
 
     formatOnCluster(settings);

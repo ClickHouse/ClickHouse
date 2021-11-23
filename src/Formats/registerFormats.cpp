@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #include <Formats/FormatFactory.h>
 
@@ -15,6 +13,7 @@ void registerFileSegmentationEngineCSV(FormatFactory & factory);
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
 void registerFileSegmentationEngineRegexp(FormatFactory & factory);
 void registerFileSegmentationEngineJSONAsString(FormatFactory & factory);
+void registerFileSegmentationEngineJSONCompactEachRow(FormatFactory & factory);
 
 /// Formats for both input/output.
 
@@ -51,6 +50,8 @@ void registerInputFormatAvro(FormatFactory & factory);
 void registerOutputFormatAvro(FormatFactory & factory);
 void registerInputFormatRawBLOB(FormatFactory & factory);
 void registerOutputFormatRawBLOB(FormatFactory & factory);
+void registerInputFormatCustomSeparated(FormatFactory & factory);
+void registerOutputFormatCustomSeparated(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -67,6 +68,7 @@ void registerOutputFormatNull(FormatFactory & factory);
 void registerOutputFormatMySQLWire(FormatFactory & factory);
 void registerOutputFormatMarkdown(FormatFactory & factory);
 void registerOutputFormatPostgreSQLWire(FormatFactory & factory);
+void registerOutputFormatCapnProto(FormatFactory & factory);
 
 /// Input only formats.
 
@@ -88,6 +90,7 @@ void registerFormats()
     registerFileSegmentationEngineJSONEachRow(factory);
     registerFileSegmentationEngineRegexp(factory);
     registerFileSegmentationEngineJSONAsString(factory);
+    registerFileSegmentationEngineJSONCompactEachRow(factory);
 
     registerInputFormatNative(factory);
     registerOutputFormatNative(factory);
@@ -114,15 +117,15 @@ void registerFormats()
     registerOutputFormatMsgPack(factory);
     registerInputFormatRawBLOB(factory);
     registerOutputFormatRawBLOB(factory);
+    registerInputFormatCustomSeparated(factory);
+    registerOutputFormatCustomSeparated(factory);
 
     registerInputFormatORC(factory);
     registerOutputFormatORC(factory);
     registerInputFormatParquet(factory);
     registerOutputFormatParquet(factory);
-#if !defined(ARCADIA_BUILD)
     registerInputFormatAvro(factory);
     registerOutputFormatAvro(factory);
-#endif
     registerInputFormatArrow(factory);
     registerOutputFormatArrow(factory);
 
@@ -139,14 +142,13 @@ void registerFormats()
     registerOutputFormatMySQLWire(factory);
     registerOutputFormatMarkdown(factory);
     registerOutputFormatPostgreSQLWire(factory);
+    registerOutputFormatCapnProto(factory);
 
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);
     registerInputFormatLineAsString(factory);
 
-#if !defined(ARCADIA_BUILD)
     registerInputFormatCapnProto(factory);
-#endif
 
     registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(factory);
     registerNonTrivialPrefixAndSuffixCheckerJSONAsString(factory);

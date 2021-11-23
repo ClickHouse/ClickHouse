@@ -12,7 +12,7 @@
 #include <DataTypes/DataTypeDate.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
-#include <DataStreams/ITTLAlgorithm.h>
+#include <Processors/TTL/ITTLAlgorithm.h>
 
 #include <Parsers/queryToString.h>
 

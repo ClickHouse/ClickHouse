@@ -18,8 +18,8 @@ namespace ErrorCodes
 
 StorageID::StorageID(const ASTQueryWithTableAndOutput & query)
 {
-    database_name = query.database;
-    table_name = query.table;
+    database_name = query.getDatabase();
+    table_name = query.getTable();
     uuid = query.uuid;
     assertNotEmpty();
 }

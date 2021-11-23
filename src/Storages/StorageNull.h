@@ -6,7 +6,7 @@
 #include <Storages/IStorage.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
@@ -43,7 +43,7 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
-    void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     std::optional<UInt64> totalRows(const Settings &) const override
     {

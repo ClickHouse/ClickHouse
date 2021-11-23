@@ -286,7 +286,7 @@ void KeeperTCPHandler::runImpl()
         return;
     }
 
-    if (keeper_dispatcher->hasLeader())
+    if (keeper_dispatcher->checkInit() && keeper_dispatcher->hasLeader())
     {
         try
         {
@@ -306,7 +306,15 @@ void KeeperTCPHandler::runImpl()
     }
     else
     {
-        LOG_WARNING(log, "Ignoring user request, because no alive leader exist");
+        String reason;
+        if (!keeper_dispatcher->checkInit() && !keeper_dispatcher->hasLeader())
+            reason = "server is not initialized yet and no alive leader exists";
+        else if (!keeper_dispatcher->checkInit())
+            reason = "server is not initialized yet";
+        else
+            reason = "no alive leader exists";
+
+        LOG_WARNING(log, "Ignoring user request, because {}", reason);
         sendHandshake(false);
         return;
     }
@@ -325,6 +333,16 @@ void KeeperTCPHandler::runImpl()
     };
     keeper_dispatcher->registerSession(session_id, response_callback);
 
+    Stopwatch logging_stopwatch;
+    auto log_long_operation = [&](const String & operation)
+    {
+        constexpr UInt64 operation_max_ms = 500;
+        auto elapsed_ms = logging_stopwatch.elapsedMilliseconds();
+        if (operation_max_ms < elapsed_ms)
+            LOG_TEST(log, "{} for session {} took {} ms", operation, session_id, elapsed_ms);
+        logging_stopwatch.restart();
+    };
+
     session_stopwatch.start();
     bool close_received = false;
     try
@@ -334,9 +352,11 @@ void KeeperTCPHandler::runImpl()
             using namespace std::chrono_literals;
 
             PollResult result = poll_wrapper->poll(session_timeout, in);
+            log_long_operation("Polling socket");
             if (result.has_requests && !close_received)
             {
                 auto [received_op, received_xid] = receiveRequest();
+                log_long_operation("Receiving request");
 
                 if (received_op == Coordination::OpNum::Close)
                 {
@@ -362,6 +382,7 @@ void KeeperTCPHandler::runImpl()
 
                 if (!responses->tryPop(response))
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "We must have ready response, but queue is empty. It's a bug.");
+                log_long_operation("Waiting for response to be ready");
 
                 if (response->xid == close_xid)
                 {
@@ -370,6 +391,7 @@ void KeeperTCPHandler::runImpl()
                 }
 
                 response->write(*out);
+                log_long_operation("Sending response");
                 if (response->error == Coordination::Error::ZSESSIONEXPIRED)
                 {
                     LOG_DEBUG(log, "Session #{} expired because server shutting down or quorum is not alive", session_id);
@@ -393,6 +415,8 @@ void KeeperTCPHandler::runImpl()
     }
     catch (const Exception & ex)
     {
+        log_long_operation("Unknown operation");
+        LOG_TRACE(log, "Has {} responses in the queue", responses->size());
         LOG_INFO(log, "Got exception processing session #{}: {}", session_id, getExceptionMessage(ex, true));
         keeper_dispatcher->finishSession(session_id);
     }

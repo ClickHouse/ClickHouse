@@ -31,7 +31,7 @@ FileDictionarySource::FileDictionarySource(
     , context(context_)
 {
     auto user_files_path = context->getUserFilesPath();
-    if (created_from_ddl && !pathStartsWith(filepath, user_files_path))
+    if (created_from_ddl && !fileOrSymlinkPathStartsWith(filepath, user_files_path))
         throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside {}", filepath, user_files_path);
 }
 

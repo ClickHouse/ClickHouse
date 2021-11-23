@@ -118,7 +118,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
     std::unique_lock lock(write_mutex);
 
     MergeTreeData::MutableDataPartsVector parts;
-    auto in = disk->readFile(path, {}, 0);
+    auto in = disk->readFile(path, {});
     NativeReader block_in(*in, 0);
     NameSet dropped_parts;
 
