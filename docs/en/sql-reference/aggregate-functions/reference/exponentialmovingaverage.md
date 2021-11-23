@@ -29,7 +29,7 @@ Each `value` corresponds to the determinate `timestamp`. The half-life `x` is th
 
 Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
 
-**Example**
+**Examples**
 
 Input table:
 
