@@ -1,11 +1,7 @@
-<yandex>
+<clickhouse>
     <named_collections>
         <url1>
             <headers>
-                <header>
-                    <name>Range</name>
-                    <value>bytes=0-1</value>
-                </header>
                 <header>
                     <name>Access-Control-Request-Method</name>
                     <value>PUT</value>
@@ -13,4 +9,4 @@
             </headers>
         </url1>
     </named_collections>
-</yandex>
+</clickhouse>

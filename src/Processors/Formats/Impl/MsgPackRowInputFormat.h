@@ -1,10 +1,7 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_formats.h"
-#    include "config_core.h"
-#endif
-
+#include "config_formats.h"
+#include "config_core.h"
 
 #if USE_MSGPACK
 
@@ -62,11 +59,12 @@ class MsgPackRowInputFormat : public IRowInputFormat
 public:
     MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
 
-    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     String getName() const override { return "MagPackRowInputFormat"; }
     void resetParser() override;
 
 private:
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+
     bool readObject();
 
     PeekableReadBuffer buf;

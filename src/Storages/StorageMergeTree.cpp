@@ -27,14 +27,10 @@
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-
-namespace CurrentMetrics
-{
-    extern const Metric BackgroundPoolTask;
-}
 
 namespace DB
 {
@@ -84,7 +80,9 @@ StorageMergeTree::StorageMergeTree(
         attach)
     , reader(*this)
     , writer(*this)
-    , merger_mutator(*this, getContext()->getSettingsRef().background_pool_size)
+    , merger_mutator(*this,
+        getContext()->getSettingsRef().background_merges_mutations_concurrency_ratio *
+        getContext()->getSettingsRef().background_pool_size)
 {
     loadDataParts(has_force_restore_data_flag);
 
@@ -107,7 +105,7 @@ void StorageMergeTree::startup()
 
     /// Temporary directories contain incomplete results of merges (after forced restart)
     ///  and don't allow to reinitialize them, so delete each of them immediately
-    clearOldTemporaryDirectories(0);
+    clearOldTemporaryDirectories(merger_mutator, 0);
 
     /// NOTE background task will also do the above cleanups periodically.
     time_after_previous_cleanup_parts.restart();
@@ -273,7 +271,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
 void StorageMergeTree::alter(
     const AlterCommands & commands,
     ContextPtr local_context,
-    TableLockHolder & table_lock_holder)
+    AlterLockHolder & table_lock_holder)
 {
     auto table_id = getStorageID();
     auto old_storage_settings = getSettings();
@@ -413,8 +411,9 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
         version = increment.get();
         entry.commit(version);
         mutation_file_name = entry.file_name;
-        auto insertion = current_mutations_by_id.emplace(mutation_file_name, std::move(entry));
-        current_mutations_by_version.emplace(version, insertion.first->second);
+        bool inserted = current_mutations_by_version.try_emplace(version, std::move(entry)).second;
+        if (!inserted)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
 
         LOG_INFO(log, "Added mutation: {}", mutation_file_name);
     }
@@ -619,16 +618,18 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 {
     LOG_TRACE(log, "Killing mutation {}", mutation_id);
+    UInt64 mutation_version = MergeTreeMutationEntry::tryParseFileName(mutation_id);
+    if (!mutation_version)
+        return CancellationCode::NotFound;
 
     std::optional<MergeTreeMutationEntry> to_kill;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
-        auto it = current_mutations_by_id.find(mutation_id);
-        if (it != current_mutations_by_id.end())
+        auto it = current_mutations_by_version.find(mutation_version);
+        if (it != current_mutations_by_version.end())
         {
             to_kill.emplace(std::move(it->second));
-            current_mutations_by_id.erase(it);
-            current_mutations_by_version.erase(to_kill->block_number);
+            current_mutations_by_version.erase(it);
         }
     }
 
@@ -669,10 +670,11 @@ void StorageMergeTree::loadMutations()
             if (startsWith(it->name(), "mutation_"))
             {
                 MergeTreeMutationEntry entry(disk, path, it->name());
-                Int64 block_number = entry.block_number;
+                UInt64 block_number = entry.block_number;
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands.size());
-                auto insertion = current_mutations_by_id.emplace(it->name(), std::move(entry));
-                current_mutations_by_version.emplace(block_number, insertion.first->second);
+                auto inserted = current_mutations_by_version.try_emplace(block_number, std::move(entry)).second;
+                if (!inserted)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", block_number);
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
@@ -682,7 +684,7 @@ void StorageMergeTree::loadMutations()
     }
 
     if (!current_mutations_by_version.empty())
-        increment.value = std::max(Int64(increment.value.load()), current_mutations_by_version.rbegin()->first);
+        increment.value = std::max(increment.value.load(), current_mutations_by_version.rbegin()->first);
 }
 
 std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
@@ -926,12 +928,16 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
             {
                 try
                 {
+                    auto fake_query_context = Context::createCopy(getContext());
+                    fake_query_context->makeQueryContext();
+                    fake_query_context->setCurrentQueryId("");
                     MutationsInterpreter interpreter(
-                        shared_from_this(), metadata_snapshot, commands_for_size_validation, getContext(), false);
+                        shared_from_this(), metadata_snapshot, commands_for_size_validation, fake_query_context, false);
                     commands_size += interpreter.evaluateCommandsSize();
                 }
                 catch (...)
                 {
+                    tryLogCurrentException(log);
                     MergeTreeMutationEntry & entry = it->second;
                     entry.latest_fail_time = time(nullptr);
                     entry.latest_fail_reason = getCurrentExceptionMessage(false);
@@ -962,49 +968,6 @@ std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMutate(
     }
 
     return {};
-}
-
-bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & merge_mutate_entry, TableLockHolder & table_lock_holder)
-{
-    auto & future_part = merge_mutate_entry.future_part;
-
-    auto merge_list_entry = getContext()->getMergeList().insert(getStorageID(), future_part);
-    Stopwatch stopwatch;
-    MutableDataPartPtr new_part;
-
-    auto write_part_log = [&] (const ExecutionStatus & execution_status)
-    {
-        writePartLog(
-            PartLogElement::MUTATE_PART,
-            execution_status,
-            stopwatch.elapsed(),
-            future_part->name,
-            new_part,
-            future_part->parts,
-            merge_list_entry.get());
-    };
-
-    try
-    {
-        auto task = merger_mutator.mutatePartToTemporaryPart(
-            future_part, metadata_snapshot, merge_mutate_entry.commands, merge_list_entry.get(),
-            time(nullptr), getContext(), merge_mutate_entry.tagger->reserved_space, table_lock_holder);
-
-        new_part = executeHere(task);
-
-        renameTempPartAndReplace(new_part);
-
-        updateMutationEntriesErrors(future_part, true, "");
-        write_part_log({});
-    }
-    catch (...)
-    {
-        updateMutationEntriesErrors(future_part, false, getCurrentExceptionMessage(false));
-        write_part_log(ExecutionStatus::fromCurrentException());
-        throw;
-    }
-
-    return true;
 }
 
 bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee) //-V657
@@ -1054,31 +1017,34 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     }
 
     bool scheduled = false;
-    if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
+    if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
+            getSettings()->merge_tree_clear_old_temporary_directories_interval_seconds))
     {
-        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
+        assignee.scheduleCommonTask(ExecutableLambdaAdapter::create(
             [this, share_lock] ()
             {
-                clearOldTemporaryDirectories(getSettings()->temporary_directories_lifetime.totalSeconds());
-                return true;
-            }, common_assignee_trigger, getStorageID()));
+                return clearOldTemporaryDirectories(merger_mutator, getSettings()->temporary_directories_lifetime.totalSeconds());
+            }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
         scheduled = true;
     }
-    if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
+    if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
+            getSettings()->merge_tree_clear_old_parts_interval_seconds))
     {
-        assignee.scheduleMergeMutateTask(ExecutableLambdaAdapter::create(
+        assignee.scheduleCommonTask(ExecutableLambdaAdapter::create(
             [this, share_lock] ()
             {
                 /// All use relative_data_path which changes during rename
                 /// so execute under share lock.
-                clearOldPartsFromFilesystem();
-                clearOldWriteAheadLogs();
-                clearOldMutations();
-                clearEmptyParts();
-                return true;
-            }, common_assignee_trigger, getStorageID()));
+                size_t cleared_count = 0;
+                cleared_count += clearOldPartsFromFilesystem();
+                cleared_count += clearOldWriteAheadLogs();
+                cleared_count += clearOldMutations();
+                cleared_count += clearEmptyParts();
+                return cleared_count;
+                /// TODO maybe take into account number of cleared objects when calculating backoff
+            }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
         scheduled = true;
-     }
+    }
 
     return scheduled;
 }
@@ -1094,18 +1060,18 @@ Int64 StorageMergeTree::getCurrentMutationVersion(
     return it->first;
 }
 
-void StorageMergeTree::clearOldMutations(bool truncate)
+size_t StorageMergeTree::clearOldMutations(bool truncate)
 {
     const auto settings = getSettings();
     if (!truncate && !settings->finished_mutations_to_keep)
-        return;
+        return 0;
 
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
         if (!truncate && current_mutations_by_version.size() <= settings->finished_mutations_to_keep)
-            return;
+            return 0;
 
         auto end_it = current_mutations_by_version.end();
         auto begin_it = current_mutations_by_version.begin();
@@ -1118,7 +1084,7 @@ void StorageMergeTree::clearOldMutations(bool truncate)
 
             size_t done_count = std::distance(begin_it, end_it);
             if (done_count <= settings->finished_mutations_to_keep)
-                return;
+                return 0;
 
             to_delete_count = done_count - settings->finished_mutations_to_keep;
         }
@@ -1127,7 +1093,6 @@ void StorageMergeTree::clearOldMutations(bool truncate)
         for (size_t i = 0; i < to_delete_count; ++i)
         {
             mutations_to_delete.push_back(std::move(it->second));
-            current_mutations_by_id.erase(mutations_to_delete.back().file_name);
             it = current_mutations_by_version.erase(it);
         }
     }
@@ -1137,6 +1102,8 @@ void StorageMergeTree::clearOldMutations(bool truncate)
         LOG_TRACE(log, "Removing mutation: {}", mutation.file_name);
         mutation.removeFile();
     }
+
+    return mutations_to_delete.size();
 }
 
 bool StorageMergeTree::optimize(
@@ -1218,6 +1185,7 @@ bool StorageMergeTree::optimize(
 
 ActionLock StorageMergeTree::stopMergesAndWait()
 {
+    /// TODO allow to stop merges in specific partition only (like it's done in ReplicatedMergeTree)
     std::unique_lock lock(currently_processing_in_background_mutex);
 
     /// Asks to complete merges and does not allow them to start.
@@ -1371,6 +1339,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 {
     auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto lock2 = source_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    auto merges_blocker = stopMergesAndWait();
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();
     auto my_metadata_snapshot = getInMemoryMetadataPtr();
 
@@ -1444,6 +1413,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 {
     auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto lock2 = dest_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    auto merges_blocker = stopMergesAndWait();
 
     auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
     if (!dest_table_storage)
@@ -1504,7 +1474,6 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
             transaction.commit(&lock);
         }
 
-        clearOldMutations(true);
         clearOldPartsFromFilesystem();
 
         PartLog::addNewParts(getContext(), dst_parts, watch.elapsed());

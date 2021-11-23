@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_MYSQL
 
@@ -18,7 +16,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
 
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/FilterTransform.h>
 
 #include <Databases/MySQL/DatabaseMaterializedMySQL.h>
@@ -50,8 +48,8 @@ Pipe StorageMaterializedMySQL::read(
     size_t max_block_size,
     unsigned int num_streams)
 {
-    /// If the background synchronization thread has exception.
-    rethrowSyncExceptionIfNeed(database);
+    if (const auto * db = typeid_cast<const DatabaseMaterializedMySQL *>(database))
+        db->rethrowExceptionIfNeeded();
 
     return readFinalFromNestedStorage(nested_storage, column_names, metadata_snapshot,
             query_info, context, processed_stage, max_block_size, num_streams);
@@ -59,8 +57,9 @@ Pipe StorageMaterializedMySQL::read(
 
 NamesAndTypesList StorageMaterializedMySQL::getVirtuals() const
 {
-    /// If the background synchronization thread has exception.
-    rethrowSyncExceptionIfNeed(database);
+    if (const auto * db = typeid_cast<const DatabaseMaterializedMySQL *>(database))
+        db->rethrowExceptionIfNeeded();
+
     return nested_storage->getVirtuals();
 }
 

@@ -63,7 +63,7 @@ public:
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(const String & path,
                                                      const ReadSettings & settings,
-                                                     size_t estimated_size) const override;
+                                                     std::optional<size_t> size) const override;
 
     /// Disk info
 
@@ -185,8 +185,8 @@ private:
 
     struct FileData
     {
-        FileType type;
-        size_t size;
+        FileType type{};
+        size_t size = 0;
     };
 
     using Files = std::unordered_map<String, FileData>; /// file path -> file data

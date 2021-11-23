@@ -34,7 +34,7 @@ public:
 
     String getName() const override { return "ReadFromRemote"; }
 
-    void initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
     ClusterProxy::IStreamFactory::Shards shards;

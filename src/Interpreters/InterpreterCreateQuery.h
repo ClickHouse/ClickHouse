@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
-#include <Access/AccessRightsElement.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>

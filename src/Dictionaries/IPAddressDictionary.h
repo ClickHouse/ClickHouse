@@ -10,8 +10,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Poco/Net/IPAddress.h>
-#include <common/StringRef.h>
-#include <common/logger_useful.h>
+#include <base/StringRef.h>
+#include <base/logger_useful.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
@@ -78,7 +78,7 @@ public:
 
     ColumnUInt8::Ptr hasKeys(const Columns & key_columns, const DataTypes & key_types) const override;
 
-    Pipe read(const Names & column_names, size_t max_block_size) const override;
+    Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
 

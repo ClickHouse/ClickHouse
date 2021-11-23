@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
-#endif
 
 #if USE_LIBPQXX
 
@@ -10,7 +8,7 @@
 #include "ConnectionHolder.h"
 #include <mutex>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 
 

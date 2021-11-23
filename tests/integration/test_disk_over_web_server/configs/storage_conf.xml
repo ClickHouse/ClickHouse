@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<yandex>
+<clickhouse>
     <storage_configuration>
         <disks>
             <def>
@@ -17,4 +17,4 @@
             </def>
         </policies>
     </storage_configuration>
-</yandex>
+</clickhouse>

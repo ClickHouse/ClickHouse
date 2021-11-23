@@ -102,7 +102,7 @@ public:
 
     String getName() const override { return "ReadFromMergeTree"; }
 
-    void initializePipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
+    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     void describeActions(FormatSettings & format_settings) const override;
     void describeIndexes(FormatSettings & format_settings) const override;
