@@ -4,7 +4,7 @@ toc_priority: 108
 
 ## exponentialMovingAverage {#exponential-moving-average}
 
-An aggregate function that calculates the exponential moving average of values for the determined time. 
+Сalculates the exponential moving average of values for the determined time. 
 
 **Syntax**
 
