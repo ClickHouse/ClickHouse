@@ -109,7 +109,7 @@ void registerDiskBlobStorage(DiskFactory & factory)
         const DisksMap & /*map*/)
     {
         auto endpoint_url = config.getString(config_prefix + ".endpoint");
-        validate_endpoint_url(endpoint_url);
+        // validate_endpoint_url(endpoint_url);
 
         auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
         auto blob_container_client = std::make_shared<Azure::Storage::Blobs::BlobContainerClient>(endpoint_url, managed_identity_credential);
