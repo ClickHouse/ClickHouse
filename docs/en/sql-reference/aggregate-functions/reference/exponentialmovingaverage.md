@@ -73,7 +73,6 @@ Result:
 ```
 
 **Example 2**
-
 Query: 
 
 ```sql
