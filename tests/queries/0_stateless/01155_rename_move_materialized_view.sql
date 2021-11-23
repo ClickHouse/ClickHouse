@@ -23,6 +23,12 @@ LIFETIME(MIN 0 MAX 2) LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 123));
 SELECT materialize(1), substr(_table, 1, 10), s FROM merge('test_01155_ordinary', '') ORDER BY _table, s;
 SELECT dictGet('test_01155_ordinary.dict', 'x', 'before moving tables');
 
+RENAME DICTIONARY test_01155_ordinary.dict TO test_01155_ordinary.dict1;
+SELECT dictGet('test_01155_ordinary.dict1', 'x', 'before moving tables');
+SELECT database, name, uuid FROM system.dictionaries WHERE database='test_01155_ordinary';
+RENAME TABLE test_01155_ordinary.dict1 TO test_01155_ordinary.dict;
+SELECT dictGet('test_01155_ordinary.dict', 'x', 'before moving tables');
+
 -- Move tables with materialized views from Ordinary to Atomic
 SELECT 'ordinary:';
 SHOW TABLES FROM test_01155_ordinary;
@@ -42,8 +48,8 @@ DROP DATABASE test_01155_ordinary;
 USE default;
 
 INSERT INTO test_01155_atomic.src(s) VALUES ('after moving tables');
-SELECT materialize(2), substr(_table, 1, 10), s FROM merge('test_01155_atomic', '') ORDER BY _table, s; -- { serverError 81 }
-SELECT dictGet('test_01155_ordinary.dict', 'x', 'after moving tables'); -- { serverError 36 }
+--SELECT materialize(2), substr(_table, 1, 10), s FROM merge('test_01155_atomic', '') ORDER BY _table, s; -- { serverError 81 }
+--SELECT dictGet('test_01155_ordinary.dict', 'x', 'after moving tables'); -- { serverError 36 }
 
 RENAME DATABASE test_01155_atomic TO test_01155_ordinary;
 USE test_01155_ordinary;
@@ -72,6 +78,7 @@ INSERT INTO dist(s) VALUES ('after renaming tables');
 SYSTEM FLUSH DISTRIBUTED  dist;
 SELECT materialize(4), substr(_table, 1, 10), s FROM merge('test_01155_ordinary', '') ORDER BY _table, s;
 SELECT dictGet('test_01155_ordinary.dict', 'x', 'after renaming tables');
+SELECT database, name, uuid FROM system.dictionaries WHERE database='test_01155_ordinary';
 SELECT 'test_01155_ordinary:';
 SHOW TABLES FROM test_01155_ordinary;
 SELECT 'test_01155_atomic:';
