@@ -1,12 +1,15 @@
 #include <Access/IAccessStorage.h>
-#include <Access/User.h>
+#include <Access/Authentication.h>
 #include <Access/Credentials.h>
+#include <Access/User.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/UUIDGenerator.h>
 #include <Poco/Logger.h>
 #include <base/FnTraits.h>
+#include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/replace.hpp>
 
 
 namespace DB
@@ -25,20 +28,16 @@ namespace ErrorCodes
 
 namespace
 {
-    using EntityType = IAccessStorage::EntityType;
-    using EntityTypeInfo = IAccessStorage::EntityTypeInfo;
-
-
     String outputID(const UUID & id)
     {
         return "ID(" + toString(id) + ")";
     }
 
-    String outputTypeAndNameOrID(const IAccessStorage & storage, const UUID & id)
+    String formatTypeWithNameOrID(const IAccessStorage & storage, const UUID & id)
     {
         auto entity = storage.tryRead(id);
         if (entity)
-            return entity->outputTypeAndName();
+            return entity->formatTypeWithName();
         return outputID(id);
     }
 
@@ -131,19 +130,19 @@ namespace
 }
 
 
-std::vector<UUID> IAccessStorage::findAll(EntityType type) const
+std::vector<UUID> IAccessStorage::findAll(AccessEntityType type) const
 {
     return findAllImpl(type);
 }
 
 
-std::optional<UUID> IAccessStorage::find(EntityType type, const String & name) const
+std::optional<UUID> IAccessStorage::find(AccessEntityType type, const String & name) const
 {
     return findImpl(type, name);
 }
 
 
-std::vector<UUID> IAccessStorage::find(EntityType type, const Strings & names) const
+std::vector<UUID> IAccessStorage::find(AccessEntityType type, const Strings & names) const
 {
     std::vector<UUID> ids;
     ids.reserve(names.size());
@@ -157,7 +156,7 @@ std::vector<UUID> IAccessStorage::find(EntityType type, const Strings & names) c
 }
 
 
-UUID IAccessStorage::getID(EntityType type, const String & name) const
+UUID IAccessStorage::getID(AccessEntityType type, const String & name) const
 {
     auto id = findImpl(type, name);
     if (id)
@@ -166,7 +165,7 @@ UUID IAccessStorage::getID(EntityType type, const String & name) const
 }
 
 
-std::vector<UUID> IAccessStorage::getIDs(EntityType type, const Strings & names) const
+std::vector<UUID> IAccessStorage::getIDs(AccessEntityType type, const Strings & names) const
 {
     std::vector<UUID> ids;
     ids.reserve(names.size());
@@ -252,7 +251,7 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
 
     if (tracker.errors())
     {
-        auto get_name_function = [&](size_t i) { return multiple_entities[i]->outputTypeAndName(); };
+        auto get_name_function = [&](size_t i) { return multiple_entities[i]->formatTypeWithName(); };
         tracker.showErrors("Couldn't insert {failed_names}. Successfully inserted: {succeeded_names}", get_name_function);
     }
 
@@ -305,7 +304,7 @@ std::vector<UUID> IAccessStorage::insertOrReplace(const std::vector<AccessEntity
 
     if (tracker.errors())
     {
-        auto get_name_function = [&](size_t i) { return multiple_entities[i]->outputTypeAndName(); };
+        auto get_name_function = [&](size_t i) { return multiple_entities[i]->formatTypeWithName(); };
         tracker.showErrors("Couldn't insert {failed_names}. Successfully inserted: {succeeded_names}", get_name_function);
     }
 
@@ -331,7 +330,7 @@ void IAccessStorage::remove(const std::vector<UUID> & ids)
 
     if (tracker.errors())
     {
-        auto get_name_function = [&](size_t i) { return outputTypeAndNameOrID(*this, ids[i]); };
+        auto get_name_function = [&](size_t i) { return formatTypeWithNameOrID(*this, ids[i]); };
         tracker.showErrors("Couldn't remove {failed_names}. Successfully removed: {succeeded_names}", get_name_function);
     }
 }
@@ -375,7 +374,7 @@ void IAccessStorage::update(const std::vector<UUID> & ids, const UpdateFunc & up
 
     if (tracker.errors())
     {
-        auto get_name_function = [&](size_t i) { return outputTypeAndNameOrID(*this, ids[i]); };
+        auto get_name_function = [&](size_t i) { return formatTypeWithNameOrID(*this, ids[i]); };
         tracker.showErrors("Couldn't update {failed_names}. Successfully updated: {succeeded_names}", get_name_function);
     }
 }
@@ -401,7 +400,7 @@ std::vector<UUID> IAccessStorage::tryUpdate(const std::vector<UUID> & ids, const
 }
 
 
-scope_guard IAccessStorage::subscribeForChanges(EntityType type, const OnChangedHandler & handler) const
+scope_guard IAccessStorage::subscribeForChanges(AccessEntityType type, const OnChangedHandler & handler) const
 {
     return subscribeForChangesImpl(type, handler);
 }
@@ -422,7 +421,7 @@ scope_guard IAccessStorage::subscribeForChanges(const std::vector<UUID> & ids, c
 }
 
 
-bool IAccessStorage::hasSubscription(EntityType type) const
+bool IAccessStorage::hasSubscription(AccessEntityType type) const
 {
     return hasSubscriptionImpl(type);
 }
@@ -480,7 +479,7 @@ UUID IAccessStorage::loginImpl(
             return *id;
         }
     }
-    throwNotFound(EntityType::USER, credentials.getUserName());
+    throwNotFound(AccessEntityType::USER, credentials.getUserName());
 }
 
 
@@ -495,7 +494,7 @@ bool IAccessStorage::areCredentialsValidImpl(
     if (credentials.getUserName() != user.getName())
         return false;
 
-    return user.authentication.areCredentialsValid(credentials, external_authenticators);
+    return Authentication::areCredentialsValid(credentials, user.auth_data, external_authenticators);
 }
 
 
@@ -541,68 +540,68 @@ void IAccessStorage::throwNotFound(const UUID & id) const
 }
 
 
-void IAccessStorage::throwNotFound(EntityType type, const String & name) const
+void IAccessStorage::throwNotFound(AccessEntityType type, const String & name) const
 {
-    int error_code = EntityTypeInfo::get(type).not_found_error_code;
-    throw Exception("There is no " + outputEntityTypeAndName(type, name) + " in " + getStorageName(), error_code);
+    int error_code = AccessEntityTypeInfo::get(type).not_found_error_code;
+    throw Exception("There is no " + formatEntityTypeWithName(type, name) + " in " + getStorageName(), error_code);
 }
 
 
-void IAccessStorage::throwBadCast(const UUID & id, EntityType type, const String & name, EntityType required_type)
+void IAccessStorage::throwBadCast(const UUID & id, AccessEntityType type, const String & name, AccessEntityType required_type)
 {
     throw Exception(
-        outputID(id) + ": " + outputEntityTypeAndName(type, name) + " expected to be of type " + toString(required_type),
+        outputID(id) + ": " + formatEntityTypeWithName(type, name) + " expected to be of type " + toString(required_type),
         ErrorCodes::LOGICAL_ERROR);
 }
 
 
-void IAccessStorage::throwIDCollisionCannotInsert(const UUID & id, EntityType type, const String & name, EntityType existing_type, const String & existing_name) const
+void IAccessStorage::throwIDCollisionCannotInsert(const UUID & id, AccessEntityType type, const String & name, AccessEntityType existing_type, const String & existing_name) const
 {
     throw Exception(
-        outputEntityTypeAndName(type, name) + ": cannot insert because the " + outputID(id) + " is already used by "
-            + outputEntityTypeAndName(existing_type, existing_name) + " in " + getStorageName(),
+        formatEntityTypeWithName(type, name) + ": cannot insert because the " + outputID(id) + " is already used by "
+            + formatEntityTypeWithName(existing_type, existing_name) + " in " + getStorageName(),
         ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
 }
 
 
-void IAccessStorage::throwNameCollisionCannotInsert(EntityType type, const String & name) const
+void IAccessStorage::throwNameCollisionCannotInsert(AccessEntityType type, const String & name) const
 {
     throw Exception(
-        outputEntityTypeAndName(type, name) + ": cannot insert because " + outputEntityTypeAndName(type, name) + " already exists in "
+        formatEntityTypeWithName(type, name) + ": cannot insert because " + formatEntityTypeWithName(type, name) + " already exists in "
             + getStorageName(),
         ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
 }
 
 
-void IAccessStorage::throwNameCollisionCannotRename(EntityType type, const String & old_name, const String & new_name) const
+void IAccessStorage::throwNameCollisionCannotRename(AccessEntityType type, const String & old_name, const String & new_name) const
 {
     throw Exception(
-        outputEntityTypeAndName(type, old_name) + ": cannot rename to " + backQuote(new_name) + " because "
-            + outputEntityTypeAndName(type, new_name) + " already exists in " + getStorageName(),
+        formatEntityTypeWithName(type, old_name) + ": cannot rename to " + backQuote(new_name) + " because "
+            + formatEntityTypeWithName(type, new_name) + " already exists in " + getStorageName(),
         ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
 }
 
 
-void IAccessStorage::throwReadonlyCannotInsert(EntityType type, const String & name) const
+void IAccessStorage::throwReadonlyCannotInsert(AccessEntityType type, const String & name) const
 {
     throw Exception(
-        "Cannot insert " + outputEntityTypeAndName(type, name) + " to " + getStorageName() + " because this storage is readonly",
+        "Cannot insert " + formatEntityTypeWithName(type, name) + " to " + getStorageName() + " because this storage is readonly",
         ErrorCodes::ACCESS_STORAGE_READONLY);
 }
 
 
-void IAccessStorage::throwReadonlyCannotUpdate(EntityType type, const String & name) const
+void IAccessStorage::throwReadonlyCannotUpdate(AccessEntityType type, const String & name) const
 {
     throw Exception(
-        "Cannot update " + outputEntityTypeAndName(type, name) + " in " + getStorageName() + " because this storage is readonly",
+        "Cannot update " + formatEntityTypeWithName(type, name) + " in " + getStorageName() + " because this storage is readonly",
         ErrorCodes::ACCESS_STORAGE_READONLY);
 }
 
 
-void IAccessStorage::throwReadonlyCannotRemove(EntityType type, const String & name) const
+void IAccessStorage::throwReadonlyCannotRemove(AccessEntityType type, const String & name) const
 {
     throw Exception(
-        "Cannot remove " + outputEntityTypeAndName(type, name) + " from " + getStorageName() + " because this storage is readonly",
+        "Cannot remove " + formatEntityTypeWithName(type, name) + " from " + getStorageName() + " because this storage is readonly",
         ErrorCodes::ACCESS_STORAGE_READONLY);
 }
 

@@ -39,9 +39,7 @@
 #include <base/Typelist.h>
 #include <base/map.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    pragma GCC diagnostic push

@@ -7,7 +7,6 @@
 #include <Storages/IStorage.h>
 
 #include <iomanip>
-#include <DataStreams/materializeBlock.h>
 
 
 namespace DB

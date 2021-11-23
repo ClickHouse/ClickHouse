@@ -18,8 +18,8 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Chain.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/Chain.h>
+#include <QueryPipeline/QueryPipeline.h>
 
 #if !defined(__clang__)
 #    pragma GCC diagnostic push
@@ -35,7 +35,8 @@ DB::StoragePtr createStorage(DB::DiskPtr & disk)
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
 
     StoragePtr table = StorageLog::create(
-        disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types}, ConstraintsDescription{}, String{}, false, 1048576);
+        "Log", disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types},
+        ConstraintsDescription{}, String{}, false, 1048576);
 
     table->startup();
 

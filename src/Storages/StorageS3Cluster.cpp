@@ -1,8 +1,6 @@
 #include "Storages/StorageS3Cluster.h"
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_AWS_S3
 
@@ -23,11 +21,11 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <DataStreams/narrowBlockInputStreams.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/narrowBlockInputStreams.h>
+#include <QueryPipeline/Pipe.h>
 #include "Processors/Sources/SourceWithProgress.h"
 #include <Processors/Sources/RemoteSource.h>
-#include <DataStreams/RemoteQueryExecutor.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/IStorage.h>

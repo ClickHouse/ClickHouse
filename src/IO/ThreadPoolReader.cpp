@@ -5,6 +5,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
+#include <Common/MemorySanitizer.h>
 #include <base/errnoToString.h>
 #include <Poco/Event.h>
 #include <future>
@@ -75,6 +76,9 @@ ThreadPoolReader::ThreadPoolReader(size_t pool_size, size_t queue_size_)
 
 std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request request)
 {
+    /// If size is zero, then read() cannot be distinguished from EOF
+    assert(request.size);
+
     int fd = assert_cast<const LocalFileDescriptor &>(*request.descriptor).fd;
 
 #if defined(__linux__)
@@ -151,6 +155,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
             else
             {
                 bytes_read += res;
+                __msan_unpoison(request.buf, res);
             }
         }
 

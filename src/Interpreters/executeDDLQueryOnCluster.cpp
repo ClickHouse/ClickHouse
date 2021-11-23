@@ -7,7 +7,7 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/queryToString.h>
-#include <Access/AccessRightsElement.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
 #include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -15,7 +15,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Processors/Sinks/EmptySink.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <filesystem>
 
 

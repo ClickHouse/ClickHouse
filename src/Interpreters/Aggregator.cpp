@@ -9,8 +9,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <DataStreams/NativeWriter.h>
-#include <DataStreams/materializeBlock.h>
+#include <Formats/NativeWriter.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
@@ -32,11 +31,6 @@ namespace ProfileEvents
     extern const Event ExternalAggregationWritePart;
     extern const Event ExternalAggregationCompressedBytes;
     extern const Event ExternalAggregationUncompressedBytes;
-}
-
-namespace CurrentMetrics
-{
-    extern const Metric QueryThread;
 }
 
 namespace DB

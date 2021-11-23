@@ -2,7 +2,7 @@
 
 #include <Interpreters/QueryViewsLog.h>
 #include <Parsers/IAST_fwd.h>
-#include <Processors/Chain.h>
+#include <QueryPipeline/Chain.h>
 #include <Processors/ISimpleTransform.h>
 #include <Storages/IStorage.h>
 #include <Processors/Sinks/SinkToStorage.h>

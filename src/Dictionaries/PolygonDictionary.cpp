@@ -7,7 +7,7 @@
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionHelpers.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySource.h>
@@ -118,7 +118,7 @@ ColumnPtr IPolygonDictionary::getColumn(
     return result;
 }
 
-Pipe IPolygonDictionary::read(const Names & column_names, size_t) const
+Pipe IPolygonDictionary::read(const Names & column_names, size_t, size_t) const
 {
     if (!configuration.store_polygon_key_column)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,

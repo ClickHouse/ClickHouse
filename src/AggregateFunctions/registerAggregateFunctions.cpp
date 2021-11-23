@@ -65,6 +65,7 @@ void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory 
 void registerAggregateFunctionCombinatorOrFill(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorResample(AggregateFunctionCombinatorFactory &);
 void registerAggregateFunctionCombinatorDistinct(AggregateFunctionCombinatorFactory &);
+void registerAggregateFunctionCombinatorMap(AggregateFunctionCombinatorFactory & factory);
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
 
@@ -98,9 +99,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionUniqUpTo(factory);
         registerAggregateFunctionTopK(factory);
         registerAggregateFunctionsBitwise(factory);
-#if !defined(ARCADIA_BUILD)
         registerAggregateFunctionsBitmap(factory);
-#endif
         registerAggregateFunctionsMaxIntersections(factory);
         registerAggregateFunctionHistogram(factory);
         registerAggregateFunctionRetention(factory);
@@ -136,6 +135,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionCombinatorOrFill(factory);
         registerAggregateFunctionCombinatorResample(factory);
         registerAggregateFunctionCombinatorDistinct(factory);
+        registerAggregateFunctionCombinatorMap(factory);
     }
 }
 
