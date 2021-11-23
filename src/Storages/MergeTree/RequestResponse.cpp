@@ -9,7 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int PARALLEL_REPLICAS_PROTOCOL_VERSION_DIFFER;
+    extern const int UNKNOWN_PROTOCOL;
 }
 
 static void readMarkRangesBinary(MarkRanges & ranges, ReadBuffer & buf, size_t MAX_RANGES_SIZE = DEFAULT_MAX_STRING_SIZE)
@@ -76,7 +76,7 @@ void PartitionReadRequest::deserialize(ReadBuffer & in)
     UInt64 version;
     readVarUInt(version, in);
     if (version != DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION)
-        throw Exception(ErrorCodes::PARALLEL_REPLICAS_PROTOCOL_VERSION_DIFFER, "Protocol versions for parallel reading \
+        throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol versions for parallel reading \
             from replicas differ. Got: {}, supported version: {}",
             version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 
@@ -106,7 +106,7 @@ void PartitionReadResponse::deserialize(ReadBuffer & in)
     UInt64 version;
     readVarUInt(version, in);
     if (version != DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION)
-        throw Exception(ErrorCodes::PARALLEL_REPLICAS_PROTOCOL_VERSION_DIFFER, "Protocol versions for parallel reading \
+        throw Exception(ErrorCodes::UNKNOWN_PROTOCOL, "Protocol versions for parallel reading \
             from replicas differ. Got: {}, supported version: {}",
             version, DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION);
 

@@ -108,7 +108,8 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
             intervals_to_do.intersect(HalfIntervals::initializeFromMarkRanges(std::move(request.mark_ranges)).negate());
 
             auto result_ranges = result.convertToMarkRangesFinal();
-            return {.denied = result_ranges.empty(), .mark_ranges = std::move(result_ranges)};
+            const bool denied = result_ranges.empty();
+            return {.denied = denied, .mark_ranges = std::move(result_ranges)};
         }
         case PartSegments::IntersectionResult::NO_INTERSECTION:
         {

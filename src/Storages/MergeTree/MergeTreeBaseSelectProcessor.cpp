@@ -567,7 +567,7 @@ std::unique_ptr<MergeTreeBlockSizePredictor> MergeTreeBaseSelectProcessor::getSi
 }
 
 
-MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performRequestToCoordinator(MarkRanges request_ranges)
+MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performRequestToCoordinator(MarkRanges requested_ranges)
 {
     String partition_id = task->data_part->info.partition_id;
     String part_name;
@@ -596,7 +596,7 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
         .part_name = std::move(part_name),
         .projection_name = std::move(projection_name),
         .block_range = std::move(block_range),
-        .mark_ranges = std::move(request_ranges)
+        .mark_ranges = std::move(requested_ranges)
     };
 
     AtomicStopwatch stop;
@@ -652,6 +652,9 @@ void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * curren
             sum_average_marks_size += average_mark_size_bytes.back();
         }
     }
+
+    if (sum_average_marks_size == 0)
+        sum_average_marks_size = 8UL * 1024 * 1024 * 10; // 10 MiB
 
     LOG_TRACE(log, "Reading from {} part, average mark size is {}",
         task->data_part->getTypeName(), sum_average_marks_size);

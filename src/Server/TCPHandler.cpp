@@ -79,6 +79,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNKNOWN_PROTOCOL;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)
@@ -310,6 +311,10 @@ void TCPHandler::runImpl()
             query_context->setReadTaskCallback([this]() -> String
             {
                 std::lock_guard lock(task_callback_mutex);
+
+                if (state.is_cancelled)
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Cancelled");
+
                 sendReadTaskRequestAssumeLocked();
                 return receiveReadTaskResponseAssumeLocked();
             });
@@ -317,6 +322,9 @@ void TCPHandler::runImpl()
             query_context->setMergeTreeReadTaskCallback([this](PartitionReadRequest request) -> PartitionReadResponse
             {
                 std::lock_guard lock(task_callback_mutex);
+
+                if (state.is_cancelled)
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Cancelled");
 
                 sendMergeTreeReadTaskRequstAssumeLocked(std::move(request));
                 return receivePartitionMergeTreeReadTaskResponseAssumeLocked();
