@@ -37,7 +37,7 @@ TRUSTED_CONTRIBUTORS = {
     "codyrobert",   # Flickerbox engineer
     "damozhaeva",   # DOCSUP
     "den-crane",
-    "flickerbox-tom", # Flickerbox 
+    "flickerbox-tom", # Flickerbox
     "gyuton",       # technical writer, Yandex
     "hagen1778",    # Roman Khavronenko, seasoned contributor
     "hczhcz",
