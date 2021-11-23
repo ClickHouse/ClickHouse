@@ -42,7 +42,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
     static bool has() { return true; }
     static IFunction::Monotonicity get(const Field &, const Field &)
     {
-        return { true, false };
+        return { .is_monotonic = true, .is_positive = false };
     }
 };
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <Core/Names.h>
 #include <Storages/AlterCommands.h>
@@ -86,7 +86,7 @@ public:
     void drop() override;
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
-    void alter(const AlterCommands & commands, ContextPtr context, TableLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & commands, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     void checkTableCanBeDropped() const override;
 
@@ -131,9 +131,7 @@ private:
     /// This set have to be used with `currently_processing_in_background_mutex`.
     DataParts currently_merging_mutating_parts;
 
-
-    std::map<String, MergeTreeMutationEntry> current_mutations_by_id;
-    std::multimap<Int64, MergeTreeMutationEntry &> current_mutations_by_version;
+    std::map<UInt64, MergeTreeMutationEntry> current_mutations_by_version;
 
     std::atomic<bool> shutdown_called {false};
 
@@ -178,13 +176,12 @@ private:
 
 
     std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String * disable_reason, TableLockHolder & table_lock_holder);
-    bool mutateSelectedPart(const StorageMetadataPtr & metadata_snapshot, MergeMutateSelectedEntry & entry, TableLockHolder & table_lock_holder);
 
     Int64 getCurrentMutationVersion(
         const DataPartPtr & part,
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
-    void clearOldMutations(bool truncate = false);
+    size_t clearOldMutations(bool truncate = false);
 
     // Partition helpers
     void dropPartNoWaitNoThrow(const String & part_name) override;

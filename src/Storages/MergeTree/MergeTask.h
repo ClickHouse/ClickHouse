@@ -8,7 +8,8 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/ColumnSizeEstimator.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
 #include <memory>
@@ -49,15 +50,17 @@ public:
         FutureMergedMutatedPartPtr future_part_,
         StorageMetadataPtr metadata_snapshot_,
         MergeList::Entry * merge_entry_,
+        std::unique_ptr<MergeListElement> projection_merge_list_element_,
         time_t time_of_merge_,
         ContextPtr context_,
         ReservationSharedPtr space_reservation_,
         bool deduplicate_,
         Names deduplicate_by_columns_,
         MergeTreeData::MergingParams merging_params_,
-        MergeTreeDataPartPtr parent_part_,
-        String prefix_,
+        const IMergeTreeDataPart * parent_part_,
+        String suffix_,
         MergeTreeData * data_,
+        MergeTreeDataMergerMutator * mutator_,
         ActionBlocker * merges_blocker_,
         ActionBlocker * ttl_merges_blocker_)
         {
@@ -66,6 +69,9 @@ public:
             global_ctx->future_part = std::move(future_part_);
             global_ctx->metadata_snapshot = std::move(metadata_snapshot_);
             global_ctx->merge_entry = std::move(merge_entry_);
+            global_ctx->projection_merge_list_element = std::move(projection_merge_list_element_);
+            global_ctx->merge_list_element_ptr
+                = global_ctx->projection_merge_list_element ? global_ctx->projection_merge_list_element.get() : (*global_ctx->merge_entry)->ptr();
             global_ctx->time_of_merge = std::move(time_of_merge_);
             global_ctx->context = std::move(context_);
             global_ctx->space_reservation = std::move(space_reservation_);
@@ -73,12 +79,13 @@ public:
             global_ctx->deduplicate_by_columns = std::move(deduplicate_by_columns_);
             global_ctx->parent_part = std::move(parent_part_);
             global_ctx->data = std::move(data_);
+            global_ctx->mutator = std::move(mutator_);
             global_ctx->merges_blocker = std::move(merges_blocker_);
             global_ctx->ttl_merges_blocker = std::move(ttl_merges_blocker_);
 
             auto prepare_stage_ctx = std::make_shared<ExecuteAndFinalizeHorizontalPartRuntimeContext>();
 
-            prepare_stage_ctx->prefix = std::move(prefix_);
+            prepare_stage_ctx->suffix = std::move(suffix_);
             prepare_stage_ctx->merging_params = std::move(merging_params_);
 
             (*stages.begin())->setRuntimeContext(std::move(prepare_stage_ctx), global_ctx);
@@ -112,12 +119,17 @@ private:
     struct GlobalRuntimeContext : public IStageRuntimeContext //-V730
     {
         MergeList::Entry * merge_entry{nullptr};
+        /// If not null, use this instead of the global MergeList::Entry. This is for merging projections.
+        std::unique_ptr<MergeListElement> projection_merge_list_element;
+        MergeListElement * merge_list_element_ptr{nullptr};
         MergeTreeData * data{nullptr};
+        MergeTreeDataMergerMutator * mutator{nullptr};
         ActionBlocker * merges_blocker{nullptr};
         ActionBlocker * ttl_merges_blocker{nullptr};
         StorageMetadataPtr metadata_snapshot{nullptr};
         FutureMergedMutatedPartPtr future_part{nullptr};
-        MergeTreeDataPartPtr parent_part{nullptr};
+        /// This will be either nullptr or new_data_part, so raw pointer is ok.
+        const IMergeTreeDataPart * parent_part{nullptr};
         ContextPtr context{nullptr};
         time_t time_of_merge{0};
         ReservationSharedPtr space_reservation{nullptr};
@@ -139,7 +151,8 @@ private:
         std::unique_ptr<MergeStageProgress> column_progress{nullptr};
 
         std::shared_ptr<MergedBlockOutputStream> to{nullptr};
-        BlockInputStreamPtr merged_stream{nullptr};
+        QueryPipeline merged_pipeline;
+        std::unique_ptr<PullingPipelineExecutor> merging_executor;
 
         SyncGuardPtr sync_guard{nullptr};
         MergeTreeData::MutableDataPartPtr new_data_part{nullptr};
@@ -160,7 +173,7 @@ private:
     struct ExecuteAndFinalizeHorizontalPartRuntimeContext : public IStageRuntimeContext //-V730
     {
         /// Dependencies
-        String prefix;
+        String suffix;
         MergeTreeData::MergingParams merging_params{};
 
         DiskPtr tmp_disk{nullptr};
@@ -255,8 +268,8 @@ private:
         Float64 progress_before = 0;
         std::unique_ptr<MergedColumnOnlyOutputStream> column_to{nullptr};
         size_t column_elems_written{0};
-        BlockInputStreams column_part_streams;
-        std::unique_ptr<ColumnGathererStream> column_gathered_stream;
+        QueryPipeline column_parts_pipeline;
+        std::unique_ptr<PullingPipelineExecutor> executor;
         std::unique_ptr<CompressedReadBufferFromFile> rows_sources_read_buf{nullptr};
     };
 

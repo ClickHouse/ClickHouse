@@ -155,7 +155,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     }
 
     /// Combinators of aggregate functions.
-    /// For every aggregate function 'agg' and combiner '-Comb' there is combined aggregate function with name 'aggComb',
+    /// For every aggregate function 'agg' and combiner '-Comb' there is a combined aggregate function with the name 'aggComb',
     ///  that can have different number and/or types of arguments, different result type and different behaviour.
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))
@@ -172,19 +172,28 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
 
         String nested_name = name.substr(0, name.size() - combinator_name.size());
         /// Nested identical combinators (i.e. uniqCombinedIfIf) is not
-        /// supported (since they even don't work -- silently).
+        /// supported (since they don't work -- silently).
         ///
-        /// But non-identical does supported and works, for example
-        /// uniqCombinedIfMergeIf, it is useful in case when the underlying
+        /// But non-identical is supported and works. For example,
+        /// uniqCombinedIfMergeIf is useful in cases when the underlying
         /// storage stores AggregateFunction(uniqCombinedIf) and in SELECT you
-        /// need to filter aggregation result based on another column for
-        /// example.
+        /// need to filter aggregation result based on another column.
+
+#if defined(UNBUNDLED)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overread"
+#endif
+
         if (!combinator->supportsNesting() && nested_name.ends_with(combinator_name))
         {
             throw Exception(ErrorCodes::ILLEGAL_AGGREGATION,
                 "Nested identical combinator '{}' is not supported",
                 combinator_name);
         }
+
+#if defined(UNBUNDLED)
+#pragma GCC diagnostic pop
+#endif
 
         DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
@@ -234,7 +243,7 @@ std::optional<AggregateFunctionProperties> AggregateFunctionFactory::tryGetPrope
         return found.properties;
 
     /// Combinators of aggregate functions.
-    /// For every aggregate function 'agg' and combiner '-Comb' there is combined aggregate function with name 'aggComb',
+    /// For every aggregate function 'agg' and combiner '-Comb' there is a combined aggregate function with the name 'aggComb',
     ///  that can have different number and/or types of arguments, different result type and different behaviour.
 
     if (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(name))

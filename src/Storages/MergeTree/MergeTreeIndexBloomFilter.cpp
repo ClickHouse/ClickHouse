@@ -2,8 +2,8 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <common/types.h>
-#include <common/bit_cast.h>
+#include <base/types.h>
+#include <base/bit_cast.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -68,7 +68,7 @@ bool MergeTreeIndexBloomFilter::mayBenefitFromIndexForIn(const ASTPtr & node) co
         }
     }
 
-    return true;
+    return false;
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() const

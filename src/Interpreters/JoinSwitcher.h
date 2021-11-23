@@ -5,7 +5,6 @@
 #include <Core/Block.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
-#include <DataStreams/IBlockInputStream.h>
 
 
 namespace DB
@@ -61,9 +60,10 @@ public:
         return join->alwaysReturnsEmptySet();
     }
 
-    std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block & block, UInt64 max_block_size) const override
+    std::shared_ptr<NotJoinedBlocks>
+    getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override
     {
-        return join->getNonJoinedBlocks(block, max_block_size);
+        return join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
     }
 
 private:

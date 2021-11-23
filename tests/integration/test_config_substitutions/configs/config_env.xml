@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
   <profiles>
     <default>
         <max_query_size from_env="MAX_QUERY_SIZE" />
@@ -14,4 +14,4 @@
       <include incl="users_1" />
       <include incl="users_2" />
   </users>
-</yandex>
+</clickhouse>

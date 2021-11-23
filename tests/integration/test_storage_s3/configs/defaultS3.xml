@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <s3>
         <s3_mock>
             <endpoint>http://resolver:8080</endpoint>
@@ -8,4 +8,4 @@
             <endpoint>http://resolver:8080/root-with-auth/restricteddirectory/</endpoint>
         </s3_mock_restricted_directory>
     </s3>
-</yandex>
+</clickhouse>

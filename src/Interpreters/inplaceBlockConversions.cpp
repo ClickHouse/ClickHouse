@@ -61,7 +61,25 @@ void addDefaultRequiredExpressionsRecursively(
         added_columns.emplace(required_column_name);
 
         for (const auto & next_required_column_name : required_columns_names)
-            addDefaultRequiredExpressionsRecursively(block, next_required_column_name, required_column_type, columns, default_expr_list_accum, added_columns, null_as_default);
+        {
+            /// Required columns of the default expression should not be converted to NULL,
+            /// since this map value to default and MATERIALIZED values will not work.
+            ///
+            /// Consider the following structure:
+            /// - A Nullable(Int64)
+            /// - X Int64 materialized coalesce(A, -1)
+            ///
+            /// With recursive_null_as_default=true you will get:
+            ///
+            ///     _CAST(coalesce(A, -1), 'Int64') AS X, NULL AS A
+            ///
+            /// And this will ignore default expression.
+            bool recursive_null_as_default = false;
+            addDefaultRequiredExpressionsRecursively(block,
+                next_required_column_name, required_column_type,
+                columns, default_expr_list_accum, added_columns,
+                recursive_null_as_default);
+        }
     }
     else if (columns.has(required_column_name))
     {

@@ -1,1 +1,1 @@
-<yandex><listen_host>::</listen_host></yandex>
+<clickhouse><listen_host>::</listen_host></clickhouse>

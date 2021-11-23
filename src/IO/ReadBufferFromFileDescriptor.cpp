@@ -11,7 +11,7 @@
 #include <sys/stat.h>
 
 
-#if defined(__clang__) && __clang_major__ >= 13
+#ifdef HAS_RESERVED_IDENTIFIER
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 #endif
 
@@ -51,6 +51,9 @@ std::string ReadBufferFromFileDescriptor::getFileName() const
 
 bool ReadBufferFromFileDescriptor::nextImpl()
 {
+    /// If internal_buffer size is empty, then read() cannot be distinguished from EOF
+    assert(!internal_buffer.empty());
+
     size_t bytes_read = 0;
     while (!bytes_read)
     {

@@ -4,7 +4,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
-#include <common/scope_guard.h>
+#include <base/scope_guard.h>
 
 #include <filesystem>
 #include <iostream>

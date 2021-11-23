@@ -1,5 +1,6 @@
 #pragma once
-
+#include <Common/Exception.h>
+#include <base/defines.h>
 namespace DB
 {
 namespace ErrorCodes

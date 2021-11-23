@@ -12,8 +12,7 @@
 #include <Interpreters/misc.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
-#include <common/map.h>
-
+#include <base/map.h>
 
 namespace DB
 {
@@ -119,13 +118,67 @@ static bool isConditionGood(const ASTPtr & condition)
     return false;
 }
 
+static const ASTFunction * getAsTuple(const ASTPtr & node)
+{
+    if (const auto * func = node->as<ASTFunction>(); func && func->name == "tuple")
+        return func;
+    return {};
+};
+
+static bool getAsTupleLiteral(const ASTPtr & node, Tuple & tuple)
+{
+    if (const auto * value_tuple = node->as<ASTLiteral>())
+        return value_tuple && value_tuple->value.tryGet<Tuple>(tuple);
+    return false;
+};
+
+bool MergeTreeWhereOptimizer::tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final) const
+{
+    if (!func || func->name != "equals" || func->arguments->children.size() != 2)
+        return false;
+
+    Tuple tuple_lit;
+    const ASTFunction * tuple_other = nullptr;
+    if (getAsTupleLiteral(func->arguments->children[0], tuple_lit))
+        tuple_other = getAsTuple(func->arguments->children[1]);
+    else if (getAsTupleLiteral(func->arguments->children[1], tuple_lit))
+        tuple_other = getAsTuple(func->arguments->children[0]);
+
+    if (!tuple_other || tuple_lit.size() != tuple_other->arguments->children.size())
+        return false;
+
+    for (size_t i = 0; i < tuple_lit.size(); ++i)
+    {
+        const auto & child = tuple_other->arguments->children[i];
+        std::shared_ptr<IAST> fetch_sign_column = nullptr;
+        /// tuple in tuple like (a, (b, c)) = (1, (2, 3))
+        if (const auto * child_func = getAsTuple(child))
+            fetch_sign_column = std::make_shared<ASTFunction>(*child_func);
+        else if (const auto * child_ident = child->as<ASTIdentifier>())
+            fetch_sign_column = std::make_shared<ASTIdentifier>(child_ident->name());
+        else
+            return false;
+
+        ASTPtr fetch_sign_value = std::make_shared<ASTLiteral>(tuple_lit.at(i));
+        ASTPtr func_node = makeASTFunction("equals", fetch_sign_column, fetch_sign_value);
+        analyzeImpl(res, func_node, is_final);
+    }
+
+    return true;
+}
 
 void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const
 {
-    if (const auto * func_and = node->as<ASTFunction>(); func_and && func_and->name == "and")
+    const auto * func = node->as<ASTFunction>();
+
+    if (func && func->name == "and")
     {
-        for (const auto & elem : func_and->arguments->children)
+        for (const auto & elem : func->arguments->children)
             analyzeImpl(res, elem, is_final);
+    }
+    else if (tryAnalyzeTuple(res, func, is_final))
+    {
+        /// analyzed
     }
     else
     {
