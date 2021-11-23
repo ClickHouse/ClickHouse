@@ -75,14 +75,11 @@ chmod 777 workspace output
 
 cd workspace
 
-# Download the package for the version we are going to test
-for path in "$S3_URL/$PR_TO_TEST/$SHA_TO_TEST/$COMMON_BUILD_PREFIX/performance/performance.tgz"
-do
-    if curl --fail --head "$path"
-    then
-        right_path="$path"
-    fi
-done
+# Download the package for the version we are going to test.
+if curl --fail --head "$S3_URL/$PR_TO_TEST/$SHA_TO_TEST/$COMMON_BUILD_PREFIX/performance/performance.tgz"
+then
+    right_path="$S3_URL/$PR_TO_TEST/$SHA_TO_TEST/$COMMON_BUILD_PREFIX/performance/performance.tgz"
+fi
 
 mkdir right
 wget -nv -nd -c "$right_path" -O- | tar -C right --strip-components=1 -zxv
