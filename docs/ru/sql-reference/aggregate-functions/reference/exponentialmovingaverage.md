@@ -72,7 +72,6 @@ SELECT exponentialMovingAverage(5)(temperature, timestamp);
 └───────────────────────────────────────────────────────┘
 ```
 
-**Пример 2**
 Запрос: 
 
 ```sql
