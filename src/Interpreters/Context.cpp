@@ -307,12 +307,23 @@ struct ContextSharedPart
             return;
         shutdown_called = true;
 
+        /// Stop periodic reloading of the configuration files.
+        /// This must be done first because otherwise the reloading may pass a changed config
+        /// to some destroyed parts of ContextSharedPart.
+        if (access_control)
+            access_control->stopPeriodicReloadingUsersConfigs();
+        if (external_dictionaries_loader)
+            external_dictionaries_loader->enablePeriodicUpdates(false);
+        if (external_user_defined_executable_functions_loader)
+            external_user_defined_executable_functions_loader->enablePeriodicUpdates(false);
+        if (external_models_loader)
+            external_models_loader->enablePeriodicUpdates(false);
+
         Session::shutdownNamedSessions();
 
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
           */
-
         if (system_logs)
             system_logs->shutdown();
 
