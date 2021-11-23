@@ -38,7 +38,6 @@ TRUSTED_CONTRIBUTORS = {
     "damozhaeva",   # DOCSUP
     "den-crane",
     "flickerbox-tom", # Flickerbox 
-    "gyuton",       # DOCSUP
     "gyuton",       # technical writer, Yandex
     "hagen1778",    # Roman Khavronenko, seasoned contributor
     "hczhcz",
