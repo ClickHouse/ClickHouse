@@ -201,7 +201,7 @@ endif ()
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 
-if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND NOT USE_MUSL)
+if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND NOT USE_MUSL)
     # Only for Linux, x86_64 or aarch64.
     option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)
 elseif(GLIBC_COMPATIBILITY)
@@ -435,20 +435,7 @@ endif ()
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
-# We recommend avoiding this mode for production builds because we can't guarantee
-# all needed libraries exist in your system.
-# This mode exists for enthusiastic developers who are searching for trouble.
-# The whole idea of using unknown version of libraries from the OS distribution is deeply flawed.
-# Useful for maintainers of OS packages.
-option (UNBUNDLED "Use system libraries instead of ones in contrib/" OFF)
-
-if (UNBUNDLED)
-    set(NOT_UNBUNDLED OFF)
-else ()
-    set(NOT_UNBUNDLED ON)
-endif ()
-
-if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN))
+if (NOT (OS_LINUX OR OS_DARWIN))
     # Using system libs can cause a lot of warnings in includes (on macro expansion).
     option(WERROR "Enable -Werror compiler option" OFF)
 else ()
@@ -527,7 +514,6 @@ message (STATUS
     USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES}
     MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES}
     SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES}
-    UNBUNDLED=${UNBUNDLED}
     CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
 include (GNUInstallDirs)
@@ -590,7 +576,6 @@ include (cmake/find/avro.cmake)
 include (cmake/find/msgpack.cmake)
 include (cmake/find/cassandra.cmake)
 include (cmake/find/sentry.cmake)
-include (cmake/find/stats.cmake)
 include (cmake/find/datasketches.cmake)
 include (cmake/find/libprotobuf-mutator.cmake)
 
