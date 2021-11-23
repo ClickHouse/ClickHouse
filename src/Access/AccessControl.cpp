@@ -172,7 +172,8 @@ void AccessControl::addUsersConfigStorage(const String & storage_name_, const Po
     auto new_storage = std::make_shared<UsersConfigAccessStorage>(storage_name_, check_setting_name_function);
     new_storage->setConfig(users_config_);
     addStorage(new_storage);
-    LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}", String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
+    LOG_DEBUG(getLogger(), "Added {} access storage '{}', path: {}",
+        String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getPath());
 }
 
 void AccessControl::addUsersConfigStorage(
@@ -225,6 +226,16 @@ void AccessControl::startPeriodicReloadingUsersConfigs()
     {
         if (auto users_config_storage = typeid_cast<std::shared_ptr<UsersConfigAccessStorage>>(storage))
             users_config_storage->startPeriodicReloading();
+    }
+}
+
+void AccessControl::stopPeriodicReloadingUsersConfigs()
+{
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto users_config_storage = typeid_cast<std::shared_ptr<UsersConfigAccessStorage>>(storage))
+            users_config_storage->stopPeriodicReloading();
     }
 }
 
