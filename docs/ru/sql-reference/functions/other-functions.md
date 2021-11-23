@@ -2375,3 +2375,75 @@ shardCount()
 **См. также**
 
 - Пример использования функции [shardNum()](#shard-num) также содержит вызов `shardCount()`.
+
+## getOSKernelVersion {#getoskernelversion}
+
+Возвращает строку с текущей версией ядра ОС.
+
+**Синтаксис**
+
+``` sql
+getOSKernelVersion()
+```
+
+**Аргументы**
+
+-   Нет.
+
+**Возвращаемое значение**
+
+-   Текущая версия ядра ОС.
+
+Тип: [String](../../sql-reference/data-types/string.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT getOSKernelVersion();
+```
+
+Результат:
+
+``` text
+┌─getOSKernelVersion()────┐
+│ Linux 4.15.0-55-generic │
+└─────────────────────────┘
+```
+
+## zookeeperSessionUptime {#zookeepersessionuptime}
+
+Возвращает аптайм текущего сеанса ZooKeeper в секундах.
+
+**Синтаксис**
+
+``` sql
+zookeeperSessionUptime()
+```
+
+**Аргументы**
+
+-   Нет.
+
+**Возвращаемое значение**
+
+-   Аптайм текущего сеанса ZooKeeper в секундах.
+
+Тип: [UInt32](../../sql-reference/data-types/int-uint.md).
+
+**Пример**
+
+Запрос:
+
+``` sql
+SELECT zookeeperSessionUptime();
+```
+
+Результат:
+
+``` text
+┌─zookeeperSessionUptime()─┐
+│                      286 │
+└──────────────────────────┘
+```

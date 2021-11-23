@@ -20,7 +20,7 @@ public:
     {
         try
         {
-            CompletionAwareWriteBuffer::finalize();
+            finalize();
         }
         catch (...)
         {
@@ -28,12 +28,9 @@ public:
         }
     }
 
-    void finalize() override
+    void finalizeImpl() override
     {
-        if (finalized)
-            return;
-
-        WriteBufferFromFileDecorator::finalize();
+        WriteBufferFromFileDecorator::finalizeImpl();
 
         completion_callback();
     }
@@ -89,15 +86,15 @@ std::unique_ptr<ReadBufferFromFileBase>
 DiskCacheWrapper::readFile(
     const String & path,
     const ReadSettings & settings,
-    size_t estimated_size) const
+    std::optional<size_t> size) const
 {
     if (!cache_file_predicate(path))
-        return DiskDecorator::readFile(path, settings, estimated_size);
+        return DiskDecorator::readFile(path, settings, size);
 
     LOG_DEBUG(log, "Read file {} from cache", backQuote(path));
 
     if (cache_disk->exists(path))
-        return cache_disk->readFile(path, settings, estimated_size);
+        return cache_disk->readFile(path, settings, size);
 
     auto metadata = acquireDownloadMetadata(path);
 
@@ -131,7 +128,7 @@ DiskCacheWrapper::readFile(
 
                 auto tmp_path = path + ".tmp";
                 {
-                    auto src_buffer = DiskDecorator::readFile(path, settings, estimated_size);
+                    auto src_buffer = DiskDecorator::readFile(path, settings, size);
                     auto dst_buffer = cache_disk->writeFile(tmp_path, settings.local_fs_buffer_size, WriteMode::Rewrite);
                     copyData(*src_buffer, *dst_buffer);
                 }
@@ -155,9 +152,9 @@ DiskCacheWrapper::readFile(
     }
 
     if (metadata->status == DOWNLOADED)
-        return cache_disk->readFile(path, settings, estimated_size);
+        return cache_disk->readFile(path, settings, size);
 
-    return DiskDecorator::readFile(path, settings, estimated_size);
+    return DiskDecorator::readFile(path, settings, size);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -177,7 +174,7 @@ DiskCacheWrapper::writeFile(const String & path, size_t buf_size, WriteMode mode
         [this, path, buf_size, mode]()
         {
             /// Copy file from cache to actual disk when cached buffer is finalized.
-            auto src_buffer = cache_disk->readFile(path, ReadSettings(), 0);
+            auto src_buffer = cache_disk->readFile(path, ReadSettings(), /* size= */ {});
             auto dst_buffer = DiskDecorator::writeFile(path, buf_size, mode);
             copyData(*src_buffer, *dst_buffer);
             dst_buffer->finalize();

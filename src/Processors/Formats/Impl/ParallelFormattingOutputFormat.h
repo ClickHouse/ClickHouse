@@ -11,7 +11,6 @@
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteBufferFromArena.h>
 
 #include <deque>
 #include <atomic>
@@ -95,7 +94,7 @@ public:
         need_flush = true;
     }
 
-    void doWritePrefix() override
+    void writePrefix() override
     {
         addChunk(Chunk{}, ProcessingUnitType::START, /*can_throw_exception*/ true);
     }
@@ -114,7 +113,7 @@ public:
         return internal_formatter_creator(buffer)->getContentType();
     }
 
-protected:
+private:
     void consume(Chunk chunk) override final
     {
         addChunk(std::move(chunk), ProcessingUnitType::PLAIN, /*can_throw_exception*/ true);
@@ -130,9 +129,8 @@ protected:
         addChunk(std::move(extremes), ProcessingUnitType::EXTREMES, /*can_throw_exception*/ true);
     }
 
-    void finalize() override;
+    void finalizeImpl() override;
 
-private:
     InternalFormatterCreator internal_formatter_creator;
 
     /// Status to synchronize multiple threads.

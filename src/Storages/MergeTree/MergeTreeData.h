@@ -365,13 +365,25 @@ public:
                   bool attach,
                   BrokenPartCallback broken_part_callback_ = [](const String &){});
 
+    /// Build a block of minmax and count values of a MergeTree table. These values are extracted
+    /// from minmax_indices, the first expression of primary key, and part rows.
+    ///
+    /// query_info - used to filter unneeded parts
+    ///
+    /// parts - part set to filter
+    ///
+    /// normal_parts - collects parts that don't have all the needed values to form the block.
+    /// Specifically, this is when a part doesn't contain a final mark and the related max value is
+    /// required.
     Block getMinMaxCountProjectionBlock(
         const StorageMetadataPtr & metadata_snapshot,
         const Names & required_columns,
         const SelectQueryInfo & query_info,
+        const DataPartsVector & parts,
+        DataPartsVector & normal_parts,
         ContextPtr query_context) const;
 
-    bool getQueryProcessingStageWithAggregateProjection(
+    std::optional<ProjectionCandidate> getQueryProcessingStageWithAggregateProjection(
         ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info) const;
 
     QueryProcessingStage::Enum getQueryProcessingStage(
@@ -394,6 +406,7 @@ public:
             || merging_params.mode == MergingParams::Summing
             || merging_params.mode == MergingParams::Aggregating
             || merging_params.mode == MergingParams::Replacing
+            || merging_params.mode == MergingParams::Graphite
             || merging_params.mode == MergingParams::VersionedCollapsing;
     }
 
@@ -529,17 +542,17 @@ public:
 
     /// Delete irrelevant parts from memory and disk.
     /// If 'force' - don't wait for old_parts_lifetime.
-    void clearOldPartsFromFilesystem(bool force = false);
+    size_t clearOldPartsFromFilesystem(bool force = false);
     void clearPartsFromFilesystem(const DataPartsVector & parts);
 
     /// Delete WAL files containing parts, that all already stored on disk.
-    void clearOldWriteAheadLogs();
+    size_t clearOldWriteAheadLogs();
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
-    void clearOldTemporaryDirectories(const MergeTreeDataMergerMutator & merger_mutator, size_t custom_directories_lifetime_seconds);
+    size_t clearOldTemporaryDirectories(const MergeTreeDataMergerMutator & merger_mutator, size_t custom_directories_lifetime_seconds);
 
-    void clearEmptyParts();
+    size_t clearEmptyParts();
 
     /// After the call to dropAllData() no method can be called.
     /// Deletes the data directory and flushes the uncompressed blocks cache and the marks cache.
@@ -570,7 +583,7 @@ public:
     /// Change MergeTreeSettings
     void changeSettings(
         const ASTPtr & new_settings,
-        TableLockHolder & table_lock_holder);
+        AlterLockHolder & table_lock_holder);
 
     /// Should be called if part data is suspected to be corrupted.
     void reportBrokenPart(const String & name) const
@@ -617,7 +630,7 @@ public:
         TableLockHolder & table_lock_holder);
 
     /// Prepares entries to backup data of the storage.
-    BackupEntries backup(const ASTs & partitions, ContextPtr context) const override;
+    BackupEntries backup(const ASTs & partitions, ContextPtr context) override;
     static BackupEntries backupDataParts(const DataPartsVector & data_parts);
 
     /// Extract data from the backup and put it to the storage.

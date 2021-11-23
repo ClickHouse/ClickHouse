@@ -1,27 +1,27 @@
-#include "Storages/MergeTree/MergeTask.h"
+#include <Storages/MergeTree/MergeTask.h>
 
 #include <memory>
 #include <fmt/format.h>
 
 #include <base/logger_useful.h>
-#include "Common/ActionBlocker.h"
+#include <Common/ActionBlocker.h>
 
-#include "Storages/MergeTree/MergeTreeData.h"
-#include "Storages/MergeTree/IMergeTreeDataPart.h"
-#include "Storages/MergeTree/MergeTreeSequentialSource.h"
-#include "Storages/MergeTree/FutureMergedMutatedPart.h"
-#include "Storages/MergeTree/MergeTreeDataMergerMutator.h"
-#include "Processors/Transforms/ExpressionTransform.h"
-#include "Processors/Transforms/MaterializingTransform.h"
-#include "Processors/Merges/MergingSortedTransform.h"
-#include "Processors/Merges/CollapsingSortedTransform.h"
-#include "Processors/Merges/SummingSortedTransform.h"
-#include "Processors/Merges/ReplacingSortedTransform.h"
-#include "Processors/Merges/GraphiteRollupSortedTransform.h"
-#include "Processors/Merges/AggregatingSortedTransform.h"
-#include "Processors/Merges/VersionedCollapsingTransform.h"
-#include "DataStreams/TTLBlockInputStream.h"
-#include <DataStreams/TTLCalcInputStream.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeSequentialSource.h>
+#include <Storages/MergeTree/FutureMergedMutatedPart.h>
+#include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Merges/CollapsingSortedTransform.h>
+#include <Processors/Merges/SummingSortedTransform.h>
+#include <Processors/Merges/ReplacingSortedTransform.h>
+#include <Processors/Merges/GraphiteRollupSortedTransform.h>
+#include <Processors/Merges/AggregatingSortedTransform.h>
+#include <Processors/Merges/VersionedCollapsingTransform.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
 
 namespace DB
@@ -94,7 +94,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
     const String local_tmp_prefix = global_ctx->parent_part ? "" : "tmp_merge_";
     const String local_tmp_suffix = global_ctx->parent_part ? ctx->suffix : "";
 
-    if (global_ctx->merges_blocker->isCancelled())
+    if (global_ctx->merges_blocker->isCancelled() || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
     /// We don't want to perform merge assigned with TTL as normal merge, so
@@ -255,9 +255,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     ctx->is_cancelled = [merges_blocker = global_ctx->merges_blocker,
         ttl_merges_blocker = global_ctx->ttl_merges_blocker,
-        need_remove = ctx->need_remove_expired_values]() -> bool
+        need_remove = ctx->need_remove_expired_values,
+        merge_list_element = global_ctx->merge_list_element_ptr]() -> bool
     {
-        return merges_blocker->isCancelled() || (need_remove && ttl_merges_blocker->isCancelled());
+        return merges_blocker->isCancelled()
+            || (need_remove && ttl_merges_blocker->isCancelled())
+            || merge_list_element->is_cancelled.load(std::memory_order_relaxed);
     };
 
     /// This is the end of preparation. Execution will be per block.
@@ -341,7 +344,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl()
     global_ctx->merging_executor.reset();
     global_ctx->merged_pipeline.reset();
 
-    if (global_ctx->merges_blocker->isCancelled())
+    if (global_ctx->merges_blocker->isCancelled() || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
@@ -440,7 +443,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
 {
     Block block;
-    if (!global_ctx->merges_blocker->isCancelled() && ctx->executor->pull(block))
+    if (!global_ctx->merges_blocker->isCancelled() && !global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed)
+        && ctx->executor->pull(block))
     {
         ctx->column_elems_written += block.rows();
         ctx->column_to->write(block);
@@ -455,7 +459,7 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
 void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
 {
     const String & column_name = ctx->it_name_and_type->name;
-    if (global_ctx->merges_blocker->isCancelled())
+    if (global_ctx->merges_blocker->isCancelled() || global_ctx->merge_list_element_ptr->is_cancelled.load(std::memory_order_relaxed))
         throw Exception("Cancelled merging parts", ErrorCodes::ABORTED);
 
     ctx->executor.reset();
@@ -778,7 +782,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream()
     {
         case MergeTreeData::MergingParams::Ordinary:
             merged_transform = std::make_shared<MergingSortedTransform>(
-                header, pipes.size(), sort_description, merge_block_size, 0, false, ctx->rows_sources_write_buf.get(), true, ctx->blocks_are_granules_size);
+                header, pipes.size(), sort_description, merge_block_size, 0, ctx->rows_sources_write_buf.get(), true, ctx->blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:

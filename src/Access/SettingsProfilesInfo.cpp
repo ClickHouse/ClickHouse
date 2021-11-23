@@ -29,7 +29,7 @@ bool operator==(const SettingsProfilesInfo & lhs, const SettingsProfilesInfo & r
 std::shared_ptr<const SettingsConstraintsAndProfileIDs>
 SettingsProfilesInfo::getConstraintsAndProfileIDs(const std::shared_ptr<const SettingsConstraintsAndProfileIDs> & previous) const
 {
-    auto res = std::make_shared<SettingsConstraintsAndProfileIDs>(manager);
+    auto res = std::make_shared<SettingsConstraintsAndProfileIDs>(access_control);
     res->current_profiles = profiles;
 
     if (previous)

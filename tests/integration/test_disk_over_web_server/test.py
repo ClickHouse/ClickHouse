@@ -37,9 +37,10 @@ def cluster():
         cluster.shutdown()
 
 
-def test_usage(cluster):
+@pytest.mark.parametrize("node_name", ["node2"])
+def test_usage(cluster, node_name):
     node1 = cluster.instances["node1"]
-    node2 = cluster.instances["node2"]
+    node2 = cluster.instances[node_name]
     global uuids
     assert(len(uuids) == 3)
     for i in range(3):
@@ -48,6 +49,8 @@ def test_usage(cluster):
             (id Int32) ENGINE = MergeTree() ORDER BY id
             SETTINGS storage_policy = 'web';
         """.format(i, uuids[i], i, i))
+
+        result = node2.query("SELECT * FROM test{} settings max_threads=20".format(i))
 
         result = node2.query("SELECT count() FROM test{}".format(i))
         assert(int(result) == 500000 * (i+1))
@@ -82,4 +85,3 @@ def test_incorrect_usage(cluster):
     assert("Table is read-only" in result)
 
     node2.query("DROP TABLE test0")
-

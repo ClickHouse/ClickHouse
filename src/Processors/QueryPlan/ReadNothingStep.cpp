@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/ReadNothingStep.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Sources/NullSource.h>
 
 namespace DB

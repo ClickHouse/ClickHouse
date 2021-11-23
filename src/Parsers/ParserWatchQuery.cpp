@@ -24,7 +24,7 @@ bool ParserWatchQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_watch("WATCH");
     ParserToken s_dot(TokenType::Dot);
-    ParserIdentifier name_p;
+    ParserIdentifier name_p(true);
     ParserKeyword s_events("EVENTS");
     ParserKeyword s_limit("LIMIT");
 
@@ -62,11 +62,14 @@ bool ParserWatchQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
+    query->database = database;
+    query->table = table;
+
     if (database)
-        query->database = getIdentifierName(database);
+        query->children.push_back(database);
 
     if (table)
-        query->table = getIdentifierName(table);
+        query->children.push_back(table);
 
     node = query;
 

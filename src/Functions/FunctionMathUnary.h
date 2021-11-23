@@ -8,9 +8,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 /** FastOps is a fast vector math library from Mikhail Parakhin (former Yandex CTO),
   * Enabled by default.

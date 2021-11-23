@@ -2,8 +2,8 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <DataStreams/ShellCommandSource.h>
-#include <DataStreams/formatBlock.h>
+#include <Processors/Sources/ShellCommandSource.h>
+#include <Formats/formatBlock.h>
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -204,6 +204,15 @@ FunctionOverloadResolverPtr UserDefinedExecutableFunctionFactory::tryGet(const S
     }
 
     return nullptr;
+}
+
+bool UserDefinedExecutableFunctionFactory::has(const String & function_name, ContextPtr context)
+{
+    const auto & loader = context->getExternalUserDefinedExecutableFunctionsLoader();
+    auto load_result = loader.getLoadResult(function_name);
+
+    bool result = load_result.object != nullptr;
+    return result;
 }
 
 std::vector<String> UserDefinedExecutableFunctionFactory::getRegisteredNames(ContextPtr context)
