@@ -40,6 +40,7 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int DATABASE_NOT_EMPTY;
+    extern const int INCORRECT_QUERY;
 }
 
 
@@ -347,6 +348,9 @@ void DatabaseOnDisk::renameTable(
         bool exchange,
         bool dictionary)
 {
+    if (exchange)
+        throw Exception("Tables can be exchanged only in Atomic databases", ErrorCodes::NOT_IMPLEMENTED);
+
     bool from_ordinary_to_atomic = false;
     bool from_atomic_to_ordinary = false;
     if (typeid(*this) != typeid(to_database))
@@ -361,21 +365,14 @@ void DatabaseOnDisk::renameTable(
             throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    bool allow_rename_dictionary = from_atomic_to_ordinary || from_ordinary_to_atomic;
-    if (exchange)
-        throw Exception("Tables can be exchanged only in Atomic databases", ErrorCodes::NOT_IMPLEMENTED);
-    if (dictionary && !allow_rename_dictionary)
-        throw Exception("Dictionaries can be renamed only in Atomic databases", ErrorCodes::NOT_IMPLEMENTED);
-
-
     auto table_data_relative_path = getTableDataPath(table_name);
     TableExclusiveLockHolder table_lock;
     String table_metadata_path;
     ASTPtr attach_query;
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
     StoragePtr table = tryGetTable(table_name, local_context);
-    if (table && table->isDictionary() && !allow_rename_dictionary)
-        throw Exception("Dictionaries can be renamed only in Atomic databases", ErrorCodes::NOT_IMPLEMENTED);
+    if (dictionary && !table->isDictionary())
+        throw Exception("Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables", ErrorCodes::INCORRECT_QUERY);
 
     detachTable(local_context, table_name);
 

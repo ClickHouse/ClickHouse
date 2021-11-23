@@ -211,32 +211,32 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
 {
     auto old_table_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
-    bool move_between_db_engines = old_table_id.uuid == UUIDHelpers::Nil || new_table_id.uuid == UUIDHelpers::Nil;
-    assert(!(old_table_id.uuid == UUIDHelpers::Nil && new_table_id.uuid == UUIDHelpers::Nil));
 
-    bool has_configuration = false;
+    assert((location == Location::SameDatabaseAndNameAsDictionary) == (getConfiguration().get() != nullptr));
+    if (location != Location::SameDatabaseAndNameAsDictionary)
+        return;
+
+    /// It's DDL dictionary, need to update configuration and reload
+
+    bool move_to_atomic = old_table_id.uuid == UUIDHelpers::Nil && new_table_id.uuid != UUIDHelpers::Nil;
+    bool move_to_ordinary = old_table_id.uuid != UUIDHelpers::Nil && new_table_id.uuid == UUIDHelpers::Nil;
+    assert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
+
     {
         std::lock_guard<std::mutex> lock(dictionary_config_mutex);
 
-        if (configuration)
-        {
-            has_configuration = true;
-            configuration->setString("dictionary.database", new_table_id.database_name);
-            configuration->setString("dictionary.name", new_table_id.table_name);
-            if (move_between_db_engines)
-            {
-                if (new_table_id.uuid == UUIDHelpers::Nil)
-                    configuration->remove("dictionary.uuid");
-                else
-                    configuration->setString("dictionary.uuid", toString(new_table_id.uuid));
-            }
-        }
+        configuration->setString("dictionary.database", new_table_id.database_name);
+        configuration->setString("dictionary.name", new_table_id.table_name);
+        if (move_to_atomic)
+            configuration->setString("dictionary.uuid", toString(new_table_id.uuid));
+        else if (move_to_ordinary)
+                configuration->remove("dictionary.uuid");
     }
 
-    if (!has_configuration)
-        return;
+    /// Dictionary is moving between databases of different engines or is renaming inside Ordinary database
+    bool recreate_dictionary = old_table_id.uuid == UUIDHelpers::Nil || new_table_id.uuid == UUIDHelpers::Nil;
 
-    if (move_between_db_engines)
+    if (recreate_dictionary)
     {
         /// It's too hard to update both name and uuid, better to reload dictionary with new name
         removeDictionaryConfigurationFromRepository();

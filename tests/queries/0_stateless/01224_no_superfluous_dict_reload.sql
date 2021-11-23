@@ -16,9 +16,6 @@ SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'dict_dat
 LIFETIME(MIN 0 MAX 0)
 LAYOUT(FLAT());
 
-RENAME DICTIONARY dict_db_01224.dict TO dict_db_01224.dict1; -- { serverError 48 }
-RENAME TABLE dict_db_01224.dict TO dict_db_01224.dict1; -- { serverError 48 }
-
 SELECT status FROM system.dictionaries WHERE database = 'dict_db_01224' AND name = 'dict';
 
 SELECT * FROM system.tables FORMAT Null;

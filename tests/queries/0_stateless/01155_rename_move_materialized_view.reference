@@ -5,6 +5,9 @@
 1	mv2	before moving tablesmv2
 1	src	before moving tables
 asdf
+asdf
+test_01155_ordinary	dict1	00000000-0000-0000-0000-000000000000
+asdf
 ordinary:
 .inner.mv1
 dict
@@ -66,6 +69,7 @@ CREATE DATABASE test_01155_atomic\nENGINE = Atomic
 4	src	after renaming tables
 4	src	before moving tables
 asdf
+test_01155_ordinary	dict	00000000-0000-0000-0000-000000000000
 test_01155_ordinary:
 .inner.mv1
 dict
