@@ -22,7 +22,7 @@ map(key1, value1[, key2, value2, ...])
 
 **Returned value**
 
--  Data structure as `key:value` pairs.
+-   Data structure as `key:value` pairs.
 
 Type: [Map(key, value)](../../sql-reference/data-types/map.md).
 
@@ -165,9 +165,6 @@ Result:
 ## mapPopulateSeries {#function-mappopulateseries}
 
 Fills missing keys in the maps (key and value array pair), where keys are integers. Also, it supports specifying the max key, which is used to extend the keys array.
-Arguments are [maps](../../sql-reference/data-types/map.md) or two [arrays](../../sql-reference/data-types/array.md#data-type-array), where the first array represent keys, and the second array contains values for the each key.
-
-For array arguments the number of elements in `keys` and `values` must be the same for each row.
 
 **Syntax**
 
@@ -178,12 +175,17 @@ mapPopulateSeries(map[, max])
 
 Generates a map (a tuple with two arrays or a value of `Map` type, depending on the arguments), where keys are a series of numbers, from minimum to maximum keys (or `max` argument if it specified) taken from the map with a step size of one, and corresponding values. If the value is not specified for the key, then it uses the default value in the resulting map. For repeated keys, only the first value (in order of appearing) gets associated with the key.
 
+For array arguments the number of elements in `keys` and `values` must be the same for each row.
+
 **Arguments**
+
+Arguments are [maps](../../sql-reference/data-types/map.md) or two [arrays](../../sql-reference/data-types/array.md#data-type-array), where the first array represent keys, and the second array contains values for the each key.
 
 Mapped arrays:
 
 -   `keys` — Array of keys. [Array](../../sql-reference/data-types/array.md#data-type-array)([Int](../../sql-reference/data-types/int-uint.md#uint-ranges)).
 -   `values` — Array of values. [Array](../../sql-reference/data-types/array.md#data-type-array)([Int](../../sql-reference/data-types/int-uint.md#uint-ranges)).
+-   `max` — Maximum key value. Optional. [Int8, Int16, Int32, Int64, Int128, Int256](../../sql-reference/data-types/int-uint.md#int-ranges).
 
 or
 
@@ -191,14 +193,14 @@ or
 
 **Returned value**
 
--  Depending on the arguments returns a [map](../../sql-reference/data-types/map.md) or a [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) of two [arrays](../../sql-reference/data-types/array.md#data-type-array): keys in sorted order, and values the corresponding keys.
+-   Depending on the arguments returns a [map](../../sql-reference/data-types/map.md) or a [tuple](../../sql-reference/data-types/tuple.md#tuplet1-t2) of two [arrays](../../sql-reference/data-types/array.md#data-type-array): keys in sorted order, and values the corresponding keys.
 
 **Example**
 
 Query with mapped arrays:
 
 ```sql
-select mapPopulateSeries([1,2,4], [11,22,44], 5) as res, toTypeName(res) as type;
+SELECT mapPopulateSeries([1,2,4], [11,22,44], 5) AS res, toTypeName(res) AS type;
 ```
 
 Result:
@@ -318,7 +320,7 @@ Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operat
 **Syntax**
 
 ```sql
-mapKeys(map)
+mapValues(map)
 ```
 
 **Parameters**
@@ -350,6 +352,83 @@ Result:
 │ ['eleven','11']  │
 │ ['twelve','6.0'] │
 └──────────────────┘
-```
+```  
+  
+## mapContainsKeyLike {#mapContainsKeyLike}  
+  
+**Syntax**
+
+```sql
+mapContainsKeyLike(map, pattern)
+```  
+  
+**Parameters**
+  
+-   `map` — Map. [Map](../../sql-reference/data-types/map.md).  
+-   `pattern`  - String pattern to match.  
+  
+**Returned value**
+
+-   `1` if `map` contains `key` like specified pattern, `0` if not.  
+  
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
+
+INSERT INTO test VALUES ({'abc':'abc','def':'def'}), ({'hij':'hij','klm':'klm'});
+
+SELECT mapContainsKeyLike(a, 'a%') FROM test;
+```  
+  
+Result:  
+  
+```text
+┌─mapContainsKeyLike(a, 'a%')─┐
+│                           1 │
+│                           0 │
+└─────────────────────────────┘  
+```  
+  
+## mapExtractKeyLike {#mapExtractKeyLike}  
+  
+**Syntax**
+
+```sql
+mapExtractKeyLike(map, pattern)
+```  
+  
+**Parameters**
+  
+-   `map` — Map. [Map](../../sql-reference/data-types/map.md).  
+-   `pattern`  - String pattern to match.  
+  
+**Returned value**
+
+- A map contained elements the key of which matchs the specified pattern. If there are no elements matched the pattern, it will return an empty map.
+  
+**Example**
+
+Query:
+
+```sql
+CREATE TABLE test (a Map(String,String)) ENGINE = Memory;
+
+INSERT INTO test VALUES ({'abc':'abc','def':'def'}), ({'hij':'hij','klm':'klm'});
+
+SELECT mapExtractKeyLike(a, 'a%') FROM test;
+```  
+  
+Result:  
+  
+```text
+┌─mapExtractKeyLike(a, 'a%')─┐
+│ {'abc':'abc'}              │
+│ {}                         │
+└────────────────────────────┘
+```  
+  
 
 [Original article](https://clickhouse.com/docs/en/sql-reference/functions/tuple-map-functions/) <!--hide-->

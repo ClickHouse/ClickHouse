@@ -33,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ACCESS_DENIED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -286,6 +287,71 @@ BlockIO InterpreterKillQueryQuery::execute()
         if (res_columns[0]->empty() && access_denied)
             throw Exception(
                 "Not allowed to kill mutation. To execute this query it's necessary to have the grant " + required_access_rights.toString(),
+                ErrorCodes::ACCESS_DENIED);
+
+        res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));
+
+        break;
+    }
+    case ASTKillQueryQuery::Type::PartMoveToShard:
+    {
+        if (query.sync)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SYNC modifier is not supported for this statement.");
+
+        Block moves_block = getSelectResult(
+            "database, table, task_name, task_uuid, part_name, to_shard, state",
+            "system.part_moves_between_shards");
+
+        if (!moves_block)
+            return res_io;
+
+        const ColumnString & database_col = typeid_cast<const ColumnString &>(*moves_block.getByName("database").column);
+        const ColumnString & table_col = typeid_cast<const ColumnString &>(*moves_block.getByName("table").column);
+        const ColumnUUID & task_uuid_col = typeid_cast<const ColumnUUID &>(*moves_block.getByName("task_uuid").column);
+
+        auto header = moves_block.cloneEmpty();
+        header.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
+
+        MutableColumns res_columns = header.cloneEmptyColumns();
+        auto table_id = StorageID::createEmpty();
+        AccessRightsElements required_access_rights;
+        auto access = getContext()->getAccess();
+        bool access_denied = false;
+
+        for (size_t i = 0; i < moves_block.rows(); ++i)
+        {
+            table_id = StorageID{database_col.getDataAt(i).toString(), table_col.getDataAt(i).toString()};
+            auto task_uuid = get<UUID>(task_uuid_col[i]);
+
+            CancellationCode code = CancellationCode::Unknown;
+
+            if (!query.test)
+            {
+                auto storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+                if (!storage)
+                    code = CancellationCode::NotFound;
+                else
+                {
+                    ASTAlterCommand alter_command{};
+                    alter_command.type = ASTAlterCommand::MOVE_PARTITION;
+                    alter_command.move_destination_type = DataDestinationType::SHARD;
+                    required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(
+                        alter_command, table_id.database_name, table_id.table_name);
+                    if (!access->isGranted(required_access_rights))
+                    {
+                        access_denied = true;
+                        continue;
+                    }
+                    code = storage->killPartMoveToShard(task_uuid);
+                }
+            }
+
+            insertResultRow(i, code, moves_block, header, res_columns);
+        }
+
+        if (res_columns[0]->empty() && access_denied)
+            throw Exception(
+                "Not allowed to kill move partition. To execute this query it's necessary to have the grant " + required_access_rights.toString(),
                 ErrorCodes::ACCESS_DENIED);
 
         res_io.pipeline = QueryPipeline(Pipe(std::make_shared<SourceFromSingleChunk>(header.cloneWithColumns(std::move(res_columns)))));

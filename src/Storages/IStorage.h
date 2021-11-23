@@ -6,7 +6,7 @@
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/CheckResults.h>
 #include <Storages/ColumnDependency.h>
 #include <Storages/IStorage_fwd.h>
@@ -158,6 +158,9 @@ public:
     /// This is true for most storages that store data on disk.
     virtual bool prefersLargeBlocks() const { return true; }
 
+    /// Returns true if the storage is for system, which cannot be target of SHOW CREATE TABLE.
+    virtual bool isSystemStorage() const { return false; }
+
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
@@ -205,7 +208,7 @@ public:
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
 
     /// Prepares entries to backup data of the storage.
-    virtual BackupEntries backup(const ASTs & partitions, ContextPtr context) const;
+    virtual BackupEntries backup(const ASTs & partitions, ContextPtr context);
 
     /// Extract data from the backup and put it to the storage.
     virtual RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context);
@@ -238,7 +241,8 @@ public:
 
     /// Lock table for alter. This lock must be acuqired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
-    TableLockHolder lockForAlter(const String & query_id, const std::chrono::milliseconds & acquire_timeout);
+    using AlterLockHolder = std::unique_lock<std::timed_mutex>;
+    AlterLockHolder lockForAlter(const std::chrono::milliseconds & acquire_timeout);
 
     /// Lock table exclusively. This lock must be acquired if you want to be
     /// sure, that no other thread (SELECT, merge, ALTER, etc.) doing something
@@ -417,7 +421,7 @@ public:
     /** ALTER tables in the form of column changes that do not affect the change
       * to Storage or its parameters. Executes under alter lock (lockForAlter).
       */
-    virtual void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & alter_lock_holder);
+    virtual void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder);
 
     /** Checks that alter commands can be applied to storage. For example, columns can be modified,
       * or primary key can be changes, etc.
@@ -465,6 +469,12 @@ public:
     virtual CancellationCode killMutation(const String & /*mutation_id*/)
     {
         throw Exception("Mutations are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    /// Cancel a part move to shard.
+    virtual CancellationCode killPartMoveToShard(const UUID & /*task_uuid*/)
+    {
+        throw Exception("Part moves between shards are not supported by storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** If the table have to do some complicated work on startup,
@@ -585,13 +595,14 @@ public:
     /// Does not takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> lifetimeBytes() const { return {}; }
 
+    /// Should table->drop be called at once or with delay (in case of atomic database engine).
+    /// Needed for integration engines, when there must be no delay for calling drop() method.
+    virtual bool dropTableImmediately() { return false; }
+
 private:
-    /// Lock required for alter queries (lockForAlter). Always taken for write
-    /// (actually can be replaced with std::mutex, but for consistency we use
-    /// RWLock). Allows to execute only one simultaneous alter query. Also it
-    /// should be taken by DROP-like queries, to be sure, that all alters are
-    /// finished.
-    mutable RWLock alter_lock = RWLockImpl::create();
+    /// Lock required for alter queries (lockForAlter).
+    /// Allows to execute only one simultaneous alter query.
+    mutable std::timed_mutex alter_lock;
 
     /// Lock required for drop queries. Every thread that want to ensure, that
     /// table is not dropped have to table this lock for read (lockForShare).

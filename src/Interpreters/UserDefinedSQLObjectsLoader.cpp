@@ -69,7 +69,7 @@ void UserDefinedSQLObjectsLoader::loadUserDefinedObject(ContextPtr context, User
                     0,
                     context->getSettingsRef().max_parser_depth);
 
-                InterpreterCreateFunctionQuery interpreter(ast, context, true /*is internal*/);
+                InterpreterCreateFunctionQuery interpreter(ast, context, false /*persist_function*/);
                 interpreter.execute();
             }
         }
@@ -111,7 +111,7 @@ void UserDefinedSQLObjectsLoader::loadObjects(ContextPtr context)
     }
 }
 
-void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name, const IAST & ast)
+void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQLObjectType object_type, const String & object_name, const IAST & ast, bool replace)
 {
     if (unlikely(!enable_persistence))
         return;
@@ -127,7 +127,7 @@ void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQL
         }
     }
 
-    if (std::filesystem::exists(file_path))
+    if (!replace && std::filesystem::exists(file_path))
         throw Exception(ErrorCodes::OBJECT_ALREADY_STORED_ON_DISK, "User defined object {} already stored on disk", backQuote(file_path));
 
     LOG_DEBUG(log, "Storing object {} to file {}", backQuote(object_name), file_path);
@@ -135,9 +135,9 @@ void UserDefinedSQLObjectsLoader::storeObject(ContextPtr context, UserDefinedSQL
     WriteBufferFromOwnString create_statement_buf;
     formatAST(ast, create_statement_buf, false);
     writeChar('\n', create_statement_buf);
-
     String create_statement = create_statement_buf.str();
-    WriteBufferFromFile out(file_path, create_statement.size(), O_WRONLY | O_CREAT | O_EXCL);
+
+    WriteBufferFromFile out(file_path, create_statement.size());
     writeString(create_statement, out);
     out.next();
     if (context->getSettingsRef().fsync_metadata)

@@ -42,7 +42,7 @@ FormatSettings getFormatSettings(ContextPtr context);
 template <typename T>
 FormatSettings getFormatSettings(ContextPtr context, const T & settings);
 
-/** Allows to create an IBlockInputStream or IBlockOutputStream by the name of the format.
+/** Allows to create an IInputFormat or IOutputFormat by the name of the format.
   * Note: format and compression are independent things.
   */
 class FormatFactory final : private boost::noncopyable
@@ -68,14 +68,11 @@ public:
         size_t row)>;
 
 private:
-
-    using InputCreatorFunc = InputFormatPtr(
-        ReadBuffer & buf,
-        const Block & header,
-        const RowInputFormatParams & params,
-        const FormatSettings & settings);
-
-    using InputCreator = std::function<InputCreatorFunc>;
+    using InputCreator = std::function<InputFormatPtr(
+            ReadBuffer & buf,
+            const Block & header,
+            const RowInputFormatParams & params,
+            const FormatSettings & settings)>;
 
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,

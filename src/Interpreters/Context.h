@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Access/RowPolicy.h>
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
@@ -13,12 +12,12 @@
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/isLocalAddress.h>
 #include <base/types.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
+#include <boost/container/flat_set.hpp>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -44,6 +43,7 @@ struct QuotaUsage;
 class AccessFlags;
 struct AccessRightsElement;
 class AccessRightsElements;
+enum class RowPolicyFilterType;
 class EmbeddedDictionaries;
 class ExternalDictionariesLoader;
 class ExternalModelsLoader;
@@ -86,7 +86,7 @@ class ActionLocksManager;
 using ActionLocksManagerPtr = std::shared_ptr<ActionLocksManager>;
 class ShellCommand;
 class ICompressionCodec;
-class AccessControlManager;
+class AccessControl;
 class Credentials;
 class GSSAcceptorContext;
 struct SettingsConstraintsAndProfileIDs;
@@ -196,7 +196,7 @@ private:
     std::shared_ptr<std::vector<UUID>> current_roles;
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     std::shared_ptr<const ContextAccess> access;
-    std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
+    std::shared_ptr<const EnabledRowPolicies> row_policies_of_initial_user;
     String current_database;
     Settings settings;  /// Setting for query execution.
 
@@ -341,7 +341,7 @@ public:
     String getUserScriptsPath() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
-    std::vector<String> getWarnings() const;
+    Strings getWarnings() const;
 
     VolumePtr getTemporaryVolume() const;
 
@@ -355,17 +355,14 @@ public:
 
     VolumePtr setTemporaryStorage(const String & path, const String & policy_name = "");
 
-    void setBackupsVolume(const String & path, const String & policy_name = "");
-    VolumePtr getBackupsVolume() const;
-
     using ConfigurationPtr = Poco::AutoPtr<Poco::Util::AbstractConfiguration>;
 
     /// Global application configuration settings.
     void setConfig(const ConfigurationPtr & config);
     const Poco::Util::AbstractConfiguration & getConfigRef() const;
 
-    AccessControlManager & getAccessControlManager();
-    const AccessControlManager & getAccessControlManager() const;
+    AccessControl & getAccessControl();
+    const AccessControl & getAccessControl() const;
 
     /// Sets external authenticators config (LDAP, Kerberos).
     void setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config);
@@ -382,7 +379,6 @@ public:
 
     /// Sets the current user assuming that he/she is already authenticated.
     /// WARNING: This function doesn't check password!
-    /// Normally you shouldn't call this function. Use the Session class to do authentication instead.
     void setUser(const UUID & user_id_);
 
     UserPtr getUser() const;
@@ -419,12 +415,14 @@ public:
 
     std::shared_ptr<const ContextAccess> getAccess() const;
 
-    ASTPtr getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType type) const;
+    ASTPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
-    /// Sets an extra row policy based on `client_info.initial_user`, if it exists.
+    /// Finds and sets extra row policies to be used based on `client_info.initial_user`,
+    /// if the initial user exists.
     /// TODO: we need a better solution here. It seems we should pass the initial row policy
-    /// because a shard is allowed to don't have the initial user or it may be another user with the same name.
-    void setInitialRowPolicy();
+    /// because a shard is allowed to not have the initial user or it might be another user
+    /// with the same name.
+    void enableRowPoliciesOfInitialUser();
 
     std::shared_ptr<const EnabledQuota> getQuota() const;
     std::optional<QuotaUsage> getQuotaUsage() const;
@@ -635,13 +633,13 @@ public:
     const Settings & getSettingsRef() const { return settings; }
 
     void setProgressCallback(ProgressCallback callback);
-    /// Used in InterpreterSelectQuery to pass it to the IBlockInputStream.
+    /// Used in executeQuery() to pass it to the QueryPipeline.
     ProgressCallback getProgressCallback() const;
 
     void setFileProgressCallback(FileProgressCallback && callback) { file_progress_callback = callback; }
     FileProgressCallback getFileProgressCallback() const { return file_progress_callback; }
 
-    /** Set in executeQuery and InterpreterSelectQuery. Then it is used in IBlockInputStream,
+    /** Set in executeQuery and InterpreterSelectQuery. Then it is used in QueryPipeline,
       *  to update and monitor information about the total number of resources spent for the query.
       */
     void setProcessListElement(QueryStatus * elem);
@@ -664,13 +662,20 @@ public:
     /// Same as above but return a zookeeper connection from auxiliary_zookeepers configuration entry.
     std::shared_ptr<zkutil::ZooKeeper> getAuxiliaryZooKeeper(const String & name) const;
 
+    /// Try to connect to Keeper using get(Auxiliary)ZooKeeper. Useful for
+    /// internal Keeper start (check connection to some other node). Return true
+    /// if connected successfully (without exception) or our zookeeper client
+    /// connection configured for some other cluster without our node.
+    bool tryCheckClientConnectionToMyKeeperCluster() const;
+
     UInt32 getZooKeeperSessionUptime() const;
 
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
 #endif
-    void initializeKeeperDispatcher() const;
+    void initializeKeeperDispatcher(bool start_async) const;
     void shutdownKeeperDispatcher() const;
+    void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config);
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
     void reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config);
@@ -792,6 +797,7 @@ public:
     DisksMap getDisksMap() const;
     void updateStorageConfiguration(const Poco::Util::AbstractConfiguration & config);
 
+
     /// Provides storage politics schemes
     StoragePolicyPtr getStoragePolicy(const String & name) const;
 
@@ -860,7 +866,7 @@ public:
     void setReadTaskCallback(ReadTaskCallback && callback);
 
     /// Background executors related methods
-    void initializeBackgroundExecutors();
+    void initializeBackgroundExecutorsIfNeeded();
 
     MergeMutateBackgroundExecutorPtr getMergeMutateExecutor() const;
     OrdinaryBackgroundExecutorPtr getMovesExecutor() const;

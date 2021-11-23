@@ -7,10 +7,7 @@
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
-#include <Processors/QueryPlan/FinishSortingStep.h>
-#include <Processors/QueryPlan/MergeSortingStep.h>
-#include <Processors/QueryPlan/MergingSortedStep.h>
-#include <Processors/QueryPlan/PartialSortingStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -237,10 +234,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     // {
     // }
 
-    if (typeid_cast<PartialSortingStep *>(child.get())
-        || typeid_cast<MergeSortingStep *>(child.get())
-        || typeid_cast<MergingSortedStep *>(child.get())
-        || typeid_cast<FinishSortingStep *>(child.get()))
+    if (typeid_cast<SortingStep *>(child.get()))
     {
         Names allowed_inputs = child->getOutputStream().header.getNames();
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, allowed_inputs))
