@@ -142,6 +142,8 @@ bool PipelineExecutor::checkTimeLimit()
             throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
 
         bool cont = limits.checkTimeLimit(process_list_element->watch, overflow_mode);
+        // We call cancel here so that all processors are notified and tasks waken up
+        // so that the "break" is faster and doesn't wait for long events
         if (!cont)
             cancel();
         return cont;
