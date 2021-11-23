@@ -32,8 +32,6 @@ PipelineExecutor::PipelineExecutor(Processors & processors, QueryStatus * elem)
     try
     {
         graph = std::make_unique<ExecutingGraph>(processors);
-        if (process_list_element)
-            process_list_element->addPipelineExecutor(this);
     }
     catch (Exception & exception)
     {
@@ -51,8 +49,11 @@ PipelineExecutor::PipelineExecutor(Processors & processors, QueryStatus * elem)
         auto settings = process_list_element->context.lock()->getSettings();
         limits.max_execution_time = settings.max_execution_time;
         overflow_mode = settings.timeout_overflow_mode;
+
+        // Add the pipeline to the QueryStatus at the end to avoid issues if other things throw
+        // as that would leave the executor "linked"
+        process_list_element->addPipelineExecutor(this);
     }
-    checkTimeLimit();
 }
 
 PipelineExecutor::~PipelineExecutor()
