@@ -2,12 +2,7 @@
 #include <Parsers/Access/ASTDropAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Access/AccessControl.h>
-#include <Access/Common/AccessFlags.h>
-#include <Access/User.h>
-#include <Access/Role.h>
-#include <Access/Quota.h>
-#include <Access/RowPolicy.h>
-#include <Access/SettingsProfile.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 
@@ -18,8 +13,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
-
-using EntityType = IAccessEntity::Type;
 
 
 BlockIO InterpreterDropAccessEntityQuery::execute()
@@ -41,7 +34,7 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
             access_control.remove(access_control.getIDs(query.type, names));
     };
 
-    if (query.type == EntityType::ROW_POLICY)
+    if (query.type == AccessEntityType::ROW_POLICY)
         do_drop(query.row_policy_names->toStrings());
     else
         do_drop(query.names);
@@ -56,12 +49,12 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
     AccessRightsElements res;
     switch (query.type)
     {
-        case EntityType::USER: res.emplace_back(AccessType::DROP_USER); return res;
-        case EntityType::ROLE: res.emplace_back(AccessType::DROP_ROLE); return res;
-        case EntityType::SETTINGS_PROFILE: res.emplace_back(AccessType::DROP_SETTINGS_PROFILE); return res;
-        case EntityType::ROW_POLICY: res.emplace_back(AccessType::DROP_ROW_POLICY); return res;
-        case EntityType::QUOTA: res.emplace_back(AccessType::DROP_QUOTA); return res;
-        case EntityType::MAX: break;
+        case AccessEntityType::USER: res.emplace_back(AccessType::DROP_USER); return res;
+        case AccessEntityType::ROLE: res.emplace_back(AccessType::DROP_ROLE); return res;
+        case AccessEntityType::SETTINGS_PROFILE: res.emplace_back(AccessType::DROP_SETTINGS_PROFILE); return res;
+        case AccessEntityType::ROW_POLICY: res.emplace_back(AccessType::DROP_ROW_POLICY); return res;
+        case AccessEntityType::QUOTA: res.emplace_back(AccessType::DROP_QUOTA); return res;
+        case AccessEntityType::MAX: break;
     }
     throw Exception(
         toString(query.type) + ": type is not supported by DROP query", ErrorCodes::NOT_IMPLEMENTED);

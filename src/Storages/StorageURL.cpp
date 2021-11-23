@@ -146,11 +146,13 @@ namespace
                                 http_method,
                                 callback,
                                 timeouts,
+                                credentials,
                                 context->getSettingsRef().max_http_get_redirects,
                                 userInfo.length() == 0 ? Poco::Net::HTTPBasicCredentials{} : Poco::Net::HTTPBasicCredentials(ostr.str()),
                                 DBMS_DEFAULT_BUFFER_SIZE,
                                 context->getReadSettings(),
                                 headers,
+                                ReadWriteBufferFromHTTP::Range{},
                                 context->getRemoteHostFilter()),
                             chooseCompressionMethod(request_uri.getPath(), compression_method));
                     }
@@ -214,6 +216,8 @@ namespace
         std::unique_ptr<ReadBuffer> read_buf;
         std::unique_ptr<QueryPipeline> pipeline;
         std::unique_ptr<PullingPipelineExecutor> reader;
+
+        Poco::Net::HTTPBasicCredentials credentials{};
     };
 }
 
@@ -238,18 +242,12 @@ StorageURLSink::StorageURLSink(
 
 void StorageURLSink::consume(Chunk chunk)
 {
-    if (is_first_chunk)
-    {
-        writer->doWritePrefix();
-        is_first_chunk = false;
-    }
-
     writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
 }
 
 void StorageURLSink::onFinish()
 {
-    writer->doWriteSuffix();
+    writer->finalize();
     writer->flush();
     write_buf->finalize();
 }
@@ -588,6 +586,8 @@ void registerStorageURL(StorageFactory & factory)
         for (const auto & [header, value] : configuration.headers)
         {
             auto value_literal = value.safeGet<String>();
+            if (header == "Range")
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Range headers are not allowed");
             headers.emplace_back(std::make_pair(header, value_literal));
         }
 
