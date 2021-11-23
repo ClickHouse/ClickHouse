@@ -237,13 +237,20 @@ public:
     /// Return false if data is still used by another node
     bool unlockSharedData(const IMergeTreeDataPart & part) const override;
 
+    /// Unlock shared data part in zookeeper by part id
+    /// Return true if data unlocked
+    /// Return false if data is still used by another node
+    static bool unlockSharedDataById(String id, const String & part_name, const String & replica_name_,
+        DiskPtr disk, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
+        const String * zookeeper_path_ptr);
+
     /// Fetch part only if some replica has it on shared storage like S3
     bool tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
 
     /// Get best replica having this partition on a same type remote disk
     String getSharedDataReplica(const IMergeTreeDataPart & part, DiskType disk_type) const;
 
-    inline String getReplicaName() const { return replica_name; }
+    inline String getReplicaName() const override { return replica_name; }
 
     /// Restores table metadata if ZooKeeper lost it.
     /// Used only on restarted readonly replicas (not checked). All active (Committed) parts are moved to detached/
@@ -263,6 +270,8 @@ public:
     }
 
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
+
+    virtual String getZooKeeperName() const override { return zookeeper_name; }
 
 private:
     std::atomic_bool are_restoring_replica {false};
@@ -727,6 +736,21 @@ private:
     std::set<String> getPartitionIdsAffectedByCommands(const MutationCommands & commands, ContextPtr query_context) const;
     PartitionBlockNumbersHolder allocateBlockNumbersInAffectedPartitions(
         const MutationCommands & commands, ContextPtr query_context, const zkutil::ZooKeeperPtr & zookeeper) const;
+
+    static Strings getZeroCopyRootPath(const MergeTreeSettings & settings, const String * zookeeper_path_ptr = nullptr);
+
+    /// Upgrave zero-copy version
+    /// version 1 - lock for shared part inside table node in ZooKeeper
+    /// version 2 - lock for shared part in separate node
+    void convertZeroCopySchema();
+
+    void cleanupOldZeroCopySchema();
+
+    static void createZeroCopyLockNode(const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_node);
+
+    bool isZeroCopySchemaInCompatibleMode() const;
+
+    bool is_zero_copy_in_compatible_mode = false;
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.

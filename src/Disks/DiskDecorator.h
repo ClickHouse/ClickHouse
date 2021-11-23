@@ -70,6 +70,18 @@ public:
     void startup() override;
     void applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String & config_prefix, const DisksMap & map) override;
 
+    std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
+        const String & path,
+        const ReadSettings & settings,
+        std::optional<size_t> size) const override { return delegate->readMetaFile(path, settings, size); }
+
+    std::unique_ptr<WriteBufferFromFileBase> writeMetaFile(
+        const String & path,
+        size_t buf_size,
+        WriteMode mode) override { return delegate->writeMetaFile(path, buf_size, mode); }
+
+    UInt32 getRefCount(const String & path) const override { return delegate->getRefCount(path); }
+
 protected:
     Executor & getExecutor() override;
 

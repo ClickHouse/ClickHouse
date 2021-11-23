@@ -136,6 +136,18 @@ public:
 
     static AsynchronousReaderPtr getThreadPoolReader();
 
+    virtual std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
+        const String & path,
+        const ReadSettings & settings = ReadSettings{},
+        std::optional<size_t> size = {}) const override;
+
+    virtual std::unique_ptr<WriteBufferFromFileBase> writeMetaFile(
+        const String & path,
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        WriteMode mode = WriteMode::Rewrite) override;
+
+    UInt32 getRefCount(const String & path) const override;
+
 protected:
     Poco::Logger * log;
     const String name;

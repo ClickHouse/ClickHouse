@@ -5111,6 +5111,76 @@ MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & parti
     };
 }
 
+struct FreezeMetaData
+{
+public:
+    void fill(const IMergeTreeDataPart & part)
+    {
+        is_replicated = part.storage.supportsReplication();
+        is_remote = part.storage.isRemote();
+        replica_name = part.storage.getReplicaName();
+        zookeeper_name = part.storage.getZooKeeperName();
+    }
+
+    void save(DiskPtr disk, const String & path) const
+    {
+        auto file_path = getFileName(path);
+        auto buffer = disk->writeMetaFile(file_path);
+        writeIntText(version, *buffer);
+        buffer->write("\n", 1);
+        writeBoolText(is_replicated, *buffer);
+        buffer->write("\n", 1);
+        writeBoolText(is_remote, *buffer);
+        buffer->write("\n", 1);
+        writeString(replica_name, *buffer);
+        buffer->write("\n", 1);
+        writeString(zookeeper_name, *buffer);
+        buffer->write("\n", 1);
+    }
+
+    bool load(DiskPtr disk, const String & path)
+    {
+        auto file_path = getFileName(path);
+        if (!disk->exists(file_path))
+            return false;
+        auto buffer = disk->readMetaFile(file_path);
+        readIntText(version, *buffer);
+        if (version != 1)
+        {
+            LOG_ERROR(&Poco::Logger::get("FreezeMetaData"), "Unknown freezed metadata version: {}", version);
+            return false;
+        }
+        DB::assertChar('\n', *buffer);
+        readBoolText(is_replicated, *buffer);
+        DB::assertChar('\n', *buffer);
+        readBoolText(is_remote, *buffer);
+        DB::assertChar('\n', *buffer);
+        readString(replica_name, *buffer);
+        DB::assertChar('\n', *buffer);
+        readString(zookeeper_name, *buffer);
+        DB::assertChar('\n', *buffer);
+        return true;
+    }
+
+    void clean(DiskPtr disk, const String & path)
+    {
+        disk->removeFileIfExists(getFileName(path));
+    }
+
+private:
+    static String getFileName(const String & path)
+    {
+        return fs::path(path) / "frozen_metadata.txt";
+    }
+
+public:
+    int version = 1;
+    bool is_replicated;
+    bool is_remote;
+    String replica_name;
+    String zookeeper_name;
+};
+
 PartitionCommandsResultInfo MergeTreeData::freezePartition(
     const ASTPtr & partition_ast,
     const StorageMetadataPtr & metadata_snapshot,
@@ -5162,7 +5232,9 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
 
         LOG_DEBUG(log, "Freezing part {} snapshot will be placed at {}", part->name, backup_path);
 
-        part->volume->getDisk()->createDirectories(backup_path);
+        auto disk = part->volume->getDisk();
+
+        disk->createDirectories(backup_path);
 
         String src_part_path = part->getFullRelativePath();
         String backup_part_path = fs::path(backup_path) / relative_data_path / part->relative_path;
@@ -5173,16 +5245,23 @@ PartitionCommandsResultInfo MergeTreeData::freezePartitionsByMatcher(
             src_part_path = fs::path(relative_data_path) / flushed_part_path / "";
         }
 
-        localBackup(part->volume->getDisk(), src_part_path, backup_part_path);
+        localBackup(disk, src_part_path, backup_part_path);
 
-        part->volume->getDisk()->removeFileIfExists(fs::path(backup_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
+        if (disk->supportZeroCopyReplication())
+        {
+            FreezeMetaData meta;
+            meta.fill(*part);
+            meta.save(disk, backup_part_path);
+        }
+
+        disk->removeFileIfExists(fs::path(backup_part_path) / IMergeTreeDataPart::DELETE_ON_DESTROY_MARKER_FILE_NAME);
 
         part->is_frozen.store(true, std::memory_order_relaxed);
         result.push_back(PartitionCommandResultInfo{
             .partition_id = part->info.partition_id,
             .part_name = part->name,
-            .backup_path = fs::path(part->volume->getDisk()->getPath()) / backup_path,
-            .part_backup_path = fs::path(part->volume->getDisk()->getPath()) / backup_part_path,
+            .backup_path = fs::path(disk->getPath()) / backup_path,
+            .part_backup_path = fs::path(disk->getPath()) / backup_part_path,
             .backup_name = backup_name,
         });
         ++parts_processed;
@@ -5237,7 +5316,42 @@ PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn
 
             const auto & path = it->path();
 
-            disk->removeRecursive(path);
+            bool keep_shared = false;
+
+            if (disk->supportZeroCopyReplication())
+            {
+                FreezeMetaData meta;
+                if (meta.load(disk, path) && meta.is_replicated)
+                {
+                    zkutil::ZooKeeperPtr zookeeper;
+                    if (meta.zookeeper_name == "default")
+                    {
+                        zookeeper = getContext()->getZooKeeper();
+                    }
+                    else
+                    {
+                        zookeeper = getContext()->getAuxiliaryZooKeeper(meta.zookeeper_name);
+                    }
+
+                    if (zookeeper)
+                    {
+                        fs::path checksums = fs::path(path) / "checksums.txt";
+                        if (disk->exists(checksums))
+                        {
+                            auto ref_count = disk->getRefCount(checksums);
+                            if (ref_count == 0)
+                            {
+                                String id = disk->getUniqueId(checksums);
+                                keep_shared = !StorageReplicatedMergeTree::unlockSharedDataById(id, partition_directory,
+                                    meta.replica_name, disk, zookeeper, getContext()->getReplicatedMergeTreeSettings(), log,
+                                    nullptr);
+                            }
+                        }
+                    }
+                }
+            }
+
+            disk->removeSharedRecursive(path, keep_shared);
 
             result.push_back(PartitionCommandResultInfo{
                 .partition_id = partition_id,
@@ -5247,7 +5361,7 @@ PartitionCommandsResultInfo MergeTreeData::unfreezePartitionsByMatcher(MatcherFn
                 .backup_name = backup_name,
             });
 
-            LOG_DEBUG(log, "Unfreezed part by path {}", disk->getPath() + path);
+            LOG_DEBUG(log, "Unfreezed part by path {}, keep shared data {}", disk->getPath() + path, keep_shared);
         }
     }
 

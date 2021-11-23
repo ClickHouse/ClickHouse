@@ -398,9 +398,13 @@ public:
     /// Returns serialization for column according to files in which column is written in part.
     SerializationPtr getSerializationForColumn(const NameAndTypePair & column) const;
 
-    /// Return some uniq string for file
-    /// Required for distinguish different copies of the same part on S3
+    /// Return some uniq string for file.
+    /// Required for distinguish different copies of the same part on remote FS.
     String getUniqueId() const;
+
+    /// Return hardlink count for part.
+    /// Required for keep data on remote FS when part has shadow copies.
+    UInt32 getRefCount() const;
 
 protected:
 
