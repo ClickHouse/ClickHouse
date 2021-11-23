@@ -518,7 +518,9 @@ unset IFS
 # all nodes.
 numactl --show
 numactl --cpunodebind=all --membind=all numactl --show
-numactl --cpunodebind=all --membind=all parallel --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
+# Use less jobs to avoid OOM. Some queries can consume 8+ GB of memory.
+jobs_count=$(($(grep -c ^processor /proc/cpuinfo) / 3))
+numactl --cpunodebind=all --membind=all parallel --jobs  $jobs_count --joblog analyze/parallel-log.txt --null < analyze/commands.txt 2>> analyze/errors.log
 
 clickhouse-local --query "
 -- Join the metric names back to the metric statistics we've calculated, and make
