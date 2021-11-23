@@ -61,7 +61,7 @@ Input table:
 Query: 
 
 ```sql
-exponentialMovingAverage(5)(temperature, timestamp)
+SELECT exponentialMovingAverage(5)(temperature, timestamp);
 ```
 
 Result:
