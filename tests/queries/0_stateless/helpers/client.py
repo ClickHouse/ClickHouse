@@ -16,7 +16,7 @@ class client(object):
         self.client = uexpect.spawn(['/bin/bash','--noediting'])
         if command is None:
             clickhouse_binary = os.environ.get('CLICKHOUSE_BINARY', 'clickhouse')
-            if os.path.isfile(clickhouse_binary) == False:
+            if os.path.isfile(os.path.abspath(clickhouse_binary)) == False:
                 print(f"clickhouse client path not set or does not exist: {clickhouse_binary}. Use env CLICKHOUSE_BINARY")
                 sys.exit()
             command = clickhouse_binary + ' client'
