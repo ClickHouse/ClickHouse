@@ -323,12 +323,23 @@ struct ContextSharedPart
             return;
         shutdown_called = true;
 
+        /// Stop periodic reloading of the configuration files.
+        /// This must be done first because otherwise the reloading may pass a changed config
+        /// to some destroyed parts of ContextSharedPart.
+        if (access_control)
+            access_control->stopPeriodicReloadingUsersConfigs();
+        if (external_dictionaries_loader)
+            external_dictionaries_loader->enablePeriodicUpdates(false);
+        if (external_user_defined_executable_functions_loader)
+            external_user_defined_executable_functions_loader->enablePeriodicUpdates(false);
+        if (external_models_loader)
+            external_models_loader->enablePeriodicUpdates(false);
+
         Session::shutdownNamedSessions();
 
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
           */
-
         if (system_logs)
             system_logs->shutdown();
 
@@ -789,23 +800,23 @@ std::shared_ptr<const ContextAccess> Context::getAccess() const
     return access ? access : ContextAccess::getFullAccess();
 }
 
-ASTPtr Context::getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType type) const
+ASTPtr Context::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
     auto lock = getLock();
-    auto initial_condition = initial_row_policy ? initial_row_policy->getCondition(database, table_name, type) : nullptr;
-    return getAccess()->getRowPolicyCondition(database, table_name, type, initial_condition);
+    auto row_filter_of_initial_user = row_policies_of_initial_user ? row_policies_of_initial_user->getFilter(database, table_name, filter_type) : nullptr;
+    return getAccess()->getRowPolicyFilter(database, table_name, filter_type, row_filter_of_initial_user);
 }
 
-void Context::setInitialRowPolicy()
+void Context::enableRowPoliciesOfInitialUser()
 {
     auto lock = getLock();
-    initial_row_policy = nullptr;
+    row_policies_of_initial_user = nullptr;
     if (client_info.initial_user == client_info.current_user)
         return;
     auto initial_user_id = getAccessControl().find<User>(client_info.initial_user);
     if (!initial_user_id)
         return;
-    initial_row_policy = getAccessControl().tryGetDefaultRowPolicies(*initial_user_id);
+    row_policies_of_initial_user = getAccessControl().tryGetDefaultRowPolicies(*initial_user_id);
 }
 
 

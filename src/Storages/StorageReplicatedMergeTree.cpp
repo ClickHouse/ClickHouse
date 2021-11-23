@@ -60,12 +60,14 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterserverCredentials.h>
 
-
 #include <Poco/DirectoryIterator.h>
 
 #include <base/range.h>
 #include <base/scope_guard.h>
 #include <base/scope_guard_safe.h>
+
+#include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/replace.hpp>
 
 #include <algorithm>
 #include <ctime>
@@ -74,8 +76,6 @@
 #include <numeric>
 #include <thread>
 #include <future>
-
-#include <boost/algorithm/string/join.hpp>
 
 namespace fs = std::filesystem;
 
