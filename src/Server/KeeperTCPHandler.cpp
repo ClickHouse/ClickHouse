@@ -493,6 +493,7 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command)
         {
             String res = command_ptr->run();
             out->write(res.data(), res.size());
+            out->next();
         }
         catch (...)
         {
