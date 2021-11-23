@@ -36,6 +36,7 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
+#include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
 #include <filesystem>
@@ -406,7 +407,10 @@ try
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
-    is_interactive = stdin_is_a_tty && !config().has("query") && !config().has("table-structure") && queries_files.empty();
+    is_interactive = stdin_is_a_tty
+        && (config().hasOption("interactive")
+            || (!config().has("query") && !config().has("table-structure") && queries_files.empty()));
+
     if (!is_interactive)
     {
         /// We will terminate process on error
@@ -425,19 +429,26 @@ try
 
     processConfig();
     applyCmdSettings(global_context);
-    connect();
 
     if (is_interactive)
     {
         clearTerminal();
         showClientVersion();
         std::cerr << std::endl;
+    }
 
+    connect();
+
+    if (is_interactive && !delayed_interactive)
+    {
         runInteractive();
     }
     else
     {
         runNonInteractive();
+
+        if (delayed_interactive)
+            runInteractive();
     }
 
     cleanup();
@@ -462,7 +473,8 @@ catch (...)
 
 void LocalServer::processConfig()
 {
-    if (is_interactive)
+    delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
+    if (is_interactive && !delayed_interactive)
     {
         if (config().has("query") && config().has("queries-file"))
             throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
@@ -474,6 +486,11 @@ void LocalServer::processConfig()
     }
     else
     {
+        if (delayed_interactive)
+        {
+            load_suggestions = true;
+        }
+
         need_render_progress = config().getBool("progress", false);
         echo_queries = config().hasOption("echo") || config().hasOption("verbose");
         ignore_error = config().getBool("ignore-error", false);
@@ -606,7 +623,7 @@ void LocalServer::processConfig()
         fs::create_directories(fs::path(path) / "metadata/");
 
         loadMetadataSystem(global_context);
-        attachSystemTablesLocal(*createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
         loadMetadata(global_context);
@@ -617,7 +634,7 @@ void LocalServer::processConfig()
     }
     else if (!config().has("no-system-tables"))
     {
-        attachSystemTablesLocal(*createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }
