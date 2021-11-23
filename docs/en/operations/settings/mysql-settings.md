@@ -5,6 +5,8 @@ toc_title: MySQL Settings
 
 # MySQL Settings {#mysql-settings}
 
+Used in the [MySQL])(../../engines/table-engines/integrations/mysql.md) engine.
+
 Default settings are not very efficient, since they do not even reuse connections. These settings allow you to increase the number of queries run by the server per second.
 
 ## connection_auto_close {#connection-auto-close}
