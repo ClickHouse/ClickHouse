@@ -2129,21 +2129,20 @@ UInt16 Context::getServerPort(const String & port_name) const
 
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
-    auto res = getClusters()->getCluster(cluster_name);
-    if (res)
+    if (auto res = tryGetCluster(cluster_name))
         return res;
-    if (!cluster_name.empty())
-        res = tryGetReplicatedDatabaseCluster(cluster_name);
-    if (res)
-        return res;
-
     throw Exception("Requested cluster '" + cluster_name + "' not found", ErrorCodes::BAD_GET);
 }
 
 
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
-    return getClusters()->getCluster(cluster_name);
+    auto res = getClusters()->getCluster(cluster_name);
+    if (res)
+        return res;
+    if (!cluster_name.empty())
+        res = tryGetReplicatedDatabaseCluster(cluster_name);
+    return res;
 }
 
 
