@@ -14,7 +14,6 @@ namespace DB
 {
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata);
-ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary, uint32_t max_parser_depth, bool throw_on_error);
 
 class Context;
 
@@ -28,9 +27,9 @@ public:
 
     bool empty() const override;
 
-    void attachTable(ContextPtr context, const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
+    void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
-    StoragePtr detachTable(ContextPtr context, const String & table_name) override;
+    StoragePtr detachTable(const String & table_name) override;
 
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr context, const FilterByNameFunction & filter_by_table_name) const override;
 

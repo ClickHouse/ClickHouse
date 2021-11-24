@@ -172,10 +172,10 @@ bool RemoteQueryExecutorReadContext::resumeRoutine()
             return false;
 
         fiber = std::move(fiber).resume();
-
-        if (exception)
-            std::rethrow_exception(std::move(exception));
     }
+
+    if (exception)
+        std::rethrow_exception(std::move(exception));
 
     return true;
 }

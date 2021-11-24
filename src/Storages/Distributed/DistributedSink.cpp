@@ -6,6 +6,7 @@
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
 
 #include <IO/WriteBufferFromFile.h>
@@ -20,9 +21,11 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
@@ -32,6 +35,9 @@
 #include <base/range.h>
 #include <base/scope_guard.h>
 
+#include <future>
+#include <condition_variable>
+#include <mutex>
 #include <filesystem>
 
 
@@ -735,7 +741,6 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
 
             stream.write(block);
 
-            compress.finalize();
             out.finalize();
             if (fsync)
                 out.sync();

@@ -10,7 +10,7 @@
             <startup_timeout>240000</startup_timeout>
             <!-- we want all logs for complex problems investigation -->
             <reserved_log_items>1000000000000000</reserved_log_items>
-            <snapshot_distance>100000</snapshot_distance>
+            <snapshot_distance>10000</snapshot_distance>
 
             <!-- For instant start in single node configuration -->
             <heart_beat_interval_ms>0</heart_beat_interval_ms>

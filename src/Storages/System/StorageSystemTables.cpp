@@ -59,10 +59,6 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"lifetime_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
         {"comment", std::make_shared<DataTypeString>()},
         {"has_own_data", std::make_shared<DataTypeUInt8>()},
-        {"loading_dependencies_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"loading_dependencies_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"loading_dependent_database", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"loading_dependent_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
     }, {
         {"table", std::make_shared<DataTypeString>(), "name"}
     }));
@@ -217,10 +213,53 @@ protected:
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
-                        /// Fill the rest columns with defaults
-                        while (src_index < columns_mask.size())
-                            if (columns_mask[src_index++])
-                                res_columns[res_index++]->insertDefault();
+                        // as_select
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // partition_key
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // sorting_key
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // primary_key
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // sampling_key
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // storage_policy
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // total_rows
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // total_bytes
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // lifetime_rows
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // lifetime_bytes
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // comment
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // has_own_data
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
                     }
                 }
 
@@ -467,42 +506,6 @@ protected:
                         res_columns[res_index++]->insert(table->storesDataOnDisk());
                     else
                         res_columns[res_index++]->insertDefault();
-                }
-
-                if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2] || columns_mask[src_index + 3])
-                {
-                    DependenciesInfo info = DatabaseCatalog::instance().getLoadingDependenciesInfo({database_name, table_name});
-
-                    Array loading_dependencies_databases;
-                    Array loading_dependencies_tables;
-                    loading_dependencies_databases.reserve(info.dependencies.size());
-                    loading_dependencies_tables.reserve(info.dependencies.size());
-                    for (auto && dependency : info.dependencies)
-                    {
-                        loading_dependencies_databases.push_back(std::move(dependency.database));
-                        loading_dependencies_tables.push_back(std::move(dependency.table));
-                    }
-
-                    Array loading_dependent_databases;
-                    Array loading_dependent_tables;
-                    loading_dependent_databases.reserve(info.dependencies.size());
-                    loading_dependent_tables.reserve(info.dependencies.size());
-                    for (auto && dependent : info.dependent_database_objects)
-                    {
-                        loading_dependent_databases.push_back(std::move(dependent.database));
-                        loading_dependent_tables.push_back(std::move(dependent.table));
-                    }
-
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(loading_dependencies_databases);
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(loading_dependencies_tables);
-
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(loading_dependent_databases);
-                    if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(loading_dependent_tables);
-
                 }
             }
         }

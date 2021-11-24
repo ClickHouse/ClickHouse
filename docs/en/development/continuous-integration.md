@@ -126,6 +126,7 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 - **Compiler**: `gcc-9` or `clang-10` (or `clang-10-xx` for other architectures e.g. `clang-10-freebsd`).
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
 - **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
+- **Bundled**: `bundled` build uses libraries from `contrib` folder, and `unbundled` build uses system libraries.
 - **Splitted** `splitted` is a [split build](../development/build.md#split-build)
 - **Status**: `success` or `fail`
 - **Build log**: link to the building and files copying log, useful when build failed.

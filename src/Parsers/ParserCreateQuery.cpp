@@ -143,32 +143,24 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_check("CHECK");
-    ParserKeyword s_assume("ASSUME");
 
     ParserIdentifier name_p;
     ParserLogicalOrExpression expression_p;
 
     ASTPtr name;
     ASTPtr expr;
-    ASTConstraintDeclaration::Type type = ASTConstraintDeclaration::Type::CHECK;
 
     if (!name_p.parse(pos, name, expected))
         return false;
 
     if (!s_check.ignore(pos, expected))
-    {
-        if (s_assume.ignore(pos, expected))
-            type = ASTConstraintDeclaration::Type::ASSUME;
-        else
-            return false;
-    }
+        return false;
 
     if (!expression_p.parse(pos, expr, expected))
         return false;
 
     auto constraint = std::make_shared<ASTConstraintDeclaration>();
     constraint->name = name->as<ASTIdentifier &>().name();
-    constraint->type = type;
     constraint->set(constraint->expr, expr);
     node = constraint;
 
@@ -434,7 +426,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserCompoundIdentifier table_name_p(true, true);
+    ParserCompoundIdentifier table_name_p(true);
     ParserKeyword s_from("FROM");
     ParserKeyword s_on("ON");
     ParserKeyword s_as("AS");
@@ -503,7 +495,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
     }
 
-    auto * table_id = table->as<ASTTableIdentifier>();
+    auto table_id = table->as<ASTTableIdentifier>()->getTableId();
 
     // Shortcut for ATTACH a previously detached table
     bool short_attach = attach && !from_path;
@@ -516,14 +508,9 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->if_not_exists = if_not_exists;
         query->cluster = cluster_str;
 
-        query->database = table_id->getDatabase();
-        query->table = table_id->getTable();
-        query->uuid = table_id->uuid;
-
-        if (query->database)
-            query->children.push_back(query->database);
-        if (query->table)
-            query->children.push_back(query->table);
+        query->database = table_id.database_name;
+        query->table = table_id.table_name;
+        query->uuid = table_id.uuid;
 
         return true;
     }
@@ -598,15 +585,10 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->if_not_exists = if_not_exists;
     query->temporary = is_temporary;
 
-    query->database = table_id->getDatabase();
-    query->table = table_id->getTable();
-    query->uuid = table_id->uuid;
+    query->database = table_id.database_name;
+    query->table = table_id.table_name;
+    query->uuid = table_id.uuid;
     query->cluster = cluster_str;
-
-    if (query->database)
-        query->children.push_back(query->database);
-    if (query->table)
-        query->children.push_back(query->table);
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);
@@ -638,7 +620,7 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserCompoundIdentifier table_name_p(true, true);
+    ParserCompoundIdentifier table_name_p(true);
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_live("LIVE");
@@ -753,16 +735,11 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->if_not_exists = if_not_exists;
     query->is_live_view = true;
 
-    auto * table_id = table->as<ASTTableIdentifier>();
-    query->database = table_id->getDatabase();
-    query->table = table_id->getTable();
-    query->uuid = table_id->uuid;
+    auto table_id = table->as<ASTTableIdentifier>()->getTableId();
+    query->database = table_id.database_name;
+    query->table = table_id.table_name;
+    query->uuid = table_id.uuid;
     query->cluster = cluster_str;
-
-    if (query->database)
-        query->children.push_back(query->database);
-    if (query->table)
-        query->children.push_back(query->table);
 
     if (to_table)
         query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
@@ -789,7 +766,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword s_database("DATABASE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserStorage storage_p;
-    ParserIdentifier name_p(true);
+    ParserIdentifier name_p;
 
     ASTPtr database;
     ASTPtr storage;
@@ -840,12 +817,9 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->attach = attach;
     query->if_not_exists = if_not_exists;
 
+    tryGetIdentifierNameInto(database, query->database);
     query->uuid = uuid;
     query->cluster = cluster_str;
-    query->database = database;
-
-    if (database)
-        query->children.push_back(database);
 
     query->set(query->storage, storage);
     if (comment)
@@ -859,7 +833,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserCompoundIdentifier table_name_p(true, true);
+    ParserCompoundIdentifier table_name_p(true);
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_materialized("MATERIALIZED");
@@ -980,16 +954,11 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->is_populate = is_populate;
     query->replace_view = replace_view;
 
-    auto * table_id = table->as<ASTTableIdentifier>();
-    query->database = table_id->getDatabase();
-    query->table = table_id->getTable();
-    query->uuid = table_id->uuid;
+    auto table_id = table->as<ASTTableIdentifier>()->getTableId();
+    query->database = table_id.database_name;
+    query->table = table_id.table_name;
+    query->uuid = table_id.uuid;
     query->cluster = cluster_str;
-
-    if (query->database)
-        query->children.push_back(query->database);
-    if (query->table)
-        query->children.push_back(query->table);
 
     if (to_table)
         query->to_table_id = to_table->as<ASTTableIdentifier>()->getTableId();
@@ -1018,7 +987,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ParserKeyword s_dictionary("DICTIONARY");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
     ParserKeyword s_on("ON");
-    ParserCompoundIdentifier dict_name_p(true, true);
+    ParserCompoundIdentifier dict_name_p(true);
     ParserToken s_left_paren(TokenType::OpeningRoundBracket);
     ParserToken s_right_paren(TokenType::ClosingRoundBracket);
     ParserToken s_dot(TokenType::Dot);
@@ -1090,15 +1059,10 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->create_or_replace = or_replace;
     query->replace_table = replace;
 
-    auto * dict_id = name->as<ASTTableIdentifier>();
-    query->database = dict_id->getDatabase();
-    query->table = dict_id->getTable();
-    query->uuid = dict_id->uuid;
-
-    if (query->database)
-        query->children.push_back(query->database);
-    if (query->table)
-        query->children.push_back(query->table);
+    auto dict_id = name->as<ASTTableIdentifier>()->getTableId();
+    query->database = dict_id.database_name;
+    query->table = dict_id.table_name;
+    query->uuid = dict_id.uuid;
 
     query->if_not_exists = if_not_exists;
     query->set(query->dictionary_attributes_list, attributes);

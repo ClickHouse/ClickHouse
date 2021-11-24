@@ -1,12 +1,16 @@
 #include "OwnPatternFormatter.h"
 
 #include <functional>
+#include <optional>
+#include <sys/time.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Common/HashTable/Hash.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Common/CurrentThread.h>
+#include <base/getThreadId.h>
 #include <base/terminalColors.h>
+#include "Loggers.h"
 
 
 OwnPatternFormatter::OwnPatternFormatter(bool color_)

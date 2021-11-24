@@ -1,5 +1,5 @@
 if (Protobuf_PROTOC_EXECUTABLE)
-    option (ENABLE_PARQUET "Enable parquet" ON)
+    option (ENABLE_PARQUET "Enable parquet" ${ENABLE_LIBRARIES})
 elseif(ENABLE_PARQUET OR USE_INTERNAL_PARQUET_LIBRARY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use parquet without protoc executable")
 endif()
@@ -13,7 +13,7 @@ if (NOT ENABLE_PARQUET)
 endif()
 
 if (NOT OS_FREEBSD) # Freebsd: ../contrib/arrow/cpp/src/arrow/util/bit-util.h:27:10: fatal error: endian.h: No such file or directory
-    option(USE_INTERNAL_PARQUET_LIBRARY "Set to FALSE to use system parquet library instead of bundled" ON)
+    option(USE_INTERNAL_PARQUET_LIBRARY "Set to FALSE to use system parquet library instead of bundled" ${NOT_UNBUNDLED})
 elseif(USE_INTERNAL_PARQUET_LIBRARY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Using internal parquet is not supported on freebsd")
 endif()

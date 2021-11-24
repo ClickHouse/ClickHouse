@@ -3,6 +3,14 @@
 #include <IO/HTTPCommon.h>
 #include <IO/Progress.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/Exception.h>
+#include <Common/NetException.h>
+#include <Common/Stopwatch.h>
+#include <Common/MemoryTracker.h>
+
+#include <Common/config.h>
+
+#include <Poco/Version.h>
 
 
 namespace DB
@@ -160,12 +168,8 @@ void WriteBufferFromHTTPServerResponse::onProgress(const Progress & progress)
     }
 }
 
-WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
-{
-    finalize();
-}
 
-void WriteBufferFromHTTPServerResponse::finalizeImpl()
+void WriteBufferFromHTTPServerResponse::finalize()
 {
     try
     {
@@ -193,5 +197,12 @@ void WriteBufferFromHTTPServerResponse::finalizeImpl()
     }
 }
 
+
+WriteBufferFromHTTPServerResponse::~WriteBufferFromHTTPServerResponse()
+{
+    /// FIXME move final flush into the caller
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    finalize();
+}
 
 }

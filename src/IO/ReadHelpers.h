@@ -30,7 +30,6 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/PeekableReadBuffer.h>
 #include <IO/VarInt.h>
 
 #include <DataTypes/DataTypeDateTime.h>
@@ -1325,9 +1324,6 @@ void saveUpToPosition(ReadBuffer & in, Memory<Allocator<false>> & memory, char *
   */
 bool loadAtPosition(ReadBuffer & in, Memory<Allocator<false>> & memory, char * & current);
 
-/// Skip data until start of the next row or eof (the end of row is determined by two delimiters:
-/// row_after_delimiter and row_between_delimiter).
-void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delimiter, const String & row_between_delimiter, bool skip_spaces);
 
 struct PcgDeserializer
 {

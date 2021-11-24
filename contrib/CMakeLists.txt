@@ -51,7 +51,7 @@ if (USE_YAML_CPP)
 endif()
 
 if (USE_INTERNAL_XZ_LIBRARY)
-    add_subdirectory (xz-cmake)
+    add_subdirectory (xz)
 endif()
 
 add_subdirectory (poco-cmake)
@@ -64,7 +64,9 @@ if (USE_INTERNAL_ZSTD_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_RE2_LIBRARY)
-    add_subdirectory (re2-cmake)
+    set(RE2_BUILD_TESTING 0 CACHE INTERNAL "")
+    add_subdirectory (re2)
+    add_subdirectory (re2_st)
 endif ()
 
 if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
@@ -80,10 +82,23 @@ if (USE_INTERNAL_FARMHASH_LIBRARY)
 endif ()
 
 if (USE_INTERNAL_ZLIB_LIBRARY)
-    if (INTERNAL_ZLIB_NAME STREQUAL "zlib-ng")
-        add_subdirectory (zlib-ng-cmake)
-    else ()
-        add_subdirectory (${INTERNAL_ZLIB_NAME})
+    set (ZLIB_ENABLE_TESTS 0 CACHE INTERNAL "")
+    set (SKIP_INSTALL_ALL 1 CACHE INTERNAL "")
+    set (ZLIB_COMPAT 1 CACHE INTERNAL "") # also enables WITH_GZFILEOP
+    set (WITH_NATIVE_INSTRUCTIONS ${ARCH_NATIVE} CACHE INTERNAL "")
+    if (OS_FREEBSD OR ARCH_I386)
+        set (WITH_OPTIM 0 CACHE INTERNAL "") # Bug in assembler
+    endif ()
+    if (ARCH_AARCH64)
+        set(WITH_NEON 1 CACHE INTERNAL "")
+        set(WITH_ACLE 1 CACHE INTERNAL "")
+    endif ()
+
+    add_subdirectory (${INTERNAL_ZLIB_NAME})
+    # We should use same defines when including zlib.h as used when zlib compiled
+    target_compile_definitions (zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
+    if (ARCH_AMD64 OR ARCH_AARCH64)
+        target_compile_definitions (zlib PUBLIC X86_64 UNALIGNED_OK)
     endif ()
 endif ()
 
@@ -102,8 +117,28 @@ if (USE_INTERNAL_LDAP_LIBRARY)
     add_subdirectory (openldap-cmake)
 endif ()
 
-if (USE_INTERNAL_MYSQL_LIBRARY)
-    add_subdirectory (mariadb-connector-c-cmake)
+function(mysql_support)
+    set(CLIENT_PLUGIN_CACHING_SHA2_PASSWORD STATIC)
+    set(CLIENT_PLUGIN_SHA256_PASSWORD STATIC)
+    set(CLIENT_PLUGIN_REMOTE_IO OFF)
+    set(CLIENT_PLUGIN_DIALOG OFF)
+    set(CLIENT_PLUGIN_AUTH_GSSAPI_CLIENT OFF)
+    set(CLIENT_PLUGIN_CLIENT_ED25519 OFF)
+    set(CLIENT_PLUGIN_MYSQL_CLEAR_PASSWORD OFF)
+    set(SKIP_TESTS 1)
+    if (GLIBC_COMPATIBILITY)
+        set(LIBM glibc-compatibility)
+    endif()
+    if (USE_INTERNAL_ZLIB_LIBRARY)
+        set(ZLIB_FOUND ON)
+        set(ZLIB_LIBRARY ${ZLIB_LIBRARIES})
+        set(WITH_EXTERNAL_ZLIB ON)
+    endif()
+    set(WITH_CURL OFF)
+    add_subdirectory (mariadb-connector-c)
+endfunction()
+if (ENABLE_MYSQL AND USE_INTERNAL_MYSQL_LIBRARY)
+    mysql_support()
 endif ()
 
 if (USE_INTERNAL_RDKAFKA_LIBRARY)
@@ -159,7 +194,11 @@ if (USE_INTERNAL_AVRO_LIBRARY)
 endif()
 
 if(USE_INTERNAL_GTEST_LIBRARY)
-    add_subdirectory(googletest-cmake)
+    set(GOOGLETEST_VERSION 1.10.0) # master
+    # Google Test from sources
+    add_subdirectory(${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
+    # avoid problems with <regexp.h>
+    target_compile_definitions (gtest INTERFACE GTEST_HAS_POSIX_RE=0)
 elseif(GTEST_SRC_DIR)
     add_subdirectory(${GTEST_SRC_DIR}/googletest ${CMAKE_CURRENT_BINARY_DIR}/googletest)
     target_compile_definitions(gtest INTERFACE GTEST_HAS_POSIX_RE=0)
@@ -190,7 +229,7 @@ if (USE_EMBEDDED_COMPILER)
 endif ()
 
 if (USE_INTERNAL_LIBGSASL_LIBRARY)
-    add_subdirectory(libgsasl-cmake)
+    add_subdirectory(libgsasl)
 endif()
 
 if (USE_INTERNAL_LIBXML2_LIBRARY)
@@ -242,7 +281,14 @@ if (USE_AMQPCPP)
     add_subdirectory (amqpcpp-cmake)
 endif()
 if (USE_CASSANDRA)
-    add_subdirectory (cassandra-cmake)
+    # Need to use C++17 since the compilation is not possible with C++20 currently.
+    set (CMAKE_CXX_STANDARD_bak ${CMAKE_CXX_STANDARD})
+    set (CMAKE_CXX_STANDARD 17)
+
+    add_subdirectory (cassandra)
+
+    set (CMAKE_CXX_STANDARD ${CMAKE_CXX_STANDARD_bak})
+    unset (CMAKE_CXX_STANDARD_bak)
 endif()
 
 # Should go before:
@@ -250,10 +296,15 @@ endif()
 add_subdirectory (curl-cmake)
 
 if (USE_SENTRY)
-    add_subdirectory (sentry-native-cmake)
+    add_subdirectory (sentry-native)
 endif()
 
 add_subdirectory (fmtlib-cmake)
+
+if (USE_STATS)
+    add_subdirectory (stats-cmake)
+    add_subdirectory (gcem)
+endif()
 
 if (USE_KRB5)
     add_subdirectory (krb5-cmake)
@@ -275,7 +326,7 @@ if (USE_NURAFT)
   add_subdirectory(nuraft-cmake)
 endif()
 
-add_subdirectory(fast_float-cmake)
+add_subdirectory(fast_float)
 
 if (USE_NLP)
     add_subdirectory(libstemmer-c-cmake)

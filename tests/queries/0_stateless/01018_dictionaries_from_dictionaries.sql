@@ -18,6 +18,8 @@ ORDER BY key_column;
 
 INSERT INTO database_for_dict.table_for_dict SELECT number, number % 17, toString(number * number), number / 2.0 from numbers(100);
 
+DROP DICTIONARY IF EXISTS database_for_dict.dict1;
+
 CREATE DICTIONARY database_for_dict.dict1
 (
   key_column UInt64 DEFAULT 0,

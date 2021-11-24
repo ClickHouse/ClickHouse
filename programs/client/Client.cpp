@@ -60,7 +60,10 @@
 
 namespace CurrentMetrics
 {
+    extern const Metric Revision;
+    extern const Metric VersionInteger;
     extern const Metric MemoryTracking;
+    extern const Metric MaxDDLEntryID;
 }
 
 namespace fs = std::filesystem;
@@ -327,9 +330,7 @@ std::vector<String> Client::loadWarningMessages()
 {
     std::vector<String> messages;
     connection->sendQuery(connection_parameters.timeouts, "SELECT message FROM system.warnings", "" /* query_id */,
-                          QueryProcessingStage::Complete,
-                          &global_context->getSettingsRef(),
-                          &global_context->getClientInfo(), false);
+                          QueryProcessingStage::Complete, nullptr, nullptr, false);
     while (true)
     {
         Packet packet = connection->receivePacket();
@@ -428,7 +429,6 @@ try
 
     processConfig();
 
-    /// Includes delayed_interactive.
     if (is_interactive)
     {
         clearTerminal();
@@ -437,28 +437,28 @@ try
 
     connect();
 
-    /// Load Warnings at the beginning of connection
-    if (is_interactive && !config().has("no-warnings"))
+    if (is_interactive)
     {
-        try
+        /// Load Warnings at the beginning of connection
+        if (!config().has("no-warnings"))
         {
-            std::vector<String> messages = loadWarningMessages();
-            if (!messages.empty())
+            try
             {
-                std::cout << "Warnings:" << std::endl;
-                for (const auto & message : messages)
-                    std::cout << " * " << message << std::endl;
-                std::cout << std::endl;
+                std::vector<String> messages = loadWarningMessages();
+                if (!messages.empty())
+                {
+                    std::cout << "Warnings:" << std::endl;
+                    for (const auto & message : messages)
+                        std::cout << " * " << message << std::endl;
+                    std::cout << std::endl;
+                }
+            }
+            catch (...)
+            {
+                /// Ignore exception
             }
         }
-        catch (...)
-        {
-            /// Ignore exception
-        }
-    }
 
-    if (is_interactive && !delayed_interactive)
-    {
         runInteractive();
     }
     else
@@ -482,9 +482,6 @@ try
             // case so that at least we don't lose an error.
             return -1;
         }
-
-        if (delayed_interactive)
-            runInteractive();
     }
 
     return 0;
@@ -558,7 +555,8 @@ void Client::connect()
     if (is_interactive)
     {
         std::cout << "Connected to " << server_name << " server version " << server_version << " revision " << server_revision << "."
-                    << std::endl << std::endl;
+                    << std::endl
+                    << std::endl;
 
         auto client_version_tuple = std::make_tuple(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH);
         auto server_version_tuple = std::make_tuple(server_version_major, server_version_minor, server_version_patch);
@@ -1003,10 +1001,14 @@ void Client::addOptions(OptionsDescription & options_description)
         ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
         ("ask-password", "ask-password")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
+        ("pager", po::value<std::string>(), "pager")
         ("testmode,T", "enable test hints in comments")
 
         ("max_client_network_bandwidth", po::value<int>(), "the maximum speed of data exchange over the network for the client in bytes per second.")
         ("compression", po::value<bool>(), "enable or disable compression")
+
+        ("log-level", po::value<std::string>(), "client log level")
+        ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
 
         ("query-fuzzer-runs", po::value<int>()->default_value(0), "After executing every SELECT query, do random mutations in it and run again specified number of times. This is used for testing to discover unexpected corner cases.")
         ("interleave-queries-file", po::value<std::vector<std::string>>()->multitoken(),
@@ -1103,6 +1105,8 @@ void Client::processOptions(const OptionsDescription & options_description,
         config().setString("host", options["host"].as<std::string>());
     if (options.count("interleave-queries-file"))
         interleave_queries_files = options["interleave-queries-file"].as<std::vector<std::string>>();
+    if (options.count("pager"))
+        config().setString("pager", options["pager"].as<std::string>());
     if (options.count("port") && !options["port"].defaulted())
         config().setInt("port", options["port"].as<int>());
     if (options.count("secure"))
@@ -1121,6 +1125,8 @@ void Client::processOptions(const OptionsDescription & options_description,
         max_client_network_bandwidth = options["max_client_network_bandwidth"].as<int>();
     if (options.count("compression"))
         config().setBool("compression", options["compression"].as<bool>());
+    if (options.count("server_logs_file"))
+        server_logs_file = options["server_logs_file"].as<std::string>();
     if (options.count("no-warnings"))
         config().setBool("no-warnings", true);
 
@@ -1155,11 +1161,11 @@ void Client::processConfig()
     /// - stdin is not a terminal. In this case queries are read from it.
     /// - -qf (--queries-file) command line option is present.
     ///   The value of the option is used as file with query (or of multiple queries) to execute.
-
-    delayed_interactive = config().has("interactive") && (config().has("query") || config().has("queries-file"));
-    if (stdin_is_a_tty
-        && (delayed_interactive || (!config().has("query") && queries_files.empty())))
+    if (stdin_is_a_tty && !config().has("query") && queries_files.empty())
     {
+        if (config().has("query") && config().has("queries-file"))
+            throw Exception("Specify either `query` or `queries-file` option", ErrorCodes::BAD_ARGUMENTS);
+
         is_interactive = true;
     }
     else

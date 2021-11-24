@@ -29,8 +29,6 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    bool isSystemStorage() const override { return true; }
-
 protected:
     StorageSystemDisks(const StorageID & table_id_);
 };

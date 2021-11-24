@@ -206,7 +206,7 @@ StoragePtr DatabasePostgreSQL::fetchTable(const String & table_name, ContextPtr,
 }
 
 
-void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
+void DatabasePostgreSQL::attachTable(const String & table_name, const StoragePtr & storage, const String &)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -231,7 +231,7 @@ void DatabasePostgreSQL::attachTable(ContextPtr /* context_ */, const String & t
 }
 
 
-StoragePtr DatabasePostgreSQL::detachTable(ContextPtr /* context_ */, const String & table_name)
+StoragePtr DatabasePostgreSQL::detachTable(const String & table_name)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -251,14 +251,14 @@ StoragePtr DatabasePostgreSQL::detachTable(ContextPtr /* context_ */, const Stri
 }
 
 
-void DatabasePostgreSQL::createTable(ContextPtr local_context, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query)
+void DatabasePostgreSQL::createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query)
 {
     const auto & create = create_query->as<ASTCreateQuery>();
 
     if (!create->attach)
         throw Exception("PostgreSQL database engine does not support create table", ErrorCodes::NOT_IMPLEMENTED);
 
-    attachTable(local_context, table_name, storage, {});
+    attachTable(table_name, storage, {});
 }
 
 
@@ -355,7 +355,7 @@ void DatabasePostgreSQL::shutdown()
 ASTPtr DatabasePostgreSQL::getCreateDatabaseQuery() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
-    create_query->setDatabase(getDatabaseName());
+    create_query->database = getDatabaseName();
     create_query->set(create_query->storage, database_engine_define);
 
     if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
@@ -388,8 +388,8 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
 
     /// init create query.
     auto table_id = storage->getStorageID();
-    create_table_query->setTable(table_id.table_name);
-    create_table_query->setDatabase(table_id.database_name);
+    create_table_query->table = table_id.table_name;
+    create_table_query->database = table_id.database_name;
 
     auto metadata_snapshot = storage->getInMemoryMetadataPtr();
     for (const auto & column_type_and_name : metadata_snapshot->getColumns().getOrdinary())

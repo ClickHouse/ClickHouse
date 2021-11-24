@@ -12,11 +12,6 @@
 #include <unistd.h>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric DiskSpaceReservedForMerge;
-}
-
 namespace DB
 {
 
@@ -111,11 +106,10 @@ private:
 };
 
 
-class DiskLocalDirectoryIterator final : public IDiskDirectoryIterator
+class DiskLocalDirectoryIterator : public IDiskDirectoryIterator
 {
 public:
-    DiskLocalDirectoryIterator() = default;
-    DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_)
+    explicit DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_)
         : dir_path(dir_path_), entry(fs::path(disk_path_) / dir_path_)
     {
     }
@@ -178,7 +172,7 @@ UInt64 DiskLocal::getTotalSpace() const
         fs = getStatVFS((fs::path(disk_path) / "data/").string());
     else
         fs = getStatVFS(disk_path);
-    UInt64 total_size = fs.f_blocks * fs.f_frsize;
+    UInt64 total_size = fs.f_blocks * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
     return total_size - keep_free_space_bytes;
@@ -193,7 +187,7 @@ UInt64 DiskLocal::getAvailableSpace() const
         fs = getStatVFS((fs::path(disk_path) / "data/").string());
     else
         fs = getStatVFS(disk_path);
-    UInt64 total_size = fs.f_bavail * fs.f_frsize;
+    UInt64 total_size = fs.f_bavail * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
     return total_size - keep_free_space_bytes;
@@ -250,11 +244,7 @@ void DiskLocal::moveDirectory(const String & from_path, const String & to_path)
 
 DiskDirectoryIteratorPtr DiskLocal::iterateDirectory(const String & path)
 {
-    fs::path meta_path = fs::path(disk_path) / path;
-    if (fs::exists(meta_path) && fs::is_directory(meta_path))
-        return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
-    else
-        return std::make_unique<DiskLocalDirectoryIterator>();
+    return std::make_unique<DiskLocalDirectoryIterator>(disk_path, path);
 }
 
 void DiskLocal::moveFile(const String & from_path, const String & to_path)

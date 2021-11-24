@@ -20,7 +20,7 @@ public:
     {
         try
         {
-            finalize();
+            CompletionAwareWriteBuffer::finalize();
         }
         catch (...)
         {
@@ -28,9 +28,12 @@ public:
         }
     }
 
-    void finalizeImpl() override
+    void finalize() override
     {
-        WriteBufferFromFileDecorator::finalizeImpl();
+        if (finalized)
+            return;
+
+        WriteBufferFromFileDecorator::finalize();
 
         completion_callback();
     }

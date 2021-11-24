@@ -2,44 +2,30 @@
 
 #if USE_HDFS
 
-#include <Common/parseGlobs.h>
-#include <DataTypes/DataTypeString.h>
-
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTInsertQuery.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Formats/IInputFormat.h>
-
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-
-#include <Interpreters/Context.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
-
 #include <Storages/StorageFactory.h>
 #include <Storages/HDFS/StorageHDFS.h>
-#include <Storages/HDFS/HDFSCommon.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTLiteral.h>
+#include <IO/ReadHelpers.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
-#include <Storages/PartitionedSink.h>
-
+#include <IO/WriteHelpers.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Formats/FormatFactory.h>
-#include <Functions/FunctionsConversion.h>
-
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/Pipe.h>
-
+#include <Processors/Formats/IOutputFormat.h>
+#include <DataTypes/DataTypeString.h>
+#include <Processors/Sinks/SinkToStorage.h>
+#include <Common/parseGlobs.h>
 #include <Poco/URI.h>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 #include <hdfs/hdfs.h>
-
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/IInputFormat.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <QueryPipeline/Pipe.h>
 #include <filesystem>
 
 
@@ -61,10 +47,8 @@ StorageHDFS::StorageHDFS(
     const ConstraintsDescription & constraints_,
     const String & comment,
     ContextPtr context_,
-    const String & compression_method_ = "",
-    ASTPtr partition_by_)
+    const String & compression_method_ = "")
     : IStorage(table_id_), WithContext(context_), uri(uri_), format_name(format_name_), compression_method(compression_method_)
-    , partition_by(partition_by_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
     checkHDFSURL(uri);
@@ -211,6 +195,11 @@ public:
 
     void consume(Chunk chunk) override
     {
+        if (is_first_chunk)
+        {
+            writer->doWritePrefix();
+            is_first_chunk = false;
+        }
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
@@ -218,7 +207,7 @@ public:
     {
         try
         {
-            writer->finalize();
+            writer->doWriteSuffix();
             writer->flush();
             write_buf->sync();
             write_buf->finalize();
@@ -233,44 +222,8 @@ public:
 private:
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
+    bool is_first_chunk = true;
 };
-
-
-class PartitionedHDFSSink : public PartitionedSink
-{
-public:
-    PartitionedHDFSSink(
-        const ASTPtr & partition_by,
-        const String & uri_,
-        const String & format_,
-        const Block & sample_block_,
-        ContextPtr context_,
-        const CompressionMethod compression_method_)
-            : PartitionedSink(partition_by, context_, sample_block_)
-            , uri(uri_)
-            , format(format_)
-            , sample_block(sample_block_)
-            , context(context_)
-            , compression_method(compression_method_)
-    {
-    }
-
-    SinkPtr createSinkForPartition(const String & partition_id) override
-    {
-        auto path = PartitionedSink::replaceWildcards(uri, partition_id);
-        PartitionedSink::validatePartitionKey(path, true);
-        return std::make_shared<HDFSSink>(path, format, sample_block, context, compression_method);
-    }
-
-private:
-    const String uri;
-
-    const String format;
-    const Block sample_block;
-    ContextPtr context;
-    const CompressionMethod compression_method;
-};
-
 
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageFile.
@@ -363,31 +316,13 @@ Pipe StorageHDFS::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+SinkToStoragePtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
 {
-    bool has_wildcards = uri.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
-    const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
-    auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
-    bool is_partitioned_implementation = partition_by_ast && has_wildcards;
-
-    if (is_partitioned_implementation)
-    {
-        return std::make_shared<PartitionedHDFSSink>(
-            partition_by_ast,
-            uri,
-            format_name,
-            metadata_snapshot->getSampleBlock(),
-            getContext(),
-            chooseCompressionMethod(uri, compression_method));
-    }
-    else
-    {
-        return std::make_shared<HDFSSink>(uri,
-            format_name,
-            metadata_snapshot->getSampleBlock(),
-            getContext(),
-            chooseCompressionMethod(uri, compression_method));
-    }
+    return std::make_shared<HDFSSink>(uri,
+        format_name,
+        metadata_snapshot->getSampleBlock(),
+        getContext(),
+        chooseCompressionMethod(uri, compression_method));
 }
 
 void StorageHDFS::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr context_, TableExclusiveLockHolder &)
@@ -430,15 +365,10 @@ void registerStorageHDFS(StorageFactory & factory)
             compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         } else compression_method = "auto";
 
-        ASTPtr partition_by;
-        if (args.storage_def->partition_by)
-            partition_by = args.storage_def->partition_by->clone();
-
         return StorageHDFS::create(
-            url, args.table_id, format_name, args.columns, args.constraints, args.comment, args.getContext(), compression_method, partition_by);
+            url, args.table_id, format_name, args.columns, args.constraints, args.comment, args.getContext(), compression_method);
     },
     {
-        .supports_sort_order = true, // for partition by
         .source_access_type = AccessType::HDFS,
     });
 }

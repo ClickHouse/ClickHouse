@@ -117,7 +117,7 @@ public:
 
     String getName() const override final { return "ParallelParsingBlockInputFormat"; }
 
-private:
+protected:
 
     Chunk generate() override final;
 
@@ -136,6 +136,8 @@ private:
 
         finishAndWait();
     }
+
+private:
 
     class InternalParser
     {

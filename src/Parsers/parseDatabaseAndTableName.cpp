@@ -41,24 +41,6 @@ bool parseDatabaseAndTableName(IParser::Pos & pos, Expected & expected, String &
     return true;
 }
 
-bool parseDatabaseAndTableAsAST(IParser::Pos & pos, Expected & expected, ASTPtr & database, ASTPtr & table)
-{
-    ParserToken s_dot(TokenType::Dot);
-    ParserIdentifier table_parser(true);
-
-    if (!table_parser.parse(pos, table, expected))
-        return false;
-
-    if (s_dot.ignore(pos))
-    {
-        database = table;
-        if (!table_parser.parse(pos, table, expected))
-            return false;
-    }
-
-    return true;
-}
-
 
 bool parseDatabase(IParser::Pos & pos, Expected & expected, String & database_str)
 {
@@ -73,12 +55,6 @@ bool parseDatabase(IParser::Pos & pos, Expected & expected, String & database_st
 
     tryGetIdentifierNameInto(database, database_str);
     return true;
-}
-
-bool parseDatabaseAsAST(IParser::Pos & pos, Expected & expected, ASTPtr & database)
-{
-    ParserIdentifier identifier_parser(/* allow_query_parameter */true);
-    return identifier_parser.parse(pos, database, expected);
 }
 
 

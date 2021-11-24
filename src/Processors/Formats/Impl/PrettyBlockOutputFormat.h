@@ -22,13 +22,13 @@ public:
 
     String getName() const override { return "PrettyBlockOutputFormat"; }
 
-protected:
     void consume(Chunk) override;
     void consumeTotals(Chunk) override;
     void consumeExtremes(Chunk) override;
 
-    void finalizeImpl() override;
+    void finalize() override;
 
+protected:
     size_t total_rows = 0;
     size_t terminal_width = 0;
     bool suffix_written = false;

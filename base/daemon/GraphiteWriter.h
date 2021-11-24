@@ -8,10 +8,10 @@
 #include <base/logger_useful.h>
 
 
-/// Writes to Graphite in the following format
+/// пишет в Graphite данные в формате
 /// path value timestamp\n
-/// path can be arbitrary nested. Elements are separated by '.'
-/// Example: root_path.server_name.sub_path.key
+/// path может иметь любую вложенность. Директории разделяются с помощью "."
+/// у нас принят следующий формат path - root_path.server_name.sub_path.key
 class GraphiteWriter
 {
 public:
@@ -32,6 +32,8 @@ public:
         writeImpl(key_val_vec, timestamp, custom_root_path);
     }
 
+    /// возвращает путь root_path.server_name
+    static std::string getPerServerPath(const std::string & server_name, const std::string & root_path = "one_min");
 private:
     template <typename T>
     void writeImpl(const T & data, time_t timestamp, const std::string & custom_root_path)

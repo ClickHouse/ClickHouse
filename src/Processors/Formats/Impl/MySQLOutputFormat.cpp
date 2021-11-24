@@ -24,6 +24,19 @@ MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header_, 
     /// But it's also possible to specify MySQLWire as output format for clickhouse-client or clickhouse-local.
     /// There is no `sequence_id` stored in `settings_.mysql_wire` in this case, so we create a dummy one.
     sequence_id = settings_.mysql_wire.sequence_id ? settings_.mysql_wire.sequence_id : &dummy_sequence_id;
+}
+
+void MySQLOutputFormat::setContext(ContextPtr context_)
+{
+    context = context_;
+}
+
+void MySQLOutputFormat::initialize()
+{
+    if (initialized)
+        return;
+
+    initialized = true;
 
     const auto & header = getPort(PortKind::Main).getHeader();
     data_types = header.getDataTypes();
@@ -33,16 +46,6 @@ MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header_, 
         serializations.emplace_back(type->getDefaultSerialization());
 
     packet_endpoint = MySQLProtocol::PacketEndpoint::create(out, *sequence_id);
-}
-
-void MySQLOutputFormat::setContext(ContextPtr context_)
-{
-    context = context_;
-}
-
-void MySQLOutputFormat::writePrefix()
-{
-    const auto & header = getPort(PortKind::Main).getHeader();
 
     if (header.columns())
     {
@@ -63,6 +66,8 @@ void MySQLOutputFormat::writePrefix()
 
 void MySQLOutputFormat::consume(Chunk chunk)
 {
+    initialize();
+
     for (size_t i = 0; i < chunk.getNumRows(); i++)
     {
         ProtocolText::ResultSetRow row_packet(serializations, chunk.getColumns(), i);
@@ -70,7 +75,7 @@ void MySQLOutputFormat::consume(Chunk chunk)
     }
 }
 
-void MySQLOutputFormat::finalizeImpl()
+void MySQLOutputFormat::finalize()
 {
     size_t affected_rows = 0;
     std::string human_readable_info;

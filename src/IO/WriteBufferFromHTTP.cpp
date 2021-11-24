@@ -20,7 +20,7 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
     ostr = &session->sendRequest(request);
 }
 
-void WriteBufferFromHTTP::finalizeImpl()
+void WriteBufferFromHTTP::finalize()
 {
     receiveResponse(*session, request, response, false);
     /// TODO: Response body is ignored.

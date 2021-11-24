@@ -31,9 +31,8 @@ from kazoo.exceptions import KazooException
 from minio import Minio
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
-from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
+from helpers.test_tools import assert_eq_with_retry
 from helpers import pytest_xdist_logging_to_separate_files
-from helpers.client import QueryRuntimeException
 
 import docker
 
@@ -226,8 +225,6 @@ class ClickHouseCluster:
         self.docker_logs_path = p.join(self.instances_dir, 'docker.log')
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
         self.env_variables = {}
-        self.env_variables["TSAN_OPTIONS"] = "second_deadlock_stack=1"
-        self.env_variables["CLICKHOUSE_WATCHDOG_ENABLE"] = "0"
         self.up_called = False
 
         custom_dockerd_host = custom_dockerd_host or os.environ.get('CLICKHOUSE_TESTS_DOCKERD_HOST')
@@ -416,23 +413,22 @@ class ClickHouseCluster:
         logging.debug(f"CLUSTER INIT base_config_dir:{self.base_config_dir}")
 
     def cleanup(self):
-        if os.environ and 'DISABLE_CLEANUP' in os.environ and os.environ['DISABLE_CLEANUP'] == "1":
-            logging.warning("Cleanup is disabled")
-            return
-
         # Just in case kill unstopped containers from previous launch
         try:
-            unstopped_containers = self.get_running_containers()
-            if unstopped_containers:
-                logging.debug(f"Trying to kill unstopped containers: {unstopped_containers}")
-                for id in unstopped_containers:
+            # docker-compose names containers using the following formula:
+            # container_name = project_name + '_' + instance_name + '_1'
+            # We need to have "^/" and "$" in the "--filter name" option below to filter by exact name of the container, see
+            # https://stackoverflow.com/questions/48767760/how-to-make-docker-container-ls-f-name-filter-by-exact-name
+            filter_name = f'^/{self.project_name}_.*_1$'
+            if int(run_and_check(f'docker container list --all --filter name={filter_name} | wc -l', shell=True)) > 1:
+                logging.debug(f"Trying to kill unstopped containers for project {self.project_name}:")
+                unstopped_containers = run_and_check(f'docker container list --all --filter name={filter_name}', shell=True)
+                unstopped_containers_ids = [line.split()[0] for line in unstopped_containers.splitlines()[1:]]
+                for id in unstopped_containers_ids:
                     run_and_check(f'docker kill {id}', shell=True, nothrow=True)
                     run_and_check(f'docker rm {id}', shell=True, nothrow=True)
-                unstopped_containers = self.get_running_containers()
-                if unstopped_containers:
-                    logging.debug(f"Left unstopped containers: {unstopped_containers}")
-                else:
-                    logging.debug(f"Unstopped containers killed.")
+                logging.debug("Unstopped containers killed")
+                run_and_check(f'docker container list --all --filter name={filter_name}', shell=True)
             else:
                 logging.debug(f"No running containers for project: {self.project_name}")
         except:
@@ -483,19 +479,6 @@ class ClickHouseCluster:
         if p.basename(cmd) == 'clickhouse':
             cmd += " client"
         return cmd
-
-    # Returns the list of currently running docker containers corresponding to this ClickHouseCluster.
-    def get_running_containers(self):
-        # docker-compose names containers using the following formula:
-        # container_name = project_name + '_' + instance_name + '_1'
-        # We need to have "^/" and "$" in the "--filter name" option below to filter by exact name of the container, see
-        # https://stackoverflow.com/questions/48767760/how-to-make-docker-container-ls-f-name-filter-by-exact-name
-        filter_name = f'^/{self.project_name}_.*_1$'
-        # We want the command "docker container list" to show only containers' ID and their names, separated by colon.
-        format = '{{.ID}}:{{.Names}}'
-        containers = run_and_check(f"docker container list --all --filter name='{filter_name}' --format '{format}'", shell=True)
-        containers = dict(line.split(':', 1) for line in containers.decode('utf8').splitlines())
-        return containers
 
     def copy_file_from_container_to_container(self, src_node, src_path, dst_node, dst_path):
         fname = os.path.basename(src_path)
@@ -775,9 +758,9 @@ class ClickHouseCluster:
                      with_kerberized_hdfs=False, with_mongo=False, with_mongo_secure=False, with_nginx=False,
                      with_redis=False, with_minio=False, with_cassandra=False, with_jdbc_bridge=False,
                      hostname=None, env_variables=None, image="clickhouse/integration-test", tag=None,
-                     stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None,
+                     stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
                      zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True,
-                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="clickhouse") -> 'ClickHouseInstance':
+                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="clickhouse"):
 
         """Add an instance to the cluster.
 
@@ -849,7 +832,6 @@ class ClickHouseCluster:
             main_config_name=main_config_name,
             users_config_name=users_config_name,
             copy_common_configs=copy_common_configs,
-            external_dirs=external_dirs,
             tmpfs=tmpfs or [],
             config_root_name=config_root_name)
 
@@ -979,9 +961,6 @@ class ClickHouseCluster:
         logging.info("Restart node with ip change")
         # In builds with sanitizer the server can take a long time to start
         node.wait_for_start(start_timeout=180.0, connection_timeout=600.0)  # seconds
-        res = node.client.query("SELECT 30")
-        logging.debug(f"Read '{res}'")
-        assert "30\n" == res
         logging.info("Restarted")
 
         return node
@@ -1434,7 +1413,7 @@ class ClickHouseCluster:
             # retry_exception(10, 5, subprocess_check_call, Exception, clickhouse_pull_cmd)
 
             if destroy_dirs and p.exists(self.instances_dir):
-                logging.debug(f"Removing instances dir {self.instances_dir}")
+                logging.debug(("Removing instances dir %s", self.instances_dir))
                 shutil.rmtree(self.instances_dir)
 
             for instance in list(self.instances.values()):
@@ -1444,7 +1423,7 @@ class ClickHouseCluster:
             _create_env_file(os.path.join(self.env_file), self.env_variables)
             self.docker_client = docker.DockerClient(base_url='unix:///var/run/docker.sock', version=self.docker_api_version, timeout=600)
 
-            common_opts = ['--verbose', 'up', '-d']
+            common_opts = ['up', '-d']
 
             if self.with_zookeeper_secure and self.base_zookeeper_cmd:
                 logging.debug('Setup ZooKeeper Secure')
@@ -1664,7 +1643,7 @@ class ClickHouseCluster:
             self.shutdown()
             raise
 
-    def shutdown(self, kill=True, ignore_fatal=True):
+    def shutdown(self, kill=True):
         sanitizer_assert_instance = None
         fatal_log = None
 
@@ -1692,10 +1671,10 @@ class ClickHouseCluster:
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
             for name, instance in self.instances.items():
                 if instance.contains_in_log(SANITIZER_SIGN, from_host=True):
-                    sanitizer_assert_instance = instance.grep_in_log(SANITIZER_SIGN, from_host=True, filename='stderr.log')
+                    sanitizer_assert_instance = instance.grep_in_log(SANITIZER_SIGN, from_host=True)
                     logging.error("Sanitizer in instance %s log %s", name, sanitizer_assert_instance)
 
-                if not ignore_fatal and instance.contains_in_log("Fatal", from_host=True):
+                if instance.contains_in_log("Fatal", from_host=True):
                     fatal_log = instance.grep_in_log("Fatal", from_host=True)
                     if 'Child process was terminated by signal 9 (KILL)' in fatal_log:
                         fatal_log = None
@@ -1705,7 +1684,7 @@ class ClickHouseCluster:
             try:
                 subprocess_check_call(self.base_cmd + ['down', '--volumes'])
             except Exception as e:
-                logging.debug("Down + remove orphans failed during shutdown. {}".format(repr(e)))
+                logging.debug("Down + remove orphans failed durung shutdown. {}".format(repr(e)))
         else:
             logging.warning("docker-compose up was not called. Trying to export docker.log for running containers")
 
@@ -1788,7 +1767,7 @@ CLICKHOUSE_START_COMMAND = "clickhouse server --config-file=/etc/clickhouse-serv
                            " --log-file=/var/log/clickhouse-server/clickhouse-server.log " \
                            " --errorlog-file=/var/log/clickhouse-server/clickhouse-server.err.log"
 
-CLICKHOUSE_STAY_ALIVE_COMMAND = 'bash -c "trap \'pkill tail\' INT TERM; {} --daemon; coproc tail -f /dev/null; wait $$!"'.format(CLICKHOUSE_START_COMMAND)
+CLICKHOUSE_STAY_ALIVE_COMMAND = 'bash -c "trap \'killall tail\' INT TERM; {} --daemon; coproc tail -f /dev/null; wait $$!"'.format(CLICKHOUSE_START_COMMAND)
 
 # /run/xtables.lock passed inside for correct iptables --wait
 DOCKER_COMPOSE_TEMPLATE = '''
@@ -1806,7 +1785,6 @@ services:
             {binary_volume}
             {odbc_bridge_volume}
             {library_bridge_volume}
-            {external_dirs_volumes}
             {odbc_ini_path}
             {keytab_path}
             {krb5_conf}
@@ -1849,7 +1827,7 @@ class ClickHouseInstance:
             main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True,
             hostname=None, env_variables=None,
             image="clickhouse/integration-test", tag="latest",
-            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None, config_root_name="clickhouse"):
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None, config_root_name="clickhouse"):
 
         self.name = name
         self.base_cmd = cluster.base_cmd
@@ -1857,7 +1835,6 @@ class ClickHouseInstance:
         self.cluster = cluster
         self.hostname = hostname if hostname is not None else self.name
 
-        self.external_dirs = external_dirs
         self.tmpfs = tmpfs or []
         self.base_config_dir = p.abspath(p.join(base_path, base_config_dir)) if base_config_dir else None
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
@@ -2054,122 +2031,84 @@ class ClickHouseInstance:
         if not self.stay_alive:
             raise Exception("clickhouse can be stopped only with stay_alive=True instance")
         try:
-            ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], nothrow=True, user='root')
+            ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
             if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND" :
                 logging.warning("ClickHouse process already stopped")
                 return
 
             self.exec_in_container(["bash", "-c", "pkill {} clickhouse".format("-9" if kill else "")], user='root')
 
-            start_time = time.time()
+            sleep_time = 0.1
+            num_steps = int(stop_wait_sec / sleep_time)
             stopped = False
-            while time.time() <= start_time + stop_wait_sec:
-                pid = self.get_process_pid("clickhouse")
-                if pid is None:
+            for step in range(num_steps):
+                time.sleep(sleep_time)
+                ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], user='root')
+                if ps_clickhouse == "  PID TTY      STAT   TIME COMMAND":
                     stopped = True
                     break
-                else:
-                    time.sleep(1)
 
             if not stopped:
-                pid = self.get_process_pid("clickhouse")
-                if pid is not None:
-                    logging.warning(f"Force kill clickhouse in stop_clickhouse. ps:{pid}")
-                    self.exec_in_container(["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid} > {os.path.join(self.path, 'logs/stdout.log')}"], user='root')
-                    self.stop_clickhouse(kill=True)
-                else:
-                    ps_all = self.exec_in_container(["bash", "-c", "ps aux"], nothrow=True, user='root')
-                    logging.warning(f"We want force stop clickhouse, but no clickhouse-server is running\n{ps_all}")
-                    return
+                logging.warning(f"Force kill clickhouse in stop_clickhouse. ps:{ps_clickhouse}")
+                self.stop_clickhouse(kill=True)
         except Exception as e:
             logging.warning(f"Stop ClickHouse raised an error {e}")
 
-    def start_clickhouse(self, start_wait_sec=60):
+    def start_clickhouse(self, start_wait_sec=30):
         if not self.stay_alive:
             raise Exception("ClickHouse can be started again only with stay_alive=True instance")
-        start_time = time.time()
-        time_to_sleep = 0.5
 
-        while start_time + start_wait_sec >= time.time():
+        time_to_sleep = 0.5
+        start_tries = 5
+
+        total_tries = int(start_wait_sec / time_to_sleep)
+        query_tries = int(total_tries / start_tries)
+
+        for i in range(start_tries):
             # sometimes after SIGKILL (hard reset) server may refuse to start for some time
             # for different reasons.
-            pid = self.get_process_pid("clickhouse")
-            if pid is None:
-                logging.debug("No clickhouse process running. Start new one.")
-                self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
-                time.sleep(1)
-                continue
-            else:
-                logging.debug("Clickhouse process running.")
+            self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
+            started = False
+            for _ in range(query_tries):
                 try:
-                    self.wait_start(start_wait_sec + start_time - time.time())
-                    return
-                except Exception as e:
-                    logging.warning(f"Current start attempt failed. Will kill {pid} just in case.")
-                    self.exec_in_container(["bash", "-c", f"kill -9 {pid}"], user='root', nothrow=True)
-                    time.sleep(time_to_sleep)        
+                    self.query("select 1")
+                    started = True
+                    break
+                except:
+                    time.sleep(time_to_sleep)
+            if started:
+                break
+        else:
+            raise Exception("Cannot start ClickHouse, see additional info in logs")
 
-        raise Exception("Cannot start ClickHouse, see additional info in logs")
 
-
-    def wait_start(self, start_wait_sec):
-        start_time = time.time()
-        last_err = None
-        while time.time() <= start_time + start_wait_sec:
-            try:
-                pid = self.get_process_pid("clickhouse")
-                if pid is None:
-                    raise Exception("ClickHouse server is not running. Check logs.")
-                exec_query_with_retry(self, 'select 20', retry_count = 10, silent=True)
-                return
-            except QueryRuntimeException as err:
-                last_err = err
-                pid = self.get_process_pid("clickhouse")
-                if pid is not None:
-                    logging.warning(f"ERROR {err}")
-                else:
-                    raise Exception("ClickHouse server is not running. Check logs.")
-        logging.error(f"No time left to start. But process is still running. Will dump threads.")
-        ps_clickhouse = self.exec_in_container(["bash", "-c", "ps -C clickhouse"], nothrow=True, user='root')
-        logging.info(f"PS RESULT:\n{ps_clickhouse}")
-        pid = self.get_process_pid("clickhouse")
-        if pid is not None:
-            self.exec_in_container(["bash", "-c", f"gdb -batch -ex 'thread apply all bt full' -p {pid}"], user='root')
-        if last_err is not None:
-            raise last_err
-
-    def restart_clickhouse(self, stop_start_wait_sec=60, kill=False):
+    def restart_clickhouse(self, stop_start_wait_sec=30, kill=False):
         self.stop_clickhouse(stop_start_wait_sec, kill)
         self.start_clickhouse(stop_start_wait_sec)
 
     def exec_in_container(self, cmd, detach=False, nothrow=False, **kwargs):
         return self.cluster.exec_in_container(self.docker_id, cmd, detach, nothrow, **kwargs)
 
-    def rotate_logs(self):
-        self.exec_in_container(["bash", "-c", f"kill -HUP {self.get_process_pid('clickhouse server')}"], user='root')
-
-    def contains_in_log(self, substring, from_host=False, filename='clickhouse-server.log'):
+    def contains_in_log(self, substring, from_host=False):
         if from_host:
-            # We check fist file exists but want to look for all rotated logs as well
             result = subprocess_check_call(["bash", "-c",
-                f'[ -f {self.logs_dir}/{filename} ] && zgrep -aH "{substring}" {self.logs_dir}/{filename}* || true'
+                f'[ -f {self.logs_dir}/clickhouse-server.log ] && grep -a "{substring}" {self.logs_dir}/clickhouse-server.log || true'
             ])
         else:
             result = self.exec_in_container(["bash", "-c",
-                f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -aH "{substring}" /var/log/clickhouse-server/{filename} || true'
+                f'[ -f /var/log/clickhouse-server/clickhouse-server.log ] && grep -a "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
             ])
         return len(result) > 0
 
-    def grep_in_log(self, substring, from_host=False, filename='clickhouse-server.log'):
+    def grep_in_log(self, substring, from_host=False):
         logging.debug(f"grep in log called %s", substring)
         if from_host:
-            # We check fist file exists but want to look for all rotated logs as well
             result = subprocess_check_call(["bash", "-c",
-                f'[ -f {self.logs_dir}/{filename} ] && zgrep -a "{substring}" {self.logs_dir}/{filename}* || true'
+                f'grep -a "{substring}" {self.logs_dir}/clickhouse-server.log || true'
             ])
         else:
             result = self.exec_in_container(["bash", "-c",
-                f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -a "{substring}" /var/log/clickhouse-server/{filename}* || true'
+                f'grep -a "{substring}" /var/log/clickhouse-server/clickhouse-server.log || true'
             ])
         logging.debug("grep result %s", result)
         return result
@@ -2204,7 +2143,7 @@ class ClickHouseInstance:
 
     def get_process_pid(self, process_name):
         output = self.exec_in_container(["bash", "-c",
-                                         "ps ax | grep '{}' | grep -v 'grep' | grep -v 'coproc' | grep -v 'bash -c' | awk '{{print $1}}'".format(
+                                         "ps ax | grep '{}' | grep -v 'grep' | grep -v 'bash -c' | awk '{{print $1}}'".format(
                                              process_name)])
         if output:
             try:
@@ -2215,7 +2154,6 @@ class ClickHouseInstance:
         return None
 
     def restart_with_original_version(self, stop_start_wait_sec=300, callback_onstop=None, signal=15):
-        begin_time = time.time()
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
         self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(signal)], user='root')
@@ -2235,7 +2173,6 @@ class ClickHouseInstance:
 
         if callback_onstop:
             callback_onstop(self)
-        self.exec_in_container(["bash", "-c", "echo 'restart_with_original_version: From version' && /usr/bin/clickhouse server --version && echo 'To version' && /usr/share/clickhouse_original server --version"])
         self.exec_in_container(
             ["bash", "-c", "cp /usr/share/clickhouse_original /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse"],
             user='root')
@@ -2245,14 +2182,9 @@ class ClickHouseInstance:
         self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
 
         # wait start
-        time_left = begin_time + stop_start_wait_sec - time.time()
-        if time_left <= 0:
-            raise Exception(f"No time left during restart")
-        else:
-            self.wait_start(time_left)
+        assert_eq_with_retry(self, "select 1", "1", retry_count=retries)
 
     def restart_with_latest_version(self, stop_start_wait_sec=300, callback_onstop=None, signal=15):
-        begin_time = time.time()
         if not self.stay_alive:
             raise Exception("Cannot restart not stay alive container")
         self.exec_in_container(["bash", "-c", "pkill -{} clickhouse".format(signal)], user='root')
@@ -2278,18 +2210,13 @@ class ClickHouseInstance:
         self.exec_in_container(
             ["bash", "-c", "cp /usr/share/clickhouse_fresh /usr/bin/clickhouse && chmod 777 /usr/bin/clickhouse"],
             user='root')
-        self.exec_in_container(["bash", "-c", "echo 'restart_with_latest_version: From version' && /usr/share/clickhouse_original server --version && echo 'To version' /usr/share/clickhouse_fresh server --version"])
         self.exec_in_container(["bash", "-c",
                                 "cp /usr/share/clickhouse-odbc-bridge_fresh /usr/bin/clickhouse-odbc-bridge && chmod 777 /usr/bin/clickhouse"],
                                user='root')
         self.exec_in_container(["bash", "-c", "{} --daemon".format(self.clickhouse_start_command)], user=str(os.getuid()))
 
         # wait start
-        time_left = begin_time + stop_start_wait_sec - time.time()
-        if time_left <= 0:
-            raise Exception(f"No time left during restart")
-        else:
-            self.wait_start(time_left)
+        assert_eq_with_retry(self, "select 1", "1", retry_count=retries)
 
     def get_docker_handle(self):
         return self.cluster.get_docker_handle(self.docker_id)
@@ -2587,14 +2514,6 @@ class ClickHouseInstance:
             odbc_bridge_volume = "- " + self.odbc_bridge_bin_path + ":/usr/share/clickhouse-odbc-bridge_fresh"
             library_bridge_volume = "- " + self.library_bridge_bin_path + ":/usr/share/clickhouse-library-bridge_fresh"
 
-        external_dirs_volumes = ""
-        if self.external_dirs:
-            for external_dir in self.external_dirs:
-                external_dir_abs_path = p.abspath(p.join(self.path, external_dir.lstrip('/')))
-                logging.info(f'external_dir_abs_path={external_dir_abs_path}')
-                os.mkdir(external_dir_abs_path)
-                external_dirs_volumes += "- " + external_dir_abs_path + ":"  + external_dir + "\n"
-
 
         with open(self.docker_compose_path, 'w') as docker_compose:
             docker_compose.write(DOCKER_COMPOSE_TEMPLATE.format(
@@ -2608,7 +2527,6 @@ class ClickHouseInstance:
                 instance_config_dir=instance_config_dir,
                 config_d_dir=self.config_d_dir,
                 db_dir=db_dir,
-                external_dirs_volumes=external_dirs_volumes,
                 tmpfs=str(self.tmpfs),
                 logs_dir=logs_dir,
                 depends_on=str(depends_on),

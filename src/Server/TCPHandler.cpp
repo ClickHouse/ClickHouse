@@ -352,13 +352,6 @@ void TCPHandler::runImpl()
                     executor.setCancelCallback(callback, interactive_delay / 1000);
                 }
                 executor.execute();
-
-                /// Send final progress
-                ///
-                /// NOTE: we cannot send Progress for regular INSERT (w/ VALUES)
-                /// w/o breaking protocol compatibility, but it can be done
-                /// by increasing revision.
-                sendProgress();
             }
 
             state.io.onFinish();
@@ -596,13 +589,8 @@ void TCPHandler::processInsertQuery()
 {
     size_t num_threads = state.io.pipeline.getNumThreads();
 
-    auto run_executor = [&](auto & executor)
+    auto send_table_columns = [&]()
     {
-        /// Made above the rest of the lines,
-        /// so that in case of `writePrefix` function throws an exception,
-        /// client receive exception before sending data.
-        executor.start();
-
         /// Send ColumnsDescription for insertion table
         if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
         {
@@ -616,6 +604,17 @@ void TCPHandler::processInsertQuery()
                 }
             }
         }
+    };
+
+    if (num_threads > 1)
+    {
+        PushingAsyncPipelineExecutor executor(state.io.pipeline);
+        /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
+        *  client receive exception before sending data.
+        */
+        executor.start();
+
+        send_table_columns();
 
         /// Send block to the client - table structure.
         sendData(executor.getHeader());
@@ -626,17 +625,22 @@ void TCPHandler::processInsertQuery()
             executor.push(std::move(state.block_for_insert));
 
         executor.finish();
-    };
-
-    if (num_threads > 1)
-    {
-        PushingAsyncPipelineExecutor executor(state.io.pipeline);
-        run_executor(executor);
     }
     else
     {
         PushingPipelineExecutor executor(state.io.pipeline);
-        run_executor(executor);
+        executor.start();
+
+        send_table_columns();
+
+        sendData(executor.getHeader());
+
+        sendLogs();
+
+        while (readDataNext())
+            executor.push(std::move(state.block_for_insert));
+
+        executor.finish();
     }
 }
 

@@ -60,7 +60,7 @@ String AsynchronousReadIndirectBufferFromRemoteFS::getFileName() const
 bool AsynchronousReadIndirectBufferFromRemoteFS::hasPendingDataToRead()
 {
     /**
-     * Note: read_until_position here can be std::nullopt only for non-MergeTree tables.
+     * Note: read_until_position here can be zero only for non-MergeTree tables.
      * For mergeTree tables it must be guaranteed that setReadUntilPosition() or
      * setReadUntilEnd() is called before any read or prefetch.
      * setReadUntilEnd() always sets read_until_position to file size.

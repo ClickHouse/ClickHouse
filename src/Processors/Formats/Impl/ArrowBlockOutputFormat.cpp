@@ -50,7 +50,7 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
             "Error while writing a table: {}", status.ToString());
 }
 
-void ArrowBlockOutputFormat::finalizeImpl()
+void ArrowBlockOutputFormat::finalize()
 {
     if (!writer)
     {

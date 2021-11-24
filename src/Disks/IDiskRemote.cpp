@@ -31,11 +31,11 @@ namespace ErrorCodes
 /// Load metadata by path or create empty if `create` flag is set.
 IDiskRemote::Metadata::Metadata(
         const String & remote_fs_root_path_,
-        DiskPtr metadata_disk_,
+        const String & disk_path_,
         const String & metadata_file_path_,
         bool create)
     : RemoteMetadata(remote_fs_root_path_, metadata_file_path_)
-    , metadata_disk(metadata_disk_)
+    , disk_path(disk_path_)
     , total_size(0), ref_count(0)
 {
     if (create)
@@ -43,54 +43,53 @@ IDiskRemote::Metadata::Metadata(
 
     try
     {
-        const ReadSettings read_settings;
-        auto buf = metadata_disk->readFile(metadata_file_path, read_settings, 1024);  /* reasonable buffer size for small file */
+        ReadBufferFromFile buf(disk_path + metadata_file_path, 1024); /* reasonable buffer size for small file */
 
         UInt32 version;
-        readIntText(version, *buf);
+        readIntText(version, buf);
 
         if (version < VERSION_ABSOLUTE_PATHS || version > VERSION_READ_ONLY_FLAG)
             throw Exception(
                 ErrorCodes::UNKNOWN_FORMAT,
                 "Unknown metadata file version. Path: {}. Version: {}. Maximum expected version: {}",
-                metadata_disk->getPath() + metadata_file_path, toString(version), toString(VERSION_READ_ONLY_FLAG));
+                disk_path + metadata_file_path, toString(version), toString(VERSION_READ_ONLY_FLAG));
 
-        assertChar('\n', *buf);
+        assertChar('\n', buf);
 
         UInt32 remote_fs_objects_count;
-        readIntText(remote_fs_objects_count, *buf);
-        assertChar('\t', *buf);
-        readIntText(total_size, *buf);
-        assertChar('\n', *buf);
+        readIntText(remote_fs_objects_count, buf);
+        assertChar('\t', buf);
+        readIntText(total_size, buf);
+        assertChar('\n', buf);
         remote_fs_objects.resize(remote_fs_objects_count);
 
         for (size_t i = 0; i < remote_fs_objects_count; ++i)
         {
             String remote_fs_object_path;
             size_t remote_fs_object_size;
-            readIntText(remote_fs_object_size, *buf);
-            assertChar('\t', *buf);
-            readEscapedString(remote_fs_object_path, *buf);
+            readIntText(remote_fs_object_size, buf);
+            assertChar('\t', buf);
+            readEscapedString(remote_fs_object_path, buf);
             if (version == VERSION_ABSOLUTE_PATHS)
             {
                 if (!remote_fs_object_path.starts_with(remote_fs_root_path))
                     throw Exception(ErrorCodes::UNKNOWN_FORMAT,
                         "Path in metadata does not correspond to root path. Path: {}, root path: {}, disk path: {}",
-                        remote_fs_object_path, remote_fs_root_path, metadata_disk->getPath());
+                        remote_fs_object_path, remote_fs_root_path, disk_path_);
 
                 remote_fs_object_path = remote_fs_object_path.substr(remote_fs_root_path.size());
             }
-            assertChar('\n', *buf);
+            assertChar('\n', buf);
             remote_fs_objects[i] = {remote_fs_object_path, remote_fs_object_size};
         }
 
-        readIntText(ref_count, *buf);
-        assertChar('\n', *buf);
+        readIntText(ref_count, buf);
+        assertChar('\n', buf);
 
         if (version >= VERSION_READ_ONLY_FLAG)
         {
-            readBoolText(read_only, *buf);
-            assertChar('\n', *buf);
+            readBoolText(read_only, buf);
+            assertChar('\n', buf);
         }
     }
     catch (Exception & e)
@@ -111,33 +110,33 @@ void IDiskRemote::Metadata::addObject(const String & path, size_t size)
 /// Fsync metadata file if 'sync' flag is set.
 void IDiskRemote::Metadata::save(bool sync)
 {
-    auto buf = metadata_disk->writeFile(metadata_file_path, 1024);
+    WriteBufferFromFile buf(disk_path + metadata_file_path, 1024);
 
-    writeIntText(VERSION_RELATIVE_PATHS, *buf);
-    writeChar('\n', *buf);
+    writeIntText(VERSION_RELATIVE_PATHS, buf);
+    writeChar('\n', buf);
 
-    writeIntText(remote_fs_objects.size(), *buf);
-    writeChar('\t', *buf);
-    writeIntText(total_size, *buf);
-    writeChar('\n', *buf);
+    writeIntText(remote_fs_objects.size(), buf);
+    writeChar('\t', buf);
+    writeIntText(total_size, buf);
+    writeChar('\n', buf);
 
     for (const auto & [remote_fs_object_path, remote_fs_object_size] : remote_fs_objects)
     {
-        writeIntText(remote_fs_object_size, *buf);
-        writeChar('\t', *buf);
-        writeEscapedString(remote_fs_object_path, *buf);
-        writeChar('\n', *buf);
+        writeIntText(remote_fs_object_size, buf);
+        writeChar('\t', buf);
+        writeEscapedString(remote_fs_object_path, buf);
+        writeChar('\n', buf);
     }
 
-    writeIntText(ref_count, *buf);
-    writeChar('\n', *buf);
+    writeIntText(ref_count, buf);
+    writeChar('\n', buf);
 
-    writeBoolText(read_only, *buf);
-    writeChar('\n', *buf);
+    writeBoolText(read_only, buf);
+    writeChar('\n', buf);
 
-    buf->finalize();
+    buf.finalize();
     if (sync)
-        buf->sync();
+        buf.sync();
 }
 
 IDiskRemote::Metadata IDiskRemote::readOrCreateMetaForWriting(const String & path, WriteMode mode)
@@ -165,21 +164,23 @@ IDiskRemote::Metadata IDiskRemote::readOrCreateMetaForWriting(const String & pat
 
 IDiskRemote::Metadata IDiskRemote::readMeta(const String & path) const
 {
-    return Metadata(remote_fs_root_path, metadata_disk, path);
+    return Metadata(remote_fs_root_path, metadata_path, path);
 }
 
 
 IDiskRemote::Metadata IDiskRemote::createMeta(const String & path) const
 {
-    return Metadata(remote_fs_root_path, metadata_disk, path, true);
+    return Metadata(remote_fs_root_path, metadata_path, path, true);
 }
 
 
 void IDiskRemote::removeMeta(const String & path, RemoteFSPathKeeperPtr fs_paths_keeper)
 {
-    LOG_DEBUG(log, "Remove file by path: {}", backQuote(metadata_disk->getPath() + path));
+    LOG_DEBUG(log, "Remove file by path: {}", backQuote(metadata_path + path));
 
-    if (!metadata_disk->isFile(path))
+    fs::path file(metadata_path + path);
+
+    if (!fs::is_regular_file(file))
         throw Exception(ErrorCodes::CANNOT_DELETE_DIRECTORY, "Path '{}' is a directory", path);
 
     try
@@ -189,7 +190,7 @@ void IDiskRemote::removeMeta(const String & path, RemoteFSPathKeeperPtr fs_paths
         /// If there is no references - delete content from remote FS.
         if (metadata.ref_count == 0)
         {
-            metadata_disk->removeFile(path);
+            fs::remove(file);
             for (const auto & [remote_fs_object_path, _] : metadata.remote_fs_objects)
                 fs_paths_keeper->addPath(remote_fs_root_path + remote_fs_object_path);
         }
@@ -197,7 +198,7 @@ void IDiskRemote::removeMeta(const String & path, RemoteFSPathKeeperPtr fs_paths
         {
             --metadata.ref_count;
             metadata.save();
-            metadata_disk->removeFile(path);
+            fs::remove(file);
         }
     }
     catch (const Exception & e)
@@ -208,7 +209,7 @@ void IDiskRemote::removeMeta(const String & path, RemoteFSPathKeeperPtr fs_paths
             LOG_WARNING(log,
                 "Metadata file {} can't be read by reason: {}. Removing it forcibly.",
                 backQuote(path), e.nested() ? e.nested()->message() : e.message());
-            metadata_disk->removeFile(path);
+            fs::remove(file);
         }
         else
             throw;
@@ -220,7 +221,8 @@ void IDiskRemote::removeMetaRecursive(const String & path, RemoteFSPathKeeperPtr
 {
     checkStackSize(); /// This is needed to prevent stack overflow in case of cyclic symlinks.
 
-    if (metadata_disk->isFile(path))
+    fs::path file = fs::path(metadata_path) / path;
+    if (fs::is_regular_file(file))
     {
         removeMeta(path, fs_paths_keeper);
     }
@@ -228,7 +230,7 @@ void IDiskRemote::removeMetaRecursive(const String & path, RemoteFSPathKeeperPtr
     {
         for (auto it{iterateDirectory(path)}; it->isValid(); it->next())
             removeMetaRecursive(it->path(), fs_paths_keeper);
-        metadata_disk->removeDirectory(path);
+        fs::remove(file);
     }
 }
 
@@ -279,27 +281,27 @@ DiskRemoteReservation::~DiskRemoteReservation()
 IDiskRemote::IDiskRemote(
     const String & name_,
     const String & remote_fs_root_path_,
-    DiskPtr metadata_disk_,
+    const String & metadata_path_,
     const String & log_name_,
     size_t thread_pool_size)
     : IDisk(std::make_unique<AsyncExecutor>(log_name_, thread_pool_size))
     , log(&Poco::Logger::get(log_name_))
     , name(name_)
     , remote_fs_root_path(remote_fs_root_path_)
-    , metadata_disk(metadata_disk_)
+    , metadata_path(metadata_path_)
 {
 }
 
 
 bool IDiskRemote::exists(const String & path) const
 {
-    return metadata_disk->exists(path);
+    return fs::exists(fs::path(metadata_path) / path);
 }
 
 
 bool IDiskRemote::isFile(const String & path) const
 {
-    return metadata_disk->isFile(path);
+    return fs::is_regular_file(fs::path(metadata_path) / path);
 }
 
 
@@ -323,7 +325,7 @@ void IDiskRemote::moveFile(const String & from_path, const String & to_path)
     if (exists(to_path))
         throw Exception("File already exists: " + to_path, ErrorCodes::FILE_ALREADY_EXISTS);
 
-    metadata_disk->moveFile(from_path, to_path);
+    fs::rename(fs::path(metadata_path) / from_path, fs::path(metadata_path) / to_path);
 }
 
 
@@ -353,7 +355,7 @@ void IDiskRemote::removeSharedFile(const String & path, bool keep_in_remote_fs)
 void IDiskRemote::removeSharedFileIfExists(const String & path, bool keep_in_remote_fs)
 {
     RemoteFSPathKeeperPtr fs_paths_keeper = createFSPathKeeper();
-    if (metadata_disk->exists(path))
+    if (fs::exists(fs::path(metadata_path) / path))
     {
         removeMeta(path, fs_paths_keeper);
         if (!keep_in_remote_fs)
@@ -383,19 +385,19 @@ void IDiskRemote::setReadOnly(const String & path)
 
 bool IDiskRemote::isDirectory(const String & path) const
 {
-    return metadata_disk->isDirectory(path);
+    return fs::is_directory(fs::path(metadata_path) / path);
 }
 
 
 void IDiskRemote::createDirectory(const String & path)
 {
-    metadata_disk->createDirectory(path);
+    fs::create_directory(fs::path(metadata_path) / path);
 }
 
 
 void IDiskRemote::createDirectories(const String & path)
 {
-    metadata_disk->createDirectories(path);
+    fs::create_directories(fs::path(metadata_path) / path);
 }
 
 
@@ -409,13 +411,17 @@ void IDiskRemote::clearDirectory(const String & path)
 
 void IDiskRemote::removeDirectory(const String & path)
 {
-    metadata_disk->removeDirectory(path);
+    fs::remove(fs::path(metadata_path) / path);
 }
 
 
 DiskDirectoryIteratorPtr IDiskRemote::iterateDirectory(const String & path)
 {
-    return metadata_disk->iterateDirectory(path);
+    fs::path meta_path = fs::path(metadata_path) / path;
+    if (fs::exists(meta_path) && fs::is_directory(meta_path))
+        return std::make_unique<RemoteDiskDirectoryIterator>(meta_path, path);
+    else
+        return std::make_unique<RemoteDiskDirectoryIterator>();
 }
 
 
@@ -428,13 +434,13 @@ void IDiskRemote::listFiles(const String & path, std::vector<String> & file_name
 
 void IDiskRemote::setLastModified(const String & path, const Poco::Timestamp & timestamp)
 {
-    metadata_disk->setLastModified(path, timestamp);
+    FS::setModificationTime(fs::path(metadata_path) / path, timestamp.epochTime());
 }
 
 
 Poco::Timestamp IDiskRemote::getLastModified(const String & path)
 {
-    return metadata_disk->getLastModified(path);
+    return FS::getModificationTimestamp(fs::path(metadata_path) / path);
 }
 
 
@@ -446,7 +452,7 @@ void IDiskRemote::createHardLink(const String & src_path, const String & dst_pat
     src.save();
 
     /// Create FS hardlink to metadata file.
-    metadata_disk->createHardLink(src_path, dst_path);
+    DB::createHardLink(metadata_path + src_path, metadata_path + dst_path);
 }
 
 
@@ -484,7 +490,7 @@ bool IDiskRemote::tryReserve(UInt64 bytes)
 
 String IDiskRemote::getUniqueId(const String & path) const
 {
-    Metadata metadata(remote_fs_root_path, metadata_disk, path);
+    Metadata metadata(remote_fs_root_path, metadata_path, path);
     String id;
     if (!metadata.remote_fs_objects.empty())
         id = metadata.remote_fs_root_path + metadata.remote_fs_objects[0].first;

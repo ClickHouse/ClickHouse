@@ -8,23 +8,23 @@ namespace DB
 
 class WriteBufferFromNuraftBuffer : public WriteBuffer
 {
-public:
-    WriteBufferFromNuraftBuffer();
-
-    nuraft::ptr<nuraft::buffer> getBuffer();
-    bool isFinished() const { return finalized; }
-
-    ~WriteBufferFromNuraftBuffer() override;
-
 private:
-    void finalizeImpl() override final;
-
-    void nextImpl() override;
-
     nuraft::ptr<nuraft::buffer> buffer;
+    bool is_finished = false;
 
     static constexpr size_t initial_size = 32;
     static constexpr size_t size_multiplier = 2;
+
+    void nextImpl() override;
+
+public:
+    WriteBufferFromNuraftBuffer();
+
+    void finalize() override final;
+    nuraft::ptr<nuraft::buffer> getBuffer();
+    bool isFinished() const { return is_finished; }
+
+    ~WriteBufferFromNuraftBuffer() override;
 };
 
 }

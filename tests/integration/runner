@@ -251,11 +251,7 @@ if __name__ == "__main__":
     elif args.dockerd_volume:
         dockerd_internal_volume = "--mount type=bind,source={},target=/var/lib/docker".format(args.dockerd_volume)
     else:
-        try:
-            subprocess.check_call('docker volume create {name}_volume'.format(name=CONTAINER_NAME), shell=True)
-        except Exception as ex:
-            print("Volume creationg failed, probably it already exists, exception", ex)
-
+        subprocess.check_call('docker volume create {name}_volume'.format(name=CONTAINER_NAME), shell=True)
         dockerd_internal_volume = "--volume={}_volume:/var/lib/docker".format(CONTAINER_NAME)
 
     # If enabled we kill and remove containers before pytest session run.

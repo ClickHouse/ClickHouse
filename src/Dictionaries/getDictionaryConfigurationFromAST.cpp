@@ -536,12 +536,12 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     AutoPtr<Poco::XML::Element> name_element(xml_document->createElement("name"));
     current_dictionary->appendChild(name_element);
-    AutoPtr<Text> name(xml_document->createTextNode(query.getTable()));
+    AutoPtr<Text> name(xml_document->createTextNode(query.table));
     name_element->appendChild(name);
 
     AutoPtr<Poco::XML::Element> database_element(xml_document->createElement("database"));
     current_dictionary->appendChild(database_element);
-    AutoPtr<Text> database(xml_document->createTextNode(!database_.empty() ? database_ : query.getDatabase()));
+    AutoPtr<Text> database(xml_document->createTextNode(!database_.empty() ? database_ : query.database));
     database_element->appendChild(database);
 
     if (query.uuid != UUIDHelpers::Nil)

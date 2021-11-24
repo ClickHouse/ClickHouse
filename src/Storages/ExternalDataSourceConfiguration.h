@@ -93,7 +93,6 @@ struct URLBasedDataSourceConfiguration
     String structure;
 
     std::vector<std::pair<String, Field>> headers;
-    String http_method;
 
     void set(const URLBasedDataSourceConfiguration & conf);
 };

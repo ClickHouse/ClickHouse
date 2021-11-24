@@ -5,7 +5,6 @@
 #include <Core/SettingsEnums.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
@@ -51,39 +50,5 @@ struct CoordinationSettings : public BaseSettings<CoordinationSettingsTraits>
 };
 
 using CoordinationSettingsPtr = std::shared_ptr<CoordinationSettings>;
-
-/// Coordination settings + some other parts of keeper configuration
-/// which are not stored in settings. Allows to dump configuration
-/// with 4lw commands.
-struct KeeperConfigurationAndSettings
-{
-    static constexpr int NOT_EXIST = -1;
-    static const String DEFAULT_FOUR_LETTER_WORD_CMD;
-
-    KeeperConfigurationAndSettings();
-    int server_id;
-
-    int tcp_port;
-    int tcp_port_secure;
-
-    String four_letter_word_white_list;
-
-    String super_digest;
-
-    bool standalone_keeper;
-    CoordinationSettingsPtr coordination_settings;
-
-    String log_storage_path;
-    String snapshot_storage_path;
-
-    void dump(WriteBufferFromOwnString & buf) const;
-    static std::shared_ptr<KeeperConfigurationAndSettings> loadFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
-
-private:
-    static String getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
-    static String getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config, bool standalone_keeper_);
-};
-
-using KeeperConfigurationAndSettingsPtr = std::shared_ptr<KeeperConfigurationAndSettings>;
 
 }

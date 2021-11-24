@@ -21,7 +21,7 @@ struct MergeTreeMutationEntry
     String file_name;
     bool is_temp = false;
 
-    UInt64 block_number = 0;
+    Int64 block_number = 0;
 
     String latest_failed_part;
     MergeTreePartInfo latest_failed_part_info;
@@ -29,18 +29,14 @@ struct MergeTreeMutationEntry
     String latest_fail_reason;
 
     /// Create a new entry and write it to a temporary file.
-    MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, UInt64 tmp_number);
+    MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, Int64 tmp_number);
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
     MergeTreeMutationEntry(MergeTreeMutationEntry &&) = default;
 
     /// Commit entry and rename it to a permanent file.
-    void commit(UInt64 block_number_);
+    void commit(Int64 block_number_);
 
     void removeFile();
-
-    static String versionToFileName(UInt64 block_number_);
-    static UInt64 tryParseFileName(const String & file_name_);
-    static UInt64 parseFileName(const String & file_name_);
 
     /// Load an existing entry.
     MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_);

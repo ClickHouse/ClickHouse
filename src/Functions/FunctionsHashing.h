@@ -103,14 +103,6 @@ struct IntHash64Impl
     }
 };
 
-template<typename T, typename HashFunction>
-T combineHashesFunc(T t1, T t2)
-{
-    T hashes[] = {t1, t2};
-    return HashFunction::apply(reinterpret_cast<const char *>(hashes), 2 * sizeof(T));
-}
-
-
 #if USE_SSL
 struct HalfMD5Impl
 {
@@ -256,7 +248,8 @@ struct SipHash64Impl
 
     static UInt64 combineHashes(UInt64 h1, UInt64 h2)
     {
-        return combineHashesFunc<UInt64, SipHash64Impl>(h1, h2);
+        UInt64 hashes[] = {h1, h2};
+        return apply(reinterpret_cast<const char *>(hashes), 16);
     }
 
     static constexpr bool use_int_hash_for_pods = false;
@@ -265,20 +258,12 @@ struct SipHash64Impl
 struct SipHash128Impl
 {
     static constexpr auto name = "sipHash128";
+    enum { length = 16 };
 
-    using ReturnType = UInt128;
-
-    static UInt128 combineHashes(UInt128 h1, UInt128 h2)
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
-        return combineHashesFunc<UInt128, SipHash128Impl>(h1, h2);
+        sipHash128(begin, size, reinterpret_cast<char*>(out_char_data));
     }
-
-    static UInt128 apply(const char * data, const size_t size)
-    {
-        return sipHash128(data, size);
-    }
-
-    static constexpr bool use_int_hash_for_pods = false;
 };
 
 /** Why we need MurmurHash2?
@@ -395,22 +380,12 @@ struct MurmurHash3Impl64
 struct MurmurHash3Impl128
 {
     static constexpr auto name = "murmurHash3_128";
+    enum { length = 16 };
 
-    using ReturnType = UInt128;
-
-    static UInt128 apply(const char * data, const size_t size)
+    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
-        char bytes[16];
-        MurmurHash3_x64_128(data, size, 0, bytes);
-        return *reinterpret_cast<UInt128 *>(bytes);
+        MurmurHash3_x64_128(begin, size, 0, out_char_data);
     }
-
-    static UInt128 combineHashes(UInt128 h1, UInt128 h2)
-    {
-        return combineHashesFunc<UInt128, MurmurHash3Impl128>(h1, h2);
-    }
-
-    static constexpr bool use_int_hash_for_pods = false;
 };
 
 /// http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452
@@ -1118,12 +1093,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override
     {
-        if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
-        {
-            return std::make_shared<DataTypeFixedString>(sizeof(UInt128));
-        }
-        else
-            return std::make_shared<DataTypeNumber<ToType>>();
+        return std::make_shared<DataTypeNumber<ToType>>();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -1144,13 +1114,6 @@ public:
         bool is_first_argument = true;
         for (const auto & col : arguments)
             executeForArgument(col.type.get(), col.column.get(), vec_to, is_first_argument);
-
-        if constexpr (std::is_same_v<ToType, UInt128>) /// backward-compatible
-        {
-            auto col_to_fixed_string = ColumnFixedString::create(sizeof(UInt128));
-            col_to_fixed_string->getChars() = std::move(*reinterpret_cast<ColumnFixedString::Chars *>(&col_to->getData()));
-            return col_to_fixed_string;
-        }
 
         return col_to;
     }
@@ -1396,7 +1359,7 @@ using FunctionSHA256 = FunctionStringHashFixedString<SHA256Impl>;
 using FunctionSHA384 = FunctionStringHashFixedString<SHA384Impl>;
 using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
 #endif
-using FunctionSipHash128 = FunctionAnyHash<SipHash128Impl>;
+using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionAnyHash<ImplCityHash64>;
 using FunctionFarmFingerprint64 = FunctionAnyHash<ImplFarmFingerprint64>;
 using FunctionFarmHash64 = FunctionAnyHash<ImplFarmHash64>;
@@ -1407,7 +1370,7 @@ using FunctionMurmurHash2_64 = FunctionAnyHash<MurmurHash2Impl64>;
 using FunctionGccMurmurHash = FunctionAnyHash<GccMurmurHashImpl>;
 using FunctionMurmurHash3_32 = FunctionAnyHash<MurmurHash3Impl32>;
 using FunctionMurmurHash3_64 = FunctionAnyHash<MurmurHash3Impl64>;
-using FunctionMurmurHash3_128 = FunctionAnyHash<MurmurHash3Impl128>;
+using FunctionMurmurHash3_128 = FunctionStringHashFixedString<MurmurHash3Impl128>;
 
 using FunctionJavaHash = FunctionAnyHash<JavaHashImpl>;
 using FunctionJavaHashUTF16LE = FunctionAnyHash<JavaHashUTF16LEImpl>;

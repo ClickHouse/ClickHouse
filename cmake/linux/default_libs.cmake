@@ -28,7 +28,7 @@ set(CMAKE_C_STANDARD_LIBRARIES ${DEFAULT_LIBS})
 # glibc-compatibility library relies to constant version of libc headers
 # (because minor changes in function attributes between different glibc versions will introduce incompatibilities)
 # This is for x86_64. For other architectures we have separate toolchains.
-if (ARCH_AMD64 AND NOT CMAKE_CROSSCOMPILING)
+if (ARCH_AMD64 AND NOT_UNBUNDLED AND NOT CMAKE_CROSSCOMPILING)
     set(CMAKE_C_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
     set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES ${ClickHouse_SOURCE_DIR}/contrib/libc-headers/x86_64-linux-gnu ${ClickHouse_SOURCE_DIR}/contrib/libc-headers)
 endif ()

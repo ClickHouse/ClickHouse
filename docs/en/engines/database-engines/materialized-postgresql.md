@@ -23,15 +23,15 @@ ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'p
 -   `user` — PostgreSQL user.
 -   `password` — User password.
 
-## Dynamically adding new tables to replication {#dynamically-adding-table-to-replication}
+## Dynamically adding new tables to replication
 
 ``` sql
 ATTACH TABLE postgres_database.new_table;
 ```
 
-When specifying a specific list of tables in the database using the setting [materialized_postgresql_tables_list](../../operations/settings/settings.md#materialized-postgresql-tables-list), it will be updated to the current state, taking into account the tables which were added by the `ATTACH TABLE` query.
+It will work as well if there is a setting `materialized_postgresql_tables_list`.
 
-## Dynamically removing tables from replication {#dynamically-removing-table-from-replication}
+## Dynamically removing tables from replication
 
 ``` sql
 DETACH TABLE postgres_database.table_to_remove;
@@ -58,7 +58,7 @@ SETTINGS materialized_postgresql_max_block_size = 65536,
 SELECT * FROM database1.table1;
 ```
 
-The settings can be changed, if necessary, using a DDL query. But it is impossible to change the setting `materialized_postgresql_tables_list`. To update the list of tables in this setting use the `ATTACH TABLE` query.
+It is also possible to change settings at run time.
 
 ``` sql
 ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;

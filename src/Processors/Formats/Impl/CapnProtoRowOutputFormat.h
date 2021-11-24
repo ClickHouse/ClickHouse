@@ -35,11 +35,11 @@ public:
 
     String getName() const override { return "CapnProtoRowOutputFormat"; }
 
-private:
     void write(const Columns & columns, size_t row_num) override;
 
     void writeField(const IColumn &, const ISerialization &, size_t) override { }
 
+private:
     Names column_names;
     DataTypes column_types;
     capnp::StructSchema schema;

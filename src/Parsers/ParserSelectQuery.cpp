@@ -23,7 +23,6 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int TOP_AND_LIMIT_TOGETHER;
     extern const int WITH_TIES_WITHOUT_ORDER_BY;
-    extern const int OFFSET_FETCH_WITHOUT_ORDER_BY;
 }
 
 
@@ -324,7 +323,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             /// OFFSET FETCH clause must exists with "ORDER BY"
             if (!order_expression_list)
-                throw Exception("Can not use OFFSET FETCH clause without ORDER BY", ErrorCodes::OFFSET_FETCH_WITHOUT_ORDER_BY);
+                return false;
 
             if (s_first.ignore(pos, expected))
             {

@@ -12,7 +12,7 @@ if(NOT ENABLE_MYSQL)
     return()
 endif()
 
-option(USE_INTERNAL_MYSQL_LIBRARY "Set to FALSE to use system mysqlclient library instead of bundled" ON)
+option(USE_INTERNAL_MYSQL_LIBRARY "Set to FALSE to use system mysqlclient library instead of bundled" ${NOT_UNBUNDLED})
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/mariadb-connector-c/README")
     if(USE_INTERNAL_MYSQL_LIBRARY)

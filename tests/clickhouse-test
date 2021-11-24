@@ -996,6 +996,7 @@ class BuildFlags():
     UNDEFINED = 'ubsan'
     MEMORY = 'msan'
     DEBUG = 'debug'
+    UNBUNDLED = 'unbundled'
     RELEASE = 'release'
     ORDINARY_DATABASE = 'ordinary-database'
     POLYMORPHIC_PARTS = 'polymorphic-parts'
@@ -1019,6 +1020,10 @@ def collect_build_flags(args):
         result.append(BuildFlags.DEBUG)
     elif b'RelWithDebInfo' in value or b'Release' in value:
         result.append(BuildFlags.RELEASE)
+
+    value = clickhouse_execute(args, "SELECT value FROM system.build_options WHERE name = 'UNBUNDLED'")
+    if value in (b'ON', b'1'):
+        result.append(BuildFlags.UNBUNDLED)
 
     value = clickhouse_execute(args, "SELECT value FROM system.settings WHERE name = 'default_database_engine'")
     if value == b'Ordinary':

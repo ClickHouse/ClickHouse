@@ -549,10 +549,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == ADD_CONSTRAINT)
     {
-        auto constraints = metadata.constraints.getConstraints();
         if (std::any_of(
-                constraints.cbegin(),
-                constraints.cend(),
+                metadata.constraints.constraints.cbegin(),
+                metadata.constraints.constraints.cend(),
                 [this](const ASTPtr & constraint_ast)
                 {
                     return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name;
@@ -564,30 +563,28 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                         ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        auto insert_it = constraints.end();
-        constraints.emplace(insert_it, constraint_decl);
-        metadata.constraints = ConstraintsDescription(constraints);
+        auto insert_it = metadata.constraints.constraints.end();
+
+        metadata.constraints.constraints.emplace(insert_it, std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint_decl));
     }
     else if (type == DROP_CONSTRAINT)
     {
-        auto constraints = metadata.constraints.getConstraints();
         auto erase_it = std::find_if(
-                constraints.begin(),
-                constraints.end(),
+                metadata.constraints.constraints.begin(),
+                metadata.constraints.constraints.end(),
                 [this](const ASTPtr & constraint_ast)
                 {
                     return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name;
                 });
 
-        if (erase_it == constraints.end())
+        if (erase_it == metadata.constraints.constraints.end())
         {
             if (if_exists)
                 return;
             throw Exception("Wrong constraint name. Cannot find constraint `" + constraint_name + "` to drop.",
                     ErrorCodes::BAD_ARGUMENTS);
         }
-        constraints.erase(erase_it);
-        metadata.constraints = ConstraintsDescription(constraints);
+        metadata.constraints.constraints.erase(erase_it);
     }
     else if (type == ADD_PROJECTION)
     {
@@ -657,10 +654,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         if (metadata.table_ttl.definition_ast)
             rename_visitor.visit(metadata.table_ttl.definition_ast);
 
-        auto constraints_data = metadata.constraints.getConstraints();
-        for (auto & constraint : constraints_data)
+        for (auto & constraint : metadata.constraints.constraints)
             rename_visitor.visit(constraint);
-        metadata.constraints = ConstraintsDescription(constraints_data);
 
         if (metadata.isSortingKeyDefined())
             rename_visitor.visit(metadata.sorting_key.definition_ast);

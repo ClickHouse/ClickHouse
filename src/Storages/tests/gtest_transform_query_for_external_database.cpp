@@ -84,7 +84,6 @@ private:
             const auto & table_name = tab.table.table;
             const auto & db_name = tab.table.database;
             database->attachTable(
-                context,
                 table_name,
                 StorageMemory::create(
                     StorageID(db_name, table_name), ColumnsDescription{getColumns()}, ConstraintsDescription{}, String{}));
