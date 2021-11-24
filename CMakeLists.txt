@@ -392,6 +392,8 @@ if (COMPILER_CLANG)
         option(ENABLE_THINLTO "Clang-specific link time optimization" ON)
     endif()
 
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
+
     # Set new experimental pass manager, it's a performance, build time and binary size win.
     # Can be removed after https://reviews.llvm.org/D66490 merged and released to at least two versions of clang.
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexperimental-new-pass-manager")
@@ -402,9 +404,9 @@ if (COMPILER_CLANG)
     # completely.
     if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         # Link time optimization
-        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin")
-        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin")
-        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin")
+        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
+        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
+        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     elseif (ENABLE_THINLTO)
         message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
     endif ()
