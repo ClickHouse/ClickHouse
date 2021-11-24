@@ -18,7 +18,9 @@
 #include <Common/typeid_cast.h>
 #include <Core/Defines.h>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 
 namespace DB

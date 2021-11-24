@@ -1,8 +1,7 @@
 #include <stdlib.h>
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
-#include <Formats/EscapingRuleUtils.h>
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -11,15 +10,16 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
 RegexpRowInputFormat::RegexpRowInputFormat(
         ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_)
-        : IRowInputFormat(header_, buf, std::move(params_))
+        : IRowInputFormat(header_, in_, std::move(params_))
         , buf(in_)
         , format_settings(format_settings_)
-        , escaping_rule(format_settings_.regexp.escaping_rule)
+        , field_format(stringToFormat(format_settings_.regexp.escaping_rule))
         , regexp(format_settings_.regexp.regexp)
 {
     size_t fields_count = regexp.NumberOfCapturingGroups();
@@ -42,19 +42,72 @@ void RegexpRowInputFormat::resetParser()
     buf.reset();
 }
 
+RegexpRowInputFormat::ColumnFormat RegexpRowInputFormat::stringToFormat(const String & format)
+{
+    if (format == "Escaped")
+        return ColumnFormat::Escaped;
+    if (format == "Quoted")
+        return ColumnFormat::Quoted;
+    if (format == "CSV")
+        return ColumnFormat::Csv;
+    if (format == "JSON")
+        return ColumnFormat::Json;
+    if (format == "Raw")
+        return ColumnFormat::Raw;
+    throw Exception("Unsupported column format \"" + format + "\".", ErrorCodes::BAD_ARGUMENTS);
+}
+
 bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
 {
     const auto & type = getPort().getHeader().getByPosition(index).type;
+    bool parse_as_nullable = format_settings.null_as_default && !type->isNullable();
+    bool read = true;
     ReadBuffer field_buf(const_cast<char *>(matched_fields[index].data()), matched_fields[index].size(), 0);
     try
     {
-        return deserializeFieldByEscapingRule(type, serializations[index], *columns[index], field_buf, escaping_rule, format_settings);
+        const auto & serialization = serializations[index];
+        switch (field_format)
+        {
+            case ColumnFormat::Escaped:
+                if (parse_as_nullable)
+                    read = SerializationNullable::deserializeTextEscapedImpl(*columns[index], field_buf, format_settings, serialization);
+                else
+                    serialization->deserializeTextEscaped(*columns[index], field_buf, format_settings);
+                break;
+            case ColumnFormat::Quoted:
+                if (parse_as_nullable)
+                    read = SerializationNullable::deserializeTextQuotedImpl(*columns[index], field_buf, format_settings, serialization);
+                else
+                    serialization->deserializeTextQuoted(*columns[index], field_buf, format_settings);
+                break;
+            case ColumnFormat::Csv:
+                if (parse_as_nullable)
+                    read = SerializationNullable::deserializeTextCSVImpl(*columns[index], field_buf, format_settings, serialization);
+                else
+                    serialization->deserializeTextCSV(*columns[index], field_buf, format_settings);
+                break;
+            case ColumnFormat::Json:
+                if (parse_as_nullable)
+                    read = SerializationNullable::deserializeTextJSONImpl(*columns[index], field_buf, format_settings, serialization);
+                else
+                    serialization->deserializeTextJSON(*columns[index], field_buf, format_settings);
+                break;
+            case ColumnFormat::Raw:
+                if (parse_as_nullable)
+                    read = SerializationNullable::deserializeWholeTextImpl(*columns[index], field_buf, format_settings, serialization);
+                else
+                    serialization->deserializeWholeText(*columns[index], field_buf, format_settings);
+                break;
+            default:
+                break;
+        }
     }
     catch (Exception & e)
     {
         e.addMessage("(while reading the value of column " +  getPort().getHeader().getByPosition(index).name + ")");
         throw;
     }
+    return read;
 }
 
 void RegexpRowInputFormat::readFieldsFromMatch(MutableColumns & columns, RowReadExtension & ext)
@@ -110,9 +163,9 @@ bool RegexpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & 
     return true;
 }
 
-void registerInputFormatRegexp(FormatFactory & factory)
+void registerInputFormatProcessorRegexp(FormatFactory & factory)
 {
-    factory.registerInputFormat("Regexp", [](
+    factory.registerInputFormatProcessor("Regexp", [](
             ReadBuffer & buf,
             const Block & sample,
             IRowInputFormat::Params params,

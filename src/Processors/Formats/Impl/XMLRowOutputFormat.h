@@ -20,7 +20,6 @@ public:
 
     String getName() const override { return "XMLRowOutputFormat"; }
 
-private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeRowStartDelimiter() override;
     void writeRowEndDelimiter() override;
@@ -55,6 +54,7 @@ private:
 
     String getContentType() const override { return "application/xml; charset=UTF-8"; }
 
+protected:
     void writeExtremesElement(const char * title, const Columns & columns, size_t row_num);
     void writeRowsBeforeLimitAtLeast();
     void writeStatistics();

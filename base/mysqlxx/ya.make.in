@@ -1,0 +1,28 @@
+LIBRARY()
+
+OWNER(g:clickhouse)
+
+CFLAGS(-g0)
+
+PEERDIR(
+    contrib/restricted/boost/libs
+    contrib/libs/libmysql_r
+    contrib/libs/poco/Foundation
+    contrib/libs/poco/Util
+)
+
+ADDINCL(
+    GLOBAL clickhouse/base
+    clickhouse/base
+    contrib/libs/libmysql_r
+)
+
+NO_COMPILER_WARNINGS()
+
+NO_UTIL()
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests/ | grep -v -F examples | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

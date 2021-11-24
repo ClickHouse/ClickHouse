@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 -- the behaviour on overflow can be implementation specific
 -- and we don't care about the results, but no buffer overflow should be possible.
 SELECT length(h3kRing(9223372036854775807, 1000)) FORMAT Null;

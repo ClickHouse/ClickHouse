@@ -1,7 +1,7 @@
-<clickhouse>
+<yandex>
     <profiles>
         <default>
             <distributed_directory_monitor_batch_inserts>0</distributed_directory_monitor_batch_inserts>
         </default>
     </profiles>
-</clickhouse>
+</yandex>

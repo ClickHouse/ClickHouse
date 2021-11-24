@@ -29,7 +29,7 @@ populate_table_bg () {
         $CLICKHOUSE_CLIENT --query "
             INSERT INTO join_block_test
             SELECT toString(number) as id, number * number as num
-            FROM system.numbers LIMIT 500000
+            FROM system.numbers LIMIT 3000000
         " >/dev/null
     ) &
 }
