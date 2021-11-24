@@ -127,16 +127,22 @@ protected:
         Progress progress;
         bool applied_limit = false;
         size_t rows_before_limit = 0;
+        Chunk totals;
+        Chunk extremes;
     };
 
-    void setOutsideStatistics(Statistics statistics) { outside_statistics = std::make_shared<Statistics>(std::move(statistics)); }
-    std::shared_ptr<Statistics> getOutsideStatistics() const { return outside_statistics; }
+    void setOutsideStatistics(Statistics statistics_) { statistics = std::make_shared<Statistics>(std::move(statistics_)); }
+    std::shared_ptr<Statistics> getOutsideStatistics() const { return statistics; }
 
     /// In some formats the way we print extremes depends on
     /// were totals printed or not. In this case in parallel formatting
     /// we should notify underling format if totals were printed.
     void setTotalsAreWritten() { are_totals_written = true; }
     bool areTotalsWritten() const { return are_totals_written; }
+
+    /// Return true if format saves totals and extremes in consumeTotals/consumeExtremes and
+    /// outputs them in finalize() method.
+    virtual bool areTotalsAndExtremesUsedInFinalize() const { return false; }
 
     WriteBuffer & out;
 
@@ -156,7 +162,7 @@ protected:
 
 private:
     size_t first_row_number = 0;
-    std::shared_ptr<Statistics> outside_statistics = nullptr;
+    std::shared_ptr<Statistics> statistics = nullptr;
     bool are_totals_written = false;
 
     /// Counters for consumed chunks. Are used for QueryLog.
