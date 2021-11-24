@@ -14,22 +14,25 @@
 
 namespace DB
 {
-class HMSClient : public WithContext
+class HiveMetastoreClient : public WithContext
 {
 public:
     struct FileInfo
     {
-        FileInfo() = default;
-        FileInfo(const std::string & path_, UInt64 last_modify_time_, size_t size_) : path(path_), last_modify_time(last_modify_time_), size(size_) { }
         std::string path;
         UInt64 last_modify_time; // in ms
         size_t size;
+
+        FileInfo() = default;
+        FileInfo(const FileInfo &) = default;
+        FileInfo(const std::string & path_, UInt64 last_modify_time_, size_t size_) : path(path_), last_modify_time(last_modify_time_), size(size_) {}
     };
 
     struct PartitionInfo
     {
         Apache::Hadoop::Hive::Partition partition;
-        std::shared_ptr<std::vector<FileInfo>> files;
+        std::vector<FileInfo> files;
+
         bool equal(const Apache::Hadoop::Hive::Partition & other);
     };
 
@@ -71,14 +74,14 @@ public:
         const bool empty_partition_keys;
     };
 
-    explicit HMSClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_, ContextPtr context_)
+    explicit HiveMetastoreClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_, ContextPtr context_)
         : WithContext(context_), client(client_), table_meta_cache(1000)
     {
     }
 
     std::shared_ptr<HiveTableMeta> getTableMeta(const std::string & db_name, const std::string & table_name);
     void clearTableMeta(const std::string & db_name, const std::string & table_name);
-    void setClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> c);
+    void setClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_);
     inline bool isExpired() const { return expired; }
     inline void setExpired() { expired = true; }
     inline void clearExpired() { expired = false; }

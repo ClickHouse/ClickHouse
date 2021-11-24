@@ -9,7 +9,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-std::shared_ptr<HMSClient::HiveTableMeta> HMSClient::getTableMeta(const std::string & db_name, const std::string & table_name)
+std::shared_ptr<HiveMetastoreClient::HiveTableMeta> HiveMetastoreClient::getTableMeta(const std::string & db_name, const std::string & table_name)
 {
     LOG_TRACE(log, "get table meta:" + db_name + ":" + table_name);
     std::lock_guard lock{mutex};
@@ -32,7 +32,7 @@ std::shared_ptr<HMSClient::HiveTableMeta> HMSClient::getTableMeta(const std::str
     }
 
     std::string cache_key = db_name + "." + table_name;
-    std::shared_ptr<HMSClient::HiveTableMeta> result = table_meta_cache.get(cache_key);
+    std::shared_ptr<HiveMetastoreClient::HiveTableMeta> result = table_meta_cache.get(cache_key);
     bool update_cache = false;
     std::map<std::string, PartitionInfo> old_partition_infos;
     std::map<std::string, PartitionInfo> partition_infos;
@@ -72,29 +72,29 @@ std::shared_ptr<HMSClient::HiveTableMeta> HMSClient::getTableMeta(const std::str
     if (update_cache)
     {
         LOG_INFO(log, "reload hive partition meta info:" + db_name + ":" + table_name);
-        result = std::make_shared<HMSClient::HiveTableMeta>(db_name, table_name, table, std::move(partition_infos), getContext());
+        result = std::make_shared<HiveMetastoreClient::HiveTableMeta>(db_name, table_name, table, std::move(partition_infos), getContext());
         table_meta_cache.set(cache_key, result);
     }
     return result;
 }
 
-void HMSClient::clearTableMeta(const std::string & db_name, const std::string & table_name)
+void HiveMetastoreClient::clearTableMeta(const std::string & db_name, const std::string & table_name)
 {
     std::lock_guard lock{mutex};
     std::string cache_key = db_name + "." + table_name;
-    std::shared_ptr<HMSClient::HiveTableMeta> meta = table_meta_cache.get(cache_key);
+    std::shared_ptr<HiveMetastoreClient::HiveTableMeta> meta = table_meta_cache.get(cache_key);
     if (meta)
         table_meta_cache.set(cache_key, nullptr);
 }
 
-void HMSClient::setClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> c)
+void HiveMetastoreClient::setClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_)
 {
     std::lock_guard lock{mutex};
-    client = c;
+    client = client_;
     clearExpired();
 }
 
-bool HMSClient::PartitionInfo::equal(const Apache::Hadoop::Hive::Partition & other)
+bool HiveMetastoreClient::PartitionInfo::equal(const Apache::Hadoop::Hive::Partition & other)
 {
     // parameters include keys:numRows,numFiles,rawDataSize,totalSize,transient_lastDdlTime
     auto it1 = partition.parameters.begin();
@@ -107,7 +107,7 @@ bool HMSClient::PartitionInfo::equal(const Apache::Hadoop::Hive::Partition & oth
     return (it1 == partition.parameters.end() && it2 == other.parameters.end());
 }
 
-std::vector<Apache::Hadoop::Hive::Partition> HMSClient::HiveTableMeta::getPartitions()
+std::vector<Apache::Hadoop::Hive::Partition> HiveMetastoreClient::HiveTableMeta::getPartitions()
 {
     std::vector<Apache::Hadoop::Hive::Partition> result;
 
@@ -117,7 +117,7 @@ std::vector<Apache::Hadoop::Hive::Partition> HMSClient::HiveTableMeta::getPartit
     return result;
 }
 
-std::vector<HMSClient::FileInfo> HMSClient::HiveTableMeta::getLocationFiles(const std::string & location)
+std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMeta::getLocationFiles(const std::string & location)
 {
     std::map<std::string, PartitionInfo>::const_iterator it;
     if (!empty_partition_keys)
@@ -126,8 +126,7 @@ std::vector<HMSClient::FileInfo> HMSClient::HiveTableMeta::getLocationFiles(cons
         it = partition_infos.find(location);
         if (it == partition_infos.end())
             throw Exception("invalid location " + location, ErrorCodes::BAD_ARGUMENTS);
-        if (it->second.files != nullptr)
-            return *(it->second.files);
+        return it->second.files;
     }
 
     auto fs_builder = createHDFSBuilder(getNameNodeUrl(table->sd.location), getContext()->getGlobalContext()->getConfigRef());
@@ -135,13 +134,15 @@ std::vector<HMSClient::FileInfo> HMSClient::HiveTableMeta::getLocationFiles(cons
     Poco::URI uri(location);
     HDFSFileInfo dir_info;
     dir_info.file_info = hdfsListDirectory(fs.get(), uri.getPath().c_str(), &dir_info.length);
-    auto result = std::make_shared<std::vector<FileInfo>>();
+
+    std::vector<FileInfo> result;
+    result.reserve(dir_info.length);
     for (int i = 0; i < dir_info.length; ++i)
     {
-        auto & finfo = dir_info.file_info[i];
+        auto & file_info = dir_info.file_info[i];
         /// skip directories and empty files, mKind value 'D' represents directory, otherwise file
-        if (finfo.mKind != 'D' && finfo.mSize > 0)
-            result->emplace_back(String(finfo.mName), finfo.mLastMod, finfo.mSize);
+        if (file_info.mKind != 'D' && file_info.mSize > 0)
+            result.emplace_back(String(file_info.mName), file_info.mLastMod, file_info.mSize);
     }
 
     if (!empty_partition_keys)
@@ -149,10 +150,10 @@ std::vector<HMSClient::FileInfo> HMSClient::HiveTableMeta::getLocationFiles(cons
         std::lock_guard lock{mutex};
         partition_infos[location].files = result;
     }
-    return *result;
+    return result;
 }
 
-std::vector<HMSClient::FileInfo> HMSClient::HiveTableMeta::getLocationFiles(const HDFSFSPtr & fs, const std::string & location)
+std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMeta::getLocationFiles(const HDFSFSPtr & fs, const std::string & location)
 {
     std::map<std::string, PartitionInfo>::const_iterator it;
     if (!empty_partition_keys)
@@ -161,19 +162,18 @@ std::vector<HMSClient::FileInfo> HMSClient::HiveTableMeta::getLocationFiles(cons
         it = partition_infos.find(location);
         if (it == partition_infos.end())
             throw Exception("invalid location " + location, ErrorCodes::BAD_ARGUMENTS);
-        if (it->second.files != nullptr)
-            return *(it->second.files);
+        return it->second.files;
     }
 
     Poco::URI location_uri(location);
     HDFSFileInfo ls;
     ls.file_info = hdfsListDirectory(fs.get(), location_uri.getPath().c_str(), &ls.length);
-    auto result = std::make_shared<std::vector<FileInfo>>();
+    std::vector<FileInfo> result;
     for (int i = 0; i < ls.length; ++i)
     {
-        auto & finfo = ls.file_info[i];
-        if (finfo.mKind != 'D' && finfo.mSize > 0)
-            result->emplace_back(String(finfo.mName), finfo.mLastMod, finfo.mSize);
+        auto & file_info = ls.file_info[i];
+        if (file_info.mKind != 'D' && file_info.mSize > 0)
+            result.emplace_back(String(file_info.mName), file_info.mLastMod, file_info.mSize);
     }
 
     if (!empty_partition_keys)
@@ -181,7 +181,7 @@ std::vector<HMSClient::FileInfo> HMSClient::HiveTableMeta::getLocationFiles(cons
         std::lock_guard lock{mutex};
         partition_infos[location].files = result;
     }
-    return *result;
+    return result;
 }
 
 

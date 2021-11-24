@@ -176,8 +176,8 @@ private:
 };
 
 #if USE_HIVE
-class HMSClient;
-using HMSClientPtr = std::shared_ptr<HMSClient>;
+class HiveMetastoreClient;
+using HiveMetastoreClientPtr = std::shared_ptr<HiveMetastoreClient>;
 #endif
 
 /** A set of known objects that can be used in the query.
@@ -694,7 +694,7 @@ public:
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
 
 #if USE_HIVE
-    HMSClientPtr getHMSClient(const String & name) const;
+    HiveMetastoreClientPtr getHiveMetastoreClient(const String & name) const;
 #endif
 
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
