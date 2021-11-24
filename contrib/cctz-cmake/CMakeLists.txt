@@ -1,4 +1,4 @@
-option (USE_INTERNAL_CCTZ_LIBRARY "Use internal cctz library" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_CCTZ_LIBRARY "Use internal cctz library" ON)
 
 if (NOT USE_INTERNAL_CCTZ_LIBRARY)
     find_library (LIBRARY_CCTZ cctz)
