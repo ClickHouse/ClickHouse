@@ -55,6 +55,30 @@ function configure()
     # Set maximum memory usage as half of total memory (less chance of OOM).
     echo "<clickhouse><max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio></clickhouse>" \
         > /etc/clickhouse-server/config.d/max_server_memory_usage_to_ram_ratio.xml
+
+    # More unwind to trigger possible issues like in the following stacktrace:
+    #
+    #   ...
+    #   unw_backtrace()
+    #   ...
+    #   <signal handler called>
+    #   ...
+    #   unw_backtrace()
+    #
+    # First unwind is possible from MemoryTracker,
+    # second from QueryProfiler (writeTraceInfo()).
+    cat > /etc/clickhouse-server/users.d/more_profiling.xml <<EOL
+    <clickhouse>
+        <profiles>
+            <default>
+                <!-- NOTE: this is too small, but server will override to something sane anyway -->
+                <query_profiler_real_time_period_ns>1</query_profiler_real_time_period_ns>
+                <query_profiler_cpu_time_period_ns>1</query_profiler_cpu_time_period_ns>
+                <memory_profiler_sample_probability>1</memory_profiler_sample_probability>
+            </default>
+        </profiles>
+    </clickhouse>
+EOL
 }
 
 function stop()
