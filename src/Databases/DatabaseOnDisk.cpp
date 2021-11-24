@@ -371,7 +371,7 @@ void DatabaseOnDisk::renameTable(
     ASTPtr attach_query;
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
     StoragePtr table = tryGetTable(table_name, local_context);
-    if (dictionary && !table->isDictionary())
+    if (dictionary && table && !table->isDictionary())
         throw Exception("Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables", ErrorCodes::INCORRECT_QUERY);
 
     detachTable(local_context, table_name);
