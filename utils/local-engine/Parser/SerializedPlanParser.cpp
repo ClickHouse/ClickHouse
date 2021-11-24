@@ -1,10 +1,12 @@
 #include "SerializedPlanParser.h"
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
+#include <Processors/Formats/Impl/ArrowBlockOutputFormat.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Processors/Pipe.h>
+#include <IO/WriteBufferFromString.h>
 #include <sys/stat.h>
 
 DB::BatchParquetFileSourcePtr dbms::SerializedPlanParser::parseReadRealWithLocalFile(const io::substrait::ReadRel& rel)
@@ -138,8 +140,29 @@ void dbms::LocalExecutor::execute(DB::QueryPlanPtr query_plan)
 {
     QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
     auto query_pipeline = query_plan->buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings());
-    auto executor = DB::PullingPipelineExecutor(*query_pipeline);
-    DB::Chunk chunk;
-    // TODO pull chunk
+    this->executor = std::make_unique<DB::PullingPipelineExecutor>(*query_pipeline);
+    this->header = query_plan->getCurrentDataStream().header;
+    this->ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(header, "Arrow", false);
 }
-
+void dbms::LocalExecutor::writeChunkToArrowString(DB::Chunk &chunk, std::string & arrowChunk)
+{
+    std::shared_ptr<arrow::Table> arrow_table;
+    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, chunk.getNumColumns());
+    DB::WriteBufferFromString buf(arrowChunk);
+    auto out_stream = std::make_shared<ArrowBufferedOutputStream>(buf);
+    arrow::Result<std::shared_ptr<arrow::ipc::RecordBatchWriter>> writer_status;
+    writer_status = arrow::ipc::MakeFileWriter(out_stream.get(), arrow_table->schema());
+    if (!writer_status.ok())
+        throw std::runtime_error("Error while opening a table writer");
+    auto writer = *writer_status;
+    auto write_status = writer->WriteTable(*arrow_table, 1000000);
+    if (writer_status.ok())
+    {
+        throw std::runtime_error("Error while writing a table");
+    }
+    auto close_status = writer->Close();
+    if (close_status.ok())
+    {
+        throw std::runtime_error("Error while close a table");
+    }
+}

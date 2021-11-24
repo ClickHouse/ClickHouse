@@ -10,6 +10,8 @@
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Pipe.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
+#include <arrow/ipc/writer.h>
 
 namespace DB
 {
@@ -66,7 +68,16 @@ public:
 
 class LocalExecutor
 {
-    static void execute(QueryPlanPtr query_plan);
+public:
+    void execute(QueryPlanPtr query_plan);
+    std::string next();
+    bool hasNext();
+
+private:
+    void writeChunkToArrowString(Chunk& chunk, std::string &arrowChunk);
+    std::unique_ptr<PullingPipelineExecutor> executor;
+    Block header;
+    std::unique_ptr<DB::CHColumnToArrowColumn> ch_column_to_arrow_column;
 };
 }
 

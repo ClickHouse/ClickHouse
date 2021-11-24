@@ -52,12 +52,12 @@ function(add_cxx_compile_options option)
     add_compile_options("$<$<STREQUAL:$<TARGET_PROPERTY:LINKER_LANGUAGE>,CXX>:${option}>")
 endfunction()
 add_cxx_compile_options(-Wzero-as-null-pointer-constant)
-#add_subdirectory(Substrait)
-#add_subdirectory(Builder)
-#add_headers_and_sources(builder Builder)
-#add_headers_and_sources(parser Parser)
+add_subdirectory(Substrait)
+add_subdirectory(Builder)
+add_headers_and_sources(builder Builder)
+add_headers_and_sources(parser Parser)
 #include (../../cmake/find/parquet.cmake)
-#include_directories(${CMAKE_CURRENT_BINARY_DIR})
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${ClickHouse_SOURCE_DIR}/utils/local-engine)
 #add_executable (local_engine
 #        local_engine.cpp
@@ -94,7 +94,13 @@ set (CLICKHOUSE_SERVER_LINK
 
 set(LOCALENGINE_SHARED_LIB local_engine_jni)
 
-add_library(${LOCALENGINE_SHARED_LIB} SHARED ${JNI_NATIVE_SOURCES})
+add_library(${LOCALENGINE_SHARED_LIB} SHARED
+        ${JNI_NATIVE_SOURCES}
+        ${builder_headers}
+        ${builder_sources}
+        ${parser_headers}
+        ${parser_sources}
+        )
 set_property(TARGET ${LOCALENGINE_SHARED_LIB} PROPERTY POSITION_INDEPENDENT_CODE ON)
 #add_executable(${LOCALENGINE_SHARED_LIB} ${JNI_NATIVE_SOURCES})
 add_dependencies(${LOCALENGINE_SHARED_LIB} local_engine_headers)
