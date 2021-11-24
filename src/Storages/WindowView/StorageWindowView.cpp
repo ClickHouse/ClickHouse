@@ -62,6 +62,7 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Fetch all window info and replace TUMPLE or HOP node names with WINDOW_ID
     struct FetchQueryInfoMatcher
     {
         using Visitor = InDepthNodeVisitor<FetchQueryInfoMatcher, true>;
@@ -110,6 +111,7 @@ namespace
         }
     };
 
+    /// Replace WINDOW_ID node name with either TUMBLE or HOP.
     struct ReplaceWindowIdMatcher
     {
     public:
@@ -131,6 +133,9 @@ namespace
         }
     };
 
+    /// GROUP BY TUMBLE(now(), INTERVAL '5' SECOND)
+    /// will become
+    /// GROUP BY TUMBLE(____timestamp, INTERVAL '5' SECOND)
     struct ReplaceFunctionNowData
     {
         using TypeToVisit = ASTFunction;
@@ -142,7 +147,8 @@ namespace
         {
             if (node.name == "WINDOW_ID")
             {
-                if (const auto * t = node.arguments->children[0]->as<ASTFunction>(); t && t->name == "now")
+                if (const auto * t = node.arguments->children[0]->as<ASTFunction>();
+                    t && t->name == "now")
                 {
                     is_time_column_func_now = true;
                     node_ptr->children[0]->children[0] = std::make_shared<ASTIdentifier>("____timestamp");
@@ -197,6 +203,7 @@ namespace
     private:
         static void visit(const ASTFunction & node, ASTPtr & node_ptr, Data &)
         {
+            /// TODO: why?
             if (node.name == "tuple")
                 return;
             else
@@ -207,6 +214,8 @@ namespace
         {
             if (node.getColumnName() == data.window_id_alias)
             {
+                /// TODO: why we need this?
+                /// related to the fatch that we replace TUMBLE/HOP with WINDOW_ID?
                 if (auto identifier = std::dynamic_pointer_cast<ASTIdentifier>(node_ptr))
                     identifier->setShortName(data.window_id_name);
             }
@@ -574,7 +583,46 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
     ReplaceFunctionWindowMatcher::Visitor func_window_visitor(func_hop_data);
 
     auto new_storage = std::make_shared<ASTStorage>();
-    if (!storage)
+    /// storage != nullptr in case create window view with ENGINE syntax
+    if (storage)
+    {
+        if (storage->ttl_table)
+            throw Exception(
+                ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW,
+                "TTL is not supported for inner table in Window View");
+
+        if (!endsWith(storage->engine->name, "MergeTree"))
+            throw Exception(
+                ErrorCodes::INCORRECT_QUERY,
+                "The ENGINE of WindowView must be MergeTree family of table engines "
+                "including the engines with replication support");
+
+        new_storage->set(new_storage->engine, storage->engine->clone());
+
+        auto visit = [&](const IAST * ast, IAST *& field)
+        {
+            if (ast)
+            {
+                auto node = ast->clone();
+                /// now() -> ____timestamp
+                if (is_time_column_func_now)
+                    time_now_visitor.visit(node);
+                /// TUMBLE/HOP -> WINDOW_ID
+                func_window_visitor.visit(node);
+                to_identifier_visitor.visit(node);
+                new_storage->set(field, node);
+            }
+        };
+
+        visit(storage->partition_by, new_storage->partition_by);
+        visit(storage->primary_key, new_storage->primary_key);
+        visit(storage->order_by, new_storage->order_by);
+        visit(storage->sample_by, new_storage->sample_by);
+
+        if (storage->settings)
+            new_storage->set(new_storage->settings, storage->settings->clone());
+    }
+    else
     {
         new_storage->set(new_storage->engine, makeASTFunction("AggregatingMergeTree"));
 
@@ -604,42 +652,6 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
         }
         new_storage->set(new_storage->order_by, order_by_ptr);
         new_storage->set(new_storage->primary_key, std::make_shared<ASTIdentifier>(window_id_name));
-    }
-    else
-    {
-        if (storage->ttl_table)
-            throw Exception(
-                ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW,
-                "TTL is not supported for inner table in Window View");
-
-        if (!endsWith(storage->engine->name, "MergeTree"))
-            throw Exception(
-                ErrorCodes::INCORRECT_QUERY,
-                "The ENGINE of WindowView must be MergeTree family of table engines "
-                "including the engines with replication support");
-
-        new_storage->set(new_storage->engine, storage->engine->clone());
-
-        auto visit = [&](const IAST * ast, IAST *& field)
-        {
-            if (ast)
-            {
-                auto node = ast->clone();
-                if (is_time_column_func_now)
-                    time_now_visitor.visit(node);
-                func_window_visitor.visit(node);
-                to_identifier_visitor.visit(node);
-                new_storage->set(field, node);
-            }
-        };
-
-        visit(storage->partition_by, new_storage->partition_by);
-        visit(storage->primary_key, new_storage->primary_key);
-        visit(storage->order_by, new_storage->order_by);
-        visit(storage->sample_by, new_storage->sample_by);
-
-        if (storage->settings)
-            new_storage->set(new_storage->settings, storage->settings->clone());
     }
 
     auto new_columns = std::make_shared<ASTColumns>();
@@ -847,6 +859,7 @@ void StorageWindowView::threadFuncFireEvent()
 
         while (!fire_signal.empty())
         {
+            LOG_TRACE(log, "Fire signals: {}", fire_signal.size());
             fire(fire_signal.front());
             fire_signal.pop_front();
         }
@@ -962,6 +975,7 @@ StorageWindowView::StorageWindowView(
     }
     else
     {
+        /// TODO: can as well pass final_query instead of inner_query?
         auto inner_create_query
             = getInnerTableCreateQuery(inner_query, query.storage, table_id_.database_name, generate_inner_table_name(table_id_.table_name));
 
@@ -1343,12 +1357,17 @@ ASTPtr StorageWindowView::getFetchColumnQuery(UInt32 w_start, UInt32 w_end) cons
     }
     else
     {
-        /// SELECT * FROM inner_table PREWHERE window_id_name in if( w_start < w_end, [w_end, w_end - window_size], [])
         auto func_array = makeASTFunction("array");
         while (w_start < w_end)
         {
             /// slice_num_units = std::gcd(hop_num_units, window_num_units);
-            /// TODO: why gcd?
+            /// We use std::gcd(hop_num_units, window_num_units) as the new window size
+            /// to split the overlapped windows into non-overlapped.
+            /// For a hopping window with window_size=3 slice=1, the windows might be
+            /// [1,3],[2,4],[3,5], which will cause recomputation.
+            /// In this case, the slice_num_units will be `gcd(1,3)=1' and the non-overlapped
+            /// windows will split into [1], [2], [3]... We compute each split window into
+            /// mergeable state and merge them when the window is triggering.
             func_array ->arguments->children.push_back(std::make_shared<ASTLiteral>(w_end));
             w_end = addTime(w_end, window_kind, -1 * slice_num_units, *time_zone);
         }
