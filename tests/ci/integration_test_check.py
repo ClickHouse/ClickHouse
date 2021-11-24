@@ -39,7 +39,7 @@ def get_json_params_dict(check_name, pr_info, docker_images):
         'context_name': check_name,
         'commit': pr_info.sha,
         'pull_request': pr_info.number,
-        'pr_info': {'changed_files' : pr_info.changed_files},
+        'pr_info': {'changed_files' : list(pr_info.changed_files)},
         'docker_images_with_versions': docker_images,
         'shuffle_test_groups': False,
         'use_tmpfs': False,
