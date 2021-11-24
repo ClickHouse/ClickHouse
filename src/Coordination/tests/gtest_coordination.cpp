@@ -829,15 +829,29 @@ TEST_P(CoordinationTest, ChangelogTestLostFiles)
     EXPECT_FALSE(fs::exists("./logs/changelog_21_40.bin" + params.extension));
 }
 
+struct IntNode
+{
+    int value;
+    IntNode(int value_) : value(value_) { } // NOLINT(google-explicit-constructor)
+    UInt64 sizeInBytes() const { return sizeof value; }
+    IntNode & operator=(int rhs)
+    {
+        this->value = rhs;
+        return *this;
+    }
+    bool operator==(const int & rhs) const { return value == rhs; }
+    bool operator!=(const int & rhs) const { return rhs != this->value; }
+};
+
 TEST_P(CoordinationTest, SnapshotableHashMapSimple)
 {
-    DB::SnapshotableHashTable<int> hello;
+    DB::SnapshotableHashTable<IntNode> hello;
     EXPECT_TRUE(hello.insert("hello", 5));
     EXPECT_TRUE(hello.contains("hello"));
     EXPECT_EQ(hello.getValue("hello"), 5);
     EXPECT_FALSE(hello.insert("hello", 145));
     EXPECT_EQ(hello.getValue("hello"), 5);
-    hello.updateValue("hello", [](int & value) { value = 7; });
+    hello.updateValue("hello", [](IntNode & value) { value = 7; });
     EXPECT_EQ(hello.getValue("hello"), 7);
     EXPECT_EQ(hello.size(), 1);
     EXPECT_TRUE(hello.erase("hello"));
@@ -846,12 +860,12 @@ TEST_P(CoordinationTest, SnapshotableHashMapSimple)
 
 TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
 {
-    DB::SnapshotableHashTable<int> map_snp;
+    DB::SnapshotableHashTable<IntNode> map_snp;
     EXPECT_TRUE(map_snp.insert("/hello", 7));
     EXPECT_FALSE(map_snp.insert("/hello", 145));
     map_snp.enableSnapshotMode();
     EXPECT_FALSE(map_snp.insert("/hello", 145));
-    map_snp.updateValue("/hello", [](int & value) { value = 554; });
+    map_snp.updateValue("/hello", [](IntNode & value) { value = 554; });
     EXPECT_EQ(map_snp.getValue("/hello"), 554);
     EXPECT_EQ(map_snp.snapshotSize(), 2);
     EXPECT_EQ(map_snp.size(), 1);
@@ -919,6 +933,73 @@ TEST_P(CoordinationTest, SnapshotableHashMapTrySnapshot)
     itr = std::next(itr);
     EXPECT_EQ(itr, map_snp.end());
     map_snp.disableSnapshotMode();
+}
+
+TEST_P(CoordinationTest, SnapshotableHashMapDataSize)
+{
+    /// int
+    DB::SnapshotableHashTable<IntNode> hello;
+    hello.disableSnapshotMode();
+    EXPECT_EQ(hello.getApproximateDataSize(), 0);
+
+    hello.insert("hello", 1);
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
+    hello.updateValue("hello", [](IntNode & value) { value = 2; });
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
+
+    hello.erase("hello");
+    EXPECT_EQ(hello.getApproximateDataSize(), 0);
+
+    hello.clear();
+    EXPECT_EQ(hello.getApproximateDataSize(), 0);
+
+    hello.enableSnapshotMode();
+    hello.insert("hello", 1);
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
+    hello.updateValue("hello", [](IntNode & value) { value = 2; });
+    EXPECT_EQ(hello.getApproximateDataSize(), 18);
+
+    hello.clearOutdatedNodes();
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
+
+    hello.erase("hello");
+    EXPECT_EQ(hello.getApproximateDataSize(), 9);
+
+    hello.clearOutdatedNodes();
+    EXPECT_EQ(hello.getApproximateDataSize(), 0);
+
+    /// Node
+    using Node = DB::KeeperStorage::Node;
+    DB::SnapshotableHashTable<Node> world;
+    Node n1;
+    n1.data = "1234";
+    Node n2;
+    n2.data = "123456";
+    n2.children.insert("");
+
+    world.disableSnapshotMode();
+    world.insert("world", n1);
+    EXPECT_EQ(world.getApproximateDataSize(), 94);
+    world.updateValue("world", [&](Node & value) { value = n2; });
+    EXPECT_EQ(world.getApproximateDataSize(), 96);
+
+    world.erase("world");
+    EXPECT_EQ(world.getApproximateDataSize(), 0);
+
+    world.enableSnapshotMode();
+    world.insert("world", n1);
+    EXPECT_EQ(world.getApproximateDataSize(), 94);
+    world.updateValue("world", [&](Node & value) { value = n2; });
+    EXPECT_EQ(world.getApproximateDataSize(), 190);
+
+    world.clearOutdatedNodes();
+    EXPECT_EQ(world.getApproximateDataSize(), 96);
+
+    world.erase("world");
+    EXPECT_EQ(world.getApproximateDataSize(), 96);
+
+    world.clear();
+    EXPECT_EQ(world.getApproximateDataSize(), 0);
 }
 
 void addNode(DB::KeeperStorage & storage, const std::string & path, const std::string & data, int64_t ephemeral_owner=0)
