@@ -89,7 +89,6 @@ private:
     BridgeHelperPtr bridge_helper;
     Poco::URI bridge_url;
     ConnectionTimeouts timeouts;
-    Poco::Net::HTTPBasicCredentials credentials{};
 };
 
 }

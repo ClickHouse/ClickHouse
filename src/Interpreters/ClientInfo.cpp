@@ -3,11 +3,13 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Core/ProtocolDefines.h>
-#include <base/getFQDNOrHostName.h>
+#include <Core/Defines.h>
+#include <common/getFQDNOrHostName.h>
 #include <unistd.h>
 
-#include <Common/config_version.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
 
 
 namespace DB

@@ -1,5 +1,3 @@
--- Tags: long
-
 drop table if exists stack;
 
 set max_insert_threads = 4;

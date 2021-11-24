@@ -6,7 +6,7 @@ if (NOT ENABLE_BZIP2)
 endif()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/bzip2/bzlib.h")
-    message (WARNING "submodule contrib/bzip2 is missing. to fix try run: \n git submodule update --init")
+    message (WARNING "submodule contrib/bzip2 is missing. to fix try run: \n git submodule update --init --recursive")
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal bzip2 library")
     set (USE_NLP 0)
     return()

@@ -9,7 +9,9 @@
 
 #include <Poco/Version.h>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_SSL
 #    include <Poco/Net/AcceptCertificateHandler.h>
@@ -118,7 +120,7 @@ namespace
                 session->setProxyHost(proxy_host);
                 session->setProxyPort(proxy_port);
 
-#if defined(POCO_CLICKHOUSE_PATCH)
+#if !defined(ARCADIA_BUILD) && defined(POCO_CLICKHOUSE_PATCH)
                 session->setProxyProtocol(proxy_scheme);
 
                 /// Turn on tunnel mode if proxy scheme is HTTP while endpoint scheme is HTTPS.

@@ -7,6 +7,7 @@
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
+#include <DataStreams/copyData.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <IO/copyData.h>
@@ -20,9 +21,10 @@
 #include <regex>
 #include <Common/setThreadName.h>
 #include <Core/MySQL/Authentication.h>
-#include <base/logger_useful.h>
 
-#include <Common/config_version.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
 
 #if USE_SSL
 #    include <Poco/Crypto/RSAKey.h>
@@ -244,7 +246,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     try
     {
         // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
-        if (session->getAuthenticationTypeOrLogInFailure(user_name) == DB::AuthenticationType::SHA256_PASSWORD)
+        if (session->getAuthenticationType(user_name) == DB::Authentication::SHA256_PASSWORD)
         {
             authPluginSSL();
         }

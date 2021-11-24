@@ -65,14 +65,21 @@ static Chunk prepareTotals(Chunk chunk)
 
 void IOutputFormat::work()
 {
-    writePrefixIfNot();
+    if (!prefix_written)
+    {
+        doWritePrefix();
+        prefix_written = true;
+    }
 
     if (finished && !finalized)
     {
         if (rows_before_limit_counter && rows_before_limit_counter->hasAppliedLimit())
             setRowsBeforeLimit(rows_before_limit_counter->get());
 
-        finalizeImpl();
+        if (before_finalize_callback)
+            before_finalize_callback();
+
+        finalize();
         finalized = true;
         return;
     }
@@ -106,17 +113,10 @@ void IOutputFormat::flush()
 
 void IOutputFormat::write(const Block & block)
 {
-    writePrefixIfNot();
     consume(Chunk(block.getColumns(), block.rows()));
 
     if (auto_flush)
         flush();
-}
-
-void IOutputFormat::finalize()
-{
-    writePrefixIfNot();
-    finalizeImpl();
 }
 
 }

@@ -35,8 +35,8 @@ public:
     StoragePtr getStorage(const UUID & id);
 
 protected:
-    std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
-    std::vector<UUID> findAllImpl(AccessEntityType type) const override;
+    std::optional<UUID> findImpl(EntityType type, const String & name) const override;
+    std::vector<UUID> findAllImpl(EntityType type) const override;
     bool existsImpl(const UUID & id) const override;
     AccessEntityPtr readImpl(const UUID & id) const override;
     String readNameImpl(const UUID &id) const override;
@@ -45,9 +45,9 @@ protected:
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
+    scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
     bool hasSubscriptionImpl(const UUID & id) const override;
-    bool hasSubscriptionImpl(AccessEntityType type) const override;
+    bool hasSubscriptionImpl(EntityType type) const override;
     UUID loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const override;
     UUID getIDOfLoggedUserImpl(const String & user_name) const override;
 
@@ -58,8 +58,8 @@ private:
 
     std::shared_ptr<const Storages> nested_storages;
     mutable LRUCache<UUID, Storage> ids_cache;
-    mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(AccessEntityType::MAX)];
-    mutable std::unordered_map<StoragePtr, scope_guard> subscriptions_to_nested_storages[static_cast<size_t>(AccessEntityType::MAX)];
+    mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(EntityType::MAX)];
+    mutable std::unordered_map<StoragePtr, scope_guard> subscriptions_to_nested_storages[static_cast<size_t>(EntityType::MAX)];
     mutable std::mutex mutex;
 };
 
