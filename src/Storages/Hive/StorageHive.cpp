@@ -410,7 +410,7 @@ Pipe StorageHive::read(
             fields,
             hdfs_namenode_url,
             hfile.path,
-            hfile.last_mod_ts,
+            hfile.last_modify_time,
             hfile.size,
             hivefile_name_types,
             storage_settings,

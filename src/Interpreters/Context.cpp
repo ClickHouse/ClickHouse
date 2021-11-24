@@ -1842,9 +1842,9 @@ HMSClientPtr Context::getHMSClient(const String & name) const
     if (it == shared->hive_metastore_clients.end() || it->second->isExpired())
     {
         // connect to hive metastore
-        Poco::URI hms_url(name);
-        const auto& host = hms_url.getHost();
-        auto port = hms_url.getPort();
+        Poco::URI hive_metastore_url(name);
+        const auto & host = hive_metastore_url.getHost();
+        auto port = hive_metastore_url.getPort();
 
         std::shared_ptr<TSocket> socket = std::make_shared<TSocket>(host, port);
         socket->setKeepAlive(true);

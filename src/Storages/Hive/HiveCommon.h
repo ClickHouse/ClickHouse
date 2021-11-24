@@ -20,9 +20,9 @@ public:
     struct FileInfo
     {
         FileInfo() = default;
-        FileInfo(const std::string & path_, UInt64 ts_, size_t size_) : path(path_), last_mod_ts(ts_), size(size_) { }
+        FileInfo(const std::string & path_, UInt64 last_modify_time_, size_t size_) : path(path_), last_modify_time(last_modify_time_), size(size_) { }
         std::string path;
-        UInt64 last_mod_ts; // in ms
+        UInt64 last_modify_time; // in ms
         size_t size;
     };
 

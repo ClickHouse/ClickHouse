@@ -54,7 +54,7 @@ public:
         const FieldVector & values_,
         const String & namenode_url_,
         const String & path_,
-        UInt64 ts_,
+        UInt64 last_modify_time_,
         size_t size_,
         const NamesAndTypesList & index_names_and_types_,
         const std::shared_ptr<HiveSettings> & storage_settings_,
@@ -63,14 +63,11 @@ public:
         , partition_values(values_)
         , namenode_url(namenode_url_)
         , path(path_)
-        , last_mod_ts(ts_)
+        , last_modify_time(last_modify_time_)
         , size(size_)
         , index_names_and_types(index_names_and_types_)
         , storage_settings(storage_settings_)
     {
-        // std::cout << "1delim:" << storage_settings->hive_text_field_delimeter << std::endl;
-        // std::cout << "1disable orc:" << storage_settings->disable_orc_stripe_minmax_index << std::endl;
-        // std::cout << "1disable parquet:" << storage_settings->disable_parquet_rowgroup_minmax_index << std::endl;
     }
     virtual ~IHiveFile() = default;
 
@@ -123,14 +120,14 @@ public:
         return boost::algorithm::join(strs, "|");
     }
 
-    inline UInt64 getLastModTs() const { return last_mod_ts; }
+    inline UInt64 getLastModTs() const { return last_modify_time; }
     inline size_t getSize() const { return size; }
 
 protected:
     FieldVector partition_values;
     String namenode_url;
     String path;
-    UInt64 last_mod_ts;
+    UInt64 last_modify_time;
     size_t size;
     NamesAndTypesList index_names_and_types;
     std::shared_ptr<IMergeTreeDataPart::MinMaxIndex> minmax_idx;
@@ -146,12 +143,12 @@ public:
         const FieldVector & values_,
         const String & namenode_url_,
         const String & path_,
-        UInt64 ts_,
+        UInt64 last_modify_time_,
         size_t size_,
         const NamesAndTypesList & index_names_and_types_,
         const std::shared_ptr<HiveSettings> & hive_settings_,
         ContextPtr context_)
-        : IHiveFile(values_, namenode_url_, path_, ts_, size_, index_names_and_types_, hive_settings_, context_)
+        : IHiveFile(values_, namenode_url_, path_, last_modify_time_, size_, index_names_and_types_, hive_settings_, context_)
     {
     }
 
@@ -167,12 +164,12 @@ public:
         const FieldVector & values_,
         const String & namenode_url_,
         const String & path_,
-        UInt64 ts_,
+        UInt64 last_modify_time_,
         size_t size_,
         const NamesAndTypesList & index_names_and_types_,
         const std::shared_ptr<HiveSettings> & hive_settings_,
         ContextPtr context_)
-        : IHiveFile(values_, namenode_url_, path_, ts_, size_, index_names_and_types_, hive_settings_, context_)
+        : IHiveFile(values_, namenode_url_, path_, last_modify_time_, size_, index_names_and_types_, hive_settings_, context_)
     {
     }
 
@@ -202,12 +199,12 @@ public:
         const FieldVector & values_,
         const String & namenode_url_,
         const String & path_,
-        UInt64 ts_,
+        UInt64 last_modify_time_,
         size_t size_,
         const NamesAndTypesList & index_names_and_types_,
         const std::shared_ptr<HiveSettings> & hive_settings_,
         ContextPtr context_)
-        : IHiveFile(values_, namenode_url_, path_, ts_, size_, index_names_and_types_, hive_settings_, context_)
+        : IHiveFile(values_, namenode_url_, path_, last_modify_time_, size_, index_names_and_types_, hive_settings_, context_)
     {
     }
 
