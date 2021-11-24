@@ -230,7 +230,9 @@ def tsvRows(n):
     result = []
     try:
         with open(n, encoding='utf-8') as fd:
-            return [row for row in csv.reader(fd, delimiter="\t", quotechar='"')]
+            # NOTE: This is absolutely wrong and also ignorant, because it works incorrectly for \\n
+            # But for the purpose of this script it's ok. Looks like there is no good way to correctly read TSV in Python.
+            return [[value.replace('\\n', '\n') for value in row] for row in csv.reader(fd, delimiter='\t', quoting=csv.QUOTE_NONE)]
     except:
         report_errors.append(
             traceback.format_exception_only(
