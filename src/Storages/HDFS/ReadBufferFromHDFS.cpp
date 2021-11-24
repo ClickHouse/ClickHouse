@@ -33,7 +33,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     HDFSFSPtr fs;
 
     off_t offset = 0;
-    bool initialized = false;
     off_t read_until_position = 0;
 
     explicit ReadBufferFromHDFSImpl(
@@ -64,16 +63,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         hdfsCloseFile(fs.get(), fin);
     }
 
-    void initialize() const
-    {
-        if (!offset)
-            return;
-
-        int seek_status = hdfsSeek(fs.get(), fin, offset);
-        if (seek_status != 0)
-            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Fail to seek HDFS file: {}, error: {}", hdfs_uri, std::string(hdfsGetLastError()));
-    }
-
     std::optional<size_t> getTotalSize() const
     {
         auto * file_info = hdfsGetPathInfo(fs.get(), hdfs_file_path.c_str());
@@ -84,12 +73,6 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
 
     bool nextImpl() override
     {
-        if (!initialized)
-        {
-            initialize();
-            initialized = true;
-        }
-
         size_t num_bytes_to_read;
         if (read_until_position)
         {
@@ -123,10 +106,15 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         return false;
     }
 
-    off_t seek(off_t offset_, int) override
+    off_t seek(off_t offset_, int whence) override
     {
+        if (whence != SEEK_SET)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Only SEEK_SET is supported");
+
         offset = offset_;
-        initialize();
+        int seek_status = hdfsSeek(fs.get(), fin, offset);
+        if (seek_status != 0)
+            throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Fail to seek HDFS file: {}, error: {}", hdfs_uri, std::string(hdfsGetLastError()));
         return offset;
     }
 
@@ -186,7 +174,6 @@ off_t ReadBufferFromHDFS::seek(off_t offset_, int whence)
     }
 
     pos = working_buffer.end();
-    impl->initialize();
     impl->seek(offset_, whence);
     return impl->getPosition();
 }
