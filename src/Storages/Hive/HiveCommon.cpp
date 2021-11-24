@@ -133,12 +133,13 @@ std::vector<HMSClient::FileInfo> HMSClient::HiveTableMeta::getLocationFiles(cons
     auto fs_builder = createHDFSBuilder(getNameNodeUrl(table->sd.location), getContext()->getGlobalContext()->getConfigRef());
     auto fs = createHDFSFS(fs_builder.get());
     Poco::URI uri(location);
-    HDFSFileInfo ls;
-    ls.file_info = hdfsListDirectory(fs.get(), uri.getPath().c_str(), &ls.length);
+    HDFSFileInfo dir_info;
+    dir_info.file_info = hdfsListDirectory(fs.get(), uri.getPath().c_str(), &dir_info.length);
     auto result = std::make_shared<std::vector<FileInfo>>();
-    for (int i = 0; i < ls.length; ++i)
+    for (int i = 0; i < dir_info.length; ++i)
     {
-        auto & finfo = ls.file_info[i];
+        auto & finfo = dir_info.file_info[i];
+        /// skip directories and empty files, mKind value 'D' represents directory, otherwise file
         if (finfo.mKind != 'D' && finfo.mSize > 0)
             result->emplace_back(String(finfo.mName), finfo.mLastMod, finfo.mSize);
     }

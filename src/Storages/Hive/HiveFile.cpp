@@ -24,20 +24,20 @@
 namespace DB
 {
 
-template <class T, class S>
-Range createRangeFromOrcStatistics(const S * stats)
+template <class FieldType, class StatisticsType>
+Range createRangeFromOrcStatistics(const StatisticsType * stats)
 {
     if (stats->hasMinimum() && stats->hasMaximum())
     {
-        return Range(T(stats->getMinimum()), true, T(stats->getMaximum()), true);
+        return Range(FieldType(stats->getMinimum()), true, FieldType(stats->getMaximum()), true);
     }
     else if (stats->hasMinimum())
     {
-        return Range::createLeftBounded(T(stats->getMinimum()), true);
+        return Range::createLeftBounded(FieldType(stats->getMinimum()), true);
     }
     else if (stats->hasMaximum())
     {
-        return Range::createRightBounded(T(stats->getMaximum()), true);
+        return Range::createRightBounded(FieldType(stats->getMaximum()), true);
     }
     else
     {
@@ -45,12 +45,12 @@ Range createRangeFromOrcStatistics(const S * stats)
     }
 }
 
-template <class T, class S>
-Range createRangeFromParquetStatistics(std::shared_ptr<S> stats)
+template <class FieldType, class StatisticsType>
+Range createRangeFromParquetStatistics(std::shared_ptr<StatisticsType> stats)
 {
     if (!stats->HasMinMax())
         return Range();
-    return Range(T(stats->min()), true, T(stats->max()), true);
+    return Range(FieldType(stats->min()), true, FieldType(stats->max()), true);
 }
 
 Range createRangeFromParquetStatistics(std::shared_ptr<parquet::ByteArrayStatistics> stats)
