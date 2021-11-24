@@ -4,12 +4,12 @@
 #include <Poco/Environment.h>
 #include <filesystem>
 
-#if defined(linux) || defined(__linux) || defined(__linux__)
+#if defined(__linux__)
+
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/syscall.h>
 #include <linux/fs.h>
-#endif
 
 /// For old versions of libc.
 #if !defined(RENAME_NOREPLACE)
@@ -61,7 +61,7 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
     if (!supportsRenameat2())
         return false;
     if (old_path.empty() || new_path.empty())
-        throw Exception("Cannot rename " + old_path + " to " + new_path + ": path is empty", ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot rename {} to {}: path is empty", old_path, new_path);
 
     /// int olddirfd (ignored for absolute oldpath), const char *oldpath,
     /// int newdirfd (ignored for absolute newpath), const char *newpath,
@@ -81,18 +81,40 @@ static bool renameat2(const std::string & old_path, const std::string & new_path
         return false;
 
     if (errno == EEXIST)
-        throwFromErrno("Cannot rename " + old_path + " to " + new_path + " because the second path already exists", ErrorCodes::ATOMIC_RENAME_FAIL);
+        throwFromErrno(ErrorCodes::ATOMIC_RENAME_FAIL, "Cannot rename {} to {} because the second path already exists", old_path, new_path);
     if (errno == ENOENT)
-        throwFromErrno("Paths cannot be exchanged because " + old_path + " or " + new_path + " does not exist", ErrorCodes::ATOMIC_RENAME_FAIL);
+        throwFromErrno(ErrorCodes::ATOMIC_RENAME_FAIL, "Paths cannot be exchanged because {} or {} does not exist", old_path, new_path);
     throwFromErrnoWithPath("Cannot rename " + old_path + " to " + new_path, new_path, ErrorCodes::SYSTEM_ERROR);
 }
 
+bool supportsRenameat2()
+{
+    static bool supports = supportsRenameat2Impl();
+    return supports;
+}
+
+#else
+
+#define RENAME_NOREPLACE -1
+#define RENAME_EXCHANGE -1
+
+static bool renameat2(const std::string &, const std::string &, int)
+{
+    return false;
+}
+
+bool supportsRenameat2()
+{
+    return false;
+}
+
+#endif
 
 static void renameNoReplaceFallback(const std::string & old_path, const std::string & new_path)
 {
     /// NOTE it's unsafe
     if (fs::exists(new_path))
-        throw Exception("File " + new_path + " exists", ErrorCodes::FILE_ALREADY_EXISTS);
+        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} exists", new_path);
     fs::rename(old_path, new_path);
 }
 
@@ -104,13 +126,6 @@ static void renameExchangeFallback(const std::string &, const std::string &)
     throw Exception("System call renameat2() is not supported", ErrorCodes::UNSUPPORTED_METHOD);
 }
 #pragma GCC diagnostic pop
-
-
-bool supportsRenameat2()
-{
-    static bool supports = supportsRenameat2Impl();
-    return supports;
-}
 
 void renameNoReplace(const std::string & old_path, const std::string & new_path)
 {
