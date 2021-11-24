@@ -571,7 +571,7 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
             const auto & column = columns_desc.get(command.column_name);
             if (column.default_desc.kind != ColumnDefaultKind::Materialized)
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} could not be materialized", column.name);
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column `{}` could not be materialized", column.name);
             }
 
             stages.back().column_to_updated.emplace(column.name, column.default_desc.expression->clone());
