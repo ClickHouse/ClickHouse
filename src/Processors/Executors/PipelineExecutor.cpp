@@ -46,7 +46,7 @@ PipelineExecutor::PipelineExecutor(Processors & processors, QueryStatus * elem)
     }
     if (process_list_element)
     {
-        auto settings = process_list_element->context.lock()->getSettings();
+        auto settings = process_list_element->getContext()->getSettings();
         limits.max_execution_time = settings.max_execution_time;
         overflow_mode = settings.timeout_overflow_mode;
 
