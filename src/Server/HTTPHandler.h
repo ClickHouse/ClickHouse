@@ -60,13 +60,16 @@ private:
         /// Points to 'out' or to CompressedWriteBuffer(*out) or to CascadeWriteBuffer.
         std::shared_ptr<WriteBuffer> out_maybe_delayed_and_compressed;
 
+        bool finalized = false;
+
         inline bool hasDelayed() const
         {
             return out_maybe_delayed_and_compressed != out_maybe_compressed;
         }
 
-        inline void finalize() const
+        inline void finalize()
         {
+            finalized = true;
             if (out_maybe_delayed_and_compressed)
                 out_maybe_delayed_and_compressed->finalize();
             if (out_maybe_compressed)
@@ -77,7 +80,7 @@ private:
 
         inline bool isFinalized() const
         {
-            return out_maybe_delayed_and_compressed->isFinalized();
+            return finalized;
         }
     };
 
