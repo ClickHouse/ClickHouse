@@ -935,19 +935,18 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         if (used_output.isFinalized())
         {
             tryLogCurrentException(log, "Cannot flush data to client");
-        }
-        else
-        {
-            tryLogCurrentException(log);
+            return;
+        } 
 
-            /** If exception is received from remote server, then stack trace is embedded in message.
-              * If exception is thrown on local server, then stack trace is in separate field.
-              */
-            std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
-            int exception_code = getCurrentExceptionCode();
+        tryLogCurrentException(log);
 
-            trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
-        }
+        /** If exception is received from remote server, then stack trace is embedded in message.
+          * If exception is thrown on local server, then stack trace is in separate field.
+          */
+        std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
+        int exception_code = getCurrentExceptionCode();
+
+        trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
     }
 
     used_output.finalize();
