@@ -936,7 +936,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         {
             tryLogCurrentException(log, "Cannot flush data to client");
             return;
-        } 
+        }
 
         tryLogCurrentException(log);
 
