@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-fasttest
+# Tags: long, no-parallel, no-fasttest, backward-incompatible
 # Tag no-fasttest: Accesses CH via mysql table function (which is unavailable)
 
 ##################################################################################################
