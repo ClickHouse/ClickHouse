@@ -1,6 +1,5 @@
 #include <queue>
 #include <IO/WriteBufferFromString.h>
-#include <Common/EventCounter.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/MemoryTracker.h>
@@ -47,12 +46,11 @@ PipelineExecutor::PipelineExecutor(Processors & processors, QueryStatus * elem)
     if (process_list_element)
     {
         auto settings = process_list_element->getContext()->getSettings();
-        limits.max_execution_time = settings.max_execution_time;
-        overflow_mode = settings.timeout_overflow_mode;
-
         // Add the pipeline to the QueryStatus at the end to avoid issues if other things throw
         // as that would leave the executor "linked"
         process_list_element->addPipelineExecutor(this);
+        limits.max_execution_time = settings.max_execution_time;
+        overflow_mode = settings.timeout_overflow_mode;
     }
 }
 
