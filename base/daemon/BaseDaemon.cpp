@@ -13,30 +13,21 @@
 #if defined(__linux__)
     #include <sys/prctl.h>
 #endif
-#include <fcntl.h>
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
-#include <cxxabi.h>
 #include <unistd.h>
 
 #include <typeinfo>
 #include <iostream>
 #include <fstream>
-#include <sstream>
 #include <memory>
 #include <base/scope_guard.h>
 
-#include <Poco/Observer.h>
-#include <Poco/AutoPtr.h>
-#include <Poco/PatternFormatter.h>
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
-#include <Poco/Condition.h>
-#include <Poco/SyslogChannel.h>
-#include <Poco/DirectoryIterator.h>
 
 #include <base/logger_useful.h>
 #include <base/ErrorHandlers.h>
@@ -56,7 +47,6 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/MemorySanitizer.h>
 #include <Common/SymbolIndex.h>
 #include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>

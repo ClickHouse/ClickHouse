@@ -8,6 +8,7 @@
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -30,7 +31,6 @@
 
 #if USE_MYSQL || USE_LIBPQXX
 #include <Common/parseRemoteDescription.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Common/parseAddress.h>
 #endif
 
@@ -258,7 +258,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (!engine->arguments || engine->arguments->children.size() != 3)
             throw Exception("Replicated database requires 3 arguments: zookeeper path, shard name and replica name", ErrorCodes::BAD_ARGUMENTS);
 
-        const auto & arguments = engine->arguments->children;
+        auto & arguments = engine->arguments->children;
+        for (auto & engine_arg : arguments)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
         String zookeeper_path = safeGetLiteralValue<String>(arguments[0], "Replicated");
         String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");
