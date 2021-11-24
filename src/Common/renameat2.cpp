@@ -4,6 +4,9 @@
 #include <Poco/Environment.h>
 #include <filesystem>
 
+namespace fs = std::filesystem;
+
+
 #if defined(__linux__)
 
 #include <unistd.h>
@@ -34,8 +37,6 @@
     #endif
 #endif
 
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
