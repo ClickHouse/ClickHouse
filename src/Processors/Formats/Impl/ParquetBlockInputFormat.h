@@ -17,6 +17,8 @@ class ArrowColumnToCHColumn;
 class ParquetBlockInputFormat : public IInputFormat
 {
 public:
+    static ProcessorPtr getParquetFormat(ReadBuffer & in_, Block header_);
+
     ParquetBlockInputFormat(ReadBuffer & in_, Block header_);
 
     void resetParser() override;

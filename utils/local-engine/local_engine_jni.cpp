@@ -1,12 +1,14 @@
+#include "include/io_kyligence_jni_engine_LocalEngine.h"
+#include <string>
+#include <iostream>
+
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Processors/Executors/PipelineExecutor.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/CSVRowInputFormat.h>
 #include <Processors/Formats/Impl/CSVRowOutputFormat.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include "Poco/Logger.h"
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -28,17 +30,17 @@
 
 #include <fstream>
 #include <string>
-#include <Builder/SerializedPlanBuilder.h>
 #include <Processors/Pipe.h>
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
-#include <Substrait/relations.pb.h>
+//#include <Substrait/relations.pb.h>
 
 using namespace DB;
 using namespace rapidjson;
 
 /**
- * SQL example：
+ * SQL example：++
+ *
  *     SELECT min(x1),max(x2),sum(x3),count(x4),avg(x5) FROM table1 WHERE x6=* GROUP BY x7
  *
  * table defination
@@ -194,21 +196,7 @@ void buildAgg(Block & header, QueryPlan & query_plan, ContextPtr context)
     query_plan.addStep(std::move(aggregating_step));
 }
 
-void generateSubStraitPlan()
-{
-    dbms::SerializedSchemaBuilder schema_builder;
-    auto schema = schema_builder.column("x1", "I8").column("x2", "String").build();
-    std::cout << schema->SerializeAsString();
-    dbms::SerializedPlanBuilder plan_builder;
-    auto plan = plan_builder.files("/test/test.csv", std::move(schema)).build();
-    std::cout << plan->SerializeAsString();
-    std::ofstream output;
-    output.open("/Users/neng.liu/Documents/GitHub/ClickHouse/plan.txt", std::fstream::in | std::fstream::out | std::fstream::trunc);
-    //    output << plan->SerializeAsString();
-    plan->SerializeToOstream(&output);
-    output.flush();
-    output.close();
-}
+bool inside_main = false;
 
 void runSamplePipeline()
 {
@@ -247,30 +235,29 @@ void runSamplePipeline()
     executor->execute(1);
 }
 
-void generateFunctions() {
-}
-
 int main(int, char **)
 {
-//    generateSubStraitPlan();
+    inside_main = true;
     runSamplePipeline();
+    return 0;
 }
 
-//    auto col = ColumnUInt8::create(1, 1);
-//    Columns columns;
-//    columns.emplace_back(std::move(col));
-//    Chunk chunk(std::move(columns), 1);
-//
-//    Block header = {ColumnWithTypeAndName(ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "x")};
-//
-//    auto source = std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk));
-//    auto sink = std::make_shared<NullSink>(source->getPort().getHeader());
-//
-//    connect(source->getPort(), sink->getPort());
-//
-//    Processors processors;
-//    processors.emplace_back(std::move(source));
-//    processors.emplace_back(std::move(sink));
-//
-//    PipelineExecutor executor(processors);
-//    executor.execute(1);
+JNIEXPORT jlong JNICALL Java_io_kyligence_jni_engine_LocalEngine_test
+    (JNIEnv *env, jclass, jint a, jint b)
+{
+//    inside_main = true;
+//    std::cout << "start run pipeline." << std::endl;
+//    try
+//    {
+//        runSamplePipeline();
+//    }
+//    catch (Poco::Exception e)
+//    {
+//        std::cout << e.message() << std::endl;
+//        std::cout << e.displayText() << std::endl;
+//        e.rethrow();
+//    }
+//    std::cout << "run pipeline success." << std::endl;
+    std::cout <<std::string("hello world");
+    return a + b;
+}
