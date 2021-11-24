@@ -13,7 +13,7 @@ WatermarkTransform::WatermarkTransform(
     const String & window_column_name_,
     UInt32 max_timestamp_,
     UInt32 lateness_upper_bound_)
-    : ISimpleTransform(header_, header_, true)
+    : ISimpleTransform(header_, header_, false)
     , block_header(header_)
     , storage(storage_)
     , window_column_name(window_column_name_)
@@ -24,7 +24,6 @@ WatermarkTransform::WatermarkTransform(
 
 WatermarkTransform::~WatermarkTransform()
 {
-    /// TODO: try move this to storage, shouldn't be in desctructor.
     if (max_timestamp)
         storage.updateMaxTimestamp(max_timestamp);
     if (max_watermark != 0)
