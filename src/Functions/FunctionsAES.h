@@ -450,6 +450,8 @@ private:
             },
             optional_args
         );
+        if (arguments[1].column->isNullable())
+            return std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>());
 
         return std::make_shared<DataTypeString>();
     }
@@ -566,11 +568,8 @@ private:
 
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {
-                    if (string_size < tag_size)
-                        throw Exception("Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.",
-                            ErrorCodes::BAD_ARGUMENTS);
-
-                    resulting_size -= tag_size;
+                    if (string_size)
+                        resulting_size -= tag_size;
                 }
             }
 
