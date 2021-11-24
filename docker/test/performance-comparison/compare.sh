@@ -212,14 +212,19 @@ function run_tests
     # already set, keep those values.
     #
     # NOTE: too high CHPC_RUNS/CHPC_MAX_QUERIES may hit internal CI timeout.
-    if [ "$PR_TO_TEST" -ne 0 ] && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ]
-    then
-        CHPC_RUNS=${CHPC_RUNS:-7}
-        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
-    else
-        CHPC_RUNS=${CHPC_RUNS:-13}
-        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
-    fi
+    # NOTE: Currently we disabled complete run even for master branch
+    #if [ "$PR_TO_TEST" -ne 0 ] && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ]
+    #then
+    #    CHPC_RUNS=${CHPC_RUNS:-7}
+    #    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
+    #else
+    #    CHPC_RUNS=${CHPC_RUNS:-13}
+    #    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
+    #fi
+
+    CHPC_RUNS=${CHPC_RUNS:-7}
+    CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
+
     export CHPC_RUNS
     export CHPC_MAX_QUERIES
 
