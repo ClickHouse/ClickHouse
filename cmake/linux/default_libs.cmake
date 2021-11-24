@@ -6,7 +6,11 @@ set (DEFAULT_LIBS "-nodefaultlibs")
 # We need builtins from Clang's RT even without libcxx - for ubsan+int128.
 # See https://bugs.llvm.org/show_bug.cgi?id=16404
 if (COMPILER_CLANG)
-    execute_process (COMMAND ${CMAKE_CXX_COMPILER} --print-libgcc-file-name --rtlib=compiler-rt OUTPUT_VARIABLE BUILTINS_LIBRARY OUTPUT_STRIP_TRAILING_WHITESPACE)
+    execute_process (COMMAND ${CMAKE_CXX_COMPILER} --target=${CMAKE_CXX_COMPILER_TARGET} --print-libgcc-file-name --rtlib=compiler-rt OUTPUT_VARIABLE BUILTINS_LIBRARY OUTPUT_STRIP_TRAILING_WHITESPACE)
+
+    if (NOT EXISTS "${BUILTINS_LIBRARY}")
+        set (BUILTINS_LIBRARY "-lgcc")
+    endif ()
 else ()
     set (BUILTINS_LIBRARY "-lgcc")
 endif ()
