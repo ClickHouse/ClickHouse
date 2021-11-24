@@ -74,6 +74,11 @@ private:
             if (out)
                 out->finalize();
         }
+
+        inline bool isFinalized() const
+        {
+            return out_maybe_delayed_and_compressed->isFinalized();
+        }
     };
 
     IServer & server;
