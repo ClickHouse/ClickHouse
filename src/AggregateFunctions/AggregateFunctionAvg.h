@@ -224,7 +224,7 @@ using AvgFieldType = std::conditional_t<is_decimal<T>,
     NearestFieldType<T>>;
 
 template <typename T>
-class AggregateFunctionAvg final : public AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionAvg<T>>
+class AggregateFunctionAvg : public AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionAvg<T>>
 {
 public:
     using Base = AggregateFunctionAvgBase<AvgFieldType<T>, UInt64, AggregateFunctionAvg<T>>;
@@ -242,8 +242,8 @@ public:
         ++this->data(place).denominator;
     }
 
-    void addBatchSinglePlace(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *, ssize_t if_argument_pos) const override
+    void
+    addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *, ssize_t if_argument_pos) const final
     {
         AggregateFunctionSumData<Numerator> sum_data;
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
@@ -264,7 +264,7 @@ public:
 
     void addBatchSinglePlaceNotNull(
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, const UInt8 * null_map, Arena *, ssize_t if_argument_pos)
-        const override
+        const final
     {
         AggregateFunctionSumData<Numerator> sum_data;
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
@@ -292,7 +292,7 @@ public:
         this->data(place).numerator += sum_data.sum;
     }
 
-    String getName() const final { return "avg"; }
+    String getName() const override { return "avg"; }
 
 #if USE_EMBEDDED_COMPILER
 
