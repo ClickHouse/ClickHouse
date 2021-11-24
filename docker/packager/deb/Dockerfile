@@ -1,4 +1,4 @@
-# docker build -t yandex/clickhouse-deb-builder .
+# docker build -t clickhouse/deb-builder .
 FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=11

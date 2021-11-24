@@ -1,5 +1,5 @@
-# docker build -t yandex/clickhouse-fuzzer .
-FROM yandex/clickhouse-test-base
+# docker build -t clickhouse/fuzzer .
+FROM clickhouse/test-base
 
 ENV LANG=C.UTF-8
 ENV TZ=Europe/Moscow
@@ -36,5 +36,5 @@ CMD set -o pipefail \
     && cd /workspace \
     && /run-fuzzer.sh 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee main.log
 
-# docker run --network=host --volume <workspace>:/workspace -e PR_TO_TEST=<> -e SHA_TO_TEST=<> yandex/clickhouse-fuzzer
+# docker run --network=host --volume <workspace>:/workspace -e PR_TO_TEST=<> -e SHA_TO_TEST=<> clickhouse/fuzzer
 
