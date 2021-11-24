@@ -26,6 +26,10 @@ JSON-1
 JSON-2
 JSONStrings-1
 JSONStrings-2
+JSONCompact-1
+JSONCompact-2
+JSONCompactStrings-1
+JSONCompactStrings-2
 PrettyCompact-1
 PrettyCompact-2
 PrettyCompactNoEscapes-1
@@ -60,3 +64,5 @@ JSONCompactStringsEachRowWithNamesAndTypes-1
 JSONCompactStringsEachRowWithNamesAndTypes-2
 CustomSeparated-1
 CustomSeparated-2
+Template-1
+Template-2

@@ -54,7 +54,10 @@ namespace DB
         unit.status = READY_TO_FORMAT;
         unit.type = type;
         if (type == ProcessingUnitType::FINALIZE)
+        {
+            std::lock_guard lock(statistics_mutex);
             unit.statistics = std::move(statistics);
+        }
 
         size_t first_row_number = rows_consumed;
         if (unit.type == ProcessingUnitType::PLAIN)

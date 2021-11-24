@@ -41,14 +41,15 @@ public:
 private:
     void writePrefix() override;
     void consume(Chunk chunk) override;
-    void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
-    void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
+    void consumeTotals(Chunk chunk) override { statistics.totals = std::move(chunk); }
+    void consumeExtremes(Chunk chunk) override { statistics.extremes = std::move(chunk); }
     void finalizeImpl() override;
 
     void writeRow(const Chunk & chunk, size_t row_num);
     template <typename U, typename V> void writeValue(U value, EscapingRule escaping_rule);
 
     void onFirstRowNumberUpdate() override { row_count = getFirstRowNumber(); }
+    bool areTotalsAndExtremesUsedInFinalize() const override { return true; }
 
     const FormatSettings settings;
     Serializations serializations;
@@ -56,8 +57,6 @@ private:
     ParsedTemplateFormatString format;
     ParsedTemplateFormatString row_format;
 
-    Chunk totals;
-    Chunk extremes;
     Statistics statistics;
 
     size_t row_count = 0;

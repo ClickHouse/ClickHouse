@@ -12,6 +12,7 @@
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
+#include <IO/NullWriteBuffer.h>
 
 #include <deque>
 #include <atomic>
@@ -80,6 +81,10 @@ public:
         {
             collectorThreadFunction(thread_group);
         });
+
+        NullWriteBuffer buf;
+        save_totals_and_extremes_in_statistics = internal_formatter_creator(buf)->areTotalsAndExtremesUsedInFinalize();
+
         LOG_TRACE(&Poco::Logger::get("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
     }
 
@@ -107,6 +112,7 @@ public:
 
     void onProgress(const Progress & value) override
     {
+        std::lock_guard lock(statistics_mutex);
         statistics.progress.incrementPiecewiseAtomically(value);
     }
 
@@ -129,13 +135,29 @@ private:
 
     void consumeTotals(Chunk totals) override
     {
-        addChunk(std::move(totals), ProcessingUnitType::TOTALS, /*can_throw_exception*/ true);
-        are_totals_written = true;
+        if (save_totals_and_extremes_in_statistics)
+        {
+            std::lock_guard lock(statistics_mutex);
+            statistics.totals = std::move(totals);
+        }
+        else
+        {
+            addChunk(std::move(totals), ProcessingUnitType::TOTALS, /*can_throw_exception*/ true);
+            are_totals_written = true;
+        }
     }
 
     void consumeExtremes(Chunk extremes) override
     {
-        addChunk(std::move(extremes), ProcessingUnitType::EXTREMES, /*can_throw_exception*/ true);
+        if (save_totals_and_extremes_in_statistics)
+        {
+            std::lock_guard lock(statistics_mutex);
+            statistics.extremes = std::move(extremes);
+        }
+        else
+        {
+            addChunk(std::move(extremes), ProcessingUnitType::EXTREMES, /*can_throw_exception*/ true);
+        }
     }
 
     void finalizeImpl() override;
@@ -201,6 +223,9 @@ private:
     std::atomic_bool are_totals_written = false;
 
     Statistics statistics;
+    /// We change statistics in onProgress() which can be called from different threads.
+    std::mutex statistics_mutex;
+    bool save_totals_and_extremes_in_statistics;
 
     void finishAndWait();
 
@@ -232,6 +257,7 @@ private:
 
     void setRowsBeforeLimit(size_t rows_before_limit) override
     {
+        std::lock_guard lock(statistics_mutex);
         statistics.rows_before_limit = rows_before_limit;
         statistics.applied_limit = true;
     }
