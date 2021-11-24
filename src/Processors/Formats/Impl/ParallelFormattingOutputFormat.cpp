@@ -59,11 +59,11 @@ namespace DB
             unit.statistics = std::move(statistics);
         }
 
-        size_t first_row_number = rows_consumed;
+        size_t first_row_num = rows_consumed;
         if (unit.type == ProcessingUnitType::PLAIN)
             rows_consumed += unit.chunk.getNumRows();
 
-        scheduleFormatterThreadForUnitWithNumber(current_unit_number, first_row_number);
+        scheduleFormatterThreadForUnitWithNumber(current_unit_number, first_row_num);
         ++writer_unit_number;
     }
 
