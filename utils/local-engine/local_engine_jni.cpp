@@ -204,7 +204,7 @@ void runSamplePipeline()
     auto global_context = Context::createGlobal(shared_context.get());
     registerAllFunctions();
     auto & factory = FunctionFactory::instance();
-    std::ifstream ifs("/Users/neng.liu/Documents/GitHub/ClickHouse/utils/local-engine/table.json");
+    std::ifstream ifs("/home/kyligence/Documents/code/ClickHouse/utils/local-engine/table.json");
     IStreamWrapper isw(ifs);
 
     Document d;
@@ -213,7 +213,7 @@ void runSamplePipeline()
     auto header = getTableHeader(*cols);
 
     QueryPlan query_plan;
-    auto file = "/Users/neng.liu/Documents/GitHub/ClickHouse/utils/local-engine/table.csv";
+    auto file = "/home/kyligence/Documents/code/ClickHouse/utils/local-engine/table.csv";
     auto buf = std::make_unique<ReadBufferFromFilePRead>(file);
 
     auto source = getSource(*buf, header);
@@ -228,7 +228,7 @@ void runSamplePipeline()
     QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
     auto query_pipline = query_plan.buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings());
 
-    auto buffer = WriteBufferFromFile("/Users/neng.liu/Documents/GitHub/ClickHouse/output.txt");
+    auto buffer = WriteBufferFromFile("/home/kyligence/Documents/code/ClickHouse/output.txt");
     auto output = std::make_shared<CSVRowOutputFormat>(buffer, query_pipline->getHeader(), true, RowOutputFormatParams(), FormatSettings());
     query_pipline->setOutputFormat(output);
     auto executor = query_pipline->execute();
@@ -245,19 +245,19 @@ int main(int, char **)
 JNIEXPORT jlong JNICALL Java_io_kyligence_jni_engine_LocalEngine_test
     (JNIEnv *env, jclass, jint a, jint b)
 {
-//    inside_main = true;
-//    std::cout << "start run pipeline." << std::endl;
-//    try
-//    {
-//        runSamplePipeline();
-//    }
-//    catch (Poco::Exception e)
-//    {
-//        std::cout << e.message() << std::endl;
-//        std::cout << e.displayText() << std::endl;
-//        e.rethrow();
-//    }
-//    std::cout << "run pipeline success." << std::endl;
+    inside_main = true;
+    std::cout << "start run pipeline." << std::endl;
+    try
+    {
+        runSamplePipeline();
+    }
+    catch (Poco::Exception e)
+    {
+        std::cout << e.message() << std::endl;
+        std::cout << e.displayText() << std::endl;
+        e.rethrow();
+    }
+    std::cout << "run pipeline success." << std::endl;
     std::cout <<std::string("hello world");
     return a + b;
 }
