@@ -10,7 +10,7 @@
 namespace DB
 {
 
-const size_t WriteBufferValidUTF8::DEFAULT_SIZE = 2048;
+const size_t WriteBufferValidUTF8::DEFAULT_SIZE = 4096;
 
 /** Index into the table below with the first byte of a UTF-8 sequence to
   * get the number of trailing bytes that are supposed to follow it.
