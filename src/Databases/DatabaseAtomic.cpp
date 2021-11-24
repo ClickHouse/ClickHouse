@@ -226,15 +226,8 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
 
     StoragePtr table = getTableUnlocked(table_name, db_lock);
 
-    if (table->isDictionary() && !dictionary)
-    {
-        if (exchange)
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Use EXCHANGE DICTIONARIES for dictionaries and EXCHANGE TABLES for tables.");
-        else
-            throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Use RENAME DICTIONARY for dictionaries and RENAME TABLE for tables.");
-    }
+    if (dictionary && !table->isDictionary())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
 
     table->checkTableCanBeRenamed();
     assert_can_move_mat_view(table);
@@ -242,6 +235,8 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (exchange)
     {
         other_table = other_db.getTableUnlocked(to_table_name, other_db_lock);
+        if (dictionary && !other_table->isDictionary())
+            throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
         other_table->checkTableCanBeRenamed();
         assert_can_move_mat_view(other_table);
     }
