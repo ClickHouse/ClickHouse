@@ -197,7 +197,7 @@ public:
     inline bool hasInitialized() const { return inited; }
 
     std::tuple<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCacheError> createReader(
-        const RemoteFileMeta &remote_file_meta,
+        const RemoteFileMeta & remote_file_meta,
         std::shared_ptr<ReadBuffer> & readbuffer);
 
 private:
