@@ -288,7 +288,7 @@ public:
         {
         }
 
-        void addPart(const String & old_name, const String & new_name);
+        void addPart(const String & old_name, const String & new_name, const DiskPtr & disk);
 
         /// Renames part from old_name to new_name
         void tryRenameAll();
@@ -296,10 +296,16 @@ public:
         /// Renames all added parts from new_name to old_name if old name is not empty
         ~PartsTemporaryRename();
 
+        struct RenameInfo
+        {
+            String old_name;
+            String new_name;
+            DiskPtr disk;
+        };
+
         const MergeTreeData & storage;
         const String source_dir;
-        std::vector<std::pair<String, String>> old_and_new_names;
-        std::unordered_map<String, PathWithDisk> old_part_name_to_path_and_disk;
+        std::vector<RenameInfo> old_and_new_names;
         bool renamed = false;
     };
 
@@ -711,19 +717,13 @@ public:
     /// Get table path on disk
     String getFullPathOnDisk(const DiskPtr & disk) const;
 
-    /// Get disk where part is located.
-    /// `additional_path` can be set if part is not located directly in table data path (e.g. 'detached/')
-    DiskPtr getDiskForPart(const String & part_name, const String & additional_path = "") const;
-
-    /// Get full path for part. Uses getDiskForPart and returns the full relative path.
-    /// `additional_path` can be set if part is not located directly in table data path (e.g. 'detached/')
-    std::optional<String> getFullRelativePathForPart(const String & part_name, const String & additional_path = "") const;
+    /// Looks for detached part on all disks,
+    /// returns pointer to the disk where part is found or nullptr (the second function throws an exception)
+    DiskPtr tryGetDiskForDetachedPart(const String & part_name) const;
+    DiskPtr getDiskForDetachedPart(const String & part_name) const;
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override;
-
-    using PathsWithDisks = std::vector<PathWithDisk>;
-    PathsWithDisks getRelativeDataPathsWithDisks() const;
 
     /// Reserves space at least 1MB.
     ReservationPtr reserveSpace(UInt64 expected_size) const;
