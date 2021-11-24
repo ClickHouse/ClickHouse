@@ -129,6 +129,8 @@ public:
         }
     }
 
+    bool isFinalized() const { return finalized; }
+
 protected:
     virtual void finalizeImpl()
     {

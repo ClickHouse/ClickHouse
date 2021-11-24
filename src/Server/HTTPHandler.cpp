@@ -929,15 +929,25 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             request_credentials.reset(); // ...so that the next requests on the connection have to always start afresh in case of exceptions.
         });
 
-        tryLogCurrentException(log);
+        /// Check if exception was thrown in used_output.finalize().
+        /// In this case used_output can be in invalid state and we
+        /// cannot write in it anymore. So, just log this exception.
+        if (used_output.isFinalized())
+        {
+            tryLogCurrentException(log, "Cannot flush data to client");
+        }
+        else
+        {
+            tryLogCurrentException(log);
 
-        /** If exception is received from remote server, then stack trace is embedded in message.
-          * If exception is thrown on local server, then stack trace is in separate field.
-          */
-        std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
-        int exception_code = getCurrentExceptionCode();
+            /** If exception is received from remote server, then stack trace is embedded in message.
+              * If exception is thrown on local server, then stack trace is in separate field.
+              */
+            std::string exception_message = getCurrentExceptionMessage(with_stacktrace, true);
+            int exception_code = getCurrentExceptionCode();
 
-        trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
+            trySendExceptionToClient(exception_message, exception_code, request, response, used_output);
+        }
     }
 
     used_output.finalize();
