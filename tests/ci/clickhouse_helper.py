@@ -13,8 +13,8 @@ class ClickHouseHelper:
 
         if url is None:
             url = get_parameter_from_ssm("clickhouse-test-stat-url")
-            url2 = get_parameter_from_ssm("clickhouse-test-stat-url2")
-            auth2 = {
+            self.url2 = get_parameter_from_ssm("clickhouse-test-stat-url2")
+            self.auth2 = {
                 'X-ClickHouse-User': get_parameter_from_ssm("clickhouse-test-stat-login2"),
                 'X-ClickHouse-Key': ''
             }
