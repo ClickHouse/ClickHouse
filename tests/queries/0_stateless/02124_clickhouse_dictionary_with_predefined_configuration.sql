@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP DICTIONARY IF EXISTS dict;
 DROP TABLE IF EXISTS s;
 CREATE TABLE s
