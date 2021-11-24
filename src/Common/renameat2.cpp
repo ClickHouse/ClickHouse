@@ -6,6 +6,20 @@
 
 namespace fs = std::filesystem;
 
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int ATOMIC_RENAME_FAIL;
+    extern const int SYSTEM_ERROR;
+    extern const int UNSUPPORTED_METHOD;
+    extern const int FILE_ALREADY_EXISTS;
+}
+
+}
+
 
 #if defined(__linux__)
 
@@ -40,15 +54,6 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-    extern const int ATOMIC_RENAME_FAIL;
-    extern const int SYSTEM_ERROR;
-    extern const int UNSUPPORTED_METHOD;
-    extern const int FILE_ALREADY_EXISTS;
-}
 
 static bool supportsRenameat2Impl()
 {
