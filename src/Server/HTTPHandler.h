@@ -69,7 +69,10 @@ private:
 
         inline void finalize()
         {
+            if (finalized)
+                return;
             finalized = true;
+
             if (out_maybe_delayed_and_compressed)
                 out_maybe_delayed_and_compressed->finalize();
             if (out_maybe_compressed)
