@@ -174,7 +174,7 @@ struct ContextSharedPart
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
 
 #if USE_HIVE
-    mutable std::map<String, HMSClientPtr> hive_metastore_clients; /// Map for hive metastore clients
+    mutable std::map<String, HiveMetastoreClientPtr> hive_metastore_clients; /// Map for hive metastore clients
 #endif
 
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
@@ -1830,7 +1830,7 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 }
 
 #if USE_HIVE
-HMSClientPtr Context::getHMSClient(const String & name) const
+HiveMetastoreClientPtr Context::getHiveMetastoreClient(const String & name) const
 {
     using namespace apache::thrift;
     using namespace apache::thrift::protocol;
@@ -1865,7 +1865,7 @@ HMSClientPtr Context::getHMSClient(const String & name) const
 
         if (it == shared->hive_metastore_clients.end())
         {
-            HMSClientPtr hms_client = std::make_shared<HMSClient>(std::move(client), shared_from_this());
+            HiveMetastoreClientPtr hms_client = std::make_shared<HiveMetastoreClient>(std::move(client), shared_from_this());
             shared->hive_metastore_clients[name] = hms_client;
             return hms_client;
         }

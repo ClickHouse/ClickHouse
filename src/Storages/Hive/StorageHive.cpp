@@ -66,7 +66,7 @@ class HiveSource : public SourceWithProgress, WithContext
 public:
     struct SourcesInfo
     {
-        HMSClientPtr hms_client;
+        HiveMetastoreClientPtr hms_client;
         std::string database;
         std::string table_name;
         HiveFiles hive_files;
@@ -254,7 +254,7 @@ StorageHive::StorageHive(
     storage_metadata.setComment(comment_);
     setInMemoryMetadata(storage_metadata);
 
-    auto hms_client = getContext()->getHMSClient(hms_url);
+    auto hms_client = getContext()->getHiveMetastoreClient(hms_url);
     auto table_meta = hms_client->getTableMeta(hive_database, hive_table);
 
     hdfs_namenode_url = getNameNodeUrl(table_meta->getTable()->sd.location);
@@ -387,7 +387,7 @@ Pipe StorageHive::read(
 {
     HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, context_->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
-    auto hms_client = context_->getHMSClient(hms_url);
+    auto hms_client = context_->getHiveMetastoreClient(hms_url);
     auto table_meta_cntrl = hms_client->getTableMeta(hive_database, hive_table);
 
     // List files under partition directory in HDFS
@@ -397,7 +397,7 @@ Pipe StorageHive::read(
     HiveFiles hive_files; // hive files to read
     std::mutex hive_files_mutex; // Mutext to protect hive_files, which maybe appended in multiple threads
 
-    auto append_hive_files = [&](const HMSClient::FileInfo & hfile, const FieldVector & fields)
+    auto append_hive_files = [&](const HiveMetastoreClient::FileInfo & hfile, const FieldVector & fields)
     {
         String filename = getBaseName(hfile.path);
 

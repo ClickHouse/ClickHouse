@@ -20,7 +20,7 @@ public:
 
     ~SnappyWriteBuffer() override;
 
-    void finalize() override { finish(); }
+    void finalizeImpl() override { finish(); }
 
 private:
     void nextImpl() override;
