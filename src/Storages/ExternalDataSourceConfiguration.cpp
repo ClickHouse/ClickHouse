@@ -380,15 +380,12 @@ bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & set
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection->name());
 
         SettingsChanges config_settings;
-        for (auto & setting : settings.all())
+        for (const auto & setting : settings.all())
         {
             const auto & setting_name = setting.getName();
             auto setting_value = config.getString(config_prefix + '.' + setting_name, "");
             if (!setting_value.empty())
-            {
-                std::cerr << setting_name << " " << setting_value << "\n";
                 config_settings.emplace_back(setting_name, setting_value);
-            }
         }
 
         /// Check key-value arguments.
