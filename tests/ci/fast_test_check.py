@@ -5,6 +5,8 @@ import subprocess
 import os
 import json
 import csv
+import sys
+
 from github import Github
 from pr_info import PRInfo
 from s3_helper import S3Helper
@@ -14,7 +16,6 @@ from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
-import sys
 
 NAME = 'Fast test (actions)'
 
