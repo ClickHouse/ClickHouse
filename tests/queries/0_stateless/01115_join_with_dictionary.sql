@@ -1,5 +1,10 @@
 SET send_logs_level = 'fatal';
 
+DROP DATABASE IF EXISTS db_01115;
+CREATE DATABASE db_01115;
+
+USE db_01115;
+
 DROP DICTIONARY IF EXISTS dict_flat;
 DROP DICTIONARY IF EXISTS dict_hashed;
 DROP DICTIONARY IF EXISTS dict_complex_cache;
@@ -9,19 +14,19 @@ INSERT INTO t1 SELECT number, number, toString(number), number from numbers(4);
 
 CREATE DICTIONARY dict_flat (key UInt64 DEFAULT 0, a UInt8 DEFAULT 42, b String DEFAULT 'x', c Float64 DEFAULT 42.0)
 PRIMARY KEY key
-SOURCE(CLICKHOUSE(TABLE 't1'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 't1' PASSWORD '' DB 'db_01115'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(FLAT());
 
-CREATE DICTIONARY dict_hashed (key UInt64 DEFAULT 0, a UInt8 DEFAULT 42, b String DEFAULT 'x', c Float64 DEFAULT 42.0)
+CREATE DICTIONARY db_01115.dict_hashed (key UInt64 DEFAULT 0, a UInt8 DEFAULT 42, b String DEFAULT 'x', c Float64 DEFAULT 42.0)
 PRIMARY KEY key
-SOURCE(CLICKHOUSE(TABLE 't1'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 't1' DB 'db_01115'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(HASHED());
 
 CREATE DICTIONARY dict_complex_cache (key UInt64 DEFAULT 0, a UInt8 DEFAULT 42, b String DEFAULT 'x', c Float64 DEFAULT 42.0)
 PRIMARY KEY key, b
-SOURCE(CLICKHOUSE(TABLE 't1'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 't1' DB 'db_01115'))
 LIFETIME(MIN 1 MAX 10)
 LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 1));
 
@@ -33,8 +38,6 @@ SELECT 'flat: left';
 SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 LEFT JOIN dict_flat d USING(key) ORDER BY key;
 SELECT 'flat: any left';
 SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 ANY LEFT JOIN dict_flat d USING(key) ORDER BY key;
-SELECT 'flat: any left + any_join_distinct_right_table_keys'; -- falls back to regular join
-SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 ANY LEFT JOIN dict_flat d USING(key) ORDER BY key SETTINGS any_join_distinct_right_table_keys = '1';
 SELECT 'flat: semi left';
 SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 SEMI JOIN dict_flat d USING(key) ORDER BY key;
 SELECT 'flat: anti left';
@@ -43,8 +46,6 @@ SELECT 'flat: inner';
 SELECT * FROM (SELECT number AS key FROM numbers(2)) s1 JOIN dict_flat d USING(key);
 SELECT 'flat: inner on';
 SELECT * FROM (SELECT number AS k FROM numbers(100)) s1 JOIN dict_flat d ON k = key ORDER BY k;
-SELECT 'flat: inner or'; -- it's not a join over dictionary, because it doen't suppoert multiple keys, but of falls back to regular join
-SELECT * FROM (SELECT if(number % 2 = 0, number, number * 1000) AS k FROM numbers(100)) s1 JOIN dict_flat d ON k = key OR k == 1000 * key ORDER BY key;
 
 SET join_use_nulls = 1;
 
@@ -101,8 +102,10 @@ SELECT * FROM (SELECT number AS key FROM numbers(5)) s1 ANY LEFT JOIN dict_flat 
 SELECT '-';
 SELECT * FROM (SELECT number AS key FROM numbers(2)) s1 RIGHT JOIN dict_flat d ON s1.key = d.key ORDER BY d.key;
 
+
 DROP DICTIONARY dict_flat;
 DROP DICTIONARY dict_hashed;
 DROP DICTIONARY dict_complex_cache;
 
 DROP TABLE t1;
+DROP DATABASE IF EXISTS db_01115;

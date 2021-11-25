@@ -1,11 +1,15 @@
 import testflows.settings as settings
+
 from testflows.core import *
+
+from multiprocessing.dummy import Pool
+from multiprocessing import TimeoutError as PoolTaskTimeoutError
 
 @TestStep(Given)
 def instrument_clickhouse_server_log(self, node=None, test=None,
         clickhouse_server_log="/var/log/clickhouse-server/clickhouse-server.log"):
     """Instrument clickhouse-server.log for the current test (default)
-    by adding start and end messages that include test name to log
+    by adding start and end messages that include test name to log 
     of the specified node. If we are in the debug mode and the test
     fails then dump the messages from the log for this test.
     """
@@ -25,7 +29,7 @@ def instrument_clickhouse_server_log(self, node=None, test=None,
         yield
 
     finally:
-        if test.terminating is True:
+        if top().terminating is True:
             return
 
         with Finally("adding test name end message to the clickhouse-server.log", flags=TE):
@@ -40,3 +44,65 @@ def instrument_clickhouse_server_log(self, node=None, test=None,
                 with Then("dumping clickhouse-server.log for this test"):
                     node.command(f"tail -c +{start_logsize} {clickhouse_server_log}"
                     	f" | head -c {int(end_logsize) - int(start_logsize)}")
+
+def join(tasks, timeout=None, polling=5):
+    """Join all parallel tests.
+    """
+    exc = None
+
+    for task in tasks:
+        task._join_timeout = timeout
+
+    while tasks:
+        try:
+            try:
+                tasks[0].get(timeout=polling)
+                tasks.pop(0)
+
+            except PoolTaskTimeoutError as e:
+                task = tasks.pop(0)
+                if task._join_timeout is not None:
+                    task._join_timeout -= polling
+                    if task._join_timeout <= 0:
+                        raise
+                tasks.append(task)
+                continue
+
+        except KeyboardInterrupt as e:
+            top().terminating = True
+            raise
+
+        except Exception as e:
+            tasks.pop(0)
+            if exc is None:
+                exc = e
+            top().terminating = True
+
+    if exc is not None:
+        raise exc
+
+def start(pool, tasks, scenario, kwargs=None):
+    """Start parallel test.
+    """
+    if kwargs is None:
+        kwargs = {}
+
+    task = pool.apply_async(scenario, [], kwargs)
+    tasks.append(task)
+
+    return task
+
+def run_scenario(pool, tasks, scenario, kwargs=None):
+    if kwargs is None:
+        kwargs = {}
+
+    _top = top()
+    def _scenario_wrapper(**kwargs):
+        if _top.terminating:
+            return
+        return scenario(**kwargs)
+
+    if current().context.parallel:
+        start(pool, tasks, _scenario_wrapper, kwargs)
+    else:
+        scenario(**kwargs)

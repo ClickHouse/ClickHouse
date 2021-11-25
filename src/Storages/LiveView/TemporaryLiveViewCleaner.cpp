@@ -24,8 +24,8 @@ namespace
         {
             /// We create and execute `drop` query for this table
             auto drop_query = std::make_shared<ASTDropQuery>();
-            drop_query->setDatabase(storage_id.database_name);
-            drop_query->setTable(storage_id.table_name);
+            drop_query->database = storage_id.database_name;
+            drop_query->table = storage_id.table_name;
             drop_query->kind = ASTDropQuery::Kind::Drop;
             ASTPtr ast_drop_query = drop_query;
             InterpreterDropQuery drop_interpreter(ast_drop_query, context);

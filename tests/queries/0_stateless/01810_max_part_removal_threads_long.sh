@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long
 
 # NOTE: this done as not .sql since we need to Ordinary database
 # (to account threads in query_log for DROP TABLE query)

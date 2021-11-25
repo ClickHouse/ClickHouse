@@ -1,9 +1,5 @@
 select * from numbers(100) settings max_result_rows = 1; -- { serverError 396 }
 select * from numbers(100) FORMAT JSON settings max_result_rows = 1; -- { serverError 396 }
-select * from numbers(100) FORMAT TSVWithNamesAndTypes settings max_result_rows = 1; -- { serverError 396 }
-select * from numbers(100) FORMAT CSVWithNamesAndTypes settings max_result_rows = 1; -- { serverError 396 }
-select * from numbers(100) FORMAT JSONCompactEachRowWithNamesAndTypes settings max_result_rows = 1; -- { serverError 396 }
-select * from numbers(100) FORMAT XML settings max_result_rows = 1; -- { serverError 396 }
 
 SET max_result_rows = 1;
 select * from numbers(10); -- { serverError 396 }

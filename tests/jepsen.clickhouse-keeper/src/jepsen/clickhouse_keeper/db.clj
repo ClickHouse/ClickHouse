@@ -68,7 +68,6 @@
   (do
     (c/exec :mkdir :-p common-prefix)
     (c/exec :mkdir :-p data-dir)
-    (c/exec :mkdir :-p coordination-data-dir)
     (c/exec :mkdir :-p logs-dir)
     (c/exec :mkdir :-p configs-dir)
     (c/exec :mkdir :-p sub-configs-dir)

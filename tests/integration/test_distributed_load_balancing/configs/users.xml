@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <profiles>
         <default>
             <use_hedged_requests>0</use_hedged_requests>
         </default>
     </profiles>
-</clickhouse>
+</yandex>

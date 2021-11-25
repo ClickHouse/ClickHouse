@@ -1,9 +1,9 @@
 #pragma once
 
 #include <Core/NamesAndTypes.h>
-#include <Common/HashTable/HashMap.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <sparsehash/dense_hash_map>
 
 namespace DB
 {
@@ -30,10 +30,8 @@ public:
         const ValueSizeMap & avg_value_size_hints_ = ValueSizeMap{});
 
     /// Return the number of rows has been read or zero if there is no columns to read.
-    /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark.
-    /// current_task_last mark is needed for asynchronous reading (mainly from remote fs).
-    virtual size_t readRows(size_t from_mark, size_t current_task_last_mark,
-                            bool continue_reading, size_t max_rows_to_read, Columns & res_columns) = 0;
+    /// If continue_reading is true, continue reading from last state, otherwise seek to from_mark
+    virtual size_t readRows(size_t from_mark, bool continue_reading, size_t max_rows_to_read, Columns & res_columns) = 0;
 
     virtual bool canReadIncompleteGranules() const = 0;
 
@@ -96,9 +94,7 @@ private:
     MergeTreeData::AlterConversions alter_conversions;
 
     /// Actual data type of columns in part
-
-    using ColumnsFromPart = HashMapWithSavedHash<StringRef, const DataTypePtr *, StringRefHash>;
-    ColumnsFromPart columns_from_part;
+    google::dense_hash_map<StringRef, const DataTypePtr *, StringRefHash> columns_from_part;
 };
 
 }

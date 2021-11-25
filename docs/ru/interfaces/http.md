@@ -15,7 +15,7 @@ $ curl 'http://localhost:8123/'
 Ok.
 ```
 
-Веб-интерфейс доступен по адресу: `http://localhost:8123/play`.
+Веб-интерфейс доступен по адресу: `http://localhost:8123/play`. 
 
 ![Веб-интерфейс](../images/play.png)
 
@@ -162,14 +162,14 @@ $ echo 'DROP TABLE t' | curl 'http://localhost:8123/' --data-binary @-
 
 Если вы указали `compress=1` в URL, то сервер сжимает данные, которые он отправляет. Если вы указали `decompress=1` в URL, сервер распаковывает те данные, которые вы передаёте методом `POST`.
 
-Также можно использовать [сжатие HTTP](https://en.wikipedia.org/wiki/HTTP_compression). ClickHouse поддерживает следующие [методы сжатия](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens):
+Также можно использовать [сжатие HTTP](https://en.wikipedia.org/wiki/HTTP_compression). ClickHouse поддерживает следующие [методы сжатия](https://en.wikipedia.org/wiki/HTTP_compression#Content-Encoding_tokens): 
 
 - `gzip`
 - `br`
 - `deflate`
 - `xz`
 
-Для отправки сжатого запроса `POST` добавьте заголовок `Content-Encoding: compression_method`.
+Для отправки сжатого запроса `POST` добавьте заголовок `Content-Encoding: compression_method`. 
 Чтобы ClickHouse сжимал ответ, разрешите сжатие настройкой [enable_http_compression](../operations/settings/settings.md#settings-enable_http_compression) и добавьте заголовок `Accept-Encoding: compression_method`. Уровень сжатия данных для всех методов сжатия можно задать с помощью настройки [http_zlib_compression_level](../operations/settings/settings.md#settings-http_zlib_compression_level).
 
 !!! note "Примечание"
@@ -403,13 +403,13 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
  -  `handler` содержит основную часть обработчика. Сейчас `handler` может настраивать `type`, `status`, `content_type`, `response_content`, `query`, `query_param_name`.
  `type` на данный момент поддерживает три типа: [predefined_query_handler](#predefined_query_handler), [dynamic_query_handler](#dynamic_query_handler), [static](#static).
-
+ 
     -   `query` — используется с типом `predefined_query_handler`, выполняет запрос при вызове обработчика.
-
+ 
     -   `query_param_name` — используется с типом `dynamic_query_handler`, извлекает и выполняет значение, соответствующее значению `query_param_name` в параметрах HTTP-запроса.
-
+ 
     -   `status` — используется с типом `static`, возвращает код состояния ответа.
-
+ 
     -   `content_type` — используется с типом `static`, возвращает [content-type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type).
 
     -   `response_content` — используется с типом`static`, содержимое ответа, отправленное клиенту, при использовании префикса ‘file://’ or ‘config://’, находит содержимое из файла или конфигурации, отправленного клиенту.
@@ -430,7 +430,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 <http_handlers>
     <rule>
         <url><![CDATA[/query_param_with_url/\w+/(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></url>
-        <methods>GET</methods>
+        <method>GET</method>
         <headers>
             <XXX>TEST_HEADER_VALUE</XXX>
             <PARAMS_XXX><![CDATA[(?P<name_1>[^/]+)(/(?P<name_2>[^/]+))?]]></PARAMS_XXX>
