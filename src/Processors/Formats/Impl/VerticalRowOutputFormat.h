@@ -37,7 +37,7 @@ private:
 
     void writeValue(const IColumn & column, const ISerialization & serialization, size_t row_num) const;
 
-    void onFirstRowNumberUpdate() override { row_number = getFirstRowNumber(); }
+    void onRowsReadBeforeUpdate() override { row_number = getRowsReadBefore(); }
 
     /// For totals and extremes.
     void writeSpecialRow(const Columns & columns, size_t row_num, const char * title);

@@ -106,17 +106,18 @@ protected:
 
     /// Methods-helpers for parallel formatting.
 
-    /// Set the real number of first row in the first chunk of data.
-    void setFirstRowNumber(size_t first_row_number_)
+    /// Set the number of rows that was already read in
+    /// parallel formatting before creating this formatter.
+    void setRowsReadBefore(size_t first_row_number_)
     {
-        first_row_number = first_row_number_;
-        onFirstRowNumberUpdate();
+        rows_read_before = first_row_number_;
+        onRowsReadBeforeUpdate();
     }
 
-    size_t getFirstRowNumber() const { return first_row_number; }
+    size_t getRowsReadBefore() const { return rows_read_before; }
 
-    /// Update state according to new first_row_number.
-    virtual void onFirstRowNumberUpdate() {}
+    /// Update state according to new rows_read_before.
+    virtual void onRowsReadBeforeUpdate() {}
 
     /// Some formats outputs some statistics after the data,
     /// in parallel formatting we collect these statistics outside the
@@ -161,7 +162,7 @@ protected:
     RowsBeforeLimitCounterPtr rows_before_limit_counter;
 
 private:
-    size_t first_row_number = 0;
+    size_t rows_read_before = 0;
     std::shared_ptr<Statistics> statistics = nullptr;
     bool are_totals_written = false;
 

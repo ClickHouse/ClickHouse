@@ -174,7 +174,7 @@ namespace DB
             unit.segment.resize(0);
 
             auto formatter = internal_formatter_creator(out_buffer);
-            formatter->setFirstRowNumber(first_row_num);
+            formatter->setRowsReadBefore(first_row_num);
 
             switch (unit.type)
             {

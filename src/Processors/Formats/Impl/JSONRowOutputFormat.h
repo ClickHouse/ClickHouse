@@ -70,7 +70,7 @@ protected:
     void writeRowsBeforeLimitAtLeast();
     void writeStatistics();
 
-    void onFirstRowNumberUpdate() override { row_count = getFirstRowNumber(); }
+    void onRowsReadBeforeUpdate() override { row_count = getRowsReadBefore(); }
 
     std::unique_ptr<WriteBuffer> validating_ostr;    /// Validates UTF-8 sequences, replaces bad sequences with replacement character.
     WriteBuffer * ostr;

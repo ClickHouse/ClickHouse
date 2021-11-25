@@ -40,7 +40,7 @@ protected:
     virtual void write(const Chunk & chunk, PortKind port_kind);
     void writeSuffix() override;
 
-    void onFirstRowNumberUpdate() override { total_rows = getFirstRowNumber(); }
+    void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
 
     void calculateWidths(
         const Block & header, const Chunk & chunk,
