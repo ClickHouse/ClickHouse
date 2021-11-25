@@ -15,21 +15,13 @@ namespace DB
 
 class CompressedWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {
-private:
-    WriteBuffer & out;
-    CompressionCodecPtr codec;
-
-    PODArray<char> compressed_buffer;
-
-    void nextImpl() override;
-
 public:
     CompressedWriteBuffer(
         WriteBuffer & out_,
         CompressionCodecPtr codec_ = CompressionCodecFactory::instance().getDefaultCodec(),
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE);
 
-    void finalize() override;
+    ~CompressedWriteBuffer() override;
 
     /// The amount of compressed data
     size_t getCompressedBytes()
@@ -51,7 +43,13 @@ public:
         return offset();
     }
 
-    ~CompressedWriteBuffer() override;
+private:
+    void nextImpl() override;
+
+    WriteBuffer & out;
+    CompressionCodecPtr codec;
+
+    PODArray<char> compressed_buffer;
 };
 
 }

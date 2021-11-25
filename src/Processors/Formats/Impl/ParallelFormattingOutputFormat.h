@@ -11,7 +11,6 @@
 #include <Poco/Event.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
-#include <IO/WriteBufferFromArena.h>
 
 #include <deque>
 #include <atomic>
