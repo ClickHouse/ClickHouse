@@ -1,6 +1,7 @@
 #include "UserDefinedSQLFunctionVisitor.h"
 
 #include <unordered_map>
+#include <unordered_set>
 #include <stack>
 
 #include <Parsers/ASTFunction.h>
@@ -18,19 +19,16 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-void UserDefinedSQLFunctionMatcher::visit(ASTPtr & ast, Data & data)
+void UserDefinedSQLFunctionMatcher::visit(ASTPtr & ast, Data &)
 {
     auto * function = ast->as<ASTFunction>();
     if (!function)
         return;
 
-    auto result = tryToReplaceFunction(*function);
-
-    if (result)
-    {
-        ast = result;
-        visit(ast, data);
-    }
+    std::unordered_set<std::string> udf_in_replace_process;
+    auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process);
+    if (replace_result)
+        ast = replace_result;
 }
 
 bool UserDefinedSQLFunctionMatcher::needChildVisit(const ASTPtr &, const ASTPtr &)
@@ -38,8 +36,11 @@ bool UserDefinedSQLFunctionMatcher::needChildVisit(const ASTPtr &, const ASTPtr 
     return true;
 }
 
-ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & function)
+ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process)
 {
+    if (udf_in_replace_process.find(function.name) != udf_in_replace_process.end())
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Recursive function call during function user defined function call {}", function.name);
+
     auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function.name);
     if (!user_defined_function)
         return nullptr;
@@ -71,7 +72,16 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
         identifier_name_to_function_argument.emplace(identifier_name, function_argument);
     }
 
+    auto [it, _] = udf_in_replace_process.emplace(function.name);
+
     auto function_body_to_update = function_core_expression->children.at(1)->clone();
+
+    if (auto * inner_function = function_body_to_update->as<ASTFunction>())
+    {
+        auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process);
+        if (replace_result)
+            function_body_to_update = replace_result;
+    }
 
     std::stack<ASTPtr> ast_nodes_to_update;
     ast_nodes_to_update.push(function_body_to_update);
@@ -83,6 +93,13 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
 
         for (auto & child : ast_node_to_update->children)
         {
+            if (auto * inner_function = child->as<ASTFunction>())
+            {
+                auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process);
+                if (replace_result)
+                    child = replace_result;
+            }
+
             auto identifier_name_opt = tryGetIdentifierName(child);
             if (identifier_name_opt)
             {
@@ -103,6 +120,8 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
             ast_nodes_to_update.push(child);
         }
     }
+
+    udf_in_replace_process.erase(it);
 
     auto function_alias = function.tryGetAlias();
 
