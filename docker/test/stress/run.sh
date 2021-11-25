@@ -206,6 +206,8 @@ zgrep -Fa "########################################" /test_output/* > /dev/null 
 for log_file in /var/log/clickhouse-server/clickhouse-server.log*
 do
     pigz < "${log_file}" > /test_output/"$(basename ${log_file})".gz
+    # FIXME: remove once only github actions will be left
+    rm "${log_file}"
 done
 
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
