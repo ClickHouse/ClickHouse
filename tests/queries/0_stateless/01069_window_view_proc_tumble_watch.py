@@ -25,14 +25,14 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
 
     client1.send('DROP TABLE IF EXISTS test.mt')
     client1.expect(prompt)
-    client1.send('DROP TABLE IF EXISTS test.wv')
+    client1.send('DROP TABLE IF EXISTS test.wv NO DELAY')
     client1.expect(prompt)
     client1.send('DROP TABLE IF EXISTS `.inner.wv`')
     client1.expect(prompt)
 
     client1.send('CREATE TABLE test.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()')
     client1.expect(prompt)
-    client1.send("CREATE WINDOW VIEW test.wv AS SELECT count(a) AS count FROM test.mt GROUP BY TUMBLE(timestamp, INTERVAL '1' SECOND) AS wid;")
+    client1.send("CREATE WINDOW VIEW test.wv AS SELECT count(a) AS count FROM test.mt GROUP BY TUMBLE(timestamp, INTERVAL '1' SECOND, 'US/Samoa') AS wid;")
     client1.expect(prompt)
     
     client1.send('WATCH test.wv')
@@ -49,7 +49,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     if match.groups()[1]:
         client1.send(client1.command)
         client1.expect(prompt)
-    client1.send('DROP TABLE test.wv')
+    client1.send('DROP TABLE test.wv NO DELAY')
     client1.expect(prompt)
     client1.send('DROP TABLE test.mt')
     client1.expect(prompt)
