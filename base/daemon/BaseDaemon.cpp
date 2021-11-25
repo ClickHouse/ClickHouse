@@ -1,7 +1,3 @@
-#ifdef HAS_RESERVED_IDENTIFIER
-#pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
-
 #include <daemon/BaseDaemon.h>
 #include <daemon/SentryWriter.h>
 
@@ -13,28 +9,37 @@
 #if defined(__linux__)
     #include <sys/prctl.h>
 #endif
+#include <fcntl.h>
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
+#include <cxxabi.h>
 #include <unistd.h>
 
 #include <typeinfo>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 #include <memory>
-#include <base/scope_guard.h>
+#include <common/scope_guard.h>
 
+#include <Poco/Observer.h>
+#include <Poco/AutoPtr.h>
+#include <Poco/PatternFormatter.h>
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
+#include <Poco/Condition.h>
+#include <Poco/SyslogChannel.h>
+#include <Poco/DirectoryIterator.h>
 
-#include <base/logger_useful.h>
-#include <base/ErrorHandlers.h>
-#include <base/argsToConfig.h>
-#include <base/getThreadId.h>
-#include <base/coverage.h>
-#include <base/sleep.h>
+#include <common/logger_useful.h>
+#include <common/ErrorHandlers.h>
+#include <common/argsToConfig.h>
+#include <common/getThreadId.h>
+#include <common/coverage.h>
+#include <common/sleep.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
@@ -47,16 +52,16 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/SymbolIndex.h>
 #include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Elf.h>
 #include <filesystem>
 
-#include <loggers/OwnFormattingChannel.h>
-#include <loggers/OwnPatternFormatter.h>
-
-#include <Common/config_version.h>
+#if !defined(ARCADIA_BUILD)
+#   include <Common/config_version.h>
+#endif
 
 #if defined(OS_DARWIN)
 #   pragma GCC diagnostic ignored "-Wunused-macros"
@@ -254,25 +259,10 @@ private:
     Poco::Logger * log;
     BaseDaemon & daemon;
 
-    void onTerminate(std::string_view message, UInt32 thread_num) const
+    void onTerminate(const std::string & message, UInt32 thread_num) const
     {
-        size_t pos = message.find('\n');
-
         LOG_FATAL(log, "(version {}{}, {}) (from thread {}) {}",
-            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message.substr(0, pos));
-
-        /// Print trace from std::terminate exception line-by-line to make it easy for grep.
-        while (pos != std::string_view::npos)
-        {
-            ++pos;
-            size_t next_pos = message.find('\n', pos);
-            size_t size = next_pos;
-            if (next_pos != std::string_view::npos)
-                size = next_pos - pos;
-
-            LOG_FATAL(log, "{}", message.substr(pos, size));
-            pos = next_pos;
-        }
+            VERSION_STRING, VERSION_OFFICIAL, daemon.build_id_info, thread_num, message);
     }
 
     void onFault(
@@ -668,34 +658,6 @@ void BaseDaemon::initialize(Application & self)
     if ((!log_path.empty() && is_daemon) || config().has("logger.stderr"))
     {
         std::string stderr_path = config().getString("logger.stderr", log_path + "/stderr.log");
-
-        /// Check that stderr is writable before freopen(),
-        /// since freopen() will make stderr invalid on error,
-        /// and logging to stderr will be broken,
-        /// so the following code (that is used in every program) will not write anything:
-        ///
-        ///     int main(int argc, char ** argv)
-        ///     {
-        ///         try
-        ///         {
-        ///             DB::SomeApp app;
-        ///             return app.run(argc, argv);
-        ///         }
-        ///         catch (...)
-        ///         {
-        ///             std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
-        ///             return 1;
-        ///         }
-        ///     }
-        if (access(stderr_path.c_str(), W_OK))
-        {
-            int fd;
-            if ((fd = creat(stderr_path.c_str(), 0600)) == -1 && errno != EEXIST)
-                throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
-            if (fd != -1)
-                ::close(fd);
-        }
-
         if (!freopen(stderr_path.c_str(), "a+", stderr))
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
@@ -992,14 +954,6 @@ void BaseDaemon::setupWatchdog()
             const char * new_process_name = "clickhouse-watchdog";
             memset(argv0, 0, original_process_name.size());
             memcpy(argv0, new_process_name, std::min(strlen(new_process_name), original_process_name.size()));
-        }
-
-        /// If streaming compression of logs is used then we write watchdog logs to cerr
-        if (config().getRawString("logger.stream_compress", "false") == "true")
-        {
-            Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
-            Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
-            logger().setChannel(log);
         }
 
         logger().information(fmt::format("Will watch for the process with pid {}", pid));

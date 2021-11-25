@@ -22,6 +22,8 @@ IRowOutputFormat::IRowOutputFormat(const Block & header, WriteBuffer & out_, con
 
 void IRowOutputFormat::consume(DB::Chunk chunk)
 {
+    writePrefixIfNot();
+
     auto num_rows = chunk.getNumRows();
     const auto & columns = chunk.getColumns();
 
@@ -41,6 +43,7 @@ void IRowOutputFormat::consume(DB::Chunk chunk)
 
 void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
 {
+    writePrefixIfNot();
     writeSuffixIfNot();
 
     auto num_rows = chunk.getNumRows();
@@ -56,6 +59,7 @@ void IRowOutputFormat::consumeTotals(DB::Chunk chunk)
 
 void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
 {
+    writePrefixIfNot();
     writeSuffixIfNot();
 
     auto num_rows = chunk.getNumRows();
@@ -70,8 +74,9 @@ void IRowOutputFormat::consumeExtremes(DB::Chunk chunk)
     writeAfterExtremes();
 }
 
-void IRowOutputFormat::finalizeImpl()
+void IRowOutputFormat::finalize()
 {
+    writePrefixIfNot();
     writeSuffixIfNot();
     writeLastSuffix();
 }

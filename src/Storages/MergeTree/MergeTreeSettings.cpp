@@ -75,30 +75,28 @@ void MergeTreeSettings::loadFromQuery(ASTStorage & storage_def)
 
 void MergeTreeSettings::sanityCheck(const Settings & query_settings) const
 {
-    if (number_of_free_entries_in_pool_to_execute_mutation >
-        query_settings.background_pool_size * query_settings.background_merges_mutations_concurrency_ratio)
+    if (number_of_free_entries_in_pool_to_execute_mutation > query_settings.background_pool_size)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_execute_mutation' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
             " or the value can be specified per table in SETTINGS section of CREATE TABLE query)"
-            " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
+            " is greater than the value of 'background_pool_size'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because mutations cannot work with these settings.",
             number_of_free_entries_in_pool_to_execute_mutation,
-            query_settings.background_pool_size * query_settings.background_merges_mutations_concurrency_ratio);
+            query_settings.background_pool_size);
     }
 
-    if (number_of_free_entries_in_pool_to_lower_max_size_of_merge >
-        query_settings.background_pool_size * query_settings.background_merges_mutations_concurrency_ratio)
+    if (number_of_free_entries_in_pool_to_lower_max_size_of_merge > query_settings.background_pool_size)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of 'number_of_free_entries_in_pool_to_lower_max_size_of_merge' setting"
             " ({}) (default values are defined in <merge_tree> section of config.xml"
             " or the value can be specified per table in SETTINGS section of CREATE TABLE query)"
-            " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
+            " is greater than the value of 'background_pool_size'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
             number_of_free_entries_in_pool_to_lower_max_size_of_merge,
-            query_settings.background_pool_size * query_settings.background_merges_mutations_concurrency_ratio);
+            query_settings.background_pool_size);
     }
 
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.

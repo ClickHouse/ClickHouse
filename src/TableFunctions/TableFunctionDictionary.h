@@ -6,7 +6,11 @@ namespace DB
 {
 class Context;
 
-/// dictionary(dictionary_name) - creates a temporary storage from dictionary
+/* file(path, format, structure) - creates a temporary storage from file
+ *
+ * The file must be in the clickhouse data directory.
+ * The relative path begins with the clickhouse data directory.
+ */
 class TableFunctionDictionary final : public ITableFunction
 {
 public:

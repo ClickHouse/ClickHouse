@@ -303,4 +303,4 @@ select * FROM UAct
 └─────────────────────┴───────────┴──────────┴──────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->

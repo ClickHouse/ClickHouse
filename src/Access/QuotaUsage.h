@@ -1,8 +1,7 @@
 #pragma once
 
-#include <Access/Common/QuotaDefs.h>
+#include <Access/Quota.h>
 #include <chrono>
-#include <optional>
 
 
 namespace DB
@@ -10,10 +9,14 @@ namespace DB
 /// The information about a quota consumption.
 struct QuotaUsage
 {
+    using ResourceType = Quota::ResourceType;
+    using ResourceAmount = Quota::ResourceAmount;
+    static constexpr auto MAX_RESOURCE_TYPE = Quota::MAX_RESOURCE_TYPE;
+
     struct Interval
     {
-        QuotaValue used[static_cast<size_t>(QuotaType::MAX)];
-        std::optional<QuotaValue> max[static_cast<size_t>(QuotaType::MAX)];
+        ResourceAmount used[MAX_RESOURCE_TYPE];
+        std::optional<ResourceAmount> max[MAX_RESOURCE_TYPE];
         std::chrono::seconds duration = std::chrono::seconds::zero();
         bool randomize_interval = false;
         std::chrono::system_clock::time_point end_of_interval;
