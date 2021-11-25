@@ -152,7 +152,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 compatibility_check.py 0
+          cd $REPO_COPY/tests/ci && python3 compatibility_check.py
       - name: Cleanup
         if: always()
         run: |
@@ -186,11 +186,11 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-##########################################################################################
-##################################### ORDINARY BUILDS ####################################
-##########################################################################################
+#########################################################################################
+#################################### ORDINARY BUILDS ####################################
+#########################################################################################
   BuilderDebRelease:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -229,7 +229,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   BuilderBinRelease:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -250,7 +250,7 @@ jobs:
           REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH: ${{runner.temp}}/../ccaches
           CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NUMBER: 9
+          BUILD_NUMBER: 8
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -268,7 +268,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   BuilderDebAsan:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -307,7 +307,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   BuilderDebUBsan:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -346,7 +346,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   BuilderDebTsan:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -385,7 +385,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   BuilderDebMsan:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -424,7 +424,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   BuilderDebDebug:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -466,7 +466,7 @@ jobs:
 ##################################### SPECIAL BUILDS #####################################
 ##########################################################################################
   BuilderDebSplitted:
-    needs: DockerHubPush
+    needs: [DockerHubPush, FastTest]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
@@ -604,7 +604,9 @@ jobs:
           sudo rm -fr $TEMP_PATH
   FunctionalStatelessTestTsan:
     needs: [BuilderDebTsan]
-    runs-on: [self-hosted, func-tester]
+    # tests can consume more than 60GB of memory,
+    # so use bigger server
+    runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1210,38 +1212,124 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-#  IntegrationTestsAsan:
-#    needs: [BuilderDebAsan]
-#    runs-on: [self-hosted, stress-tester]
-#    steps:
-#      - name: Download json reports
-#        uses: actions/download-artifact@v2
-#        with:
-#          path: ${{runner.temp}}/reports_dir
-#      - name: Check out repository code
-#        uses: actions/checkout@v2
-#      - name: Integration test
-#        env:
-#          TEMP_PATH: ${{runner.temp}}/integration_tests_asan
-#          REPORTS_PATH: ${{runner.temp}}/reports_dir
-#          CHECK_NAME: 'Integration tests (asan, actions)'
-#          REPO_COPY: ${{runner.temp}}/integration_tests_asan/ClickHouse
-#        run: |
-#          sudo rm -fr $TEMP_PATH
-#          mkdir -p $TEMP_PATH
-#          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-#          cd $REPO_COPY/tests/ci
-#          python3 integration_test_check.py "$CHECK_NAME"
-#      - name: Cleanup
-#        if: always()
-#        run: |
-#          docker kill $(docker ps -q) ||:
-#          docker rm -f $(docker ps -a -q) ||:
-#          sudo rm -fr $TEMP_PATH
-
-##############################################################################################
-##################################### UNIT TESTS #############################################
-##############################################################################################
+#############################################################################################
+############################# INTEGRATION TESTS #############################################
+#############################################################################################
+  IntegrationTestsAsan:
+    needs: [BuilderDebAsan, FunctionalStatelessTestAsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_asan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (asan, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_asan/ClickHouse
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsTsan:
+    needs: [BuilderDebTsan, FunctionalStatelessTestTsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_tsan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (thread, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_tsan/ClickHouse
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsRelease:
+    needs: [BuilderDebRelease, FunctionalStatelessTestRelease]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_release
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (release, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_release/ClickHouse
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsFlakyCheck:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_asan_flaky_check
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests flaky check (asan, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_asan_flaky_check/ClickHouse
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+#############################################################################################
+#################################### UNIT TESTS #############################################
+#############################################################################################
   UnitTestsAsan:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, func-tester]
@@ -1368,7 +1456,7 @@ jobs:
         env:
           TEMP_PATH: ${{runner.temp}}/unit_tests_ubsan
           REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Unit tests (msan, actions)'
+          CHECK_NAME: 'Unit tests (ubsan, actions)'
           REPO_COPY: ${{runner.temp}}/unit_tests_ubsan/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
@@ -1412,6 +1500,9 @@ jobs:
       - ASTFuzzerTestTsan
       - ASTFuzzerTestMSan
       - ASTFuzzerTestUBSan
+      - IntegrationTestsAsan
+      - IntegrationTestsRelease
+      - IntegrationTestsTsan
       - PVSCheck
       - UnitTestsAsan
       - UnitTestsTsan
@@ -1420,6 +1511,7 @@ jobs:
       - UnitTestsReleaseClang
       - SplitBuildSmokeTest
       - CompatibilityCheck
+      - IntegrationTestsFlakyCheck
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
