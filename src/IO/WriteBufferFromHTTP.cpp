@@ -1,6 +1,6 @@
 #include <IO/WriteBufferFromHTTP.h>
 
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -20,7 +20,7 @@ WriteBufferFromHTTP::WriteBufferFromHTTP(
     ostr = &session->sendRequest(request);
 }
 
-void WriteBufferFromHTTP::finalizeImpl()
+void WriteBufferFromHTTP::finalize()
 {
     receiveResponse(*session, request, response, false);
     /// TODO: Response body is ignored.

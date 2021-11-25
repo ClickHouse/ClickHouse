@@ -22,7 +22,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageS3.h>
 #include <Storages/StorageS3Settings.h>
-#include <Storages/PartitionedSink.h>
 
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
@@ -31,12 +30,11 @@
 
 #include <Formats/FormatFactory.h>
 
+#include <DataStreams/IBlockOutputStream.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <QueryPipeline/narrowBlockInputStreams.h>
+#include <DataStreams/narrowBlockInputStreams.h>
 
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 #include <DataTypes/DataTypeString.h>
@@ -53,7 +51,8 @@
 
 #include <Processors/Sources/SourceWithProgress.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <Processors/Pipe.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <filesystem>
 
@@ -75,10 +74,6 @@ namespace ErrorCodes
     extern const int S3_ERROR;
     extern const int UNEXPECTED_EXPRESSION;
 }
-
-class IOutputFormat;
-using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
-
 class StorageS3Source::DisclosedGlobIterator::Impl
 {
 
@@ -235,21 +230,20 @@ bool StorageS3Source::initialize()
     file_path = fs::path(bucket) / current_key;
 
     read_buf = wrapReadBufferWithCompressionMethod(
-        std::make_unique<ReadBufferFromS3>(client, bucket, current_key, max_single_read_retries, getContext()->getReadSettings()),
+        std::make_unique<ReadBufferFromS3>(client, bucket, current_key, max_single_read_retries, DBMS_DEFAULT_BUFFER_SIZE),
         chooseCompressionMethod(current_key, compression_hint));
-    auto input_format = getContext()->getInputFormat(format, *read_buf, sample_block, max_block_size, format_settings);
-    QueryPipelineBuilder builder;
-    builder.init(Pipe(input_format));
+    auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, getContext(), max_block_size, format_settings);
+    pipeline = std::make_unique<QueryPipeline>();
+    pipeline->init(Pipe(input_format));
 
     if (columns_desc.hasDefaults())
     {
-        builder.addSimpleTransform([&](const Block & header)
+        pipeline->addSimpleTransform([&](const Block & header)
         {
             return std::make_shared<AddingDefaultsTransform>(header, columns_desc, *input_format, getContext());
         });
     }
 
-    pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
     reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
 
     initialized = false;
@@ -314,21 +308,26 @@ public:
     {
         write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromS3>(client, bucket, key, min_upload_part_size, max_single_part_upload_size), compression_method, 3);
-        writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context, {}, format_settings);
+        writer = FormatFactory::instance().getOutputStreamParallelIfPossible(format, *write_buf, sample_block, context, {}, format_settings);
     }
 
     String getName() const override { return "StorageS3Sink"; }
 
     void consume(Chunk chunk) override
     {
-        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+        if (is_first_chunk)
+        {
+            writer->writePrefix();
+            is_first_chunk = false;
+        }
+        writer->write(getPort().getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
     void onFinish() override
     {
         try
         {
-            writer->finalize();
+            writer->writeSuffix();
             writer->flush();
             write_buf->finalize();
         }
@@ -344,11 +343,12 @@ private:
     Block sample_block;
     std::optional<FormatSettings> format_settings;
     std::unique_ptr<WriteBuffer> write_buf;
-    OutputFormatPtr writer;
+    BlockOutputStreamPtr writer;
+    bool is_first_chunk = true;
 };
 
 
-class PartitionedStorageS3Sink : public PartitionedSink
+class PartitionedStorageS3Sink : public SinkToStorage
 {
 public:
     PartitionedStorageS3Sink(
@@ -363,7 +363,7 @@ public:
         const String & key_,
         size_t min_upload_part_size_,
         size_t max_single_part_upload_size_)
-        : PartitionedSink(partition_by, context_, sample_block_)
+        : SinkToStorage(sample_block_)
         , format(format_)
         , sample_block(sample_block_)
         , context(context_)
@@ -375,36 +375,74 @@ public:
         , max_single_part_upload_size(max_single_part_upload_size_)
         , format_settings(format_settings_)
     {
+        std::vector<ASTPtr> arguments(1, partition_by);
+        ASTPtr partition_by_string = makeASTFunction(FunctionToString::name, std::move(arguments));
+
+        auto syntax_result = TreeRewriter(context).analyze(partition_by_string, sample_block.getNamesAndTypesList());
+        partition_by_expr = ExpressionAnalyzer(partition_by_string, syntax_result, context).getActions(false);
+        partition_by_column_name = partition_by_string->getColumnName();
     }
 
-    SinkPtr createSinkForPartition(const String & partition_id) override
+    String getName() const override { return "PartitionedStorageS3Sink"; }
+
+    void consume(Chunk chunk) override
     {
-        auto partition_bucket = replaceWildcards(bucket, partition_id);
-        validateBucket(partition_bucket);
+        const auto & columns = chunk.getColumns();
 
-        auto partition_key = replaceWildcards(key, partition_id);
-        validateKey(partition_key);
+        Block block_with_partition_by_expr = sample_block.cloneWithoutColumns();
+        block_with_partition_by_expr.setColumns(columns);
+        partition_by_expr->execute(block_with_partition_by_expr);
 
-        return std::make_shared<StorageS3Sink>(
-            format,
-            sample_block,
-            context,
-            format_settings,
-            compression_method,
-            client,
-            partition_bucket,
-            partition_key,
-            min_upload_part_size,
-            max_single_part_upload_size
-        );
+        const auto * column = block_with_partition_by_expr.getByName(partition_by_column_name).column.get();
+
+        std::unordered_map<String, size_t> sub_chunks_indices;
+        IColumn::Selector selector;
+        for (size_t row = 0; row < chunk.getNumRows(); ++row)
+        {
+            auto value = column->getDataAt(row);
+            auto [it, inserted] = sub_chunks_indices.emplace(value, sub_chunks_indices.size());
+            selector.push_back(it->second);
+        }
+
+        Chunks sub_chunks;
+        sub_chunks.reserve(sub_chunks_indices.size());
+        for (size_t column_index = 0; column_index < columns.size(); ++column_index)
+        {
+            MutableColumns column_sub_chunks = columns[column_index]->scatter(sub_chunks_indices.size(), selector);
+            if (column_index == 0) /// Set sizes for sub-chunks.
+            {
+                for (const auto & column_sub_chunk : column_sub_chunks)
+                {
+                    sub_chunks.emplace_back(Columns(), column_sub_chunk->size());
+                }
+            }
+            for (size_t sub_chunk_index = 0; sub_chunk_index < column_sub_chunks.size(); ++sub_chunk_index)
+            {
+                sub_chunks[sub_chunk_index].addColumn(std::move(column_sub_chunks[sub_chunk_index]));
+            }
+        }
+
+        for (const auto & [partition_id, sub_chunk_index] : sub_chunks_indices)
+        {
+            getSinkForPartition(partition_id)->consume(std::move(sub_chunks[sub_chunk_index]));
+        }
+    }
+
+    void onFinish() override
+    {
+        for (auto & [partition_id, sink] : sinks)
+        {
+            sink->onFinish();
+        }
     }
 
 private:
+    using SinkPtr = std::shared_ptr<StorageS3Sink>;
+
     const String format;
     const Block sample_block;
     ContextPtr context;
     const CompressionMethod compression_method;
-
     std::shared_ptr<Aws::S3::S3Client> client;
     const String bucket;
     const String key;
@@ -414,6 +452,41 @@ private:
 
     ExpressionActionsPtr partition_by_expr;
     String partition_by_column_name;
+
+    std::unordered_map<String, SinkPtr> sinks;
+
+    static String replaceWildcards(const String & haystack, const String & partition_id)
+    {
+        return boost::replace_all_copy(haystack, PARTITION_ID_WILDCARD, partition_id);
+    }
+
+    SinkPtr getSinkForPartition(const String & partition_id)
+    {
+        auto it = sinks.find(partition_id);
+        if (it == sinks.end())
+        {
+            auto partition_bucket = replaceWildcards(bucket, partition_id);
+            validateBucket(partition_bucket);
+
+            auto partition_key = replaceWildcards(key, partition_id);
+            validateKey(partition_key);
+
+            std::tie(it, std::ignore) = sinks.emplace(partition_id, std::make_shared<StorageS3Sink>(
+                format,
+                sample_block,
+                context,
+                format_settings,
+                compression_method,
+                client,
+                partition_bucket,
+                partition_key,
+                min_upload_part_size,
+                max_single_part_upload_size
+            ));
+        }
+
+        return it->second;
+    }
 
     static void validateBucket(const String & str)
     {
@@ -439,6 +512,21 @@ private:
 
         validatePartitionKey(str, true);
     }
+
+    static void validatePartitionKey(const StringRef & str, bool allow_slash)
+    {
+        for (const char * i = str.data; i != str.data + str.size; ++i)
+        {
+            if (static_cast<UInt8>(*i) < 0x20 || *i == '{' || *i == '}' || *i == '*' || *i == '?' || (!allow_slash && *i == '/'))
+            {
+                /// Need to convert to UInt32 because UInt8 can't be passed to format due to "mixing character types is disallowed".
+                UInt32 invalid_char_byte = static_cast<UInt32>(static_cast<UInt8>(*i));
+                throw DB::Exception(
+                    ErrorCodes::CANNOT_PARSE_TEXT, "Illegal character '\\x{:02x}' in partition id starting with '{}'",
+                    invalid_char_byte, StringRef(str.data, i - str.data));
+            }
+        }
+    }
 };
 
 
@@ -458,8 +546,7 @@ StorageS3::StorageS3(
     ContextPtr context_,
     std::optional<FormatSettings> format_settings_,
     const String & compression_method_,
-    bool distributed_processing_,
-    ASTPtr partition_by_)
+    bool distributed_processing_)
     : IStorage(table_id_)
     , client_auth{uri_, access_key_id_, secret_access_key_, max_connections_, {}, {}} /// Client and settings will be updated later
     , format_name(format_name_)
@@ -470,7 +557,6 @@ StorageS3::StorageS3(
     , name(uri_.storage_name)
     , distributed_processing(distributed_processing_)
     , format_settings(format_settings_)
-    , partition_by(partition_by_)
 {
     context_->getGlobalContext()->getRemoteHostFilter().checkURL(uri_.uri);
     StorageInMemoryMetadata storage_metadata;
@@ -555,13 +641,12 @@ SinkToStoragePtr StorageS3::write(const ASTPtr & query, const StorageMetadataPtr
     bool has_wildcards = client_auth.uri.bucket.find(PARTITION_ID_WILDCARD) != String::npos || client_auth.uri.key.find(PARTITION_ID_WILDCARD) != String::npos;
     auto insert_query = std::dynamic_pointer_cast<ASTInsertQuery>(query);
 
-    auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
-    bool is_partitioned_implementation = partition_by_ast && has_wildcards;
+    bool is_partitioned_implementation = insert_query && insert_query->partition_by && has_wildcards;
 
     if (is_partitioned_implementation)
     {
         return std::make_shared<PartitionedStorageS3Sink>(
-            partition_by_ast,
+            insert_query->partition_by,
             format_name,
             sample_block,
             local_context,
@@ -647,70 +732,20 @@ void StorageS3::updateClientAndAuthSettings(ContextPtr ctx, StorageS3::ClientAut
     upd.auth_settings = std::move(settings);
 }
 
-
-StorageS3Configuration StorageS3::getConfiguration(ASTs & engine_args, ContextPtr local_context)
+void registerStorageS3Impl(const String & name, StorageFactory & factory)
 {
-    StorageS3Configuration configuration;
-
-    if (auto named_collection = getURLBasedDataSourceConfiguration(engine_args, local_context))
+    factory.registerStorage(name, [](const StorageFactory::Arguments & args)
     {
-        auto [common_configuration, storage_specific_args] = named_collection.value();
-        configuration.set(common_configuration);
+        ASTs & engine_args = args.engine_args;
 
-        for (const auto & [arg_name, arg_value] : storage_specific_args)
-        {
-            if (arg_name == "access_key_id")
-                configuration.access_key_id = arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            else if (arg_name == "secret_access_key")
-                configuration.secret_access_key = arg_value->as<ASTLiteral>()->value.safeGet<String>();
-            else
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Unknown key-value argument `{}` for StorageS3, expected: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
-                    arg_name);
-        }
-    }
-    else
-    {
         if (engine_args.size() < 2 || engine_args.size() > 5)
             throw Exception(
                 "Storage S3 requires 2 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, local_context);
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
-        configuration.url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
-        if (engine_args.size() >= 4)
-        {
-            configuration.access_key_id = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-            configuration.secret_access_key = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        }
-
-        if (engine_args.size() == 3 || engine_args.size() == 5)
-        {
-            configuration.compression_method = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
-            configuration.format = engine_args[engine_args.size() - 2]->as<ASTLiteral &>().value.safeGet<String>();
-        }
-        else
-        {
-            configuration.compression_method = "auto";
-            configuration.format = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
-        }
-    }
-
-    return configuration;
-}
-
-
-void registerStorageS3Impl(const String & name, StorageFactory & factory)
-{
-    factory.registerStorage(name, [](const StorageFactory::Arguments & args)
-    {
-        auto & engine_args = args.engine_args;
-        if (engine_args.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
-
-        auto configuration = StorageS3::getConfiguration(engine_args, args.getLocalContext());
         // Use format settings from global server context + settings from
         // the SETTINGS clause of the create query. Settings from current
         // session and user are ignored.
@@ -725,7 +760,9 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             for (const auto & change : changes)
             {
                 if (user_format_settings.has(change.name))
+                {
                     user_format_settings.set(change.name, change.value);
+                }
             }
 
             // Apply changes from SETTINGS clause, with validation.
@@ -737,22 +774,42 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             format_settings = getFormatSettings(args.getContext());
         }
 
-        S3::URI s3_uri(Poco::URI(configuration.url));
-        auto max_single_read_retries = args.getLocalContext()->getSettingsRef().s3_max_single_read_retries;
-        auto min_upload_part_size = args.getLocalContext()->getSettingsRef().s3_min_upload_part_size;
-        auto max_single_part_upload_size = args.getLocalContext()->getSettingsRef().s3_max_single_part_upload_size;
-        auto max_connections = args.getLocalContext()->getSettingsRef().s3_max_connections;
+        String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+        Poco::URI uri (url);
+        S3::URI s3_uri (uri);
 
-        ASTPtr partition_by;
-        if (args.storage_def->partition_by)
-            partition_by = args.storage_def->partition_by->clone();
+        String access_key_id;
+        String secret_access_key;
+        if (engine_args.size() >= 4)
+        {
+            access_key_id = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+            secret_access_key = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        }
+
+        UInt64 max_single_read_retries = args.getLocalContext()->getSettingsRef().s3_max_single_read_retries;
+        UInt64 min_upload_part_size = args.getLocalContext()->getSettingsRef().s3_min_upload_part_size;
+        UInt64 max_single_part_upload_size = args.getLocalContext()->getSettingsRef().s3_max_single_part_upload_size;
+        UInt64 max_connections = args.getLocalContext()->getSettingsRef().s3_max_connections;
+
+        String compression_method;
+        String format_name;
+        if (engine_args.size() == 3 || engine_args.size() == 5)
+        {
+            compression_method = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
+            format_name = engine_args[engine_args.size() - 2]->as<ASTLiteral &>().value.safeGet<String>();
+        }
+        else
+        {
+            compression_method = "auto";
+            format_name = engine_args.back()->as<ASTLiteral &>().value.safeGet<String>();
+        }
 
         return StorageS3::create(
             s3_uri,
-            configuration.access_key_id,
-            configuration.secret_access_key,
+            access_key_id,
+            secret_access_key,
             args.table_id,
-            configuration.format,
+            format_name,
             max_single_read_retries,
             min_upload_part_size,
             max_single_part_upload_size,
@@ -762,13 +819,10 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
             args.comment,
             args.getContext(),
             format_settings,
-            configuration.compression_method,
-            /* distributed_processing_ */false,
-            partition_by);
+            compression_method);
     },
     {
         .supports_settings = true,
-        .supports_sort_order = true, // for partition by
         .source_access_type = AccessType::S3,
     });
 }

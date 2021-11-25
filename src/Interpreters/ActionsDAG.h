@@ -5,7 +5,9 @@
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 namespace DB
 {
@@ -58,6 +60,8 @@ public:
         ARRAY_JOIN,
         FUNCTION,
     };
+
+    static const char * typeToString(ActionType type);
 
     struct Node;
     using NodeRawPtrs = std::vector<Node *>;

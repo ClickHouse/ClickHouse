@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: replica, no-parallel, no-fasttest
 
 
 # This test checks mutations concurrent execution with concurrent inserts.

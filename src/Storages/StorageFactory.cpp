@@ -146,8 +146,8 @@ StoragePtr StorageFactory::get(
                     throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
             }
 
-            if (query.comment)
-                comment = query.comment->as<ASTLiteral &>().value.get<String>();
+            if (storage_def->comment)
+                comment = storage_def->comment->as<ASTLiteral &>().value.get<String>();
 
             auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
             {
@@ -201,7 +201,7 @@ StoragePtr StorageFactory::get(
         .storage_def = storage_def,
         .query = query,
         .relative_data_path = relative_data_path,
-        .table_id = StorageID(query.getDatabase(), query.getTable(), query.uuid),
+        .table_id = StorageID(query.database, query.table, query.uuid),
         .local_context = local_context,
         .context = context,
         .columns = columns,

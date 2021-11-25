@@ -30,6 +30,8 @@ struct ProjectionDescription
 
     static constexpr const char * MINMAX_COUNT_PROJECTION_NAME = "_minmax_count_projection";
 
+    static const char * typeToString(Type type);
+
     /// Definition AST of projection
     ASTPtr definition_ast;
 
@@ -47,6 +49,12 @@ struct ProjectionDescription
 
     Names getRequiredColumns() const { return required_columns; }
 
+    /// Names of projection columns (not to be confused with required columns)
+    Names column_names;
+
+    /// Data types of projection columns
+    DataTypes data_types;
+
     /// Sample block with projection columns. (NOTE: columns in block are empty, but not nullptr)
     Block sample_block;
 
@@ -58,25 +66,12 @@ struct ProjectionDescription
 
     bool is_minmax_count_projection = false;
 
-    /// If a primary key expression is used in the minmax_count projection, store the name of max expression.
-    String primary_key_max_column_name;
-
-    /// Stores partition value indices of partition value row. It's needed because identical
-    /// partition columns will appear only once in projection block, but every column will have a
-    /// value in the partition value row. This vector holds the biggest value index of give
-    /// partition columns.
-    std::vector<size_t> partition_value_indices;
-
     /// Parse projection from definition AST
     static ProjectionDescription
     getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
 
-    static ProjectionDescription getMinMaxCountProjection(
-        const ColumnsDescription & columns,
-        const ASTPtr & partition_columns,
-        const Names & minmax_columns,
-        const ASTs & primary_key_asts,
-        ContextPtr query_context);
+    static ProjectionDescription
+    getMinMaxCountProjection(const ColumnsDescription & columns, const Names & minmax_columns, ContextPtr query_context);
 
     ProjectionDescription() = default;
 

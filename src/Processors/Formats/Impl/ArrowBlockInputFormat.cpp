@@ -85,7 +85,7 @@ void ArrowBlockInputFormat::prepareReader()
 
     if (stream)
     {
-        auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(*in));
+        auto stream_reader_status = arrow::ipc::RecordBatchStreamReader::Open(std::make_unique<ArrowInputStreamFromReadBuffer>(in));
         if (!stream_reader_status.ok())
             throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
                 "Error while opening a table: {}", stream_reader_status.status().ToString());
@@ -94,7 +94,7 @@ void ArrowBlockInputFormat::prepareReader()
     }
     else
     {
-        auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(asArrowFile(*in, format_settings));
+        auto file_reader_status = arrow::ipc::RecordBatchFileReader::Open(asArrowFile(in));
         if (!file_reader_status.ok())
             throw Exception(ErrorCodes::UNKNOWN_EXCEPTION,
                 "Error while opening a table: {}", file_reader_status.status().ToString());
@@ -112,9 +112,9 @@ void ArrowBlockInputFormat::prepareReader()
     record_batch_current = 0;
 }
 
-void registerInputFormatArrow(FormatFactory & factory)
+void registerInputFormatProcessorArrow(FormatFactory & factory)
 {
-    factory.registerInputFormat(
+    factory.registerInputFormatProcessor(
         "Arrow",
         [](ReadBuffer & buf,
            const Block & sample,
@@ -124,7 +124,7 @@ void registerInputFormatArrow(FormatFactory & factory)
             return std::make_shared<ArrowBlockInputFormat>(buf, sample, false, format_settings);
         });
     factory.markFormatAsColumnOriented("Arrow");
-    factory.registerInputFormat(
+    factory.registerInputFormatProcessor(
         "ArrowStream",
         [](ReadBuffer & buf,
            const Block & sample,
@@ -141,7 +141,7 @@ void registerInputFormatArrow(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatArrow(FormatFactory &)
+void registerInputFormatProcessorArrow(FormatFactory &)
 {
 }
 }

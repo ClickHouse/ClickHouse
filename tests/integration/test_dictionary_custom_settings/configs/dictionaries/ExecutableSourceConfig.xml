@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <dictionary>
         <name>test_executable</name>
         
@@ -42,4 +42,4 @@
             </attribute>
         </structure>
     </dictionary>
-</clickhouse>
+</yandex>

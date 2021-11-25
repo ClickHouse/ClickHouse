@@ -1,13 +1,19 @@
 #include <Backups/BackupFactory.h>
+#include <Backups/BackupInDirectory.h>
+#include <Interpreters/Context.h>
+#include <Disks/IVolume.h>
 
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int BACKUP_ENGINE_NOT_FOUND;
+    extern const int BACKUP_NOT_FOUND;
+    extern const int BACKUP_ALREADY_EXISTS;
+    extern const int NOT_ENOUGH_SPACE;
     extern const int LOGICAL_ERROR;
 }
+
 
 BackupFactory & BackupFactory::instance()
 {
@@ -15,27 +21,45 @@ BackupFactory & BackupFactory::instance()
     return the_instance;
 }
 
-BackupMutablePtr BackupFactory::createBackup(const CreateParams & params) const
+void BackupFactory::setBackupsVolume(VolumePtr backups_volume_)
 {
-    const String & engine_name = params.backup_info.backup_engine_name;
-    auto it = creators.find(engine_name);
-    if (it == creators.end())
-        throw Exception(ErrorCodes::BACKUP_ENGINE_NOT_FOUND, "Not found backup engine {}", engine_name);
-    return (it->second)(params);
+    backups_volume = backups_volume_;
 }
 
-void BackupFactory::registerBackupEngine(const String & engine_name, const CreatorFn & creator_fn)
+BackupMutablePtr BackupFactory::createBackup(const String & backup_name, UInt64 estimated_backup_size, const BackupPtr & base_backup) const
 {
-    if (creators.contains(engine_name))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Backup engine {} was registered twice", engine_name);
-    creators[engine_name] = creator_fn;
+    if (!backups_volume)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No backups volume");
+
+    for (const auto & disk : backups_volume->getDisks())
+    {
+        if (disk->exists(backup_name))
+            throw Exception(ErrorCodes::BACKUP_ALREADY_EXISTS, "Backup {} already exists", quoteString(backup_name));
+    }
+
+    auto reservation = backups_volume->reserve(estimated_backup_size);
+    if (!reservation)
+        throw Exception(
+            ErrorCodes::NOT_ENOUGH_SPACE,
+            "Couldn't reserve {} bytes of free space for new backup {}",
+            estimated_backup_size,
+            quoteString(backup_name));
+
+    return std::make_shared<BackupInDirectory>(IBackup::OpenMode::WRITE, reservation->getDisk(), backup_name, base_backup);
 }
 
-void registerBackupEngines(BackupFactory & factory);
-
-BackupFactory::BackupFactory()
+BackupPtr BackupFactory::openBackup(const String & backup_name, const BackupPtr & base_backup) const
 {
-    registerBackupEngines(*this);
+    if (!backups_volume)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No backups volume");
+
+    for (const auto & disk : backups_volume->getDisks())
+    {
+        if (disk->exists(backup_name))
+            return std::make_shared<BackupInDirectory>(IBackup::OpenMode::READ, disk, backup_name, base_backup);
+    }
+
+    throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", quoteString(backup_name));
 }
 
 }
