@@ -94,10 +94,12 @@ ClusterDiscovery::ClusterDiscovery(
     ContextPtr context_,
     const String & config_prefix)
     : context(Context::createCopy(context_))
-    , node_name(toString(ServerUUID::get()))
+    , current_node_name(toString(ServerUUID::get()))
     , server_port(context->getTCPPort())
     , log(&Poco::Logger::get("ClusterDiscovery"))
 {
+    LOG_DEBUG(log, "Cluster discovery is enabled");
+
     Poco::Util::AbstractConfiguration::Keys config_keys;
     config.keys(config_prefix, config_keys);
 
@@ -137,14 +139,11 @@ ClusterDiscovery::NodesInfo ClusterDiscovery::getNodes(zkutil::ZooKeeperPtr & zk
     for (const auto & node_uuid : node_uuids)
     {
         String payload;
-        if (!zk->tryGet(getShardsListPath(zk_root) / node_uuid, payload))
+        bool ok = zk->tryGet(getShardsListPath(zk_root) / node_uuid, payload) &&
+                  NodeInfo::parse(payload, result[node_uuid]);
+        if (!ok)
         {
-            LOG_WARNING(log, "Error getting data from node '{}' in '{}'", node_uuid, zk_root);
-            return {};
-        }
-        if (!NodeInfo::parse(payload, result[node_uuid]))
-        {
-            LOG_WARNING(log, "Error parsing data from node '{}' in '{}'", node_uuid, zk_root);
+            LOG_WARNING(log, "Can't get data from node '{}' in '{}'", node_uuid, zk_root);
             return {};
         }
     }
@@ -159,11 +158,8 @@ bool ClusterDiscovery::needUpdate(const Strings & node_uuids, const NodesInfo & 
 {
     bool has_difference = node_uuids.size() != nodes.size() ||
                           std::any_of(node_uuids.begin(), node_uuids.end(), [&nodes] (auto u) { return !nodes.contains(u); });
-    UNUSED(log);
-    #if defined(NDEBUG) || defined(ADDRESS_SANITIZER) || defined(THREAD_SANITIZER) || defined(MEMORY_SANITIZER) || defined(UNDEFINED_BEHAVIOR_SANITIZER)
     {
-        /// Just to log updated nodes, suboptimal, but should be ok for expected update sizes.
-        /// Disabled on release build.
+        /// Just to log updated nodes, suboptimal, but should be ok for expected update sizes
         std::set<String> new_names(node_uuids.begin(), node_uuids.end());
         std::set<String> old_names;
         for (const auto & [name, _] : nodes)
@@ -176,17 +172,19 @@ bool ClusterDiscovery::needUpdate(const Strings & node_uuids, const NodesInfo & 
 
             constexpr size_t max_to_show = 3;
             size_t sz = diff.size();
-            if (sz > max_to_show)
+            bool need_crop = sz > max_to_show;
+            if (need_crop)
                 diff.resize(max_to_show);
-            return fmt::format("{} nodes ({}{})", sz, fmt::join(diff, ", "), diff.size() == sz ? "" : ",...");
+
+            if (sz == 0)
+                return fmt::format("{} nodes", sz);
+            return fmt::format("{} nodes ({}{})", sz, fmt::join(diff, ", "), need_crop ? "" : ",...");
         };
 
-        LOG_DEBUG(log, "Cluster update: added: {}, removed: {}",
+        LOG_DEBUG(log, "Cluster update: added {}, removed {}",
             format_cluster_update(new_names, old_names),
             format_cluster_update(old_names, new_names));
-
     }
-    #endif
     return has_difference;
 }
 
@@ -205,7 +203,6 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
 
         secure = node.secure;
         replica_adresses.emplace_back(node.address);
-
     }
 
     // TODO(vdimir@) save custom params from config to zookeeper and use here (like secure), split by shards
@@ -235,9 +232,9 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
     int start_version;
     Strings node_uuids = getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &start_version, false);
 
-    if (node_uuids.empty())
+    if (std::find(node_uuids.begin(), node_uuids.end(), current_node_name) == node_uuids.end())
     {
-        LOG_ERROR(log, "Can't find any node in cluster '{}', will register again", cluster_info.name);
+        LOG_ERROR(log, "Can't find current node in cluster '{}', will register again", cluster_info.name);
         registerInZk(zk, cluster_info);
         return false;
     }
@@ -251,16 +248,22 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
 
     nodes_info = getNodes(zk, cluster_info.zk_root, node_uuids);
     if (nodes_info.empty())
+    {
+        LOG_WARNING(log, "Can't get nodes info for '{}'", cluster_info.name);
         return false;
+    }
 
     int current_version;
     getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &current_version, true);
 
     if (current_version != start_version)
     {
+        LOG_TRACE(log, "Cluster '{}' configuration changed during update", cluster_info.name);
         nodes_info.clear();
         return false;
     }
+
+    LOG_TRACE(log, "Updating system.clusters record for '{}' with {} nodes", cluster_info.name, cluster_info.nodes_info.size());
 
     auto cluster = makeCluster(cluster_info);
     context->setCluster(cluster_info.name, cluster);
@@ -280,15 +283,15 @@ bool ClusterDiscovery::updateCluster(const String & cluster_name)
 
 void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info)
 {
-    LOG_DEBUG(log, "Registering current node {} in cluster {}", node_name, info.name);
+    LOG_DEBUG(log, "Registering current node {} in cluster {}", current_node_name, info.name);
 
-    String node_path = getShardsListPath(info.zk_root) / node_name;
+    String node_path = getShardsListPath(info.zk_root) / current_node_name;
     zk->createAncestors(node_path);
 
     NodeInfo self_node(getFQDNOrHostName() + ":" + toString(server_port));
 
     zk->createOrUpdate(node_path, self_node.serialize(), zkutil::CreateMode::Ephemeral);
-    LOG_DEBUG(log, "Current node {} registered in cluster {}", node_name, info.name);
+    LOG_DEBUG(log, "Current node {} registered in cluster {}", current_node_name, info.name);
 }
 
 void ClusterDiscovery::start()
@@ -339,9 +342,16 @@ void ClusterDiscovery::runMainThread()
         {
             if (!need_update)
                 continue;
-            bool ok = updateCluster(cluster_name);
-            if (ok)
+
+            if (updateCluster(cluster_name))
+            {
                 clusters_to_update->unset(cluster_name);
+                LOG_DEBUG(log, "Cluster '{}' updated successfully", cluster_name);
+            }
+            else
+            {
+                LOG_DEBUG(log, "Cluster '{}' are not updated, will retry", cluster_name);
+            }
         }
     }
     LOG_DEBUG(log, "Worker thread stopped");

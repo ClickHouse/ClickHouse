@@ -85,7 +85,7 @@ private:
 
     ContextMutablePtr context;
 
-    String node_name;
+    String current_node_name;
     UInt16 server_port;
 
     template <typename T> class ConcurrentFlags;
