@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnsCommon.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -251,8 +252,7 @@ public:
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             sum_data.addManyConditional(column.getData().data(), flags.data(), batch_size);
-            for (size_t i = 0; i < batch_size; i++)
-                this->data(place).denominator += (flags[i] != 0);
+            this->data(place).denominator += countBytesInFilter(flags.data(), batch_size);
         }
         else
         {
@@ -276,8 +276,9 @@ public:
             size_t used_value = 0;
             for (size_t i = 0; i < batch_size; ++i)
             {
-                final_flags[i] = (!null_map[i]) & if_flags[i];
-                used_value += (!null_map[i]) & if_flags[i];
+                UInt8 kept = (!null_map[i]) & !!if_flags[i];
+                final_flags[i] = kept;
+                used_value += kept;
             }
 
             sum_data.addManyConditional(column.getData().data(), final_flags.get(), batch_size);
@@ -286,8 +287,7 @@ public:
         else
         {
             sum_data.addManyNotNull(column.getData().data(), null_map, batch_size);
-            for (size_t i = 0; i < batch_size; i++)
-                this->data(place).denominator += (!null_map[i]);
+            this->data(place).denominator += batch_size - countBytesInFilter(null_map, batch_size);
         }
         this->data(place).numerator += sum_data.sum;
     }
