@@ -21,12 +21,15 @@ namespace ErrorCodes
 }
 
 
+static constexpr size_t HTTP_MAX_TRIES = 10;
+static constexpr size_t WAIT_INIT = 100;
+
 ReadBufferFromWebServer::ReadBufferFromWebServer(
     const String & url_,
     ContextPtr context_,
     const ReadSettings & settings_,
     bool use_external_buffer_,
-    size_t read_until_position_)
+    size_t last_offset_)
     : SeekableReadBuffer(nullptr, 0)
     , log(&Poco::Logger::get("ReadBufferFromWebServer"))
     , context(context_)
@@ -34,7 +37,7 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
     , buf_size(settings_.remote_fs_buffer_size)
     , read_settings(settings_)
     , use_external_buffer(use_external_buffer_)
-    , read_until_position(read_until_position_)
+    , last_offset(last_offset_)
 {
 }
 
@@ -42,18 +45,20 @@ ReadBufferFromWebServer::ReadBufferFromWebServer(
 std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
 {
     Poco::URI uri(url);
-    ReadWriteBufferFromHTTP::Range range;
-    if (read_until_position)
-    {
-        if (read_until_position < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
 
-        range = { .begin = static_cast<size_t>(offset), .end = read_until_position - 1 };
-        LOG_DEBUG(log, "Reading with range: {}-{}", offset, read_until_position);
+    ReadWriteBufferFromHTTP::HTTPHeaderEntries headers;
+
+    if (last_offset)
+    {
+        if (last_offset < offset)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, last_offset - 1);
+
+        headers.emplace_back(std::make_pair("Range", fmt::format("bytes={}-{}", offset, last_offset - 1)));
+        LOG_DEBUG(log, "Reading with range: {}-{}", offset, last_offset);
     }
     else
     {
-        range = { .begin = static_cast<size_t>(offset), .end = std::nullopt };
+        headers.emplace_back(std::make_pair("Range", fmt::format("bytes={}-", offset)));
         LOG_DEBUG(log, "Reading from offset: {}", offset);
     }
 
@@ -70,32 +75,78 @@ std::unique_ptr<ReadBuffer> ReadBufferFromWebServer::initialize()
                            std::max(Poco::Timespan(settings.http_receive_timeout.totalSeconds(), 0), Poco::Timespan(20, 0)),
                            settings.tcp_keep_alive_timeout,
                            http_keep_alive_timeout),
-        credentials,
         0,
+        Poco::Net::HTTPBasicCredentials{},
         buf_size,
         read_settings,
-        ReadWriteBufferFromHTTP::HTTPHeaderEntries{},
-        range,
+        headers,
         context->getRemoteHostFilter(),
-        /* delay_initialization */true,
         use_external_buffer);
+}
+
+
+void ReadBufferFromWebServer::initializeWithRetry()
+{
+    /// Initialize impl with retry.
+    size_t milliseconds_to_wait = WAIT_INIT;
+    for (size_t i = 0; i < HTTP_MAX_TRIES; ++i)
+    {
+        try
+        {
+            impl = initialize();
+
+            if (use_external_buffer)
+            {
+                /**
+                 * See comment 30 lines lower.
+                 */
+                impl->set(internal_buffer.begin(), internal_buffer.size());
+                assert(working_buffer.begin() != nullptr);
+                assert(!internal_buffer.empty());
+            }
+
+            break;
+        }
+        catch (Poco::Exception & e)
+        {
+            if (i == HTTP_MAX_TRIES - 1)
+                throw;
+
+            LOG_ERROR(&Poco::Logger::get("ReadBufferFromWeb"), "Error: {}, code: {}", e.what(), e.code());
+            sleepForMilliseconds(milliseconds_to_wait);
+            milliseconds_to_wait *= 2;
+        }
+    }
 }
 
 
 bool ReadBufferFromWebServer::nextImpl()
 {
-    if (read_until_position)
+    if (last_offset)
     {
-        if (read_until_position == offset)
+        if (last_offset == offset)
             return false;
 
-        if (read_until_position < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
+        if (last_offset < offset)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, last_offset - 1);
     }
 
     if (impl)
     {
-        if (!use_external_buffer)
+        if (use_external_buffer)
+        {
+            /**
+            * use_external_buffer -- means we read into the buffer which
+            * was passed to us from somewhere else. We do not check whether
+            * previously returned buffer was read or not, because this branch
+            * means we are prefetching data, each nextImpl() call we can fill
+            * a different buffer.
+            */
+            impl->set(internal_buffer.begin(), internal_buffer.size());
+            assert(working_buffer.begin() != nullptr);
+            assert(!internal_buffer.empty());
+        }
+        else
         {
             /**
             * impl was initialized before, pass position() to it to make
@@ -108,21 +159,7 @@ bool ReadBufferFromWebServer::nextImpl()
     }
     else
     {
-        impl = initialize();
-    }
-
-    if (use_external_buffer)
-    {
-        /**
-        * use_external_buffer -- means we read into the buffer which
-        * was passed to us from somewhere else. We do not check whether
-        * previously returned buffer was read or not, because this branch
-        * means we are prefetching data, each nextImpl() call we can fill
-        * a different buffer.
-        */
-        impl->set(internal_buffer.begin(), internal_buffer.size());
-        assert(working_buffer.begin() != nullptr);
-        assert(!internal_buffer.empty());
+        initializeWithRetry();
     }
 
     auto result = impl->next();

@@ -10,10 +10,6 @@ The String type replaces the types VARCHAR, BLOB, CLOB, and others from other DB
 
 When creating tables, numeric parameters for string fields can be set (e.g. `VARCHAR(255)`), but ClickHouse ignores them.
 
-Aliases:
-
--   `String` — `LONGTEXT`, `MEDIUMTEXT`, `TINYTEXT`, `TEXT`, `LONGBLOB`, `MEDIUMBLOB`, `TINYBLOB`, `BLOB`, `VARCHAR`, `CHAR`.
-
 ## Encodings {#encodings}
 
 ClickHouse does not have the concept of encodings. Strings can contain an arbitrary set of bytes, which are stored and output as-is.

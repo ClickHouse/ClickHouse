@@ -190,7 +190,7 @@ def test_restricted_database(started_cluster):
         LIFETIME(MIN 1 MAX 10)
         """)
     for node in [node1, node2]:
-        node.query("DROP DICTIONARY IF EXISTS default.some_dict", user="admin")
+        node.query("DROP TABLE restricted_db.table_in_restricted_db", user="admin")
         node.query("DROP DATABASE restricted_db", user="admin")
 
 

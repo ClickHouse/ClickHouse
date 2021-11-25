@@ -485,7 +485,7 @@ bool ASTAlterQuery::isDropPartitionAlter() const
 /** Get the text that identifies this element. */
 String ASTAlterQuery::getID(char delim) const
 {
-    return "AlterQuery" + (delim + getDatabase()) + delim + getTable();
+    return "AlterQuery" + (delim + database) + delim + table;
 }
 
 ASTPtr ASTAlterQuery::clone() const
@@ -523,18 +523,18 @@ void ASTAlterQuery::formatQueryImpl(const FormatSettings & settings, FormatState
 
     settings.ostr << (settings.hilite ? hilite_none : "");
 
-    if (table)
+    if (!table.empty())
     {
-        if (database)
+        if (!database.empty())
         {
-            settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
+            settings.ostr << indent_str << backQuoteIfNeed(database);
             settings.ostr << ".";
         }
-        settings.ostr << indent_str << backQuoteIfNeed(getTable());
+        settings.ostr << indent_str << backQuoteIfNeed(table);
     }
-    else if (alter_object == AlterObjectType::DATABASE && database)
+    else if (alter_object == AlterObjectType::DATABASE && !database.empty())
     {
-        settings.ostr << indent_str << backQuoteIfNeed(getDatabase());
+        settings.ostr << indent_str << backQuoteIfNeed(database);
     }
 
     formatOnCluster(settings);

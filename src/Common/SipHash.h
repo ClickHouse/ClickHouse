@@ -18,7 +18,6 @@
 #include <string>
 #include <type_traits>
 #include <Core/Defines.h>
-#include <base/extended_types.h>
 
 
 #define ROTL(x, b) static_cast<UInt64>(((x) << (b)) | ((x) >> (64 - (b))))
@@ -190,15 +189,6 @@ inline void sipHash128(const char * data, const size_t size, char * out)
     SipHash hash;
     hash.update(data, size);
     hash.get128(out);
-}
-
-inline UInt128 sipHash128(const char * data, const size_t size)
-{
-    SipHash hash;
-    hash.update(data, size);
-    UInt128 res;
-    hash.get128(res);
-    return res;
 }
 
 inline UInt64 sipHash64(const char * data, const size_t size)

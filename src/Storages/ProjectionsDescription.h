@@ -61,22 +61,12 @@ struct ProjectionDescription
     /// If a primary key expression is used in the minmax_count projection, store the name of max expression.
     String primary_key_max_column_name;
 
-    /// Stores partition value indices of partition value row. It's needed because identical
-    /// partition columns will appear only once in projection block, but every column will have a
-    /// value in the partition value row. This vector holds the biggest value index of give
-    /// partition columns.
-    std::vector<size_t> partition_value_indices;
-
     /// Parse projection from definition AST
     static ProjectionDescription
     getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
 
     static ProjectionDescription getMinMaxCountProjection(
-        const ColumnsDescription & columns,
-        const ASTPtr & partition_columns,
-        const Names & minmax_columns,
-        const ASTs & primary_key_asts,
-        ContextPtr query_context);
+        const ColumnsDescription & columns, const Names & minmax_columns, const ASTs & primary_key_asts, ContextPtr query_context);
 
     ProjectionDescription() = default;
 

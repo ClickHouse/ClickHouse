@@ -20,8 +20,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
     extern const int NOT_IMPLEMENTED;
-    extern const int LOGICAL_ERROR;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata)
@@ -31,7 +29,7 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     bool has_structure = ast_create_query.columns_list && ast_create_query.columns_list->columns;
     if (ast_create_query.as_table_function && !has_structure)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot alter table {} because it was created AS table function"
-                                                     " and doesn't have structure in metadata", backQuote(ast_create_query.getTable()));
+                                                     " and doesn't have structure in metadata", backQuote(ast_create_query.table));
 
     assert(has_structure);
     ASTPtr new_columns = InterpreterCreateQuery::formatColumns(metadata.columns);
@@ -87,66 +85,6 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
 }
 
 
-ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary, uint32_t max_parser_depth, bool throw_on_error)
-{
-    auto table_id = storage->getStorageID();
-    auto metadata_ptr = storage->getInMemoryMetadataPtr();
-    if (metadata_ptr == nullptr)
-    {
-        if (throw_on_error)
-            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot get metadata of {}.{}", backQuote(table_id.database_name), backQuote(table_id.table_name));
-        else
-            return nullptr;
-    }
-
-    auto create_table_query = std::make_shared<ASTCreateQuery>();
-    create_table_query->attach = false;
-    create_table_query->setTable(table_id.table_name);
-    create_table_query->setDatabase(table_id.database_name);
-    create_table_query->set(create_table_query->storage, ast_storage);
-
-    /// setup create table query columns info.
-    {
-        auto ast_columns_list = std::make_shared<ASTColumns>();
-        auto ast_expression_list = std::make_shared<ASTExpressionList>();
-        NamesAndTypesList columns;
-        if (only_ordinary)
-            columns = metadata_ptr->columns.getOrdinary();
-        else
-            columns = metadata_ptr->columns.getAll();
-        for (const auto & column_name_and_type: columns)
-        {
-            const auto & ast_column_declaration = std::make_shared<ASTColumnDeclaration>();
-            ast_column_declaration->name = column_name_and_type.name;
-            /// parser typename
-            {
-                ASTPtr ast_type;
-                auto type_name = column_name_and_type.type->getName();
-                const auto * string_end = type_name.c_str() + type_name.length();
-                Expected expected;
-                expected.max_parsed_pos = string_end;
-                Tokens tokens(type_name.c_str(), string_end);
-                IParser::Pos pos(tokens, max_parser_depth);
-                ParserDataType parser;
-                if (!parser.parse(pos, ast_type, expected))
-                {
-                    if (throw_on_error)
-                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot parser metadata of {}.{}", backQuote(table_id.database_name), backQuote(table_id.table_name));
-                    else
-                        return nullptr;
-                }
-                ast_column_declaration->type = ast_type;
-            }
-            ast_expression_list->children.emplace_back(ast_column_declaration);
-        }
-
-        ast_columns_list->set(ast_columns_list->columns, ast_expression_list);
-        create_table_query->set(create_table_query->columns_list, ast_columns_list);
-    }
-    return create_table_query;
-}
-
-
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger, ContextPtr context_)
         : IDatabase(name_), WithContext(context_->getGlobalContext()), log(&Poco::Logger::get(logger))
 {
@@ -187,7 +125,7 @@ bool DatabaseWithOwnTablesBase::empty() const
     return tables.empty();
 }
 
-StoragePtr DatabaseWithOwnTablesBase::detachTable(ContextPtr /* context_ */, const String & table_name)
+StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
 {
     std::unique_lock lock(mutex);
     return detachTableUnlocked(table_name, lock);
@@ -214,7 +152,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     return res;
 }
 
-void DatabaseWithOwnTablesBase::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
+void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const StoragePtr & table, const String &)
 {
     std::unique_lock lock(mutex);
     attachTableUnlocked(table_name, table, lock);

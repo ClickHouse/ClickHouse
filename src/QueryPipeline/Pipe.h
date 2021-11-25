@@ -3,12 +3,12 @@
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/PipelineResourcesHolder.h>
 #include <QueryPipeline/Chain.h>
+#include <Access/EnabledQuota.h>
 #include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {
 
-class EnabledQuota;
 struct StreamLocalLimits;
 
 class Pipe;

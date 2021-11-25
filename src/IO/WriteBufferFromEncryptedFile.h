@@ -1,19 +1,17 @@
 #pragma once
 
 #include <Common/config.h>
-#include <Common/assert_cast.h>
 
 #if USE_SSL
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/FileEncryptionCommon.h>
-#include <IO/WriteBufferDecorator.h>
 
 
 namespace DB
 {
 
 /// Encrypts data and writes the encrypted data to the underlying write buffer.
-class WriteBufferFromEncryptedFile : public WriteBufferDecorator<WriteBufferFromFileBase>
+class WriteBufferFromEncryptedFile : public WriteBufferFromFileBase
 {
 public:
     /// `old_file_size` should be set to non-zero if we're going to append an existing file.
@@ -23,17 +21,21 @@ public:
         const String & key_,
         const FileEncryption::Header & header_,
         size_t old_file_size = 0);
-
     ~WriteBufferFromEncryptedFile() override;
 
     void sync() override;
+    void finalize() override { finish(); }
 
-    std::string getFileName() const override { return assert_cast<WriteBufferFromFileBase *>(out.get())->getFileName(); }
+    std::string getFileName() const override { return out->getFileName(); }
 
 private:
     void nextImpl() override;
 
-    void finalizeBefore() override;
+    void finish();
+    void finishImpl();
+
+    bool finished = false;
+    std::unique_ptr<WriteBufferFromFileBase> out;
 
     FileEncryption::Header header;
     bool flush_header = false;

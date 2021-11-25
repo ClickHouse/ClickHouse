@@ -417,49 +417,7 @@ set(PARQUET_SRCS
 #list(TRANSFORM PARQUET_SRCS PREPEND "${LIBRARY_DIR}/") # cmake 3.12
 add_library(${PARQUET_LIBRARY} ${PARQUET_SRCS})
 target_include_directories(${PARQUET_LIBRARY} SYSTEM PUBLIC "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src" "${CMAKE_CURRENT_SOURCE_DIR}/cpp/src" PRIVATE ${OPENSSL_INCLUDE_DIR})
-
-set (HAVE_ARPA_INET_H 1)
-set (HAVE_FCNTL_H 1)
-set (HAVE_GETOPT_H 1)
-set (HAVE_INTTYPES_H 1)
-set (HAVE_NETDB_H 1)
-set (HAVE_NETINET_IN_H 1)
-set (HAVE_SIGNAL_H 1)
-set (HAVE_STDINT_H 1)
-set (HAVE_UNISTD_H 1)
-set (HAVE_PTHREAD_H 1)
-set (HAVE_SYS_IOCTL_H 1)
-set (HAVE_SYS_PARAM_H 1)
-set (HAVE_SYS_RESOURCE_H 1)
-set (HAVE_SYS_SOCKET_H 1)
-set (HAVE_SYS_STAT_H 1)
-set (HAVE_SYS_TIME_H 1)
-set (HAVE_SYS_UN_H 1)
-set (HAVE_POLL_H 1)
-set (HAVE_SYS_POLL_H 1)
-set (HAVE_SYS_SELECT_H 1)
-set (HAVE_SCHED_H 1)
-set (HAVE_STRING_H 1)
-set (HAVE_STRINGS_H 1)
-set (HAVE_GETHOSTBYNAME 1)
-set (HAVE_STRERROR_R 1)
-set (HAVE_SCHED_GET_PRIORITY_MAX 1)
-set (HAVE_SCHED_GET_PRIORITY_MIN 1)
-
-if (OS_LINUX)
-    set (STRERROR_R_CHAR_P 1)
-endif ()
-
-#set(PACKAGE ${PACKAGE_NAME})
-#set(PACKAGE_STRING "${PACKAGE_NAME} ${PACKAGE_VERSION}")
-#set(VERSION ${thrift_VERSION})
-
-# generate a config.h file
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/build/cmake/config.h.in" "${CMAKE_CURRENT_BINARY_DIR}/thrift/config.h")
-
-include_directories("${CMAKE_CURRENT_BINARY_DIR}")
-
-
+include("${ClickHouse_SOURCE_DIR}/contrib/thrift/build/cmake/ConfigureChecks.cmake") # makes config.h
 target_link_libraries(${PARQUET_LIBRARY} PUBLIC ${ARROW_LIBRARY} PRIVATE ${THRIFT_LIBRARY} boost::headers_only boost::regex ${OPENSSL_LIBRARIES})
 
 if (SANITIZE STREQUAL "undefined")

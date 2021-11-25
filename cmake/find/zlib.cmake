@@ -1,4 +1,4 @@
-option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ON)
+option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT MSVC)
     set (INTERNAL_ZLIB_NAME "zlib-ng" CACHE INTERNAL "")
@@ -29,6 +29,9 @@ if (NOT USE_INTERNAL_ZLIB_LIBRARY)
 endif ()
 
 if (NOT ZLIB_FOUND AND NOT MISSING_INTERNAL_ZLIB_LIBRARY)
+    # https://github.com/zlib-ng/zlib-ng/pull/733
+    # This is disabed by default
+    add_compile_definitions(Z_TLS=__thread)
     set (USE_INTERNAL_ZLIB_LIBRARY 1)
     set (ZLIB_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/${INTERNAL_ZLIB_NAME}" "${ClickHouse_BINARY_DIR}/contrib/${INTERNAL_ZLIB_NAME}" CACHE INTERNAL "") # generated zconf.h
     set (ZLIB_INCLUDE_DIRS ${ZLIB_INCLUDE_DIR}) # for poco

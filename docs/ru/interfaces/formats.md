@@ -54,7 +54,7 @@ ClickHouse может принимать (`INSERT`) и отдавать (`SELECT
 | [Native](#native)                                                                       | ✔     | ✔      |
 | [Null](#null)                                                                           | ✗     | ✔      |
 | [XML](#xml)                                                                             | ✗     | ✔      |
-| [CapnProto](#capnproto)                                                                 | ✔     | ✔      |
+| [CapnProto](#capnproto)                                                                 | ✔     | ✗      |
 | [LineAsString](#lineasstring)                                                           | ✔     | ✗      |
 | [Regexp](#data-format-regexp)                                                           | ✔     | ✗      |
 | [RawBLOB](#rawblob)                                                                     | ✔     | ✔      |
@@ -163,8 +163,8 @@ SELECT * FROM nestedt FORMAT TSV
 ## TabSeparatedWithNames {#tabseparatedwithnames}
 
 Отличается от формата `TabSeparated` тем, что в первой строке пишутся имена столбцов.
-
-При парсинге первая строка должна содержать имена столбцов. Вы можете использовать имена столбцов, чтобы указать их порядок расположения, или чтобы проверить их корректность.
+При парсинге, первая строка полностью игнорируется. Вы не можете использовать имена столбцов, чтобы указать их порядок расположения, или чтобы проверить их корректность.
+(Поддержка обработки заголовка при парсинге может быть добавлена в будущем.)
 
 Этот формат также доступен под именем `TSVWithNames`.
 
@@ -1013,44 +1013,12 @@ test: string with 'quotes' and   with some special
 
 ## CapnProto {#capnproto}
 
-CapnProto — формат бинарных сообщений, похож на [Protocol Buffers](https://developers.google.com/protocol-buffers/) и [Thrift](https://ru.wikipedia.org/wiki/Apache_Thrift), но не похож на [JSON](#json) или [MessagePack](https://msgpack.org/).
+Cap’n Proto - формат бинарных сообщений, похож на Protocol Buffers и Thrift, но не похож на JSON или MessagePack.
 
-Сообщения формата CapnProto строго типизированы и не самоописывающиеся, т.е. нуждаются во внешнем описании схемы. Схема применяется "на лету" и кешируется между запросами.
-
-См. также [схема формата](#formatschema).
-
-### Соответствие типов данных {#data_types-matching-capnproto}
-
-Таблица ниже содержит поддерживаемые типы данных и их соответствие [типам данных](../sql-reference/data-types/index.md) ClickHouse для запросов `INSERT` и `SELECT`.
-
-| Тип данных CapnProto (`INSERT`) | Тип данных ClickHouse                                      | Тип данных CapnProto (`SELECT`) |
-|--------------------------------|-----------------------------------------------------------|--------------------------------|
-| `UINT8`, `BOOL`                | [UInt8](../sql-reference/data-types/int-uint.md)          | `UINT8`                        |
-| `INT8`                         | [Int8](../sql-reference/data-types/int-uint.md)           | `INT8`                         |
-| `UINT16`                       | [UInt16](../sql-reference/data-types/int-uint.md), [Date](../sql-reference/data-types/date.md)         | `UINT16`                       |
-| `INT16`                        | [Int16](../sql-reference/data-types/int-uint.md)          | `INT16`                        |
-| `UINT32`                       | [UInt32](../sql-reference/data-types/int-uint.md), [DateTime](../sql-reference/data-types/datetime.md)         | `UINT32`                       |
-| `INT32`                        | [Int32](../sql-reference/data-types/int-uint.md)          | `INT32`                        |
-| `UINT64`                       | [UInt64](../sql-reference/data-types/int-uint.md)         | `UINT64`                       |
-| `INT64`                        | [Int64](../sql-reference/data-types/int-uint.md), [DateTime64](../sql-reference/data-types/datetime.md)          | `INT64`                        |
-| `FLOAT32`                      | [Float32](../sql-reference/data-types/float.md)           | `FLOAT32`                      |
-| `FLOAT64`                      | [Float64](../sql-reference/data-types/float.md)           | `FLOAT64`                      |
-| `TEXT, DATA`                   | [String](../sql-reference/data-types/string.md), [FixedString](../sql-reference/data-types/fixedstring.md)               | `TEXT, DATA`                       |
-| `union(T, Void), union(Void, T)`          | [Nullable(T)](../sql-reference/data-types/date.md)       | `union(T, Void), union(Void, T)`                       |
-| `ENUM`                         | [Enum(8\|16)](../sql-reference/data-types/enum.md)        | `ENUM`                         |
-| `LIST`                         | [Array](../sql-reference/data-types/array.md)             | `LIST`                         |
-| `STRUCT`                       | [Tuple](../sql-reference/data-types/tuple.md)             | `STRUCT`                       |
-
-Для работы с типом данных `Enum` в формате CapnProto используйте настройку [format_capn_proto_enum_comparising_mode](../operations/settings/settings.md#format-capn-proto-enum-comparising-mode).
-
-Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`. Тип `Tuple` также может быть вложенным.
-
-### Вставка и вывод данных {#inserting-and-selecting-data-capnproto}
-
-Чтобы вставить в ClickHouse данные из файла в формате CapnProto, выполните команду следующего вида:
+Сообщения Cap’n Proto строго типизированы и не самоописывающиеся, т.е. нуждаются во внешнем описании схемы. Схема применяется «на лету» и кешируется между запросами.
 
 ``` bash
-$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
+$ cat capnproto_messages.bin | clickhouse-client --query "INSERT INTO test.hits FORMAT CapnProto SETTINGS format_schema='schema:Message'"
 ```
 
 Где `schema.capnp` выглядит следующим образом:
@@ -1062,11 +1030,9 @@ struct Message {
 }
 ```
 
-Чтобы получить данные из таблицы ClickHouse и сохранить их в файл формата CapnProto, используйте команду следующего вида:
+Десериализация эффективна и обычно не повышает нагрузку на систему.
 
-``` bash
-$ clickhouse-client --query = "SELECT * FROM test.hits FORMAT CapnProto SETTINGS format_schema = 'schema:Message'"
-```
+См. также [схема формата](#formatschema).
 
 ## Protobuf {#protobuf}
 

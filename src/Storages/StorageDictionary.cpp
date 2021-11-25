@@ -212,39 +212,19 @@ void StorageDictionary::renameInMemory(const StorageID & new_table_id)
     auto old_table_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
 
-    assert((location == Location::SameDatabaseAndNameAsDictionary) == (getConfiguration().get() != nullptr));
-    if (location != Location::SameDatabaseAndNameAsDictionary)
-        return;
-
-    /// It's DDL dictionary, need to update configuration and reload
-
-    bool move_to_atomic = old_table_id.uuid == UUIDHelpers::Nil && new_table_id.uuid != UUIDHelpers::Nil;
-    bool move_to_ordinary = old_table_id.uuid != UUIDHelpers::Nil && new_table_id.uuid == UUIDHelpers::Nil;
-    assert(old_table_id.uuid == new_table_id.uuid || move_to_atomic || move_to_ordinary);
-
+    bool has_configuration = false;
     {
         std::lock_guard<std::mutex> lock(dictionary_config_mutex);
 
-        configuration->setString("dictionary.database", new_table_id.database_name);
-        configuration->setString("dictionary.name", new_table_id.table_name);
-        if (move_to_atomic)
-            configuration->setString("dictionary.uuid", toString(new_table_id.uuid));
-        else if (move_to_ordinary)
-                configuration->remove("dictionary.uuid");
+        if (configuration)
+        {
+            has_configuration = true;
+            configuration->setString("dictionary.database", new_table_id.database_name);
+            configuration->setString("dictionary.name", new_table_id.table_name);
+        }
     }
 
-    /// Dictionary is moving between databases of different engines or is renaming inside Ordinary database
-    bool recreate_dictionary = old_table_id.uuid == UUIDHelpers::Nil || new_table_id.uuid == UUIDHelpers::Nil;
-
-    if (recreate_dictionary)
-    {
-        /// It's too hard to update both name and uuid, better to reload dictionary with new name
-        removeDictionaryConfigurationFromRepository();
-        auto repository = std::make_unique<ExternalLoaderDictionaryStorageConfigRepository>(*this);
-        remove_repository_callback = getContext()->getExternalDictionariesLoader().addConfigRepository(std::move(repository));
-        /// Dictionary will be reloaded lazily to avoid exceptions in the middle of renaming
-    }
-    else
+    if (has_configuration)
     {
         const auto & external_dictionaries_loader = getContext()->getExternalDictionariesLoader();
         auto result = external_dictionaries_loader.getLoadResult(old_table_id.getInternalDictionaryName());

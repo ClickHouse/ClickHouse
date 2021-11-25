@@ -37,3 +37,11 @@ GraphiteWriter::GraphiteWriter(const std::string & config_name, const std::strin
         root_path += sub_path;
     }
 }
+
+
+std::string GraphiteWriter::getPerServerPath(const std::string & server_name, const std::string & root_path)
+{
+    std::string path = root_path + "." + server_name;
+    std::replace(path.begin() + root_path.size() + 1, path.end(), '.', '_');
+    return path;
+}

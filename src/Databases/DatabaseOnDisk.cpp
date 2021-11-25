@@ -40,7 +40,6 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int DATABASE_NOT_EMPTY;
-    extern const int INCORRECT_QUERY;
 }
 
 
@@ -52,7 +51,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     bool force_restore)
 {
     ast_create_query.attach = true;
-    ast_create_query.setDatabase(database_name);
+    ast_create_query.database = database_name;
 
     if (ast_create_query.as_table_function)
     {
@@ -61,9 +60,9 @@ std::pair<String, StoragePtr> createTableFromAST(
         ColumnsDescription columns;
         if (ast_create_query.columns_list && ast_create_query.columns_list->columns)
             columns = InterpreterCreateQuery::getColumnsDescription(*ast_create_query.columns_list->columns, context, true);
-        StoragePtr storage = table_function->execute(ast_create_query.as_table_function, context, ast_create_query.getTable(), std::move(columns));
+        StoragePtr storage = table_function->execute(ast_create_query.as_table_function, context, ast_create_query.table, std::move(columns));
         storage->renameInMemory(ast_create_query);
-        return {ast_create_query.getTable(), storage};
+        return {ast_create_query.table, storage};
     }
 
     ColumnsDescription columns;
@@ -83,7 +82,7 @@ std::pair<String, StoragePtr> createTableFromAST(
 
     return
     {
-        ast_create_query.getTable(),
+        ast_create_query.table,
         StorageFactory::instance().get(
             ast_create_query,
             table_data_path_relative,
@@ -113,7 +112,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
 
     /// We remove everything that is not needed for ATTACH from the query.
     assert(!create->temporary);
-    create->database.reset();
+    create->database.clear();
     create->as_database.clear();
     create->as_table.clear();
     create->if_not_exists = false;
@@ -130,7 +129,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     create->out_file = nullptr;
 
     if (create->uuid != UUIDHelpers::Nil)
-        create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
+        create->table = TABLE_WITH_UUID_NAME_PLACEHOLDER;
 
     WriteBufferFromOwnString statement_buf;
     formatAST(*create, statement_buf, false);
@@ -162,7 +161,7 @@ void DatabaseOnDisk::createTable(
 {
     const auto & settings = local_context->getSettingsRef();
     const auto & create = query->as<ASTCreateQuery &>();
-    assert(table_name == create.getTable());
+    assert(table_name == create.table);
 
     /// Create a file with metadata if necessary - if the query is not ATTACH.
     /// Write the query of `ATTACH table` to it.
@@ -186,7 +185,7 @@ void DatabaseOnDisk::createTable(
     {
         /// Metadata already exists, table was detached
         removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, true);
-        attachTable(local_context, table_name, table, getTableDataPath(create));
+        attachTable(table_name, table, getTableDataPath(create));
         return;
     }
 
@@ -247,12 +246,12 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
 
 void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                                        const String & table_metadata_tmp_path, const String & table_metadata_path,
-                                       ContextPtr query_context)
+                                       ContextPtr /*query_context*/)
 {
     try
     {
         /// Add a table to the map of known tables.
-        attachTable(query_context, query.getTable(), table, getTableDataPath(query));
+        attachTable(query.table, table, getTableDataPath(query));
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
@@ -265,9 +264,9 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
     }
 }
 
-void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const String & table_name)
+void DatabaseOnDisk::detachTablePermanently(ContextPtr, const String & table_name)
 {
-    auto table = detachTable(query_context, table_name);
+    auto table = detachTable(table_name);
 
     fs::path detached_permanently_flag(getObjectMetadataPath(table_name) + detached_suffix);
     try
@@ -289,7 +288,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     if (table_data_path_relative.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Path is empty");
 
-    StoragePtr table = detachTable(local_context, table_name);
+    StoragePtr table = detachTable(table_name);
 
     /// This is possible for Lazy database.
     if (!table)
@@ -310,7 +309,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     catch (...)
     {
         LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
-        attachTable(local_context, table_name, table, table_data_path_relative);
+        attachTable(table_name, table, table_data_path_relative);
         if (renamed)
             fs::rename(table_metadata_path_drop, table_metadata_path);
         throw;
@@ -350,6 +349,8 @@ void DatabaseOnDisk::renameTable(
 {
     if (exchange)
         throw Exception("Tables can be exchanged only in Atomic databases", ErrorCodes::NOT_IMPLEMENTED);
+    if (dictionary)
+        throw Exception("Dictionaries can be renamed only in Atomic databases", ErrorCodes::NOT_IMPLEMENTED);
 
     bool from_ordinary_to_atomic = false;
     bool from_atomic_to_ordinary = false;
@@ -370,12 +371,8 @@ void DatabaseOnDisk::renameTable(
     String table_metadata_path;
     ASTPtr attach_query;
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
-    StoragePtr table = tryGetTable(table_name, local_context);
-    if (dictionary && table && !table->isDictionary())
-        throw Exception("Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables", ErrorCodes::INCORRECT_QUERY);
-
-    detachTable(local_context, table_name);
-
+    StoragePtr table = tryGetTable(table_name, getContext());
+    detachTable(table_name);
     UUID prev_uuid = UUIDHelpers::Nil;
     try
     {
@@ -385,8 +382,8 @@ void DatabaseOnDisk::renameTable(
         table_metadata_path = getObjectMetadataPath(table_name);
         attach_query = parseQueryFromMetadata(log, local_context, table_metadata_path);
         auto & create = attach_query->as<ASTCreateQuery &>();
-        create.setDatabase(to_database.getDatabaseName());
-        create.setTable(to_table_name);
+        create.database = to_database.getDatabaseName();
+        create.table = to_table_name;
         if (from_ordinary_to_atomic)
             create.uuid = UUIDHelpers::generateV4();
         if (from_atomic_to_ordinary)
@@ -400,12 +397,12 @@ void DatabaseOnDisk::renameTable(
     }
     catch (const Exception &)
     {
-        attachTable(local_context, table_name, table, table_data_relative_path);
+        attachTable(table_name, table, table_data_relative_path);
         throw;
     }
     catch (const Poco::Exception & e)
     {
-        attachTable(local_context, table_name, table, table_data_relative_path);
+        attachTable(table_name, table, table_data_relative_path);
         /// Better diagnostics.
         throw Exception{Exception::CreateFromPocoTag{}, e};
     }
@@ -433,11 +430,7 @@ void DatabaseOnDisk::renameTable(
 ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, ContextPtr, bool throw_on_error) const
 {
     ASTPtr ast;
-    StoragePtr storage = tryGetTable(table_name, getContext());
-    bool has_table = storage != nullptr;
-    bool is_system_storage = false;
-    if (has_table)
-        is_system_storage = storage->isSystemStorage();
+    bool has_table = tryGetTable(table_name, getContext()) != nullptr;
     auto table_metadata_path = getObjectMetadataPath(table_name);
     try
     {
@@ -448,8 +441,6 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
         if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
             throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
                             ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
-        else if (is_system_storage)
-            ast = getCreateQueryFromStorage(table_name, storage, throw_on_error);
         else if (throw_on_error)
             throw;
     }
@@ -467,7 +458,7 @@ ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
         ast = parseQueryFromMetadata(log, getContext(), database_metadata_path, true);
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.attach = false;
-        ast_create_query.setDatabase(database_name);
+        ast_create_query.database = database_name;
     }
     if (!ast)
     {
@@ -651,18 +642,18 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
         return nullptr;
 
     auto & create = ast->as<ASTCreateQuery &>();
-    if (create.table && create.uuid != UUIDHelpers::Nil)
+    if (!create.table.empty() && create.uuid != UUIDHelpers::Nil)
     {
         String table_name = unescapeForFileName(fs::path(metadata_file_path).stem());
 
-        if (create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER && logger)
+        if (create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER && logger)
             LOG_WARNING(
                 logger,
                 "File {} contains both UUID and table name. Will use name `{}` instead of `{}`",
                 metadata_file_path,
                 table_name,
-                create.getTable());
-        create.setTable(table_name);
+                create.table);
+        create.table = table_name;
     }
 
     return ast;
@@ -676,36 +667,10 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metada
     {
         auto & ast_create_query = ast->as<ASTCreateQuery &>();
         ast_create_query.attach = false;
-        ast_create_query.setDatabase(getDatabaseName());
+        ast_create_query.database = getDatabaseName();
     }
 
     return ast;
-}
-
-ASTPtr DatabaseOnDisk::getCreateQueryFromStorage(const String & table_name, const StoragePtr & storage, bool throw_on_error) const
-{
-    auto metadata_ptr = storage->getInMemoryMetadataPtr();
-    if (metadata_ptr == nullptr)
-    {
-        if (throw_on_error)
-            throw Exception(ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY, "Cannot get metadata of {}.{}", backQuote(getDatabaseName()), backQuote(table_name));
-        else
-            return nullptr;
-    }
-
-    /// setup create table query storage info.
-    auto ast_engine = std::make_shared<ASTFunction>();
-    ast_engine->name = storage->getName();
-    auto ast_storage = std::make_shared<ASTStorage>();
-    ast_storage->set(ast_storage->engine, ast_engine);
-
-    auto create_table_query = DB::getCreateQueryFromStorage(storage, ast_storage, false,
-                                                            getContext()->getSettingsRef().max_parser_depth, throw_on_error);
-
-    create_table_query->set(create_table_query->as<ASTCreateQuery>()->comment,
-                            std::make_shared<ASTLiteral>("SYSTEM TABLE is built on the fly."));
-
-    return create_table_query;
 }
 
 void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context)

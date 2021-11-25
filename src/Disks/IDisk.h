@@ -28,6 +28,11 @@ namespace Poco
     }
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric DiskSpaceReservedForMerge;
+}
+
 namespace DB
 {
 

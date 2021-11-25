@@ -11,6 +11,7 @@ SCRIPT_PATH = os.path.realpath(__file__)
 IMAGE_MAP = {
     "deb": "clickhouse/deb-builder",
     "binary": "clickhouse/binary-builder",
+    "unbundled": "clickhouse/unbundled-builder"
 }
 
 def check_image_exists_locally(image_name):
@@ -54,7 +55,7 @@ def run_docker_image_with_env(image_name, output, env_variables, ch_root, ccache
 
     subprocess.check_call(cmd, shell=True)
 
-def parse_env_variables(build_type, compiler, sanitizer, package_type, image_type, cache, distcc_hosts, split_binary, clang_tidy, version, author, official, alien_pkgs, with_coverage, with_binaries):
+def parse_env_variables(build_type, compiler, sanitizer, package_type, image_type, cache, distcc_hosts, unbundled, split_binary, clang_tidy, version, author, official, alien_pkgs, with_coverage, with_binaries):
     CLANG_PREFIX = "clang"
     DARWIN_SUFFIX = "-darwin"
     DARWIN_ARM_SUFFIX = "-darwin-aarch64"
@@ -106,7 +107,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
 
     cxx = cc.replace('gcc', 'g++').replace('clang', 'clang++')
 
-    if image_type == "deb":
+    if image_type == "deb" or image_type == "unbundled":
         result.append("DEB_CC={}".format(cc))
         result.append("DEB_CXX={}".format(cxx))
         # For building fuzzers
@@ -158,6 +159,15 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
         cmake_flags.append('-DENABLE_TESTS=1')
         cmake_flags.append('-DUSE_GTEST=1')
 
+    # "Unbundled" build is not suitable for any production usage.
+    # But it is occasionally used by some developers.
+    # The whole idea of using unknown version of libraries from the OS distribution is deeply flawed.
+    # We wish these developers good luck.
+    if unbundled:
+        # We also disable all CPU features except basic x86_64.
+        # It is only slightly related to "unbundled" build, but it is a good place to test if code compiles without these instruction sets.
+        cmake_flags.append('-DUNBUNDLED=1 -DUSE_INTERNAL_RDKAFKA_LIBRARY=1 -DENABLE_ARROW=0 -DENABLE_AVRO=0 -DENABLE_ORC=0 -DENABLE_PARQUET=0 -DENABLE_SSSE3=0 -DENABLE_SSE41=0 -DENABLE_SSE42=0 -DENABLE_PCLMULQDQ=0 -DENABLE_POPCNT=0 -DENABLE_AVX=0 -DENABLE_AVX2=0')
+
     if split_binary:
         cmake_flags.append('-DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1')
         # We can't always build utils because it requires too much space, but
@@ -203,6 +213,7 @@ if __name__ == "__main__":
                                                "clang-13", "clang-13-darwin", "clang-13-darwin-aarch64", "clang-13-aarch64", "clang-13-ppc64le",
                                                "clang-11-freebsd", "clang-12-freebsd", "clang-13-freebsd", "gcc-11"), default="clang-13")
     parser.add_argument("--sanitizer", choices=("address", "thread", "memory", "undefined", ""), default="")
+    parser.add_argument("--unbundled", action="store_true")
     parser.add_argument("--split-binary", action="store_true")
     parser.add_argument("--clang-tidy", action="store_true")
     parser.add_argument("--cache", choices=("", "ccache", "distcc"), default="")
@@ -221,7 +232,7 @@ if __name__ == "__main__":
     if not os.path.isabs(args.output_dir):
         args.output_dir = os.path.abspath(os.path.join(os.getcwd(), args.output_dir))
 
-    image_type = 'binary' if args.package_type == 'performance' else args.package_type
+    image_type = 'binary' if args.package_type == 'performance' else 'unbundled' if args.unbundled else args.package_type
     image_name = IMAGE_MAP[image_type]
 
     if not os.path.isabs(args.clickhouse_repo_path):
@@ -245,7 +256,7 @@ if __name__ == "__main__":
             build_image(image_with_version, dockerfile)
     env_prepared = parse_env_variables(
         args.build_type, args.compiler, args.sanitizer, args.package_type, image_type,
-        args.cache, args.distcc_hosts, args.split_binary, args.clang_tidy,
+        args.cache, args.distcc_hosts, args.unbundled, args.split_binary, args.clang_tidy,
         args.version, args.author, args.official, args.alien_pkgs, args.with_coverage, args.with_binaries)
 
     run_docker_image_with_env(image_name, args.output_dir, env_prepared, ch_root, args.ccache_dir, args.docker_image_version)

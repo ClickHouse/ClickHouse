@@ -1,6 +1,5 @@
 -- Tags: no-fasttest
 
--- { echo }
 SELECT '--JSON_VALUE--';
 SELECT JSON_VALUE('{"hello":1}', '$'); -- root is a complex object => default value (empty string)
 SELECT JSON_VALUE('{"hello":1}', '$.hello');
@@ -13,10 +12,6 @@ SELECT JSON_VALUE('{"hello":{"world":"!"}}', '$.hello');
 SELECT JSON_VALUE('{hello:world}', '$.hello'); -- invalid json => default value (empty string)
 SELECT JSON_VALUE('', '$.hello');
 SELECT JSON_VALUE('{"foo foo":"bar"}', '$."foo foo"');
-SELECT JSON_VALUE('{"hello":"\\uD83C\\uDF3A \\uD83C\\uDF38 \\uD83C\\uDF37 Hello, World \\uD83C\\uDF37 \\uD83C\\uDF38 \\uD83C\\uDF3A"}', '$.hello');
-SELECT JSON_VALUE('{"a":"Hello \\"World\\" \\\\"}', '$.a');
-select JSON_VALUE('{"a":"\\n\\u0000"}', '$.a');
-select JSON_VALUE('{"a":"\\u263a"}', '$.a');
 
 SELECT '--JSON_QUERY--';
 SELECT JSON_QUERY('{"hello":1}', '$');
@@ -55,5 +50,4 @@ INSERT INTO 01889_sql_json(id, json) VALUES(0, '{"name":"Ivan","surname":"Ivanov
 INSERT INTO 01889_sql_json(id, json) VALUES(1, '{"name":"Katya","surname":"Baltica","friends":["Tihon","Ernest","Innokentiy"]}');
 INSERT INTO 01889_sql_json(id, json) VALUES(2, '{"name":"Vitali","surname":"Brown","friends":["Katya","Anatoliy","Ivan","Oleg"]}');
 SELECT id, JSON_QUERY(json, '$.friends[0 to 2]') FROM 01889_sql_json ORDER BY id;
-SELECT id, JSON_VALUE(json, '$.friends[0]') FROM 01889_sql_json ORDER BY id;
 DROP TABLE 01889_sql_json;

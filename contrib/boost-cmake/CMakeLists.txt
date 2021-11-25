@@ -1,4 +1,4 @@
-option (USE_INTERNAL_BOOST_LIBRARY "Use internal Boost library" ON)
+option (USE_INTERNAL_BOOST_LIBRARY "Use internal Boost library" ${NOT_UNBUNDLED})
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     # 1.70 like in contrib/boost
@@ -195,12 +195,6 @@ if (NOT EXTERNAL_BOOST_FOUND)
             "${LIBRARY_DIR}/libs/context/src/asm/jump_ppc64_sysv_elf_gas.S"
             "${LIBRARY_DIR}/libs/context/src/asm/make_ppc64_sysv_elf_gas.S"
             "${LIBRARY_DIR}/libs/context/src/asm/ontop_ppc64_sysv_elf_gas.S"
-        )
-    elseif (ARCH_RISCV64)
-        set (SRCS_CONTEXT ${SRCS_CONTEXT}
-            "${LIBRARY_DIR}/libs/context/src/asm/jump_riscv64_sysv_elf_gas.S"
-            "${LIBRARY_DIR}/libs/context/src/asm/make_riscv64_sysv_elf_gas.S"
-            "${LIBRARY_DIR}/libs/context/src/asm/ontop_riscv64_sysv_elf_gas.S"
         )
     elseif(OS_DARWIN)
         set (SRCS_CONTEXT ${SRCS_CONTEXT}

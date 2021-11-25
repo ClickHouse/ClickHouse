@@ -39,7 +39,7 @@ public:
         const String & disk_name_,
         const String & hdfs_root_path_,
         SettingsPtr settings_,
-        DiskPtr metadata_disk_,
+        const String & metadata_path_,
         const Poco::Util::AbstractConfiguration & config_);
 
     DiskType getType() const override { return DiskType::HDFS; }

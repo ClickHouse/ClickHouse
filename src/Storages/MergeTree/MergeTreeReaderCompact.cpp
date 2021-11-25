@@ -71,9 +71,6 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         if (buffer_size)
             settings.read_settings = settings.read_settings.adjustBufferSize(buffer_size);
 
-        if (!settings.read_settings.local_fs_buffer_size || !settings.read_settings.remote_fs_buffer_size)
-            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
-
         const String full_data_path = data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
         if (uncompressed_cache)
         {

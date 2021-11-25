@@ -500,6 +500,7 @@ function(preprocess_et out_var)
       COMMAND perl "${KRB5_SOURCE_DIR}/util/et/compile_et" -d "${KRB5_SOURCE_DIR}/util/et" ${in_f}
       DEPENDS ${in_f} "${KRB5_SOURCE_DIR}/util/et/compile_et"
       WORKING_DIRECTORY ${ET_PATH}
+      COMMENT "Creating preprocessed file ${F_C}"
       VERBATIM
       )
     list(APPEND result ${F_C})
@@ -525,6 +526,7 @@ add_custom_command(
 add_custom_target(
     ERROR_MAP_H
     DEPENDS "${KRB5_SOURCE_DIR}/lib/gssapi/krb5/error_map.h"
+    COMMENT "generating error_map.h"
     VERBATIM
 )
 
@@ -537,12 +539,14 @@ add_custom_command(
 add_custom_target(
     ERRMAP_H
     DEPENDS "${KRB5_SOURCE_DIR}/lib/gssapi/generic/errmap.h"
+    COMMENT "generating errmap.h"
     VERBATIM
 )
 
 add_custom_target(
     KRB_5_H
     DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/include/krb5/krb5.h"
+    COMMENT "generating krb5.h"
     VERBATIM
 )
 

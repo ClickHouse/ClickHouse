@@ -166,7 +166,6 @@ endif()
 
 target_link_libraries (clickhouse_common_io PRIVATE jemalloc)
 
-add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
 add_subdirectory(Common/Config)
 
@@ -198,7 +197,6 @@ add_object_library(clickhouse_databases Databases)
 add_object_library(clickhouse_databases_mysql Databases/MySQL)
 add_object_library(clickhouse_disks Disks)
 add_object_library(clickhouse_interpreters Interpreters)
-add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
@@ -366,10 +364,13 @@ dbms_target_link_libraries (
         clickhouse_common_io
 )
 
-dbms_target_link_libraries (
-    PUBLIC
-        boost::circular_buffer
-        boost::heap)
+if (NOT_UNBUNDLED)
+    dbms_target_link_libraries (
+        PUBLIC
+            boost::circular_buffer
+            boost::heap
+    )
+endif()
 
 target_include_directories(clickhouse_common_io PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include") # uses some includes from core
 dbms_target_include_directories(PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include")

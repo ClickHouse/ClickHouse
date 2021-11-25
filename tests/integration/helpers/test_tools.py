@@ -85,18 +85,15 @@ def assert_logs_contain_with_retry(instance, substring, retry_count=20, sleep_ti
     else:
         raise AssertionError("'{}' not found in logs".format(substring))
 
-def exec_query_with_retry(instance, query, retry_count=40, sleep_time=0.5, silent=False, settings={}):
+def exec_query_with_retry(instance, query, retry_count=40, sleep_time=0.5, settings={}):
     exception = None
-    for cnt in range(retry_count):
+    for _ in range(retry_count):
         try:
-            res = instance.query(query, timeout=30, settings=settings)
-            if not silent:
-                logging.debug(f"Result of {query} on {cnt} try is {res}")
+            instance.query(query, timeout=30, settings=settings)
             break
         except Exception as ex:
             exception = ex
-            if not silent:
-                logging.exception(f"Failed to execute query '{query}' on  {cnt} try on instance '{instance.name}' will retry")
+            logging.exception(f"Failed to execute query '{query}' on instance '{instance.name}' will retry")
             time.sleep(sleep_time)
     else:
         raise exception

@@ -182,6 +182,7 @@ void MsgPackRowOutputFormat::write(const Columns & columns, size_t row_num)
 
 void registerOutputFormatMsgPack(FormatFactory & factory)
 {
+
     factory.registerOutputFormat("MsgPack", [](
             WriteBuffer & buf,
             const Block & sample,
@@ -190,7 +191,6 @@ void registerOutputFormatMsgPack(FormatFactory & factory)
     {
         return std::make_shared<MsgPackRowOutputFormat>(buf, sample, params);
     });
-    factory.markOutputFormatSupportsParallelFormatting("MsgPack");
 }
 
 }

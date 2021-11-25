@@ -437,23 +437,3 @@ def test_miscellaneous_engines():
     node.query("CREATE TABLE mydb.other_table (a UInt8, b UInt8) ENGINE Distributed('test_local_cluster', mydb, local)")
     assert node.query("SELECT * FROM mydb.other_table", user="another") == TSV([[1, 0], [1, 1], [1, 0], [1, 1]])
     assert node.query("SELECT sum(a), b FROM mydb.other_table GROUP BY b ORDER BY b", user="another") == TSV([[2, 0], [2, 1]])
-
-
-def test_policy_on_distributed_table_via_role():
-    node.query("DROP TABLE IF EXISTS local_tbl")
-    node.query("DROP TABLE IF EXISTS dist_tbl")
-
-    node.query("CREATE TABLE local_tbl engine=MergeTree ORDER BY tuple() as select * FROM numbers(10)")
-    node.query("CREATE TABLE dist_tbl ENGINE=Distributed( 'test_cluster_two_shards_localhost', default, local_tbl) AS local_tbl")
-
-    node.query("CREATE ROLE OR REPLACE 'role1'")
-    node.query("CREATE USER OR REPLACE 'user1' DEFAULT ROLE 'role1'")
-
-    node.query("GRANT SELECT ON dist_tbl TO 'role1'")
-    node.query("GRANT SELECT ON local_tbl TO 'role1'")
-
-    node.query("CREATE ROW POLICY OR REPLACE 'all_data' ON dist_tbl, local_tbl USING 1 TO ALL EXCEPT 'role1'")
-    node.query("CREATE ROW POLICY OR REPLACE 'role1_data' ON dist_tbl, local_tbl USING number % 2 = 0 TO 'role1'")
-
-    assert node.query("SELECT * FROM local_tbl SETTINGS prefer_localhost_replica=0", user="user1") == TSV([[0], [2], [4], [6], [8]])
-    assert node.query("SELECT * FROM dist_tbl SETTINGS prefer_localhost_replica=0", user="user1") == TSV([[0], [2], [4], [6], [8], [0], [2], [4], [6], [8]])

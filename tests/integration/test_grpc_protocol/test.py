@@ -213,7 +213,6 @@ def test_errors_handling():
 def test_authentication():
     query("CREATE USER OR REPLACE john IDENTIFIED BY 'qwe123'")
     assert query("SELECT currentUser()", user_name="john", password="qwe123") == "john\n"
-    query("DROP USER john")
 
 def test_logs():
     logs = query_and_get_logs("SELECT 1", settings={'send_logs_level':'debug'})

@@ -25,6 +25,28 @@ class IOutputFormat : public IProcessor
 public:
     enum PortKind { Main = 0, Totals = 1, Extremes = 2 };
 
+protected:
+    WriteBuffer & out;
+
+    Chunk current_chunk;
+    PortKind current_block_kind = PortKind::Main;
+    bool has_input = false;
+    bool finished = false;
+    bool finalized = false;
+
+    /// Flush data on each consumed chunk. This is intended for interactive applications to output data as soon as it's ready.
+    bool auto_flush = false;
+
+    RowsBeforeLimitCounterPtr rows_before_limit_counter;
+
+    friend class ParallelFormattingOutputFormat;
+
+    virtual void consume(Chunk) = 0;
+    virtual void consumeTotals(Chunk) {}
+    virtual void consumeExtremes(Chunk) {}
+    virtual void finalize() {}
+
+public:
     IOutputFormat(const Block & header_, WriteBuffer & out_);
 
     Status prepare() override;
@@ -55,7 +77,8 @@ public:
 
     void write(const Block & block);
 
-    void finalize();
+    virtual void doWritePrefix() {}
+    virtual void doWriteSuffix() { finalize(); }
 
     virtual bool expectMaterializedColumns() const { return true; }
 
@@ -65,43 +88,11 @@ public:
     size_t getResultRows() const { return result_rows; }
     size_t getResultBytes() const { return result_bytes; }
 
-    void doNotWritePrefix() { need_write_prefix = false; }
-
-protected:
-    friend class ParallelFormattingOutputFormat;
-
-    virtual void consume(Chunk) = 0;
-    virtual void consumeTotals(Chunk) {}
-    virtual void consumeExtremes(Chunk) {}
-    virtual void finalizeImpl() {}
-    virtual void writePrefix() {}
-
-    void writePrefixIfNot()
-    {
-        if (need_write_prefix)
-        {
-            writePrefix();
-            need_write_prefix = false;
-        }
-    }
-
-    WriteBuffer & out;
-
-    Chunk current_chunk;
-    PortKind current_block_kind = PortKind::Main;
-    bool has_input = false;
-    bool finished = false;
-    bool finalized = false;
-
-    /// Flush data on each consumed chunk. This is intended for interactive applications to output data as soon as it's ready.
-    bool auto_flush = false;
-    bool need_write_prefix  = true;
-
-    RowsBeforeLimitCounterPtr rows_before_limit_counter;
-
 private:
     /// Counters for consumed chunks. Are used for QueryLog.
     size_t result_rows = 0;
     size_t result_bytes = 0;
+
+    bool prefix_written = false;
 };
 }

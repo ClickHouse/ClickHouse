@@ -296,12 +296,6 @@ std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> 
         }
         else
         {
-            /// We need to check that query was not cancelled again,
-            /// to avoid the race between cancel() thread and read() thread.
-            /// (since cancel() thread will steal the fiber and may update the packet).
-            if (was_cancelled)
-                return Block();
-
             if (auto data = processPacket(std::move(read_context->packet)))
                 return std::move(*data);
             else if (got_duplicated_part_uuids)

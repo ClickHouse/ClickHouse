@@ -102,16 +102,11 @@ private:
     size_t width;
     X min_x;
     X max_x;
-    bool specified_min_max_x;
 
-    template <class T>
-    String getBar(const T value) const
+    String getBar(const UInt8 value) const
     {
-        if (isNaN(value) || value > 8 || value < 1)
-            return " ";
-
         // ▁▂▃▄▅▆▇█
-        switch (static_cast<UInt8>(value))
+        switch (value)
         {
             case 1: return "▁";
             case 2: return "▂";
@@ -141,20 +136,9 @@ private:
         String value;
         if (data.points.empty() || !width)
             return value;
-
-        size_t diff_x;
-        X min_x_local;
-        if (specified_min_max_x)
-        {
-            diff_x = max_x - min_x;
-            min_x_local = min_x;
-        }
-        else
-        {
-            diff_x = data.max_x - data.min_x;
-            min_x_local = data.min_x;
-        }
-
+        X local_min_x = data.min_x;
+        X local_max_x = data.max_x;
+        size_t diff_x = local_max_x - local_min_x;
         if ((diff_x + 1) <= width)
         {
             Y min_y = data.min_y;
@@ -165,15 +149,15 @@ private:
             {
                 for (size_t i = 0; i <= diff_x; ++i)
                 {
-                    auto it = data.points.find(min_x_local + i);
+                    auto it = data.points.find(local_min_x + i);
                     bool found = it != data.points.end();
-                    value += getBar(found ? std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1 : 0.0);
+                    value += getBar(found ? static_cast<UInt8>(std::round(((it->getMapped() - min_y) / diff_y) * 7) + 1) : 0);
                 }
             }
             else
             {
                 for (size_t i = 0; i <= diff_x; ++i)
-                    value += getBar(data.points.has(min_x_local + i) ? 1 : 0);
+                    value += getBar(data.points.has(local_min_x + i) ? 1 : 0);
             }
         }
         else
@@ -202,9 +186,9 @@ private:
                 if (i == bound.first) // is bound
                 {
                     Float64 proportion = bound.second - bound.first;
-                    auto it = data.points.find(min_x_local + i);
+                    auto it = data.points.find(local_min_x + i);
                     bool found = (it != data.points.end());
-                    if (found && proportion > 0)
+                    if (found)
                         new_y = new_y.value_or(0) + it->getMapped() * proportion;
 
                     if (new_y)
@@ -229,7 +213,7 @@ private:
                 }
                 else
                 {
-                    auto it = data.points.find(min_x_local + i);
+                    auto it = data.points.find(local_min_x + i);
                     if (it != data.points.end())
                         new_y = new_y.value_or(0) + it->getMapped();
                 }
@@ -242,7 +226,7 @@ private:
 
             auto getBars = [&] (const std::optional<Float64> & point_y)
             {
-                value += getBar(point_y ? std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1 : 0);
+                value += getBar(point_y ? static_cast<UInt8>(std::round(((point_y.value() - min_y.value()) / diff_y) * 7) + 1) : 0);
             };
             auto getBarsForConstant = [&] (const std::optional<Float64> & point_y)
             {
@@ -266,13 +250,11 @@ public:
         width = params.at(0).safeGet<UInt64>();
         if (params.size() == 3)
         {
-            specified_min_max_x = true;
             min_x = params.at(1).safeGet<X>();
             max_x = params.at(2).safeGet<X>();
         }
         else
         {
-            specified_min_max_x = false;
             min_x = std::numeric_limits<X>::min();
             max_x = std::numeric_limits<X>::max();
         }

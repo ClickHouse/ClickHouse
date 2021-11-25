@@ -118,7 +118,7 @@ $CLICKHOUSE_CLIENT -q "ATTACH DICTIONARY IF NOT EXISTS database_for_dict.dict1"
 $CLICKHOUSE_CLIENT -q "ATTACH DICTIONARY IF NOT EXISTS database_for_dict.dict2"
 
 $CLICKHOUSE_CLIENT -n -q "
-    DROP DATABASE database_for_dict;
     DROP TABLE table_for_dict1;
     DROP TABLE table_for_dict2;
+    DROP DATABASE database_for_dict;
 "

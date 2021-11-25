@@ -5,15 +5,5 @@
             <access_key_id>minio</access_key_id>
             <secret_access_key>minio123</secret_access_key>
         </s3_conf1>
-        <s3_parquet>
-            <url>http://minio1:9001/root/test_parquet</url>
-            <access_key_id>minio</access_key_id>
-            <secret_access_key>minio123</secret_access_key>
-        </s3_parquet>
-        <s3_orc>
-            <url>http://minio1:9001/root/test_orc</url>
-            <access_key_id>minio</access_key_id>
-            <secret_access_key>minio123</secret_access_key>
-        </s3_orc>
     </named_collections>
 </clickhouse>

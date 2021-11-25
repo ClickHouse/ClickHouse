@@ -107,7 +107,7 @@ Loading key from the environment variable:
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <key_hex from_env="ENVVAR"></key_hex>
+        <key_hex from_env="KEY"></key_hex>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
@@ -120,7 +120,7 @@ Each of these methods can be applied for multiple keys:
 <encryption_codecs>
     <aes_128_gcm_siv>
         <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
-        <key_hex id="1" from_env="ENVVAR"></key_hex>
+        <key_hex id="1" from_env=".."></key_hex>
         <current_key_id>1</current_key_id>
     </aes_128_gcm_siv>
 </encryption_codecs>
@@ -370,7 +370,7 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
   <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
 </http_server_default_response>
 ```  
-## hsts_max_age  {#hsts-max-age}
+## hsts_max_age  
   
 Expired time for HSTS in seconds. The default value is 0 means clickhouse disabled HSTS. If you set a positive number, the HSTS will be enabled and the max-age is the number you set.  
   
@@ -588,7 +588,7 @@ For more information, see the section [Creating replicated tables](../../engines
 
 Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family.
 
-The cache is shared for the server and memory is allocated as needed.
+The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
 
 **Example**
 
@@ -761,30 +761,6 @@ Default value: 10000.
 
 ``` xml
 <max_thread_pool_size>12000</max_thread_pool_size>
-```
-
-## max_thread_pool_free_size {#max-thread-pool-free-size}
-
-The number of threads that are always held in the Global Thread pool.
-
-Default value: 1000.
-
-**Example**
-
-``` xml
-<max_thread_pool_free_size>1200</max_thread_pool_free_size>
-```
-
-## thread_pool_queue_size {#thread-pool-queue-size}
-
-The limit to the number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to the `max_thread_pool_size`.
-
-Default value: 10000.
-
-**Example**
-
-``` xml
-<thread_pool_queue_size>12000</thread_pool_queue_size>
 ```
 
 ## merge_tree {#server_configuration_parameters-merge_tree}
@@ -1460,53 +1436,4 @@ To add an LDAP server as a remote user directory of users that are not defined l
 </ldap>
 ```
 
-## total_memory_profiler_step {#total-memory-profiler-step}
-
-Sets the memory size (in bytes) for a stack trace at every peak allocation step. The data is stored in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `query_id` equal to an empty string.
-
-Possible values:
-
--   Positive integer.
-
-Default value: `4194304`.
-
-## total_memory_tracker_sample_probability {#total-memory-tracker-sample-probability}
-
-Allows to collect random allocations and deallocations and writes them in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `trace_type` equal to a `MemorySample` with the specified probability. The probability is for every allocation or deallocations, regardless of the size of the allocation. Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit (default value is `4` MiB). It can be lowered if [total_memory_profiler_step](#total-memory-profiler-step) is lowered. You can set `total_memory_profiler_step` equal to `1` for extra fine-grained sampling.
-
-Possible values:
-
--   Positive integer.
--   0 — Writing of random allocations and deallocations in the `system.trace_log` system table is disabled.
-
-Default value: `0`.
-
-## mmap_cache_size {#mmap-cache-size}
-
-Sets the cache size (in bytes) for mapped files. This setting allows to avoid frequent open/[mmap/munmap](https://en.wikipedia.org/wiki/Mmap)/close calls (which are very expensive due to consequent page faults) and to reuse mappings from several threads and queries. The setting value is the number of mapped regions (usually equal to the number of mapped files). The amount of data in mapped files can be monitored in [system.metrics](../../operations/system-tables/metrics.md), [system.metric_log](../../operations/system-tables/metric_log.md) system tables by the `MMappedFiles` and `MMappedFileBytes` metrics, in [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md), [system.asynchronous_metrics_log](../../operations/system-tables/asynchronous_metric_log.md) by the `MMapCacheCells` metric, and also in [system.events](../../operations/system-tables/events.md), [system.processes](../../operations/system-tables/processes.md), [system.query_log](../../operations/system-tables/query_log.md), [system.query_thread_log](../../operations/system-tables/query_thread_log.md), [system.query_views_log](../../operations/system-tables/query_views_log.md) by the `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses` events. Note that the amount of data in mapped files does not consume memory directly and is not accounted in query or server memory usage — because this memory can be discarded similar to OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
-
-Possible values:
-
--   Positive integer.
-
-Default value: `1000`.
-
-## compiled_expression_cache_size {#compiled-expression-cache-size}
-
-Sets the cache size (in bytes) for [compiled expressions](../../operations/caches.md).
-
-Possible values:
-
--   Positive integer.
-
-Default value: `134217728`.
-
-## compiled_expression_cache_elements_size {#compiled_expression_cache_elements_size}
-
-Sets the cache size (in elements) for [compiled expressions](../../operations/caches.md).
-
-Possible values:
-
--   Positive integer.
-
-Default value: `10000`.
+[Original article](https://clickhouse.com/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

@@ -3,7 +3,7 @@ set (CMAKE_SYSTEM_PROCESSOR "aarch64")
 set (CMAKE_C_COMPILER_TARGET "aarch64-unknown-freebsd12")
 set (CMAKE_CXX_COMPILER_TARGET "aarch64-unknown-freebsd12")
 set (CMAKE_ASM_COMPILER_TARGET "aarch64-unknown-freebsd12")
-set (CMAKE_SYSROOT "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/freebsd-aarch64")
+set (CMAKE_SYSROOT "${CMAKE_CURRENT_LIST_DIR}/../toolchain/freebsd-aarch64")
 
 set (CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)  # disable linkage check - it doesn't work in CMake
 

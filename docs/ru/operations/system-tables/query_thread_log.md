@@ -9,7 +9,7 @@
 
 Интервал сброса данных в таблицу задаётся параметром `flush_interval_milliseconds` в разделе настроек сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log). Чтобы принудительно записать логи из буфера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs).
 
-ClickHouse не удаляет данные из таблицы автоматически. Подробности в разделе [Введение](../../operations/system-tables/index.md#system-tables-introduction).
+ClickHouse не удаляет данные из таблицы автоматически. Подробности в разделе [Введение](#system-tables-introduction).
 
 Чтобы уменьшить количество запросов, регистрирующихся в таблице `query_thread_log`, вы можете использовать настройку [log_queries_probability](../../operations/settings/settings.md#log-queries-probability).
 

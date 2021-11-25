@@ -411,9 +411,8 @@ Int64 StorageMergeTree::startMutation(const MutationCommands & commands, String 
         version = increment.get();
         entry.commit(version);
         mutation_file_name = entry.file_name;
-        bool inserted = current_mutations_by_version.try_emplace(version, std::move(entry)).second;
-        if (!inserted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", version);
+        auto insertion = current_mutations_by_id.emplace(mutation_file_name, std::move(entry));
+        current_mutations_by_version.emplace(version, insertion.first->second);
 
         LOG_INFO(log, "Added mutation: {}", mutation_file_name);
     }
@@ -618,18 +617,16 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
 {
     LOG_TRACE(log, "Killing mutation {}", mutation_id);
-    UInt64 mutation_version = MergeTreeMutationEntry::tryParseFileName(mutation_id);
-    if (!mutation_version)
-        return CancellationCode::NotFound;
 
     std::optional<MergeTreeMutationEntry> to_kill;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
-        auto it = current_mutations_by_version.find(mutation_version);
-        if (it != current_mutations_by_version.end())
+        auto it = current_mutations_by_id.find(mutation_id);
+        if (it != current_mutations_by_id.end())
         {
             to_kill.emplace(std::move(it->second));
-            current_mutations_by_version.erase(it);
+            current_mutations_by_id.erase(it);
+            current_mutations_by_version.erase(to_kill->block_number);
         }
     }
 
@@ -670,11 +667,10 @@ void StorageMergeTree::loadMutations()
             if (startsWith(it->name(), "mutation_"))
             {
                 MergeTreeMutationEntry entry(disk, path, it->name());
-                UInt64 block_number = entry.block_number;
+                Int64 block_number = entry.block_number;
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands.size());
-                auto inserted = current_mutations_by_version.try_emplace(block_number, std::move(entry)).second;
-                if (!inserted)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Mutation {} already exists, it's a bug", block_number);
+                auto insertion = current_mutations_by_id.emplace(it->name(), std::move(entry));
+                current_mutations_by_version.emplace(block_number, insertion.first->second);
             }
             else if (startsWith(it->name(), "tmp_mutation_"))
             {
@@ -684,7 +680,7 @@ void StorageMergeTree::loadMutations()
     }
 
     if (!current_mutations_by_version.empty())
-        increment.value = std::max(increment.value.load(), current_mutations_by_version.rbegin()->first);
+        increment.value = std::max(Int64(increment.value.load()), current_mutations_by_version.rbegin()->first);
 }
 
 std::shared_ptr<MergeMutateSelectedEntry> StorageMergeTree::selectPartsToMerge(
@@ -1018,31 +1014,30 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
 
     bool scheduled = false;
     if (time_after_previous_cleanup_temporary_directories.compareAndRestartDeferred(
-            getSettings()->merge_tree_clear_old_temporary_directories_interval_seconds))
+            getContext()->getSettingsRef().merge_tree_clear_old_temporary_directories_interval_seconds))
     {
         assignee.scheduleCommonTask(ExecutableLambdaAdapter::create(
             [this, share_lock] ()
             {
-                return clearOldTemporaryDirectories(merger_mutator, getSettings()->temporary_directories_lifetime.totalSeconds());
-            }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
+                clearOldTemporaryDirectories(merger_mutator, getSettings()->temporary_directories_lifetime.totalSeconds());
+                return true;
+            }, common_assignee_trigger, getStorageID()));
         scheduled = true;
     }
     if (auto lock = time_after_previous_cleanup_parts.compareAndRestartDeferred(
-            getSettings()->merge_tree_clear_old_parts_interval_seconds))
+            getContext()->getSettingsRef().merge_tree_clear_old_parts_interval_seconds))
     {
         assignee.scheduleCommonTask(ExecutableLambdaAdapter::create(
             [this, share_lock] ()
             {
                 /// All use relative_data_path which changes during rename
                 /// so execute under share lock.
-                size_t cleared_count = 0;
-                cleared_count += clearOldPartsFromFilesystem();
-                cleared_count += clearOldWriteAheadLogs();
-                cleared_count += clearOldMutations();
-                cleared_count += clearEmptyParts();
-                return cleared_count;
-                /// TODO maybe take into account number of cleared objects when calculating backoff
-            }, common_assignee_trigger, getStorageID()), /* need_trigger */ false);
+                clearOldPartsFromFilesystem();
+                clearOldWriteAheadLogs();
+                clearOldMutations();
+                clearEmptyParts();
+                return true;
+            }, common_assignee_trigger, getStorageID()));
         scheduled = true;
     }
 
@@ -1060,18 +1055,18 @@ Int64 StorageMergeTree::getCurrentMutationVersion(
     return it->first;
 }
 
-size_t StorageMergeTree::clearOldMutations(bool truncate)
+void StorageMergeTree::clearOldMutations(bool truncate)
 {
     const auto settings = getSettings();
     if (!truncate && !settings->finished_mutations_to_keep)
-        return 0;
+        return;
 
     std::vector<MergeTreeMutationEntry> mutations_to_delete;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
         if (!truncate && current_mutations_by_version.size() <= settings->finished_mutations_to_keep)
-            return 0;
+            return;
 
         auto end_it = current_mutations_by_version.end();
         auto begin_it = current_mutations_by_version.begin();
@@ -1084,7 +1079,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
 
             size_t done_count = std::distance(begin_it, end_it);
             if (done_count <= settings->finished_mutations_to_keep)
-                return 0;
+                return;
 
             to_delete_count = done_count - settings->finished_mutations_to_keep;
         }
@@ -1093,6 +1088,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         for (size_t i = 0; i < to_delete_count; ++i)
         {
             mutations_to_delete.push_back(std::move(it->second));
+            current_mutations_by_id.erase(mutations_to_delete.back().file_name);
             it = current_mutations_by_version.erase(it);
         }
     }
@@ -1102,8 +1098,6 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
         LOG_TRACE(log, "Removing mutation: {}", mutation.file_name);
         mutation.removeFile();
     }
-
-    return mutations_to_delete.size();
 }
 
 bool StorageMergeTree::optimize(

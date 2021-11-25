@@ -71,7 +71,7 @@ For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-function
 
 ## Operators for Working with Data Sets {#operators-for-working-with-data-sets}
 
-See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-reference/operators/exists.md) operator.
+*See [IN operators](../../sql-reference/operators/in.md).*
 
 `a IN ...` – The `in(a, b)` function.
 

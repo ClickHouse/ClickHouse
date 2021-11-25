@@ -263,7 +263,7 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
 
 void ColumnMap::forEachSubcolumn(ColumnCallback callback)
 {
-    callback(nested);
+    nested->forEachSubcolumn(callback);
 }
 
 bool ColumnMap::structureEquals(const IColumn & rhs) const

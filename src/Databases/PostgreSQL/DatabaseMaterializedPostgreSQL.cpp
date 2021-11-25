@@ -238,7 +238,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::createAlterSettingsQuery(const SettingCha
     auto * alter = query->as<ASTAlterQuery>();
 
     alter->alter_object = ASTAlterQuery::AlterObjectType::DATABASE;
-    alter->setDatabase(database_name);
+    alter->database = database_name;
     alter->set(alter->command_list, command_list);
 
     return query;
@@ -266,11 +266,11 @@ void DatabaseMaterializedPostgreSQL::createTable(ContextPtr local_context, const
     DatabaseAtomic::createTable(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), table_name, table, query_copy);
 
     /// Attach MaterializedPostgreSQL table.
-    attachTable(local_context, table_name, table, {});
+    attachTable(table_name, table, {});
 }
 
 
-void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const String & table_name, const StoragePtr & table, const String & relative_table_path)
+void DatabaseMaterializedPostgreSQL::attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path)
 {
     /// If there is query context then we need to attach materialized storage.
     /// If there is no query context then we need to attach internal storage from atomic database.
@@ -310,12 +310,12 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
     }
     else
     {
-        DatabaseAtomic::attachTable(context_, table_name, table, relative_table_path);
+        DatabaseAtomic::attachTable(table_name, table, relative_table_path);
     }
 }
 
 
-StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr context_, const String & table_name)
+StoragePtr DatabaseMaterializedPostgreSQL::detachTable(const String & table_name)
 {
     /// If there is query context then we need to detach materialized storage.
     /// If there is no query context then we need to detach internal storage from atomic database.
@@ -369,7 +369,7 @@ StoragePtr DatabaseMaterializedPostgreSQL::detachTable(ContextPtr context_, cons
     }
     else
     {
-        return DatabaseAtomic::detachTable(context_, table_name);
+        return DatabaseAtomic::detachTable(table_name);
     }
 }
 

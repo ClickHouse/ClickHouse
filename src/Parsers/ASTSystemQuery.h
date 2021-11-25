@@ -70,17 +70,10 @@ public:
 
     Type type = Type::UNKNOWN;
 
-    ASTPtr database;
-    ASTPtr table;
-
-    String getDatabase() const;
-    String getTable() const;
-
-    void setDatabase(const String & name);
-    void setTable(const String & name);
-
     String target_model;
     String target_function;
+    String database;
+    String table;
     String replica;
     String replica_zk_path;
     bool is_drop_whole_replica{};
@@ -91,16 +84,7 @@ public:
 
     String getID(char) const override { return "SYSTEM query"; }
 
-    ASTPtr clone() const override
-    {
-        auto res = std::make_shared<ASTSystemQuery>(*this);
-        res->children.clear();
-
-        if (database) { res->database = database->clone(); res->children.push_back(res->database); }
-        if (table) { res->table = table->clone(); res->children.push_back(res->table); }
-
-        return res;
-    }
+    ASTPtr clone() const override { return std::make_shared<ASTSystemQuery>(*this); }
 
     ASTPtr getRewrittenASTWithoutOnCluster(const std::string & new_database) const override
     {

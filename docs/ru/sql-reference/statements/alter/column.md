@@ -212,9 +212,6 @@ SET mutations_sync = 2;
 CREATE TABLE tmp (x Int64) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY tuple();
 INSERT INTO tmp SELECT * FROM system.numbers LIMIT 10;
 ALTER TABLE tmp ADD COLUMN s String MATERIALIZED toString(x);
-
-ALTER TABLE tmp MATERIALIZE COLUMN s;
-
 SELECT groupArray(x), groupArray(s) FROM tmp;
 ```
 
