@@ -86,9 +86,6 @@
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
 #   include "Common/config_version.h"
-#   if USE_OPENCL
-#       include "Common/BitonicSort.h"
-#   endif
 #endif
 
 #if defined(OS_LINUX)
@@ -112,7 +109,8 @@
 #endif
 
 #if USE_NURAFT
-#   include <Server/KeeperTCPHandlerFactory.h>
+#    include <Coordination/FourLetterCommand.h>
+#    include <Server/KeeperTCPHandlerFactory.h>
 #endif
 
 #if USE_BASE64
@@ -1033,6 +1031,7 @@ if (ThreadFuzzer::instance().isEffective())
         }
         /// Initialize keeper RAFT.
         global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
+        FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
 
         for (const auto & listen_host : listen_hosts)
         {
