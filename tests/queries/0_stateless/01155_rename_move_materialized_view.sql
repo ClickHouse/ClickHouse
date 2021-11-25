@@ -34,7 +34,6 @@ RENAME TABLE test_01155_ordinary.mv1 TO test_01155_atomic.mv1;
 RENAME TABLE test_01155_ordinary.mv2 TO test_01155_atomic.mv2;
 RENAME TABLE test_01155_ordinary.dst TO test_01155_atomic.dst;
 RENAME TABLE test_01155_ordinary.src TO test_01155_atomic.src;
-
 RENAME TABLE test_01155_ordinary.dist TO test_01155_atomic.dist;
 
 RENAME DICTIONARY test_01155_ordinary.dict TO test_01155_atomic.dict;
