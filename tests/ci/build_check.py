@@ -50,8 +50,6 @@ def get_packager_cmd(build_config, packager_path, output_path, build_version, im
         cmd += ' --build-type={}'.format(build_config['build_type'])
     if build_config['sanitizer']:
         cmd += ' --sanitizer={}'.format(build_config['sanitizer'])
-    if build_config['bundled'] == 'unbundled':
-        cmd += ' --unbundled'
     if build_config['splitted'] == 'splitted':
         cmd += ' --split-binary'
     if build_config['tidy'] == 'enable':
@@ -73,9 +71,7 @@ def get_packager_cmd(build_config, packager_path, output_path, build_version, im
     return cmd
 
 def get_image_name(build_config):
-    if build_config['bundled'] != 'bundled':
-        return 'clickhouse/unbundled-builder'
-    elif build_config['package_type'] != 'deb':
+    if build_config['package_type'] != 'deb':
         return 'clickhouse/binary-builder'
     else:
         return 'clickhouse/deb-builder'
@@ -119,8 +115,15 @@ if __name__ == "__main__":
     image_version = docker_image.version
 
     version = get_version_from_repo(repo_path)
-    version.tweak_update()
-    update_version_local(repo_path, pr_info.sha, version)
+    logging.info("Got version from repo %s", version.get_version_string())
+
+    version_type = 'testing'
+    if 'release' in pr_info.labels or 'release-lts' in pr_info.labels:
+        version_type = 'stable'
+
+    update_version_local(repo_path, pr_info.sha, version, version_type)
+
+    logging.info("Updated local files with version")
 
     build_name = build_config_to_string(build_config)
     logging.info("Build short name %s", build_name)
@@ -182,3 +185,7 @@ if __name__ == "__main__":
 
     with open(os.path.join(temp_path, "build_urls_" + build_name + '.json'), 'w') as build_links:
         json.dump(result, build_links)
+
+    # Fail build job if not successeded
+    if not success:
+        sys.exit(1)
