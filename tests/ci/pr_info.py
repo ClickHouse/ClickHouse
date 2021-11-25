@@ -101,7 +101,11 @@ class PRInfo:
                     else:
                         self.changed_files = set([])
                 else:
-                    diff_url = pull_request['diff_url']
+                    if 'pr-backport' in self.labels:
+                        diff_url = f"https://github.com/{os.getenv('GITHUB_REPOSITORY')}/compare/master...{self.head_ref}.diff"
+                    else:
+                        diff_url = pull_request['diff_url']
+
                     diff = urllib.request.urlopen(diff_url)
                     diff_object = PatchSet(diff, diff.headers.get_charsets()[0])
                     self.changed_files = { f.path for f in diff_object }
