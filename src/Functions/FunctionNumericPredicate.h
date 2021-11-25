@@ -1,11 +1,9 @@
 #pragma once
-
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
-#include <Interpreters/Context_fwd.h>
-#include <base/range.h>
+#include <ext/range.h>
 
 
 namespace DB
@@ -23,7 +21,7 @@ class FunctionNumericPredicate : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionNumericPredicate>();
     }
@@ -36,11 +34,6 @@ public:
     size_t getNumberOfArguments() const override
     {
         return 1;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
-    {
-        return false;
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -85,7 +78,7 @@ public:
             const auto & in_data = in->getData();
             auto & out_data = out->getData();
 
-            for (const auto i : collections::range(0, size))
+            for (const auto i : ext::range(0, size))
                 out_data[i] = Impl::execute(in_data[i]);
 
             return out;

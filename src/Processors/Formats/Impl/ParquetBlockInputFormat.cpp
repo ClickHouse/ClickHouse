@@ -11,10 +11,8 @@
 #include <parquet/file_reader.h>
 #include "ArrowBufferedStreams.h"
 #include "ArrowColumnToCHColumn.h"
-#include <DataTypes/NestedUtils.h>
 
-#include <base/logger_useful.h>
-
+#include <common/logger_useful.h>
 
 namespace DB
 {
@@ -32,14 +30,15 @@ namespace ErrorCodes
             throw Exception(_s.ToString(), ErrorCodes::BAD_ARGUMENTS); \
     } while (false)
 
-ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_, const FormatSettings & format_settings_)
-    : IInputFormat(std::move(header_), in_), format_settings(format_settings_)
+ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_)
+    : IInputFormat(std::move(header_), in_)
 {
 }
 
 Chunk ParquetBlockInputFormat::generate()
 {
     Chunk res;
+    const Block & header = getPort().getHeader();
 
     if (!file_reader)
         prepareReader();
@@ -55,7 +54,7 @@ Chunk ParquetBlockInputFormat::generate()
 
     ++row_group_current;
 
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
+    ArrowColumnToCHColumn::arrowTableToCHChunk(res, table, header, "Parquet");
     return res;
 }
 
@@ -68,73 +67,35 @@ void ParquetBlockInputFormat::resetParser()
     row_group_current = 0;
 }
 
-static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
-{
-    if (type->id() == arrow::Type::LIST)
-        return countIndicesForType(static_cast<arrow::ListType *>(type.get())->value_type());
-
-    if (type->id() == arrow::Type::STRUCT)
-    {
-        int indices = 0;
-        auto * struct_type = static_cast<arrow::StructType *>(type.get());
-        for (int i = 0; i != struct_type->num_fields(); ++i)
-            indices += countIndicesForType(struct_type->field(i)->type());
-        return indices;
-    }
-
-    if (type->id() == arrow::Type::MAP)
-    {
-        auto * map_type = static_cast<arrow::MapType *>(type.get());
-        return countIndicesForType(map_type->key_type()) + countIndicesForType(map_type->item_type());
-    }
-
-    return 1;
-}
-
 void ParquetBlockInputFormat::prepareReader()
 {
-    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in, format_settings), arrow::default_memory_pool(), &file_reader));
+    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(in), arrow::default_memory_pool(), &file_reader));
     row_group_total = file_reader->num_row_groups();
     row_group_current = 0;
 
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(file_reader->GetSchema(&schema));
 
-    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "Parquet", format_settings.parquet.import_nested);
-
-    std::unordered_set<String> nested_table_names;
-    if (format_settings.parquet.import_nested)
-        nested_table_names = Nested::getAllTableNames(getPort().getHeader());
-
-    int index = 0;
     for (int i = 0; i < schema->num_fields(); ++i)
     {
-        /// STRUCT type require the number of indexes equal to the number of
-        /// nested elements, so we should recursively
-        /// count the number of indices we need for this type.
-        int indexes_count = countIndicesForType(schema->field(i)->type());
-        const auto & name = schema->field(i)->name();
-        if (getPort().getHeader().has(name) || nested_table_names.contains(name))
+        if (getPort().getHeader().has(schema->field(i)->name()))
         {
-            for (int j = 0; j != indexes_count; ++j)
-                column_indices.push_back(index + j);
+            column_indices.push_back(i);
         }
-        index += indexes_count;
     }
 }
 
-void registerInputFormatParquet(FormatFactory &factory)
+void registerInputFormatProcessorParquet(FormatFactory &factory)
 {
-    factory.registerInputFormat(
+    factory.registerInputFormatProcessor(
             "Parquet",
             [](ReadBuffer &buf,
                 const Block &sample,
                 const RowInputFormatParams &,
-                const FormatSettings & settings)
+                const FormatSettings & /* settings */)
             {
-                return std::make_shared<ParquetBlockInputFormat>(buf, sample, settings);
+                return std::make_shared<ParquetBlockInputFormat>(buf, sample);
             });
-    factory.markFormatAsColumnOriented("Parquet");
 }
 
 }
@@ -144,7 +105,7 @@ void registerInputFormatParquet(FormatFactory &factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatParquet(FormatFactory &)
+void registerInputFormatProcessorParquet(FormatFactory &)
 {
 }
 }

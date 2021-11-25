@@ -7,10 +7,10 @@ SYSTEM DROP MARK CACHE;
 SELECT a.size0 FROM t_arr;
 
 SYSTEM FLUSH LOGS;
-SELECT ProfileEvents['FileOpen']
+SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT a.size0 FROM %t_arr%'))
-    AND current_database = currentDatabase();
+    AND event_time > now() - INTERVAL 10 SECOND AND current_database = currentDatabase();
 
 SELECT '====tuple====';
 DROP TABLE IF EXISTS t_tup;
@@ -24,10 +24,10 @@ SYSTEM DROP MARK CACHE;
 SELECT t.u FROM t_tup;
 
 SYSTEM FLUSH LOGS;
-SELECT ProfileEvents['FileOpen']
+SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT t._ FROM %t_tup%'))
-    AND current_database = currentDatabase();
+    AND event_time > now() - INTERVAL 10 SECOND AND current_database = currentDatabase();
 
 SELECT '====nullable====';
 DROP TABLE IF EXISTS t_nul;
@@ -38,10 +38,10 @@ SYSTEM DROP MARK CACHE;
 SELECT n.null FROM t_nul;
 
 SYSTEM FLUSH LOGS;
-SELECT ProfileEvents['FileOpen']
+SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT n.null FROM %t_nul%'))
-    AND current_database = currentDatabase();
+    AND event_time > now() - INTERVAL 10 SECOND AND current_database = currentDatabase();
 
 SELECT '====map====';
 SET allow_experimental_map_type = 1;
@@ -57,10 +57,10 @@ SYSTEM DROP MARK CACHE;
 SELECT m.values FROM t_map;
 
 SYSTEM FLUSH LOGS;
-SELECT ProfileEvents['FileOpen']
+SELECT ProfileEvents.Values[indexOf(ProfileEvents.Names, 'FileOpen')]
 FROM system.query_log
 WHERE (type = 'QueryFinish') AND (lower(query) LIKE lower('SELECT m.% FROM %t_map%'))
-    AND current_database = currentDatabase();
+    AND event_time > now() - INTERVAL 10 SECOND AND current_database = currentDatabase();
 
 DROP TABLE t_arr;
 DROP TABLE t_nul;

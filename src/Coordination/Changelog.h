@@ -1,42 +1,39 @@
 #pragma once
 
-#include <libnuraft/nuraft.hxx>
+#include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <city.h>
-#include <optional>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/HashingWriteBuffer.h>
-#include <IO/CompressionMethod.h>
+#include <Compression/CompressedWriteBuffer.h>
 #include <Disks/IDisk.h>
 
 namespace DB
 {
 
-using Checksum = uint64_t;
+using Checksum = UInt64;
 
 using LogEntryPtr = nuraft::ptr<nuraft::log_entry>;
 using LogEntries = std::vector<LogEntryPtr>;
 using LogEntriesPtr = nuraft::ptr<LogEntries>;
 using BufferPtr = nuraft::ptr<nuraft::buffer>;
 
-using IndexToOffset = std::unordered_map<uint64_t, off_t>;
-using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
+using IndexToOffset = std::unordered_map<size_t, off_t>;
+using IndexToLogEntry = std::unordered_map<size_t, LogEntryPtr>;
 
 enum class ChangelogVersion : uint8_t
 {
     V0 = 0,
-    V1 = 1, /// with 64 bit buffer header
-    V2 = 2, /// with compression and duplicate records
 };
 
-static constexpr auto CURRENT_CHANGELOG_VERSION = ChangelogVersion::V2;
+static constexpr auto CURRENT_CHANGELOG_VERSION = ChangelogVersion::V0;
 
 struct ChangelogRecordHeader
 {
     ChangelogVersion version = CURRENT_CHANGELOG_VERSION;
-    uint64_t index = 0; /// entry log number
-    uint64_t term = 0;
-    nuraft::log_val_type value_type{};
-    uint64_t blob_size = 0;
+    size_t index; /// entry log number
+    size_t term;
+    nuraft::log_val_type value_type;
+    size_t blob_size;
 };
 
 /// Changelog record on disk
@@ -51,76 +48,65 @@ struct ChangelogRecord
 struct ChangelogFileDescription
 {
     std::string prefix;
-    uint64_t from_log_index;
-    uint64_t to_log_index;
-    std::string extension;
+    size_t from_log_index;
+    size_t to_log_index;
 
     std::string path;
-
-    /// How many entries should be stored in this log
-    uint64_t expectedEntriesCountInLog() const
-    {
-        return to_log_index - from_log_index + 1;
-    }
 };
 
 class ChangelogWriter;
 
 /// Simplest changelog with files rotation.
-/// No compression, no metadata, just entries with headers one by one.
-/// Able to read broken files/entries and discard them. Not thread safe.
+/// No compression, no metadata, just entries with headers one by one
+/// Able to read broken files/entries and discard them.
 class Changelog
 {
 
 public:
-    Changelog(const std::string & changelogs_dir_, uint64_t rotate_interval_,
-            bool force_sync_, Poco::Logger * log_, bool compress_logs_ = true);
+    Changelog(const std::string & changelogs_dir_, size_t rotate_interval_, Poco::Logger * log_);
 
     /// Read changelog from files on changelogs_dir_ skipping all entries before from_log_index
     /// Truncate broken entries, remove files after broken entries.
-    void readChangelogAndInitWriter(uint64_t last_commited_log_index, uint64_t logs_to_keep);
+    void readChangelogAndInitWriter(size_t from_log_index);
 
-    /// Add entry to log with index.
-    void appendEntry(uint64_t index, const LogEntryPtr & log_entry);
+    /// Add entry to log with index. Call fsync if force_sync true.
+    void appendEntry(size_t index, const LogEntryPtr & log_entry, bool force_sync);
 
     /// Write entry at index and truncate all subsequent entries.
-    void writeAt(uint64_t index, const LogEntryPtr & log_entry);
+    void writeAt(size_t index, const LogEntryPtr & log_entry, bool force_sync);
 
     /// Remove log files with to_log_index <= up_to_log_index.
-    void compact(uint64_t up_to_log_index);
+    void compact(size_t up_to_log_index);
 
-    uint64_t getNextEntryIndex() const
+    size_t getNextEntryIndex() const
     {
-        return max_log_id + 1;
+        return start_index + logs.size();
     }
 
-    uint64_t getStartIndex() const
+    size_t getStartIndex() const
     {
-        return min_log_id;
+        return start_index;
     }
 
     /// Last entry in log, or fake entry with term 0 if log is empty
     LogEntryPtr getLastEntry() const;
 
-    /// Get entry with latest config in logstore
-    LogEntryPtr getLatestConfigChange() const;
-
     /// Return log entries between [start, end)
-    LogEntriesPtr getLogEntriesBetween(uint64_t start_index, uint64_t end_index);
+    LogEntriesPtr getLogEntriesBetween(size_t start_index, size_t end_index);
 
     /// Return entry at position index
-    LogEntryPtr entryAt(uint64_t index);
+    LogEntryPtr entryAt(size_t index);
 
     /// Serialize entries from index into buffer
-    BufferPtr serializeEntriesToBuffer(uint64_t index, int32_t count);
+    BufferPtr serializeEntriesToBuffer(size_t index, int32_t count);
 
     /// Apply entries from buffer overriding existing entries
-    void applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer);
+    void applyEntriesFromBuffer(size_t index, nuraft::buffer & buffer, bool force_sync);
 
-    /// Fsync latest log to disk and flush buffer
+    /// Fsync log to disk
     void flush();
 
-    uint64_t size() const
+    size_t size() const
     {
         return logs.size();
     }
@@ -130,36 +116,21 @@ public:
 
 private:
     /// Pack log_entry into changelog record
-    static ChangelogRecord buildRecord(uint64_t index, const LogEntryPtr & log_entry);
+    static ChangelogRecord buildRecord(size_t index, const LogEntryPtr & log_entry);
 
     /// Starts new file [new_start_log_index, new_start_log_index + rotate_interval]
-    void rotate(uint64_t new_start_log_index);
-
-    /// Remove all changelogs from disk with start_index bigger than start_to_remove_from_id
-    void removeAllLogsAfter(uint64_t remove_after_log_start_index);
-    /// Remove all logs from disk
-    void removeAllLogs();
-    /// Init writer for existing log with some entries already written
-    void initWriter(const ChangelogFileDescription & description);
+    void rotate(size_t new_start_log_index);
 
 private:
     const std::string changelogs_dir;
-    const uint64_t rotate_interval;
-    const bool force_sync;
+    const size_t rotate_interval;
     Poco::Logger * log;
-    bool compress_logs;
 
-    /// Currently existing changelogs
-    std::map<uint64_t, ChangelogFileDescription> existing_changelogs;
-
-    /// Current writer for changelog file
+    std::map<size_t, ChangelogFileDescription> existing_changelogs;
     std::unique_ptr<ChangelogWriter> current_writer;
-    /// Mapping log_id -> log_entry
+    IndexToOffset index_to_start_pos;
     IndexToLogEntry logs;
-    /// Start log_id which exists in all "active" logs
-    /// min_log_id + 1 == max_log_id means empty log storage for NuRaft
-    uint64_t min_log_id = 0;
-    uint64_t max_log_id = 0;
+    size_t start_index = 0;
 };
 
 }

@@ -1,5 +1,3 @@
--- Tags: distributed
-
 SET max_block_size = 1000;
 
 DROP TABLE IF EXISTS numbers_10_00223;

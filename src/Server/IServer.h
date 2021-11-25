@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
-
 namespace Poco
 {
 
@@ -9,7 +7,6 @@ namespace Util
 {
 class LayeredConfiguration;
 }
-
 class Logger;
 
 }
@@ -17,6 +14,8 @@ class Logger;
 
 namespace DB
 {
+
+class Context;
 
 class IServer
 {
@@ -28,12 +27,12 @@ public:
     virtual Poco::Logger & logger() const = 0;
 
     /// Returns global application's context.
-    virtual ContextMutablePtr context() const = 0;
+    virtual Context & context() const = 0;
 
     /// Returns true if shutdown signaled.
     virtual bool isCancelled() const = 0;
 
-    virtual ~IServer() = default;
+    virtual ~IServer() {}
 };
 
 }

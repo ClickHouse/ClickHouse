@@ -21,12 +21,13 @@ public:
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
             DictionaryLifetime dict_lifetime_,
-            Configuration configuration_);
+            InputType input_type_,
+            PointType point_type_);
 
     std::shared_ptr<const IExternalLoadable> clone() const override;
 
 private:
-    bool find(const Point & point, size_t & polygon_index) const override;
+    bool find(const Point & point, size_t & id) const override;
 };
 
 /** A polygon dictionary which generates a recursive grid in order to efficiently cut the number
@@ -43,7 +44,8 @@ public:
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
             DictionaryLifetime dict_lifetime_,
-            Configuration configuration_,
+            InputType input_type_,
+            PointType point_type_,
             int min_intersections_,
             int max_depth_);
 
@@ -53,7 +55,7 @@ public:
     static constexpr size_t kMaxDepthDefault = 5;
 
 private:
-    bool find(const Point & point, size_t & polygon_index) const override;
+    bool find(const Point & point, size_t & id) const override;
 
     std::vector<SlabsPolygonIndex> buckets;
     GridRoot<FinalCell> grid;
@@ -71,7 +73,8 @@ public:
             const DictionaryStructure & dict_struct_,
             DictionarySourcePtr source_ptr_,
             DictionaryLifetime dict_lifetime_,
-            Configuration configuration_,
+            InputType input_type_,
+            PointType point_type_,
             size_t min_intersections_,
             size_t max_depth_);
 
@@ -81,7 +84,7 @@ public:
     static constexpr size_t kMaxDepthDefault = 5;
 
 private:
-    bool find(const Point & point, size_t & polygon_index) const override;
+    bool find(const Point & point, size_t & id) const override;
 
     GridRoot<FinalCellWithSlabs> index;
 

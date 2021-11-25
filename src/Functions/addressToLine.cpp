@@ -7,11 +7,11 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteHelpers.h>
-#include <Access/Common/AccessFlags.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/Context.h>
 
 #include <mutex>
@@ -36,9 +36,9 @@ class FunctionAddressToLine : public IFunction
 {
 public:
     static constexpr auto name = "addressToLine";
-    static FunctionPtr create(ContextPtr context)
+    static FunctionPtr create(const Context & context)
     {
-        context->checkAccess(AccessType::addressToLine);
+        context.checkAccess(AccessType::addressToLine);
         return std::make_shared<FunctionAddressToLine>();
     }
 
@@ -51,8 +51,6 @@ public:
     {
         return 1;
     }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -128,7 +126,7 @@ private:
                 writeChar(':', out);
                 writeIntText(location.line, out);
 
-                return out.complete();
+                return out.finish();
             }
             else
             {

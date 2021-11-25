@@ -1,0 +1,13 @@
+<test>
+
+
+
+    <preconditions>
+        <table_exists>trips_mergetree</table_exists>
+    </preconditions>
+
+    <query>SELECT cab_type, count(*) FROM trips_mergetree GROUP BY cab_type</query>
+    <query>SELECT passenger_count, avg(total_amount) FROM trips_mergetree GROUP BY passenger_count</query>
+    <query>SELECT passenger_count, toYear(pickup_date) AS year, count(*) FROM trips_mergetree GROUP BY passenger_count, year</query>
+    <query>SELECT passenger_count, toYear(pickup_date) AS year, round(trip_distance) AS distance, count(*) FROM trips_mergetree GROUP BY passenger_count, year, distance ORDER BY year, count(*) DESC</query>
+</test>

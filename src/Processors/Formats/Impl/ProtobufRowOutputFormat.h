@@ -1,6 +1,8 @@
 #pragma once
 
-#include "config_formats.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
 
 #if USE_PROTOBUF
 #    include <Core/Block.h>
@@ -39,12 +41,11 @@ public:
 
     String getName() const override { return "ProtobufRowOutputFormat"; }
 
+    void write(const Columns & columns, size_t row_num) override;
+    void writeField(const IColumn &, const IDataType &, size_t) override {}
     std::string getContentType() const override { return "application/octet-stream"; }
 
 private:
-    void write(const Columns & columns, size_t row_num) override;
-    void writeField(const IColumn &, const ISerialization &, size_t) override {}
-
     std::unique_ptr<ProtobufWriter> writer;
     std::unique_ptr<ProtobufSerializer> serializer;
     const bool allow_multiple_rows;

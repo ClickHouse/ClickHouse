@@ -1,7 +1,3 @@
-if (OS_DARWIN AND ARCH_AARCH64)
-    set (ENABLE_ROCKSDB OFF CACHE INTERNAL "")
-endif()
-
 option(ENABLE_ROCKSDB "Enable ROCKSDB" ${ENABLE_LIBRARIES})
 
 if (NOT ENABLE_ROCKSDB)
@@ -11,11 +7,11 @@ if (NOT ENABLE_ROCKSDB)
     return()
 endif()
 
-option(USE_INTERNAL_ROCKSDB_LIBRARY "Set to FALSE to use system ROCKSDB library instead of bundled" ON)
+option(USE_INTERNAL_ROCKSDB_LIBRARY "Set to FALSE to use system ROCKSDB library instead of bundled" ${NOT_UNBUNDLED})
 
-if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/rocksdb/include")
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/rocksdb/CMakeLists.txt")
     if (USE_INTERNAL_ROCKSDB_LIBRARY)
-        message (WARNING "submodule contrib is missing. to fix try run: \n git submodule update --init")
+        message (WARNING "submodule contrib is missing. to fix try run: \n git submodule update --init --recursive")
         message(${RECONFIGURE_MESSAGE_LEVEL} "cannot find internal rocksdb")
     endif()
     set (MISSING_INTERNAL_ROCKSDB 1)

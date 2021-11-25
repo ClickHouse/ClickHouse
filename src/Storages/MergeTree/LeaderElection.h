@@ -2,7 +2,7 @@
 
 #include <functional>
 #include <memory>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
@@ -83,7 +83,7 @@ private:
     void createNode()
     {
         shutdown_called = false;
-        node = EphemeralNodeHolder::createSequential(fs::path(path) / "leader_election-", zookeeper, identifier);
+        node = EphemeralNodeHolder::createSequential(path + "/leader_election-", zookeeper, identifier);
 
         std::string node_path = node->getPath();
         node_name = node_path.substr(node_path.find_last_of('/') + 1);

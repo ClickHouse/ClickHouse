@@ -1,6 +1,6 @@
 #include "CatBoostModel.h"
 
-#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/FieldVisitors.h>
 #include <mutex>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -13,7 +13,6 @@
 #include <Common/SharedLibrary.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeTuple.h>
-
 
 namespace DB
 {
@@ -481,15 +480,20 @@ void CatBoostLibHolder::initAPI()
 
 std::shared_ptr<CatBoostLibHolder> getCatBoostWrapperHolder(const std::string & lib_path)
 {
-    static std::shared_ptr<CatBoostLibHolder> ptr;
+    static std::weak_ptr<CatBoostLibHolder> ptr;
     static std::mutex mutex;
 
     std::lock_guard lock(mutex);
+    auto result = ptr.lock();
 
-    if (!ptr || ptr->getCurrentPath() != lib_path)
-        ptr = std::make_shared<CatBoostLibHolder>(lib_path);
+    if (!result || result->getCurrentPath() != lib_path)
+    {
+        result = std::make_shared<CatBoostLibHolder>(lib_path);
+        /// This assignment is not atomic, which prevents from creating lock only inside 'if'.
+        ptr = result;
+    }
 
-    return ptr;
+    return result;
 }
 
 }

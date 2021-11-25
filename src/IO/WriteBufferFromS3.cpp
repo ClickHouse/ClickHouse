@@ -4,13 +4,14 @@
 
 #    include <IO/WriteBufferFromS3.h>
 #    include <IO/WriteHelpers.h>
+#    include <Common/MemoryTracker.h>
 
 #    include <aws/s3/S3Client.h>
 #    include <aws/s3/model/CreateMultipartUploadRequest.h>
 #    include <aws/s3/model/CompleteMultipartUploadRequest.h>
 #    include <aws/s3/model/PutObjectRequest.h>
 #    include <aws/s3/model/UploadPartRequest.h>
-#    include <base/logger_useful.h>
+#    include <common/logger_useful.h>
 
 #    include <utility>
 
@@ -19,7 +20,6 @@ namespace ProfileEvents
 {
     extern const Event S3WriteBytes;
 }
-
 
 namespace DB
 {
@@ -83,13 +83,18 @@ void WriteBufferFromS3::allocateBuffer()
     last_part_size = 0;
 }
 
-WriteBufferFromS3::~WriteBufferFromS3()
+void WriteBufferFromS3::finalize()
 {
-    finalize();
+    /// FIXME move final flush into the caller
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    finalizeImpl();
 }
 
 void WriteBufferFromS3::finalizeImpl()
 {
+    if (finalized)
+        return;
+
     next();
 
     if (multipart_upload_id.empty())
@@ -101,6 +106,20 @@ void WriteBufferFromS3::finalizeImpl()
         /// Write rest of the data as last part.
         writePart();
         completeMultipartUpload();
+    }
+
+    finalized = true;
+}
+
+WriteBufferFromS3::~WriteBufferFromS3()
+{
+    try
+    {
+        finalizeImpl();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
     }
 }
 
@@ -220,7 +239,7 @@ void WriteBufferFromS3::makeSinglepartUpload()
     auto outcome = client_ptr->PutObject(req);
 
     if (outcome.IsSuccess())
-        LOG_DEBUG(log, "Single part upload has completed. Bucket: {}, Key: {}, Object size: {}", bucket, key, req.GetContentLength());
+        LOG_DEBUG(log, "Single part upload has completed. Bucket: {}, Key: {}", bucket, key);
     else
         throw Exception(outcome.GetError().GetMessage(), ErrorCodes::S3_ERROR);
 }

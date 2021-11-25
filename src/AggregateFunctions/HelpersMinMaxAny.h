@@ -12,11 +12,10 @@
 
 namespace DB
 {
-struct Settings;
 
 /// min, max, any, anyLast, anyHeavy, etc...
 template <template <typename> class AggregateFunctionTemplate, template <typename> class Data>
-static IAggregateFunction * createAggregateFunctionSingleValue(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+static IAggregateFunction * createAggregateFunctionSingleValue(const String & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertNoParameters(name, parameters);
     assertUnary(name, argument_types);
@@ -79,7 +78,7 @@ static IAggregateFunction * createAggregateFunctionArgMinMaxSecond(const DataTyp
 }
 
 template <template <typename> class MinMaxData>
-static IAggregateFunction * createAggregateFunctionArgMinMax(const String & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+static IAggregateFunction * createAggregateFunctionArgMinMax(const String & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertNoParameters(name, parameters);
     assertBinary(name, argument_types);

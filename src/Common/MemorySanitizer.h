@@ -1,16 +1,11 @@
 #pragma once
 
-#include <base/defines.h>
+#include <common/defines.h>
 
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wreserved-id-macro"
 #endif
-
-#undef __msan_unpoison
-#undef __msan_test_shadow
-#undef __msan_print_shadow
-#undef __msan_unpoison_string
 
 #define __msan_unpoison(X, Y)
 #define __msan_test_shadow(X, Y) (false)

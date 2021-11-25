@@ -4,9 +4,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
-#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -24,7 +23,7 @@ class FunctionConsistentHashImpl : public IFunction
 public:
     static constexpr auto name = Impl::name;
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionConsistentHashImpl<Impl>>();
     }
@@ -38,8 +37,6 @@ public:
     {
         return 2;
     }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
@@ -106,9 +103,8 @@ private:
         else if (buckets_field.getType() == Field::Types::UInt64)
             num_buckets = checkBucketsRange(buckets_field.get<UInt64>());
         else
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of the second argument of function {}",
-                buckets_field.getTypeName(), getName());
+            throw Exception("Illegal type " + String(buckets_field.getTypeName()) + " of the second argument of function " + getName(),
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         const auto & hash_col = arguments[0].column;
         const IDataType * hash_type = arguments[0].type.get();

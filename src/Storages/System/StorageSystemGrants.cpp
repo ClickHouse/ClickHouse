@@ -7,8 +7,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
-#include <Access/AccessControl.h>
-#include <Access/Common/AccessRightsElement.h>
+#include <Access/AccessControlManager.h>
+#include <Access/AccessRightsElement.h>
 #include <Access/Role.h>
 #include <Access/User.h>
 #include <Interpreters/Context.h>
@@ -17,6 +17,8 @@
 
 namespace DB
 {
+using EntityType = IAccessEntity::Type;
+using Kind = AccessRightsElementWithOptions::Kind;
 
 NamesAndTypesList StorageSystemGrants::getNamesAndTypes()
 {
@@ -34,10 +36,10 @@ NamesAndTypesList StorageSystemGrants::getNamesAndTypes()
 }
 
 
-void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
+void StorageSystemGrants::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
-    context->checkAccess(AccessType::SHOW_USERS | AccessType::SHOW_ROLES);
-    const auto & access_control = context->getAccessControl();
+    context.checkAccess(AccessType::SHOW_USERS | AccessType::SHOW_ROLES);
+    const auto & access_control = context.getAccessControlManager();
     std::vector<UUID> ids = access_control.findAll<User>();
     boost::range::push_back(ids, access_control.findAll<Role>());
 
@@ -57,22 +59,22 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
     auto & column_grant_option = assert_cast<ColumnUInt8 &>(*res_columns[column_index++]).getData();
 
     auto add_row = [&](const String & grantee_name,
-                       AccessEntityType grantee_type,
+                       EntityType grantee_type,
                        AccessType access_type,
                        const String * database,
                        const String * table,
                        const String * column,
-                       bool is_partial_revoke,
+                       Kind kind,
                        bool grant_option)
     {
-        if (grantee_type == AccessEntityType::USER)
+        if (grantee_type == EntityType::USER)
         {
             column_user_name.insertData(grantee_name.data(), grantee_name.length());
             column_user_name_null_map.push_back(false);
             column_role_name.insertDefault();
             column_role_name_null_map.push_back(true);
         }
-        else if (grantee_type == AccessEntityType::ROLE)
+        else if (grantee_type == EntityType::ROLE)
         {
             column_user_name.insertDefault();
             column_user_name_null_map.push_back(true);
@@ -117,13 +119,13 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
             column_column_null_map.push_back(true);
         }
 
-        column_is_partial_revoke.push_back(is_partial_revoke);
+        column_is_partial_revoke.push_back(kind == Kind::REVOKE);
         column_grant_option.push_back(grant_option);
     };
 
     auto add_rows = [&](const String & grantee_name,
-                        AccessEntityType grantee_type,
-                        const AccessRightsElements & elements)
+                        IAccessEntity::Type grantee_type,
+                        const AccessRightsElementsWithOptions & elements)
     {
         for (const auto & element : elements)
         {
@@ -137,13 +139,13 @@ void StorageSystemGrants::fillData(MutableColumns & res_columns, ContextPtr cont
             if (element.any_column)
             {
                 for (const auto & access_type : access_types)
-                    add_row(grantee_name, grantee_type, access_type, database, table, nullptr, element.is_partial_revoke, element.grant_option);
+                    add_row(grantee_name, grantee_type, access_type, database, table, nullptr, element.kind, element.grant_option);
             }
             else
             {
                 for (const auto & access_type : access_types)
                     for (const auto & column : element.columns)
-                        add_row(grantee_name, grantee_type, access_type, database, table, &column, element.is_partial_revoke, element.grant_option);
+                        add_row(grantee_name, grantee_type, access_type, database, table, &column, element.kind, element.grant_option);
             }
         }
     };

@@ -1,14 +1,11 @@
 #include "ConfigReloader.h"
 
 #include <Poco/Util/Application.h>
-#include <base/logger_useful.h>
+#include <Poco/File.h>
+#include <common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include "ConfigProcessor.h"
-#include <filesystem>
-#include <Common/filesystemHelpers.h>
 
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -36,25 +33,7 @@ ConfigReloader::ConfigReloader(
 
 void ConfigReloader::start()
 {
-    std::lock_guard lock(reload_mutex);
-    if (!thread.joinable())
-    {
-        quit = false;
-        thread = ThreadFromGlobalPool(&ConfigReloader::run, this);
-    }
-}
-
-
-void ConfigReloader::stop()
-{
-    std::unique_lock lock(reload_mutex);
-    if (!thread.joinable())
-        return;
-    quit = true;
-    zk_changed_event->set();
-    auto temp_thread = std::move(thread);
-    lock.unlock();
-    temp_thread.join();
+    thread = ThreadFromGlobalPool(&ConfigReloader::run, this);
 }
 
 
@@ -62,11 +41,15 @@ ConfigReloader::~ConfigReloader()
 {
     try
     {
-        stop();
+        quit = true;
+        zk_changed_event->set();
+
+        if (thread.joinable())
+            thread.join();
     }
     catch (...)
     {
-        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
@@ -184,8 +167,8 @@ struct ConfigReloader::FileWithTimestamp
 
 void ConfigReloader::FilesChangesTracker::addIfExists(const std::string & path_to_add)
 {
-    if (!path_to_add.empty() && fs::exists(path_to_add))
-        files.emplace(path_to_add, FS::getModificationTime(path_to_add));
+    if (!path_to_add.empty() && Poco::File(path_to_add).exists())
+        files.emplace(path_to_add, Poco::File(path_to_add).getLastModified().epochTime());
 }
 
 bool ConfigReloader::FilesChangesTracker::isDifferOrNewerThan(const FilesChangesTracker & rhs)

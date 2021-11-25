@@ -12,7 +12,8 @@
 #include <Interpreters/misc.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
-#include <base/map.h>
+#include <ext/map.h>
+
 
 namespace DB
 {
@@ -28,17 +29,15 @@ static constexpr auto threshold = 2;
 
 MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     SelectQueryInfo & query_info,
-    ContextPtr context,
+    const Context & context,
     std::unordered_map<std::string, UInt64> column_sizes_,
     const StorageMetadataPtr & metadata_snapshot,
     const Names & queried_columns_,
     Poco::Logger * log_)
-    : table_columns{collections::map<std::unordered_set>(
+    : table_columns{ext::map<std::unordered_set>(
         metadata_snapshot->getColumns().getAllPhysical(), [](const NameAndTypePair & col) { return col.name; })}
     , queried_columns{queried_columns_}
-    , sorting_key_names{NameSet(
-          metadata_snapshot->getSortingKey().column_names.begin(), metadata_snapshot->getSortingKey().column_names.end())}
-    , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query->clone(), query_info.syntax_analyzer_result, context)}
+    , block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)}
     , log{log_}
     , column_sizes{std::move(column_sizes_)}
 {
@@ -118,67 +117,13 @@ static bool isConditionGood(const ASTPtr & condition)
     return false;
 }
 
-static const ASTFunction * getAsTuple(const ASTPtr & node)
+
+void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node) const
 {
-    if (const auto * func = node->as<ASTFunction>(); func && func->name == "tuple")
-        return func;
-    return {};
-};
-
-static bool getAsTupleLiteral(const ASTPtr & node, Tuple & tuple)
-{
-    if (const auto * value_tuple = node->as<ASTLiteral>())
-        return value_tuple && value_tuple->value.tryGet<Tuple>(tuple);
-    return false;
-};
-
-bool MergeTreeWhereOptimizer::tryAnalyzeTuple(Conditions & res, const ASTFunction * func, bool is_final) const
-{
-    if (!func || func->name != "equals" || func->arguments->children.size() != 2)
-        return false;
-
-    Tuple tuple_lit;
-    const ASTFunction * tuple_other = nullptr;
-    if (getAsTupleLiteral(func->arguments->children[0], tuple_lit))
-        tuple_other = getAsTuple(func->arguments->children[1]);
-    else if (getAsTupleLiteral(func->arguments->children[1], tuple_lit))
-        tuple_other = getAsTuple(func->arguments->children[0]);
-
-    if (!tuple_other || tuple_lit.size() != tuple_other->arguments->children.size())
-        return false;
-
-    for (size_t i = 0; i < tuple_lit.size(); ++i)
+    if (const auto * func_and = node->as<ASTFunction>(); func_and && func_and->name == "and")
     {
-        const auto & child = tuple_other->arguments->children[i];
-        std::shared_ptr<IAST> fetch_sign_column = nullptr;
-        /// tuple in tuple like (a, (b, c)) = (1, (2, 3))
-        if (const auto * child_func = getAsTuple(child))
-            fetch_sign_column = std::make_shared<ASTFunction>(*child_func);
-        else if (const auto * child_ident = child->as<ASTIdentifier>())
-            fetch_sign_column = std::make_shared<ASTIdentifier>(child_ident->name());
-        else
-            return false;
-
-        ASTPtr fetch_sign_value = std::make_shared<ASTLiteral>(tuple_lit.at(i));
-        ASTPtr func_node = makeASTFunction("equals", fetch_sign_column, fetch_sign_value);
-        analyzeImpl(res, func_node, is_final);
-    }
-
-    return true;
-}
-
-void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node, bool is_final) const
-{
-    const auto * func = node->as<ASTFunction>();
-
-    if (func && func->name == "and")
-    {
-        for (const auto & elem : func->arguments->children)
-            analyzeImpl(res, elem, is_final);
-    }
-    else if (tryAnalyzeTuple(res, func, is_final))
-    {
-        /// analyzed
+        for (const auto & elem : func_and->arguments->children)
+            analyzeImpl(res, elem);
     }
     else
     {
@@ -192,7 +137,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
         cond.viable =
             /// Condition depend on some column. Constant expressions are not moved.
             !cond.identifiers.empty()
-            && !cannotBeMoved(node, is_final)
+            && !cannotBeMoved(node)
             /// Do not take into consideration the conditions consisting only of the first primary key column
             && !hasPrimaryKeyAtoms(node)
             /// Only table columns are considered. Not array joined columns. NOTE We're assuming that aliases was expanded.
@@ -208,10 +153,10 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const ASTPtr & node,
 }
 
 /// Transform conjunctions chain in WHERE expression to Conditions list.
-MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const ASTPtr & expression, bool is_final) const
+MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const ASTPtr & expression) const
 {
     Conditions res;
-    analyzeImpl(res, expression, is_final);
+    analyzeImpl(res, expression);
     return res;
 }
 
@@ -242,7 +187,7 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
     if (!select.where() || select.prewhere())
         return;
 
-    Conditions where_conditions = analyze(select.where(), select.final());
+    Conditions where_conditions = analyze(select.where());
     Conditions prewhere_conditions;
 
     UInt64 total_size_of_moved_conditions = 0;
@@ -365,12 +310,6 @@ bool MergeTreeWhereOptimizer::isPrimaryKeyAtom(const ASTPtr & ast) const
 }
 
 
-bool MergeTreeWhereOptimizer::isSortingKey(const String & column_name) const
-{
-    return sorting_key_names.count(column_name);
-}
-
-
 bool MergeTreeWhereOptimizer::isConstant(const ASTPtr & expr) const
 {
     const auto column_name = expr->getColumnName();
@@ -390,7 +329,7 @@ bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & identifiers
 }
 
 
-bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) const
+bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr) const
 {
     if (const auto * function_ptr = ptr->as<ASTFunction>())
     {
@@ -402,22 +341,17 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
         if ("globalIn" == function_ptr->name
             || "globalNotIn" == function_ptr->name)
             return true;
-
-        /// indexHint is a special function that it does not make sense to transfer to PREWHERE
-        if ("indexHint" == function_ptr->name)
-            return true;
     }
     else if (auto opt_name = IdentifierSemantic::getColumnName(ptr))
     {
         /// disallow moving result of ARRAY JOIN to PREWHERE
         if (array_joined_names.count(*opt_name) ||
-            array_joined_names.count(Nested::extractTableName(*opt_name)) ||
-            (is_final && !isSortingKey(*opt_name)))
+            array_joined_names.count(Nested::extractTableName(*opt_name)))
             return true;
     }
 
     for (const auto & child : ptr->children)
-        if (cannotBeMoved(child, is_final))
+        if (cannotBeMoved(child))
             return true;
 
     return false;
@@ -426,7 +360,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr, bool is_final) c
 
 void MergeTreeWhereOptimizer::determineArrayJoinedNames(ASTSelectQuery & select)
 {
-    auto [array_join_expression_list, _] = select.arrayJoinExpressionList();
+    auto array_join_expression_list = select.arrayJoinExpressionList();
 
     /// much simplified code from ExpressionAnalyzer::getArrayJoinedColumns()
     if (!array_join_expression_list)

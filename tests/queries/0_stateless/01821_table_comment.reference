@@ -1,4 +1,0 @@
-t1	this is a temtorary table
-t2	this is a MergeTree table
-t3	this is a Log table
-CREATE TABLE default.t1\n(\n    `n` Int8\n)\nENGINE = Memory\nCOMMENT \'this is a temtorary table\'

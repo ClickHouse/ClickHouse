@@ -1,10 +1,10 @@
-<clickhouse>
+<yandex>
    <dictionary>
        <name>postgres_odbc_hashed</name>
        <source>
            <odbc>
                <table>clickhouse.test_table</table>
-               <connection_string>DSN=postgresql_odbc</connection_string>
+               <connection_string>DSN=postgresql_odbc;</connection_string>
                <db>postgres</db>
            </odbc>
        </source>
@@ -18,7 +18,7 @@
 
        <structure>
            <id>
-               <name>id</name>
+               <name>column1</name>
            </id>
 
            <attribute>
@@ -35,4 +35,4 @@
 
        </structure>
    </dictionary>
-</clickhouse>
+</yandex>

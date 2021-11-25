@@ -22,13 +22,13 @@ public:
 
     String getName() const override { return "PrettyBlockOutputFormat"; }
 
-protected:
     void consume(Chunk) override;
     void consumeTotals(Chunk) override;
     void consumeExtremes(Chunk) override;
 
-    void finalizeImpl() override;
+    void finalize() override;
 
+protected:
     size_t total_rows = 0;
     size_t terminal_width = 0;
     bool suffix_written = false;
@@ -57,8 +57,7 @@ protected:
         WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths);
 
     void writeValueWithPadding(
-        const IColumn & column, const ISerialization & serialization, size_t row_num,
-        size_t value_width, size_t pad_to_width, bool align_right);
+        const IColumn & column, const IDataType & type, size_t row_num, size_t value_width, size_t pad_to_width);
 };
 
 }

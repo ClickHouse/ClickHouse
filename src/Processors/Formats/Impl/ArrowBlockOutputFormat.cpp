@@ -18,26 +18,17 @@ namespace ErrorCodes
 }
 
 ArrowBlockOutputFormat::ArrowBlockOutputFormat(WriteBuffer & out_, const Block & header_, bool stream_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_)
-    , stream{stream_}
-    , format_settings{format_settings_}
-    , arrow_ostream{std::make_shared<ArrowBufferedOutputStream>(out_)}
+    : IOutputFormat(header_, out_), stream{stream_}, format_settings{format_settings_}, arrow_ostream{std::make_shared<ArrowBufferedOutputStream>(out_)}
 {
 }
 
 void ArrowBlockOutputFormat::consume(Chunk chunk)
 {
+    const Block & header = getPort(PortKind::Main).getHeader();
     const size_t columns_num = chunk.getNumColumns();
     std::shared_ptr<arrow::Table> arrow_table;
 
-    if (!ch_column_to_arrow_column)
-    {
-        const Block & header = getPort(PortKind::Main).getHeader();
-        ch_column_to_arrow_column
-            = std::make_unique<CHColumnToArrowColumn>(header, "Arrow", format_settings.arrow.low_cardinality_as_dictionary);
-    }
-
-    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, columns_num);
+    CHColumnToArrowColumn::chChunkToArrowTable(arrow_table, header, chunk, columns_num, "Arrow");
 
     if (!writer)
         prepareWriter(arrow_table->schema());
@@ -50,7 +41,7 @@ void ArrowBlockOutputFormat::consume(Chunk chunk)
             "Error while writing a table: {}", status.ToString());
 }
 
-void ArrowBlockOutputFormat::finalizeImpl()
+void ArrowBlockOutputFormat::finalize()
 {
     if (!writer)
     {
@@ -82,9 +73,9 @@ void ArrowBlockOutputFormat::prepareWriter(const std::shared_ptr<arrow::Schema> 
     writer = *writer_status;
 }
 
-void registerOutputFormatArrow(FormatFactory & factory)
+void registerOutputFormatProcessorArrow(FormatFactory & factory)
 {
-    factory.registerOutputFormat(
+    factory.registerOutputFormatProcessor(
         "Arrow",
         [](WriteBuffer & buf,
            const Block & sample,
@@ -94,7 +85,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
             return std::make_shared<ArrowBlockOutputFormat>(buf, sample, false, format_settings);
         });
 
-    factory.registerOutputFormat(
+    factory.registerOutputFormatProcessor(
         "ArrowStream",
         [](WriteBuffer & buf,
            const Block & sample,
@@ -112,7 +103,7 @@ void registerOutputFormatArrow(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatArrow(FormatFactory &)
+void registerOutputFormatProcessorArrow(FormatFactory &)
 {
 }
 }

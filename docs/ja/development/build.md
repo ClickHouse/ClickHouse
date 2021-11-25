@@ -19,17 +19,28 @@ $ sudo apt-get install git cmake python ninja-build
 
 古いシステムではcmakeの代わりにcmake3。
 
-## Clang 11 のインストール
+## GCC9のインストール {#install-gcc-10}
 
-On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
+これを行うにはいくつかの方法があります。
 
-```bash
-sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
-```
+### PPAパッケージからインストール {#install-from-a-ppa-package}
 
 ``` bash
-$ export CC=clang
-$ export CXX=clang++
+$ sudo apt-get install software-properties-common
+$ sudo apt-add-repository ppa:ubuntu-toolchain-r/test
+$ sudo apt-get update
+$ sudo apt-get install gcc-10 g++-10
+```
+
+### ソースからインスト {#install-from-sources}
+
+見て [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
+
+## ビルドにGCC9を使用する {#use-gcc-10-for-builds}
+
+``` bash
+$ export CC=gcc-10
+$ export CXX=g++-10
 ```
 
 ## ﾂつｨﾂ姪"ﾂ債ﾂつｹ {#checkout-clickhouse-sources}
@@ -65,7 +76,7 @@ $ cd ..
 -   Git（ソースをチェックアウトするためにのみ使用され、ビルドには必要ありません)
 -   CMake3.10以降
 -   忍者（推奨）または作る
--   C++コンパイラ:clang11以降
+-   C++コンパイラ:gcc9またはclang8以降
 -   リンカ:lldまたはgold(古典的なGNU ldは動作しません)
 -   Python(LLVMビルド内でのみ使用され、オプションです)
 
@@ -127,4 +138,4 @@ $ cd ClickHouse
 $ ./release
 ```
 
-[元の記事](https://clickhouse.com/docs/en/development/build/) <!--hide-->
+[元の記事](https://clickhouse.tech/docs/en/development/build/) <!--hide-->

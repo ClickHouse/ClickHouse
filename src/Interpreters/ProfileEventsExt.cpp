@@ -3,7 +3,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnMap.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -11,38 +10,50 @@
 namespace ProfileEvents
 {
 
-std::shared_ptr<DB::DataTypeEnum8> TypeEnum = std::make_shared<DB::DataTypeEnum8>(DB::DataTypeEnum8::Values{
-    { "increment", static_cast<Int8>(INCREMENT)},
-    { "gauge",     static_cast<Int8>(GAUGE)},
-});
-
 /// Put implementation here to avoid extra linking dependencies for clickhouse_common_io
-void dumpToMapColumn(const Counters::Snapshot & counters, DB::IColumn * column, bool nonzero_only)
+void dumpToArrayColumns(const Counters & counters, DB::IColumn * column_names_, DB::IColumn * column_values_, bool nonzero_only)
 {
-    auto * column_map = column ? &typeid_cast<DB::ColumnMap &>(*column) : nullptr;
-    if (!column_map)
-        return;
-
-    auto & offsets = column_map->getNestedColumn().getOffsets();
-    auto & tuple_column = column_map->getNestedData();
-    auto & key_column = tuple_column.getColumn(0);
-    auto & value_column = tuple_column.getColumn(1);
+    /// Convert ptr and make simple check
+    auto * column_names = (column_names_) ? &typeid_cast<DB::ColumnArray &>(*column_names_) : nullptr;
+    auto * column_values = (column_values_) ? &typeid_cast<DB::ColumnArray &>(*column_values_) : nullptr;
 
     size_t size = 0;
+
     for (Event event = 0; event < Counters::num_counters; ++event)
     {
-        UInt64 value = counters[event];
+        UInt64 value = counters[event].load(std::memory_order_relaxed);
 
         if (nonzero_only && 0 == value)
             continue;
 
-        const char * desc = ProfileEvents::getName(event);
-        key_column.insertData(desc, strlen(desc));
-        value_column.insert(value);
-        size++;
+        ++size;
+
+        if (column_names)
+        {
+            const char * desc = ProfileEvents::getName(event);
+            column_names->getData().insertData(desc, strlen(desc));
+        }
+
+        if (column_values)
+            column_values->getData().insert(value);
     }
 
-    offsets.push_back(offsets.back() + size);
+    if (column_names)
+    {
+        auto & offsets = column_names->getOffsets();
+        offsets.push_back(offsets.back() + size);
+    }
+
+    if (column_values)
+    {
+        /// Nested columns case
+        bool the_same_offsets = column_names && column_names->getOffsetsPtr().get() == column_values->getOffsetsPtr().get();
+        if (!the_same_offsets)
+        {
+            auto & offsets = column_values->getOffsets();
+            offsets.push_back(offsets.back() + size);
+        }
+    }
 }
 
 }

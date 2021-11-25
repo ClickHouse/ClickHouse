@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 
 namespace DB
@@ -18,7 +17,7 @@ struct SelectQueryDescription
 
     /// Parse description from select query for materialized view. Also
     /// validates query.
-    static SelectQueryDescription getSelectQueryFromASTForMatView(const ASTPtr & select, ContextPtr context);
+    static SelectQueryDescription getSelectQueryFromASTForMatView(const ASTPtr & select, const Context & context);
 
     SelectQueryDescription() = default;
     SelectQueryDescription(const SelectQueryDescription & other);

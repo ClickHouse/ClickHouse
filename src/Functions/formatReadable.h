@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
@@ -28,16 +28,11 @@ class FunctionFormatReadable : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatReadable<Impl>>(); }
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionFormatReadable<Impl>>(); }
 
     String getName() const override
     {
         return name;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
-    {
-        return true;
     }
 
     size_t getNumberOfArguments() const override { return 1; }
