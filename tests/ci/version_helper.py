@@ -70,7 +70,7 @@ def get_tweak_from_git_describe(repo_path):
     # something like v21.12.1.8816-testing-358-g81942b8128
     # or v21.11.4.14-stable-31-gd6aab025e0
     output = subprocess.check_output(f"cd {repo_path} && git describe --long", shell=True).decode('utf-8')
-    commits_number = int(output.split('-')[2])
+    commits_number = int(output.split('-')[-2])
     # for testing releases we have to also add fourth number of
     # the previous tag
     if 'testing' in output:
