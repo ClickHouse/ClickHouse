@@ -21,6 +21,7 @@ private:
         using Poco::Net::TCPServerConnection::TCPServerConnection;
         void run() override {}
     };
+
 public:
     KeeperTCPHandlerFactory(IServer & server_, bool secure)
         : server(server_)
@@ -41,6 +42,7 @@ public:
             return new DummyTCPHandler(socket);
         }
     }
+
 };
 
 }

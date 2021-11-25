@@ -159,6 +159,7 @@ function clone_submodules
         cd "$FASTTEST_SOURCE"
 
         SUBMODULES_TO_UPDATE=(
+            contrib/sysroot
             contrib/magic_enum
             contrib/abseil-cpp
             contrib/boost
