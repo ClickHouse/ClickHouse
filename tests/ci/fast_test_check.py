@@ -146,7 +146,5 @@ if __name__ == "__main__":
     ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
 
     # Refuse other checks to run if fast test failed
-    for test_result in test_results:
-        status = test_result[1]
-        if status != "OK":
-            sys.exit(1)
+    if state != 'success':
+        sys.exit(1)
