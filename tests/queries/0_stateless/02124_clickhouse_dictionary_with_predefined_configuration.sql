@@ -17,8 +17,11 @@ CREATE DICTIONARY dict
    value String
 )
 PRIMARY KEY id
-SOURCE(CLICKHOUSE(NAME clickhouse_dictionary PORT tcpPort()))
+SOURCE(CLICKHOUSE(NAME clickhouse_dictionary PORT tcpPort() DATABASE currentDatabase()))
 LIFETIME(MIN 1 MAX 1000)
 LAYOUT(CACHE(SIZE_IN_CELLS 10));
 
 SELECT dictGet('dict', 'value', toUInt64(1));
+
+DROP DICTIONARY dict;
+DROP TABLE s;
