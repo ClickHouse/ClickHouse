@@ -86,7 +86,7 @@ INSERT INTO simple_agf_aggregating_mt SELECT
     minMap((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13)))),
     maxMapState((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13)))),
     maxMap((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13))))
-FROM numbers(1000000)
+FROM numbers(10000)
 GROUP BY a;
 
 OPTIMIZE TABLE simple_agf_aggregating_mt FINAL;
@@ -167,7 +167,7 @@ INSERT INTO simple_agf_aggregating_mt SELECT
     minMap((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13)))),
     maxMapState((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13)))),
     maxMap((arrayMap(i -> toString(i), range(13)), arrayMap(i -> (number + i), range(13))))
-FROM numbers(1000000)
+FROM numbers(10000)
 GROUP BY a;
 
 OPTIMIZE TABLE simple_agf_aggregating_mt FINAL;
