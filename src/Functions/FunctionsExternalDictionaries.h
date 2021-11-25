@@ -671,7 +671,7 @@ private:
 
     static bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs)
     {
-        return removeNullable(recursiveRemoveLowCardinality(lhs))->equals(*removeNullable(recursiveRemoveLowCardinality(rhs)));
+        return lhs->equals(*rhs);
     }
 
     const FunctionDictGetNoType<dictionary_get_function_type> impl;
