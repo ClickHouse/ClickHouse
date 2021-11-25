@@ -23,7 +23,6 @@ set(JNI_NATIVE_SOURCES
 
 set(JAVA_MAIN_CLASSES
         ${JAVA_MAIN_CLASS_PATH}/io/kyligence/jni/engine/LocalEngine.java
-        ${JAVA_MAIN_CLASS_PATH}/io/kyligence/jni/engine/Chunk.java
         )
 # Create the jni header file (from the java class).
 set(JNI_HEADERS_DIR ${PROJECT_SOURCE_DIR}/utils/local-engine/include)
@@ -85,8 +84,9 @@ set (CLICKHOUSE_SERVER_LINK
         clickhouse_aggregate_functions
         clickhouse_common_io
         clickhouse_functions
-#        clickhouse_storages_system
-#        substrait
+        clickhouse_storages_system
+        arrow_shared
+        substrait
         )
 
 #target_link_libraries(local_engine ${CLICKHOUSE_SERVER_LINK} )

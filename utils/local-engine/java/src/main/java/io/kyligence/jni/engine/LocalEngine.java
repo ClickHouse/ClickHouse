@@ -1,6 +1,9 @@
 package io.kyligence.jni.engine;
 
-public class LocalEngine {
+import java.io.Closeable;
+import java.io.IOException;
+
+public class LocalEngine implements Closeable {
     public static native long test(int a, int b);
 
     public static native void initEngineEnv();
@@ -13,15 +16,19 @@ public class LocalEngine {
         System.out.println(result);
     }
 
+    private long nativeExecutor;
     private byte[] plan;
 
-    public void execute() {}
-
-    public boolean hasNext() {
-        return true;
+    public LocalEngine(byte[] plan) {
+        this.plan = plan;
     }
 
-    public byte[] next() {
-        return null;
-    }
+    public native void execute();
+
+    public native boolean hasNext();
+
+    public native byte[] next();
+
+    @Override
+    public native void close() throws IOException;
 }

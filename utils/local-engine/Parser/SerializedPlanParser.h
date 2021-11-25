@@ -23,7 +23,7 @@ struct FilesInfo
 };
 using FilesInfoPtr = std::shared_ptr<FilesInfo>;
 
-class BatchParquetFileSource : DB::SourceWithProgress
+class BatchParquetFileSource : public DB::SourceWithProgress
 {
 public:
     BatchParquetFileSource(FilesInfoPtr files, const Block & header);
@@ -59,6 +59,7 @@ using namespace DB;
 class SerializedPlanParser
 {
 public:
+    static DB::QueryPlanPtr parse(std::string& plan);
     static DB::QueryPlanPtr parse(std::unique_ptr<io::substrait::Plan> plan);
     static DB::BatchParquetFileSourcePtr parseReadRealWithLocalFile(const io::substrait::ReadRel& rel);
     static DB::Block parseNameStruct(const io::substrait::Type_NamedStruct& struct_);
@@ -74,10 +75,11 @@ public:
     bool hasNext();
 
 private:
-    void writeChunkToArrowString(Chunk& chunk, std::string &arrowChunk);
+    void writeChunkToArrowString(Chunk& chunk, std::string & arrow_chunk);
     std::unique_ptr<PullingPipelineExecutor> executor;
     Block header;
     std::unique_ptr<DB::CHColumnToArrowColumn> ch_column_to_arrow_column;
+    std::unique_ptr<Chunk> current_chunk;
 };
 }
 

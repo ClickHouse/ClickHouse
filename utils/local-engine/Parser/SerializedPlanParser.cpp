@@ -80,6 +80,12 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::unique_ptr<io::substrait
     }
     return query_plan;
 }
+DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::string& plan)
+{
+    auto plan_ptr = std::make_unique<io::substrait::Plan>();
+    plan_ptr->ParseFromString(plan);
+    return parse(std::move(plan_ptr));
+}
 DB::Chunk DB::BatchParquetFileSource::generate()
 {
     while (!finished_generate)
@@ -144,11 +150,11 @@ void dbms::LocalExecutor::execute(DB::QueryPlanPtr query_plan)
     this->header = query_plan->getCurrentDataStream().header;
     this->ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(header, "Arrow", false);
 }
-void dbms::LocalExecutor::writeChunkToArrowString(DB::Chunk &chunk, std::string & arrowChunk)
+void dbms::LocalExecutor::writeChunkToArrowString(DB::Chunk &chunk, std::string & arrow_chunk)
 {
     std::shared_ptr<arrow::Table> arrow_table;
     ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, chunk.getNumColumns());
-    DB::WriteBufferFromString buf(arrowChunk);
+    DB::WriteBufferFromString buf(arrow_chunk);
     auto out_stream = std::make_shared<ArrowBufferedOutputStream>(buf);
     arrow::Result<std::shared_ptr<arrow::ipc::RecordBatchWriter>> writer_status;
     writer_status = arrow::ipc::MakeFileWriter(out_stream.get(), arrow_table->schema());
@@ -165,4 +171,22 @@ void dbms::LocalExecutor::writeChunkToArrowString(DB::Chunk &chunk, std::string 
     {
         throw std::runtime_error("Error while close a table");
     }
+}
+bool dbms::LocalExecutor::hasNext()
+{
+    bool has_next;
+    if (this->current_chunk->empty())
+    {
+        this->current_chunk = std::make_unique<DB::Chunk>();
+        has_next = this->executor->pull(*this->current_chunk);
+    } else {
+        has_next = true;
+    }
+    return has_next;
+}
+std::string dbms::LocalExecutor::next()
+{
+    std::string arrow_chunk;
+    writeChunkToArrowString(*this->current_chunk, arrow_chunk);
+    return arrow_chunk;
 }

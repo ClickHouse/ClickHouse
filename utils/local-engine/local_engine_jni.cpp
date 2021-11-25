@@ -8,7 +8,6 @@
 #include <Processors/Formats/Impl/CSVRowInputFormat.h>
 #include <Processors/Formats/Impl/CSVRowOutputFormat.h>
 #include <Processors/Sinks/NullSink.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -21,19 +20,17 @@
 #include <IO/ReadBuffer.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Processors/QueryPipeline.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <Parser/SerializedPlanParser.h>
 
 #include <fstream>
-#include <string>
 #include <Processors/Pipe.h>
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
-//#include <Substrait/relations.pb.h>
 
 using namespace DB;
 using namespace rapidjson;
@@ -260,4 +257,52 @@ JNIEXPORT jlong JNICALL Java_io_kyligence_jni_engine_LocalEngine_test
     std::cout << "run pipeline success." << std::endl;
     std::cout <<std::string("hello world");
     return a + b;
+}
+void Java_io_kyligence_jni_engine_LocalEngine_initEngineEnv(JNIEnv *, jclass)
+{
+    registerAllFunctions();
+}
+void Java_io_kyligence_jni_engine_LocalEngine_execute(JNIEnv *env, jobject obj)
+{
+    jclass this_class = env->GetObjectClass(obj);
+    jfieldID plan_field_id = env->GetFieldID(this_class, "plan", "[B");
+    jobject plan_data = env->GetObjectField(obj, plan_field_id);
+    jbyteArray *plan = reinterpret_cast<jbyteArray*>(&plan_data);
+    jsize plan_size = env->GetArrayLength(*plan);
+    jbyte *plan_address = env->GetByteArrayElements(*plan, nullptr);
+    std::string plan_string;
+    plan_string.assign(reinterpret_cast<const char *>(plan_address), plan_size);
+    auto query_plan = dbms::SerializedPlanParser::parse(plan_string);
+    dbms::LocalExecutor* executor = new dbms::LocalExecutor();
+    executor->execute(std::move(query_plan));
+
+    jfieldID executor_field_id = env->GetFieldID(this_class, "nativeExecutor", "L");
+    env->SetLongField(obj, executor_field_id, reinterpret_cast<jlong>(executor));
+}
+jboolean Java_io_kyligence_jni_engine_LocalEngine_hasNext(JNIEnv *env, jobject obj)
+{
+    jclass this_class = env->GetObjectClass(obj);
+    jfieldID executor_field_id = env->GetFieldID(this_class, "nativeExecutor", "L");
+    jlong executor_address = env->GetLongField(obj, executor_field_id);
+    dbms::LocalExecutor* executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
+    return executor->hasNext();
+}
+jbyteArray Java_io_kyligence_jni_engine_LocalEngine_next(JNIEnv *env, jobject obj)
+{
+    jclass this_class = env->GetObjectClass(obj);
+    jfieldID executor_field_id = env->GetFieldID(this_class, "nativeExecutor", "L");
+    jlong executor_address = env->GetLongField(obj, executor_field_id);
+    dbms::LocalExecutor* executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
+    std::string arrow_batch = executor->next();
+    jbyteArray result = env->NewByteArray(arrow_batch.size());
+    env->SetByteArrayRegion(result, 0, arrow_batch.size(), reinterpret_cast<const jbyte *>(arrow_batch.data()));
+    return result;
+}
+void Java_io_kyligence_jni_engine_LocalEngine_close(JNIEnv *env, jobject obj)
+{
+    jclass this_class = env->GetObjectClass(obj);
+    jfieldID executor_field_id = env->GetFieldID(this_class, "nativeExecutor", "L");
+    jlong executor_address = env->GetLongField(obj, executor_field_id);
+    dbms::LocalExecutor* executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
+    delete executor;
 }
