@@ -15,8 +15,8 @@ public:
 
     BlockIO execute() override;
 
-    bool ignoreQuota() const override { return true; }
-    bool ignoreLimits() const override { return true; }
+    bool ignoreQuota() const override { return false; }
+    bool ignoreLimits() const override { return false; }
 
 private:
     ASTPtr query_ptr;
