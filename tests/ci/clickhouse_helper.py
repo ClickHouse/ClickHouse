@@ -25,7 +25,8 @@ class ClickHouseHelper:
             'X-ClickHouse-Key': password if password is not None else get_parameter_from_ssm("clickhouse-test-stat-password")
         }
 
-    def _insert_json_str_info_impl(self, url, auth, db, table, json_str):
+    @staticmethod
+    def _insert_json_str_info_impl(url, auth, db, table, json_str):
         params = {
             'database': db,
             'query': 'INSERT INTO {table} FORMAT JSONEachRow'.format(table=table),
