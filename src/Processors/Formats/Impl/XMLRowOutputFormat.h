@@ -51,7 +51,7 @@ private:
         statistics.rows_before_limit = rows_before_limit_;
     }
 
-    void onFirstRowNumberUpdate() override { row_count = getFirstRowNumber(); }
+    void onRowsReadBeforeUpdate() override { row_count = getRowsReadBefore(); }
 
     void onProgress(const Progress & value) override;
 

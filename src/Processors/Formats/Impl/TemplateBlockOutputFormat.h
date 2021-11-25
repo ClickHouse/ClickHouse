@@ -48,7 +48,7 @@ private:
     void writeRow(const Chunk & chunk, size_t row_num);
     template <typename U, typename V> void writeValue(U value, EscapingRule escaping_rule);
 
-    void onFirstRowNumberUpdate() override { row_count = getFirstRowNumber(); }
+    void onRowsReadBeforeUpdate() override { row_count = getRowsReadBefore(); }
     bool areTotalsAndExtremesUsedInFinalize() const override { return true; }
 
     const FormatSettings settings;
