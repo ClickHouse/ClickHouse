@@ -15,7 +15,7 @@ def getenv(name, default=None):
     env = os.getenv(name, default)
     if env is not None:
         return env
-    raise KeyError("necessary {} environment is not set".format(name))
+    raise KeyError(f"Necessary {name} environment is not set")
 
 
 TEMP_PATH = getenv("TEMP_PATH", ".")
@@ -174,7 +174,7 @@ class Artifactory(object):
         elif JFROG_TOKEN:
             path = ArtifactorySaaSPath(url, token=JFROG_TOKEN)
         else:
-            raise KeyError("neither JFROG_API_KEY nor JFROG_TOKEN env are defined")
+            raise KeyError("Neither JFROG_API_KEY nor JFROG_TOKEN env are defined")
         return path
 
     def deb(self, package) -> ArtifactorySaaSPath:
@@ -250,7 +250,7 @@ def main():
         args.build_name,
         args.release.version,
     )
-    artClient = Artifactory(args.artifactory_url, args.release.type)
+    art_client = Artifactory(args.artifactory_url, args.release.type)
     if args.deb:
         s3.download_deb()
         artClient.deploy_deb(s3.packages)
