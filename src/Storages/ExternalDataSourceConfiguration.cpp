@@ -8,6 +8,12 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <IO/WriteBufferFromString.h>
 
+#if USE_AMQPCPP
+#include <Storages/RabbitMQ/RabbitMQSettings.h>
+#endif
+#if USE_RDKAFKA
+#include <Storages/Kafka/KafkaSettings.h>
+#endif
 
 namespace DB
 {
@@ -359,4 +365,63 @@ std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const
     return std::nullopt;
 }
 
+template<typename T>
+bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context)
+{
+    if (args.empty())
+        return false;
+
+    if (const auto * collection = typeid_cast<const ASTIdentifier *>(args[0].get()))
+    {
+        const auto & config = context->getConfigRef();
+        const auto & config_prefix = fmt::format("named_collections.{}", collection->name());
+
+        if (!config.has(config_prefix))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection->name());
+
+        SettingsChanges config_settings;
+        for (const auto & setting : settings.all())
+        {
+            const auto & setting_name = setting.getName();
+            auto setting_value = config.getString(config_prefix + '.' + setting_name, "");
+            if (!setting_value.empty())
+                config_settings.emplace_back(setting_name, setting_value);
+        }
+
+        /// Check key-value arguments.
+        for (size_t i = 1; i < args.size(); ++i)
+        {
+            if (const auto * ast_function = typeid_cast<const ASTFunction *>(args[i].get()))
+            {
+                const auto * args_expr = assert_cast<const ASTExpressionList *>(ast_function->arguments.get());
+                auto function_args = args_expr->children;
+                if (function_args.size() != 2)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
+
+                auto arg_name = function_args[0]->as<ASTIdentifier>()->name();
+                auto arg_value_ast = evaluateConstantExpressionOrIdentifierAsLiteral(function_args[1], context);
+                auto arg_value = arg_value_ast->as<ASTLiteral>()->value;
+                config_settings.emplace_back(arg_name, arg_value);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected key-value defined argument");
+            }
+        }
+
+        settings.applyChanges(config_settings);
+        return true;
+    }
+    return false;
+}
+
+#if USE_AMQPCPP
+template
+bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<RabbitMQSettingsTraits> & settings, ContextPtr context);
+#endif
+
+#if USE_RDKAFKA
+template
+bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<KafkaSettingsTraits> & settings, ContextPtr context);
+#endif
 }
