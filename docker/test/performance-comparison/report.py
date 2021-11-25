@@ -227,10 +227,16 @@ def tableEnd():
     return '</table>'
 
 def tsvRows(n):
-    result = []
     try:
         with open(n, encoding='utf-8') as fd:
-            return [row for row in csv.reader(fd, delimiter="\t", quotechar='"')]
+            result = []
+            for row in csv.reader(fd, delimiter="\t", quoting=csv.QUOTE_NONE):
+                new_row = []
+                for e in row:
+                    new_row.append(e.encode('utf-8').decode('unicode-escape').encode('latin1').decode('utf-8'))
+                result.append(new_row)
+        return result
+
     except:
         report_errors.append(
             traceback.format_exception_only(
