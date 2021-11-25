@@ -119,8 +119,15 @@ if __name__ == "__main__":
     image_version = docker_image.version
 
     version = get_version_from_repo(repo_path)
-    version.tweak_update()
-    update_version_local(repo_path, pr_info.sha, version)
+    logging.info("Got version from repo %s", version.get_version_string())
+
+    version_type = 'testing'
+    if 'release' in pr_info.labels or 'release-lts' in pr_info.labels:
+        version_type = 'stable'
+
+    update_version_local(repo_path, pr_info.sha, version, version_type)
+
+    logging.info("Updated local files with version")
 
     build_name = build_config_to_string(build_config)
     logging.info("Build short name %s", build_name)
