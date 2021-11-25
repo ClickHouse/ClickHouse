@@ -11,7 +11,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalModelsLoader.h>
-#include <Interpreters/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -22,7 +21,6 @@
 #include <Interpreters/PartLog.h>
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
-#include <Interpreters/SessionLog.h>
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
@@ -31,7 +29,7 @@
 #include <Interpreters/ZooKeeperLog.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/ContextAccess.h>
-#include <Access/Common/AllowedClientHosts.h>
+#include <Access/AllowedClientHosts.h>
 #include <Databases/IDatabase.h>
 #include <Disks/DiskRestartProxy.h>
 #include <Storages/StorageDistributed.h>
@@ -40,11 +38,12 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Common/ThreadFuzzer.h>
 #include <csignal>
 #include <algorithm>
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 namespace DB
 {
@@ -217,12 +216,12 @@ BlockIO InterpreterSystemQuery::execute()
     /// Make canonical query for simpler processing
     if (query.type == Type::RELOAD_DICTIONARY)
     {
-        if (query.database)
-            query.setTable(query.getDatabase() + "." + query.getTable());
+        if (!query.database.empty())
+            query.table = query.database + "." + query.table;
     }
-    else if (query.table)
+    else if (!query.table.empty())
     {
-        table_id = getContext()->resolveStorageID(StorageID(query.getDatabase(), query.getTable()), Context::ResolveOrdinary);
+        table_id = getContext()->resolveStorageID(StorageID(query.database, query.table), Context::ResolveOrdinary);
     }
 
 
@@ -278,14 +277,6 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->dropUncompressedCache();
             break;
-        case Type::DROP_INDEX_MARK_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
-            system_context->dropIndexMarkCache();
-            break;
-        case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
-            system_context->dropIndexUncompressedCache();
-            break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->dropMMappedFileCache();
@@ -302,7 +293,8 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
 
             auto & external_dictionaries_loader = system_context->getExternalDictionariesLoader();
-            external_dictionaries_loader.reloadDictionary(query.getTable(), getContext());
+            external_dictionaries_loader.reloadDictionary(query.table, getContext());
+
 
             ExternalDictionariesLoader::resetAll();
             break;
@@ -333,22 +325,6 @@ BlockIO InterpreterSystemQuery::execute()
             external_models_loader.reloadAllTriedToLoad();
             break;
         }
-        case Type::RELOAD_FUNCTION:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_FUNCTION);
-
-            auto & external_user_defined_executable_functions_loader = system_context->getExternalUserDefinedExecutableFunctionsLoader();
-            external_user_defined_executable_functions_loader.reloadFunction(query.target_function);
-            break;
-        }
-        case Type::RELOAD_FUNCTIONS:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_FUNCTION);
-
-            auto & external_user_defined_executable_functions_loader = system_context->getExternalUserDefinedExecutableFunctionsLoader();
-            external_user_defined_executable_functions_loader.reloadAllTriedToLoad();
-            break;
-        }
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_EMBEDDED_DICTIONARIES);
             system_context->getEmbeddedDictionaries().reload();
@@ -361,7 +337,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
 #if defined(__ELF__) && !defined(__FreeBSD__)
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_SYMBOLS);
-            SymbolIndex::reload();
+            (void)SymbolIndex::instance(true);
             break;
 #else
             throw Exception("SYSTEM RELOAD SYMBOLS is not supported on current platform", ErrorCodes::NOT_IMPLEMENTED);
@@ -444,20 +420,13 @@ BlockIO InterpreterSystemQuery::execute()
                 [&] { if (auto asynchronous_metric_log = getContext()->getAsynchronousMetricLog()) asynchronous_metric_log->flush(true); },
                 [&] { if (auto opentelemetry_span_log = getContext()->getOpenTelemetrySpanLog()) opentelemetry_span_log->flush(true); },
                 [&] { if (auto query_views_log = getContext()->getQueryViewsLog()) query_views_log->flush(true); },
-                [&] { if (auto zookeeper_log = getContext()->getZooKeeperLog()) zookeeper_log->flush(true); },
-                [&] { if (auto session_log = getContext()->getSessionLog()) session_log->flush(true); }
+                [&] { if (auto zookeeper_log = getContext()->getZooKeeperLog()) zookeeper_log->flush(true); }
             );
             break;
         }
         case Type::STOP_LISTEN_QUERIES:
         case Type::START_LISTEN_QUERIES:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not supported yet", query.type);
-        case Type::STOP_THREAD_FUZZER:
-            ThreadFuzzer::stop();
-            break;
-        case Type::START_THREAD_FUZZER:
-            ThreadFuzzer::start();
-            break;
+            throw Exception(String(ASTSystemQuery::typeToString(query.type)) + " is not supported yet", ErrorCodes::NOT_IMPLEMENTED);
         default:
             throw Exception("Unknown type of SYSTEM query", ErrorCodes::BAD_ARGUMENTS);
     }
@@ -523,7 +492,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
         auto table_lock = table->lockExclusively(getContext()->getCurrentQueryId(), getContext()->getSettingsRef().lock_acquire_timeout);
         create_ast = database->getCreateTableQuery(replica.table_name, getContext());
 
-        database->detachTable(system_context, replica.table_name);
+        database->detachTable(replica.table_name);
     }
     table.reset();
 
@@ -544,7 +513,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
         constraints,
         false);
 
-    database->attachTable(system_context, replica.table_name, table, data_path);
+    database->attachTable(replica.table_name, table, data_path);
 
     table->startup();
     return table;
@@ -594,10 +563,10 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         if (!dropReplicaImpl(query, table))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
     }
-    else if (query.database)
+    else if (!query.database.empty())
     {
-        getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase());
-        DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.getDatabase());
+        getContext()->checkAccess(AccessType::SYSTEM_DROP_REPLICA, query.database);
+        DatabasePtr database = DatabaseCatalog::instance().getDatabase(query.database);
         for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             dropReplicaImpl(query, iterator->table());
         LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
@@ -752,8 +721,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_COMPILED_EXPRESSION_CACHE: [[fallthrough]];
 #endif
         case Type::DROP_UNCOMPRESSED_CACHE:
-        case Type::DROP_INDEX_MARK_CACHE:
-        case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
@@ -771,12 +738,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_MODEL);
             break;
         }
-        case Type::RELOAD_FUNCTION: [[fallthrough]];
-        case Type::RELOAD_FUNCTIONS:
-        {
-            required_access.emplace_back(AccessType::SYSTEM_RELOAD_FUNCTION);
-            break;
-        }
         case Type::RELOAD_CONFIG:
         {
             required_access.emplace_back(AccessType::SYSTEM_RELOAD_CONFIG);
@@ -790,84 +751,84 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::STOP_MERGES: [[fallthrough]];
         case Type::START_MERGES:
         {
-            if (!query.table)
+            if (query.table.empty())
                 required_access.emplace_back(AccessType::SYSTEM_MERGES);
             else
-                required_access.emplace_back(AccessType::SYSTEM_MERGES, query.getDatabase(), query.getTable());
+                required_access.emplace_back(AccessType::SYSTEM_MERGES, query.database, query.table);
             break;
         }
         case Type::STOP_TTL_MERGES: [[fallthrough]];
         case Type::START_TTL_MERGES:
         {
-            if (!query.table)
+            if (query.table.empty())
                 required_access.emplace_back(AccessType::SYSTEM_TTL_MERGES);
             else
-                required_access.emplace_back(AccessType::SYSTEM_TTL_MERGES, query.getDatabase(), query.getTable());
+                required_access.emplace_back(AccessType::SYSTEM_TTL_MERGES, query.database, query.table);
             break;
         }
         case Type::STOP_MOVES: [[fallthrough]];
         case Type::START_MOVES:
         {
-            if (!query.table)
+            if (query.table.empty())
                 required_access.emplace_back(AccessType::SYSTEM_MOVES);
             else
-                required_access.emplace_back(AccessType::SYSTEM_MOVES, query.getDatabase(), query.getTable());
+                required_access.emplace_back(AccessType::SYSTEM_MOVES, query.database, query.table);
             break;
         }
         case Type::STOP_FETCHES: [[fallthrough]];
         case Type::START_FETCHES:
         {
-            if (!query.table)
+            if (query.table.empty())
                 required_access.emplace_back(AccessType::SYSTEM_FETCHES);
             else
-                required_access.emplace_back(AccessType::SYSTEM_FETCHES, query.getDatabase(), query.getTable());
+                required_access.emplace_back(AccessType::SYSTEM_FETCHES, query.database, query.table);
             break;
         }
         case Type::STOP_DISTRIBUTED_SENDS: [[fallthrough]];
         case Type::START_DISTRIBUTED_SENDS:
         {
-            if (!query.table)
+            if (query.table.empty())
                 required_access.emplace_back(AccessType::SYSTEM_DISTRIBUTED_SENDS);
             else
-                required_access.emplace_back(AccessType::SYSTEM_DISTRIBUTED_SENDS, query.getDatabase(), query.getTable());
+                required_access.emplace_back(AccessType::SYSTEM_DISTRIBUTED_SENDS, query.database, query.table);
             break;
         }
         case Type::STOP_REPLICATED_SENDS: [[fallthrough]];
         case Type::START_REPLICATED_SENDS:
         {
-            if (!query.table)
+            if (query.table.empty())
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATED_SENDS);
             else
-                required_access.emplace_back(AccessType::SYSTEM_REPLICATED_SENDS, query.getDatabase(), query.getTable());
+                required_access.emplace_back(AccessType::SYSTEM_REPLICATED_SENDS, query.database, query.table);
             break;
         }
         case Type::STOP_REPLICATION_QUEUES: [[fallthrough]];
         case Type::START_REPLICATION_QUEUES:
         {
-            if (!query.table)
+            if (query.table.empty())
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES);
             else
-                required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES, query.getDatabase(), query.getTable());
+                required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES, query.database, query.table);
             break;
         }
         case Type::DROP_REPLICA:
         {
-            required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase(), query.getTable());
+            required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA, query.database, query.table);
             break;
         }
         case Type::RESTORE_REPLICA:
         {
-            required_access.emplace_back(AccessType::SYSTEM_RESTORE_REPLICA, query.getDatabase(), query.getTable());
+            required_access.emplace_back(AccessType::SYSTEM_RESTORE_REPLICA, query.database, query.table);
             break;
         }
         case Type::SYNC_REPLICA:
         {
-            required_access.emplace_back(AccessType::SYSTEM_SYNC_REPLICA, query.getDatabase(), query.getTable());
+            required_access.emplace_back(AccessType::SYSTEM_SYNC_REPLICA, query.database, query.table);
             break;
         }
         case Type::RESTART_REPLICA:
         {
-            required_access.emplace_back(AccessType::SYSTEM_RESTART_REPLICA, query.getDatabase(), query.getTable());
+            required_access.emplace_back(AccessType::SYSTEM_RESTART_REPLICA, query.database, query.table);
             break;
         }
         case Type::RESTART_REPLICAS:
@@ -877,7 +838,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::FLUSH_DISTRIBUTED:
         {
-            required_access.emplace_back(AccessType::SYSTEM_FLUSH_DISTRIBUTED, query.getDatabase(), query.getTable());
+            required_access.emplace_back(AccessType::SYSTEM_FLUSH_DISTRIBUTED, query.database, query.table);
             break;
         }
         case Type::FLUSH_LOGS:
@@ -892,8 +853,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::STOP_LISTEN_QUERIES: break;
         case Type::START_LISTEN_QUERIES: break;
-        case Type::STOP_THREAD_FUZZER: break;
-        case Type::START_THREAD_FUZZER: break;
         case Type::UNKNOWN: break;
         case Type::END: break;
     }

@@ -1,5 +1,3 @@
--- Tags: long, replica
-
 SET replication_alter_partitions_sync = 2;
 
 SELECT '*** Not partitioned ***';

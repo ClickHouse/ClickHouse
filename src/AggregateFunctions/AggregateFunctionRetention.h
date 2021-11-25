@@ -9,7 +9,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/ArenaAllocator.h>
-#include <base/range.h>
+#include <common/range.h>
 #include <bitset>
 
 #include <AggregateFunctions/IAggregateFunction.h>
