@@ -33,6 +33,8 @@ struct FormatSettings
     bool decimal_trailing_zeros = false;
     bool defaults_for_omitted_fields = true;
 
+    bool seekable_read = true;
+
     enum class DateTimeInputFormat
     {
         Basic,      /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.

@@ -6,6 +6,7 @@
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 #include <IO/RemoteReadBufferCache.h>
+#include <Common/assert_cast.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/copyData.h>
@@ -21,6 +22,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_FILE_SIZE;
+}
 
 ArrowBufferedOutputStream::ArrowBufferedOutputStream(WriteBuffer & out_) : out{out_}, is_open{true}
 {
@@ -49,9 +55,22 @@ RandomAccessFileFromSeekableReadBuffer::RandomAccessFileFromSeekableReadBuffer(S
 {
 }
 
+RandomAccessFileFromSeekableReadBuffer::RandomAccessFileFromSeekableReadBuffer(SeekableReadBufferWithSize & in_)
+    : in{in_}, is_open{true}
+{
+}
+
 arrow::Result<int64_t> RandomAccessFileFromSeekableReadBuffer::GetSize()
 {
-    return arrow::Result<int64_t>(file_size);
+    if (!file_size)
+    {
+        auto * buf_with_size = dynamic_cast<SeekableReadBufferWithSize *>(&in);
+        if (buf_with_size)
+            file_size = buf_with_size->getTotalSize();
+        if (!file_size)
+            throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot find out size of file");
+    }
+    return arrow::Result<int64_t>(*file_size);
 }
 
 arrow::Status RandomAccessFileFromSeekableReadBuffer::Close()
@@ -124,7 +143,7 @@ arrow::Status ArrowInputStreamFromReadBuffer::Close()
     return arrow::Status();
 }
 
-std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in)
+std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in, const FormatSettings & settings)
 {
     if (auto * fd_in = dynamic_cast<ReadBufferFromFileDescriptor *>(&in))
     {
@@ -133,6 +152,11 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in)
         // if fd is a regular file i.e. not stdin
         if (res == 0 && S_ISREG(stat.st_mode))
             return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*fd_in, stat.st_size);
+    }
+    else if (auto * seekable_in = dynamic_cast<SeekableReadBufferWithSize *>(&in))
+    {
+        if (settings.seekable_read)
+            return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*seekable_in);
     }
 
     if (auto * fd_in = dynamic_cast<RemoteReadBuffer *>(&in))

@@ -3153,6 +3153,8 @@ ReadSettings Context::getReadSettings() const
     res.remote_fs_read_max_backoff_ms = settings.remote_fs_read_max_backoff_ms;
     res.remote_fs_read_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;
 
+    res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
+
     res.local_fs_buffer_size = settings.max_read_buffer_size;
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;
     res.mmap_threshold = settings.min_bytes_to_use_mmap_io;
