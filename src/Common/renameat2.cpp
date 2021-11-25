@@ -99,10 +99,15 @@ bool supportsRenameat2()
     return supports;
 }
 
+}
+
 #else
 
 #define RENAME_NOREPLACE -1
 #define RENAME_EXCHANGE -1
+
+namespace DB
+{
 
 static bool renameat2(const std::string &, const std::string &, int)
 {
@@ -114,7 +119,12 @@ bool supportsRenameat2()
     return false;
 }
 
+}
+
 #endif
+
+namespace DB
+{
 
 static void renameNoReplaceFallback(const std::string & old_path, const std::string & new_path)
 {
