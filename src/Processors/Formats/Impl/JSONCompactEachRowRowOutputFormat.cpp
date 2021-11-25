@@ -81,7 +81,7 @@ void JSONCompactEachRowRowOutputFormat::writeLine(const std::vector<String> & va
     writeRowEndDelimiter();
 }
 
-void JSONCompactEachRowRowOutputFormat::doWritePrefix()
+void JSONCompactEachRowRowOutputFormat::writePrefix()
 {
     const auto & header = getPort(PortKind::Main).getHeader();
 

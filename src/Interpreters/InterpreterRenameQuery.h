@@ -31,7 +31,8 @@ struct RenameDescription
             from_database_name(elem.from.database.empty() ? current_database : elem.from.database),
             from_table_name(elem.from.table),
             to_database_name(elem.to.database.empty() ? current_database : elem.to.database),
-            to_table_name(elem.to.table)
+            to_table_name(elem.to.table),
+            if_exists(elem.if_exists)
     {}
 
     String from_database_name;
@@ -39,6 +40,7 @@ struct RenameDescription
 
     String to_database_name;
     String to_table_name;
+    bool if_exists;
 };
 
 using RenameDescriptions = std::vector<RenameDescription>;
@@ -59,7 +61,7 @@ public:
 
 private:
     BlockIO executeToTables(const ASTRenameQuery & rename, const RenameDescriptions & descriptions, TableGuards & ddl_guards);
-    static BlockIO executeToDatabase(const ASTRenameQuery & rename, const RenameDescriptions & descriptions);
+    BlockIO executeToDatabase(const ASTRenameQuery & rename, const RenameDescriptions & descriptions);
 
     AccessRightsElements getRequiredAccess() const;
 
