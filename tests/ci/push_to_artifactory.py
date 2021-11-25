@@ -4,10 +4,9 @@ import argparse
 import logging
 import os
 import re
-import requests
-import time
 
 from artifactory import ArtifactorySaaSPath
+from build_download_helper import dowload_build_with_progress
 
 
 # Necessary ENV variables
@@ -46,7 +45,7 @@ class Packages(object):
         )
 
     def arch(self, deb_pkg: str) -> str:
-        if not deb_pkg in self.deb:
+        if deb_pkg not in self.deb:
             raise ValueError("{} not in {}".format(deb_pkg, self.deb))
         return deb_pkg.removesuffix(".deb").split("_")[-1]
 
@@ -90,29 +89,9 @@ class S3(object):
         )
         self.packages = Packages(version)
 
-    @staticmethod
-    def get_with_retries(url) -> requests.Response:
-        ok = False
-        r = None
-        for retry in range(5):
-            r = requests.get(url, allow_redirects=True, stream=True)
-            if not r.ok and retry != 5:
-                time.sleep(1)
-                continue
-            elif not r.ok:
-                break
-            ok = True
-        if ok:
-            return r
-
-        r.raise_for_status()
-
     def download_package(self, package):
         url = self.template.format_map({**self._common, "package": package})
-        r = self.get_with_retries(url)
-        with open(Packages.path(package), "wb") as package_file:
-            for chunk in r.iter_content(2 ** 16):
-                package_file.write(chunk)
+        dowload_build_with_progress(url, Packages.path(package))
 
     def download_deb(self):
         for package in self.packages.deb:
@@ -158,13 +137,21 @@ class Artifactory(object):
 
     def deploy_deb(self, packages: Packages):
         for package in packages.deb:
-            self.deb(package).deploy_deb(
-                packages.path(package), self._release, "main", packages.arch(package)
+            path = packages.path(package)
+            dist = self._release
+            comp = "main"
+            arch = packages.arch(package)
+            logging.info(
+                f"Deploy {path} distribution={dist};component={comp};"
+                f"architecture={arch} to artifactory"
             )
+            self.deb(package).deploy_deb(path, dist, comp, arch)
 
     def deploy_rpm(self, packages: Packages):
         for package in packages.rpm:
-            self.rpm(package).deploy_file(packages.path(package))
+            path = packages.path(package)
+            logging.info(f"Deploy {path} to artifactory")
+            self.rpm(package).deploy_file(path)
 
     def __path_helper(self, name, package) -> ArtifactorySaaSPath:
         url = "/".join((getattr(self, name + "_url"), package))
@@ -253,10 +240,10 @@ def main():
     art_client = Artifactory(args.artifactory_url, args.release.type)
     if args.deb:
         s3.download_deb()
-        artClient.deploy_deb(s3.packages)
+        art_client.deploy_deb(s3.packages)
     if args.rpm:
         s3.download_rpm()
-        artClient.deploy_rpm(s3.packages)
+        art_client.deploy_rpm(s3.packages)
 
 
 if __name__ == "__main__":
