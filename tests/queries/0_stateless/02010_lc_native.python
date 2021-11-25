@@ -8,7 +8,6 @@ import uuid
 CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '127.0.0.1')
 CLICKHOUSE_PORT = int(os.environ.get('CLICKHOUSE_PORT_TCP', '900000'))
 CLICKHOUSE_DATABASE = os.environ.get('CLICKHOUSE_DATABASE', 'default')
-CLICKHOUSE_QUERY_ID = uuid.uuid4().hex
 
 def writeVarUInt(x, ba):
     for _ in range(0, 9):
@@ -111,9 +110,9 @@ def receiveHello(s):
     # print("Version patch: ", server_version_patch)
 
 
-def serializeClientInfo(ba):
+def serializeClientInfo(ba, query_id):
     writeStringBinary('default', ba) # initial_user
-    writeStringBinary(CLICKHOUSE_QUERY_ID, ba) # initial_query_id
+    writeStringBinary(query_id, ba) # initial_query_id
     writeStringBinary('127.0.0.1:9000', ba) # initial_address
     ba.extend([0] * 8) # initial_query_start_time_microseconds
     ba.append(1) # TCP
@@ -131,13 +130,14 @@ def serializeClientInfo(ba):
 
 def sendQuery(s, query):
     ba = bytearray()
+    query_id = uuid.uuid4().hex
     writeVarUInt(1, ba) # query
-    writeStringBinary(CLICKHOUSE_QUERY_ID, ba)
+    writeStringBinary(query_id, ba)
 
     ba.append(1) # INITIAL_QUERY
 
     # client info
-    serializeClientInfo(ba)
+    serializeClientInfo(ba, query_id)
 
     writeStringBinary('', ba) # No settings
     writeStringBinary('', ba) # No interserver secret
