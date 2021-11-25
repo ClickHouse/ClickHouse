@@ -23,7 +23,7 @@ JFROG_API_KEY = getenv("JFROG_API_KEY", "")
 JFROG_TOKEN = getenv("JFROG_TOKEN", "")
 
 
-class Packages(object):
+class Packages:
     rpm_arch = dict(all="noarch", amd64="x86_64")
     packages = (
         ("clickhouse-client", "all"),
@@ -54,7 +54,7 @@ class Packages(object):
         return os.path.join(TEMP_PATH, package)
 
 
-class S3(object):
+class S3:
     template = (
         "https://s3.amazonaws.com/"
         # "clickhouse-builds/"
@@ -102,38 +102,35 @@ class S3(object):
             self.download_package(package)
 
 
-class Release(object):
-    def __call__(self, name: str) -> str:
+class Release:
+    def __init__(self, name: str) -> str:
         r = re.compile(r"^v\d{2}[.]\d+[.]\d+[.]\d+-(testing|prestable|stable|lts)$")
         if not r.match(name):
             raise argparse.ArgumentTypeError(
                 "release name does not match v12.13.14-TYPE pattern"
             )
         self._name = name
-        return self
+        self._version = self._name.removeprefix("v")
+        self._version = self._version.split("-")[0]
+        self._type = self._name.split("-")[-1]
 
     @property
     def version(self) -> str:
-        if getattr(self, "_version", False):
-            return self._version
-        version = self._name.removeprefix("v")
-        self._version = version.split("-")[0]
         return self._version
 
     @property
     def type(self) -> str:
-        if getattr(self, "_type", False):
-            return self._type
-        self._type = self._name.split("-")[-1]
         return self._type
 
 
-class Artifactory(object):
+class Artifactory:
     def __init__(self, url: str, release: str, deb_repo="deb", rpm_repo="rpm"):
         self._url = url
         self._release = release
         self._deb_url = "/".join((self._url, deb_repo, "pool", self._release)) + "/"
         self._rpm_url = "/".join((self._url, rpm_repo, self._release)) + "/"
+        # check the credentials ENVs for early exit
+        self.__path_helper("_deb", "")
 
     def deploy_deb(self, packages: Packages):
         for package in packages.deb:
@@ -142,15 +139,18 @@ class Artifactory(object):
             comp = "main"
             arch = packages.arch(package)
             logging.info(
-                f"Deploy {path} distribution={dist};component={comp};"
-                f"architecture={arch} to artifactory"
+                "Deploy %s(distribution=%s;component=%s;architecture=%s) to artifactory",
+                path,
+                dist,
+                comp,
+                arch,
             )
             self.deb(package).deploy_deb(path, dist, comp, arch)
 
     def deploy_rpm(self, packages: Packages):
         for package in packages.rpm:
             path = packages.path(package)
-            logging.info(f"Deploy {path} to artifactory")
+            logging.info("Deploy %s to artifactory", path)
             self.rpm(package).deploy_file(path)
 
     def __path_helper(self, name, package) -> ArtifactorySaaSPath:
@@ -191,7 +191,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--commit", required=True, type=commit, help="commit hash for S3 bucket"
     )
-    parser.add_argument("--release", required=True, type=Release(), help="release name")
+    parser.add_argument("--release", required=True, type=Release, help="release name")
     parser.add_argument(
         "--bucket-name",
         default="clickhouse-builds",
