@@ -85,9 +85,6 @@
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
 #   include "Common/config_version.h"
-#   if USE_OPENCL
-#       include "Common/BitonicSort.h"
-#   endif
 #endif
 
 #if defined(OS_LINUX)
