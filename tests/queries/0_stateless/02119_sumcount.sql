@@ -32,3 +32,9 @@ SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT '1.001'::Decimal(3, 3) 
 -- Other types
 SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT 'a'::String AS v); -- { serverError 43 }
 SELECT toTypeName(sumCount(v)), sumCount(v) FROM (SELECT now()::DateTime AS v); -- { serverError 43 }
+
+
+-- SumCountIf
+SELECT sumCountIf(n, n > 10) FROM (SELECT number AS n FROM system.numbers LIMIT 100 );
+SELECT sumCountIf(n, n > 10) FROM (SELECT toNullable(number) AS n FROM system.numbers LIMIT 100);
+SELECT sumCountIf(n, n > 10) FROM (SELECT If(number % 2 == 0, number, NULL) AS n FROM system.numbers LIMIT 100);
