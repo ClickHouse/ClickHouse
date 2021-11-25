@@ -310,7 +310,7 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
 
 void ThreadStatus::initQueryProfiler()
 {
-    if (!query_profiled_enabled)
+    if (!query_profiler_enabled)
         return;
 
     /// query profilers are useless without trace collector
