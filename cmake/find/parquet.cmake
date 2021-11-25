@@ -1,5 +1,5 @@
 if (Protobuf_PROTOC_EXECUTABLE)
-    option (ENABLE_PARQUET "Enable parquet" ON)
+    option (ENABLE_PARQUET "Enable parquet" ${ENABLE_LIBRARIES})
 elseif(ENABLE_PARQUET OR USE_INTERNAL_PARQUET_LIBRARY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use parquet without protoc executable")
 endif()
