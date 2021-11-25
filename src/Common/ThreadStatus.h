@@ -165,7 +165,7 @@ protected:
     std::function<void()> fatal_error_callback;
 
     /// It is used to avoid enabling the query profiler when you have multiple ThreadStatus in the same thread
-    bool query_profiled_enabled = true;
+    bool query_profiler_enabled = true;
 
     /// Requires access to query_id.
     friend class MemoryTrackerThreadSwitcher;
@@ -207,7 +207,7 @@ public:
 
     void disableProfiling()
     {
-        query_profiled_enabled = false;
+        query_profiler_enabled = false;
     }
 
     /// Starts new query and create new thread group for it, current thread becomes master thread of the query
