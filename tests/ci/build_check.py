@@ -185,3 +185,7 @@ if __name__ == "__main__":
 
     with open(os.path.join(temp_path, "build_urls_" + build_name + '.json'), 'w') as build_links:
         json.dump(result, build_links)
+
+    # Fail build job if not successeded
+    if not success:
+        sys.exit(1)
