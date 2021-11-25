@@ -247,7 +247,7 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
 
     while (filt_pos < filt_end_aligned)
     {
-        UInt64 mask = Bytes64MaskToBits64Mask(filt_pos);
+        UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
 
         if (0xffffffffffffffff == mask)
         {

@@ -1,4 +1,4 @@
-option (USE_INTERNAL_BOOST_LIBRARY "Use internal Boost library" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_BOOST_LIBRARY "Use internal Boost library" ON)
 
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     # 1.70 like in contrib/boost
