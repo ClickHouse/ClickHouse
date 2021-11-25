@@ -32,6 +32,8 @@ struct FormatSettings
     bool decimal_trailing_zeros = false;
     bool defaults_for_omitted_fields = true;
 
+    bool seekable_read = true;
+
     enum class DateTimeInputFormat
     {
         Basic,      /// Default format for fast parsing: YYYY-MM-DD hh:mm:ss (ISO-8601 without fractional part and timezone) or NNNNNNNNNN unix timestamp.
@@ -45,6 +47,17 @@ struct FormatSettings
         Simple,
         ISO,
         UnixTimestamp
+    };
+
+    enum class EscapingRule
+    {
+        None,
+        Escaped,
+        Quoted,
+        CSV,
+        JSON,
+        XML,
+        Raw
     };
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
@@ -89,7 +102,7 @@ struct FormatSettings
         std::string row_after_delimiter;
         std::string row_between_delimiter;
         std::string field_delimiter;
-        std::string escaping_rule;
+        EscapingRule escaping_rule = EscapingRule::Escaped;
     } custom;
 
     struct
@@ -148,7 +161,7 @@ struct FormatSettings
     struct
     {
         std::string regexp;
-        std::string escaping_rule;
+        EscapingRule escaping_rule = EscapingRule::Raw;
         bool skip_unmatched = false;
     } regexp;
 

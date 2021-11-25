@@ -50,8 +50,6 @@ def get_packager_cmd(build_config, packager_path, output_path, build_version, im
         cmd += ' --build-type={}'.format(build_config['build_type'])
     if build_config['sanitizer']:
         cmd += ' --sanitizer={}'.format(build_config['sanitizer'])
-    if build_config['bundled'] == 'unbundled':
-        cmd += ' --unbundled'
     if build_config['splitted'] == 'splitted':
         cmd += ' --split-binary'
     if build_config['tidy'] == 'enable':
@@ -73,9 +71,7 @@ def get_packager_cmd(build_config, packager_path, output_path, build_version, im
     return cmd
 
 def get_image_name(build_config):
-    if build_config['bundled'] != 'bundled':
-        return 'clickhouse/unbundled-builder'
-    elif build_config['package_type'] != 'deb':
+    if build_config['package_type'] != 'deb':
         return 'clickhouse/binary-builder'
     else:
         return 'clickhouse/deb-builder'

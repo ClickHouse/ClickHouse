@@ -34,9 +34,10 @@ TRUSTED_CONTRIBUTORS = {
     "bharatnc",     # Newbie, but already with many contributions.
     "bobrik",       # Seasoned contributor, CloundFlare
     "BohuTANG",
+    "codyrobert",   # Flickerbox engineer
     "damozhaeva",   # DOCSUP
     "den-crane",
-    "gyuton",       # DOCSUP
+    "flickerbox-tom", # Flickerbox
     "gyuton",       # technical writer, Yandex
     "hagen1778",    # Roman Khavronenko, seasoned contributor
     "hczhcz",
@@ -111,7 +112,7 @@ if __name__ == "__main__":
     can_run, description = should_run_checks_for_pr(pr_info)
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
-    url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
+    url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
     if not can_run:
         print("::notice ::Cannot run")
         commit.create_status(context=NAME, description=description, state="failure", target_url=url)
