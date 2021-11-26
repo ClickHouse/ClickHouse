@@ -9,7 +9,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 function run
 {
-  ${CLICKHOUSE_CLIENT} -q "select number from remote('127.0.0.2', numbers(10)) where number global in (select number + 9 from numbers(400000000)) settings max_execution_time=3" 2>&1 | echo > /dev/null
+  ${CLICKHOUSE_CLIENT} -q "select number from remote('127.0.0.2', numbers(10)) where number global in (select number + 9 from numbers(400000000)) settings max_execution_time=3" 2>&1 | cat > /dev/null
 }
 
 export -f run
