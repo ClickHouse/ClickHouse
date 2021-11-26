@@ -70,6 +70,12 @@ bool Lz4InflatingReadBuffer::nextImpl()
         return !working_buffer.empty();
     }
 
+    /// It may happen that we didn't get new uncompressed data
+    /// (for example if we read the end of frame). Load new data
+    /// in this case.
+    if (working_buffer.empty())
+        return nextImpl();
+
     return true;
 }
 }
