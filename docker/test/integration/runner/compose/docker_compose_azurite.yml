@@ -1,0 +1,14 @@
+version: '2.3'
+
+services:
+  azurite1:
+    image: mcr.microsoft.com/azure-storage/azurite
+    volumes:
+      - data1-1:/data1
+    expose:
+      - 10000
+      - 10001
+      - 10002
+
+volumes:
+  data1-1:
