@@ -4,7 +4,6 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/StorageID.h>
 

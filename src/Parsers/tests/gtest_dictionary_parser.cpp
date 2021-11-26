@@ -1,6 +1,7 @@
 #include <base/types.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/formatAST.h>
