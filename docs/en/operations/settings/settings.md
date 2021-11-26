@@ -4090,7 +4090,7 @@ Default value: `'Escaped'`.
 
 ## format_custom_field_delimiter {#format-custom-field-delimiter}
 
-Sets the character is interpreted as a delimiter between fields for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+Sets the character that is interpreted as a delimiter between the fields for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
 
 Default value: `'\t'`.
 
