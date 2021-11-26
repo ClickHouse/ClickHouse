@@ -90,6 +90,9 @@ void ConnectionCollector::drainConnections(IConnections & connections) noexcept
                 break;
 
             default:
+                /// Connection should be closed in case of unknown packet,
+                /// since this means that the connection in some bad state.
+                is_drained = false;
                 throw Exception(
                     ErrorCodes::UNKNOWN_PACKET_FROM_SERVER,
                     "Unknown packet {} from one of the following replicas: {}",
