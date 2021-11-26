@@ -1,0 +1,1 @@
+#define TEST_DATA(file) "@TEST_DATA_DIR@"#file

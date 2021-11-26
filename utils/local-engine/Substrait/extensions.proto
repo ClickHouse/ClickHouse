@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package io.substrait;
+
+option java_multiple_files = true;
+
+
+message Extensions {
+
+
+    message Extension {
+
+        // unique that describes a particular source for (and type of) extensions.
+        ExtensionId extension_id = 1;
+
+        oneof extension_type {
+            // git uri for extension types information
+            TypeExtension type_extension = 2;
+            FunctionExtension function_extension = 3;
+        }
+
+        message TypeExtension {
+            string git_uri = 1;
+        }
+
+        message FunctionExtension {
+            string git_uri = 1;
+        }
+
+    }
+
+    message Mapping {
+
+        oneof mapping_type {
+            TypeMapping type_mapping = 1;
+            FunctionMapping function_mapping = 2;
+        }
+
+        message TypeMapping {
+            TypeId type_id = 1;
+            ExtensionId extension_id = 2;
+            string name = 3;
+        }
+
+        message FunctionMapping {
+            FunctionId function_id = 1;
+            ExtensionId extension_id = 2;
+            string name = 3;
+            uint32 index = 4;
+            repeated Option options = 5;
+            message Option {
+                string key = 1;
+                string value = 2;
+            }
+        }
+    }
+
+    message ExtensionId {
+        uint32 id = 1;
+    }
+
+    message FunctionId {
+        uint64 id = 1;
+    }
+
+    message TypeId {
+        uint64 id = 1;
+    }
+}
+

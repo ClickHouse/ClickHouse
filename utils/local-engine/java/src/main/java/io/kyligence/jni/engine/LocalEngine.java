@@ -16,8 +16,8 @@ public class LocalEngine implements Closeable {
         System.out.println(result);
     }
 
-    private long nativeExecutor;
-    private byte[] plan;
+    public long nativeExecutor;
+    public byte[] plan;
 
     public LocalEngine(byte[] plan) {
         this.plan = plan;

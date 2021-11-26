@@ -38,6 +38,18 @@ std::unique_ptr<io::substrait::Type_NamedStruct> SerializedSchemaBuilder::build(
             t->mutable_string()->set_nullability(
                 this->nullability_map[name] ? io::substrait::Type_Nullability_NULLABLE : io::substrait::Type_Nullability_REQUIRED);
         }
+        else if (type == "FP32")
+        {
+            auto *t = type_struct->mutable_types()->Add();
+            t->mutable_fp32()->set_nullability(
+                this->nullability_map[name] ? io::substrait::Type_Nullability_NULLABLE : io::substrait::Type_Nullability_REQUIRED);
+        }
+        else if (type == "FP64")
+        {
+            auto *t = type_struct->mutable_types()->Add();
+            t->mutable_fp64()->set_nullability(
+                this->nullability_map[name] ? io::substrait::Type_Nullability_NULLABLE : io::substrait::Type_Nullability_REQUIRED);
+        }
         else {
             throw "doesn't support type "+ type;
         }

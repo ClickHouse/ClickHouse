@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package io.substrait;
+
+import "relations.proto";
+import "extensions.proto";
+
+option java_multiple_files = true;
+
+
+// Describe a set of operations to complete.
+// For compactness sake, identifiers are normalized at the plan level.
+message Plan {
+
+    repeated Extensions.Extension extensions = 1;
+    repeated Extensions.Mapping mappings = 2;
+    repeated Rel relations = 3;
+
+}
+

@@ -1,10 +1,8 @@
 #include "include/io_kyligence_jni_engine_LocalEngine.h"
 #include <string>
 #include <iostream>
-
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/Impl/CSVRowInputFormat.h>
 #include <Processors/Formats/Impl/CSVRowOutputFormat.h>
 #include <Processors/Sinks/NullSink.h>
@@ -276,13 +274,13 @@ void Java_io_kyligence_jni_engine_LocalEngine_execute(JNIEnv *env, jobject obj)
     dbms::LocalExecutor* executor = new dbms::LocalExecutor();
     executor->execute(std::move(query_plan));
 
-    jfieldID executor_field_id = env->GetFieldID(this_class, "nativeExecutor", "L");
+    jfieldID executor_field_id = env->GetFieldID(this_class, "nativeExecutor", "J");
     env->SetLongField(obj, executor_field_id, reinterpret_cast<jlong>(executor));
 }
 jboolean Java_io_kyligence_jni_engine_LocalEngine_hasNext(JNIEnv *env, jobject obj)
 {
     jclass this_class = env->GetObjectClass(obj);
-    jfieldID executor_field_id = env->GetFieldID(this_class, "nativeExecutor", "L");
+    jfieldID executor_field_id = env->GetFieldID(this_class, "nativeExecutor", "J");
     jlong executor_address = env->GetLongField(obj, executor_field_id);
     dbms::LocalExecutor* executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
     return executor->hasNext();
@@ -290,7 +288,7 @@ jboolean Java_io_kyligence_jni_engine_LocalEngine_hasNext(JNIEnv *env, jobject o
 jbyteArray Java_io_kyligence_jni_engine_LocalEngine_next(JNIEnv *env, jobject obj)
 {
     jclass this_class = env->GetObjectClass(obj);
-    jfieldID executor_field_id = env->GetFieldID(this_class, "nativeExecutor", "L");
+    jfieldID executor_field_id = env->GetFieldID(this_class, "nativeExecutor", "J");
     jlong executor_address = env->GetLongField(obj, executor_field_id);
     dbms::LocalExecutor* executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
     std::string arrow_batch = executor->next();
@@ -301,7 +299,7 @@ jbyteArray Java_io_kyligence_jni_engine_LocalEngine_next(JNIEnv *env, jobject ob
 void Java_io_kyligence_jni_engine_LocalEngine_close(JNIEnv *env, jobject obj)
 {
     jclass this_class = env->GetObjectClass(obj);
-    jfieldID executor_field_id = env->GetFieldID(this_class, "nativeExecutor", "L");
+    jfieldID executor_field_id = env->GetFieldID(this_class, "nativeExecutor", "J");
     jlong executor_address = env->GetLongField(obj, executor_field_id);
     dbms::LocalExecutor* executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
     delete executor;

@@ -1,0 +1,181 @@
+syntax = "proto3";
+package io.substrait;
+
+import "extensions.proto";
+
+option java_multiple_files = true;
+
+message Type {
+
+    oneof kind {
+        Boolean bool = 1;
+        I8 i8 = 2;
+        I16 i16 = 3;
+        I32 i32 = 5;
+        I64 i64 = 7;
+        FP32 fp32 = 10;
+        FP64 fp64 = 11;
+        String string = 12;
+        Binary binary = 13;
+        Timestamp timestamp = 14;
+        Date date = 16;
+        Time time = 17;
+        IntervalYear interval_year = 19;
+        IntervalDay interval_day = 20;
+        TimestampTZ timestamp_tz = 29;
+        UUID uuid = 32;
+
+        FixedChar fixed_char = 21;
+        VarChar varchar = 22;
+        FixedBinary fixed_binary = 23;
+        Decimal decimal = 24;
+
+        Struct struct = 25;
+        List list = 27;
+        Map map = 28;
+
+        Extensions.TypeId user_defined = 31;
+    }
+
+    enum Nullability {
+        NULLABLE = 0;
+        REQUIRED = 1;
+    }
+
+    message Boolean {
+        Variation variation = 1;
+        Nullability nullability = 2;
+    }
+    message I8 {
+        Variation variation = 1;
+        Nullability nullability = 2;
+    }
+
+    message I16 {
+        Variation variation = 1;
+        Nullability nullability = 2;
+    }
+
+    message I32 {
+        Variation variation = 1;
+        Nullability nullability = 2;
+    }
+
+    message I64 {
+        Variation variation = 1;
+        Nullability nullability = 2;
+    }
+
+    message FP32 {
+        Variation variation = 1;
+        Nullability nullability = 2;
+    }
+
+    message FP64 {
+        Variation variation = 1;
+        Nullability nullability = 2;
+    }
+
+    message String {
+        Variation variation = 1;
+        Nullability nullability = 2;
+    }
+
+    message Binary {
+        Variation variation = 1;
+        Nullability nullability = 2;
+    }
+
+    message Timestamp {
+        Variation variation = 1;
+        Nullability nullability = 2;
+    }
+
+    message Date {
+        Variation variation = 1;
+        Nullability nullability = 2;
+    }
+
+    message Time {
+        Variation variation = 1;
+        Nullability nullability = 2;
+    }
+
+    message TimestampTZ {
+        Variation variation = 1;
+        Nullability nullability = 2;
+    }
+
+    message IntervalYear {
+        Variation variation = 1;
+        Nullability nullability = 2;
+    }
+
+    message IntervalDay {
+        Variation variation = 1;
+        Nullability nullability = 2;
+    }
+
+    message UUID {
+        Variation variation = 1;
+        Nullability nullability = 2;
+    }
+
+    // Start compound types.
+    message FixedChar {
+        int32 length = 1;
+        Variation variation = 2;
+        Nullability nullability = 3;
+    }
+
+    message VarChar {
+        int32 length = 1;
+        Variation variation = 2;
+        Nullability nullability = 3;
+    }
+
+    message FixedBinary {
+        int32 length = 1;
+        Variation variation = 2;
+        Nullability nullability = 3;
+    }
+
+    message Decimal {
+        int32 scale = 1;
+        int32 precision = 2;
+        Variation variation = 3;
+        Nullability nullability = 4;
+    }
+
+    message Struct {
+        repeated Type types = 1;
+        Variation variation = 2;
+        Nullability nullability = 3;
+    }
+
+    message NamedStruct {
+        // list of names in dfs order
+        repeated string names = 1;
+        Struct struct = 2;
+    }
+
+    message List {
+        Type type = 1;
+        Variation variation = 2;
+        Nullability nullability = 3;
+    }
+
+    message Map {
+        Type key = 1;
+        Type value = 2;
+        Variation variation = 3;
+        Nullability nullability = 4;
+    }
+
+    message Variation {
+        int32 organization = 1;
+        string name = 2;
+    }
+
+}
+

@@ -46,6 +46,16 @@ else ()
     message("generating headers to ${JNI_HEADERS_DIR}")
 endif()
 
+set (CLICKHOUSE_SERVER_LINK
+        PRIVATE
+        #        dbms
+        clickhouse_aggregate_functions
+        clickhouse_common_io
+        clickhouse_functions
+        clickhouse_storages_system
+        arrow_shared
+        substrait
+        )
 
 function(add_cxx_compile_options option)
     add_compile_options("$<$<STREQUAL:$<TARGET_PROPERTY:LINKER_LANGUAGE>,CXX>:${option}>")
@@ -78,16 +88,6 @@ include_directories(
         )
 
 
-set (CLICKHOUSE_SERVER_LINK
-
-#        dbms
-        clickhouse_aggregate_functions
-        clickhouse_common_io
-        clickhouse_functions
-        clickhouse_storages_system
-        arrow_shared
-        substrait
-        )
 
 #target_link_libraries(local_engine ${CLICKHOUSE_SERVER_LINK} )
 #create_javah()
@@ -105,3 +105,7 @@ set_property(TARGET ${LOCALENGINE_SHARED_LIB} PROPERTY POSITION_INDEPENDENT_CODE
 #add_executable(${LOCALENGINE_SHARED_LIB} ${JNI_NATIVE_SOURCES})
 add_dependencies(${LOCALENGINE_SHARED_LIB} local_engine_headers)
 target_link_libraries(${LOCALENGINE_SHARED_LIB} ${CLICKHOUSE_SERVER_LINK} )
+
+if (ENABLE_TESTS)
+    add_subdirectory(tests)
+endif ()

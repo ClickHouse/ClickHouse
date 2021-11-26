@@ -53,6 +53,14 @@ DB::DataTypePtr dbms::SerializedPlanParser::parseType(const io::substrait::Type&
     {
         return factory.get("String");
     }
+    else if (type.has_fp32())
+    {
+        return factory.get("Float32");
+    }
+    else if (type.has_fp64())
+    {
+        return factory.get("Float64");
+    }
     else
     {
         throw std::runtime_error("doesn't support type " + type.DebugString());
@@ -61,7 +69,7 @@ DB::DataTypePtr dbms::SerializedPlanParser::parseType(const io::substrait::Type&
 DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::unique_ptr<io::substrait::Plan> plan)
 {
     auto query_plan = std::make_unique<DB::QueryPlan>();
-    if (plan->relations().Capacity() == 1)
+    if (plan->relations_size() == 1)
     {
         auto rel = plan->relations().at(0);
         if (rel.has_read()) {
@@ -76,7 +84,7 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::unique_ptr<io::substrait
     }
     else
     {
-        throw std::runtime_error("unsupported relation");
+        throw std::runtime_error("too many relations found");
     }
     return query_plan;
 }
@@ -145,7 +153,7 @@ DB::BatchParquetFileSource::BatchParquetFileSource(
 void dbms::LocalExecutor::execute(DB::QueryPlanPtr query_plan)
 {
     QueryPlanOptimizationSettings optimization_settings{.optimize_plan = false};
-    auto query_pipeline = query_plan->buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings());
+    this->query_pipeline = query_plan->buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings());
     this->executor = std::make_unique<DB::PullingPipelineExecutor>(*query_pipeline);
     this->header = query_plan->getCurrentDataStream().header;
     this->ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(header, "Arrow", false);
@@ -162,12 +170,12 @@ void dbms::LocalExecutor::writeChunkToArrowString(DB::Chunk &chunk, std::string 
         throw std::runtime_error("Error while opening a table writer");
     auto writer = *writer_status;
     auto write_status = writer->WriteTable(*arrow_table, 1000000);
-    if (writer_status.ok())
+    if (!write_status.ok())
     {
         throw std::runtime_error("Error while writing a table");
     }
     auto close_status = writer->Close();
-    if (close_status.ok())
+    if (!close_status.ok())
     {
         throw std::runtime_error("Error while close a table");
     }
@@ -175,7 +183,7 @@ void dbms::LocalExecutor::writeChunkToArrowString(DB::Chunk &chunk, std::string 
 bool dbms::LocalExecutor::hasNext()
 {
     bool has_next;
-    if (this->current_chunk->empty())
+    if (!this->current_chunk || this->current_chunk->empty())
     {
         this->current_chunk = std::make_unique<DB::Chunk>();
         has_next = this->executor->pull(*this->current_chunk);
@@ -188,5 +196,6 @@ std::string dbms::LocalExecutor::next()
 {
     std::string arrow_chunk;
     writeChunkToArrowString(*this->current_chunk, arrow_chunk);
+    this->current_chunk.reset();
     return arrow_chunk;
 }

@@ -1,0 +1,175 @@
+syntax = "proto3";
+
+package io.substrait;
+
+import "type.proto";
+import "expression.proto";
+import "selection.proto";
+
+option java_multiple_files = true;
+
+message RelCommon {
+
+    oneof kind {
+        Direct direct = 1;
+        Emit emit = 2;
+    }
+
+    Hint hint = 3;
+    RuntimeConstraint constraint = 4;
+
+    message Direct {}
+    message Emit {
+        repeated int32 output_mapping = 1;
+    }
+
+    message Hint {
+        repeated HintKeyValue hint_key_values = 1;
+        Stats stats = 2;
+
+        message Stats {
+            double row_count = 1;
+            double record_size = 2;
+        }
+
+        message HintKeyValue {
+            string key = 1;
+            bytes value = 2;
+        }
+
+    }
+
+    message RuntimeConstraint {
+        // TODO: nodes, cpu threads/%, memory, iops, etc.
+    }
+
+}
+
+message ReadRel {
+    RelCommon common = 1;
+    Type.NamedStruct base_schema = 2;
+    Expression filter = 3;
+    MaskExpression projection = 4;
+
+    oneof read_type {
+        VirtualTable virtual_table = 5;
+        LocalFiles local_files = 6;
+        NamedTable named_table = 7;
+    }
+
+    message NamedTable {
+        repeated string names = 1;
+    }
+
+
+    message VirtualTable {
+        repeated Expression.Literal.Struct values = 1;
+    }
+
+    message LocalFiles {
+
+        repeated FileOrFiles items = 1;
+
+        message FileOrFiles {
+            oneof path_type {
+                string uri_path = 1;
+                string uri_path_glob = 2;
+            }
+
+            Format format = 3;
+
+            enum Format {
+                UNKNOWN = 0;
+                PARQUET = 1;
+            }
+        }
+
+    }
+
+}
+
+message ProjectRel {
+    RelCommon common = 1;
+    Rel input = 2;
+    repeated Expression expressions = 3;
+}
+
+message JoinRel {
+    RelCommon common = 1;
+    Rel left = 2;
+    Rel right = 3;
+    Expression expression = 4;
+    Expression post_join_filter = 5;
+
+    enum JoinType {
+        UNKNOWN = 0;
+        INNER = 1;
+        OUTER = 2;
+        LEFT = 3;
+        RIGHT = 4;
+    }
+}
+
+message FetchRel {
+    RelCommon common = 1;
+    Rel input = 2;
+    int64 offset = 3;
+    int64 count = 4;
+}
+
+message AggregateRel {
+    RelCommon common = 1;
+    Rel input = 2;
+    repeated Grouping groupings = 3;
+    repeated Measure measures = 4;
+    Expression.AggregationPhase phase = 5;
+
+    message Grouping {
+        repeated int32 input_fields = 1;
+    }
+
+    message Measure {
+        Expression.AggregateFunction measure = 1;
+    }
+}
+
+message SortRel {
+    RelCommon common = 1;
+    Rel input = 2;
+    repeated Expression.SortField sorts = 3;
+}
+
+message FilterRel {
+    RelCommon common = 1;
+    Rel input = 2;
+    Expression condition = 3;
+}
+
+message SetRel {
+    RelCommon common = 1;
+    repeated Rel inputs = 2;
+    SetOp op = 3;
+
+    enum SetOp {
+        UNKNOWN = 0;
+        MINUS_PRIMARY = 1;
+        MINUS_MULTISET = 2;
+        INTERSECTION_PRIMARY = 3;
+        INTERSECTION_MULTISET = 4;
+        UNION_DISTINCT = 5;
+        UNION_ALL = 6;
+    }
+}
+
+message Rel {
+  oneof RelType {
+      ReadRel read = 1;
+      FilterRel filter = 2;
+      FetchRel fetch = 3;
+      AggregateRel aggregate = 4;
+      SortRel sort = 5;
+      JoinRel join = 6;
+      ProjectRel project = 7;
+      SetRel set = 8;
+  }
+}

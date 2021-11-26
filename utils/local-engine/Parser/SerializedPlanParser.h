@@ -76,6 +76,7 @@ public:
 
 private:
     void writeChunkToArrowString(Chunk& chunk, std::string & arrow_chunk);
+    QueryPipelinePtr query_pipeline;
     std::unique_ptr<PullingPipelineExecutor> executor;
     Block header;
     std::unique_ptr<DB::CHColumnToArrowColumn> ch_column_to_arrow_column;
