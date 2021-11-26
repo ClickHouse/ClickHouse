@@ -63,7 +63,9 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
 
             if (!replaceInvalidChars(metric_name))
                 continue;
+
             std::string key{profile_events_prefix + metric_name};
+            toPrometheusMetricName(key);
 
             writeOutLine(wb, "# HELP", key, metric_doc);
             writeOutLine(wb, "# TYPE", key, "counter");
@@ -82,7 +84,9 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
 
             if (!replaceInvalidChars(metric_name))
                 continue;
+
             std::string key{current_metrics_prefix + metric_name};
+            toPrometheusMetricName(key);
 
             writeOutLine(wb, "# HELP", key, metric_doc);
             writeOutLine(wb, "# TYPE", key, "gauge");
@@ -96,6 +100,7 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
         for (const auto & name_value : async_metrics_values)
         {
             std::string key{asynchronous_metrics_prefix + name_value.first};
+            toPrometheusMetricName(key);
 
             if (!replaceInvalidChars(key))
                 continue;
@@ -117,7 +122,9 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
 
             if (!replaceInvalidChars(metric_name))
                 continue;
+
             std::string key{current_status_prefix + metric_name};
+            toPrometheusMetricName(key);
 
             writeOutLine(wb, "# HELP", key, metric_doc);
             writeOutLine(wb, "# TYPE", key, "gauge");
@@ -139,6 +146,18 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
                 }
             }
         }
+    }
+}
+
+/// Prometheus metrics name should meet constraint "[a-zA-Z_:][a-zA-Z0-9_:]*"
+void PrometheusMetricsWriter::toPrometheusMetricName(String & name)
+{
+    if (likely(!name.empty()))
+    {
+        char first_alpha = *name.begin();
+        if (unlikely(!(std::isalpha(first_alpha) || first_alpha == '_' || first_alpha == ':')))
+            name = "ClickHouseMetric_" + name;
+        std::replace_if(name.begin(), name.end(), [](char c) { return !(isalnum(c) || c == '_' || c == ':'); }, '_');
     }
 }
 

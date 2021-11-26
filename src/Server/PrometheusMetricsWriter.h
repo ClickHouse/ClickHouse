@@ -29,6 +29,10 @@ private:
     const bool send_asynchronous_metrics;
     const bool send_status_info;
 
+    /// Prometheus metrics name should meet constraint "[a-zA-Z_:][a-zA-Z0-9_:]*"
+    /// @name is the suffix of a metric name
+    static void toPrometheusMetricName(String & name);
+
     static inline constexpr auto profile_events_prefix = "ClickHouseProfileEvents_";
     static inline constexpr auto current_metrics_prefix = "ClickHouseMetrics_";
     static inline constexpr auto asynchronous_metrics_prefix = "ClickHouseAsyncMetrics_";
