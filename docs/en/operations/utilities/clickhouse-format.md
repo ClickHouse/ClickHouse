@@ -29,7 +29,7 @@ $ clickhouse-format --query "select number from numbers(10) where number%2 order
 
 Result:
 
-```sql
+```text
 SELECT number
 FROM numbers(10)
 WHERE number % 2
