@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
