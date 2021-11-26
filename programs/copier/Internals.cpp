@@ -1,4 +1,5 @@
 #include "Internals.h"
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>

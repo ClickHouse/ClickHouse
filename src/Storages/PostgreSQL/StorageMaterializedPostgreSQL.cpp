@@ -1,7 +1,5 @@
 #include "StorageMaterializedPostgreSQL.h"
 
-#include <Parsers/ASTIdentifier.h>
-
 #if USE_LIBPQXX
 #include <base/logger_useful.h>
 #include <Common/Macros.h>
@@ -15,6 +13,8 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/executeQuery.h>

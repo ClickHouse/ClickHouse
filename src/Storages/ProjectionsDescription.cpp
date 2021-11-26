@@ -2,6 +2,7 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/ProjectionsDescription.h>
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
