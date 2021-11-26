@@ -43,8 +43,7 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
     const auto access = context->getAccess();
     const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
-    using RocksDBStoragePtr = std::shared_ptr<StorageEmbeddedRocksDB>;
-    std::map<String, std::map<String, RocksDBStoragePtr>> tables;
+    std::map<String, std::map<String, StoragePtr>> tables;
     for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
@@ -52,16 +51,17 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
             StoragePtr table = iterator->table();
-            RocksDBStoragePtr rocksdb_table = table ? std::dynamic_pointer_cast<StorageEmbeddedRocksDB>(table) : nullptr;
-            if (!rocksdb_table)
+            if (!table)
                 continue;
 
+            if (!dynamic_cast<const StorageEmbeddedRocksDB *>(table.get()))
+                continue;
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
                 continue;
-
-            tables[db.first][iterator->name()] = rocksdb_table;
+            tables[db.first][iterator->name()] = table;
         }
     }
+
 
     MutableColumnPtr col_database_mut = ColumnString::create();
     MutableColumnPtr col_table_mut = ColumnString::create();
@@ -101,9 +101,10 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
         String database = (*col_database_to_filter)[i].safeGet<const String &>();
         String table = (*col_table_to_filter)[i].safeGet<const String &>();
 
-        auto statistics = tables[database][table]->getRocksDBStatistics();
+        auto & rocksdb_table = dynamic_cast<StorageEmbeddedRocksDB &>(*tables[database][table]);
+        auto statistics = rocksdb_table.getRocksDBStatistics();
         if (!statistics)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "RocksDB statistics are not available");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "rocksdb statistics is not enabled");
 
         for (auto [tick, name] : rocksdb::TickersNameMap)
         {

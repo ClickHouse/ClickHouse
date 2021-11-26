@@ -1,6 +1,3 @@
--- Tags: no-replicated-database
--- Tag no-replicated-database: Different query_id
-
 DROP TABLE IF EXISTS tmp;
 
 CREATE TABLE tmp ENGINE = TinyLog AS SELECT queryID();

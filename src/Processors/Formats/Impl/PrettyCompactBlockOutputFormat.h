@@ -16,7 +16,7 @@ public:
     PrettyCompactBlockOutputFormat(WriteBuffer & out_, const Block & header, const FormatSettings & format_settings_, bool mono_block_);
     String getName() const override { return "PrettyCompactBlockOutputFormat"; }
 
-private:
+protected:
     void write(const Chunk & chunk, PortKind port_kind) override;
     void writeHeader(const Block & block, const Widths & max_widths, const Widths & name_widths);
     void writeBottom(const Widths & max_widths);
@@ -28,6 +28,7 @@ private:
         const WidthsPerColumn & widths,
         const Widths & max_widths);
 
+private:
     bool mono_block;
     /// For mono_block == true only
     Chunk mono_chunk;

@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <openSSL>
         <client>
             <cacheSessions>true</cacheSessions>
@@ -9,4 +9,4 @@
             </invalidCertificateHandler>
         </client>
     </openSSL>
-</clickhouse>
+</yandex>

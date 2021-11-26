@@ -1,5 +1,5 @@
-<clickhouse>
+<yandex>
     <merge_tree>
         <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
     </merge_tree>    
-</clickhouse>
+</yandex>

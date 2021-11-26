@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP TABLE IF EXISTS dictionary_array_source_table;
 CREATE TABLE dictionary_array_source_table
 (

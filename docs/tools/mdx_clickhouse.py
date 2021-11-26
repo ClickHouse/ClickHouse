@@ -53,7 +53,7 @@ class ClickHouseLinkMixin(object):
             href = el.get('href') or ''
             is_external = href.startswith('http:') or href.startswith('https:')
             if is_external:
-                if not href.startswith('https://clickhouse.com'):
+                if not href.startswith('https://clickhouse.tech'):
                     el.set('rel', 'external nofollow noreferrer')
             elif single_page:
                 if '#' in href:
@@ -73,8 +73,12 @@ class ClickHouseLinkPattern(ClickHouseLinkMixin, markdown.inlinepatterns.LinkInl
 
 class ClickHousePreprocessor(markdown.util.Processor):
     def run(self, lines):
-        for line in lines:
-            if '<!--hide-->' not in line:
+        if os.getenv('QLOUD_TOKEN'):
+            for line in lines:
+                if '<!--hide-->' not in line:
+                    yield line
+        else:
+            for line in lines:
                 yield line
 
 

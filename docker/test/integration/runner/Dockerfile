@@ -60,7 +60,7 @@ RUN dockerd --version; docker --version
 RUN python3 -m pip install \
     PyMySQL \
     aerospike==4.0.0 \
-    avro==1.10.2 \
+    avro \
     cassandra-driver \
     confluent-kafka==1.5.0 \
     dict2xml \

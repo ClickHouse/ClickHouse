@@ -151,7 +151,7 @@ class _NetworkManager:
     def _iptables_cmd_suffix(
             source=None, destination=None,
             source_port=None, destination_port=None,
-            action=None, probability=None, custom_args=None):
+            action=None, probability=None):
         ret = []
         if probability is not None:
             ret.extend(['-m', 'statistic', '--mode', 'random', '--probability', str(probability)])
@@ -166,8 +166,6 @@ class _NetworkManager:
             ret.extend(['--dport', str(destination_port)])
         if action is not None:
             ret.extend(['-j'] + action.split())
-        if custom_args is not None:
-            ret.extend(custom_args)
         return ret
 
     def __init__(
@@ -214,8 +212,6 @@ class _NetworkManager:
             self._container = self._docker_client.containers.run('clickhouse/integration-helper',
                                                                  auto_remove=True,
                                                                  command=('sleep %s' % self.container_exit_timeout),
-                                                                 # /run/xtables.lock passed inside for correct iptables --wait
-                                                                 volumes={'/run/xtables.lock': {'bind': '/run/xtables.lock', 'mode': 'ro' }},
                                                                  detach=True, network_mode='host')
             container_id = self._container.id
             self._container_expire_time = time.time() + self.container_expire_timeout

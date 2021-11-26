@@ -5,8 +5,6 @@ import subprocess
 import os
 import json
 import csv
-import sys
-
 from github import Github
 from pr_info import PRInfo
 from s3_helper import S3Helper
@@ -144,7 +142,3 @@ if __name__ == "__main__":
 
     prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_results, state, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, NAME)
     ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
-
-    # Refuse other checks to run if fast test failed
-    if state != 'success':
-        sys.exit(1)
