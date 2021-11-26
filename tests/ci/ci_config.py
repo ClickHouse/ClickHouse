@@ -84,16 +84,6 @@ CI_CONFIG = {
             "with_coverage": False
         },
         {
-            "compiler": "gcc-11",
-            "build_type": "",
-            "sanitizer": "",
-            "package_type": "deb",
-            "bundled": "unbundled",
-            "splitted": "unsplitted",
-            "tidy": "disable",
-            "with_coverage": False
-        },
-        {
             "compiler": "clang-13",
             "build_type": "",
             "sanitizer": "",
@@ -340,18 +330,6 @@ CI_CONFIG = {
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
                 "bundled": "bundled",
-                "splitted": "unsplitted",
-                "clang_tidy": "disable",
-                "with_coverage": False
-            }
-        },
-        "Stateless tests (unbundled, actions)": {
-            "required_build_properties": {
-                "compiler": "gcc-11",
-                "package_type": "deb",
-                "build_type": "relwithdebuginfo",
-                "sanitizer": "none",
-                "bundled": "unbundled",
                 "splitted": "unsplitted",
                 "clang_tidy": "disable",
                 "with_coverage": False
