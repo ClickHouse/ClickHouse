@@ -259,7 +259,7 @@ CI_CONFIG = {
             "required_build": "binary_gcc",
         },
         "Unit tests (release-clang, actions)": {
-            "required_build": "package_release",
+            "required_build": "binary_release",
         },
         "Unit tests (asan, actions)": {
             "required_build": "package_asan",
