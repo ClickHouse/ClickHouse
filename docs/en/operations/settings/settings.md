@@ -4096,7 +4096,7 @@ Default value: `'\t'`.
 
 ## format_custom_row_before_delimiter {#format-custom-row-before-delimiter}
 
-Sets the character is interpreted as a delimiter before field of the first column for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+Sets the character that is interpreted as a delimiter before the field of the first column for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
 
 Default value: `''`.
 
