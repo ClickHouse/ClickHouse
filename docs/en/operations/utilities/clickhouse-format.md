@@ -11,7 +11,6 @@ Keys:
 
 - `--help` or`-h` — Produce help message.
 - `--query` — Format queries of any length and complexity.
-
 - `--hilite` — Add syntax highlight with ANSI terminal escape sequences.
 - `--oneline` — Format in single line.
 - `--quiet` or `-q` — Just check syntax, no output on success.
