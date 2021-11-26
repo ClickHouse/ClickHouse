@@ -644,12 +644,9 @@ public:
     void onFinish() override
     {
         writer->finalize();
+        writer->flush();
+        write_buf->finalize();
     }
-
-    // void flush() override
-    // {
-    //     writer->flush();
-    // }
 
 private:
     StorageMetadataPtr metadata_snapshot;

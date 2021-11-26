@@ -3,7 +3,6 @@
 #include <errno.h>
 
 #include <Common/ProfileEvents.h>
-#include <Common/MemoryTracker.h>
 
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
@@ -70,18 +69,18 @@ WriteBufferFromFile::WriteBufferFromFile(
     fd_ = -1;
 }
 
-
 WriteBufferFromFile::~WriteBufferFromFile()
+{
+    finalize();
+    ::close(fd);
+}
+
+void WriteBufferFromFile::finalizeImpl()
 {
     if (fd < 0)
         return;
 
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-
     next();
-
-    ::close(fd);
 }
 
 
