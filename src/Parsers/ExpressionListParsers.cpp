@@ -6,12 +6,13 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/parseIntervalKind.h>
 #include <Parsers/ParserUnionQueryElement.h>
+#include <Parsers/parseIntervalKind.h>
 #include <Common/StringUtils/StringUtils.h>
 
 using namespace std::literals;
