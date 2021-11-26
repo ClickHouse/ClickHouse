@@ -4102,7 +4102,7 @@ Default value: `''`.
 
 ## format_custom_row_after_delimiter {#format-custom-row-after-delimiter}
 
-Sets the character is interpreted as a delimiter after field of the last column for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+Sets the character that is interpreted as a delimiter after the field of the last column for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
 
 Default value: `'\n'`.
 
