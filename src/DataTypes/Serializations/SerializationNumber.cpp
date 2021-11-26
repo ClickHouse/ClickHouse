@@ -21,7 +21,7 @@ void SerializationNumber<T>::serializeText(const IColumn & column, size_t row_nu
 }
 
 template <typename T>
-void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
+void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
     T x;
 
@@ -31,6 +31,9 @@ void SerializationNumber<T>::deserializeText(IColumn & column, ReadBuffer & istr
         readText(x, istr);
 
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
+
+    if (whole && !istr.eof())
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, "Number");
 }
 
 template <typename T>
