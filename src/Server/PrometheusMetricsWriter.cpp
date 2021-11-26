@@ -149,7 +149,6 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
     }
 }
 
-/// Prometheus metrics name should meet constraint "[a-zA-Z_:][a-zA-Z0-9_:]*"
 void PrometheusMetricsWriter::toPrometheusMetricName(String & name)
 {
     if (likely(!name.empty()))
