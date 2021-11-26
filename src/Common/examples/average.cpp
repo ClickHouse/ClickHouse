@@ -3,7 +3,7 @@
 
 #include <fmt/format.h>
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/PODArray.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/Arena.h>

@@ -106,4 +106,4 @@ SELECT toDecimal32(1, 8) < 100
 DB::Exception: Can't compare.
 ```
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/decimal/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/decimal/) <!--hide-->

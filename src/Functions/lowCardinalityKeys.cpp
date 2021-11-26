@@ -19,7 +19,7 @@ class FunctionLowCardinalityKeys: public IFunction
 {
 public:
     static constexpr auto name = "lowCardinalityKeys";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionLowCardinalityKeys>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionLowCardinalityKeys>(); }
 
     String getName() const override { return name; }
 
@@ -28,6 +28,7 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

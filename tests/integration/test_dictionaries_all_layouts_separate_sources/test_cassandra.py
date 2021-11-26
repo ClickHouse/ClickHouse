@@ -40,7 +40,6 @@ def setup_module(module):
 
     main_configs = []
     main_configs.append(os.path.join('configs', 'disable_ssl_verification.xml'))
-    main_configs.append(os.path.join('configs', 'log_conf.xml'))
 
     dictionaries = simple_tester.list_dictionaries()
 

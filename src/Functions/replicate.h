@@ -13,7 +13,7 @@ class FunctionReplicate : public IFunction
 public:
     static constexpr auto name = "replicate";
 
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionReplicate>();
     }
@@ -29,6 +29,8 @@ public:
     }
 
     bool isVariadic() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForNulls() const override { return false; }
 

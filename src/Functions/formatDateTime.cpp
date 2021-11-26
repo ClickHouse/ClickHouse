@@ -14,8 +14,8 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <common/DateLUTImpl.h>
-#include <common/find_symbols.h>
+#include <base/DateLUTImpl.h>
+#include <base/find_symbols.h>
 #include <Core/DecimalFunctions.h>
 
 #include <type_traits>
@@ -281,7 +281,7 @@ private:
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionFormatDateTimeImpl>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionFormatDateTimeImpl>(); }
 
     String getName() const override
     {
@@ -289,6 +289,8 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2}; }
 
@@ -477,8 +479,6 @@ public:
             {
                 for (auto & instruction : instructions)
                 {
-                    // since right now LUT does not support Int64-values and not format instructions for subsecond parts,
-                    // treat DatTime64 values just as DateTime values by ignoring fractional and casting to UInt32.
                     const auto c = DecimalUtils::split(vec[i], scale);
                     instruction.perform(pos, static_cast<Int64>(c.whole), time_zone);
                 }

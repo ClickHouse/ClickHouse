@@ -7,6 +7,7 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <re2/re2.h>
+#include <stack>
 
 
 namespace DB
@@ -40,10 +41,18 @@ void ASTColumnsApplyTransformer::formatImpl(const FormatSettings & settings, For
 
     if (!column_name_prefix.empty())
         settings.ostr << "(";
-    settings.ostr << func_name;
 
-    if (parameters)
-        parameters->formatImpl(settings, state, frame);
+    if (lambda)
+    {
+        lambda->formatImpl(settings, state, frame);
+    }
+    else
+    {
+        settings.ostr << func_name;
+
+        if (parameters)
+            parameters->formatImpl(settings, state, frame);
+    }
 
     if (!column_name_prefix.empty())
         settings.ostr << ", '" << column_name_prefix << "')";
@@ -64,9 +73,33 @@ void ASTColumnsApplyTransformer::transform(ASTs & nodes) const
             else
                 name = column->getColumnName();
         }
-        auto function = makeASTFunction(func_name, column);
-        function->parameters = parameters;
-        column = function;
+        if (lambda)
+        {
+            auto body = lambda->as<const ASTFunction &>().arguments->children.at(1)->clone();
+            std::stack<ASTPtr> stack;
+            stack.push(body);
+            while (!stack.empty())
+            {
+                auto ast = stack.top();
+                stack.pop();
+                for (auto & child : ast->children)
+                {
+                    if (auto arg_name = tryGetIdentifierName(child); arg_name && arg_name == lambda_arg)
+                    {
+                        child = column->clone();
+                        continue;
+                    }
+                    stack.push(child);
+                }
+            }
+            column = body;
+        }
+        else
+        {
+            auto function = makeASTFunction(func_name, column);
+            function->parameters = parameters;
+            column = function;
+        }
         if (!column_name_prefix.empty())
             column->setAlias(column_name_prefix + name);
     }
@@ -165,7 +198,7 @@ void ASTColumnsReplaceTransformer::Replacement::formatImpl(
     const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     expr->formatImpl(settings, state, frame);
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "") << name;
+    settings.ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(name);
 }
 
 void ASTColumnsReplaceTransformer::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const

@@ -4,7 +4,6 @@ import time
 import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.cluster import ClickHouseKiller
-from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 

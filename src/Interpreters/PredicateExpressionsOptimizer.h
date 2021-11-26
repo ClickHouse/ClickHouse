@@ -2,11 +2,11 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
-#include <Parsers/ASTSelectQuery.h>
 
 namespace DB
 {
 
+class ASTSelectQuery;
 struct Settings;
 
 /** Predicate optimization based on rewriting ast rules
@@ -15,10 +15,10 @@ struct Settings;
  *      - Move predicates from having to where
  *      - Push the predicate down from the current query to the having of the subquery
  */
-class PredicateExpressionsOptimizer : WithConstContext
+class PredicateExpressionsOptimizer : WithContext
 {
 public:
-    PredicateExpressionsOptimizer(ContextConstPtr context_, const TablesWithColumns & tables_with_columns_, const Settings & settings_);
+    PredicateExpressionsOptimizer(ContextPtr context_, const TablesWithColumns & tables_with_columns_, const Settings & settings_);
 
     bool optimize(ASTSelectQuery & select_query);
 

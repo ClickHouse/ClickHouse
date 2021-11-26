@@ -1,6 +1,6 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <IO/WriteHelpers.h>    // toString
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 
 
 namespace DB
@@ -21,6 +21,7 @@ namespace ErrorCodes
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
 }
 
 
@@ -36,7 +37,8 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_READ_ALL_DATA
         || code == ErrorCodes::TOO_LARGE_STRING_SIZE
         || code == ErrorCodes::ARGUMENT_OUT_OF_BOUND       /// For Decimals
-        || code == ErrorCodes::INCORRECT_DATA;             /// For some ReadHelpers
+        || code == ErrorCodes::INCORRECT_DATA              /// For some ReadHelpers
+        || code == ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
 }
 
 IRowInputFormat::IRowInputFormat(Block header, ReadBuffer & in_, Params params_)

@@ -15,6 +15,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/interpretSubquery.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 
 
 namespace DB
@@ -93,18 +94,18 @@ static bool extractPathImpl(const IAST & elem, Paths & res, ContextPtr context)
         if (value->as<ASTSubquery>())
         {
             auto interpreter_subquery = interpretSubquery(value, context, {}, {});
-            auto stream = interpreter_subquery->execute().getInputStream();
+            auto pipeline = interpreter_subquery->execute().pipeline;
             SizeLimits limites(context->getSettingsRef().max_rows_in_set, context->getSettingsRef().max_bytes_in_set, OverflowMode::THROW);
             Set set(limites, true, context->getSettingsRef().transform_null_in);
-            set.setHeader(stream->getHeader());
+            set.setHeader(pipeline.getHeader().getColumnsWithTypeAndName());
 
-            stream->readPrefix();
-            while (Block block = stream->read())
+            PullingPipelineExecutor executor(pipeline);
+            Block block;
+            while (executor.pull(block))
             {
-                set.insertFromBlock(block);
+                set.insertFromBlock(block.getColumnsWithTypeAndName());
             }
             set.finishInsert();
-            stream->readSuffix();
 
             set.checkColumnsNumber(1);
             const auto & set_column = *set.getSetElements()[0];

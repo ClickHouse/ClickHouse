@@ -65,11 +65,7 @@ static Chunk prepareTotals(Chunk chunk)
 
 void IOutputFormat::work()
 {
-    if (!prefix_written)
-    {
-        doWritePrefix();
-        prefix_written = true;
-    }
+    writePrefixIfNot();
 
     if (finished && !finalized)
     {
@@ -89,10 +85,15 @@ void IOutputFormat::work()
             consume(std::move(current_chunk));
             break;
         case Totals:
+            writeSuffixIfNot();
             if (auto totals = prepareTotals(std::move(current_chunk)))
+            {
                 consumeTotals(std::move(totals));
+                are_totals_written = true;
+            }
             break;
         case Extremes:
+            writeSuffixIfNot();
             consumeExtremes(std::move(current_chunk));
             break;
     }
@@ -110,11 +111,18 @@ void IOutputFormat::flush()
 
 void IOutputFormat::write(const Block & block)
 {
+    writePrefixIfNot();
     consume(Chunk(block.getColumns(), block.rows()));
 
     if (auto_flush)
         flush();
 }
 
+void IOutputFormat::finalize()
+{
+    writePrefixIfNot();
+    writeSuffixIfNot();
+    finalizeImpl();
 }
 
+}

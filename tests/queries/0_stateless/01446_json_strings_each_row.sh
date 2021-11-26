@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -24,7 +25,7 @@ echo "DROP TABLE IF EXISTS test_table;" | ${CLICKHOUSE_CLIENT}
 echo "SELECT 5;" | ${CLICKHOUSE_CLIENT}
 # Check JSONStringsEachRow Input
 echo "CREATE TABLE test_table (v1 String, v2 UInt8, v3 DEFAULT v2 * 16, v4 UInt8 DEFAULT 8) ENGINE = MergeTree() ORDER BY v2;" | ${CLICKHOUSE_CLIENT}
-echo 'INSERT INTO test_table FORMAT JSONStringsEachRow {"v1": "first", "v2": "1", "v3": "2", "v4": "NULL"} {"v1": "second", "v2": "2", "v3": "null", "v4": "6"};' | ${CLICKHOUSE_CLIENT} --input_format_null_as_default=0
+echo 'INSERT INTO test_table FORMAT JSONStringsEachRow {"v1": "first", "v2": "1", "v3": "2", "v4": "NULL"} {"v1": "second", "v2": "2", "v3": "null", "v4": "6"};' | ${CLICKHOUSE_CLIENT} --input_format_null_as_default=1
 echo "SELECT * FROM test_table FORMAT JSONStringsEachRow;" | ${CLICKHOUSE_CLIENT}
 echo "TRUNCATE TABLE test_table;" | ${CLICKHOUSE_CLIENT}
 echo "SELECT 6;" | ${CLICKHOUSE_CLIENT}

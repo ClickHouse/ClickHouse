@@ -13,6 +13,8 @@ namespace DB
 {
 
 class ASTAlterCommand;
+class IDatabase;
+using DatabasePtr = std::shared_ptr<IDatabase>;
 
 /// Operation from the ALTER query (except for manipulation with PART/PARTITION).
 /// Adding Nested columns is not expanded to add individual columns.
@@ -38,9 +40,13 @@ struct AlterCommand
         DROP_PROJECTION,
         MODIFY_TTL,
         MODIFY_SETTING,
+        RESET_SETTING,
         MODIFY_QUERY,
         RENAME_COLUMN,
         REMOVE_TTL,
+        MODIFY_DATABASE_SETTING,
+        COMMENT_TABLE,
+        REMOVE_SAMPLE_BY,
     };
 
     /// Which property user wants to remove from column
@@ -71,16 +77,16 @@ struct AlterCommand
     ColumnDefaultKind default_kind{};
     ASTPtr default_expression{};
 
-    /// For COMMENT column
+    /// For COMMENT column or table
     std::optional<String> comment;
 
     /// For ADD or MODIFY - after which column to add a new one. If an empty string, add to the end.
     String after_column;
 
-    /// For ADD_COLUMN, MODIFY_COLUMN - Add to the begin if it is true.
+    /// For ADD_COLUMN, MODIFY_COLUMN, ADD_INDEX - Add to the begin if it is true.
     bool first = false;
 
-    /// For DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN
+    /// For DROP_COLUMN, MODIFY_COLUMN, COMMENT_COLUMN, RESET_SETTING
     bool if_exists = false;
 
     /// For ADD_COLUMN
@@ -127,6 +133,9 @@ struct AlterCommand
     /// For MODIFY SETTING
     SettingsChanges settings_changes;
 
+    /// For RESET SETTING
+    std::set<String> settings_resets;
+
     /// For MODIFY_QUERY
     ASTPtr select = nullptr;
 
@@ -164,9 +173,6 @@ struct AlterCommand
     std::optional<MutationCommand> tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 };
 
-/// Return string representation of AlterCommand::Type
-String alterTypeToString(const AlterCommand::Type type);
-
 class Context;
 
 /// Vector of AlterCommand with several additional functions
@@ -191,9 +197,12 @@ public:
     void apply(StorageInMemoryMetadata & metadata, ContextPtr context) const;
 
     /// At least one command modify settings.
+    bool hasSettingsAlterCommand() const;
+
+    /// All commands modify settings only.
     bool isSettingsAlter() const;
 
-    /// At least one command modify comments.
+    /// All commands modify comments only.
     bool isCommentAlter() const;
 
     /// Return mutation commands which some storages may execute as part of

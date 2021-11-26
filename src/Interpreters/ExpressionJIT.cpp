@@ -1,11 +1,11 @@
-#include <Interpreters/ExpressionJIT.h>
+#include "config_core.h"
 
 #if USE_EMBEDDED_COMPILER
 
 #include <optional>
 #include <stack>
 
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
@@ -20,6 +20,7 @@
 #include <Interpreters/JIT/CHJIT.h>
 #include <Interpreters/JIT/CompileDAG.h>
 #include <Interpreters/JIT/compileFunction.h>
+#include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/ActionsDAG.h>
 
 namespace DB
@@ -42,36 +43,30 @@ static Poco::Logger * getLogger()
     return &logger;
 }
 
-class CompiledFunction
+class CompiledFunctionHolder : public CompiledExpressionCacheEntry
 {
 public:
 
-    CompiledFunction(void * compiled_function_, CHJIT::CompiledModuleInfo module_info_)
-        : compiled_function(compiled_function_)
-        , module_info(std::move(module_info_))
+    explicit CompiledFunctionHolder(CompiledFunction compiled_function_)
+        : CompiledExpressionCacheEntry(compiled_function_.compiled_module.size)
+        , compiled_function(compiled_function_)
     {}
 
-    void * getCompiledFunction() const { return compiled_function; }
-
-    ~CompiledFunction()
+    ~CompiledFunctionHolder() override
     {
-        getJITInstance().deleteCompiledModule(module_info);
+        getJITInstance().deleteCompiledModule(compiled_function.compiled_module);
     }
 
-private:
-
-    void * compiled_function;
-
-    CHJIT::CompiledModuleInfo module_info;
+    CompiledFunction compiled_function;
 };
 
 class LLVMExecutableFunction : public IExecutableFunction
 {
 public:
 
-    explicit LLVMExecutableFunction(const std::string & name_, std::shared_ptr<CompiledFunction> compiled_function_)
+    explicit LLVMExecutableFunction(const std::string & name_, std::shared_ptr<CompiledFunctionHolder> compiled_function_holder_)
         : name(name_)
-        , compiled_function(compiled_function_)
+        , compiled_function_holder(compiled_function_holder_)
     {
     }
 
@@ -104,8 +99,8 @@ public:
 
             columns[arguments.size()] = getColumnData(result_column.get());
 
-            JITCompiledFunction jit_compiled_function_typed = reinterpret_cast<JITCompiledFunction>(compiled_function->getCompiledFunction());
-            jit_compiled_function_typed(input_rows_count, columns.data());
+            auto jit_compiled_function = compiled_function_holder->compiled_function.compiled_function;
+            jit_compiled_function(input_rows_count, columns.data());
 
             #if defined(MEMORY_SANITIZER)
             /// Memory sanitizer don't know about stores from JIT-ed code.
@@ -135,7 +130,7 @@ public:
 
 private:
     std::string name;
-    std::shared_ptr<CompiledFunction> compiled_function;
+    std::shared_ptr<CompiledFunctionHolder> compiled_function_holder;
 };
 
 class LLVMFunction : public IFunctionBase
@@ -157,9 +152,9 @@ public:
         }
     }
 
-    void setCompiledFunction(std::shared_ptr<CompiledFunction> compiled_function_)
+    void setCompiledFunction(std::shared_ptr<CompiledFunctionHolder> compiled_function_holder_)
     {
-        compiled_function = compiled_function_;
+        compiled_function_holder = compiled_function_holder_;
     }
 
     bool isCompilable() const override { return true; }
@@ -167,6 +162,15 @@ public:
     llvm::Value * compile(llvm::IRBuilderBase & builder, Values values) const override
     {
         return dag.compile(builder, values);
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        for (const auto & f : nested_functions)
+            if (!f->isSuitableForShortCircuitArgumentsExecution(arguments))
+                return false;
+
+        return true;
     }
 
     String getName() const override { return name; }
@@ -177,10 +181,10 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        if (!compiled_function)
+        if (!compiled_function_holder)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Compiled function was not initialized {}", name);
 
-        return std::make_unique<LLVMExecutableFunction>(name, compiled_function);
+        return std::make_unique<LLVMExecutableFunction>(name, compiled_function_holder);
     }
 
     bool isDeterministic() const override
@@ -233,7 +237,9 @@ public:
         const IDataType * type_ptr = &type;
         Field left_mut = left;
         Field right_mut = right;
-        Monotonicity result(true, true, true);
+
+        Monotonicity result = { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true };
+
         /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
         for (size_t i = 0; i < nested_functions.size(); ++i)
         {
@@ -269,7 +275,7 @@ private:
     CompileDAG dag;
     DataTypes argument_types;
     std::vector<FunctionBasePtr> nested_functions;
-    std::shared_ptr<CompiledFunction> compiled_function;
+    std::shared_ptr<CompiledFunctionHolder> compiled_function_holder;
 };
 
 static FunctionBasePtr compile(
@@ -293,22 +299,19 @@ static FunctionBasePtr compile(
         auto [compiled_function_cache_entry, _] = compilation_cache->getOrSet(hash_key, [&] ()
         {
             LOG_TRACE(getLogger(), "Compile expression {}", llvm_function->getName());
-            CHJIT::CompiledModuleInfo compiled_module_info = compileFunction(getJITInstance(), *llvm_function);
-            auto * compiled_jit_function = getJITInstance().findCompiledFunction(compiled_module_info, llvm_function->getName());
-            auto compiled_function = std::make_shared<CompiledFunction>(compiled_jit_function, compiled_module_info);
-
-            return std::make_shared<CompiledFunctionCacheEntry>(std::move(compiled_function), compiled_module_info.size);
+            auto compiled_function = compileFunction(getJITInstance(), *llvm_function);
+            return std::make_shared<CompiledFunctionHolder>(compiled_function);
         });
 
-        llvm_function->setCompiledFunction(compiled_function_cache_entry->getCompiledFunction());
+        std::shared_ptr<CompiledFunctionHolder> compiled_function_holder = std::static_pointer_cast<CompiledFunctionHolder>(compiled_function_cache_entry);
+        llvm_function->setCompiledFunction(std::move(compiled_function_holder));
     }
     else
     {
-        LOG_TRACE(getLogger(), "Compile expression {}", llvm_function->getName());
-        CHJIT::CompiledModuleInfo compiled_module_info = compileFunction(getJITInstance(), *llvm_function);
-        auto * compiled_jit_function = getJITInstance().findCompiledFunction(compiled_module_info, llvm_function->getName());
-        auto compiled_function = std::make_shared<CompiledFunction>(compiled_jit_function, compiled_module_info);
-        llvm_function->setCompiledFunction(compiled_function);
+        auto compiled_function = compileFunction(getJITInstance(), *llvm_function);
+        auto compiled_function_holder = std::make_shared<CompiledFunctionHolder>(compiled_function);
+
+        llvm_function->setCompiledFunction(std::move(compiled_function_holder));
     }
 
     return llvm_function;
@@ -319,12 +322,34 @@ static bool isCompilableConstant(const ActionsDAG::Node & node)
     return node.column && isColumnConst(*node.column) && canBeNativeType(*node.result_type);
 }
 
-static bool isCompilableFunction(const ActionsDAG::Node & node)
+static const ActionsDAG::Node * removeAliasIfNecessary(const ActionsDAG::Node * node)
+{
+    const ActionsDAG::Node * node_no_alias = node;
+
+    while (node_no_alias->type == ActionsDAG::ActionType::ALIAS)
+        node_no_alias = node_no_alias->children[0];
+
+    return node_no_alias;
+}
+
+static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     if (node.type != ActionsDAG::ActionType::FUNCTION)
         return false;
 
     auto & function = *node.function_base;
+
+    IFunction::ShortCircuitSettings settings;
+    if (function.isShortCircuit(settings, node.children.size()))
+    {
+        for (const auto & child : node.children)
+        {
+            const ActionsDAG::Node * child_no_alias = removeAliasIfNecessary(child);
+
+            if (lazy_executed_nodes.contains(child_no_alias))
+                return false;
+        }
+    }
 
     if (!canBeNativeType(*function.getResultType()))
         return false;
@@ -340,7 +365,8 @@ static bool isCompilableFunction(const ActionsDAG::Node & node)
 
 static CompileDAG getCompilableDAG(
     const ActionsDAG::Node * root,
-    ActionsDAG::NodeRawConstPtrs & children)
+    ActionsDAG::NodeRawConstPtrs & children,
+    const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     /// Extract CompileDAG from root actions dag node.
 
@@ -363,29 +389,29 @@ static CompileDAG getCompilableDAG(
         const auto * node = frame.node;
 
         bool is_compilable_constant = isCompilableConstant(*node);
-        bool is_compilable_function = isCompilableFunction(*node);
+        bool is_compilable_function = isCompilableFunction(*node, lazy_executed_nodes);
 
         if (!is_compilable_function || is_compilable_constant)
         {
-           CompileDAG::Node compile_node;
-           compile_node.function = node->function_base;
-           compile_node.result_type = node->result_type;
+            CompileDAG::Node compile_node;
+            compile_node.function = node->function_base;
+            compile_node.result_type = node->result_type;
 
-           if (is_compilable_constant)
-           {
-               compile_node.type = CompileDAG::CompileType::CONSTANT;
-               compile_node.column = node->column;
-           }
-           else
-           {
+            if (is_compilable_constant)
+            {
+                compile_node.type = CompileDAG::CompileType::CONSTANT;
+                compile_node.column = node->column;
+            }
+            else
+            {
                 compile_node.type = CompileDAG::CompileType::INPUT;
                 children.emplace_back(node);
-           }
+            }
 
-           visited_node_to_compile_dag_position[node] = dag.getNodesCount();
-           dag.addNode(std::move(compile_node));
-           stack.pop();
-           continue;
+            visited_node_to_compile_dag_position[node] = dag.getNodesCount();
+            dag.addNode(std::move(compile_node));
+            stack.pop();
+            continue;
         }
 
         while (frame.next_child_to_visit < node->children.size())
@@ -426,7 +452,7 @@ static CompileDAG getCompilableDAG(
     return dag;
 }
 
-void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
+void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     struct Data
     {
@@ -442,7 +468,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
 
     for (const auto & node : nodes)
     {
-        bool node_is_compilable_in_isolation = isCompilableFunction(node) && !isCompilableConstant(node);
+        bool node_is_compilable_in_isolation = isCompilableFunction(node, lazy_executed_nodes) && !isCompilableConstant(node);
         node_to_data[&node].is_compilable_in_isolation = node_is_compilable_in_isolation;
     }
 
@@ -555,7 +581,7 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
     for (auto & node : nodes_to_compile)
     {
         NodeRawConstPtrs new_children;
-        auto dag = getCompilableDAG(node, new_children);
+        auto dag = getCompilableDAG(node, new_children, lazy_executed_nodes);
 
         if (dag.getInputNodesCount() == 0)
             continue;
@@ -575,25 +601,6 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression)
             node->column = nullptr;
         }
     }
-}
-
-CompiledExpressionCacheFactory & CompiledExpressionCacheFactory::instance()
-{
-    static CompiledExpressionCacheFactory factory;
-    return factory;
-}
-
-void CompiledExpressionCacheFactory::init(size_t cache_size)
-{
-    if (cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "CompiledExpressionCache was already initialized");
-
-    cache = std::make_unique<CompiledExpressionCache>(cache_size);
-}
-
-CompiledExpressionCache * CompiledExpressionCacheFactory::tryGetCache()
-{
-    return cache.get();
 }
 
 }

@@ -23,7 +23,7 @@ class FunctionIndexHint : public IFunction
 {
 public:
     static constexpr auto name = "indexHint";
-    static FunctionPtr create(ContextConstPtr)
+    static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionIndexHint>();
     }
@@ -40,6 +40,8 @@ public:
     bool useDefaultImplementationForNulls() const override { return false; }
 
     bool isSuitableForConstantFolding() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     String getName() const override
     {

@@ -1,11 +1,9 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#   include "config_core.h"
-#endif
+#include "config_core.h"
 
 #include <Access/Credentials.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <memory>
 
 #if USE_KRB5
@@ -32,7 +30,7 @@ public:
         String realm;
     };
 
-    explicit GSSAcceptorContext(const Params& params_);
+    explicit GSSAcceptorContext(const Params & params_);
     virtual ~GSSAcceptorContext() override;
 
     GSSAcceptorContext(const GSSAcceptorContext &) = delete;

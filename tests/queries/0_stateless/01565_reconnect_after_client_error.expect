@@ -1,10 +1,11 @@
 #!/usr/bin/expect -f
+# Tags: no-fasttest
 
 # This is a separate test, because we want to test the interactive mode.
 # https://github.com/ClickHouse/ClickHouse/issues/19353
 
 log_user 0
-set timeout 5
+set timeout 60
 match_max 100000
 
 # A default timeout action is to fail

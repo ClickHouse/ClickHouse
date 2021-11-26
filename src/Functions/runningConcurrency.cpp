@@ -10,7 +10,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
-#include <common/defines.h>
+#include <base/defines.h>
 #include <set>
 
 namespace DB
@@ -119,6 +119,8 @@ namespace DB
             return true;
         }
 
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+
     private:
         DataTypes argument_types;
         DataTypePtr return_type;
@@ -154,7 +156,7 @@ namespace DB
     public:
         static constexpr auto name = Name::name;
 
-        static FunctionOverloadResolverPtr create(ContextConstPtr)
+        static FunctionOverloadResolverPtr create(ContextPtr)
         {
             return std::make_unique<RunningConcurrencyOverloadResolver<Name, ConcurrencyDataType>>();
         }

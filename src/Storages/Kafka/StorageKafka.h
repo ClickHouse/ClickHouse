@@ -7,7 +7,7 @@
 #include <Common/SettingsChanges.h>
 
 #include <Poco/Semaphore.h>
-#include <ext/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 
 #include <mutex>
 #include <list>
@@ -28,9 +28,9 @@ struct StorageKafkaInterceptors;
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka final : public ext::shared_ptr_helper<StorageKafka>, public IStorage, WithContext
+class StorageKafka final : public shared_ptr_helper<StorageKafka>, public IStorage, WithContext
 {
-    friend struct ext::shared_ptr_helper<StorageKafka>;
+    friend struct shared_ptr_helper<StorageKafka>;
     friend struct StorageKafkaInterceptors;
 
 public:
@@ -50,7 +50,7 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    BlockOutputStreamPtr write(
+    SinkToStoragePtr write(
         const ASTPtr & query,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         ContextPtr context) override;
@@ -71,7 +71,8 @@ protected:
         const StorageID & table_id_,
         ContextPtr context_,
         const ColumnsDescription & columns_,
-        std::unique_ptr<KafkaSettings> kafka_settings_);
+        std::unique_ptr<KafkaSettings> kafka_settings_,
+        const String & collection_name_);
 
 private:
     // Configuration and state
@@ -119,8 +120,12 @@ private:
     SettingsChanges createSettingsAdjustments();
     ConsumerBufferPtr createReadBuffer(const size_t consumer_number);
 
+    /// If named_collection is specified.
+    String collection_name;
+
     // Update Kafka configuration with values from CH user configuration.
     void updateConfiguration(cppkafka::Configuration & conf);
+    String getConfigPrefix() const;
     void threadFunc(size_t idx);
 
     size_t getPollMaxBatchSize() const;

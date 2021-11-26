@@ -3,17 +3,18 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
 
+class ASTFunction;
+class ASTIdentifier;
+
 
 struct ExpressionInfoMatcher
 {
-    struct Data : public WithConstContext
+    struct Data : public WithContext
     {
         const TablesWithColumns & tables;
 
@@ -36,6 +37,6 @@ struct ExpressionInfoMatcher
 
 using ExpressionInfoVisitor = ConstInDepthNodeVisitor<ExpressionInfoMatcher, true>;
 
-bool hasNonRewritableFunction(const ASTPtr & node, ContextConstPtr context);
+bool hasNonRewritableFunction(const ASTPtr & node, ContextPtr context);
 
 }

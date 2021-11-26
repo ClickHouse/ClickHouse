@@ -10,7 +10,7 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance("node",
-                             main_configs=["configs/minio.xml", "configs/ssl.xml", "configs/config.d/log_conf.xml"],
+                             main_configs=["configs/minio.xml", "configs/ssl.xml"],
                              with_minio=True, stay_alive=True)
         logging.info("Starting cluster...")
         cluster.start()

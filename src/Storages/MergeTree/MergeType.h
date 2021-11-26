@@ -1,13 +1,13 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 
 namespace DB
 {
 
 /// Type of Merge. Used to control amount of different merges during merges
 /// assignment. Also allows to apply special logic during merge process
-/// (mergePartsToTemporaryPart). Stored in FutureMergedMutatedPart and
+/// Stored in FutureMergedMutatedPart and
 /// ReplicatedMergeTreeLogEntry.
 ///
 /// Order is important, don't try to change it.
