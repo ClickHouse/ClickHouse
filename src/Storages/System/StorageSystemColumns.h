@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Storages/System/IStorageSystemOneBlock.h>
 
 
@@ -25,8 +25,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-    bool isSystemStorage() const override { return true; }
 
 protected:
     StorageSystemColumns(const StorageID & table_id_);

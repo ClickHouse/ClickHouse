@@ -5,7 +5,7 @@
 #include <Columns/ColumnDecimal.h>
 #include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
-#include <base/defines.h>
+#include <common/defines.h>
 
 
 namespace DB
@@ -71,7 +71,7 @@ struct ArrayAggregateResultImpl<ArrayElement, AggregateOperation::sum>
         std::conditional_t<std::is_same_v<ArrayElement, UInt128>, UInt128,
         std::conditional_t<std::is_same_v<ArrayElement, Int256>, Int256,
         std::conditional_t<std::is_same_v<ArrayElement, UInt256>, UInt256,
-        std::conditional_t<is_decimal<ArrayElement>, Decimal128,
+        std::conditional_t<IsDecimalNumber<ArrayElement>, Decimal128,
         std::conditional_t<std::is_floating_point_v<ArrayElement>, Float64,
         std::conditional_t<std::is_signed_v<ArrayElement>, Int64,
             UInt64>>>>>>>;
@@ -135,8 +135,8 @@ struct ArrayAggregateImpl
     static NO_SANITIZE_UNDEFINED bool executeType(const ColumnPtr & mapped, const ColumnArray::Offsets & offsets, ColumnPtr & res_ptr)
     {
         using ResultType = ArrayAggregateResult<Element, aggregate_operation>;
-        using ColVecType = ColumnVectorOrDecimal<Element>;
-        using ColVecResultType = ColumnVectorOrDecimal<ResultType>;
+        using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
+        using ColVecResultType = std::conditional_t<IsDecimalNumber<ResultType>, ColumnDecimal<ResultType>, ColumnVector<ResultType>>;
 
         /// For average and product of array we return Float64 as result, but we want to keep precision
         /// so we convert to Float64 as last step, but intermediate value is represented as result of sum operation
@@ -160,7 +160,7 @@ struct ArrayAggregateImpl
             const auto & data = checkAndGetColumn<ColVecType>(&column_const->getDataColumn())->getData();
 
             typename ColVecResultType::MutablePtr res_column;
-            if constexpr (is_decimal<Element>)
+            if constexpr (IsDecimalNumber<Element>)
                 res_column = ColVecResultType::create(offsets.size(), data.getScale());
             else
                 res_column = ColVecResultType::create(offsets.size());
@@ -183,7 +183,7 @@ struct ArrayAggregateImpl
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::average)
                 {
-                    if constexpr (is_decimal<Element>)
+                    if constexpr (IsDecimalNumber<Element>)
                     {
                         res[i] = DecimalUtils::convertTo<ResultType>(x, data.getScale());
                     }
@@ -197,7 +197,7 @@ struct ArrayAggregateImpl
                     size_t array_size = offsets[i] - pos;
                     AggregationType product = x;
 
-                    if constexpr (is_decimal<Element>)
+                    if constexpr (IsDecimalNumber<Element>)
                     {
                         using T = decltype(x.value);
                         T x_val = x.value;
@@ -235,7 +235,7 @@ struct ArrayAggregateImpl
         const auto & data = column->getData();
 
         typename ColVecResultType::MutablePtr res_column;
-        if constexpr (is_decimal<Element>)
+        if constexpr (IsDecimalNumber<Element>)
             res_column = ColVecResultType::create(offsets.size(), data.getScale());
         else
             res_column = ColVecResultType::create(offsets.size());
@@ -250,7 +250,7 @@ struct ArrayAggregateImpl
             /// Array is empty
             if (offsets[i] == pos)
             {
-                if constexpr (is_decimal<AggregationType>)
+                if constexpr (IsDecimalNumber<AggregationType>)
                     res[i] = aggregate_value.value;
                 else
                     res[i] = aggregate_value;
@@ -286,7 +286,7 @@ struct ArrayAggregateImpl
                 }
                 else if constexpr (aggregate_operation == AggregateOperation::product)
                 {
-                    if constexpr (is_decimal<Element>)
+                    if constexpr (IsDecimalNumber<Element>)
                     {
                         using AggregateValueDecimalUnderlyingValue = decltype(aggregate_value.value);
                         AggregateValueDecimalUnderlyingValue current_aggregate_value = aggregate_value.value;
@@ -306,7 +306,7 @@ struct ArrayAggregateImpl
 
             if constexpr (aggregate_operation == AggregateOperation::average)
             {
-                if constexpr (is_decimal<Element>)
+                if constexpr (IsDecimalNumber<Element>)
                 {
                     aggregate_value = aggregate_value / AggregationType(count);
                     res[i] = DecimalUtils::convertTo<ResultType>(aggregate_value, data.getScale());
@@ -316,7 +316,7 @@ struct ArrayAggregateImpl
                     res[i] = static_cast<ResultType>(aggregate_value) / count;
                 }
             }
-            else if constexpr (aggregate_operation == AggregateOperation::product && is_decimal<Element>)
+            else if constexpr (aggregate_operation == AggregateOperation::product && IsDecimalNumber<Element>)
             {
                 auto result_scale = data.getScale() * count;
 

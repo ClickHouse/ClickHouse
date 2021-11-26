@@ -3,7 +3,7 @@
 CI_CONFIG = {
     "build_config": [
         {
-            "compiler": "clang-13",
+            "compiler": "clang-11",
             "build_type": "",
             "sanitizer": "",
             "package_type": "deb",
@@ -14,7 +14,7 @@ CI_CONFIG = {
             "with_coverage": False
         },
         {
-            "compiler": "clang-13",
+            "compiler": "clang-11",
             "build_type": "",
             "sanitizer": "",
             "package_type": "performance",
@@ -24,7 +24,7 @@ CI_CONFIG = {
             "with_coverage": False
         },
         {
-            "compiler": "gcc-11",
+            "compiler": "gcc-10",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -34,7 +34,7 @@ CI_CONFIG = {
             "with_coverage": False
         },
         {
-            "compiler": "clang-13",
+            "compiler": "clang-11",
             "build_type": "",
             "sanitizer": "address",
             "package_type": "deb",
@@ -44,7 +44,7 @@ CI_CONFIG = {
             "with_coverage": False
         },
         {
-            "compiler": "clang-13",
+            "compiler": "clang-11",
             "build_type": "",
             "sanitizer": "undefined",
             "package_type": "deb",
@@ -54,7 +54,7 @@ CI_CONFIG = {
             "with_coverage": False
         },
         {
-            "compiler": "clang-13",
+            "compiler": "clang-11",
             "build_type": "",
             "sanitizer": "thread",
             "package_type": "deb",
@@ -64,7 +64,7 @@ CI_CONFIG = {
             "with_coverage": False
         },
         {
-            "compiler": "clang-13",
+            "compiler": "clang-11",
             "build_type": "",
             "sanitizer": "memory",
             "package_type": "deb",
@@ -74,7 +74,7 @@ CI_CONFIG = {
             "with_coverage": False
         },
         {
-            "compiler": "clang-13",
+            "compiler": "clang-11",
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "deb",
@@ -84,7 +84,17 @@ CI_CONFIG = {
             "with_coverage": False
         },
         {
-            "compiler": "clang-13",
+            "compiler": "gcc-10",
+            "build_type": "",
+            "sanitizer": "",
+            "package_type": "deb",
+            "bundled": "unbundled",
+            "splitted": "unsplitted",
+            "tidy": "disable",
+            "with_coverage": False
+        },
+        {
+            "compiler": "clang-11",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -96,7 +106,7 @@ CI_CONFIG = {
     ],
     "special_build_config": [
         {
-            "compiler": "clang-13",
+            "compiler": "clang-11",
             "build_type": "debug",
             "sanitizer": "",
             "package_type": "deb",
@@ -106,7 +116,7 @@ CI_CONFIG = {
             "with_coverage": False
         },
         {
-            "compiler": "clang-13",
+            "compiler": "clang-11",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -116,7 +126,7 @@ CI_CONFIG = {
             "with_coverage": False
         },
         {
-            "compiler": "clang-13-darwin",
+            "compiler": "clang-11-darwin",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -126,7 +136,7 @@ CI_CONFIG = {
             "with_coverage": False
         },
         {
-            "compiler": "clang-13-aarch64",
+            "compiler": "clang-11-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -136,7 +146,7 @@ CI_CONFIG = {
             "with_coverage": False
         },
         {
-            "compiler": "clang-13-freebsd",
+            "compiler": "clang-11-freebsd",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -146,7 +156,7 @@ CI_CONFIG = {
             "with_coverage": False
         },
         {
-            "compiler": "clang-13-darwin-aarch64",
+            "compiler": "clang-11-darwin-aarch64",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -156,7 +166,7 @@ CI_CONFIG = {
             "with_coverage": False
         },
         {
-            "compiler": "clang-13-ppc64le",
+            "compiler": "clang-11-ppc64le",
             "build_type": "",
             "sanitizer": "",
             "package_type": "binary",
@@ -169,7 +179,7 @@ CI_CONFIG = {
     "tests_config": {
         "Stateful tests (address, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -181,7 +191,7 @@ CI_CONFIG = {
         },
         "Stateful tests (thread, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -193,7 +203,7 @@ CI_CONFIG = {
         },
         "Stateful tests (memory, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "memory",
@@ -205,7 +215,7 @@ CI_CONFIG = {
         },
         "Stateful tests (ubsan, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "undefined",
@@ -217,7 +227,7 @@ CI_CONFIG = {
         },
         "Stateful tests (debug, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "debug",
                 "sanitizer": "none",
@@ -229,7 +239,7 @@ CI_CONFIG = {
         },
         "Stateful tests (release, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -241,7 +251,7 @@ CI_CONFIG = {
         },
         "Stateful tests (release, DatabaseOrdinary, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -253,7 +263,7 @@ CI_CONFIG = {
         },
         "Stateful tests (release, DatabaseReplicated, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -265,7 +275,7 @@ CI_CONFIG = {
         },
         "Stateless tests (address, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -277,7 +287,7 @@ CI_CONFIG = {
         },
         "Stateless tests (thread, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -289,7 +299,7 @@ CI_CONFIG = {
         },
         "Stateless tests (memory, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "memory",
@@ -301,7 +311,7 @@ CI_CONFIG = {
         },
         "Stateless tests (ubsan, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "undefined",
@@ -313,7 +323,7 @@ CI_CONFIG = {
         },
         "Stateless tests (debug, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "debug",
                 "sanitizer": "none",
@@ -325,7 +335,7 @@ CI_CONFIG = {
         },
         "Stateless tests (release, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -335,9 +345,21 @@ CI_CONFIG = {
                 "with_coverage": False
             }
         },
+        "Stateless tests (unbundled, actions)": {
+            "required_build_properties": {
+                "compiler": "gcc-10",
+                "package_type": "deb",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "none",
+                "bundled": "unbundled",
+                "splitted": "unsplitted",
+                "clang_tidy": "disable",
+                "with_coverage": False
+            }
+        },
         "Stateless tests (release, wide parts enabled, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -349,7 +371,7 @@ CI_CONFIG = {
         },
         "Stateless tests (release, DatabaseOrdinary, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -361,7 +383,7 @@ CI_CONFIG = {
         },
         "Stateless tests (release, DatabaseReplicated, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -373,7 +395,7 @@ CI_CONFIG = {
         },
         "Stress test (address, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -385,7 +407,7 @@ CI_CONFIG = {
         },
         "Stress test (thread, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -397,7 +419,7 @@ CI_CONFIG = {
         },
         "Stress test (undefined, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "undefined",
@@ -409,7 +431,7 @@ CI_CONFIG = {
         },
         "Stress test (memory, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "memory",
@@ -421,7 +443,7 @@ CI_CONFIG = {
         },
         "Stress test (debug, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "debug",
                 "sanitizer": "none",
@@ -433,7 +455,7 @@ CI_CONFIG = {
         },
         "Integration tests (asan, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -445,7 +467,7 @@ CI_CONFIG = {
         },
         "Integration tests (thread, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -457,7 +479,7 @@ CI_CONFIG = {
         },
         "Integration tests (release, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -469,7 +491,7 @@ CI_CONFIG = {
         },
         "Integration tests (memory, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "memory",
@@ -481,7 +503,7 @@ CI_CONFIG = {
         },
         "Integration tests flaky check (asan, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -493,7 +515,7 @@ CI_CONFIG = {
         },
         "Compatibility check (actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -505,7 +527,7 @@ CI_CONFIG = {
         },
         "Split build smoke test (actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -517,7 +539,7 @@ CI_CONFIG = {
         },
         "Testflows check (actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -529,7 +551,7 @@ CI_CONFIG = {
         },
         "Unit tests (release-gcc, actions)": {
             "required_build_properties": {
-                "compiler": "gcc-11",
+                "compiler": "gcc-10",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -541,7 +563,7 @@ CI_CONFIG = {
         },
         "Unit tests (release-clang, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -553,7 +575,7 @@ CI_CONFIG = {
         },
         "Unit tests (asan, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -565,7 +587,7 @@ CI_CONFIG = {
         },
         "Unit tests (msan, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "memory",
@@ -577,7 +599,7 @@ CI_CONFIG = {
         },
         "Unit tests (tsan, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -589,10 +611,10 @@ CI_CONFIG = {
         },
         "Unit tests (ubsan, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
-                "sanitizer": "undefined",
+                "sanitizer": "thread",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
                 "clang_tidy": "disable",
@@ -601,7 +623,7 @@ CI_CONFIG = {
         },
         "AST fuzzer (debug, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "debug",
                 "sanitizer": "none",
@@ -613,7 +635,7 @@ CI_CONFIG = {
         },
         "AST fuzzer (ASan, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -625,7 +647,7 @@ CI_CONFIG = {
         },
         "AST fuzzer (MSan, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "memory",
@@ -637,7 +659,7 @@ CI_CONFIG = {
         },
         "AST fuzzer (TSan, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "thread",
@@ -649,7 +671,7 @@ CI_CONFIG = {
         },
         "AST fuzzer (UBSan, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "undefined",
@@ -661,7 +683,7 @@ CI_CONFIG = {
         },
         "Release (actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
@@ -673,7 +695,7 @@ CI_CONFIG = {
         },
         "Stateless tests flaky check (address, actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "deb",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "address",
@@ -685,7 +707,7 @@ CI_CONFIG = {
         },
         "ClickHouse Keeper Jepsen (actions)": {
             "required_build_properties": {
-                "compiler": "clang-13",
+                "compiler": "clang-11",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",

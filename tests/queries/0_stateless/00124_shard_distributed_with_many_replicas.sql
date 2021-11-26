@@ -1,5 +1,3 @@
--- Tags: replica, distributed
-
 SET max_parallel_replicas = 2;
 
 DROP TABLE IF EXISTS report;

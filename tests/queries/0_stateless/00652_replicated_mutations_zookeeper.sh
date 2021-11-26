@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: replica, no-replicated-database, no-parallel, no-fasttest
-# Tag no-replicated-database: Old syntax is not allowed
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -63,7 +61,7 @@ ${CLICKHOUSE_CLIENT} --query="CREATE TABLE mutations_cleaner_r2(x UInt32) ENGINE
     cleanup_delay_period_random_add = 0"
 
 # Insert some data
-${CLICKHOUSE_CLIENT} --query="INSERT INTO mutations_cleaner_r1(x) VALUES (1), (2), (3), (4), (5)"
+${CLICKHOUSE_CLIENT} --query="INSERT INTO mutations_cleaner_r1(x) VALUES (1), (2), (3), (4)"
 
 # Add some mutations and wait for their execution
 ${CLICKHOUSE_CLIENT} --query="ALTER TABLE mutations_cleaner_r1 DELETE WHERE x = 1 SETTINGS mutations_sync = 2"

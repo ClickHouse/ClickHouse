@@ -60,7 +60,7 @@ RUN dockerd --version; docker --version
 RUN python3 -m pip install \
     PyMySQL \
     aerospike==4.0.0 \
-    avro==1.10.2 \
+    avro \
     cassandra-driver \
     confluent-kafka==1.5.0 \
     dict2xml \
@@ -97,8 +97,6 @@ RUN set -x \
   && adduser dockremap dockremap \
   && echo 'dockremap:165536:65536' >> /etc/subuid \
     && echo 'dockremap:165536:65536' >> /etc/subgid
-
-RUN echo '127.0.0.1 localhost test.com' >> /etc/hosts
 
 EXPOSE 2375
 ENTRYPOINT ["dockerd-entrypoint.sh"]

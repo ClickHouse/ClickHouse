@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -30,7 +29,7 @@ function create()
     ${CLICKHOUSE_CLIENT} -q "CREATE TABLE IF NOT EXISTS ${CURR_DATABASE}.data3 Engine=MergeTree() ORDER BY number AS SELECT * FROM numbers(1);" 2>&1 | grep -F "Code: " | grep -Fv "is currently dropped or renamed"
 }
 
-for _ in {1..50}; do
+for _ in {1..100}; do
     create
     drop_table &
     drop_database &

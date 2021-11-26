@@ -16,6 +16,8 @@ struct TableExclusiveLockHolder
 private:
     friend class IStorage;
 
+    /// Order is important.
+    TableLockHolder alter_lock;
     TableLockHolder drop_lock;
 };
 
