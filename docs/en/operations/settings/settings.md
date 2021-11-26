@@ -4114,7 +4114,7 @@ Default value: `''`.
 
 ## format_custom_result_before_delimiter {#format-custom-result-before-delimiter}
 
-Sets the character is interpreted as a prefix before result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+Sets the character that is interpreted as a prefix before the result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
 
 Default value: `''`.
 
