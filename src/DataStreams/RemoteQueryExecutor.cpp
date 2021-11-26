@@ -6,6 +6,7 @@
 #include <Common/CurrentThread.h>
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/castColumn.h>
@@ -477,6 +478,12 @@ void RemoteQueryExecutor::sendExternalTables()
         external_tables_data.clear();
         external_tables_data.reserve(count);
 
+        StreamLocalLimits limits;
+        const auto & settings = context->getSettingsRef();
+        limits.mode = LimitsMode::LIMITS_TOTAL;
+        limits.speed_limits.max_execution_time = settings.max_execution_time;
+        limits.timeout_overflow_mode = settings.timeout_overflow_mode;
+
         for (size_t i = 0; i < count; ++i)
         {
             ExternalTablesData res;
@@ -486,7 +493,7 @@ void RemoteQueryExecutor::sendExternalTables()
 
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;
-                data->creating_pipe_callback = [cur, context = this->context]()
+                data->creating_pipe_callback = [cur, limits, context = this->context]()
                 {
                     SelectQueryInfo query_info;
                     auto metadata_snapshot = cur->getInMemoryMetadataPtr();
@@ -501,6 +508,8 @@ void RemoteQueryExecutor::sendExternalTables()
                     if (pipe.empty())
                         return std::make_unique<Pipe>(
                             std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), Chunk()));
+
+                    pipe.addTransform(std::make_shared<LimitsCheckingTransform>(pipe.getHeader(), limits));
 
                     return std::make_unique<Pipe>(std::move(pipe));
                 };
