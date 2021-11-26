@@ -158,7 +158,7 @@ if __name__ == "__main__":
     logging.info("Will upload cache")
     upload_ccache(ccache_path, s3_helper, pr_info.number, temp_path)
 
-    # for release pull requests we use fixed names
+    # for release pull requests we use branch names prefixes, not pr numbers
     if 'release' in pr_info.labels or 'release-lts' in pr_info.labels:
         s3_path_prefix = pr_info.head_ref + "/" + pr_info.sha + "/" + build_name
     else:
