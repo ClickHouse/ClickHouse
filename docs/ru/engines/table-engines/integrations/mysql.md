@@ -144,7 +144,7 @@ SELECT * FROM mysql_table
 
 Значение по умолчанию: `16`.
 
-## См. также {#smotrite-takzhe}
+## См. также {#see-also}
 
 -   [Табличная функция mysql](../../../engines/table-engines/integrations/mysql.md)
 -   [Использование MySQL в качестве источника для внешнего словаря](../../../engines/table-engines/integrations/mysql.md#dicts-external_dicts_dict_sources-mysql)
