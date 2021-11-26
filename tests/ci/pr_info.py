@@ -132,7 +132,9 @@ class PRInfo:
 
         for f in self.changed_files:
             _, ext = os.path.splitext(f)
-            if ext in DIFF_IN_DOCUMENTATION_EXT or 'Dockerfile' in f:
+            path_in_docs = 'docs' in f
+            path_in_website = 'website' in f
+            if (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs and path_in_website) or 'docker/docs' in f:
                 return True
         return False
 
