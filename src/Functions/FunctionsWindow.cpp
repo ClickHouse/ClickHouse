@@ -220,15 +220,19 @@ struct WindowImpl<TUMBLE_START>
         if (arguments.size() == 1)
         {
             auto type_ = WhichDataType(arguments[0].type);
-            if (!type_.isTuple() && !type_.isUInt32())
+            if (type_.isTuple())
+                return std::static_pointer_cast<const DataTypeTuple>(arguments[0].type)->getElement(0);
+            else if (type_.isUInt32())
+                return std::make_shared<DataTypeDateTime>();
+            else
                 throw Exception(
-                    "Illegal type of first argument of function " + function_name + " should be DateTime, Tuple or UInt32", ErrorCodes::ILLEGAL_COLUMN);
+                    "Illegal type of first argument of function " + function_name + " should be DateTime, Tuple or UInt32",
+                    ErrorCodes::ILLEGAL_COLUMN);
         }
         else
         {
-            WindowImpl<TUMBLE>::getReturnType(arguments, function_name);
+           return std::static_pointer_cast<const DataTypeTuple>(WindowImpl<TUMBLE>::getReturnType(arguments, function_name))->getElement(0);
         }
-        return std::make_shared<DataTypeDateTime>();
     }
 
     [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
@@ -563,16 +567,19 @@ struct WindowImpl<HOP_START>
         if (arguments.size() == 1)
         {
             auto type_ = WhichDataType(arguments[0].type);
-            if (!type_.isTuple() && !type_.isUInt32())
+            if (type_.isTuple())
+                return std::static_pointer_cast<const DataTypeTuple>(arguments[0].type)->getElement(0);
+            else if (type_.isUInt32())
+                return std::make_shared<DataTypeDateTime>();
+            else
                 throw Exception(
                     "Illegal type of first argument of function " + function_name + " should be DateTime, Tuple or UInt32",
                     ErrorCodes::ILLEGAL_COLUMN);
         }
         else
         {
-            WindowImpl<HOP>::getReturnType(arguments, function_name);
+           return std::static_pointer_cast<const DataTypeTuple>(WindowImpl<HOP>::getReturnType(arguments, function_name))->getElement(0);
         }
-        return std::make_shared<DataTypeDateTime>();
     }
 
     [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
