@@ -33,7 +33,7 @@ using BlocksWithPartition = std::vector<BlockWithPartition>;
 class MergeTreeDataWriter
 {
 public:
-    MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Poco::Logger::get(data.getLogName() + " (Writer)")) {}
+    explicit MergeTreeDataWriter(MergeTreeData & data_) : data(data_), log(&Poco::Logger::get(data.getLogName() + " (Writer)")) {}
 
     /** Split the block to blocks, each of them must be written as separate part.
       *  (split rows by partition)
@@ -74,11 +74,16 @@ public:
         const ProjectionDescription & projection,
         const IMergeTreeDataPart * parent_part);
 
-    Block mergeBlock(const Block & block, SortDescription sort_description, Names & partition_key_columns, IColumn::Permutation *& permutation);
+    static Block mergeBlock(
+        const Block & block,
+        SortDescription sort_description,
+        const Names & partition_key_columns,
+        IColumn::Permutation *& permutation,
+        const MergeTreeData::MergingParams & merging_params);
 
 private:
     static MergeTreeData::MutableDataPartPtr writeProjectionPartImpl(
-        const String part_name,
+        const String & part_name,
         MergeTreeDataPartType part_type,
         const String & relative_path,
         bool is_temp,
@@ -86,7 +91,7 @@ private:
         const MergeTreeData & data,
         Poco::Logger * log,
         Block block,
-        const StorageMetadataPtr & metadata_snapshot);
+        const ProjectionDescription & projection);
 
     MergeTreeData & data;
 
