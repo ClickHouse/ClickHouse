@@ -6,8 +6,8 @@
 #include <IO/ReadBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
+#include <DataStreams/NativeBlockInputStream.h>
+#include <DataStreams/NativeBlockOutputStream.h>
 #include <Disks/IVolume.h>
 
 
@@ -33,10 +33,11 @@ public:
     BufferingToFileTransform(const Block & header, Poco::Logger * log_, std::string path_)
         : IAccumulatingTransform(header, header), log(log_)
         , path(std::move(path_)), file_buf_out(path), compressed_buf_out(file_buf_out)
-        , out_stream(std::make_unique<NativeWriter>(compressed_buf_out, 0, header))
+        , out_stream(std::make_shared<NativeBlockOutputStream>(compressed_buf_out, 0, header))
     {
         LOG_INFO(log, "Sorting and writing part of data into temporary file {}", path);
         ProfileEvents::increment(ProfileEvents::ExternalSortWritePart);
+        out_stream->writePrefix();
     }
 
     String getName() const override { return "BufferingToFileTransform"; }
@@ -50,6 +51,7 @@ public:
     {
         if (out_stream)
         {
+            out_stream->writeSuffix();
             compressed_buf_out.next();
             file_buf_out.next();
             LOG_INFO(log, "Done writing part of data into temporary file {}", path);
@@ -58,7 +60,7 @@ public:
 
             file_in = std::make_unique<ReadBufferFromFile>(path);
             compressed_in = std::make_unique<CompressedReadBuffer>(*file_in);
-            block_in = std::make_unique<NativeReader>(*compressed_in, getOutputPort().getHeader(), 0);
+            block_in = std::make_shared<NativeBlockInputStream>(*compressed_in, getOutputPort().getHeader(), 0);
         }
 
         if (!block_in)
@@ -67,6 +69,7 @@ public:
         auto block = block_in->read();
         if (!block)
         {
+            block_in->readSuffix();
             block_in.reset();
             return {};
         }
@@ -80,11 +83,11 @@ private:
     std::string path;
     WriteBufferFromFile file_buf_out;
     CompressedWriteBuffer compressed_buf_out;
-    std::unique_ptr<NativeWriter> out_stream;
+    BlockOutputStreamPtr out_stream;
 
     std::unique_ptr<ReadBufferFromFile> file_in;
     std::unique_ptr<CompressedReadBuffer> compressed_in;
-    std::unique_ptr<NativeReader> block_in;
+    BlockInputStreamPtr block_in;
 };
 
 MergeSortingTransform::MergeSortingTransform(

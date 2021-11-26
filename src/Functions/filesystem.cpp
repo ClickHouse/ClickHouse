@@ -39,11 +39,6 @@ public:
         return std::make_shared<FilesystemImpl<Impl>>(std::filesystem::space(context->getConfigRef().getString("path")));
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
-    {
-        return false;
-    }
-
     explicit FilesystemImpl(std::filesystem::space_info spaceinfo_) : spaceinfo(spaceinfo_) { }
 
     String getName() const override { return name; }

@@ -1,17 +1,4 @@
-## How To Generate Changelog
-
-Generate github token:
-* https://github.com/settings/tokens - keep all checkboxes unchecked, no scopes need to be enabled.
-
-Dependencies:
-```
- apt-get install git curl jq python3 python3-fuzzywuzzy 
-```
-
-Update information about tags:
-```
-git fetch --tags
-```
+## Generate changelog
 
 Usage example:
 

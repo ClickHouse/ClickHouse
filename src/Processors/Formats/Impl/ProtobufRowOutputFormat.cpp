@@ -51,11 +51,11 @@ void ProtobufRowOutputFormat::write(const Columns & columns, size_t row_num)
 }
 
 
-void registerOutputFormatProtobuf(FormatFactory & factory)
+void registerOutputFormatProcessorProtobuf(FormatFactory & factory)
 {
     for (bool with_length_delimiter : {false, true})
     {
-        factory.registerOutputFormat(
+        factory.registerOutputFormatProcessor(
             with_length_delimiter ? "Protobuf" : "ProtobufSingle",
             [with_length_delimiter](WriteBuffer & buf,
                const Block & header,
@@ -64,7 +64,9 @@ void registerOutputFormatProtobuf(FormatFactory & factory)
             {
                 return std::make_shared<ProtobufRowOutputFormat>(
                     buf, header, params,
-                    FormatSchemaInfo(settings, "Protobuf", true),
+                    FormatSchemaInfo(settings.schema.format_schema, "Protobuf",
+                        true, settings.schema.is_server,
+                        settings.schema.format_schema_path),
                     settings,
                     with_length_delimiter);
             });
@@ -78,7 +80,7 @@ void registerOutputFormatProtobuf(FormatFactory & factory)
 namespace DB
 {
     class FormatFactory;
-    void registerOutputFormatProtobuf(FormatFactory &) {}
+    void registerOutputFormatProcessorProtobuf(FormatFactory &) {}
 }
 
 #endif

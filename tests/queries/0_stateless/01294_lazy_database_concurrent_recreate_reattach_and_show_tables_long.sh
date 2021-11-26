@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -102,12 +101,14 @@ timeout $TIMEOUT bash -c test_func 2> /dev/null &
 wait
 sleep 1
 
-for table in log tlog slog tlog2; do
-    $CLICKHOUSE_CLIENT -q "SYSTEM STOP TTL MERGES $CURR_DATABASE.$table" >& /dev/null
-  ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE $CURR_DATABASE.$table;" 2>/dev/null
-done
+${CLICKHOUSE_CLIENT} -n -q "
+    DROP TABLE IF EXISTS $CURR_DATABASE.log;
+    DROP TABLE IF EXISTS $CURR_DATABASE.slog;
+    DROP TABLE IF EXISTS $CURR_DATABASE.tlog;
+    DROP TABLE IF EXISTS $CURR_DATABASE.tlog2;
+"
 
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE $CURR_DATABASE"
-
+$CLICKHOUSE_CLIENT -q "SYSTEM START TTL MERGES";
 echo "Test OK"
 
+# TODO: doesn't work! $CLICKHOUSE_CLIENT -q "DROP DATABASE $CURR_DATABASE"

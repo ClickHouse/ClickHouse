@@ -22,7 +22,6 @@ set(SRCS
     "${LIBRARY_DIR}/src/launcher.cxx"
     "${LIBRARY_DIR}/src/srv_config.cxx"
     "${LIBRARY_DIR}/src/snapshot_sync_req.cxx"
-    "${LIBRARY_DIR}/src/snapshot_sync_ctx.cxx"
     "${LIBRARY_DIR}/src/handle_timeout.cxx"
     "${LIBRARY_DIR}/src/handle_append_entries.cxx"
     "${LIBRARY_DIR}/src/cluster_config.cxx"

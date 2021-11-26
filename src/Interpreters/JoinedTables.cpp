@@ -299,17 +299,16 @@ std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & se
     if (table_to_join.database_and_table_name)
     {
         auto joined_table_id = context->resolveStorageID(table_to_join.database_and_table_name);
-        StoragePtr storage = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
-        if (storage)
+        StoragePtr table = DatabaseCatalog::instance().tryGetTable(joined_table_id, context);
+        if (table)
         {
-            if (auto storage_join = std::dynamic_pointer_cast<StorageJoin>(storage); storage_join)
-                table_join->setStorageJoin(storage_join);
-            else if (auto storage_dict = std::dynamic_pointer_cast<StorageDictionary>(storage); storage_dict)
-                table_join->setStorageJoin(storage_dict);
+            if (dynamic_cast<StorageJoin *>(table.get()) ||
+                dynamic_cast<StorageDictionary *>(table.get()))
+                table_join->joined_storage = table;
         }
     }
 
-    if (!table_join->isSpecialStorage() &&
+    if (!table_join->joined_storage &&
         settings.enable_optimize_predicate_expression)
         replaceJoinedTable(select_query);
 

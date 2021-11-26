@@ -41,9 +41,9 @@ void ValuesRowOutputFormat::writeRowBetweenDelimiter()
 }
 
 
-void registerOutputFormatValues(FormatFactory & factory)
+void registerOutputFormatProcessorValues(FormatFactory & factory)
 {
-    factory.registerOutputFormat("Values", [](
+    factory.registerOutputFormatProcessor("Values", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,

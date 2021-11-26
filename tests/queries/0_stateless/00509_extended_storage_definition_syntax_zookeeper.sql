@@ -1,6 +1,3 @@
--- Tags: zookeeper, no-parallel
--- Tag no-parallel: leftovers
-
 SET optimize_on_insert = 0;
 
 SELECT '*** Replicated with sampling ***';
@@ -8,7 +5,7 @@ SELECT '*** Replicated with sampling ***';
 DROP TABLE IF EXISTS replicated_with_sampling;
 
 CREATE TABLE replicated_with_sampling(x UInt8)
-    ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_00509/replicated_with_sampling', 'r1')
+    ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00509/replicated_with_sampling', 'r1')
     ORDER BY x
     SAMPLE BY x;
 
@@ -75,7 +72,7 @@ SELECT '*** Table definition with SETTINGS ***';
 DROP TABLE IF EXISTS with_settings;
 
 CREATE TABLE with_settings(x UInt32)
-    ENGINE ReplicatedMergeTree('/clickhouse/tables/{database}/test_00509/with_settings', 'r1')
+    ENGINE ReplicatedMergeTree('/clickhouse/tables/test_00509/with_settings', 'r1')
     ORDER BY x
     SETTINGS replicated_can_become_leader = 0;
 

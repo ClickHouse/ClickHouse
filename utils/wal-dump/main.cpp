@@ -5,7 +5,7 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Formats/NativeReader.h>
+#include <DataStreams/NativeBlockInputStream.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
@@ -21,7 +21,7 @@
 static void dump(const std::string & bin_path)
 {
     DB::ReadBufferFromFile in(bin_path);
-    DB::NativeReader block_in(in, 0);
+    DB::NativeBlockInputStream block_in(in, 0);
     DB::Block block;
 
     DB::WriteBufferFromFileDescriptor out(STDOUT_FILENO);

@@ -1,5 +1,5 @@
-<clickhouse>
-  <include_from>/etc/clickhouse-server/config.d/include_from_source.xml</include_from>
+<yandex>
+  <include_from>/etc/clickhouse-server/config.d/max_query_size.xml</include_from>
   <profiles>
     <default>
         <max_query_size incl="mqs" />
@@ -11,8 +11,5 @@
           <profile>default</profile>
           <quota>default</quota>
       </default>
-
-      <include incl="users_1" />
-      <include incl="users_2" />
   </users>
-</clickhouse>
+</yandex>
