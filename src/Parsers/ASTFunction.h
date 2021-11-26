@@ -2,13 +2,13 @@
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier_fwd.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTWithAlias.h>
 
 
 namespace DB
 {
 
+class ASTSelectWithUnionQuery;
 
 /** AST for function application or operator.
   */
