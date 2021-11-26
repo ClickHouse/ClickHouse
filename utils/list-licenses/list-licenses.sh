@@ -4,7 +4,7 @@ ROOT_PATH="$(git rev-parse --show-toplevel)"
 LIBS_PATH="${ROOT_PATH}/contrib"
 LC_ALL=C
 
-ls -1 -d ${LIBS_PATH}/*/ | grep -F -v -- '-cmake' | sort | while read LIB; do
+ls -1 -d ${LIBS_PATH}/*/ | grep -F -v -- '-cmake' | LC_ALL=C sort | while read LIB; do
     LIB_NAME=$(basename $LIB)
 
     LIB_LICENSE=$(
