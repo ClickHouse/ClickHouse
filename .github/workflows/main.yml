@@ -518,6 +518,7 @@ jobs:
       - BuilderDebDebug
       - BuilderDebSplitted
     runs-on: [self-hosted, style-checker]
+    if: always()
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
