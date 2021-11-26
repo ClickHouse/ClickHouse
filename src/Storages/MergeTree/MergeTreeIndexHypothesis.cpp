@@ -5,10 +5,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-
-
 namespace DB
 {
 namespace ErrorCodes
