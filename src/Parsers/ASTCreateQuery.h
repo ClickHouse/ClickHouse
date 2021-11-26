@@ -4,7 +4,6 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/StorageID.h>
 
 namespace DB
@@ -12,6 +11,7 @@ namespace DB
 
 class ASTFunction;
 class ASTSetQuery;
+class ASTSelectWithUnionQuery;
 
 class ASTStorage : public IAST
 {

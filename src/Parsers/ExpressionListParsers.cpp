@@ -9,6 +9,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -144,28 +145,28 @@ bool ParserUnionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             // SELECT ... UNION ALL SELECT ...
             if (s_all_parser.check(pos, expected))
             {
-                union_modes.push_back(ASTSelectWithUnionQuery::Mode::ALL);
+                union_modes.push_back(SelectUnionMode::ALL);
             }
             // SELECT ... UNION DISTINCT SELECT ...
             else if (s_distinct_parser.check(pos, expected))
             {
-                union_modes.push_back(ASTSelectWithUnionQuery::Mode::DISTINCT);
+                union_modes.push_back(SelectUnionMode::DISTINCT);
             }
             // SELECT ... UNION SELECT ...
             else
             {
-                union_modes.push_back(ASTSelectWithUnionQuery::Mode::Unspecified);
+                union_modes.push_back(SelectUnionMode::Unspecified);
             }
             return true;
         }
         else if (s_except_parser.check(pos, expected))
         {
-            union_modes.push_back(ASTSelectWithUnionQuery::Mode::EXCEPT);
+            union_modes.push_back(SelectUnionMode::EXCEPT);
             return true;
         }
         else if (s_intersect_parser.check(pos, expected))
         {
-            union_modes.push_back(ASTSelectWithUnionQuery::Mode::INTERSECT);
+            union_modes.push_back(SelectUnionMode::INTERSECT);
             return true;
         }
         return false;
