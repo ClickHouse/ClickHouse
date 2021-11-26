@@ -48,7 +48,7 @@ clickhouse_embed_binaries(
         RESOURCES schemata.sql tables.sql views.sql columns.sql
 )
 
-add_library(clickhouse_storages_system ${storages_system_headers} ${storages_system_sources})
+add_library(clickhouse_storages_system ${storages_system_sources})
 
 add_dependencies(clickhouse_storages_system information_schema_metadata)
 
