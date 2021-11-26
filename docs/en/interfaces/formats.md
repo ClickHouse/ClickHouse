@@ -1559,7 +1559,7 @@ When working with the `Regexp` format, you can use the following settings:
     -   XML (similarly to [XML](#xml))
     -   None (no escaping rules)
 	
-- `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exeption in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
+-   `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exeption in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
 
 **Usage**
 
