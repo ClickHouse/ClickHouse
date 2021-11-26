@@ -77,7 +77,7 @@ if (SANITIZE)
         endif()
 
     elseif (SANITIZE STREQUAL "undefined")
-        set (UBSAN_FLAGS "-fsanitize=undefined -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero")
+        set (UBSAN_FLAGS "-fsanitize=undefined -fno-sanitize-recover=all -fno-sanitize=float-divide-by-zero -fno-sanitize=unsigned-integer-overflow")
         if (COMPILER_CLANG)
             set (UBSAN_FLAGS "${UBSAN_FLAGS} -fsanitize-blacklist=${CMAKE_SOURCE_DIR}/tests/ubsan_suppressions.txt")
         else()
