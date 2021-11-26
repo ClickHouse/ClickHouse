@@ -27,7 +27,7 @@ using ASTPtr = std::shared_ptr<IAST>;
  * - only stores data that has not been triggered yet;
  * - fire_task checks if there is a window ready to be fired
  *   (each window result is fired in one output at the end of TUMBLE/HOP window interval);
- * - intermidiate data is stored in inner table with
+ * - intermediate data is stored in inner table with
  *   AggregatingMergeTree engine by default, but any other -MergeTree
  *   engine might be used as inner table engine;
  * - WATCH query is supported (WATCH [db.]name [LIMIT n]);
