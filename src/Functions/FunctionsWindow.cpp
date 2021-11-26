@@ -231,7 +231,8 @@ struct WindowImpl<TUMBLE_START>
         }
         else
         {
-           return std::static_pointer_cast<const DataTypeTuple>(WindowImpl<TUMBLE>::getReturnType(arguments, function_name))->getElement(0);
+            return std::static_pointer_cast<const DataTypeTuple>(WindowImpl<TUMBLE>::getReturnType(arguments, function_name))
+                ->getElement(0);
         }
     }
 
@@ -578,7 +579,7 @@ struct WindowImpl<HOP_START>
         }
         else
         {
-           return std::static_pointer_cast<const DataTypeTuple>(WindowImpl<HOP>::getReturnType(arguments, function_name))->getElement(0);
+            return std::static_pointer_cast<const DataTypeTuple>(WindowImpl<HOP>::getReturnType(arguments, function_name))->getElement(0);
         }
     }
 
