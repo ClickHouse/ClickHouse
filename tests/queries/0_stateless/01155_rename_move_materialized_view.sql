@@ -48,8 +48,8 @@ DROP DATABASE test_01155_ordinary;
 USE default;
 
 INSERT INTO test_01155_atomic.src(s) VALUES ('after moving tables');
---SELECT materialize(2), substr(_table, 1, 10), s FROM merge('test_01155_atomic', '') ORDER BY _table, s; -- { serverError 81 }
---SELECT dictGet('test_01155_ordinary.dict', 'x', 'after moving tables'); -- { serverError 36 }
+SELECT materialize(2), substr(_table, 1, 10), s FROM merge('test_01155_atomic', '') ORDER BY _table, s; -- { serverError 81 }
+SELECT dictGet('test_01155_ordinary.dict', 'x', 'after moving tables'); -- { serverError 36 }
 
 RENAME DATABASE test_01155_atomic TO test_01155_ordinary;
 USE test_01155_ordinary;
