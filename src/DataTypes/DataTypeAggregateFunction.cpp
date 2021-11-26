@@ -1,13 +1,10 @@
-#include <Common/FieldVisitors.h>
-
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
 #include <Columns/ColumnAggregateFunction.h>
 
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <Common/AlignedBuffer.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <Formats/FormatSettings.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -18,8 +15,8 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB
@@ -47,7 +44,7 @@ std::string DataTypeAggregateFunction::doGetName() const
         {
             if (i)
                 stream << ", ";
-            stream << applyVisitor(DB::FieldVisitorToString(), parameters[i]);
+            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
         }
         stream << ')';
     }
@@ -100,7 +97,7 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeAggregateFunction::doGetDefaultSerialization() const
 {
-    return std::make_shared<SerializationAggregateFunction>(function);
+    return std::make_shared<SerializationAggregateFunction>(function, getName());
 }
 
 

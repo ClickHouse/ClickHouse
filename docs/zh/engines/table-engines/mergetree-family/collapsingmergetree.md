@@ -1,4 +1,4 @@
-# 折叠树 {#table_engine-collapsingmergetree}
+# CollapsingMergeTree {#table_engine-collapsingmergetree}
 
 该引擎继承于 [MergeTree](mergetree.md)，并在数据块合并算法中添加了折叠行的逻辑。
 
@@ -203,4 +203,4 @@ SELECT * FROM UAct FINAL
 
 这种查询数据的方法是非常低效的。不要在大表中使用它。
 
-[来源文章](https://clickhouse.tech/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->
+[原文](https://clickhouse.com/docs/en/operations/table_engines/collapsingmergetree/) <!--hide-->

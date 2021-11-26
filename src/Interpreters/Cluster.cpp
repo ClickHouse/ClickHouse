@@ -1,5 +1,4 @@
 #include <Interpreters/Cluster.h>
-#include <common/SimpleCache.h>
 #include <Common/DNSResolver.h>
 #include <Common/escapeForFileName.h>
 #include <Common/isLocalAddress.h>
@@ -11,7 +10,7 @@
 #include <IO/ReadHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
-#include <ext/range.h>
+#include <base/range.h>
 #include <boost/range/algorithm_ext/erase.hpp>
 
 namespace DB
@@ -115,23 +114,44 @@ Cluster::Address::Address(
 
 
 Cluster::Address::Address(
-        const String & host_port_,
-        const String & user_,
-        const String & password_,
-        UInt16 clickhouse_port,
-        bool secure_,
-        Int64 priority_,
-        UInt32 shard_index_,
-        UInt32 replica_index_)
-    : user(user_)
-    , password(password_)
+    const String & host_port_,
+    const String & user_,
+    const String & password_,
+    UInt16 clickhouse_port,
+    bool treat_local_port_as_remote,
+    bool secure_,
+    Int64 priority_,
+    UInt32 shard_index_,
+    UInt32 replica_index_)
+    : user(user_), password(password_)
 {
-    auto parsed_host_port = parseAddress(host_port_, clickhouse_port);
+    bool can_be_local = true;
+    std::pair<std::string, UInt16> parsed_host_port;
+    if (!treat_local_port_as_remote)
+    {
+        parsed_host_port = parseAddress(host_port_, clickhouse_port);
+    }
+    else
+    {
+        /// For clickhouse-local (treat_local_port_as_remote) try to read the address without passing a default port
+        /// If it works we have a full address that includes a port, which means it won't be local
+        /// since clickhouse-local doesn't listen in any port
+        /// If it doesn't include a port then use the default one and it could be local (if the address is)
+        try
+        {
+            parsed_host_port = parseAddress(host_port_, 0);
+            can_be_local = false;
+        }
+        catch (...)
+        {
+            parsed_host_port = parseAddress(host_port_, clickhouse_port);
+        }
+    }
     host_name = parsed_host_port.first;
     port = parsed_host_port.second;
     secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     priority = priority_;
-    is_local = isLocal(clickhouse_port);
+    is_local = can_be_local && isLocal(clickhouse_port);
     shard_index = shard_index_;
     replica_index = replica_index_;
 }
@@ -179,7 +199,7 @@ String Cluster::Address::toFullString(bool use_compact_format) const
             // shard_num/replica_num like in system.clusters table
             throw Exception("shard_num/replica_num cannot be zero", ErrorCodes::LOGICAL_ERROR);
 
-        return "shard" + std::to_string(shard_index) + "_replica" + std::to_string(replica_index);
+        return fmt::format("shard{}_replica{}", shard_index, replica_index);
     }
     else
     {
@@ -199,7 +219,7 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
 
     const char * user_pw_end = strchr(full_string.data(), '@');
 
-    /// parsing with the new [shard{shard_index}[_replica{replica_index}]] format
+    /// parsing with the new shard{shard_index}[_replica{replica_index}] format
     if (!user_pw_end && startsWith(full_string, "shard"))
     {
         const char * underscore = strchr(full_string.data(), '_');
@@ -329,7 +349,7 @@ Clusters::Impl Clusters::getContainer() const
 Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                  const Settings & settings,
                  const String & config_prefix_,
-                 const String & cluster_name)
+                 const String & cluster_name) : name(cluster_name)
 {
     auto config_prefix = config_prefix_ + "." + cluster_name;
 
@@ -366,7 +386,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             if (address.is_local)
                 info.local_addresses.push_back(address);
 
-            ConnectionPoolPtr pool = std::make_shared<ConnectionPool>(
+            auto pool = ConnectionPoolFactory::instance().get(
                 settings.distributed_connections_pool_size,
                 address.host_name, address.port,
                 address.default_database, address.user, address.password,
@@ -401,6 +421,9 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
             bool internal_replication = config.getBool(partial_prefix + ".internal_replication", false);
 
             ShardInfoInsertPathForInternalReplication insert_paths;
+            /// "_all_replicas" is a marker that will be replaced with all replicas
+            /// (for creating connections in the Distributed engine)
+            insert_paths.compact = fmt::format("shard{}_all_replicas", current_shard_num);
 
             for (const auto & replica_key : replica_keys)
             {
@@ -419,20 +442,10 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
                     if (internal_replication)
                     {
-                        /// use_compact_format=0
-                        {
-                            auto dir_name = replica_addresses.back().toFullString(false /* use_compact_format */);
-                            if (!replica_addresses.back().is_local)
-                                concatInsertPath(insert_paths.prefer_localhost_replica, dir_name);
-                            concatInsertPath(insert_paths.no_prefer_localhost_replica, dir_name);
-                        }
-                        /// use_compact_format=1
-                        {
-                            auto dir_name = replica_addresses.back().toFullString(true /* use_compact_format */);
-                            if (!replica_addresses.back().is_local)
-                                concatInsertPath(insert_paths.prefer_localhost_replica_compact, dir_name);
-                            concatInsertPath(insert_paths.no_prefer_localhost_replica_compact, dir_name);
-                        }
+                        auto dir_name = replica_addresses.back().toFullString(/* use_compact_format= */ false);
+                        if (!replica_addresses.back().is_local)
+                            concatInsertPath(insert_paths.prefer_localhost_replica, dir_name);
+                        concatInsertPath(insert_paths.no_prefer_localhost_replica, dir_name);
                     }
                 }
                 else
@@ -446,7 +459,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 
             for (const auto & replica : replica_addresses)
             {
-                auto replica_pool = std::make_shared<ConnectionPool>(
+                auto replica_pool = ConnectionPoolFactory::instance().get(
                     settings.distributed_connections_pool_size,
                     replica.host_name, replica.port,
                     replica.default_database, replica.user, replica.password,
@@ -489,9 +502,16 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
 }
 
 
-Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String>> & names,
-                 const String & username, const String & password, UInt16 clickhouse_port, bool treat_local_as_remote,
-                 bool secure, Int64 priority)
+Cluster::Cluster(
+    const Settings & settings,
+    const std::vector<std::vector<String>> & names,
+    const String & username,
+    const String & password,
+    UInt16 clickhouse_port,
+    bool treat_local_as_remote,
+    bool treat_local_port_as_remote,
+    bool secure,
+    Int64 priority)
 {
     UInt32 current_shard_num = 1;
 
@@ -499,7 +519,16 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
     {
         Addresses current;
         for (const auto & replica : shard)
-            current.emplace_back(replica, username, password, clickhouse_port, secure, priority, current_shard_num, current.size() + 1);
+            current.emplace_back(
+                replica,
+                username,
+                password,
+                clickhouse_port,
+                treat_local_port_as_remote,
+                secure,
+                priority,
+                current_shard_num,
+                current.size() + 1);
 
         addresses_with_failover.emplace_back(current);
 
@@ -509,7 +538,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
 
         for (const auto & replica : current)
         {
-            auto replica_pool = std::make_shared<ConnectionPool>(
+            auto replica_pool = ConnectionPoolFactory::instance().get(
                         settings.distributed_connections_pool_size,
                         replica.host_name, replica.port,
                         replica.default_database, replica.user, replica.password,
@@ -599,7 +628,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
     UInt32 shard_num = 0;
     std::set<std::pair<String, int>> unique_hosts;
-    for (size_t shard_index : ext::range(0, from.shards_info.size()))
+    for (size_t shard_index : collections::range(0, from.shards_info.size()))
     {
         const auto & replicas = from.addresses_with_failover[shard_index];
         for (const auto & address : replicas)
@@ -613,7 +642,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
             if (address.is_local)
                 info.local_addresses.push_back(address);
 
-            ConnectionPoolPtr pool = std::make_shared<ConnectionPool>(
+            auto pool = ConnectionPoolFactory::instance().get(
                 settings.distributed_connections_pool_size,
                 address.host_name,
                 address.port,
@@ -660,17 +689,17 @@ const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool pr
     const auto & paths = insert_path_for_internal_replication;
     if (!use_compact_format)
     {
-        if (prefer_localhost_replica)
-            return paths.prefer_localhost_replica;
-        else
-            return paths.no_prefer_localhost_replica;
+        const auto & path = prefer_localhost_replica ? paths.prefer_localhost_replica : paths.no_prefer_localhost_replica;
+        if (path.size() > NAME_MAX)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Path '{}' for async distributed INSERT is too long (exceed {} limit)", path, NAME_MAX);
+        }
+        return path;
     }
     else
     {
-        if (prefer_localhost_replica)
-            return paths.prefer_localhost_replica_compact;
-        else
-            return paths.no_prefer_localhost_replica_compact;
+        return paths.compact;
     }
 }
 

@@ -37,8 +37,8 @@ funcs = [
     ('hypot(1,', 1, 43),
 ]
 
-Examples_list =  [tuple(list(func)+list(data_type)+[Name(f'{func[0]} - {data_type[0]}')]) for func in funcs for data_type in data_types]
-Examples_dec_list = [tuple(list(func)+[Name(f'{func[0]} - Decimal256')]) for func in funcs]
+Examples_list =  [tuple(list(func)+list(data_type)+[Name(f'{func[0]}) - {data_type[0]}')]) for func in funcs for data_type in data_types]
+Examples_dec_list = [tuple(list(func)+[Name(f'{func[0]}) - Decimal256')]) for func in funcs]
 
 @TestOutline(Scenario)
 @Examples('func expected_result exitcode int_type min max', Examples_list)
@@ -65,7 +65,7 @@ def math_int_inline(self, func, expected_result, exitcode, int_type, min, max, n
 
         with And(f"I check {func} with {int_type} using max and min"):
             execute_query(f"""
-                SELECT {func} to{int_type}(\'{max}\')), {func} to{int_type}(\'{min}\'))
+                SELECT round({func} to{int_type}(\'{max}\')), {rounding_precision}), round({func} to{int_type}(\'{min}\')), {rounding_precision})
                 """)
 
 @TestOutline(Scenario)
@@ -94,7 +94,7 @@ def math_int_table(self, func, expected_result, exitcode, int_type, min, max, no
         for value in [1, max, min]:
 
             with And(f"I insert the output of {func} with {int_type} using {value} into a table"):
-                node.query(f"INSERT INTO {table_name} SELECT to{int_type}OrZero( toString({func} to{int_type}(\'{value}\'))))")
+                node.query(f"INSERT INTO {table_name} SELECT round(to{int_type}OrZero( toString({func} to{int_type}(\'{value}\')))), {rounding_precision})")
 
         with Then(f"I check the outputs of {func} with {int_type}"):
             execute_query(f"""
@@ -129,7 +129,7 @@ def math_dec_inline(self, func, expected_result, exitcode, node=None):
 
         with And(f"I check {func} with Decimal256 using max and min"):
             execute_query(f"""
-                SELECT {func} toDecimal256(\'{max}\',0)), {func} toDecimal256(\'{min}\',0))
+                SELECT round({func} toDecimal256(\'{max}\',0)),{rounding_precision}), round({func} toDecimal256(\'{min}\',0)),{rounding_precision})
                 """)
 
 @TestOutline(Scenario)
@@ -161,7 +161,7 @@ def math_dec_table(self, func, expected_result, exitcode, node=None):
         for value in [1, max, min]:
 
             with When(f"I insert the output of {func} with Decimal256 using {value} into a table"):
-                node.query(f"INSERT INTO {table_name} SELECT toDecimal256OrZero( toString({func} toDecimal256(\'{value}\',0))),0)")
+                node.query(f"INSERT INTO {table_name} SELECT round(toDecimal256OrZero( toString({func} toDecimal256(\'{value}\',0))),0), 7)")
 
         with Then(f"I check the outputs of {func} with Decimal256"):
             execute_query(f"""

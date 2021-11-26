@@ -25,16 +25,16 @@ namespace
 /** Usage:
  *  hasColumnInTable(['hostname'[, 'username'[, 'password']],] 'database', 'table', 'column')
  */
-class FunctionHasColumnInTable : public IFunction, WithConstContext
+class FunctionHasColumnInTable : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "hasColumnInTable";
-    static FunctionPtr create(ContextConstPtr context_)
+    static FunctionPtr create(ContextPtr context_)
     {
         return std::make_shared<FunctionHasColumnInTable>(context_->getGlobalContext());
     }
 
-    explicit FunctionHasColumnInTable(ContextConstPtr global_context_) : WithConstContext(global_context_)
+    explicit FunctionHasColumnInTable(ContextPtr global_context_) : WithContext(global_context_)
     {
     }
 
@@ -55,6 +55,8 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
     bool isDeterministic() const override { return false; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override;
 };
@@ -127,13 +129,16 @@ ColumnPtr FunctionHasColumnInTable::executeImpl(const ColumnsWithTypeAndName & a
     {
         std::vector<std::vector<String>> host_names = {{ host_name }};
 
+        bool treat_local_as_remote = false;
+        bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
         auto cluster = std::make_shared<Cluster>(
             getContext()->getSettings(),
             host_names,
             !user_name.empty() ? user_name : "default",
             password,
             getContext()->getTCPPort(),
-            false);
+            treat_local_as_remote,
+            treat_local_port_as_remote);
 
         // FIXME this (probably) needs a non-constant access to query context,
         // because it might initialized a storage. Ideally, the tables required

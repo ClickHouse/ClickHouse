@@ -16,11 +16,10 @@ def fill_node(node):
     '''.format(replica=node.name))
 
 cluster = ClickHouseCluster(__file__)
-configs =["configs/remote_servers.xml"]
 
-node_1 = cluster.add_instance('replica1', with_zookeeper=True, main_configs=configs)
-node_2 = cluster.add_instance('replica2', with_zookeeper=True, main_configs=configs)
-node_3 = cluster.add_instance('replica3', with_zookeeper=True, main_configs=configs)
+node_1 = cluster.add_instance('replica1', with_zookeeper=True)
+node_2 = cluster.add_instance('replica2', with_zookeeper=True)
+node_3 = cluster.add_instance('replica3', with_zookeeper=True)
 
 @pytest.fixture(scope="module")
 def start_cluster():

@@ -149,4 +149,4 @@ Max_parallel_replicasオプションを有効にすると、単一のシャー�
 
 -   [仮想列](index.md#table_engines-virtual_columns)
 
-[元の記事](https://clickhouse.tech/docs/en/operations/table_engines/distributed/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/table_engines/distributed/) <!--hide-->

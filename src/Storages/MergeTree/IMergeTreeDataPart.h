@@ -1,15 +1,12 @@
 #pragma once
 
-#include <DataStreams/IBlockInputStream.h>
-
 #include <Core/Block.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Storages/MergeTree/MergeTreeProjections.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
@@ -58,6 +55,8 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using NameToNumber = std::unordered_map<std::string, size_t>;
 
+    using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
+
     using Type = MergeTreeDataPartType;
 
 
@@ -98,14 +97,23 @@ public:
 
     virtual bool isStoredOnDisk() const = 0;
 
+    virtual bool isStoredOnRemoteDisk() const = 0;
+
     virtual bool supportsVerticalMerge() const { return false; }
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name, const IDataType & /* type */) const;
 
+    /// NOTE: Returns zeros if secondary indexes are not found in checksums.
+    /// Otherwise return information about secondary index size on disk.
+    IndexSize getSecondaryIndexSize(const String & secondary_index_name) const;
+
     /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const { return total_columns_size; }
+
+    /// Return information about secondary indexes size on disk for all indexes in part
+    IndexSize getTotalSeconaryIndicesSize() const { return total_secondary_indices_size; }
 
     virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
 
@@ -126,9 +134,9 @@ public:
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
 
-    void remove(bool keep_s3 = false) const;
+    void remove() const;
 
-    void projectionRemove(const String & parent_to, bool keep_s3 = false) const;
+    void projectionRemove(const String & parent_to, bool keep_shared_data = false) const;
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
@@ -178,6 +186,7 @@ public:
 
     /// A directory path (relative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
+    /// NOTE: Cannot have trailing slash.
     mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;
 
@@ -198,7 +207,7 @@ public:
     mutable std::atomic<bool> is_frozen {false};
 
     /// Flag for keep S3 data when zero-copy replication over S3 turned on.
-    mutable bool keep_s3_on_delete = false;
+    mutable bool force_keep_shared_data = false;
 
     /**
      * Part state is a stage of its lifetime. States are ordered and state of a part could be increased only.
@@ -232,14 +241,10 @@ public:
     void setState(State new_state) const;
     State getState() const;
 
-    /// Returns name of state
-    static String stateToString(State state);
-    String stateString() const;
+    static constexpr std::string_view stateString(State state) { return magic_enum::enum_name(state); }
+    constexpr std::string_view stateString() const { return stateString(state); }
 
-    String getNameWithState() const
-    {
-        return name + " (state " + stateString() + ")";
-    }
+    String getNameWithState() const { return fmt::format("{} (state {})", name, stateString()); }
 
     /// Returns true if state of part is one of affordable_states
     bool checkState(const std::initializer_list<State> & affordable_states) const
@@ -295,7 +300,9 @@ public:
         void merge(const MinMaxIndex & other);
     };
 
-    MinMaxIndex minmax_idx;
+    using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
+
+    MinMaxIndexPtr minmax_idx;
 
     Checksums checksums;
 
@@ -346,7 +353,9 @@ public:
 
     /// Calculate the total size of the entire directory with all the files
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
-    void calculateColumnsSizesOnDisk();
+
+    /// Calculate column and secondary indices sizes on disk.
+    void calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     String getRelativePathForPrefix(const String & prefix) const;
 
@@ -368,7 +377,7 @@ public:
 
     void loadProjections(bool require_columns_checksums, bool check_consistency);
 
-    /// Return set of metadat file names without checksums. For example,
+    /// Return set of metadata file names without checksums. For example,
     /// columns.txt or checksums.txt itself.
     NameSet getFileNamesWithoutChecksums() const;
 
@@ -401,6 +410,10 @@ protected:
     /// Size for each column, calculated once in calcuateColumnSizesOnDisk
     ColumnSizeByName columns_sizes;
 
+    ColumnSize total_secondary_indices_size;
+
+    IndexSizeByName secondary_index_sizes;
+
     /// Total size on disk, not only columns. May not contain size of
     /// checksums.txt and columns.txt. 0 - if not counted;
     UInt64 bytes_on_disk{0};
@@ -424,6 +437,8 @@ protected:
     virtual void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
     String getRelativePathForDetachedPart(const String & prefix) const;
+
+    std::optional<bool> keepSharedDataInDecoupledStorage() const;
 
 private:
     /// In compact parts order of columns is necessary
@@ -452,6 +467,10 @@ private:
     void loadTTLInfos();
 
     void loadPartitionAndMinMaxIndex();
+
+    void calculateColumnsSizesOnDisk();
+
+    void calculateSecondaryIndicesSizesOnDisk();
 
     /// Load default compression codec from file default_compression_codec.txt
     /// if it not exists tries to deduce codec from compressed column without

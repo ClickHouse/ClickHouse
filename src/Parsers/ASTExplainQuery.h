@@ -17,6 +17,7 @@ public:
         AnalyzedSyntax, /// 'EXPLAIN SYNTAX SELECT ...'
         QueryPlan, /// 'EXPLAIN SELECT ...'
         QueryPipeline, /// 'EXPLAIN PIPELINE ...'
+        QueryEstimates, /// 'EXPLAIN ESTIMATE ...'
     };
 
     explicit ASTExplainQuery(ExplainKind kind_) : kind(kind_) {}
@@ -76,6 +77,7 @@ private:
             case AnalyzedSyntax: return "EXPLAIN SYNTAX";
             case QueryPlan: return "EXPLAIN";
             case QueryPipeline: return "EXPLAIN PIPELINE";
+            case QueryEstimates: return "EXPLAIN ESTIMATE";
         }
 
         __builtin_unreachable();

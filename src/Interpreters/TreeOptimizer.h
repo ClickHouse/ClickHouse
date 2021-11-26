@@ -3,6 +3,7 @@
 #include <Interpreters/Aliases.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -15,11 +16,12 @@ struct TreeRewriterResult;
 class TreeOptimizer
 {
 public:
+
     static void apply(
         ASTPtr & query,
         TreeRewriterResult & result,
         const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
-        ContextConstPtr context);
+        ContextPtr context);
 
     static void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_multiif);
 };

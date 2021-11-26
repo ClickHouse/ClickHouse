@@ -1,3 +1,5 @@
+-- Tags: shard
+
 drop table if exists dist_01528;
 create table dist_01528 as system.one engine=Distributed('test_cluster_two_shards', system, one, rand()+dummy);
 

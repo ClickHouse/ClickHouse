@@ -41,6 +41,8 @@ xfails = {
         [(Fail, "not supported, https://github.com/ClickHouse/ClickHouse/issues/19857")],
     "tests/:/misc/window functions in subquery":
         [(Fail, "not supported, https://github.com/ClickHouse/ClickHouse/issues/19857")],
+    "tests/:/misc/in view":
+        [(Fail, "bug, https://github.com/ClickHouse/ClickHouse/issues/26001")],
     "tests/:/frame clause/range frame/order by decimal":
         [(Fail, "Exception: The RANGE OFFSET frame for 'DB::ColumnDecimal<DB::Decimal<long> >' ORDER BY column is not implemented")],
     "tests/:/frame clause/range frame/with nulls":
@@ -60,6 +62,18 @@ xfails = {
     "tests/distributed/frame clause/range datetime/:":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
     "tests/distributed/frame clause/range frame/between expr preceding and expr following with partition by same column twice":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
+    "tests/:/funcs/leadInFrame/explicit default value":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/25057")],
+    "tests/:/funcs/leadInFrame/with nulls":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/25057")],
+    "tests/:/funcs/leadInFrame/default offset":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")],
+    "tests/:/funcs/lagInFrame/explicit default value":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/25057")],
+    "tests/:/funcs/lagInFrame/with nulls":
+        [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/25057")],
+    "tests/:/funcs/lagInFrame/default offset":
         [(Fail, "https://github.com/ClickHouse/ClickHouse/issues/23902")]
 }
 
@@ -77,10 +91,9 @@ xflags = {
 @Requirements(
     RQ_SRS_019_ClickHouse_WindowFunctions("1.0")
 )
-def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
+def regression(self, local, clickhouse_binary_path, stress=None):
     """Window functions regression.
     """
-    top().terminating = False
     nodes = {
         "clickhouse":
             ("clickhouse1", "clickhouse2", "clickhouse3")
@@ -88,8 +101,6 @@ def regression(self, local, clickhouse_binary_path, stress=None, parallel=None):
 
     if stress is not None:
         self.context.stress = stress
-    if parallel is not None:
-        self.context.parallel = parallel
 
     with Cluster(local, clickhouse_binary_path, nodes=nodes,
             docker_compose_project_dir=os.path.join(current_dir(), "window_functions_env")) as cluster:

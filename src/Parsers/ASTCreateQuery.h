@@ -4,8 +4,6 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/StorageID.h>
 
 namespace DB
@@ -13,6 +11,7 @@ namespace DB
 
 class ASTFunction;
 class ASTSetQuery;
+class ASTSelectWithUnionQuery;
 
 class ASTStorage : public IAST
 {
@@ -23,7 +22,6 @@ public:
     IAST * order_by = nullptr;
     IAST * sample_by = nullptr;
     IAST * ttl_table = nullptr;
-    IAST * comment = nullptr;
     ASTSetQuery * settings = nullptr;
 
 
@@ -75,6 +73,7 @@ public:
     String as_table;
     ASTPtr as_table_function;
     ASTSelectWithUnionQuery * select = nullptr;
+    IAST * comment = nullptr;
 
     bool is_dictionary{false}; /// CREATE DICTIONARY
     ASTExpressionList * dictionary_attributes_list = nullptr; /// attributes of
@@ -91,7 +90,7 @@ public:
     bool create_or_replace{false};
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + database) + delim + table; }
+    String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + getDatabase()) + delim + getTable(); }
 
     ASTPtr clone() const override;
 
@@ -101,6 +100,8 @@ public:
     }
 
     bool isView() const { return is_ordinary_view || is_materialized_view || is_live_view; }
+
+    const char * getQueryKindString() const override { return "Create"; }
 
 protected:
     void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;

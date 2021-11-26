@@ -11,6 +11,7 @@
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeAltersSequence.h>
+#include <Storages/MergeTree/DropPartsRanges.h>
 
 #include <Common/ZooKeeper/ZooKeeper.h>
 
@@ -30,6 +31,8 @@ class ReplicatedMergeTreeQueue
 private:
     friend class CurrentlyExecuting;
     friend class ReplicatedMergeTreeMergePredicate;
+    friend class MergeFromLogEntryTask;
+    friend class ReplicatedMergeMutateTaskBase;
 
     using LogEntry = ReplicatedMergeTreeLogEntry;
     using LogEntryPtr = LogEntry::Ptr;
@@ -100,6 +103,10 @@ private:
       */
     ActiveDataPartSet virtual_parts;
 
+
+    /// Dropped ranges inserted into queue
+    DropPartsRanges drop_ranges;
+
     /// A set of mutations loaded from ZooKeeper.
     /// mutations_by_partition is an index partition ID -> block ID -> mutation into this set.
     /// Note that mutations are updated in such a way that they are always more recent than
@@ -148,6 +155,8 @@ private:
     /// This sequence control ALTERs execution in replication queue.
     /// We need it because alters have to be executed sequentially (one by one).
     ReplicatedMergeTreeAltersSequence alter_sequence;
+
+    Strings broken_parts_to_enqueue_fetches_on_loading;
 
     /// List of subscribers
     /// A subscriber callback is called when an entry queue is deleted
@@ -201,7 +210,7 @@ private:
       * Should be called under state_mutex.
       */
     bool isNotCoveredByFuturePartsImpl(
-        const String & log_entry_name,
+        const LogEntry & entry,
         const String & new_part_name, String & out_reason,
         std::lock_guard<std::mutex> & state_lock) const;
 
@@ -214,7 +223,7 @@ private:
         std::unique_lock<std::mutex> & state_lock);
 
     /// Add part for mutations with block_number > part.getDataVersion()
-    void addPartToMutations(const String & part_name);
+    void addPartToMutations(const String & part_name, const MergeTreePartInfo & part_info);
 
     /// Remove covered parts from mutations (parts_to_do) which were assigned
     /// for mutation. If remove_covered_parts = true, than remove parts covered
@@ -272,19 +281,14 @@ public:
     /// Clears queue state
     void clear();
 
-    /// Put a set of (already existing) parts in virtual_parts.
-    void initialize(const MergeTreeData::DataParts & parts);
+    /// Get set of parts from zookeeper
+    void initialize(zkutil::ZooKeeperPtr zookeeper);
 
     /** Inserts an action to the end of the queue.
       * To restore broken parts during operation.
       * Do not insert the action itself into ZK (do it yourself).
       */
     void insert(zkutil::ZooKeeperPtr zookeeper, LogEntryPtr & entry);
-
-    /** Delete the action with the specified part (as new_part_name) from the queue.
-      * Called for unreachable actions in the queue - old lost parts.
-      */
-    bool remove(zkutil::ZooKeeperPtr zookeeper, const String & part_name);
 
     /** Load (initialize) a queue from ZooKeeper (/replicas/me/queue/).
       * If queue was not empty load() would not load duplicate records.
@@ -294,13 +298,22 @@ public:
 
     bool removeFailedQuorumPart(const MergeTreePartInfo & part_info);
 
+    enum PullLogsReason
+    {
+        LOAD,
+        UPDATE,
+        MERGE_PREDICATE,
+        SYNC,
+        OTHER,
+    };
+
     /** Copy the new entries from the shared log to the queue of this replica. Set the log_pointer to the appropriate value.
       * If watch_callback is not empty, will call it when new entries appear in the log.
       * If there were new entries, notifies storage.queue_task_handle.
       * Additionally loads mutations (so that the set of mutations is always more recent than the queue).
       * Return the version of "logs" node (that is updated for every merge/mutation/... added to the log)
       */
-    int32_t pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {});
+    int32_t pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback = {}, PullLogsReason reason = OTHER);
 
     /// Load new mutation entries. If something new is loaded, schedule storage.merge_selecting_task.
     /// If watch_callback is not empty, will call it when new mutations appear in ZK.
@@ -312,8 +325,10 @@ public:
 
     /** Remove the action from the queue with the parts covered by part_name (from ZK and from the RAM).
       * And also wait for the completion of their execution, if they are now being executed.
+      * covering_entry is as an entry that caused removal of entries in range (usually, DROP_RANGE)
       */
-    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info, const ReplicatedMergeTreeLogEntryData & current);
+    void removePartProducingOpsInRange(zkutil::ZooKeeperPtr zookeeper, const MergeTreePartInfo & part_info,
+                                       const std::optional<ReplicatedMergeTreeLogEntryData> & covering_entry);
 
     /** In the case where there are not enough parts to perform the merge in part_name
       * - move actions with merged parts to the end of the queue
@@ -378,6 +393,11 @@ public:
     /// Checks that part is already in virtual parts
     bool isVirtualPart(const MergeTreeData::DataPartPtr & data_part) const;
 
+    /// Check that part produced by some entry in queue and get source parts for it.
+    /// If there are several entries return largest source_parts set. This rarely possible
+    /// for example after replica clone.
+    bool checkPartInQueueAndGetSourceParts(const String & part_name, Strings & source_parts) const;
+
     /// Check that part isn't in currently generating parts and isn't covered by them and add it to future_parts.
     /// Locks queue's mutex.
     bool addFuturePartIfNotCoveredByThem(const String & part_name, LogEntry & entry, String & reject_reason);
@@ -439,6 +459,13 @@ public:
     /// It's needed because queue itself can trigger it's task handler and in
     /// this case race condition is possible.
     QueueLocks lockQueue();
+
+    /// Can be called only on data parts loading.
+    /// We need loaded queue to create GET_PART entry for broken (or missing) part,
+    /// but queue is not loaded yet on data parts loading.
+    void setBrokenPartsToEnqueueFetchesOnLoading(Strings && parts_to_fetch);
+    /// Must be called right after queue loading.
+    void createLogEntriesToFetchBrokenParts();
 };
 
 class ReplicatedMergeTreeMergePredicate
@@ -474,6 +501,8 @@ public:
 
     /// The version of "log" node that is used to check that no new merges have appeared.
     int32_t getVersion() const { return merges_version; }
+
+    bool hasDropRange(const MergeTreePartInfo & new_drop_range_info) const;
 
 private:
     const ReplicatedMergeTreeQueue & queue;

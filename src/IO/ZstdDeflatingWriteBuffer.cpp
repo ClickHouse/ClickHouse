@@ -1,5 +1,4 @@
 #include <IO/ZstdDeflatingWriteBuffer.h>
-#include <Common/MemoryTracker.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -11,7 +10,7 @@ namespace ErrorCodes
 
 ZstdDeflatingWriteBuffer::ZstdDeflatingWriteBuffer(
     std::unique_ptr<WriteBuffer> out_, int compression_level, size_t buf_size, char * existing_memory, size_t alignment)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment), out(std::move(out_))
+    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
 {
     cctx = ZSTD_createCCtx();
     if (cctx == nullptr)
@@ -30,24 +29,7 @@ ZstdDeflatingWriteBuffer::ZstdDeflatingWriteBuffer(
 
 ZstdDeflatingWriteBuffer::~ZstdDeflatingWriteBuffer()
 {
-    /// FIXME move final flush into the caller
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-
-    finish();
-
-    try
-    {
-        int err = ZSTD_freeCCtx(cctx);
-        /// This is just in case, since it is impossible to get an error by using this wrapper.
-        if (unlikely(err))
-            throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "ZSTD_freeCCtx failed: error code: {}; zstd version: {}", err, ZSTD_VERSION_STRING);
-    }
-    catch (...)
-    {
-        /// It is OK not to terminate under an error from ZSTD_freeCCtx()
-        /// since all data already written to the stream.
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+    finalize();
 }
 
 void ZstdDeflatingWriteBuffer::nextImpl()
@@ -73,9 +55,17 @@ void ZstdDeflatingWriteBuffer::nextImpl()
             output.pos = out->offset();
 
 
-            ZSTD_compressStream2(cctx, &output, &input, mode);
+            size_t compression_result = ZSTD_compressStream2(cctx, &output, &input, mode);
+            if (ZSTD_isError(compression_result))
+                throw Exception(
+                    ErrorCodes::ZSTD_ENCODER_FAILED, "Zstd stream encoding failed: error: '{}'; zstd version: {}", ZSTD_getErrorName(compression_result), ZSTD_VERSION_STRING);
+
             out->position() = out->buffer().begin() + output.pos;
-            ended = (input.pos == input.size);
+
+            bool everything_was_compressed = (input.pos == input.size);
+            bool everything_was_flushed = compression_result == 0;
+
+            ended = everything_was_compressed && everything_was_flushed;
         } while (!ended);
     }
     catch (...)
@@ -86,27 +76,7 @@ void ZstdDeflatingWriteBuffer::nextImpl()
     }
 }
 
-void ZstdDeflatingWriteBuffer::finish()
-{
-    if (finished)
-        return;
-
-    try
-    {
-        finishImpl();
-        out->finalize();
-        finished = true;
-    }
-    catch (...)
-    {
-        /// Do not try to flush next time after exception.
-        out->position() = out->buffer().begin();
-        finished = true;
-        throw;
-    }
-}
-
-void ZstdDeflatingWriteBuffer::finishImpl()
+void ZstdDeflatingWriteBuffer::finalizeBefore()
 {
     next();
 
@@ -124,6 +94,23 @@ void ZstdDeflatingWriteBuffer::finishImpl()
     if (ZSTD_isError(remaining))
         throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "zstd stream encoder end failed: zstd version: {}", ZSTD_VERSION_STRING);
     out->position() = out->buffer().begin() + output.pos;
+}
+
+void ZstdDeflatingWriteBuffer::finalizeAfter()
+{
+    try
+    {
+        int err = ZSTD_freeCCtx(cctx);
+        /// This is just in case, since it is impossible to get an error by using this wrapper.
+        if (unlikely(err))
+            throw Exception(ErrorCodes::ZSTD_ENCODER_FAILED, "ZSTD_freeCCtx failed: error: '{}'; zstd version: {}", ZSTD_getErrorName(err), ZSTD_VERSION_STRING);
+    }
+    catch (...)
+    {
+        /// It is OK not to terminate under an error from ZSTD_freeCCtx()
+        /// since all data already written to the stream.
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 }

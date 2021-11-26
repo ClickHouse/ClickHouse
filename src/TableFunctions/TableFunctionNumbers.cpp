@@ -2,8 +2,8 @@
 #include <TableFunctions/TableFunctionNumbers.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <Common/typeid_cast.h>
+#include <Common/FieldVisitorToString.h>
 #include <Storages/System/StorageSystemNumbers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>

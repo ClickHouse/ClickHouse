@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS table1;
 
 CREATE TABLE table1 (lat Float64, lon Float64, resolution UInt8) ENGINE = Memory;

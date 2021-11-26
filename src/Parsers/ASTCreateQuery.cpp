@@ -32,9 +32,6 @@ ASTPtr ASTStorage::clone() const
     if (settings)
         res->set(res->settings, settings->clone());
 
-    if (comment)
-        res->set(res->comment, comment->clone());
-
     return res;
 }
 
@@ -75,12 +72,6 @@ void ASTStorage::formatImpl(const FormatSettings & s, FormatState & state, Forma
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "SETTINGS " << (s.hilite ? hilite_none : "");
         settings->formatImpl(s, state, frame);
     }
-    if (comment)
-    {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "COMMENT " << (s.hilite ? hilite_none : "");
-        comment->formatImpl(s, state, frame);
-    }
-
 }
 
 
@@ -217,7 +208,11 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->dictionary, dictionary->clone());
     }
 
+    if (comment)
+        res->set(res->comment, comment->clone());
+
     cloneOutputOptions(*res);
+    cloneTableOptions(*res);
 
     return res;
 }
@@ -226,13 +221,13 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 {
     frame.need_parens = false;
 
-    if (!database.empty() && table.empty())
+    if (database && !table)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "")
             << (attach ? "ATTACH DATABASE " : "CREATE DATABASE ")
             << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
-            << backQuoteIfNeed(database);
+            << backQuoteIfNeed(getDatabase());
 
         if (uuid != UUIDHelpers::Nil)
         {
@@ -244,6 +239,12 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
         if (storage)
             storage->formatImpl(settings, state, frame);
+
+        if (comment)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "COMMENT " << (settings.hilite ? hilite_none : "");
+            comment->formatImpl(settings, state, frame);
+        }
 
         return;
     }
@@ -275,7 +276,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
                 << what << " "
                 << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
-            << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+            << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
 
         if (uuid != UUIDHelpers::Nil)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
@@ -305,10 +306,18 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     }
     else
     {
+        String action = "CREATE";
+        if (attach)
+            action = "ATTACH";
+        else if (replace_table && create_or_replace)
+            action = "CREATE OR REPLACE";
+        else if (replace_table)
+            action = "REPLACE";
+
         /// Always DICTIONARY
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (attach ? "ATTACH " : "CREATE ") << "DICTIONARY "
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << action << " DICTIONARY "
                       << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "")
-                      << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+                      << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
         if (uuid != UUIDHelpers::Nil)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
                           << quoteString(toString(uuid));
@@ -396,6 +405,12 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH " << (settings.hilite ? hilite_none : "");
         tables->formatImpl(settings, state, frame);
+    }
+
+    if (comment)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << "COMMENT " << (settings.hilite ? hilite_none : "");
+        comment->formatImpl(settings, state, frame);
     }
 }
 

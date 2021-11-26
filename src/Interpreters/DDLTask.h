@@ -20,6 +20,11 @@ namespace fs = std::filesystem;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 class ASTQueryWithOnCluster;
 using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 using ClusterPtr = std::shared_ptr<Cluster>;
@@ -164,13 +169,15 @@ class ZooKeeperMetadataTransaction
     ZooKeeperPtr current_zookeeper;
     String zookeeper_path;
     bool is_initial_query;
+    String task_path;
     Coordination::Requests ops;
 
 public:
-    ZooKeeperMetadataTransaction(const ZooKeeperPtr & current_zookeeper_, const String & zookeeper_path_, bool is_initial_query_)
+    ZooKeeperMetadataTransaction(const ZooKeeperPtr & current_zookeeper_, const String & zookeeper_path_, bool is_initial_query_, const String & task_path_)
     : current_zookeeper(current_zookeeper_)
     , zookeeper_path(zookeeper_path_)
     , is_initial_query(is_initial_query_)
+    , task_path(task_path_)
     {
     }
 
@@ -180,15 +187,21 @@ public:
 
     String getDatabaseZooKeeperPath() const { return zookeeper_path; }
 
+    String getTaskZooKeeperPath() const { return task_path; }
+
+    ZooKeeperPtr getZooKeeper() const { return current_zookeeper; }
+
     void addOp(Coordination::RequestPtr && op)
     {
-        assert(!isExecuted());
+        if (isExecuted())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add ZooKeeper operation because query is executed. It's a bug.");
         ops.emplace_back(op);
     }
 
     void moveOpsTo(Coordination::Requests & other_ops)
     {
-        assert(!isExecuted());
+        if (isExecuted())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add ZooKeeper operation because query is executed. It's a bug.");
         std::move(ops.begin(), ops.end(), std::back_inserter(other_ops));
         ops.clear();
         state = COMMITTED;
@@ -196,7 +209,7 @@ public:
 
     void commit();
 
-    ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exceptions()); }
+    ~ZooKeeperMetadataTransaction() { assert(isExecuted() || std::uncaught_exceptions() || ops.empty()); }
 };
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name);

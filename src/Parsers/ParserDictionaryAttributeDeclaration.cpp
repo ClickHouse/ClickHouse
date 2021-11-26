@@ -1,5 +1,6 @@
 #include <Parsers/ParserDictionaryAttributeDeclaration.h>
 
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ParserDataType.h>
@@ -17,6 +18,7 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_injective{"INJECTIVE"};
     ParserKeyword s_is_object_id{"IS_OBJECT_ID"};
     ParserLiteral default_parser;
+    ParserArrayOfLiterals array_literals_parser;
     ParserTernaryOperatorExpression expression_parser;
 
     /// mandatory attribute name
@@ -40,8 +42,10 @@ bool ParserDictionaryAttributeDeclaration::parseImpl(Pos & pos, ASTPtr & node, E
     {
         if (!default_value && s_default.ignore(pos, expected))
         {
-            if (!default_parser.parse(pos, default_value, expected))
+            if (!default_parser.parse(pos, default_value, expected) &&
+                !array_literals_parser.parse(pos, default_value, expected))
                 return false;
+
             continue;
         }
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+
 import pytest
 from helpers.cluster import ClickHouseCluster
 from kazoo.client import KazooClient, KazooState
@@ -6,7 +6,7 @@ from kazoo.security import ACL, make_digest_acl, make_acl
 from kazoo.exceptions import AuthFailedError, InvalidACLError, NoAuthError, KazooException
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance('node', main_configs=['configs/keeper_config.xml', 'configs/logs_conf.xml'], with_zookeeper=True, use_keeper=False, stay_alive=True)
+node = cluster.add_instance('node', main_configs=['configs/keeper_config.xml'], with_zookeeper=True, use_keeper=False, stay_alive=True)
 
 SUPERAUTH = "super:admin"
 
@@ -300,3 +300,47 @@ def test_auth_snapshot(started_cluster):
 
     with pytest.raises(NoAuthError):
         connection2.get("/test_snapshot_acl1")
+
+
+@pytest.mark.parametrize(
+    ('get_zk'),
+    [
+        get_genuine_zk,
+        get_fake_zk
+    ]
+)
+def test_get_set_acl(started_cluster, get_zk):
+    auth_connection = get_zk()
+    auth_connection.add_auth('digest', 'username1:secret1')
+    auth_connection.add_auth('digest', 'username2:secret2')
+
+    auth_connection.create("/test_set_get_acl", b"data", acl=[make_acl("auth", "", all=True)])
+
+    acls, stat = auth_connection.get_acls("/test_set_get_acl")
+
+    assert stat.aversion == 0
+    assert len(acls) == 2
+    for acl in acls:
+        assert acl.acl_list == ['ALL']
+        assert acl.id.scheme == 'digest'
+        assert acl.perms == 31
+        assert acl.id.id in ('username1:eGncMdBgOfGS/TCojt51xWsWv/Y=', 'username2:qgSSumukVlhftkVycylbHNvxhFU=')
+
+
+    other_auth_connection = get_zk()
+    other_auth_connection.add_auth('digest', 'username1:secret1')
+    other_auth_connection.add_auth('digest', 'username3:secret3')
+    other_auth_connection.set_acls("/test_set_get_acl", acls=[make_acl("auth", "", read=True, write=False, create=True, delete=True, admin=True)])
+
+    acls, stat = other_auth_connection.get_acls("/test_set_get_acl")
+
+    assert stat.aversion == 1
+    assert len(acls) == 2
+    for acl in acls:
+        assert acl.acl_list == ['READ', 'CREATE', 'DELETE', 'ADMIN']
+        assert acl.id.scheme == 'digest'
+        assert acl.perms == 29
+        assert acl.id.id in ('username1:eGncMdBgOfGS/TCojt51xWsWv/Y=', 'username3:CvWITOxxTwk+u6S5PoGlQ4hNoWI=')
+
+    with pytest.raises(KazooException):
+        other_auth_connection.set_acls("/test_set_get_acl", acls=[make_acl("auth", "", all=True)], version=0)

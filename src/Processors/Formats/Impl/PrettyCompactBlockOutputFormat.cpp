@@ -54,7 +54,7 @@ PrettyCompactBlockOutputFormat::PrettyCompactBlockOutputFormat(WriteBuffer & out
 {
 }
 
-void PrettyCompactBlockOutputFormat::writeSuffixIfNot()
+void PrettyCompactBlockOutputFormat::writeSuffix()
 {
     if (mono_chunk)
     {
@@ -62,7 +62,7 @@ void PrettyCompactBlockOutputFormat::writeSuffixIfNot()
         mono_chunk.clear();
     }
 
-    PrettyBlockOutputFormat::writeSuffixIfNot();
+    PrettyBlockOutputFormat::writeSuffix();
 }
 
 void PrettyCompactBlockOutputFormat::writeHeader(
@@ -218,7 +218,7 @@ void PrettyCompactBlockOutputFormat::write(const Chunk & chunk, PortKind port_ki
         }
         else
         {
-            /// Should be written from writeSuffixIfNot()
+            /// Should be written from writeSuffix()
             assert(!mono_chunk);
         }
     }
@@ -255,11 +255,11 @@ void PrettyCompactBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind po
 }
 
 
-void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory)
+void registerOutputFormatPrettyCompact(FormatFactory & factory)
 {
     for (const auto & [name, mono_block] : {std::make_pair("PrettyCompact", false), std::make_pair("PrettyCompactMonoBlock", true)})
     {
-        factory.registerOutputFormatProcessor(name, [mono_block = mono_block](
+        factory.registerOutputFormat(name, [mono_block = mono_block](
             WriteBuffer & buf,
             const Block & sample,
             const RowOutputFormatParams &,
@@ -269,7 +269,9 @@ void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory)
         });
     }
 
-    factory.registerOutputFormatProcessor("PrettyCompactNoEscapes", [](
+    factory.markOutputFormatSupportsParallelFormatting("PrettyCompact");
+
+    factory.registerOutputFormat("PrettyCompactNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,
@@ -279,6 +281,7 @@ void registerOutputFormatProcessorPrettyCompact(FormatFactory & factory)
         changed_settings.pretty.color = false;
         return std::make_shared<PrettyCompactBlockOutputFormat>(buf, sample, changed_settings, false /* mono_block */);
     });
+    factory.markOutputFormatSupportsParallelFormatting("PrettyCompactNoEscapes");
 }
 
 }

@@ -7,7 +7,7 @@
 #include <Functions/PerformanceAdaptors.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 
 
 namespace DB
@@ -32,6 +32,8 @@ public:
     String getName() const override { return name; }
 
     bool isVariadic() const override { return true; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     size_t getNumberOfArguments() const override { return 0; }
 
@@ -97,7 +99,7 @@ public:
 class FunctionRandomString : public FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>
 {
 public:
-    explicit FunctionRandomString(ContextConstPtr context) : selector(context)
+    explicit FunctionRandomString(ContextPtr context) : selector(context)
     {
         selector.registerImplementation<TargetArch::Default,
             FunctionRandomStringImpl<TargetSpecific::Default::RandImpl>>();
@@ -113,7 +115,7 @@ public:
         return selector.selectAndExecute(arguments, result_type, input_rows_count);
     }
 
-    static FunctionPtr create(ContextConstPtr context)
+    static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionRandomString>(context);
     }

@@ -3,7 +3,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
-#include <common/DateLUTImpl.h>
+#include <base/DateLUTImpl.h>
 #include <Core/Field.h>
 
 
@@ -28,9 +28,11 @@ class FunctionTimezoneOf : public IFunction
 public:
     static constexpr auto name = "timezoneOf";
     String getName() const override { return name; }
-    static FunctionPtr create(ContextConstPtr) { return std::make_unique<FunctionTimezoneOf>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_unique<FunctionTimezoneOf>(); }
 
     size_t getNumberOfArguments() const override { return 1; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & types) const override
     {

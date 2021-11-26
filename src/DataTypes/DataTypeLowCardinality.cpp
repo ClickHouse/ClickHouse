@@ -1,18 +1,19 @@
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnUnique.h>
-#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsCommon.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <Core/Field.h>
-#include <Core/TypeListNumber.h>
+#include <base/TypeLists.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/Serializations/SerializationLowCardinality.h>
 #include <Parsers/IAST.h>
 
@@ -52,8 +53,8 @@ namespace
         {
         }
 
-        template <typename T, size_t>
-        void operator()()
+        template <typename T>
+        void operator()(Id<T>)
         {
             if (typeid_cast<const DataTypeNumber<T> *>(&keys_type))
                 column = creator(static_cast<ColumnVector<T> *>(nullptr));
@@ -77,14 +78,18 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
         return creator(static_cast<ColumnFixedString *>(nullptr));
     else if (which.isDate())
         return creator(static_cast<ColumnVector<UInt16> *>(nullptr));
+    else if (which.isDate32())
+        return creator(static_cast<ColumnVector<Int32> *>(nullptr));
     else if (which.isDateTime())
         return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
     else if (which.isUUID())
         return creator(static_cast<ColumnVector<UUID> *>(nullptr));
+    else if (which.isInterval())
+        return creator(static_cast<DataTypeInterval::ColumnType *>(nullptr));
     else if (which.isInt() || which.isUInt() || which.isFloat())
     {
         MutableColumnUniquePtr column;
-        TypeListNativeNumbers::forEach(CreateColumnVector(column, *type, creator));
+        TypeListUtils::forEach(TypeListIntAndFloat{}, CreateColumnVector(column, *type, creator));
 
         if (!column)
             throw Exception("Unexpected numeric type: " + type->getName(), ErrorCodes::LOGICAL_ERROR);

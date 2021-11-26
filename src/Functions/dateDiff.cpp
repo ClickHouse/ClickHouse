@@ -14,7 +14,7 @@
 
 #include <IO/WriteHelpers.h>
 
-#include <common/find_symbols.h>
+#include <base/find_symbols.h>
 
 #include <type_traits>
 
@@ -47,7 +47,7 @@ class FunctionDateDiff : public IFunction
     using ColumnDateTime64 = ColumnDecimal<DateTime64>;
 public:
     static constexpr auto name = "dateDiff";
-    static FunctionPtr create(ContextConstPtr) { return std::make_shared<FunctionDateDiff>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionDateDiff>(); }
 
     String getName() const override
     {
@@ -55,6 +55,7 @@ public:
     }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

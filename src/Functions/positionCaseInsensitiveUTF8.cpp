@@ -14,7 +14,7 @@ struct NamePositionCaseInsensitiveUTF8
 };
 
 using FunctionPositionCaseInsensitiveUTF8
-    = FunctionsStringSearch<PositionImpl<PositionCaseInsensitiveUTF8>, NamePositionCaseInsensitiveUTF8>;
+    = FunctionsStringSearch<PositionImpl<NamePositionCaseInsensitiveUTF8, PositionCaseInsensitiveUTF8>>;
 
 }
 

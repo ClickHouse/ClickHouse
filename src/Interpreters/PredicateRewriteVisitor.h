@@ -3,14 +3,16 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
 
-class PredicateRewriteVisitorData : WithConstContext
+class ASTSelectIntersectExceptQuery;
+class ASTSelectQuery;
+class ASTSelectWithUnionQuery;
+
+class PredicateRewriteVisitorData : WithContext
 {
 public:
     bool is_rewrite = false;
@@ -24,7 +26,7 @@ public:
     }
 
     PredicateRewriteVisitorData(
-        ContextConstPtr context_,
+        ContextPtr context_,
         const ASTs & predicates_,
         const TableWithColumnNamesAndTypes & table_columns_,
         bool optimize_final_,
@@ -40,7 +42,11 @@ private:
 
     void visitOtherInternalSelect(ASTSelectQuery & select_query, ASTPtr &);
 
+    void visit(ASTSelectIntersectExceptQuery & intersect_except_query, ASTPtr &);
+
     bool rewriteSubquery(ASTSelectQuery & subquery, const Names & inner_columns);
+
+    void visitInternalSelect(size_t index, ASTSelectQuery & select_node, ASTPtr & node);
 };
 
 using PredicateRewriteMatcher = OneTypeMatcher<PredicateRewriteVisitorData, PredicateRewriteVisitorData::needChild>;

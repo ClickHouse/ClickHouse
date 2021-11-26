@@ -1,3 +1,5 @@
+-- Tags: distributed
+
 SET optimize_move_functions_out_of_any = 1;
 SET optimize_injective_functions_inside_uniq = 1;
 SET optimize_arithmetic_operations_in_aggregate_functions = 1;
