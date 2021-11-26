@@ -49,6 +49,16 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
                 }
             }
         }
+        else if (function->name == "toUInt8" || function->name == "toInt8")
+        {
+            if (const auto * expr_list = function->arguments->as<ASTExpressionList>())
+            {
+                if (expr_list->children.size() != 1)
+                    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} must have exactly two arguments", function->name);
+
+                return tryExtractConstValueFromCondition(expr_list->children.at(0), value);
+            }
+        }
     }
 
     return false;
