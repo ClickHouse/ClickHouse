@@ -8,6 +8,7 @@
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/convertFieldToType.h>
 
@@ -1059,7 +1060,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // Just materialize everything.
         auto columns = chunk.detachColumns();
         for (auto & column : columns)
-            column = std::move(column)->convertToFullColumnIfConst();
+            column = recursiveRemoveLowCardinality(std::move(column)->convertToFullColumnIfConst());
         block.input_columns = std::move(columns);
 
         // Initialize output columns.
