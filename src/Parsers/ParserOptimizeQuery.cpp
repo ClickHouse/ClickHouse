@@ -3,7 +3,6 @@
 #include <Parsers/CommonParsers.h>
 
 #include <Parsers/ASTOptimizeQuery.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionListParsers.h>
 
 
