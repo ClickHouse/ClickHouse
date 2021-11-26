@@ -4120,6 +4120,6 @@ Default value: `''`.
 
 ## format_custom_result_after_delimiter {#format-custom-result-after-delimiter}
 
-Sets the character is interpreted as a suffix after result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+Sets the character that is interpreted as a suffix after the result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
 
 Default value: `''`.
