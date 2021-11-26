@@ -6,7 +6,7 @@ if(NOT ENABLE_RAPIDJSON)
     return()
 endif()
 
-option(USE_INTERNAL_RAPIDJSON_LIBRARY "Set to FALSE to use system rapidjson library instead of bundled" ${NOT_UNBUNDLED})
+option(USE_INTERNAL_RAPIDJSON_LIBRARY "Set to FALSE to use system rapidjson library instead of bundled" ON)
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/rapidjson/include/rapidjson/rapidjson.h")
     if(USE_INTERNAL_RAPIDJSON_LIBRARY)
