@@ -24,6 +24,7 @@ namespace ErrorCodes
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING;
     extern const int LOGICAL_ERROR;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 
@@ -291,6 +292,9 @@ QueryStatus::QueryStatus(
     , client_info(client_info_)
     , priority_handle(std::move(priority_handle_))
 {
+    auto settings = getContext()->getSettings();
+    limits.max_execution_time = settings.max_execution_time;
+    overflow_mode = settings.timeout_overflow_mode;
 }
 
 QueryStatus::~QueryStatus()
@@ -324,6 +328,14 @@ void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
     std::lock_guard lock(executors_mutex);
     assert(std::find(executors.begin(), executors.end(), e) != executors.end());
     std::erase_if(executors, [e](PipelineExecutor * x) { return x == e; });
+}
+
+bool QueryStatus::checkTimeLimit()
+{
+    if (is_killed.load())
+        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
+
+    return limits.checkTimeLimit(watch, overflow_mode);
 }
 
 

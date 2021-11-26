@@ -21,7 +21,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 
@@ -45,12 +44,9 @@ PipelineExecutor::PipelineExecutor(Processors & processors, QueryStatus * elem)
     }
     if (process_list_element)
     {
-        auto settings = process_list_element->getContext()->getSettings();
         // Add the pipeline to the QueryStatus at the end to avoid issues if other things throw
         // as that would leave the executor "linked"
         process_list_element->addPipelineExecutor(this);
-        limits.max_execution_time = settings.max_execution_time;
-        overflow_mode = settings.timeout_overflow_mode;
     }
 }
 
@@ -136,15 +132,12 @@ bool PipelineExecutor::checkTimeLimit()
 {
     if (process_list_element)
     {
-        if (process_list_element->isKilled())
-            throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
-
-        bool cont = limits.checkTimeLimit(process_list_element->watch, overflow_mode);
+        bool continuing = process_list_element->checkTimeLimit();
         // We call cancel here so that all processors are notified and tasks waken up
         // so that the "break" is faster and doesn't wait for long events
-        if (!cont)
+        if (!continuing)
             cancel();
-        return cont;
+        return continuing;
     }
 
     return true;
