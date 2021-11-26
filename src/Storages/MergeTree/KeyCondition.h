@@ -5,7 +5,6 @@
 #include <Interpreters/Set.h>
 #include <Core/SortDescription.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Storages/SelectQueryInfo.h>
 
 
