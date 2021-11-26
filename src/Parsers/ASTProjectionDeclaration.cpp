@@ -1,3 +1,4 @@
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Common/quoteString.h>
 

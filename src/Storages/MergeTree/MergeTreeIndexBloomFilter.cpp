@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionBloomFilter.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/BloomFilterHash.h>
+#include <Parsers/ASTFunction.h>
 
 
 namespace DB

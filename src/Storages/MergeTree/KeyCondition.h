@@ -6,13 +6,13 @@
 #include <Core/SortDescription.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
 {
 
+class ASTFunction;
 class Context;
 class IFunction;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
