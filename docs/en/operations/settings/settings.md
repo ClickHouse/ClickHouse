@@ -4108,7 +4108,7 @@ Default value: `'\n'`.
 
 ## format_custom_row_between_delimiter {#format-custom-row-between-delimiter}
 
-Sets the character is interpreted as a delimiter between rows for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+Sets the character that is interpreted as a delimiter between the rows for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
 
 Default value: `''`.
 
