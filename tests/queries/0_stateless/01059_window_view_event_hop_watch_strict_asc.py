@@ -21,29 +21,31 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.send('SET window_view_heartbeat_interval = 1')
     client1.expect(prompt)
 
-    client1.send('DROP TABLE IF EXISTS test.mt')
+    client1.send('CREATE DATABASE db_01059_event_hop_watch_strict_asc')
     client1.expect(prompt)
-    client1.send('DROP TABLE IF EXISTS test.wv NO DELAY')
+    client1.send('DROP TABLE IF EXISTS db_01059_event_hop_watch_strict_asc.mt')
     client1.expect(prompt)
-
-    client1.send('CREATE TABLE test.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()')
-    client1.expect(prompt)
-    client1.send("CREATE WINDOW VIEW test.wv WATERMARK=STRICTLY_ASCENDING AS SELECT count(a) AS count, HOP_END(wid) as w_end FROM test.mt GROUP BY HOP(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid;")
+    client1.send('DROP TABLE IF EXISTS db_01059_event_hop_watch_strict_asc.wv NO DELAY')
     client1.expect(prompt)
 
-    client1.send('WATCH test.wv')
+    client1.send("CREATE TABLE db_01059_event_hop_watch_strict_asc.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()")
+    client1.expect(prompt)
+    client1.send("CREATE WINDOW VIEW db_01059_event_hop_watch_strict_asc.wv WATERMARK=STRICTLY_ASCENDING AS SELECT count(a) AS count, HOP_END(wid) as w_end FROM db_01059_event_hop_watch_strict_asc.mt GROUP BY HOP(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND, 'US/Samoa') AS wid;")
+    client1.expect(prompt)
 
-    client2.send("INSERT INTO test.mt VALUES (1, '1990/01/01 12:00:00');")
+    client1.send('WATCH db_01059_event_hop_watch_strict_asc.wv')
+
+    client2.send("INSERT INTO db_01059_event_hop_watch_strict_asc.mt VALUES (1, toDateTime('1990/01/01 12:00:00', 'US/Samoa'));")
     client2.expect("Ok.")
-    client2.send("INSERT INTO test.mt VALUES (1, '1990/01/01 12:00:05');")
+    client2.send("INSERT INTO db_01059_event_hop_watch_strict_asc.mt VALUES (1, toDateTime('1990/01/01 12:00:05', 'US/Samoa'));")
     client2.expect("Ok.")
-    client1.expect('1*1990-01-01 12:00:02' + end_of_block)
+    client1.expect('1*1990-01-02 02:00:02' + end_of_block)
     client1.expect('Progress: 1.00 rows.*\)')
 
-    client2.send("INSERT INTO test.mt VALUES (1, '1990/01/01 12:00:10');")
+    client2.send("INSERT INTO db_01059_event_hop_watch_strict_asc.mt VALUES (1, toDateTime('1990/01/01 12:00:10', 'US/Samoa'));")
     client2.expect("Ok.")
-    client1.expect('1*1990-01-01 12:00:06' + end_of_block)
-    client1.expect('1*1990-01-01 12:00:08' + end_of_block)
+    client1.expect('1*1990-01-02 02:00:06' + end_of_block)
+    client1.expect('1*1990-01-02 02:00:08' + end_of_block)
     client1.expect('Progress: 3.00 rows.*\)')
 
     # send Ctrl-C

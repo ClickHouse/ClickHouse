@@ -23,20 +23,22 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client2.send('SET allow_experimental_window_view = 1')
     client2.expect(prompt)
 
-    client1.send('DROP TABLE IF EXISTS test.mt')
+    client1.send('CREATE DATABASE 01056_window_view_proc_hop_watch')
     client1.expect(prompt)
-    client1.send('DROP TABLE IF EXISTS test.wv')
+    client1.send('DROP TABLE IF EXISTS 01056_window_view_proc_hop_watch.mt')
+    client1.expect(prompt)
+    client1.send('DROP TABLE IF EXISTS 01056_window_view_proc_hop_watch.wv')
     client1.expect(prompt)
     client1.send('DROP TABLE IF EXISTS `.inner.wv`')
     client1.expect(prompt)
 
-    client1.send('CREATE TABLE test.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()')
+    client1.send('CREATE TABLE 01056_window_view_proc_hop_watch.mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple()')
     client1.expect(prompt)
-    client1.send("CREATE WINDOW VIEW test.wv AS SELECT count(a) AS count FROM test.mt GROUP BY HOP(timestamp, INTERVAL '1' SECOND, INTERVAL '1' SECOND, 'US/Samoa') AS wid;")
+    client1.send("CREATE WINDOW VIEW 01056_window_view_proc_hop_watch.wv AS SELECT count(a) AS count FROM 01056_window_view_proc_hop_watch.mt GROUP BY HOP(timestamp, INTERVAL '1' SECOND, INTERVAL '1' SECOND, 'US/Samoa') AS wid;")
     client1.expect(prompt)
     
-    client1.send('WATCH test.wv')
-    client2.send('INSERT INTO test.mt VALUES (1, now())')
+    client1.send('WATCH 01056_window_view_proc_hop_watch.wv')
+    client2.send("INSERT INTO 01056_window_view_proc_hop_watch.mt VALUES (1, now('US/Samoa'))")
     client1.expect('1' + end_of_block)
     client1.expect('Progress: 1.00 rows.*\)')
 
@@ -46,7 +48,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     if match.groups()[1]:
         client1.send(client1.command)
         client1.expect(prompt)
-    client1.send('DROP TABLE test.wv')
+    client1.send('DROP TABLE 01056_window_view_proc_hop_watch.wv')
     client1.expect(prompt)
-    client1.send('DROP TABLE test.mt')
+    client1.send('DROP TABLE 01056_window_view_proc_hop_watch.mt')
     client1.expect(prompt)
