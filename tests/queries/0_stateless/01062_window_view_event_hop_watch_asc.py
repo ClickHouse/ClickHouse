@@ -36,6 +36,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.expect(prompt)
     
     client1.send('WATCH 01062_window_view_event_hop_watch_asc.wv')
+    client1.expect('Query id' + end_of_block)
     client2.send("INSERT INTO 01062_window_view_event_hop_watch_asc.mt VALUES (1, '1990/01/01 12:00:00');")
     client2.expect(prompt)
     client2.send("INSERT INTO 01062_window_view_event_hop_watch_asc.mt VALUES (1, '1990/01/01 12:00:05');")
@@ -43,12 +44,11 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.expect('1*' + end_of_block)
     client2.send("INSERT INTO 01062_window_view_event_hop_watch_asc.mt VALUES (1, '1990/01/01 12:00:06');")
     client2.expect(prompt)
-    client1.expect(r'Progress')
     client2.send("INSERT INTO 01062_window_view_event_hop_watch_asc.mt VALUES (1, '1990/01/01 12:00:10');")
     client2.expect(prompt)
-    client1.expect(r'1*' + end_of_block)
-    client1.expect(r'2*' + end_of_block)
-    client1.expect(r'Progress')
+    client1.expect('1' + end_of_block)
+    client1.expect('2' + end_of_block)
+    client1.expect('Progress: 3.00 rows.*\)')
 
     # send Ctrl-C
     client1.send('\x03', eol='')
@@ -59,4 +59,6 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.send('DROP TABLE 01062_window_view_event_hop_watch_asc.wv NO DELAY')
     client1.expect(prompt)
     client1.send('DROP TABLE 01062_window_view_event_hop_watch_asc.mt')
+    client1.expect(prompt)
+    client1.send('DROP DATABASE IF EXISTS 01062_window_view_event_hop_watch_asc')
     client1.expect(prompt)

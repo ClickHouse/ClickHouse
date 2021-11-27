@@ -38,7 +38,8 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.expect(prompt)
     
     client1.send('WATCH 01056_window_view_proc_hop_watch.wv')
-    client2.send("INSERT INTO 01056_window_view_proc_hop_watch.mt VALUES (1, now('US/Samoa'))")
+    client1.expect('Query id' + end_of_block)
+    client2.send("INSERT INTO 01056_window_view_proc_hop_watch.mt VALUES (1, now() + 1)")
     client1.expect('1' + end_of_block)
     client1.expect('Progress: 1.00 rows.*\)')
 
@@ -51,4 +52,6 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.send('DROP TABLE 01056_window_view_proc_hop_watch.wv')
     client1.expect(prompt)
     client1.send('DROP TABLE 01056_window_view_proc_hop_watch.mt')
+    client1.expect(prompt)
+    client1.send('DROP DATABASE IF EXISTS 01056_window_view_proc_hop_watch')
     client1.expect(prompt)
