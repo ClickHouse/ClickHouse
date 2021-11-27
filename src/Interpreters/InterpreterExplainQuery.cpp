@@ -1,18 +1,20 @@
 #include <Interpreters/InterpreterExplainQuery.h>
 
-#include <QueryPipeline/BlockIO.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
-#include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/Context.h>
 #include <Formats/FormatFactory.h>
-#include <Parsers/DumpASTNode.h>
-#include <Parsers/queryToString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
+#include <Parsers/DumpASTNode.h>
+#include <Parsers/queryToString.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <QueryPipeline/BlockIO.h>
 
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>

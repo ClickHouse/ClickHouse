@@ -4,6 +4,8 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/CommonParsers.h>
 
+#include <unordered_map>
+
 namespace DB
 {
 

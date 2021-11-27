@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <string>
 #include <Core/Field.h>
-#include <Core/SettingsEnums.h>
+#include <Core/SettingsEnums_fwd.h>
 #include <Common/IntervalKind.h>
 
 class Collator;

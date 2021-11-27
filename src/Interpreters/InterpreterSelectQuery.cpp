@@ -64,8 +64,9 @@
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 
-#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/IStorage.h>
+#include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/StorageView.h>
 
 #include <Functions/IFunction.h>

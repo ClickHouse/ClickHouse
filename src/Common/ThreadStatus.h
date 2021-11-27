@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/SettingsEnums.h>
+#include <Core/SettingsEnums_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <IO/Progress.h>
 #include <Common/MemoryTracker.h>

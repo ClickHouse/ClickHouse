@@ -3,16 +3,20 @@
 #include <Databases/IDatabase.h>
 
 #include <Disks/IDisk.h>
+#include <Disks/IStoragePolicy.h>
+#include <Disks/IVolume.h>
 
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 
-#include <Storages/Distributed/DistributedSink.h>
-#include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/Distributed/DistributedSink.h>
+#include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/StorageFactory.h>
 
 #include <Columns/ColumnConst.h>
 
@@ -24,6 +28,7 @@
 #include <Common/randomSeed.h>
 #include <Common/formatReadable.h>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -44,6 +49,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
@@ -55,6 +61,7 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Functions/IFunction.h>
 
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>

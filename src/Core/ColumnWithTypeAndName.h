@@ -1,13 +1,20 @@
 #pragma once
 
-#include <Columns/IColumn.h>
-#include <DataTypes/IDataType.h>
+#include <Common/COW.h>
+#include <base/types.h>
 
+#include <memory>
 
 namespace DB
 {
 
 class WriteBuffer;
+
+class IColumn;
+using ColumnPtr = COW<IColumn>::Ptr;
+
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
 
 
 /** Column data along with its data type and name.
@@ -27,8 +34,7 @@ struct ColumnWithTypeAndName
         : column(column_), type(type_), name(name_) {}
 
     /// Uses type->createColumn() to create column
-    ColumnWithTypeAndName(const DataTypePtr & type_, const String & name_)
-        : column(type_->createColumn()), type(type_), name(name_) {}
+    ColumnWithTypeAndName(const DataTypePtr & type_, const String & name_);
 
     ColumnWithTypeAndName cloneEmpty() const;
     bool operator==(const ColumnWithTypeAndName & other) const;

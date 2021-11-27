@@ -2,9 +2,10 @@
 #include <Common/Exception.h>
 
 #include <Interpreters/MutationsInterpreter.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Storages/MemorySettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMemory.h>
-#include <Storages/MemorySettings.h>
 
 #include <IO/WriteHelpers.h>
 #include <Processors/Sources/SourceWithProgress.h>

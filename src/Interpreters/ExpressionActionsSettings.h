@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
-#include <Core/SettingsEnums.h>
+#include <Core/SettingsEnums_fwd.h>
 
 #include <cstddef>
 

@@ -1,23 +1,22 @@
 #include <Columns/getLeastSuperColumn.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterSelectIntersectExceptQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/queryToString.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/UnionStep.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/typeid_cast.h>
-
-#include <Interpreters/InDepthNodeVisitor.h>
 
 #include <algorithm>
 

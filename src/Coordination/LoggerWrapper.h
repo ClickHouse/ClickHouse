@@ -2,7 +2,7 @@
 
 #include <libnuraft/nuraft.hxx>
 #include <base/logger_useful.h>
-#include <Core/SettingsEnums.h>
+#include <Core/SettingsEnums_fwd.h>
 
 namespace DB
 {

@@ -5,7 +5,6 @@
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
-#include <Core/Settings.h>
 #include <IO/WriteBufferFromString.h>
 
 #include <algorithm>

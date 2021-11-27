@@ -1,7 +1,7 @@
 #include <Storages/IStorage.h>
 
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/quoteString.h>
+#include <Disks/IDisk.h>
+#include <Disks/IStoragePolicy.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
@@ -9,10 +9,12 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <QueryPipeline/Pipe.h>
-#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/AlterCommands.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/quoteString.h>
 
 
 namespace DB

@@ -8,6 +8,7 @@
 #include <Interpreters/WindowDescription.h>
 #include <Interpreters/join_common.h>
 #include <Parsers/IAST_fwd.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 

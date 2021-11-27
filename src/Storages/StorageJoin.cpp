@@ -14,6 +14,9 @@
 #include <Interpreters/castColumn.h>
 #include <Common/quoteString.h>
 #include <Common/Exception.h>
+#include <Disks/IDisk.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <Formats/NativeWriter.h>
 
 #include <Compression/CompressedWriteBuffer.h>
 #include <Processors/Sources/SourceWithProgress.h>

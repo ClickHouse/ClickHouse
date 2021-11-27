@@ -5,9 +5,10 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/addMissingDefaults.h>
+#include <Storages/AlterCommands.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/AlterCommands.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -18,9 +19,7 @@
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
-#include <base/logger_useful.h>
 #include <base/getThreadId.h>
-#include <base/range.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>

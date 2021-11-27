@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/formatAST.h>

@@ -1,21 +1,24 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
 #include <Core/Defines.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <base/range.h>
 
 

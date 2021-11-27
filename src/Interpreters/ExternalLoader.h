@@ -13,6 +13,9 @@
 
 namespace DB
 {
+
+using Strings = std::vector<String>;
+
 /* External configuration structure.
  *
  * <external_group>

@@ -1,19 +1,17 @@
 #include "convertMySQLDataType.h"
 
 #include <Core/Field.h>
-#include <base/types.h>
 #include <Core/MultiEnum.h>
-#include <Core/SettingsEnums.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/IAST.h>
+#include <Core/SettingsEnums_fwd.h>
+#include <base/types.h>
 #include "DataTypeDate.h"
 #include "DataTypeDateTime.h"
 #include "DataTypeDateTime64.h"
 #include "DataTypeEnum.h"
-#include "DataTypesDecimal.h"
 #include "DataTypeFixedString.h"
 #include "DataTypeNullable.h"
 #include "DataTypeString.h"
+#include "DataTypesDecimal.h"
 #include "DataTypesNumber.h"
 #include "IDataType.h"
 

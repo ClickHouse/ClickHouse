@@ -6,7 +6,7 @@
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
-#include <Core/SettingsEnums.h>
+#include <Core/SettingsEnums_fwd.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
 #include <Interpreters/SystemLog.h>

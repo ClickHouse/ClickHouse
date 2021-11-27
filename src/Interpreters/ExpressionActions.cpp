@@ -17,8 +17,6 @@
 #include <queue>
 #include <stack>
 #include <Common/JSONBuilder.h>
-#include <Core/SettingsEnums.h>
-
 
 #if defined(MEMORY_SANITIZER)
     #include <sanitizer/msan_interface.h>

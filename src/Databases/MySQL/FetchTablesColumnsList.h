@@ -7,7 +7,7 @@
 
 #include <base/types.h>
 #include <Core/MultiEnum.h>
-#include <Core/SettingsEnums.h>
+#include <Core/SettingsEnums_fwd.h>
 #include <Storages/ColumnsDescription.h>
 
 #include <map>

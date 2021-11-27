@@ -1,9 +1,10 @@
 #include <Parsers/getInsertQuery.h>
 
-#include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTExpressionList.h>
+#include <Columns/IColumn.h>
 #include <IO/WriteBufferFromString.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInsertQuery.h>
 
 
 namespace DB

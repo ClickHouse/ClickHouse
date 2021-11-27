@@ -1,5 +1,6 @@
 #include <QueryPipeline/narrowBlockInputStreams.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/StorageMerge.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>

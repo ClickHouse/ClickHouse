@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 
 #include <Core/QueryProcessingStage.h>
 #include <Interpreters/ExpressionActions.h>
@@ -9,7 +10,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Storages/ReadInOrderOptimizer.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableLockHolder.h>
 

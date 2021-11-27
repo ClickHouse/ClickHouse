@@ -6,6 +6,8 @@
 
 namespace DB
 {
+
+using Strings = std::vector<String>;
 class ASTSettingsProfileElements;
 class ASTRolesOrUsersSet;
 
