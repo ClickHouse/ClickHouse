@@ -27,7 +27,7 @@ namespace DB
 template <class FieldType, class StatisticsType>
 Range createRangeFromOrcStatistics(const StatisticsType * stats)
 {
-    /// We must check if there are minumum or maximum values in statistics in case of 
+    /// We must check if there are minimum or maximum values in statistics in case of 
     /// null values or NaN/Inf values of double type.
     if (stats->hasMinimum() && stats->hasMaximum())
     {
@@ -50,7 +50,7 @@ Range createRangeFromOrcStatistics(const StatisticsType * stats)
 template <class FieldType, class StatisticsType>
 Range createRangeFromParquetStatistics(std::shared_ptr<StatisticsType> stats)
 {
-    /// We must check if there are minumum or maximum values in statistics in case of 
+    /// We must check if there are minimum or maximum values in statistics in case of 
     /// null values or NaN/Inf values of double type.
     if (!stats->HasMinMax())
         return Range();
