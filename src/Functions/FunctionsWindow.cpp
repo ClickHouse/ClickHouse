@@ -73,7 +73,7 @@ namespace
 
     void checkIntervalArgument(const ColumnWithTypeAndName & argument, const String & function_name, IntervalKind & interval_kind, bool & result_type_is_date)
     {
-        auto interval_type = checkAndGetDataType<DataTypeInterval>(argument.type.get());
+        const auto * interval_type = checkAndGetDataType<DataTypeInterval>(argument.type.get());
         if (!interval_type)
             throw Exception(
                 "Illegal type " + argument.type->getName() + " of argument of function " + function_name
@@ -141,13 +141,13 @@ struct WindowImpl<TUMBLE>
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
         }
 
-        DataTypePtr dataType = nullptr;
+        DataTypePtr data_type = nullptr;
         if (result_type_is_date)
-            dataType = std::make_shared<DataTypeDate>();
+            data_type = std::make_shared<DataTypeDate>();
         else
-            dataType = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
+            data_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 2, 0));
 
-        return std::make_shared<DataTypeTuple>(DataTypes{dataType, dataType});
+        return std::make_shared<DataTypeTuple>(DataTypes{data_type, data_type});
     }
 
     static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
@@ -168,27 +168,27 @@ struct WindowImpl<TUMBLE>
         switch (std::get<0>(interval))
         {
             case IntervalKind::Second:
-                return execute_tumble<UInt32, IntervalKind::Second>(*time_column_vec, std::get<1>(interval), time_zone);
+                return executeTumble<UInt32, IntervalKind::Second>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Minute:
-                return execute_tumble<UInt32, IntervalKind::Minute>(*time_column_vec, std::get<1>(interval), time_zone);
+                return executeTumble<UInt32, IntervalKind::Minute>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Hour:
-                return execute_tumble<UInt32, IntervalKind::Hour>(*time_column_vec, std::get<1>(interval), time_zone);
+                return executeTumble<UInt32, IntervalKind::Hour>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Day:
-                return execute_tumble<UInt32, IntervalKind::Day>(*time_column_vec, std::get<1>(interval), time_zone);
+                return executeTumble<UInt32, IntervalKind::Day>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Week:
-                return execute_tumble<UInt16, IntervalKind::Week>(*time_column_vec, std::get<1>(interval), time_zone);
+                return executeTumble<UInt16, IntervalKind::Week>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Month:
-                return execute_tumble<UInt16, IntervalKind::Month>(*time_column_vec, std::get<1>(interval), time_zone);
+                return executeTumble<UInt16, IntervalKind::Month>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Quarter:
-                return execute_tumble<UInt16, IntervalKind::Quarter>(*time_column_vec, std::get<1>(interval), time_zone);
+                return executeTumble<UInt16, IntervalKind::Quarter>(*time_column_vec, std::get<1>(interval), time_zone);
             case IntervalKind::Year:
-                return execute_tumble<UInt16, IntervalKind::Year>(*time_column_vec, std::get<1>(interval), time_zone);
+                return executeTumble<UInt16, IntervalKind::Year>(*time_column_vec, std::get<1>(interval), time_zone);
         }
         __builtin_unreachable();
     }
 
     template <typename ToType, IntervalKind::Kind unit>
-    static ColumnPtr execute_tumble(const ColumnUInt32 & time_column, UInt64 num_units, const DateLUTImpl & time_zone)
+    static ColumnPtr executeTumble(const ColumnUInt32 & time_column, UInt64 num_units, const DateLUTImpl & time_zone)
     {
         const auto & time_data = time_column.getData();
         size_t size = time_column.size();
@@ -219,10 +219,10 @@ struct WindowImpl<TUMBLE_START>
     {
         if (arguments.size() == 1)
         {
-            auto type_ = WhichDataType(arguments[0].type);
-            if (type_.isTuple())
+            auto type = WhichDataType(arguments[0].type);
+            if (type.isTuple())
                 return std::static_pointer_cast<const DataTypeTuple>(arguments[0].type)->getElement(0);
-            else if (type_.isUInt32())
+            else if (type.isUInt32())
                 return std::make_shared<DataTypeDateTime>();
             else
                 throw Exception(
@@ -239,12 +239,12 @@ struct WindowImpl<TUMBLE_START>
     [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
         const auto which_type = WhichDataType(arguments[0].type);
-        ColumnPtr result_column_;
+        ColumnPtr result_column;
         if (which_type.isDateTime())
-            result_column_ = WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
+            result_column= WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
         else
-            result_column_ = arguments[0].column;
-        return executeWindowBound(result_column_, 0, function_name);
+            result_column = arguments[0].column;
+        return executeWindowBound(result_column, 0, function_name);
     }
 };
 
@@ -261,12 +261,12 @@ struct WindowImpl<TUMBLE_END>
     [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name)
     {
         const auto which_type = WhichDataType(arguments[0].type);
-        ColumnPtr result_column_;
+        ColumnPtr result_column;
         if (which_type.isDateTime())
-            result_column_ = WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
+            result_column = WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
         else
-            result_column_ = arguments[0].column;
-        return executeWindowBound(result_column_, 1, function_name);
+            result_column = arguments[0].column;
+        return executeWindowBound(result_column, 1, function_name);
     }
 };
 
@@ -306,12 +306,12 @@ struct WindowImpl<HOP>
             throw Exception(
                 "Illegal type of window and hop column of function " + function_name + ", must be same", ErrorCodes::ILLEGAL_COLUMN);
 
-        DataTypePtr dataType = nullptr;
+        DataTypePtr data_type = nullptr;
         if (result_type_is_date)
-            dataType = std::make_shared<DataTypeDate>();
+            data_type = std::make_shared<DataTypeDate>();
         else
-            dataType = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0));
-        return std::make_shared<DataTypeTuple>(DataTypes{dataType, dataType});
+            data_type = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 3, 0));
+        return std::make_shared<DataTypeTuple>(DataTypes{data_type, data_type});
     }
 
     static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
@@ -339,28 +339,28 @@ struct WindowImpl<HOP>
         switch (std::get<0>(window_interval))
         {
             case IntervalKind::Second:
-                return execute_hop<UInt32, IntervalKind::Second>(
+                return executeHop<UInt32, IntervalKind::Second>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Minute:
-                return execute_hop<UInt32, IntervalKind::Minute>(
+                return executeHop<UInt32, IntervalKind::Minute>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Hour:
-                return execute_hop<UInt32, IntervalKind::Hour>(
+                return executeHop<UInt32, IntervalKind::Hour>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Day:
-                return execute_hop<UInt32, IntervalKind::Day>(
+                return executeHop<UInt32, IntervalKind::Day>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Week:
-                return execute_hop<UInt16, IntervalKind::Week>(
+                return executeHop<UInt16, IntervalKind::Week>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Month:
-                return execute_hop<UInt16, IntervalKind::Month>(
+                return executeHop<UInt16, IntervalKind::Month>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Quarter:
-                return execute_hop<UInt16, IntervalKind::Quarter>(
+                return executeHop<UInt16, IntervalKind::Quarter>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Year:
-                return execute_hop<UInt16, IntervalKind::Year>(
+                return executeHop<UInt16, IntervalKind::Year>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
         }
         __builtin_unreachable();
@@ -368,7 +368,7 @@ struct WindowImpl<HOP>
 
     template <typename ToType, IntervalKind::Kind kind>
     static ColumnPtr
-    execute_hop(const ColumnUInt32 & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone)
+    executeHop(const ColumnUInt32 & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone)
     {
         const auto & time_data = time_column.getData();
         size_t size = time_column.size();
@@ -384,15 +384,13 @@ struct WindowImpl<HOP>
             ToType wstart = ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
             ToType wend = AddTime<kind>::execute(wstart, hop_num_units, time_zone);
             wstart = AddTime<kind>::execute(wend, -1 * window_num_units, time_zone);
-
-            ToType wend_ = wend;
             ToType wend_latest;
 
             do
             {
-                wend_latest = wend_;
-                wend_ = AddTime<kind>::execute(wend_, -1 * hop_num_units, time_zone);
-            } while (wend_ > time_data[i]);
+                wend_latest = wend;
+                wend = AddTime<kind>::execute(wend, -1 * hop_num_units, time_zone);
+            } while (wend > time_data[i]);
 
             end_data[i] = wend_latest;
             start_data[i] = AddTime<kind>::execute(wend_latest, -1 * window_num_units, time_zone);
@@ -478,28 +476,28 @@ struct WindowImpl<WINDOW_ID>
         switch (std::get<0>(window_interval))
         {
             case IntervalKind::Second:
-                return execute_hop_slice<UInt32, IntervalKind::Second>(
+                return executeHopSlice<UInt32, IntervalKind::Second>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Minute:
-                return execute_hop_slice<UInt32, IntervalKind::Minute>(
+                return executeHopSlice<UInt32, IntervalKind::Minute>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Hour:
-                return execute_hop_slice<UInt32, IntervalKind::Hour>(
+                return executeHopSlice<UInt32, IntervalKind::Hour>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Day:
-                return execute_hop_slice<UInt32, IntervalKind::Day>(
+                return executeHopSlice<UInt32, IntervalKind::Day>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Week:
-                return execute_hop_slice<UInt16, IntervalKind::Week>(
+                return executeHopSlice<UInt16, IntervalKind::Week>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Month:
-                return execute_hop_slice<UInt16, IntervalKind::Month>(
+                return executeHopSlice<UInt16, IntervalKind::Month>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Quarter:
-                return execute_hop_slice<UInt16, IntervalKind::Quarter>(
+                return executeHopSlice<UInt16, IntervalKind::Quarter>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
             case IntervalKind::Year:
-                return execute_hop_slice<UInt16, IntervalKind::Year>(
+                return executeHopSlice<UInt16, IntervalKind::Year>(
                     *time_column_vec, std::get<1>(hop_interval), std::get<1>(window_interval), time_zone);
         }
         __builtin_unreachable();
@@ -507,7 +505,7 @@ struct WindowImpl<WINDOW_ID>
 
     template <typename ToType, IntervalKind::Kind kind>
     static ColumnPtr
-    execute_hop_slice(const ColumnUInt32 & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone)
+    executeHopSlice(const ColumnUInt32 & time_column, UInt64 hop_num_units, UInt64 window_num_units, const DateLUTImpl & time_zone)
     {
         Int64 gcd_num_units = std::gcd(hop_num_units, window_num_units);
 
@@ -521,15 +519,13 @@ struct WindowImpl<WINDOW_ID>
         {
             ToType wstart = ToStartOfTransform<kind>::execute(time_data[i], hop_num_units, time_zone);
             ToType wend = AddTime<kind>::execute(wstart, hop_num_units, time_zone);
-
-            ToType wend_ = wend;
             ToType wend_latest;
 
             do
             {
-                wend_latest = wend_;
-                wend_ = AddTime<kind>::execute(wend_, -1 * gcd_num_units, time_zone);
-            } while (wend_ > time_data[i]);
+                wend_latest = wend;
+                wend = AddTime<kind>::execute(wend, -1 * gcd_num_units, time_zone);
+            } while (wend > time_data[i]);
 
             end_data[i] = wend_latest;
         }
@@ -567,10 +563,10 @@ struct WindowImpl<HOP_START>
     {
         if (arguments.size() == 1)
         {
-            auto type_ = WhichDataType(arguments[0].type);
-            if (type_.isTuple())
+            auto type = WhichDataType(arguments[0].type);
+            if (type.isTuple())
                 return std::static_pointer_cast<const DataTypeTuple>(arguments[0].type)->getElement(0);
-            else if (type_.isUInt32())
+            else if (type.isUInt32())
                 return std::make_shared<DataTypeDateTime>();
             else
                 throw Exception(
@@ -587,17 +583,17 @@ struct WindowImpl<HOP_START>
     {
         const auto & time_column = arguments[0];
         const auto which_type = WhichDataType(time_column.type);
-        ColumnPtr result_column_;
+        ColumnPtr result_column;
         if (arguments.size() == 1)
         {
             if (which_type.isUInt32())
                 return time_column.column;
             else //isTuple
-                result_column_ = time_column.column;
+                result_column = time_column.column;
         }
         else
-            result_column_ = WindowImpl<HOP>::dispatchForColumns(arguments, function_name);
-        return executeWindowBound(result_column_, 0, function_name);
+            result_column = WindowImpl<HOP>::dispatchForColumns(arguments, function_name);
+        return executeWindowBound(result_column, 0, function_name);
     }
 };
 
@@ -615,18 +611,18 @@ struct WindowImpl<HOP_END>
     {
         const auto & time_column = arguments[0];
         const auto which_type = WhichDataType(time_column.type);
-        ColumnPtr result_column_;
+        ColumnPtr result_column;
         if (arguments.size() == 1)
         {
             if (which_type.isUInt32())
                 return time_column.column;
             else //isTuple
-                result_column_ = time_column.column;
+                result_column = time_column.column;
         }
         else
-            result_column_ = WindowImpl<HOP>::dispatchForColumns(arguments, function_name);
+            result_column = WindowImpl<HOP>::dispatchForColumns(arguments, function_name);
 
-        return executeWindowBound(result_column_, 1, function_name);
+        return executeWindowBound(result_column, 1, function_name);
     }
 };
 
