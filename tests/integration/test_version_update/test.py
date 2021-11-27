@@ -5,20 +5,16 @@ from helpers.test_tools import assert_eq_with_retry, exec_query_with_retry
 cluster = ClickHouseCluster(__file__)
 
 
-node1 = cluster.add_instance('node1', main_configs=["configs/log_conf.xml"], stay_alive=True)
+node1 = cluster.add_instance('node1', stay_alive=True)
 
 node2 = cluster.add_instance('node2', with_zookeeper=True, image='yandex/clickhouse-server', tag='21.2', with_installed_binary=True, stay_alive=True)
 
 # Use differents nodes because if there is node.restart_from_latest_version(), then in later tests
 # it will be with latest version, but shouldn't, order of tests in CI is shuffled.
-node3 = cluster.add_instance('node3', main_configs=["configs/log_conf.xml"],
-                                      image='yandex/clickhouse-server', tag='21.5', with_installed_binary=True, stay_alive=True)
-node4 = cluster.add_instance('node4', main_configs=["configs/log_conf.xml"],
-                                      image='yandex/clickhouse-server', tag='21.5', with_installed_binary=True, stay_alive=True)
-node5 = cluster.add_instance('node5', main_configs=["configs/log_conf.xml"],
-                                      image='yandex/clickhouse-server', tag='21.5', with_installed_binary=True, stay_alive=True)
-node6 = cluster.add_instance('node6', main_configs=["configs/log_conf.xml"],
-                                      image='yandex/clickhouse-server', tag='21.5', with_installed_binary=True, stay_alive=True)
+node3 = cluster.add_instance('node3', image='yandex/clickhouse-server', tag='21.5', with_installed_binary=True, stay_alive=True)
+node4 = cluster.add_instance('node4', image='yandex/clickhouse-server', tag='21.5', with_installed_binary=True, stay_alive=True)
+node5 = cluster.add_instance('node5', image='yandex/clickhouse-server', tag='21.5', with_installed_binary=True, stay_alive=True)
+node6 = cluster.add_instance('node6', image='yandex/clickhouse-server', tag='21.5', with_installed_binary=True, stay_alive=True)
 
 
 
@@ -109,6 +105,23 @@ def test_aggregate_function_versioning_fetch_data_from_old_to_new_server(start_c
     assert(data_from_old_to_new_server == old_server_data)
 
 
+#def test_aggregate_function_versioning_fetch_data_from_new_to_old_server(start_cluster):
+#    for node in [node1, node4]:
+#        create_table(node)
+#        insert_data(node)
+#
+#    expected = "([1],[300])"
+#
+#    new_server_data = node1.query("select finalizeAggregation(col3) from default.test_table;").strip()
+#    assert(new_server_data == expected)
+#
+#    old_server_data = node4.query("select finalizeAggregation(col3) from default.test_table;").strip()
+#    assert(old_server_data != expected)
+#
+#    data_from_new_to_old_server = node4.query("select finalizeAggregation(col3) from remote('node1', default.test_table);").strip()
+#    print(data_from_new_to_old_server)
+
+
 def test_aggregate_function_versioning_server_upgrade(start_cluster):
     for node in [node1, node5]:
         create_table(node)
@@ -118,6 +131,7 @@ def test_aggregate_function_versioning_server_upgrade(start_cluster):
     # Serialization with version 0.
     old_server_data = node5.query("select finalizeAggregation(col3) from default.test_table;").strip()
     assert(old_server_data == "([1],[44])")
+    print('Ok 1')
 
     # Upgrade server.
     node5.restart_with_latest_version()
@@ -125,42 +139,51 @@ def test_aggregate_function_versioning_server_upgrade(start_cluster):
     # Deserialized with version 0.
     upgraded_server_data = node5.query("select finalizeAggregation(col3) from default.test_table;").strip()
     assert(upgraded_server_data == "([1],[44])")
+    print('Ok 2')
 
     # Data from upgraded server to new server. Deserialize with version 0.
     data_from_upgraded_to_new_server = node1.query("select finalizeAggregation(col3) from remote('node5', default.test_table);").strip()
     assert(data_from_upgraded_to_new_server == upgraded_server_data == "([1],[44])")
+    print('Ok 3')
 
     upgraded_server_data = node5.query("select finalizeAggregation(col3) from remote('127.0.0.{1,2}', default.test_table);").strip()
     assert(upgraded_server_data == "([1],[44])\n([1],[44])")
+    print('Ok 4')
 
     # Check insertion after server upgarde.
     insert_data(node5, col2=2)
 
     upgraded_server_data = node5.query("select finalizeAggregation(col3) from default.test_table order by col2;").strip()
     assert(upgraded_server_data == "([1],[44])\n([1],[44])")
+    print('Ok 5')
 
     new_server_data = node1.query("select finalizeAggregation(col3) from default.test_table;").strip()
     assert(new_server_data == "([1],[300])")
+    print('Ok 6')
 
     # Insert from new server to upgraded server, data version 1.
     node1.query("insert into table function remote('node5', default.test_table) select * from default.test_table;").strip()
     upgraded_server_data = node5.query("select finalizeAggregation(col3) from default.test_table order by col2;").strip()
     assert(upgraded_server_data == "([1],[44])\n([1],[44])\n([1],[44])")
+    print('Ok 7')
 
     insert_data(node1)
     new_server_data = node1.query("select finalizeAggregation(col3) from default.test_table;").strip()
     assert(new_server_data == "([1],[300])\n([1],[300])")
+    print('Ok 8')
 
     # Create table with column with version 0 serialiazation to be used for futher check.
     create_table(node1, name='test_table_0', version=0)
     insert_data(node1, table_name='test_table_0', col2=3)
     data = node1.query("select finalizeAggregation(col3) from default.test_table_0;").strip()
     assert(data == "([1],[44])")
+    print('Ok')
 
     # Insert from new server to upgraded server, data version 0.
     node1.query("insert into table function remote('node5', default.test_table) select * from default.test_table_0;").strip()
     upgraded_server_data = node5.query("select finalizeAggregation(col3) from default.test_table order by col2;").strip()
     assert(upgraded_server_data == "([1],[44])\n([1],[44])\n([1],[44])\n([1],[44])")
+    print('Ok')
 
 
 def test_aggregate_function_versioning_persisting_metadata(start_cluster):
@@ -196,4 +219,3 @@ def test_aggregate_function_versioning_persisting_metadata(start_cluster):
 
     result = node6.query("select finalizeAggregation(col3) from remote('127.0.0.{1,2}', default.test_table);").strip()
     assert(result == "([1],[44])\n([1],[44])\n([1],[44])\n([1],[44])\n([1],[44])\n([1],[44])")
-

@@ -448,7 +448,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
             const auto * aggregate_function_type = typeid_cast<const DataTypeAggregateFunction *>(column_type.get());
             if (attach && aggregate_function_type && aggregate_function_type->isVersioned())
-                aggregate_function_type->setVersionIfEmpty(0);
+                aggregate_function_type->setVersion(0, /* if_empty */true);
 
             if (col_decl.null_modifier)
             {

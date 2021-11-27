@@ -77,7 +77,7 @@ void NativeReader::readData(const IDataType & type, ColumnPtr & column, ReadBuff
     if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
     {
         auto version = aggregate_function_data_type->getVersionFromRevision(revision);
-        aggregate_function_data_type->setVersionIfEmpty(version);
+        aggregate_function_data_type->setVersion(version, /* if_empty */true);
     }
 
     auto serialization = type.getDefaultSerialization();

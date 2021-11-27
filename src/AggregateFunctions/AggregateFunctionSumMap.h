@@ -70,6 +70,7 @@ private:
     SerializationPtr keys_serialization;
     DataTypes values_types;
     Serializations values_serializations;
+    Serializations promoted_values_serializations;
 
 public:
     using Base = IAggregateFunctionDataHelper<
@@ -83,8 +84,16 @@ public:
         , values_types(values_types_)
     {
         values_serializations.reserve(values_types.size());
+        promoted_values_serializations.reserve(values_types.size());
         for (const auto & type : values_types)
+        {
             values_serializations.emplace_back(type->getDefaultSerialization());
+            if (type->isNullable())
+                promoted_values_serializations.emplace_back(
+                    makeNullable(removeNullable(type)->promoteNumericType())->getDefaultSerialization());
+            else
+                promoted_values_serializations.emplace_back(type->promoteNumericType()->getDefaultSerialization());
+        }
     }
 
     bool isVersioned() const override { return true; }
@@ -283,14 +292,7 @@ public:
             }
             case 1:
             {
-                serialize = [&](size_t col_idx, const Array & values)
-                {
-                    const auto & type = values_types[col_idx];
-                    if (!type->isNullable())
-                        type->promoteNumericType()->getDefaultSerialization()->serializeBinary(values[col_idx], buf);
-                    else
-                        values_serializations[col_idx]->serializeBinary(values[col_idx], buf);
-                };
+                serialize = [&](size_t col_idx, const Array & values){ promoted_values_serializations[col_idx]->serializeBinary(values[col_idx], buf); };
                 break;
             }
         }
@@ -322,14 +324,7 @@ public:
             }
             case 1:
             {
-                deserialize = [&](size_t col_idx, Array & values)
-                {
-                    const auto & type = values_types[col_idx];
-                    if (!type->isNullable())
-                        type->promoteNumericType()->getDefaultSerialization()->deserializeBinary(values[col_idx], buf);
-                    else
-                        values_serializations[col_idx]->deserializeBinary(values[col_idx], buf);
-                };
+                deserialize = [&](size_t col_idx, Array & values){ promoted_values_serializations[col_idx]->deserializeBinary(values[col_idx], buf); };
                 break;
             }
         }
