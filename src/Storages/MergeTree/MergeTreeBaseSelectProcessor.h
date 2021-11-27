@@ -113,7 +113,6 @@ protected:
     MergeTreeReadTaskPtr task;
 
     std::optional<ParallelReadingExtension> extension;
-    std::vector<size_t> average_mark_size_bytes;
 
     bool no_more_tasks{false};
     std::deque<MergeTreeReadTaskPtr> delayed_tasks;

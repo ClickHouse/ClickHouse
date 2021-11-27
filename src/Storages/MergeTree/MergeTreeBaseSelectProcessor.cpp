@@ -648,15 +648,14 @@ void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * curren
             auto size = task->data_part->getColumnSize(name);
 
             assert(size.marks != 0);
-            average_mark_size_bytes.emplace_back(size.data_uncompressed / size.marks);
-            sum_average_marks_size += average_mark_size_bytes.back();
+            sum_average_marks_size += size.data_uncompressed / size.marks;
         }
     }
 
     if (sum_average_marks_size == 0)
         sum_average_marks_size = 8UL * 1024 * 1024 * 10; // 10 MiB
 
-    LOG_TRACE(log, "Reading from {} part, average mark size is {}",
+    LOG_TEST(log, "Reading from {} part, average mark size is {}",
         task->data_part->getTypeName(), sum_average_marks_size);
 
     const size_t max_batch_size = (8UL * 1024 * 1024 * 1024) / sum_average_marks_size;
@@ -689,6 +688,10 @@ void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * curren
             {
                 buffered_ranges.back().push_back(range);
                 current_batch_size += range.end - range.begin;
+            }
+            else
+            {
+                delayed_ranges.emplace_back(range);
             }
             continue;
         }

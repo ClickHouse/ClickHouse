@@ -224,29 +224,20 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::IStreamFactory::
         = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
 
     std::shared_ptr<RemoteQueryExecutor> remote_query_executor;
-    if (pool)
-    {
-        remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            pool, query_string, shard.header, context, throttler, scalars, external_tables, stage,
+
+    remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+            pool ? pool : shard.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage,
             RemoteQueryExecutor::Extension{.parallel_reading_coordinator = std::move(coordinator), .replica_info = std::move(replica_info)});
 
-        remote_query_executor->setLogger(log);
+    remote_query_executor->setLogger(log);
 
-        if (!table_func_ptr)
-            remote_query_executor->setMainTable(main_table);
-    }
-    else
-    {
-        remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            shard.pool, query_string, shard.header, context, throttler, scalars, external_tables, stage,
-            RemoteQueryExecutor::Extension{.parallel_reading_coordinator = std::move(coordinator), .replica_info = std::move(replica_info)});
-
-        remote_query_executor->setLogger(log);
-
+    /// In case of parallel reading from replicas we have a connection pool per replica.
+    /// Setting PoolMode will make no sense.
+    if (!pool)
         remote_query_executor->setPoolMode(PoolMode::GET_MANY);
-        if (!table_func_ptr)
-            remote_query_executor->setMainTable(main_table);
-    }
+
+    if (!table_func_ptr)
+        remote_query_executor->setMainTable(main_table);
 
     pipes.emplace_back(createRemoteSourcePipe(remote_query_executor, add_agg_info, add_totals, add_extremes, async_read));
     pipes.back().addInterpreterContext(context);

@@ -37,6 +37,11 @@ class RemoteQueryExecutor
 public:
     using ReadContext = RemoteQueryExecutorReadContext;
 
+    /// We can provide additional logic for RemoteQueryExecutor
+    /// For example for s3Cluster table function we provide an Iterator over tasks to do.
+    /// Nodes involved into the query send request for a new task and we answer them using this object.
+    /// In case of parallel reading from replicas we provide a Coordinator object
+    /// Every replica will tell us about parts and 
     struct Extension
     {
       std::shared_ptr<TaskIterator> task_iterator{nullptr};
