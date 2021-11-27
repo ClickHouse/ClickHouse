@@ -54,6 +54,7 @@ namespace ErrorCodes
     extern const int PROTOBUF_FIELD_NOT_REPEATED;
     extern const int PROTOBUF_BAD_CAST;
     extern const int LOGICAL_ERROR;
+    extern const int POSITION_OUT_OF_BOUND;
 }
 
 namespace
@@ -2093,6 +2094,11 @@ namespace
                 field_columns.clear();
                 for (size_t column_index : info.column_indices)
                 {
+                    /// This can happen, for example, if user makes a typo in column name, so it does not match name in .proto
+                    if (column_index >= num_columns_)
+                        throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND,
+                                        "Position {} out of bound (must be less than {}). Possible reason: some column names are incorrect",
+                                        column_index, num_columns_);
                     field_columns.emplace_back(columns_[column_index]);
                 }
                 info.field_serializer->setColumns(field_columns.data(), field_columns.size());

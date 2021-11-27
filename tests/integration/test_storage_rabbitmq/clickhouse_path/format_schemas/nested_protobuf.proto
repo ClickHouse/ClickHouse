@@ -1,0 +1,14 @@
+syntax = "proto2";
+
+message UpdateMessage {
+  message Module {
+    message ModuleNode {
+      required uint32 node_id = 1;
+      optional uint32 opening_time = 10;
+      optional uint32 closing_time = 11;
+      optional uint32 current = 12;
+    }
+    repeated ModuleNode nodes = 20;
+  }
+  repeated Module modules = 70;
+}

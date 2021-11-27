@@ -16,11 +16,13 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 from . import rabbitmq_pb2
+from . import nested_protobuf_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
                                 main_configs=['configs/rabbitmq.xml', 'configs/macros.xml', 'configs/named_collection.xml'],
-                                with_rabbitmq=True)
+                                with_rabbitmq=True,
+                                clickhouse_path_dir='clickhouse_path')
 
 
 # Helpers
@@ -387,7 +389,6 @@ def test_rabbitmq_many_materialized_views(rabbitmq_cluster):
     rabbitmq_check_result(result2, True)
 
 
-@pytest.mark.skip(reason="clichouse_path with rabbitmq.proto fails to be exported")
 def test_rabbitmq_protobuf(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value String)
@@ -408,7 +409,7 @@ def test_rabbitmq_protobuf(rabbitmq_cluster):
     connection = pika.BlockingConnection(parameters)
     channel = connection.channel()
 
-    data = ''
+    data = b''
     for i in range(0, 20):
         msg = rabbitmq_pb2.KeyValueProto()
         msg.key = i
@@ -416,7 +417,7 @@ def test_rabbitmq_protobuf(rabbitmq_cluster):
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
     channel.basic_publish(exchange='pb', routing_key='', body=data)
-    data = ''
+    data = b''
     for i in range(20, 21):
         msg = rabbitmq_pb2.KeyValueProto()
         msg.key = i
@@ -424,7 +425,7 @@ def test_rabbitmq_protobuf(rabbitmq_cluster):
         serialized_msg = msg.SerializeToString()
         data = data + _VarintBytes(len(serialized_msg)) + serialized_msg
     channel.basic_publish(exchange='pb', routing_key='', body=data)
-    data = ''
+    data = b''
     for i in range(21, 50):
         msg = rabbitmq_pb2.KeyValueProto()
         msg.key = i
@@ -2241,6 +2242,81 @@ def test_rabbitmq_predefined_configuration(rabbitmq_cluster):
         result = instance.query('SELECT * FROM test.rabbitmq ORDER BY key', ignore_error=True)
         if result == "1\t2\n":
             break
+
+
+
+def test_rabbitmq_crash_nested_protobuf(rabbitmq_cluster):
+    # Make correct table
+    instance.query('''
+CREATE TABLE test.correct_names
+(
+    modules_nodes Nested (
+        node_id Array(UInt32),
+        opening_time Array(UInt32),
+        closing_time Array(UInt32),
+        current Array(UInt32)
+    )
+) ENGINE = RabbitMQ SETTINGS
+    rabbitmq_host_port = 'rabbitmq1:5672',
+    rabbitmq_exchange_name = 'parsed_messages_ch',
+    rabbitmq_exchange_type = 'topic',
+    rabbitmq_routing_key_list = 'message.update',
+    rabbitmq_format = 'Protobuf',
+    rabbitmq_schema = 'nested_protobuf.proto:UpdateMessage',
+    rabbitmq_skip_broken_messages = 1;
+        ''')
+
+    # Make incorrect table
+    instance.query('''
+CREATE TABLE test.incorrect_names
+(
+    modules_nodes Nested (
+        node_id Array(UInt32),
+        opening_time Array(UInt32),
+        closing_time_time Array(UInt32),
+        current Array(UInt32)
+    )
+) ENGINE = RabbitMQ SETTINGS
+    rabbitmq_host_port = 'rabbitmq1:5672',
+    rabbitmq_exchange_name = 'parsed_messages_ch',
+    rabbitmq_exchange_type = 'topic',
+    rabbitmq_routing_key_list = 'message.update',
+    rabbitmq_format = 'Protobuf',
+    rabbitmq_schema = 'nested_protobuf.proto:UpdateMessage',
+    rabbitmq_skip_broken_messages = 1;
+        ''')
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    msg = nested_protobuf_pb2.UpdateMessage()
+    modules = msg.modules.add()
+    nodes = modules.nodes.add()
+    nodes.node_id = 1
+    nodes.opening_time = 5393
+    nodes.closing_time = 3411
+    nodes.current = 12811
+
+    serialized_msg = msg.SerializeToString()
+    data = _VarintBytes(len(serialized_msg)) + serialized_msg
+
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.basic_publish(exchange='parsed_messages_ch', routing_key='message.update', body=data)
+    connection.close()
+
+    while True:
+        result = instance.query('SELECT * FROM test.correct_names')
+        if result != '':
+            assert(result.strip() == '[[1]]\t[[5393]]\t[[3411]]\t[[12811]]')
+            break
+
+    error = instance.query_and_get_error('SELECT * FROM test.incorrect_names')
+    assert('Position 3 out of bound' in error)
 
 
 if __name__ == '__main__':
