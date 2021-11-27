@@ -39,13 +39,13 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client2.expect("Ok.")
     client2.send("INSERT INTO db_01059_event_hop_watch_strict_asc.mt VALUES (1, toDateTime('1990/01/01 12:00:05', 'US/Samoa'));")
     client2.expect("Ok.")
-    client1.expect('1*1990-01-02 12:00:02' + end_of_block)
+    client1.expect('1*1990-01-01 12:00:02' + end_of_block)
     client1.expect('Progress: 1.00 rows.*\)')
 
     client2.send("INSERT INTO db_01059_event_hop_watch_strict_asc.mt VALUES (1, toDateTime('1990/01/01 12:00:10', 'US/Samoa'));")
     client2.expect("Ok.")
-    client1.expect('1*1990-01-02 12:00:06' + end_of_block)
-    client1.expect('1*1990-01-02 12:00:08' + end_of_block)
+    client1.expect('1*1990-01-01 12:00:06' + end_of_block)
+    client1.expect('1*1990-01-01 12:00:08' + end_of_block)
     client1.expect('Progress: 3.00 rows.*\)')
 
     # send Ctrl-C
