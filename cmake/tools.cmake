@@ -8,6 +8,8 @@ elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set (COMPILER_CLANG 1)
 endif ()
 
+execute_process(COMMAND ${CMAKE_CXX_COMPILER} --version)
+
 if (COMPILER_GCC)
     # Require minimum version of gcc
     set (GCC_MINIMUM_VERSION 11)
