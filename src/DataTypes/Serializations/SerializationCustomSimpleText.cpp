@@ -21,7 +21,7 @@ String serializeToString(const SerializationCustomSimpleText & domain, const ICo
 void deserializeFromString(const SerializationCustomSimpleText & domain, IColumn & column, const String & s, const FormatSettings & settings)
 {
     ReadBufferFromString istr(s);
-    domain.deserializeText(column, istr, settings);
+    domain.deserializeText(column, istr, settings, true);
 }
 
 }
@@ -37,7 +37,7 @@ SerializationCustomSimpleText::SerializationCustomSimpleText(const Serialization
 void SerializationCustomSimpleText::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String str;
-    readString(str, istr);
+    readStringUntilEOF(str, istr);
     deserializeFromString(*this, column, str, settings);
 }
 
