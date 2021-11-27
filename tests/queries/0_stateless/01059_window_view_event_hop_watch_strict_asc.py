@@ -34,7 +34,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.expect(prompt)
 
     client1.send('WATCH db_01059_event_hop_watch_strict_asc.wv')
-
+    client1.expect('Query id' + end_of_block)
     client2.send("INSERT INTO db_01059_event_hop_watch_strict_asc.mt VALUES (1, toDateTime('1990/01/01 12:00:00', 'US/Samoa'));")
     client2.expect("Ok.")
     client2.send("INSERT INTO db_01059_event_hop_watch_strict_asc.mt VALUES (1, toDateTime('1990/01/01 12:00:05', 'US/Samoa'));")
@@ -54,3 +54,9 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     if match.groups()[1]:
         client1.send(client1.command)
         client1.expect(prompt)
+    client1.send('DROP TABLE db_01059_event_hop_watch_strict_asc.wv NO DELAY')
+    client1.expect(prompt)
+    client1.send('DROP TABLE db_01059_event_hop_watch_strict_asc.mt')
+    client1.expect(prompt)
+    client1.send('DROP DATABASE IF EXISTS db_01059_event_hop_watch_strict_asc')
+    client1.expect(prompt)
