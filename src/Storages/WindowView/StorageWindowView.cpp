@@ -934,7 +934,7 @@ StorageWindowView::StorageWindowView(
     select_table_id = StorageID(select_database_name, select_table_name);
     DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
 
-    /// Extract all info from query; substitute Functiion_TUMPLE and Function_HOP with Function_WINDOW_ID.
+    /// Extract all info from query; substitute Function_TUMPLE and Function_HOP with Function_WINDOW_ID.
     auto inner_query = innerQueryParser(select_query);
 
     // Parse mergeable query
