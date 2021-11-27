@@ -4,10 +4,10 @@
 #include <memory>
 
 #include <Core/Defines.h>
-#include <base/types.h>
-#include <IO/WriteHelpers.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/TokenIterator.h>
+#include <base/types.h>
+#include <Common/Exception.h>
 
 
 namespace DB
@@ -64,7 +64,9 @@ public:
         {
             ++depth;
             if (max_depth > 0 && depth > max_depth)
-                throw Exception("Maximum parse depth (" + toString(max_depth) + ") exceeded. Consider rising max_parser_depth parameter.", ErrorCodes::TOO_DEEP_RECURSION);
+                throw Exception(
+                    "Maximum parse depth (" + std::to_string(max_depth) + ") exceeded. Consider rising max_parser_depth parameter.",
+                    ErrorCodes::TOO_DEEP_RECURSION);
         }
 
         void decreaseDepth()

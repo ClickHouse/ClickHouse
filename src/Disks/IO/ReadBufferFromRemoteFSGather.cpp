@@ -88,6 +88,9 @@ void ReadBufferFromRemoteFSGather::initialize()
             {
                 current_buf = createImplementationBuffer(file_path, read_until_position);
                 current_buf_idx = i;
+
+                if (auto * in = dynamic_cast<SeekableReadBufferWithSize *>(current_buf.get()))
+                    in->setReadType(SeekableReadBufferWithSize::ReadType::DISK_READ);
             }
 
             current_buf->seek(current_buf_offset, SEEK_SET);

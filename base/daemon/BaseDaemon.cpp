@@ -13,30 +13,21 @@
 #if defined(__linux__)
     #include <sys/prctl.h>
 #endif
-#include <fcntl.h>
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
-#include <cxxabi.h>
 #include <unistd.h>
 
 #include <typeinfo>
 #include <iostream>
 #include <fstream>
-#include <sstream>
 #include <memory>
 #include <base/scope_guard.h>
 
-#include <Poco/Observer.h>
-#include <Poco/AutoPtr.h>
-#include <Poco/PatternFormatter.h>
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
-#include <Poco/Condition.h>
-#include <Poco/SyslogChannel.h>
-#include <Poco/DirectoryIterator.h>
 
 #include <base/logger_useful.h>
 #include <base/ErrorHandlers.h>
@@ -56,12 +47,14 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/MemorySanitizer.h>
 #include <Common/SymbolIndex.h>
 #include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Elf.h>
 #include <filesystem>
+
+#include <loggers/OwnFormattingChannel.h>
+#include <loggers/OwnPatternFormatter.h>
 
 #include <Common/config_version.h>
 
@@ -999,6 +992,14 @@ void BaseDaemon::setupWatchdog()
             const char * new_process_name = "clickhouse-watchdog";
             memset(argv0, 0, original_process_name.size());
             memcpy(argv0, new_process_name, std::min(strlen(new_process_name), original_process_name.size()));
+        }
+
+        /// If streaming compression of logs is used then we write watchdog logs to cerr
+        if (config().getRawString("logger.stream_compress", "false") == "true")
+        {
+            Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+            Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
+            logger().setChannel(log);
         }
 
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
