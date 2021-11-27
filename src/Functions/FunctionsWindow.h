@@ -89,7 +89,7 @@ struct ToStartOfTransform;
     template <> \
     struct AddTime<IntervalKind::INTERVAL_KIND> \
     { \
-        static ExtendedDayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl & time_zone) \
+        static inline ExtendedDayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl & time_zone) \
         { \
             return time_zone.add##INTERVAL_KIND##s(ExtendedDayNum(d), delta); \
         } \
@@ -102,14 +102,14 @@ struct ToStartOfTransform;
     template <>
     struct AddTime<IntervalKind::Week>
     {
-        static ExtendedDayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl &) { return ExtendedDayNum(d + delta * 7);}
+        static inline NO_SANITIZE_UNDEFINED ExtendedDayNum execute(UInt16 d, UInt64 delta, const DateLUTImpl &) { return ExtendedDayNum(d + delta * 7);}
     };
 
 #define ADD_TIME(INTERVAL_KIND, INTERVAL) \
     template <> \
     struct AddTime<IntervalKind::INTERVAL_KIND> \
     { \
-        static UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &) { return t + delta * INTERVAL; } \
+        static inline NO_SANITIZE_UNDEFINED UInt32 execute(UInt32 t, Int64 delta, const DateLUTImpl &) { return t + delta * INTERVAL; } \
     };
     ADD_TIME(Day, 86400)
     ADD_TIME(Hour, 3600)
