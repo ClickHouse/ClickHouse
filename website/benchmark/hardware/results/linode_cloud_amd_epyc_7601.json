@@ -3,7 +3,7 @@
         "system":       "Linode 16GB",
         "system_full":  "Linode Cloud 16GB RAM, 6 AMD EPYC 7601 CPU Cores 2200 MHz, 320GB Storage, CentOS Linux release 7.9.2009 kernel 3.10.0-1160, KVM",
         "time":         "2021-11-05 18:00:00",
-        "kind":         "KVM cloud hosted",
+        "kind":         "cloud",
         "result":
         [
 [0.003, 0.002, 0.002],
