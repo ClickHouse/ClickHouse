@@ -10,9 +10,7 @@ Inserts data into a table.
 **Syntax**
 
 ``` sql
-INSERT INTO [db.]table [(c1, c2, c3)] [FORMAT format_name] VALUES (v11, v12, v13), (v21, v22, v23), ... 
-INSERT INTO [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] FORMAT format_name
-INSERT INTO [TABLE] FUNCTION table_func ...
+INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
 You can specify a list of columns to insert using  the `(c1, c2, c3)`. You can also use an expression with column [matcher](../../sql-reference/statements/select/index.md#asterisk) such as `*` and/or [modifiers](../../sql-reference/statements/select/index.md#select-modifiers) such as [APPLY](../../sql-reference/statements/select/index.md#apply-modifier), [EXCEPT](../../sql-reference/statements/select/index.md#except-modifier), [REPLACE](../../sql-reference/statements/select/index.md#replace-modifier).
@@ -111,11 +109,17 @@ To insert a default value instead of `NULL` into a column with not nullable data
 
 ### Inserting Data from a File {#inserting-data-from-a-file}
 
-Use `FROM INFILE file_name [COMPRESSION type] FORMAT input_format` to insert data from a file stored on a **client** side. This functionality is available in the [command-line client](../../interfaces/cli.md) and [clickhouse-local](../../operations/utilities/clickhouse-local.md).
+**Syntax**
 
-`filename` and `type` are string literals. Input file [format](../../interfaces/formats.md) is set in the `FORMAT` clause.
+``` sql
+INSERT INTO [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] FORMAT format_name
+```
 
-Compressed files may be used. File compression is detected by the extension of the file name or it can be explicitly specified in a `COMPRESSION` clause. Supported compression types are: `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+Use the syntax above to insert data from a file stored on a **client** side. This functionality is available in the [command-line client](../../interfaces/cli.md) and [clickhouse-local](../../operations/utilities/clickhouse-local.md).
+
+`file_name` and `type` are string literals. Input file [format](../../interfaces/formats.md) is set in the `FORMAT` clause.
+
+Compressed files are supported. File compression is detected by the extension of the file name or it can be explicitly specified in a `COMPRESSION` clause. Supported compression types are: `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
 
 **Example**
 
@@ -140,6 +144,11 @@ Result:
 ### Inserting into Table Function {#inserting-into-table-function}
 
 Data can be inserted into tables referenced by [table functions](../../sql-reference/table-functions/index.md).
+
+**Syntax**
+``` sql
+INSERT INTO [TABLE] FUNCTION table_func ...
+```
 
 **Example**
 
