@@ -95,7 +95,7 @@ BlockIO InterpreterDescribeQuery::execute()
     for (const auto & column : columns)
     {
         res_columns[0]->insert(column.name);
-        res_columns[1]->insert(column.type->getName());
+        res_columns[1]->insert(column.type->getName()); /// TODO: The problem is here.
 
         if (column.default_desc.expression)
         {

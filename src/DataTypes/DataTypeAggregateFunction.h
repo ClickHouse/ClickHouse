@@ -76,10 +76,12 @@ public:
     /// It is ok to have an empty version value here - then for serialization a default (latest)
     /// version is used. This method is used to force some zero version to be used instead of
     /// default, or to set version for serialization in distributed queries.
-    void setVersionIfEmpty(size_t version_) const
+    void setVersion(size_t version_, bool if_empty) const
     {
-        if (!version)
-            version = version_;
+        if (version && if_empty)
+            return;
+
+        version = version_;
     }
 };
 

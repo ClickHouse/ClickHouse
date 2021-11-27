@@ -43,7 +43,7 @@ void NativeWriter::flush()
 }
 
 
-static void writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit, size_t revision)
+static void writeData(const IDataType & type, const ColumnPtr & column, WriteBuffer & ostr, UInt64 offset, UInt64 limit)
 {
     /** If there are columns-constants - then we materialize them.
       * (Since the data type does not know how to serialize / deserialize constants.)
@@ -54,20 +54,6 @@ static void writeData(const IDataType & type, const ColumnPtr & column, WriteBuf
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
     settings.position_independent_encoding = false;
     settings.low_cardinality_max_dictionary_size = 0; //-V1048
-
-    bool include_version = revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
-    const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(&type);
-    if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
-    {
-        if (include_version)
-        {
-            auto version = aggregate_function_data_type->getVersionFromRevision(revision);
-            aggregate_function_data_type->setVersionIfEmpty(version);
-        }
-        else
-        {
-        }
-    }
 
     auto serialization = type.getDefaultSerialization();
 
@@ -128,6 +114,22 @@ void NativeWriter::write(const Block & block)
         /// Name
         writeStringBinary(column.name, ostr);
 
+        bool include_version = client_revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING;
+        const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
+        if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
+        {
+            if (include_version)
+            {
+                auto version = aggregate_function_data_type->getVersionFromRevision(client_revision);
+                aggregate_function_data_type->setVersion(version, /* if_empty */true);
+            }
+            else
+            {
+                /// TODO: set maximum supported version according to revision
+                aggregate_function_data_type->setVersion(0, /* if_empty */false);
+            }
+        }
+
         /// Type
         String type_name = column.type->getName();
 
@@ -141,7 +143,7 @@ void NativeWriter::write(const Block & block)
 
         /// Data
         if (rows)    /// Zero items of data is always represented as zero number of bytes.
-            writeData(*column.type, column.column, ostr, 0, 0, client_revision);
+            writeData(*column.type, column.column, ostr, 0, 0);
 
         if (index)
         {

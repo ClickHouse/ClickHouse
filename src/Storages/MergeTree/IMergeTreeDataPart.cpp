@@ -407,7 +407,7 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 }
 
 
-void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, bool loaded_from_disk)
+void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
 {
     columns = new_columns;
     column_name_to_position.clear();
@@ -416,14 +416,8 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, bool 
     for (const auto & column : columns)
     {
         column_name_to_position.emplace(column.name, pos);
-
-        const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
-        if (loaded_from_disk && aggregate_function_data_type && aggregate_function_data_type->isVersioned())
-            aggregate_function_data_type->setVersionIfEmpty(0);
-
         for (const auto & subcolumn : column.type->getSubcolumnNames())
             column_name_to_position.emplace(Nested::concatenateName(column.name, subcolumn), pos);
-
         ++pos;
     }
 }
@@ -1017,7 +1011,6 @@ void IMergeTreeDataPart::loadColumns(bool require)
         metadata_snapshot = metadata_snapshot->projections.get(name).metadata;
     NamesAndTypesList loaded_columns;
 
-    bool loaded_from_disk = false;
     if (!volume->getDisk()->exists(path))
     {
         /// We can get list of columns only from columns.txt in compact parts.
@@ -1042,10 +1035,16 @@ void IMergeTreeDataPart::loadColumns(bool require)
     else
     {
         loaded_columns.readText(*volume->getDisk()->readFile(path));
-        loaded_from_disk = true;
+
+        for (const auto & column : loaded_columns)
+        {
+            const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
+            if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
+                aggregate_function_data_type->setVersion(0, /* if_empty */true);
+        }
     }
 
-    setColumns(loaded_columns, loaded_from_disk);
+    setColumns(loaded_columns);
 }
 
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
