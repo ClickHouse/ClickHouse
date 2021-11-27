@@ -4,7 +4,6 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Core/SortDescription.h>
 #include <Core/Names.h>
-#include <Storages/ProjectionsDescription.h>
 #include <Interpreters/AggregateDescription.h>
 
 #include <memory>
@@ -44,6 +43,9 @@ using MergeTreeDataSelectAnalysisResultPtr = std::shared_ptr<MergeTreeDataSelect
 
 struct SubqueryForSet;
 using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
+
+struct ProjectionDescription;
+using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 
 struct PrewhereInfo
 {

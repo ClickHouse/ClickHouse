@@ -41,6 +41,9 @@ using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 class ActionsDAG;
 using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
+struct PrewhereInfo;
+using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
+
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
