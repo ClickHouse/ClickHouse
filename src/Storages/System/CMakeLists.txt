@@ -48,7 +48,7 @@ clickhouse_embed_binaries(
         RESOURCES schemata.sql tables.sql views.sql columns.sql
 )
 
-list (SORT storages_system_sources)
+list (SORT storages_system_sources) # Reproducible build
 add_library(clickhouse_storages_system ${storages_system_sources})
 
 add_dependencies(clickhouse_storages_system information_schema_metadata)
