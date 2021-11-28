@@ -1,19 +1,21 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Core/SortDescription.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
+
+class Context;
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /** Helper class, that can analyze MergeTree order key
  *   and required sort description to get their
  *   common prefix, which is needed for
  *   performing reading in order of PK.
  */
-class Context;
-
 class ReadInOrderOptimizer
 {
 public:
