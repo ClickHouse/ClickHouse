@@ -553,11 +553,14 @@ private:
 
                 if constexpr (mode == CipherMode::RFC5116_AEAD_AES_GCM)
                 {
-                    if (string_size > 0 && string_size < tag_size)
-                        throw Exception("Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.",
-                            ErrorCodes::BAD_ARGUMENTS);
+                    if (string_size > 0)
+                    {
+                        if (string_size < tag_size)
+                            throw Exception("Encrypted data is smaller than the size of additional data for AEAD mode, cannot decrypt.",
+                                ErrorCodes::BAD_ARGUMENTS);
 
-                    resulting_size -= tag_size;
+                        resulting_size -= tag_size;
+                    }
                 }
             }
 
@@ -592,6 +595,7 @@ private:
                         throw Exception(fmt::format("Encrypted data is too short: only {} bytes, "
                                 "should contain at least {} bytes of a tag.",
                                 input_value.size, block_size, tag_size), ErrorCodes::BAD_ARGUMENTS);
+
                     input_value.size -= tag_size;
                 }
             }
