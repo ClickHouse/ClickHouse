@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Columns/ColumnNullable_fwd.h>
-#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Common/assert_cast.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 
 class Collator;
 
@@ -189,5 +188,7 @@ private:
     void updatePermutationImpl(
         bool reverse, size_t limit, int null_direction_hint, Permutation & res, EqualRanges & equal_ranges, const Collator * collator = nullptr) const;
 };
+
+ColumnPtr makeNullable(const ColumnPtr & column);
 
 }

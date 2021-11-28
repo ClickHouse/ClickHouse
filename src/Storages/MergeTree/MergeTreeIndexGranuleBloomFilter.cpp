@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranuleBloomFilter.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Common/HashTable/Hash.h>

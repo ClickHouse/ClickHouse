@@ -1,6 +1,7 @@
 #include "insertPostgreSQLValue.h"
 
 #if USE_LIBPQXX
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
