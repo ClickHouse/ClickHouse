@@ -115,15 +115,14 @@ To insert a default value instead of `NULL` into a column with not nullable data
 INSERT INTO [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] FORMAT format_name
 ```
 
-Use the syntax above to insert data from a file stored on a **client** side. This functionality is available in the [command-line client](../../interfaces/cli.md) and [clickhouse-local](../../operations/utilities/clickhouse-local.md).
+Use the syntax above to insert data from a file stored on a **client** side. `file_name` and `type` are string literals. Input file [format](../../interfaces/formats.md) must be set in the `FORMAT` clause. 
+Compressed files are supported. File compression is detected by the extension of the file name. Or it can be explicitly specified in a `COMPRESSION` clause. Supported compression types are: `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
 
-`file_name` and `type` are string literals. Input file [format](../../interfaces/formats.md) is set in the `FORMAT` clause.
-
-Compressed files are supported. File compression is detected by the extension of the file name or it can be explicitly specified in a `COMPRESSION` clause. Supported compression types are: `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+This functionality is available in the [command-line client](../../interfaces/cli.md) and [clickhouse-local](../../operations/utilities/clickhouse-local.md).
 
 **Example**
 
-Execute queries in the [command-line client](../../interfaces/cli.md):
+Execute the following queries in the [command-line client](../../interfaces/cli.md):
 
 ```bash
 echo 1,A > input.csv ; echo 2,B >> input.csv
