@@ -1,5 +1,6 @@
 #include <Interpreters/JoinedTables.h>
 
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InJoinSubqueriesPreprocessor.h>

@@ -4,6 +4,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>

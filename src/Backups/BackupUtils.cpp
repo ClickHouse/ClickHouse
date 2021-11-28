@@ -8,6 +8,7 @@
 #include <Databases/IDatabase.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserCreateQuery.h>

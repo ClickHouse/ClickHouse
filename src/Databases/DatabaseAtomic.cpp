@@ -7,6 +7,7 @@
 #include <Common/renameat2.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <filesystem>
 #include <Interpreters/DDLTask.h>

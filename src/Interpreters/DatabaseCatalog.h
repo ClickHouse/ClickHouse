@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Interpreters/DatabaseCatalog_fwd.h>
+
 #include <Core/UUID.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
@@ -77,9 +79,6 @@ private:
     bool is_database_guard = false;
 };
 
-using DDLGuardPtr = std::unique_ptr<DDLGuard>;
-
-
 /// Creates temporary table in `_temporary_and_external_tables` with randomly generated unique StorageID.
 /// Such table can be accessed from everywhere by its ID.
 /// Removes the table from database on destruction.
@@ -112,9 +111,6 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
     IDatabase * temporary_tables = nullptr;
     UUID id = UUIDHelpers::Nil;
 };
-
-///TODO maybe remove shared_ptr from here?
-using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHolder>>;
 
 class BackgroundSchedulePoolTaskHolder;
 

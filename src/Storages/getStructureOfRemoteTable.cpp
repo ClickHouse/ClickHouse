@@ -1,6 +1,7 @@
 #include "getStructureOfRemoteTable.h"
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>

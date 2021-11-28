@@ -8,6 +8,7 @@
 #include <Databases/IDatabase.h>
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/queryToString.h>

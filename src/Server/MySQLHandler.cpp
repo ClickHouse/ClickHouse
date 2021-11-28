@@ -7,6 +7,7 @@
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
 #include <IO/copyData.h>

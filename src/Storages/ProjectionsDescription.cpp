@@ -1,4 +1,6 @@
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -13,7 +15,6 @@
 #include <Parsers/queryToString.h>
 
 #include <Core/Defines.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>

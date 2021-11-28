@@ -1,4 +1,5 @@
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Access/Common/AccessFlags.h>
 #include <Storages/IStorage.h>
@@ -7,7 +8,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/typeid_cast.h>
+
 #include <algorithm>
 
 

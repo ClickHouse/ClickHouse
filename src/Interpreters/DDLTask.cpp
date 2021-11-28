@@ -5,6 +5,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Poco/Net/NetException.h>
 #include <base/logger_useful.h>
 #include <Parsers/ParserQuery.h>

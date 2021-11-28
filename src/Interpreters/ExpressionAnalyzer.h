@@ -2,10 +2,9 @@
 
 #include <Columns/FilterDescription.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DatabaseCatalog_fwd.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/TreeRewriter.h>
-#include <Interpreters/WindowDescription.h>
 #include <Interpreters/join_common.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -43,6 +42,9 @@ using ActionsDAGPtr = std::shared_ptr<ActionsDAG>;
 
 struct PrewhereInfo;
 using PrewhereInfoPtr = std::shared_ptr<PrewhereInfo>;
+
+struct WindowDescription;
+using WindowDescriptions = std::unordered_map<std::string, WindowDescription>;
 
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);

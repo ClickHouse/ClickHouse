@@ -6,14 +6,15 @@
 #include <Core/UUID.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/DatabaseCatalog_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include <base/types.h>
 #include <Common/MultiVersion.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/isLocalAddress.h>
-#include <base/types.h>
 
 #include "config_core.h"
 
@@ -91,7 +92,6 @@ class Credentials;
 class GSSAcceptorContext;
 struct SettingsConstraintsAndProfileIDs;
 class RemoteHostFilter;
-struct StorageID;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class DiskSelector;

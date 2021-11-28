@@ -6,8 +6,9 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
-#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/loadMetadata.h>
 
 #include <Databases/DatabaseOrdinary.h>

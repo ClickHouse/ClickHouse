@@ -12,8 +12,9 @@ limitations under the License. */
 #include <Core/Settings.h>
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTWatchQuery.h>
-#include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterWatchQuery.h>
 #include <Access/Common/AccessFlags.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 

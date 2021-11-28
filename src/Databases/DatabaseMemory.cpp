@@ -4,6 +4,7 @@
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/IStorage.h>

@@ -8,6 +8,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Access/Common/AccessFlags.h>

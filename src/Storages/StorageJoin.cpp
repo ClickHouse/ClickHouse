@@ -8,6 +8,7 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/NestedUtils.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/joinDispatch.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TableJoin.h>

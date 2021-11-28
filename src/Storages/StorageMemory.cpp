@@ -1,6 +1,7 @@
 #include <cassert>
 #include <Common/Exception.h>
 
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/MemorySettings.h>
