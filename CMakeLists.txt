@@ -276,6 +276,13 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     endif ()
 endif()
 
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+    set(USE_DEBUG_HELPERS ON)
+else ()
+    set(USE_DEBUG_HELPERS ON)
+endif()
+option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
+
 # Create BuildID when using lld. For other linkers it is created by default.
 if (LINKER_NAME MATCHES "lld$")
     # SHA1 is not cryptographically secure but it is the best what lld is offering.
