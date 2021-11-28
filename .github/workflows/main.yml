@@ -152,7 +152,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 compatibility_check.py 0
+          cd $REPO_COPY/tests/ci && python3 compatibility_check.py
       - name: Cleanup
         if: always()
         run: |
@@ -518,6 +518,7 @@ jobs:
       - BuilderDebDebug
       - BuilderDebSplitted
     runs-on: [self-hosted, style-checker]
+    if: always()
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -604,7 +605,9 @@ jobs:
           sudo rm -fr $TEMP_PATH
   FunctionalStatelessTestTsan:
     needs: [BuilderDebTsan]
-    runs-on: [self-hosted, func-tester]
+    # tests can consume more than 60GB of memory,
+    # so use bigger server
+    runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1297,6 +1300,34 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
+  IntegrationTestsFlakyCheck:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_asan_flaky_check
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests flaky check (asan, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_asan_flaky_check/ClickHouse
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
 #############################################################################################
 #################################### UNIT TESTS #############################################
 #############################################################################################
@@ -1481,6 +1512,7 @@ jobs:
       - UnitTestsReleaseClang
       - SplitBuildSmokeTest
       - CompatibilityCheck
+      - IntegrationTestsFlakyCheck
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
