@@ -4,15 +4,17 @@ toc_title: INTO OUTFILE
 
 # INTO OUTFILE Clause {#into-outfile-clause}
 
-`INTO OUTFILE` clause redirects the result of a `SELECT` query to a file on the **client** side. File compression is detected by the extension of the file name or it can be explicitly specified in a `COMPRESSION` clause.
+`INTO OUTFILE` clause redirects the result of a `SELECT` query to a file on the **client** side.
+
+Compressed files are supported. File compression is detected by the extension of the file name. Or it can be explicitly specified in a `COMPRESSION` clause.
 
 **Syntax**
 
 ```sql
-SELECT <expr_list> INTO OUTFILE filename [COMPRESSION type]
+SELECT <expr_list> INTO OUTFILE file_name [COMPRESSION type]
 ```
 
-`filename` and `type` are string literals. Supported compression types are: `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+`file_name` and `type` are string literals. Supported compression types are: `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
 
 ## Implementation Details {#implementation-details}
 
@@ -22,7 +24,7 @@ SELECT <expr_list> INTO OUTFILE filename [COMPRESSION type]
 
 **Example**
 
-Execute a query in the [command-line client](../../../interfaces/cli.md):
+Execute the following query in the [command-line client](../../../interfaces/cli.md):
 
 ```bash
 clickhouse-client --query="SELECT 1,'ABC' INTO OUTFILE 'select.gz' FORMAT CSV;"
