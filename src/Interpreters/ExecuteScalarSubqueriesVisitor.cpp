@@ -1,9 +1,9 @@
 #include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
 
+#include <Columns/ColumnNullable_fwd.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>

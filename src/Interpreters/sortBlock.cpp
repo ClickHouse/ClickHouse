@@ -2,10 +2,7 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Common/typeid_cast.h>
-#include <Functions/FunctionHelpers.h>
 
 #include <pdqsort.h>
 

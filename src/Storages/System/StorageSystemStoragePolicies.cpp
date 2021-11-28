@@ -1,7 +1,6 @@
 #include <Storages/System/StorageSystemStoragePolicies.h>
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>

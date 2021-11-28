@@ -1,8 +1,8 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnNullable_fwd.h>
 #include <Core/ColumnNumbers.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
 
 
 namespace DB
