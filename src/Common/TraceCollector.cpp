@@ -6,6 +6,7 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Loggers.h>
 #include <Interpreters/TraceLog.h>
 #include <Poco/Logger.h>
 #include <Common/Exception.h>

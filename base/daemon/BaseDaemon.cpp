@@ -22,6 +22,7 @@
 #include <iostream>
 #include <fstream>
 #include <memory>
+#include <thread>
 #include <base/scope_guard.h>
 
 #include <Poco/Message.h>
@@ -51,6 +52,7 @@
 #include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Elf.h>
+#include <Common/setThreadName.h>
 #include <filesystem>
 
 #include <loggers/OwnFormattingChannel.h>

@@ -13,6 +13,7 @@
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB

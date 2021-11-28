@@ -11,6 +11,8 @@
 namespace DB
 {
 
+class WriteBufferFromOwnString;
+
 using ResponsesQueue = ConcurrentBoundedQueue<KeeperStorage::ResponseForSession>;
 using SnapshotsQueue = ConcurrentBoundedQueue<CreateSnapshotTask>;
 

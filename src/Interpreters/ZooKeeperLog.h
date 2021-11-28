@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
-#include <Interpreters/SystemLog.h>
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/ClientInfo.h>
+#include <base/types.h>
 #include <Common/ZooKeeper/IKeeper.h>
 
 
@@ -66,11 +67,6 @@ struct ZooKeeperLogElement
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
-};
-
-class ZooKeeperLog : public SystemLog<ZooKeeperLogElement>
-{
-    using SystemLog<ZooKeeperLogElement>::SystemLog;
 };
 
 DataTypePtr getCoordinationErrorCodesEnumType();

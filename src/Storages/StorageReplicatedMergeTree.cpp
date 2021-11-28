@@ -45,6 +45,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ExpressionListParsers.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -55,7 +56,9 @@
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ConnectionTimeoutsContext.h>
 
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/Loggers.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>

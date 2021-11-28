@@ -1,6 +1,9 @@
 #pragma once
 
-#include <Interpreters/SystemLog.h>
+#include <Core/Field.h>
+#include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -32,18 +35,9 @@ struct OpenTelemetrySpanLogElement : public OpenTelemetrySpan
     void appendToBlock(MutableColumns & columns) const;
 };
 
-// OpenTelemetry standartizes some Log data as well, so it's not just
-// OpenTelemetryLog to avoid confusion.
-class OpenTelemetrySpanLog : public SystemLog<OpenTelemetrySpanLogElement>
-{
-public:
-    using SystemLog<OpenTelemetrySpanLogElement>::SystemLog;
-};
-
 struct OpenTelemetrySpanHolder : public OpenTelemetrySpan
 {
     OpenTelemetrySpanHolder(const std::string & _operation_name);
     ~OpenTelemetrySpanHolder();
 };
-
 }

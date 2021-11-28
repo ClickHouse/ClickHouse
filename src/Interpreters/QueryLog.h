@@ -1,17 +1,16 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
-#include <Interpreters/SystemLog.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/SettingsEnums_fwd.h>
 #include <Interpreters/ClientInfo.h>
-
-namespace ProfileEvents
-{
-    class Counters;
-}
+#include <Common/ProfileEvents.h>
 
 
 namespace DB
 {
+
+struct Settings;
 
 
 /** Allows to log information about queries execution:
@@ -90,13 +89,6 @@ struct QueryLogElement
     void appendToBlock(MutableColumns & columns) const;
 
     static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);
-};
-
-
-/// Instead of typedef - to allow forward declaration.
-class QueryLog : public SystemLog<QueryLogElement>
-{
-    using SystemLog<QueryLogElement>::SystemLog;
 };
 
 }

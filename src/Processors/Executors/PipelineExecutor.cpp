@@ -2,6 +2,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Common/EventCounter.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/MemoryTracker.h>
 #include <Processors/Executors/PipelineExecutor.h>

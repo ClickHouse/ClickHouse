@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/StorageMergeTree.h>
+#include <Interpreters/Loggers.h>
 #include <Interpreters/PartLog.h>
 
 

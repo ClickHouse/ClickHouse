@@ -11,6 +11,7 @@
 #include <Poco/Base64Encoder.h>
 #include <boost/algorithm/string.hpp>
 #include <Common/hex.h>
+#include <IO/Operators.h>
 
 namespace DB
 {

@@ -3,6 +3,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Columns/ColumnNullable_fwd.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/QueryLog.h>

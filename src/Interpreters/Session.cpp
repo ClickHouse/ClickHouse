@@ -9,6 +9,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Loggers.h>
 #include <Interpreters/SessionLog.h>
 
 #include <magic_enum.hpp>

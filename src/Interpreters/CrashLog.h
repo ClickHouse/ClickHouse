@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Interpreters/SystemLog.h>
-
+#include <Core/Field.h>
+#include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
+#include <base/types.h>
 
 /// Call this function on crash.
 void collectCrashLog(Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace);
@@ -29,18 +31,6 @@ struct CrashLogElement
     void appendToBlock(MutableColumns & columns) const;
 };
 
-class CrashLog : public SystemLog<CrashLogElement>
-{
-    using SystemLog<CrashLogElement>::SystemLog;
-    friend void ::collectCrashLog(Int32, UInt64, const String &, const StackTrace &);
 
-    static std::weak_ptr<CrashLog> crash_log;
-
-public:
-    static void initialize(std::shared_ptr<CrashLog> crash_log_)
-    {
-        crash_log = std::move(crash_log_);
-    }
-};
 
 }

@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/AsynchronousMetricLog.h>
 #include <Interpreters/AsynchronousMetrics.h>
+#include <Interpreters/Loggers.h>
 
 
 namespace DB

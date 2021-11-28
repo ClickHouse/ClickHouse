@@ -1,6 +1,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeSink.h>
+#include <Interpreters/Loggers.h>
 #include <Interpreters/PartLog.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/KeeperException.h>

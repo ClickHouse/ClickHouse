@@ -18,6 +18,8 @@
 #include <base/JSON.h>
 #include <base/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <DataTypes/NestedUtils.h>
 

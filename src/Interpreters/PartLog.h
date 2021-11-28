@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Interpreters/SystemLog.h>
-
+#include <Core/NamesAndAliases.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -57,23 +57,6 @@ struct PartLogElement
     void appendToBlock(MutableColumns & columns) const;
 };
 
-class IMergeTreeDataPart;
 
-
-/// Instead of typedef - to allow forward declaration.
-class PartLog : public SystemLog<PartLogElement>
-{
-    using SystemLog<PartLogElement>::SystemLog;
-
-    using MutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
-    using MutableDataPartsVector = std::vector<MutableDataPartPtr>;
-
-public:
-    /// Add a record about creation of new part.
-    static bool addNewPart(ContextPtr context, const MutableDataPartPtr & part, UInt64 elapsed_ns,
-                           const ExecutionStatus & execution_status = {});
-    static bool addNewParts(ContextPtr context, const MutableDataPartsVector & parts, UInt64 elapsed_ns,
-                            const ExecutionStatus & execution_status = {});
-};
 
 }

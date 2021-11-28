@@ -3,14 +3,13 @@
 #include <Common/QueryProfiler.h>
 #include <Common/ThreadStatus.h>
 #include <base/errnoToString.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <Poco/Logger.h>
 #include <base/getThreadId.h>
 #include <base/getPageSize.h>
 
 #include <csignal>
-#include <mutex>
+#include <sys/mman.h>
 
 
 namespace DB

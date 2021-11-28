@@ -3,6 +3,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/setThreadName.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
+#include <Interpreters/Loggers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>

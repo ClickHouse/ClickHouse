@@ -6,7 +6,9 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/ThreadPool.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Interpreters/Loggers.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>

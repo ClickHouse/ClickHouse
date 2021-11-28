@@ -3,6 +3,7 @@
 
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Loggers.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryThreadLog.h>
@@ -15,6 +16,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/TraceCollector.h>
+#include <Common/thread_local_rng.h>
 #include <base/errnoToString.h>
 
 #if defined(OS_LINUX)

@@ -6,6 +6,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/AlterCommands.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>

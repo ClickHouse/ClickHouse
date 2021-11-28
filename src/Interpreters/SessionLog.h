@@ -1,8 +1,10 @@
 #pragma once
 
-#include <Interpreters/SystemLog.h>
-#include <Interpreters/ClientInfo.h>
 #include <Access/Common/AuthenticationData.h>
+#include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
+#include <Interpreters/ClientInfo.h>
+#include <base/types.h>
 
 namespace DB
 {
@@ -14,7 +16,6 @@ enum SessionLogElementType : int8_t
     SESSION_LOGOUT = 2,
 };
 
-class ContextAccess;
 
 /** A struct which will be inserted as row into session_log table.
   *
@@ -57,18 +58,6 @@ struct SessionLogElement
     static NamesAndAliases getNamesAndAliases() { return {}; }
 
     void appendToBlock(MutableColumns & columns) const;
-};
-
-
-/// Instead of typedef - to allow forward declaration.
-class SessionLog : public SystemLog<SessionLogElement>
-{
-    using SystemLog<SessionLogElement>::SystemLog;
-
-public:
-    void addLoginSuccess(const UUID & auth_id, std::optional<String> session_id, const Context & login_context);
-    void addLoginFailure(const UUID & auth_id, const ClientInfo & info, const String & user, const Exception & reason);
-    void addLogOut(const UUID & auth_id, const String & user, const ClientInfo & client_info);
 };
 
 }

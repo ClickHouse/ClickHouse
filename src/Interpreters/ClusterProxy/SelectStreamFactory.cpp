@@ -1,4 +1,5 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>

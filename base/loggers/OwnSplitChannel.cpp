@@ -3,7 +3,9 @@
 
 #include <iostream>
 #include <Core/Block.h>
+#include <Core/Field.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/Loggers.h>
 #include <Interpreters/TextLog.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <sys/time.h>
@@ -13,6 +15,7 @@
 #include <base/getThreadId.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/IO.h>
+#include <Common/setThreadName.h>
 
 namespace DB
 {

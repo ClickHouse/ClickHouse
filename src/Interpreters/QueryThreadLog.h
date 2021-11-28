@@ -1,13 +1,10 @@
 #pragma once
 
-#include <Interpreters/SystemLog.h>
+#include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/ClientInfo.h>
-
-
-namespace ProfileEvents
-{
-    class Counters;
-}
+#include <base/types.h>
+#include <Common/ProfileEvents.h>
 
 
 namespace DB
@@ -53,13 +50,6 @@ struct QueryThreadLogElement
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
 };
-
-
-class QueryThreadLog : public SystemLog<QueryThreadLogElement>
-{
-    using SystemLog<QueryThreadLogElement>::SystemLog;
-};
-
 
 }
 

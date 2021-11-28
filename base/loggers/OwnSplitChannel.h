@@ -1,14 +1,20 @@
 #pragma once
-#include <atomic>
-#include <vector>
+
 #include <Poco/AutoPtr.h>
 #include <Poco/Channel.h>
 #include "ExtendedLogChannel.h"
-#include <Interpreters/TextLog.h>
 
+#include <atomic>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <vector>
 
 namespace DB
 {
+
+class TextLog;
+
 /// Works as Poco::SplitterChannel, but performs additional work:
 ///  passes logs to Client via TCP interface
 ///  tries to use extended logging interface of child for more comprehensive logging

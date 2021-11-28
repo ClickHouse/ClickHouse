@@ -1,8 +1,10 @@
 #pragma once
 
+#include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/SystemLog.h>
+#include <base/types.h>
 #include <Common/QueryProfiler.h>
 #include <Common/TraceCollector.h>
 
@@ -30,11 +32,6 @@ struct TraceLogElement
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
-};
-
-class TraceLog : public SystemLog<TraceLogElement>
-{
-    using SystemLog<TraceLogElement>::SystemLog;
 };
 
 }

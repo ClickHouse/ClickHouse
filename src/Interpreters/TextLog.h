@@ -1,5 +1,10 @@
 #pragma once
-#include <Interpreters/SystemLog.h>
+
+#include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
+#include <base/types.h>
+
+#include <Poco/Message.h>
 
 namespace DB
 {
@@ -28,17 +33,6 @@ struct TextLogElement
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
-};
-
-class TextLog : public SystemLog<TextLogElement>
-{
-public:
-    TextLog(
-        ContextPtr context_,
-        const String & database_name_,
-        const String & table_name_,
-        const String & storage_def_,
-        size_t flush_interval_milliseconds_);
 };
 
 }

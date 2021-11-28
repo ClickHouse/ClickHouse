@@ -18,6 +18,7 @@
 #include <Processors/Sources/MySQLSource.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 #include <Storages/StorageMergeTree.h>
 #include <Common/quoteString.h>

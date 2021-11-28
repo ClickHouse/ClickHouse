@@ -6,11 +6,12 @@
 
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
+#include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums_fwd.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
 #include <Interpreters/QueryViewRuntimeStats.h>
-#include <Interpreters/SystemLog.h>
 #include <base/types.h>
 
 namespace ProfileEvents
@@ -54,12 +55,6 @@ struct QueryViewsLogElement
     static NamesAndTypesList getNamesAndTypes();
     static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
-};
-
-
-class QueryViewsLog : public SystemLog<QueryViewsLogElement>
-{
-    using SystemLog<QueryViewsLogElement>::SystemLog;
 };
 
 }

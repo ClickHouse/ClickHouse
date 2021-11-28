@@ -1,8 +1,10 @@
 #pragma once
 
-#include <Interpreters/SystemLog.h>
-#include <Common/ProfileEvents.h>
+#include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
+#include <base/types.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 
 #include <vector>
 #include <atomic>
@@ -32,12 +34,5 @@ struct AsynchronousMetricLogElement
     void appendToBlock(MutableColumns & columns) const;
 };
 
-class AsynchronousMetricLog : public SystemLog<AsynchronousMetricLogElement>
-{
-public:
-    using SystemLog<AsynchronousMetricLogElement>::SystemLog;
-
-    void addValues(const AsynchronousMetricValues &);
-};
 
 }

@@ -2,6 +2,7 @@
 
 #include <Coordination/KeeperDispatcher.h>
 #include <Server/KeeperTCPHandler.h>
+#include <base/find_symbols.h>
 #include <base/logger_useful.h>
 #include <Poco/Environment.h>
 #include <Poco/Path.h>
@@ -9,6 +10,8 @@
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Coordination/Keeper4LWInfo.h>
+#include <IO/Operators.h>
+#include <IO/WriteHelpers.h>
 
 #include <unistd.h>
 

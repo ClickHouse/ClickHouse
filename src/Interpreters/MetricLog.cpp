@@ -1,3 +1,4 @@
+#include <Interpreters/Loggers.h>
 #include <Interpreters/MetricLog.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>

@@ -1,6 +1,7 @@
 #include <Processors/Transforms/buildPushingToViewsChain.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -424,7 +425,7 @@ static void process(Block & block, ViewRuntimeData & view, const ViewsData & vie
     }
 
     if (executor.pull(block))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Single chunk is expected from view inner query {}", view.query);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Single chunk is expected from view inner query {}", view.query->getID());
 }
 
 static void logQueryViews(std::list<ViewRuntimeData> & views, ContextPtr context)

@@ -1,5 +1,6 @@
 #include "OpenTelemetrySpanLog.h"
 
+#include <Common/CurrentThread.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -8,6 +9,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Loggers.h>
 
 #include <Common/hex.h>
 

@@ -6,6 +6,7 @@
 
 #include <base/logger_useful.h>
 #include <base/range.h>
+#include <base/scope_guard.h>
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SensitiveDataMasker.h>
@@ -15,6 +16,7 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
+#include <thread>
 #include <sys/time.h>
 #include <sys/resource.h>
 
