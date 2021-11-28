@@ -57,6 +57,4 @@ struct PartLogElement
     void appendToBlock(MutableColumns & columns) const;
 };
 
-
-
 }

@@ -32,7 +32,4 @@ struct MetricLogElement
     void appendToBlock(MutableColumns & columns) const;
 };
 
-
-
-
 }

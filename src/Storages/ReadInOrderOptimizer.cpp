@@ -1,5 +1,6 @@
 #include <Storages/ReadInOrderOptimizer.h>
 
+#include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TableJoin.h>

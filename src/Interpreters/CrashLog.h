@@ -8,7 +8,6 @@
 /// Call this function on crash.
 void collectCrashLog(Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace);
 
-
 namespace DB
 {
 
@@ -30,7 +29,5 @@ struct CrashLogElement
     static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
 };
-
-
 
 }
