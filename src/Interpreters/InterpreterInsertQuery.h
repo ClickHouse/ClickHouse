@@ -1,15 +1,18 @@
 #pragma once
 
-#include <QueryPipeline/BlockIO.h>
+#include <Core/Names.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Storages/StorageInMemoryMetadata.h>
+#include <QueryPipeline/BlockIO.h>
+#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
 
 class Chain;
 class ThreadStatus;
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /** Interprets the INSERT query.
   */

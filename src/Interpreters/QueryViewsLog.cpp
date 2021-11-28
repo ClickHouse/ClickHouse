@@ -26,9 +26,9 @@ NamesAndTypesList QueryViewsLogElement::getNamesAndTypes()
         {"ExceptionWhileProcessing", static_cast<Int8>(EXCEPTION_WHILE_PROCESSING)}});
 
     auto view_type_datatype = std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
-        {"Default", static_cast<Int8>(ViewType::DEFAULT)},
-        {"Materialized", static_cast<Int8>(ViewType::MATERIALIZED)},
-        {"Live", static_cast<Int8>(ViewType::LIVE)}});
+        {"Default", static_cast<Int8>(QueryViewType::DEFAULT)},
+        {"Materialized", static_cast<Int8>(QueryViewType::MATERIALIZED)},
+        {"Live", static_cast<Int8>(QueryViewType::LIVE)}});
 
     return {
         {"event_date", std::make_shared<DataTypeDate>()},

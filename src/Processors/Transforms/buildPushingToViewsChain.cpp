@@ -223,11 +223,11 @@ Chain buildPushingToViewsChain(
             view_thread_status_ptr->attachQuery(running_group);
         }
 
-        auto runtime_stats = std::make_unique<QueryViewsLogElement::ViewRuntimeStats>();
+        auto runtime_stats = std::make_unique<QueryViewRuntimeStats>();
         runtime_stats->target_name = database_table.getFullTableName();
         runtime_stats->thread_status = std::move(view_thread_status_ptr);
         runtime_stats->event_time = std::chrono::system_clock::now();
-        runtime_stats->event_status = QueryViewsLogElement::ViewStatus::EXCEPTION_BEFORE_START;
+        runtime_stats->event_status = QueryLogElementType::EXCEPTION_BEFORE_START;
 
         auto & type = runtime_stats->type;
         auto & target_name = runtime_stats->target_name;
@@ -236,7 +236,7 @@ Chain buildPushingToViewsChain(
 
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
         {
-            type = QueryViewsLogElement::ViewType::MATERIALIZED;
+            type = QueryViewType::MATERIALIZED;
             result_chain.addTableLock(materialized_view->lockForShare(context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout));
 
             StoragePtr inner_table = materialized_view->getTargetTable();
@@ -266,7 +266,7 @@ Chain buildPushingToViewsChain(
         }
         else if (auto * live_view = dynamic_cast<StorageLiveView *>(dependent_table.get()))
         {
-            runtime_stats->type = QueryViewsLogElement::ViewType::LIVE;
+            runtime_stats->type = QueryViewType::LIVE;
             query = live_view->getInnerQuery(); // Used only to log in system.query_views_log
             out = buildPushingToViewsChain(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true, view_thread_status, view_counter_ms, storage_header);
@@ -282,7 +282,7 @@ Chain buildPushingToViewsChain(
             nullptr,
             std::move(runtime_stats)});
 
-        if (type == QueryViewsLogElement::ViewType::MATERIALIZED)
+        if (type == QueryViewType::MATERIALIZED)
         {
             auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform>(
                 storage_header, views_data->views.back(), views_data);
@@ -431,7 +431,7 @@ static void logQueryViews(std::list<ViewRuntimeData> & views, ContextPtr context
 {
     const auto & settings = context->getSettingsRef();
     const UInt64 min_query_duration = settings.log_queries_min_query_duration_ms.totalMilliseconds();
-    const QueryViewsLogElement::ViewStatus min_status = settings.log_queries_min_type;
+    const QueryLogElementType min_status = settings.log_queries_min_type;
     if (views.empty() || !settings.log_queries || !settings.log_query_views)
         return;
 
@@ -659,7 +659,7 @@ void FinalizingViewsTransform::work()
         }
         else
         {
-            view.runtime_stats->setStatus(QueryViewsLogElement::ViewStatus::QUERY_FINISH);
+            view.runtime_stats->setStatus(QueryLogElementType::QUERY_FINISH);
 
             LOG_TRACE(
                 &Poco::Logger::get("PushingToViews"),

@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Interpreters/QueryViewsLog.h>
+#include <Interpreters/QueryViewRuntimeStats.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
-#include <QueryPipeline/Chain.h>
 #include <Processors/ISimpleTransform.h>
-#include <Storages/IStorage.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <QueryPipeline/Chain.h>
+#include <Storages/IStorage_fwd.h>
 #include <Common/Stopwatch.h>
 
 namespace Poco
@@ -16,9 +17,12 @@ class Logger;
 namespace DB
 {
 
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
 struct ViewRuntimeData
 {
-    /// A query we should run over inserted block befire pushing into inner storage.
+    /// A query we should run over inserted block before pushing into inner storage.
     const ASTPtr query;
     /// This structure is expected by inner storage. Will convert query result to it.
     Block sample_block;
@@ -29,12 +33,12 @@ struct ViewRuntimeData
     /// exception is stored here (will be stored in query views log).
     std::exception_ptr exception;
     /// Info which is needed for query views log.
-    std::unique_ptr<QueryViewsLogElement::ViewRuntimeStats> runtime_stats;
+    std::unique_ptr<QueryViewRuntimeStats> runtime_stats;
 
     void setException(std::exception_ptr e)
     {
         exception = e;
-        runtime_stats->setStatus(QueryViewsLogElement::ViewStatus::EXCEPTION_WHILE_PROCESSING);
+        runtime_stats->setStatus(QueryLogElementType::EXCEPTION_WHILE_PROCESSING);
     }
 };
 
