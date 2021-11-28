@@ -588,7 +588,7 @@ For more information, see the section [Creating replicated tables](../../engines
 
 Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family.
 
-The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
+The cache is shared for the server and memory is allocated as needed.
 
 **Example**
 

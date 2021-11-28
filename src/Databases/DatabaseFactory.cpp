@@ -11,9 +11,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Common/Macros.h>
