@@ -76,10 +76,11 @@ class CSVHTTPServer(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self._set_headers()
-        with open(CSV_DATA, 'r') as fl:
-            reader = csv.reader(fl, delimiter=',')
-            for row in reader:
-                self.wfile.write((', '.join(row) + '\n').encode())
+        self.wfile.write(('hello, world').encode())
+        # with open(CSV_DATA, 'r') as fl:
+        #     reader = csv.reader(fl, delimiter=',')
+        #     for row in reader:
+        #         self.wfile.write((', '.join(row) + '\n').encode())
         return
 
     def read_chunk(self):
@@ -186,6 +187,7 @@ def test_select_url_engine(requests=[], answers=[], test_data=""):
 
 def main():
     test_data = "Hello,2,-2,7.7\nWorld,2,-5,8.8"
+    """
     select_only_requests = {
         "select str,numuint,numint,double from {tbl}" : test_data.replace(',', '\t'),
         "select numuint, count(*) from {tbl} group by numuint" : "2\t2",
@@ -202,12 +204,20 @@ def main():
         "select count(*) from {tbl}": '12',
         'select double, count(*) from {tbl} group by double': "7.7\t2\n9.9\t10"
     }
+    """
+
+    if IS_IPV6:
+        query = "select * from url('http://guest:guest@" + f'[{str(HTTP_SERVER_ADDRESS[0])}]:{str(HTTP_SERVER_ADDRESS[1])}' + "/', 'RawBLOB', 'a String')"
+    else:
+        query = "select * from url('http://guest:guest@" + f'{str(HTTP_SERVER_ADDRESS[0])}:{str(HTTP_SERVER_ADDRESS[1])}' + "/', 'RawBLOB', 'a String')"
+
+
 
     select_requests_url_auth = {
-        "select * from url('http://guest:guest@127.0.0.1:4443/', 'RawBLOB', 'a String')": test_data.replace(',', '\t'),
+       query : 'hello, world',
     }
 
-    t = start_server(len(select_only_requests) * 2 + (len(insert_requests) + len(select_requests)) * 2)
+    t = start_server(len(list(select_requests_url_auth.keys())))
     t.start()
     test_select(requests=list(select_requests_url_auth.keys()), answers=list(select_requests_url_auth.values()), test_data=test_data)
     t.join()
