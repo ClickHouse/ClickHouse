@@ -128,7 +128,6 @@ namespace
 
                     try
                     {
-                        std::ostringstream ostr;
                         std::string userInfo = request_uri.getUserInfo();
                         if (!userInfo.empty())
                         {
