@@ -119,7 +119,7 @@ INSERT INTO [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] F
 
 Use the syntax above to insert data from a file stored on a **client** side. `file_name` and `type` are string literals. Input file [format](../../interfaces/formats.md) must be set in the `FORMAT` clause. 
 
-Compressed files are supported. File compression is detected by the extension of the file name. Or it can be explicitly specified in a `COMPRESSION` clause. Supported compression types are: `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+Compressed files are supported. Compression type is detected by the extension of the file name. Or it can be explicitly specified in a `COMPRESSION` clause. Supported types are: `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
 
 This functionality is available in the [command-line client](../../interfaces/cli.md) and [clickhouse-local](../../operations/utilities/clickhouse-local.md).
 

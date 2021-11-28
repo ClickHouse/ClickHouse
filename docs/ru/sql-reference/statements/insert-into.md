@@ -3,7 +3,7 @@ toc_priority: 33
 toc_title: INSERT INTO
 ---
 
-## INSERT {#insert}
+## INSERT INTO {#insert}
 
 Добавляет данные в таблицу.
 
@@ -21,17 +21,15 @@ INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), .
 SHOW CREATE insert_select_testtable
 ```
 
-```
-┌─statement────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ CREATE TABLE insert_select_testtable
+```text
+CREATE TABLE insert_select_testtable
 (
     `a` Int8,
     `b` String,
     `c` Int8
 )
 ENGINE = MergeTree()
-ORDER BY a │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+ORDER BY a
 ```
 
 ``` sql
@@ -121,7 +119,7 @@ INSERT INTO [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] F
 
 Используйте этот синтаксис, чтобы вставить данные из файла, который хранится на стороне **клиента**. `file_name` и `type` задаются в виде строковых литералов. [Формат](../../interfaces/formats.md) входного файла должен быть задан в секции `FORMAT`. 
 
-Поддерживаются сжатые файлы. Сжатие определяется по расширению файла. Либо оно может быть задано в секции `COMPRESSION`. Поддерживаются форматы сжатия: `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+Поддерживаются сжатые файлы. Формат сжатия определяется по расширению файла. Либо он может быть задан в секции `COMPRESSION`. Поддерживаются форматы: `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
 
 Эта функциональность поддерживается [клиентом командной строки](../../interfaces/cli.md) и [clickhouse-local](../../operations/utilities/clickhouse-local.md).
 
