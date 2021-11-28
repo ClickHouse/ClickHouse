@@ -39,15 +39,19 @@ DB::DataTypePtr dbms::SerializedPlanParser::parseType(const io::substrait::Type&
     auto & factory = DB::DataTypeFactory::instance();
     if (type.has_bool_() || type.has_i8())
     {
-        return factory.get("UInt8");
+        return factory.get("Int8");
     }
     else if (type.has_i16())
     {
-        return factory.get("UInt16");
+        return factory.get("Int16");
     }
     else if (type.has_i32())
     {
-        return factory.get("UInt32");
+        return factory.get("Int32");
+    }
+    else if (type.has_i64())
+    {
+        return factory.get("Int64");
     }
     else if (type.has_string())
     {

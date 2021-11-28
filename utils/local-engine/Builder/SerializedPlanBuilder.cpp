@@ -20,6 +20,12 @@ std::unique_ptr<io::substrait::Type_NamedStruct> SerializedSchemaBuilder::build(
             t->mutable_i32()->set_nullability(
                 this->nullability_map[name] ? io::substrait::Type_Nullability_NULLABLE : io::substrait::Type_Nullability_REQUIRED);
         }
+        else if (type == "I64")
+        {
+            auto *t = type_struct->mutable_types()->Add();
+            t->mutable_i64()->set_nullability(
+                this->nullability_map[name] ? io::substrait::Type_Nullability_NULLABLE : io::substrait::Type_Nullability_REQUIRED);
+        }
         else if (type == "Boolean")
         {
             auto *t = type_struct->mutable_types()->Add();

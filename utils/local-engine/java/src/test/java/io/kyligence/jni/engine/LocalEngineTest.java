@@ -26,6 +26,6 @@ public class LocalEngineTest {
         localEngine.execute();
         Assert.assertTrue(localEngine.hasNext());
         byte[] data = localEngine.next();
-        Assert.assertEquals(6490, data.length);
+        Assert.assertEquals(7106, data.length);
     }
 }
