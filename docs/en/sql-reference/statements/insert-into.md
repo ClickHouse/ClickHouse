@@ -92,6 +92,8 @@ If table has [constraints](../../sql-reference/statements/create/table.md#constr
 
 ### Inserting the Results of `SELECT` {#insert_query_insert-select}
 
+**Syntax**
+
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 ```
@@ -116,6 +118,7 @@ INSERT INTO [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] F
 ```
 
 Use the syntax above to insert data from a file stored on a **client** side. `file_name` and `type` are string literals. Input file [format](../../interfaces/formats.md) must be set in the `FORMAT` clause. 
+
 Compressed files are supported. File compression is detected by the extension of the file name. Or it can be explicitly specified in a `COMPRESSION` clause. Supported compression types are: `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
 
 This functionality is available in the [command-line client](../../interfaces/cli.md) and [clickhouse-local](../../operations/utilities/clickhouse-local.md).
@@ -151,7 +154,7 @@ INSERT INTO [TABLE] FUNCTION table_func ...
 
 **Example**
 
-Query:
+[remote](../../sql-reference/table-functions/index.md#remote) table function is used in the following queries:
 
 ``` sql
 CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;
