@@ -6,7 +6,7 @@ toc_title: INTO OUTFILE
 
 `INTO OUTFILE` clause redirects the result of a `SELECT` query to a file on the **client** side.
 
-Compressed files are supported. File compression is detected by the extension of the file name. Or it can be explicitly specified in a `COMPRESSION` clause.
+Compressed files are supported. Compression type is detected by the extension of the file name. Or it can be explicitly specified in a `COMPRESSION` clause.
 
 **Syntax**
 
@@ -32,6 +32,7 @@ zcat select.gz
 ```
 
 Result:
+
 ```text
 1,"ABC"
 ```
