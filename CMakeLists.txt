@@ -541,8 +541,6 @@ include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
-include (cmake/print_flags.cmake)
-
 if (TARGET global-group)
     install (EXPORT global DESTINATION cmake)
 endif ()
@@ -594,6 +592,7 @@ include_directories(${ConfigIncludePath})
 
 # Add as many warnings as possible for our own code.
 include (cmake/warnings.cmake)
+include (cmake/print_flags.cmake)
 
 add_subdirectory (base)
 add_subdirectory (src)
