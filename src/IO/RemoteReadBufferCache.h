@@ -66,7 +66,7 @@ public:
      * The second value of the return tuple is the local_path to store file.
      * It will be empty if the file has not been downloaded
      */
-    std::tuple<FILE *, std::filesystem::path> allocFile();
+    std::pair<FILE *, std::filesystem::path> allocFile();
     void deallocFile(FILE * fs_);
 
     /**
@@ -155,6 +155,8 @@ private:
     FILE * fs;
     std::filesystem::path local_path;
     RemoteCacheController * controller;
+
+    Poco::Logger * log = &Poco::Logger::get("RemoteReadBufferCache");
 };
 
 /*
