@@ -56,7 +56,7 @@ public:
         size_t cache_bytes_before_flush_,
         std::shared_ptr<ReadBuffer> readbuffer_,
         std::function<void(RemoteCacheController *)> const & finish_callback);
-    ~RemoteCacheController(); // the local files will be deleted in descontructor
+    ~RemoteCacheController();
 
     // recover from local disk
     static std::shared_ptr<RemoteCacheController>
