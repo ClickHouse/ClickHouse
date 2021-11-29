@@ -34,9 +34,11 @@ struct Expected
         {
             variants.clear();
             max_parsed_pos = current_pos;
+            variants.push_back(description);
+            return;
         }
 
-        if (!max_parsed_pos || current_pos >= max_parsed_pos)
+        if ((current_pos == max_parsed_pos) && (find(variants.begin(), variants.end(), description) == variants.end()))
             variants.push_back(description);
     }
 
