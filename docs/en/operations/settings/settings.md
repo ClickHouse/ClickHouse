@@ -4071,3 +4071,54 @@ Possible values:
 -   0 — Big files read with only copying data from kernel to userspace.
 
 Default value: `0`.
+
+## format_custom_escaping_rule {#format-custom-escaping-rule}
+
+Sets the field escaping rule for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Possible values:
+
+-   `'Escaped'` — Similarly to [TSV](../../interfaces/formats.md#tabseparated).
+-   `'Quoted'` — Similarly to [Values](../../interfaces/formats.md#data-format-values).
+-   `'CSV'` — Similarly to [CSV](../../interfaces/formats.md#csv).
+-   `'JSON'` — Similarly to [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+-   `'XML'` — Similarly to [XML](../../interfaces/formats.md#xml).
+-   `'Raw'` — Extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](../../interfaces/formats.md#tabseparatedraw).
+
+Default value: `'Escaped'`.
+
+## format_custom_field_delimiter {#format-custom-field-delimiter}
+
+Sets the character that is interpreted as a delimiter between the fields for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `'\t'`.
+
+## format_custom_row_before_delimiter {#format-custom-row-before-delimiter}
+
+Sets the character that is interpreted as a delimiter before the field of the first column for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `''`.
+
+## format_custom_row_after_delimiter {#format-custom-row-after-delimiter}
+
+Sets the character that is interpreted as a delimiter after the field of the last column for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `'\n'`.
+
+## format_custom_row_between_delimiter {#format-custom-row-between-delimiter}
+
+Sets the character that is interpreted as a delimiter between the rows for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `''`.
+
+## format_custom_result_before_delimiter {#format-custom-result-before-delimiter}
+
+Sets the character that is interpreted as a prefix before the result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `''`.
+
+## format_custom_result_after_delimiter {#format-custom-result-after-delimiter}
+
+Sets the character that is interpreted as a suffix after the result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `''`.

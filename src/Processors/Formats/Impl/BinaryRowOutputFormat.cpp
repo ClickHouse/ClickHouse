@@ -60,6 +60,7 @@ void registerOutputFormatRowBinary(FormatFactory & factory)
         {
             return std::make_shared<BinaryRowOutputFormat>(buf, sample, with_names, with_types, params);
         });
+        factory.markOutputFormatSupportsParallelFormatting(format_name);
     };
 
     registerWithNamesAndTypes("RowBinary", register_func);

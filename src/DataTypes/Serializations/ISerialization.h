@@ -304,6 +304,9 @@ public:
 
     static bool hasSubcolumnForPath(const SubstreamPath & path, size_t prefix_len);
     static SubstreamData createFromPath(const SubstreamPath & path, size_t prefix_len);
+
+protected:
+    [[noreturn]] void throwUnexpectedDataAfterParsedValue(IColumn & column, ReadBuffer & istr, const FormatSettings &, const String & type_name) const;
 };
 
 using SerializationPtr = std::shared_ptr<const ISerialization>;
