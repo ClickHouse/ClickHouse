@@ -24,33 +24,34 @@ enum class RemoteReadBufferCacheError : int8_t
     END_OF_FILE = 20,
 };
 
-struct RemoteFileMeta
+struct RemoteFileMetadata
 {
-    RemoteFileMeta(
+    RemoteFileMetadata(
         const std::string & schema_,
         const std::string & cluster_,
         const std::string & path_,
-        UInt64 last_modification_timestamp_,
+        UInt64 last_modify_time_,
         size_t file_size_)
-        : schema(schema_), cluster(cluster_), path(path_), last_modification_timestamp(last_modification_timestamp_), file_size(file_size_)
+        : schema(schema_)
+        , cluster(cluster_)
+        , path(path_)
+        , last_modify_time(last_modify_time_)
+        , file_size(file_size_)
     {
     }
 
     std::string schema; // Hive, S2 etc.
     std::string cluster;
     std::string path;
-    UInt64 last_modification_timestamp;
+    UInt64 last_modify_time;
     size_t file_size;
 };
 
-/**
- *
- */
 class RemoteCacheController
 {
 public:
     RemoteCacheController(
-        const RemoteFileMeta & meta,
+        const RemoteFileMetadata & meta,
         const std::filesystem::path & local_path_,
         size_t cache_bytes_before_flush_,
         std::shared_ptr<ReadBuffer> readbuffer_,
@@ -92,7 +93,7 @@ public:
     inline const std::filesystem::path & getLocalPath() { return local_path; }
     inline const std::string & getRemotePath() { return remote_path; }
 
-    inline UInt64 getLastModificationTimestamp() const { return last_modification_timestamp; }
+    inline UInt64 getLastModificationTimestamp() const { return last_modify_time; }
     inline void markInvalid()
     {
         std::lock_guard lock(mutex);
@@ -108,7 +109,7 @@ private:
     // flush file and meta info into disk
     void flush(bool need_flush_meta_ = false);
 
-    void backgroupDownload(std::function<void(RemoteCacheController *)> const & finish_callback);
+    void backgroundDownload(std::function<void(RemoteCacheController *)> const & finish_callback);
 
     std::mutex mutex;
     std::condition_variable more_data_signal;
@@ -116,16 +117,17 @@ private:
     std::set<FILE *> opened_file_streams;
 
     // meta info
-    bool download_finished;
-    bool valid;
-    size_t current_offset;
-    UInt64 last_modification_timestamp;
-    std::filesystem::path local_path;
-    std::string remote_path;
     std::string schema;
     std::string cluster;
+    std::string remote_path;
+    std::filesystem::path local_path;
+    UInt64 last_modify_time;
 
+    bool valid;
     size_t local_cache_bytes_read_before_flush;
+    bool download_finished;
+    size_t current_offset;
+
     std::shared_ptr<ReadBuffer> remote_readbuffer;
     std::unique_ptr<std::ofstream> out_file;
 
@@ -168,7 +170,7 @@ class RemoteReadBuffer : public BufferWithOwnMemory<SeekableReadBuffer>
 public:
     explicit RemoteReadBuffer(size_t buff_size);
     ~RemoteReadBuffer() override;
-    static std::unique_ptr<RemoteReadBuffer> create(const RemoteFileMeta & remote_file_meta_, std::unique_ptr<ReadBuffer> readbuffer);
+    static std::unique_ptr<RemoteReadBuffer> create(const RemoteFileMetadata & remote_file_meta_, std::unique_ptr<ReadBuffer> readbuffer);
 
     bool nextImpl() override;
     inline bool seekable() { return file_reader != nullptr && file_reader->size() > 0; }
@@ -193,16 +195,16 @@ public:
     std::shared_ptr<FreeThreadPool> getThreadPool() { return thread_pool; }
 
     void initOnce(const std::filesystem::path & dir, size_t limit_size, size_t bytes_read_before_flush_, size_t max_threads);
-    inline bool hasInitialized() const { return inited; }
+    inline bool isInitialized() const { return initialized; }
 
-    std::tuple<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCacheError>
-    createReader(const RemoteFileMeta & remote_file_meta, std::shared_ptr<ReadBuffer> & readbuffer);
+    std::pair<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCacheError>
+    createReader(const RemoteFileMetadata & remote_file_meta, std::shared_ptr<ReadBuffer> & read_buffer);
 
 private:
     std::string local_path_prefix;
 
     std::shared_ptr<FreeThreadPool> thread_pool;
-    std::atomic<bool> inited = false;
+    std::atomic<bool> initialized = false;
     std::mutex mutex;
     size_t limit_size = 0;
     size_t local_cache_bytes_read_before_flush = 0;
@@ -217,7 +219,7 @@ private:
     std::list<std::string> keys;
     std::map<std::string, CacheCell> caches;
 
-    std::filesystem::path calculateLocalPath(const RemoteFileMeta & meta);
+    std::filesystem::path calculateLocalPath(const RemoteFileMetadata & meta);
 
     void recoverCachedFilesMeta(
         const std::filesystem::path & current_path,

@@ -255,7 +255,7 @@ StorageHive::StorageHive(
     setInMemoryMetadata(storage_metadata);
 
     auto hms_client = getContext()->getHiveMetastoreClient(hms_url);
-    auto table_meta = hms_client->getTableMeta(hive_database, hive_table);
+    auto table_meta = hms_client->getTableMetadata(hive_database, hive_table);
 
     hdfs_namenode_url = getNameNodeUrl(table_meta->getTable()->sd.location);
     table_schema = table_meta->getTable()->sd.cols;
@@ -388,7 +388,7 @@ Pipe StorageHive::read(
     HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, context_->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
     auto hms_client = context_->getHiveMetastoreClient(hms_url);
-    auto table_meta_cntrl = hms_client->getTableMeta(hive_database, hive_table);
+    auto table_meta_cntrl = hms_client->getTableMetadata(hive_database, hive_table);
 
     // List files under partition directory in HDFS
     auto list_paths = [table_meta_cntrl, &fs](const String & path) { return table_meta_cntrl->getLocationFiles(fs, path); };
