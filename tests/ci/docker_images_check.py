@@ -39,17 +39,13 @@ def get_changed_docker_images(pr_info, repo_path, image_file_path):
         if image_description['name'].startswith('clickhouse/'):
             dockerhub_repo_name = 'clickhouse'
 
-        if 'release' in pr_info.labels:
-            logging.info("Release PR, will rebuild all images from branch, including %s", dockerfile_dir)
-            changed_images.append(dockerfile_dir)
-        else:
-            for f in files_changed:
-                if f.startswith(dockerfile_dir):
-                    logging.info(
-                        "Found changed file '%s' which affects docker image '%s' with path '%s'",
-                        f, image_description['name'], dockerfile_dir)
-                    changed_images.append(dockerfile_dir)
-                    break
+        for f in files_changed:
+            if f.startswith(dockerfile_dir):
+                logging.info(
+                    "Found changed file '%s' which affects docker image '%s' with path '%s'",
+                    f, image_description['name'], dockerfile_dir)
+                changed_images.append(dockerfile_dir)
+                break
 
     # The order is important: dependents should go later than bases, so that
     # they are built with updated base versions.

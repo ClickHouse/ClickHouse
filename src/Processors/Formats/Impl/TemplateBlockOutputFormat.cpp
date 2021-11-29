@@ -144,6 +144,9 @@ void TemplateBlockOutputFormat::finalizeImpl()
         return;
 
     size_t parts = format.format_idx_to_column_idx.size();
+    auto outside_statistics = getOutsideStatistics();
+    if (outside_statistics)
+        statistics = std::move(*outside_statistics);
 
     for (size_t i = 0; i < parts; ++i)
     {
@@ -152,36 +155,36 @@ void TemplateBlockOutputFormat::finalizeImpl()
         switch (static_cast<ResultsetPart>(*format.format_idx_to_column_idx[i]))
         {
             case ResultsetPart::Totals:
-                if (!totals || !totals.hasRows())
+                if (!statistics.totals || !statistics.totals.hasRows())
                     format.throwInvalidFormat("Cannot print totals for this request", i);
-                writeRow(totals, 0);
+                writeRow(statistics.totals, 0);
                 break;
             case ResultsetPart::ExtremesMin:
-                if (!extremes)
+                if (!statistics.extremes)
                     format.throwInvalidFormat("Cannot print extremes for this request", i);
-                writeRow(extremes, 0);
+                writeRow(statistics.extremes, 0);
                 break;
             case ResultsetPart::ExtremesMax:
-                if (!extremes)
+                if (!statistics.extremes)
                     format.throwInvalidFormat("Cannot print extremes for this request", i);
-                writeRow(extremes, 1);
+                writeRow(statistics.extremes, 1);
                 break;
             case ResultsetPart::Rows:
                 writeValue<size_t, DataTypeUInt64>(row_count, format.escaping_rules[i]);
                 break;
             case ResultsetPart::RowsBeforeLimit:
-                if (!rows_before_limit_set)
+                if (!statistics.applied_limit)
                     format.throwInvalidFormat("Cannot print rows_before_limit for this request", i);
-                writeValue<size_t, DataTypeUInt64>(rows_before_limit, format.escaping_rules[i]);
+                writeValue<size_t, DataTypeUInt64>(statistics.rows_before_limit, format.escaping_rules[i]);
                 break;
             case ResultsetPart::TimeElapsed:
-                writeValue<double, DataTypeFloat64>(watch.elapsedSeconds(), format.escaping_rules[i]);
+                writeValue<double, DataTypeFloat64>(statistics.watch.elapsedSeconds(), format.escaping_rules[i]);
                 break;
             case ResultsetPart::RowsRead:
-                writeValue<size_t, DataTypeUInt64>(progress.read_rows.load(), format.escaping_rules[i]);
+                writeValue<size_t, DataTypeUInt64>(statistics.progress.read_rows.load(), format.escaping_rules[i]);
                 break;
             case ResultsetPart::BytesRead:
-                writeValue<size_t, DataTypeUInt64>(progress.read_bytes.load(), format.escaping_rules[i]);
+                writeValue<size_t, DataTypeUInt64>(statistics.progress.read_bytes.load(), format.escaping_rules[i]);
                 break;
             default:
                 break;
