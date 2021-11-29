@@ -3830,7 +3830,7 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
     return res;
 }
 
-void MergeTreeData::validateDetachedPartName(const String & name) const
+void MergeTreeData::validateDetachedPartName(const String & name)
 {
     if (name.find('/') != std::string::npos || name == "." || name == "..")
         throw DB::Exception("Invalid part name '" + name + "'", ErrorCodes::INCORRECT_FILE_NAME);

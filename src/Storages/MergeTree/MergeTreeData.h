@@ -288,6 +288,7 @@ public:
         {
         }
 
+        /// Adds part to rename. Both names are relative to relative_data_path.
         void addPart(const String & old_name, const String & new_name, const DiskPtr & disk);
 
         /// Renames part from old_name to new_name
@@ -300,6 +301,7 @@ public:
         {
             String old_name;
             String new_name;
+            /// Disk cannot be changed
             DiskPtr disk;
         };
 
@@ -443,7 +445,7 @@ public:
     /// Returns all detached parts
     DetachedPartsInfo getDetachedParts() const;
 
-    void validateDetachedPartName(const String & name) const;
+    static void validateDetachedPartName(const String & name);
 
     void dropDetached(const ASTPtr & partition, bool part, ContextPtr context);
 
