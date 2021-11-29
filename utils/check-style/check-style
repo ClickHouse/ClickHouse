@@ -312,3 +312,5 @@ then
     echo "ErrorCodes.cpp contains non-unique error codes"
 fi
 
+# Forbid files that differ only by character case
+find $ROOT_PATH | sort -f | uniq -i -c | awk '{ if ($1 > 1) print }'

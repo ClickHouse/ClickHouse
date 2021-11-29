@@ -1,4 +1,3 @@
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Common/typeid_cast.h>
@@ -33,13 +32,13 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
 
     auto mode_to_str = [&](auto mode)
     {
-        if (mode == Mode::ALL)
+        if (mode == SelectUnionMode::ALL)
             return "UNION ALL";
-        else if (mode == Mode::DISTINCT)
+        else if (mode == SelectUnionMode::DISTINCT)
             return "UNION DISTINCT";
-        else if (mode == Mode::INTERSECT)
+        else if (mode == SelectUnionMode::INTERSECT)
             return "INTERSECT";
-        else if (mode == Mode::EXCEPT)
+        else if (mode == SelectUnionMode::EXCEPT)
             return "EXCEPT";
         return "";
     };
@@ -78,7 +77,8 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
 
 bool ASTSelectWithUnionQuery::hasNonDefaultUnionMode() const
 {
-    return set_of_modes.contains(Mode::DISTINCT) || set_of_modes.contains(Mode::INTERSECT) || set_of_modes.contains(Mode::EXCEPT);
+    return set_of_modes.contains(SelectUnionMode::DISTINCT) || set_of_modes.contains(SelectUnionMode::INTERSECT)
+        || set_of_modes.contains(SelectUnionMode::EXCEPT);
 }
 
 }
