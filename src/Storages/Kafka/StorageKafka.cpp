@@ -49,6 +49,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int QUERY_NOT_ALLOWED;
 }
 
 struct StorageKafkaInterceptors
@@ -270,6 +271,12 @@ Pipe StorageKafka::read(
 {
     if (num_created_consumers == 0)
         return {};
+
+    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+
+    if (mv_attached)
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageKafka with attached materialized views");
 
     /// Always use all consumers at once, otherwise SELECT may not read messages from all partitions.
     Pipes pipes;
@@ -557,6 +564,8 @@ void StorageKafka::threadFunc(size_t idx)
         {
             auto start_time = std::chrono::steady_clock::now();
 
+            mv_attached.store(true);
+
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled && num_created_consumers > 0)
             {
@@ -587,6 +596,8 @@ void StorageKafka::threadFunc(size_t idx)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    mv_attached.store(false);
 
     // Wait for attached views
     if (!task->stream_cancelled)

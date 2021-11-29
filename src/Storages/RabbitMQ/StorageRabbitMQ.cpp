@@ -45,6 +45,7 @@ namespace ErrorCodes
     extern const int CANNOT_DECLARE_RABBITMQ_EXCHANGE;
     extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE;
     extern const int CANNOT_CREATE_RABBITMQ_QUEUE_BINDING;
+    extern const int QUERY_NOT_ALLOWED;
 }
 
 namespace ExchangeType
@@ -645,6 +646,12 @@ Pipe StorageRabbitMQ::read(
     if (num_created_consumers == 0)
         return {};
 
+    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+
+    if (mv_attached)
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageRabbitMQ with attached materialized views");
+
     std::lock_guard lock(loop_mutex);
 
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
@@ -937,6 +944,8 @@ void StorageRabbitMQ::streamingToViewsFunc()
                 initializeBuffers();
                 auto start_time = std::chrono::steady_clock::now();
 
+                mv_attached.store(true);
+
                 // Keep streaming as long as there are attached views and streaming is not cancelled
                 while (!shutdown_called && num_created_consumers > 0)
                 {
@@ -974,6 +983,8 @@ void StorageRabbitMQ::streamingToViewsFunc()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+
+    mv_attached.store(false);
 
     /// If there is no running select, stop the loop which was
     /// activated by previous select.
