@@ -28,7 +28,7 @@ struct Expected
     std::vector<const char *> variants;
 
     /// 'description' should be statically allocated string.
-    void add(const char * current_pos, const char * description)
+    ALWAYS_INLINE void add(const char * current_pos, const char * description)
     {
         if (!max_parsed_pos || current_pos > max_parsed_pos)
         {
@@ -40,7 +40,7 @@ struct Expected
             variants.push_back(description);
     }
 
-    void add(TokenIterator it, const char * description)
+    ALWAYS_INLINE void add(TokenIterator it, const char * description)
     {
         add(it->begin, description);
     }
