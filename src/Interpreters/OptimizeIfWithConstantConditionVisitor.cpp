@@ -28,6 +28,8 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
     }
 
     /// cast of numeric constant in condition to UInt8
+    /// Note: this solution is ad-hoc and only implemented for yandex.metrica use case.
+    /// We should allow any constant condition (or maybe remove this optimization completely) later.
     if (const auto * function = condition->as<ASTFunction>())
     {
         if (isFunctionCast(function))
