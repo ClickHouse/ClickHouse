@@ -12,6 +12,7 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -19,6 +20,7 @@
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/KafkaSource.h>
 #include <Storages/Kafka/WriteBufferToKafkaProducer.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
 #include <boost/algorithm/string/replace.hpp>
@@ -168,7 +170,9 @@ namespace
 }
 
 StorageKafka::StorageKafka(
-    const StorageID & table_id_, ContextPtr context_, const ColumnsDescription & columns_, std::unique_ptr<KafkaSettings> kafka_settings_)
+    const StorageID & table_id_, ContextPtr context_,
+    const ColumnsDescription & columns_, std::unique_ptr<KafkaSettings> kafka_settings_,
+    const String & collection_name_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , kafka_settings(std::move(kafka_settings_))
@@ -187,6 +191,7 @@ StorageKafka::StorageKafka(
     , intermediate_commit(kafka_settings->kafka_commit_every_batch.value)
     , settings_adjustments(createSettingsAdjustments())
     , thread_per_consumer(kafka_settings->kafka_thread_per_consumer.value)
+    , collection_name(collection_name_)
 {
     if (kafka_settings->kafka_handle_error_mode == HandleKafkaErrorMode::STREAM)
     {
@@ -459,17 +464,25 @@ size_t StorageKafka::getPollTimeoutMillisecond() const
         : getContext()->getSettingsRef().stream_poll_timeout_ms.totalMilliseconds();
 }
 
+String StorageKafka::getConfigPrefix() const
+{
+    if (!collection_name.empty())
+        return "named_collections." + collection_name + "." + CONFIG_PREFIX; /// Add one more level to separate librdkafka configuration.
+    return CONFIG_PREFIX;
+}
+
 void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 {
     // Update consumer configuration from the configuration
     const auto & config = getContext()->getConfigRef();
-    if (config.has(CONFIG_PREFIX))
-        loadFromConfig(conf, config, CONFIG_PREFIX);
+    auto config_prefix = getConfigPrefix();
+    if (config.has(config_prefix))
+        loadFromConfig(conf, config, config_prefix);
 
     // Update consumer topic-specific configuration
     for (const auto & topic : topics)
     {
-        const auto topic_config_key = CONFIG_PREFIX + "_" + topic;
+        const auto topic_config_key = config_prefix + "_" + topic;
         if (config.has(topic_config_key))
             loadFromConfig(conf, config, topic_config_key);
     }
@@ -666,6 +679,7 @@ void registerStorageKafka(StorageFactory & factory)
         bool has_settings = args.storage_def->settings;
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
+        auto named_collection = getExternalDataSourceConfiguration(args.engine_args, *kafka_settings, args.getLocalContext());
         if (has_settings)
         {
             kafka_settings->loadFromQuery(*args.storage_def);
@@ -729,17 +743,25 @@ void registerStorageKafka(StorageFactory & factory)
           * - Do intermediate commits when the batch consumed and handled
           */
 
-        /* 0 = raw, 1 = evaluateConstantExpressionAsLiteral, 2=evaluateConstantExpressionOrIdentifierAsLiteral */
-        CHECK_KAFKA_STORAGE_ARGUMENT(1, kafka_broker_list, 0)
-        CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1)
-        CHECK_KAFKA_STORAGE_ARGUMENT(3, kafka_group_name, 2)
-        CHECK_KAFKA_STORAGE_ARGUMENT(4, kafka_format, 2)
-        CHECK_KAFKA_STORAGE_ARGUMENT(5, kafka_row_delimiter, 2)
-        CHECK_KAFKA_STORAGE_ARGUMENT(6, kafka_schema, 2)
-        CHECK_KAFKA_STORAGE_ARGUMENT(7, kafka_num_consumers, 0)
-        CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size, 0)
-        CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages, 0)
-        CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch, 0)
+        String collection_name;
+        if (named_collection)
+        {
+            collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
+        }
+        else
+        {
+            /* 0 = raw, 1 = evaluateConstantExpressionAsLiteral, 2=evaluateConstantExpressionOrIdentifierAsLiteral */
+            CHECK_KAFKA_STORAGE_ARGUMENT(1, kafka_broker_list, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1)
+            CHECK_KAFKA_STORAGE_ARGUMENT(3, kafka_group_name, 2)
+            CHECK_KAFKA_STORAGE_ARGUMENT(4, kafka_format, 2)
+            CHECK_KAFKA_STORAGE_ARGUMENT(5, kafka_row_delimiter, 2)
+            CHECK_KAFKA_STORAGE_ARGUMENT(6, kafka_schema, 2)
+            CHECK_KAFKA_STORAGE_ARGUMENT(7, kafka_num_consumers, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch, 0)
+        }
 
         #undef CHECK_KAFKA_STORAGE_ARGUMENT
 
@@ -765,7 +787,7 @@ void registerStorageKafka(StorageFactory & factory)
             throw Exception("kafka_poll_max_batch_size can not be lower than 1", ErrorCodes::BAD_ARGUMENTS);
         }
 
-        return StorageKafka::create(args.table_id, args.getContext(), args.columns, std::move(kafka_settings));
+        return StorageKafka::create(args.table_id, args.getContext(), args.columns, std::move(kafka_settings), collection_name);
     };
 
     factory.registerStorage("Kafka", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });

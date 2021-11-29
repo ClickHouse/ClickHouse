@@ -18,9 +18,10 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Storages/KeyDescription.h>
@@ -272,27 +273,6 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             out.range = !right_bound.empty()
                 ? Range(prefix, true, right_bound, false)
                 : Range::createLeftBounded(prefix, true);
-
-            return true;
-        }
-    },
-    {
-        "notLike",
-        [] (RPNElement & out, const Field & value)
-        {
-            if (value.getType() != Field::Types::String)
-                return false;
-
-            String prefix = extractFixedPrefixFromLikePattern(value.get<const String &>());
-            if (prefix.empty())
-                return false;
-
-            String right_bound = firstStringThatIsGreaterThanAllStringsWithPrefix(prefix);
-
-            out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
-            out.range = !right_bound.empty()
-                        ? Range(prefix, true, right_bound, false)
-                        : Range::createLeftBounded(prefix, true);
 
             return true;
         }
