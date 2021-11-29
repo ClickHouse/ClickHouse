@@ -141,23 +141,26 @@ private:
 class LocalCachedFileReader
 {
 public:
-    LocalCachedFileReader(RemoteCacheController * cache_controller_, size_t size_);
+    LocalCachedFileReader(RemoteCacheController * cache_controller_, size_t file_size_);
     ~LocalCachedFileReader();
 
     // expect to read size bytes into buf, return is the real bytes read
     size_t read(char * buf, size_t size);
-    inline off_t getOffset() const { return static_cast<off_t>(offset); }
-    size_t size();
     off_t seek(off_t offset);
+
     inline String getPath() const { return local_path; }
+    inline off_t getOffset() const { return static_cast<off_t>(offset); }
+    size_t getSize();
+
 
 private:
-    std::mutex mutex;
-    size_t offset;
-    size_t file_size;
-    FILE * fs;
-    String local_path;
     RemoteCacheController * cache_controller;
+    size_t file_size;
+    size_t offset;
+
+    std::mutex mutex;
+    FILE * file_stream;
+    String local_path;
 
     Poco::Logger * log = &Poco::Logger::get("RemoteReadBufferCache");
 };
@@ -174,10 +177,10 @@ public:
     static std::unique_ptr<RemoteReadBuffer> create(const RemoteFileMetadata & remote_file_meta, std::unique_ptr<ReadBuffer> read_buffer);
 
     bool nextImpl() override;
-    inline bool seekable() { return file_reader != nullptr && file_reader->size() > 0; }
+    inline bool seekable() { return file_reader != nullptr && file_reader->getSize() > 0; }
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
-    inline size_t size() { return file_reader->size(); }
+    inline size_t size() { return file_reader->getSize(); }
 
 private:
     std::shared_ptr<LocalCachedFileReader> file_reader;
