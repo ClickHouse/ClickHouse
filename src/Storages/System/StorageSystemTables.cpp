@@ -1,5 +1,4 @@
 #include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -10,6 +9,7 @@
 #include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/queryToString.h>
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>

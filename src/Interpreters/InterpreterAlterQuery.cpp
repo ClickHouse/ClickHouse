@@ -11,6 +11,7 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/LiveView/LiveViewCommands.h>

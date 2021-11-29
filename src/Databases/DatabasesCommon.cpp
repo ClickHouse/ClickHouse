@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Storages/StorageDictionary.h>

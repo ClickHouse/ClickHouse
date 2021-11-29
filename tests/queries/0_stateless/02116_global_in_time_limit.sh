@@ -13,4 +13,4 @@ function run
 }
 
 export -f run
-timeout 6 bash -c run
+timeout 10 bash -c run

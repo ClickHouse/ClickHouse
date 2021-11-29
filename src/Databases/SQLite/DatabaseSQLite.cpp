@@ -8,6 +8,7 @@
 #include <Databases/SQLite/fetchSQLiteTableStructure.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/ASTFunction.h>
 #include <Interpreters/Context.h>
 #include <Storages/StorageSQLite.h>
 #include <Databases/SQLite/SQLiteUtils.h>
