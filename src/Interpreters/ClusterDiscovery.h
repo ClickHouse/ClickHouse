@@ -3,6 +3,7 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/Common.h>
+#include <base/getFQDNOrHostName.h>
 #include <Interpreters/Cluster.h>
 
 #include <Poco/Logger.h>
@@ -41,9 +42,15 @@ private:
         String address;
         /// is secure tcp port user
         bool secure = false;
+        /// shard number
+        size_t shard_id = 0;
 
         NodeInfo() = default;
-        explicit NodeInfo(const String & address_) : address(address_) {}
+        explicit NodeInfo(const String & address_, bool secure_, size_t shard_id_)
+            : address(address_)
+            , secure(secure_)
+            , shard_id(shard_id_)
+        {}
 
         static bool parse(const String & data, NodeInfo & result);
         String serialize() const;
@@ -58,7 +65,14 @@ private:
         const String zk_root;
         NodesInfo nodes_info;
 
-        explicit ClusterInfo(const String & name_, const String & zk_root_) : name(name_), zk_root(zk_root_) {}
+        NodeInfo current_node;
+
+        explicit ClusterInfo(const String & name_, const String & zk_root_, UInt16 port, bool secure, size_t shard_id)
+            : name(name_)
+            , zk_root(zk_root_)
+            , current_node(getFQDNOrHostName() + ":" + toString(port), secure, shard_id)
+        {
+        }
     };
 
     void registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info);
@@ -86,7 +100,6 @@ private:
     ContextMutablePtr context;
 
     String current_node_name;
-    UInt16 server_port;
 
     template <typename T> class ConcurrentFlags;
     using UpdateFlags = ConcurrentFlags<std::string>;
