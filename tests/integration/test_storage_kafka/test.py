@@ -44,6 +44,7 @@ from . import social_pb2
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
                                 main_configs=['configs/kafka.xml', 'configs/named_collection.xml'],
+                                user_configs=['configs/users.xml'],
                                 with_kafka=True,
                                 with_zookeeper=True, # For Replicated Table
                                 macros={"kafka_broker":"kafka1",
