@@ -12,19 +12,17 @@ from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from version_helper import get_version_from_repo, update_version_local
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
-from ci_config import build_config_to_string, CI_CONFIG
+from ci_config import CI_CONFIG
 from docker_pull_helper import get_image_with_version
 
 
-def get_build_config(build_check_name, build_number):
+def get_build_config(build_check_name, build_name):
     if build_check_name == 'ClickHouse build check (actions)':
         build_config_name = 'build_config'
-    elif build_check_name == 'ClickHouse special build check (actions)':
-        build_config_name = 'special_build_config'
     else:
         raise Exception(f"Unknown build check name {build_check_name}")
 
-    return CI_CONFIG[build_config_name][build_number]
+    return CI_CONFIG[build_config_name][build_name]
 
 
 def _can_export_binaries(build_config):
@@ -94,9 +92,9 @@ if __name__ == "__main__":
     caches_path = os.getenv("CACHES_PATH", temp_path)
 
     build_check_name = sys.argv[1]
-    build_number = int(sys.argv[2])
+    build_name = sys.argv[2]
 
-    build_config = get_build_config(build_check_name, build_number)
+    build_config = get_build_config(build_check_name, build_name)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
@@ -125,7 +123,6 @@ if __name__ == "__main__":
 
     logging.info("Updated local files with version")
 
-    build_name = build_config_to_string(build_config)
     logging.info("Build short name %s", build_name)
     subprocess.check_call(f"echo 'BUILD_NAME=build_urls_{build_name}' >> $GITHUB_ENV", shell=True)
 
@@ -161,7 +158,12 @@ if __name__ == "__main__":
     logging.info("Will upload cache")
     upload_ccache(ccache_path, s3_helper, pr_info.number, temp_path)
 
-    s3_path_prefix = str(pr_info.number) + "/" + pr_info.sha + "/" + build_check_name.lower().replace(' ', '_') + "/" + build_name
+    # for release pull requests we use branch names prefixes, not pr numbers
+    if 'release' in pr_info.labels or 'release-lts' in pr_info.labels:
+        s3_path_prefix = pr_info.head_ref + "/" + pr_info.sha + "/" + build_name
+    else:
+        s3_path_prefix = str(pr_info.number) + "/" + pr_info.sha + "/" + build_name
+
     if os.path.exists(log_path):
         log_url = s3_helper.upload_build_file_to_s3(log_path, s3_path_prefix + "/" + os.path.basename(log_path))
         logging.info("Log url %s", log_url)

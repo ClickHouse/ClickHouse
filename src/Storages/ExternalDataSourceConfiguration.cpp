@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <IO/WriteBufferFromString.h>
 
@@ -68,9 +69,9 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
     if (const auto * collection = typeid_cast<const ASTIdentifier *>(args[0].get()))
     {
         const auto & config = context->getConfigRef();
-        const auto & config_prefix = fmt::format("named_collections.{}", collection->name());
+        const auto & collection_prefix = fmt::format("named_collections.{}", collection->name());
 
-        if (!config.has(config_prefix))
+        if (!config.has(collection_prefix))
         {
             /// For table function remote we do not throw on no collection, because then we consider first arg
             /// as cluster definition from config.
@@ -80,14 +81,14 @@ std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection->name());
         }
 
-        configuration.host = config.getString(config_prefix + ".host", "");
-        configuration.port = config.getInt(config_prefix + ".port", 0);
-        configuration.username = config.getString(config_prefix + ".user", "");
-        configuration.password = config.getString(config_prefix + ".password", "");
-        configuration.database = config.getString(config_prefix + ".database", "");
-        configuration.table = config.getString(config_prefix + ".table", "");
-        configuration.schema = config.getString(config_prefix + ".schema", "");
-        configuration.addresses_expr = config.getString(config_prefix + ".addresses_expr", "");
+        configuration.host = config.getString(collection_prefix + ".host", "");
+        configuration.port = config.getInt(collection_prefix + ".port", 0);
+        configuration.username = config.getString(collection_prefix + ".user", "");
+        configuration.password = config.getString(collection_prefix + ".password", "");
+        configuration.database = config.getString(collection_prefix + ".database", "");
+        configuration.table = config.getString(collection_prefix + ".table", "");
+        configuration.schema = config.getString(collection_prefix + ".schema", "");
+        configuration.addresses_expr = config.getString(collection_prefix + ".addresses_expr", "");
 
         if (!configuration.addresses_expr.empty() && !configuration.host.empty())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot have `addresses_expr` and `host`, `port` in configuration at the same time");
@@ -167,21 +168,20 @@ std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguratio
     if (!collection_name.empty())
     {
         const auto & config = context->getConfigRef();
-        const auto & config_prefix = fmt::format("named_collections.{}", collection_name);
+        const auto & collection_prefix = fmt::format("named_collections.{}", collection_name);
 
-        if (!config.has(config_prefix))
+        if (!config.has(collection_prefix))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no collection named `{}` in config", collection_name);
 
-        configuration.host = dict_config.getString(dict_config_prefix + ".host", config.getString(config_prefix + ".host", ""));
-        configuration.port = dict_config.getInt(dict_config_prefix + ".port", config.getUInt(config_prefix + ".port", 0));
-        configuration.username = dict_config.getString(dict_config_prefix + ".user", config.getString(config_prefix + ".user", ""));
-        configuration.password = dict_config.getString(dict_config_prefix + ".password", config.getString(config_prefix + ".password", ""));
-        configuration.database = dict_config.getString(dict_config_prefix + ".db", config.getString(config_prefix + ".database", ""));
-        configuration.table = dict_config.getString(dict_config_prefix + ".table", config.getString(config_prefix + ".table", ""));
-        configuration.schema = dict_config.getString(dict_config_prefix + ".schema", config.getString(config_prefix + ".schema", ""));
+        configuration.host = dict_config.getString(dict_config_prefix + ".host", config.getString(collection_prefix + ".host", ""));
+        configuration.port = dict_config.getInt(dict_config_prefix + ".port", config.getUInt(collection_prefix + ".port", 0));
+        configuration.username = dict_config.getString(dict_config_prefix + ".user", config.getString(collection_prefix + ".user", ""));
+        configuration.password = dict_config.getString(dict_config_prefix + ".password", config.getString(collection_prefix + ".password", ""));
+        configuration.database = dict_config.getString(dict_config_prefix + ".db", config.getString(collection_prefix + ".database", ""));
+        configuration.table = dict_config.getString(dict_config_prefix + ".table", config.getString(collection_prefix + ".table", ""));
+        configuration.schema = dict_config.getString(dict_config_prefix + ".schema", config.getString(collection_prefix + ".schema", ""));
 
-        if (configuration.host.empty() || configuration.port == 0 || configuration.username.empty() || configuration.password.empty()
-            || configuration.database.empty() || configuration.table.empty())
+        if (configuration.host.empty() || configuration.port == 0 || configuration.username.empty() || configuration.table.empty())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Named collection of connection parameters is missing some of the parameters and dictionary parameters are added");
