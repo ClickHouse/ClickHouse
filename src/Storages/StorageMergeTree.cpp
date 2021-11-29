@@ -1072,7 +1072,7 @@ Int64 StorageMergeTree::getUpdatedDataVersion(
 {
     auto it = updated_version_by_block_range.find(std::make_pair(part->info.min_block, part->info.max_block));
     if (it != updated_version_by_block_range.end())
-        return std::max(part->info.getDataVersion(), it->second);
+        return std::max(part->info.getDataVersion(), static_cast<Int64>(it->second));
     else
         return part->info.getDataVersion();
 }
@@ -1118,7 +1118,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
 
             for (auto it = begin_it; it != end_it; ++it)
             {
-                const PartVersionWithName needle{it->first, ""};
+                const PartVersionWithName needle{static_cast<Int64>(it->first), ""};
                 auto versions_it = std::lower_bound(
                     part_versions_with_names.begin(), part_versions_with_names.end(), needle);
 

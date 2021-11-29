@@ -136,7 +136,7 @@ private:
     /// We store information about mutations which are not applicable to the partition of each part.
     /// The value is a maximum version for a part which will be the same as his current version,
     /// that is, to which version it can be upgraded without any change.
-    std::map<std::pair<Int64, Int64>, Int64> updated_version_by_block_range;
+    std::map<std::pair<Int64, Int64>, UInt64> updated_version_by_block_range;
 
     std::atomic<bool> shutdown_called {false};
 
