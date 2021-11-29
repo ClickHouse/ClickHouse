@@ -95,7 +95,6 @@ ClusterDiscovery::ClusterDiscovery(
     const String & config_prefix)
     : context(Context::createCopy(context_))
     , current_node_name(toString(ServerUUID::get()))
-    , server_port(context->getTCPPort())
     , log(&Poco::Logger::get("ClusterDiscovery"))
 {
     LOG_DEBUG(log, "Cluster discovery is enabled");
@@ -108,9 +107,17 @@ ClusterDiscovery::ClusterDiscovery(
         String prefix = config_prefix + "." + key + ".discovery";
         if (!config.has(prefix))
             continue;
-        String path = config.getString(prefix + ".path");
-        trimRight(path, '/');
-        clusters_info.emplace(key, ClusterInfo(key, path));
+
+        clusters_info.emplace(
+            key,
+            ClusterInfo(
+                /* name_= */ key,
+                /* zk_root_= */ config.getString(prefix + ".path"),
+                /* port= */ context->getTCPPort(),
+                /* secure= */ config.getBool(prefix + ".secure", false),
+                /* shard_id= */ config.getUInt(prefix + ".shard", 0)
+            )
+        );
     }
     clusters_to_update = std::make_shared<UpdateFlags>(config_keys.begin(), config_keys.end());
 }
@@ -190,34 +197,35 @@ bool ClusterDiscovery::needUpdate(const Strings & node_uuids, const NodesInfo & 
 
 ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
 {
-    Strings replica_adresses;
-    replica_adresses.reserve(cluster_info.nodes_info.size());
-
-    std::optional<bool> secure;
-    for (const auto & [_, node] : cluster_info.nodes_info)
+    std::vector<std::vector<String>> shards;
     {
-        if (secure && secure.value() != node.secure)
+        std::map<size_t, Strings> replica_adresses;
+
+        for (const auto & [_, node] : cluster_info.nodes_info)
         {
-            LOG_WARNING(log, "Nodes in cluster '{}' has different 'secure' value", cluster_info.name);
+            if (cluster_info.current_node.secure != node.secure)
+            {
+                LOG_WARNING(log, "Node '{}' in cluster '{}' has different 'secure' value, skipping it", node.address, cluster_info.name);
+                continue;
+            }
+            replica_adresses[node.shard_id].emplace_back(node.address);
         }
 
-        secure = node.secure;
-        replica_adresses.emplace_back(node.address);
+        shards.reserve(replica_adresses.size());
+        for (auto & [_, replicas] : replica_adresses)
+            shards.emplace_back(std::move(replicas));
     }
 
-    // TODO(vdimir@) save custom params from config to zookeeper and use here (like secure), split by shards
-    std::vector<std::vector<String>> shards = {replica_adresses};
-
-    auto secure_port_opt = context->getTCPPortSecure();
+    bool secure = cluster_info.current_node.secure;
     auto cluster = std::make_shared<Cluster>(
         context->getSettings(),
         shards,
         /* username= */ context->getUserName(),
         /* password= */ "",
-        /* clickhouse_port= */ (secure.value_or(false) ? secure_port_opt.value_or(DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort()),
+        /* clickhouse_port= */ secure ? context->getTCPPortSecure().value_or(DBMS_DEFAULT_SECURE_PORT) : context->getTCPPort(),
         /* treat_local_as_remote= */ false,
         /* treat_local_port_as_remote= */ context->getApplicationType() == Context::ApplicationType::LOCAL,
-        secure.value_or(false));
+        /* secure= */ secure);
     return cluster;
 }
 
@@ -289,9 +297,7 @@ void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & inf
     String node_path = getShardsListPath(info.zk_root) / current_node_name;
     zk->createAncestors(node_path);
 
-    NodeInfo self_node(getFQDNOrHostName() + ":" + toString(server_port));
-
-    zk->createOrUpdate(node_path, self_node.serialize(), zkutil::CreateMode::Ephemeral);
+    zk->createOrUpdate(node_path, info.current_node.serialize(), zkutil::CreateMode::Ephemeral);
     LOG_DEBUG(log, "Current node {} registered in cluster {}", current_node_name, info.name);
 }
 
@@ -381,6 +387,7 @@ bool ClusterDiscovery::NodeInfo::parse(const String & data, NodeInfo & result)
 
         result.address = json->getValue<std::string>("address");
         result.secure = json->optValue<bool>("secure", false);
+        result.shard_id = json->optValue<size_t>("shard_id", 0);
     }
     catch (Poco::Exception & e)
     {
@@ -397,6 +404,7 @@ String ClusterDiscovery::NodeInfo::serialize() const
 {
     Poco::JSON::Object json;
     json.set("address", address);
+    json.set("shard_id", shard_id);
 
     std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     oss.exceptions(std::ios::failbit);
