@@ -170,7 +170,11 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
                 }
             }
             else if (pos > columns.size() || !pos)
-                positional = false;
+            {
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                     "Positional argument out of bounds: {} (exprected in range [1, {}]",
+                                pos, columns.size());
+            }
         }
         else
             positional = false;
