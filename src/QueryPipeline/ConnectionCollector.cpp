@@ -46,7 +46,7 @@ struct AsyncDrainTask
     std::shared_ptr<IConnections> shared_connections;
     void operator()() const
     {
-        ConnectionCollector::drainConnections(*shared_connections);
+        ConnectionCollector::drainConnections(*shared_connections, /* throw_error= */ false);
     }
 
     // We don't have std::unique_function yet. Wrap it in shared_ptr to make the functor copyable.
@@ -71,7 +71,7 @@ std::shared_ptr<IConnections> ConnectionCollector::enqueueConnectionCleanup(
     return connections;
 }
 
-void ConnectionCollector::drainConnections(IConnections & connections) noexcept
+void ConnectionCollector::drainConnections(IConnections & connections, bool throw_error)
 {
     bool is_drained = false;
     try
@@ -114,6 +114,9 @@ void ConnectionCollector::drainConnections(IConnections & connections) noexcept
                 tryLogCurrentException(&Poco::Logger::get("ConnectionCollector"), __PRETTY_FUNCTION__);
             }
         }
+
+        if (throw_error)
+            throw;
     }
 }
 
