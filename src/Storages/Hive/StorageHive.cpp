@@ -66,7 +66,7 @@ class HiveSource : public SourceWithProgress, WithContext
 public:
     struct SourcesInfo
     {
-        HiveMetastoreClientPtr hms_client;
+        HiveMetastoreClientPtr hive_metastore_client;
         std::string database;
         std::string table_name;
         HiveFiles hive_files;
@@ -150,7 +150,7 @@ public:
                 {
                     if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
                     {
-                        source_info->hms_client->clearTableMeta(source_info->database, source_info->table_name);
+                        source_info->hive_metastore_client->clearTableMeta(source_info->database, source_info->table_name);
                         throw;
                     }
                 }
@@ -228,7 +228,7 @@ private:
 
 
 StorageHive::StorageHive(
-    const String & hms_url_,
+    const String & hive_metastore_url_,
     const String & hive_database_,
     const String & hive_table_,
     const StorageID & table_id_,
@@ -240,13 +240,13 @@ StorageHive::StorageHive(
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_)
-    , hms_url(hms_url_)
+    , hive_metastore_url(hive_metastore_url_)
     , hive_database(hive_database_)
     , hive_table(hive_table_)
     , partition_by_ast(partition_by_ast_)
     , storage_settings(std::move(storage_settings_))
 {
-    getContext()->getRemoteHostFilter().checkURL(Poco::URI(hms_url));
+    getContext()->getRemoteHostFilter().checkURL(Poco::URI(hive_metastore_url));
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -254,13 +254,13 @@ StorageHive::StorageHive(
     storage_metadata.setComment(comment_);
     setInMemoryMetadata(storage_metadata);
 
-    auto hms_client = getContext()->getHiveMetastoreClient(hms_url);
-    auto table_meta = hms_client->getTableMetadata(hive_database, hive_table);
+    auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, getContext());
+    auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
 
-    hdfs_namenode_url = getNameNodeUrl(table_meta->getTable()->sd.location);
-    table_schema = table_meta->getTable()->sd.cols;
+    hdfs_namenode_url = getNameNodeUrl(hive_table_metadata->getTable()->sd.location);
+    table_schema = hive_table_metadata->getTable()->sd.cols;
 
-    FileFormat hdfs_file_format = toFileFormat(table_meta->getTable()->sd.inputFormat);
+    FileFormat hdfs_file_format = toFileFormat(hive_table_metadata->getTable()->sd.inputFormat);
     switch (hdfs_file_format)
     {
         case FileFormat::TEXT:
@@ -387,13 +387,13 @@ Pipe StorageHive::read(
 {
     HDFSBuilderWrapper builder = createHDFSBuilder(hdfs_namenode_url, context_->getGlobalContext()->getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
-    auto hms_client = context_->getHiveMetastoreClient(hms_url);
-    auto table_meta_cntrl = hms_client->getTableMetadata(hive_database, hive_table);
+    auto hive_metastore_client = HiveMetastoreClientFactory::instance().getOrCreate(hive_metastore_url, getContext());
+    auto hive_table_metadata = hive_metastore_client->getTableMetadata(hive_database, hive_table);
 
     // List files under partition directory in HDFS
-    auto list_paths = [table_meta_cntrl, &fs](const String & path) { return table_meta_cntrl->getLocationFiles(fs, path); };
+    auto list_paths = [hive_table_metadata, &fs](const String & path) { return hive_table_metadata->getLocationFiles(fs, path); };
 
-    std::vector<Apache::Hadoop::Hive::Partition> partitions = table_meta_cntrl->getPartitions();
+    std::vector<Apache::Hadoop::Hive::Partition> partitions = hive_table_metadata->getPartitions();
     HiveFiles hive_files; // hive files to read
     std::mutex hive_files_mutex; // Mutext to protect hive_files, which maybe appended in multiple threads
 
@@ -529,7 +529,7 @@ Pipe StorageHive::read(
     }
     else if (partition_name_types.empty()) // Partition keys is empty
     {
-        auto paths = list_paths(table_meta_cntrl->getTable()->sd.location);
+        auto paths = list_paths(hive_table_metadata->getTable()->sd.location);
         for (const auto & path : paths)
         {
             pool.scheduleOrThrowOnError([&] { append_hive_files(path, {}); });
@@ -545,7 +545,7 @@ Pipe StorageHive::read(
     sources_info->hive_files = std::move(hive_files);
     sources_info->database = hive_database;
     sources_info->table_name = hive_table;
-    sources_info->hms_client = hms_client;
+    sources_info->hive_metastore_client = hive_metastore_client;
     sources_info->partition_name_types = partition_name_types;
     for (const auto & column : column_names)
     {
@@ -608,11 +608,11 @@ void registerStorageHive(StorageFactory & factory)
             for (auto & engine_arg : engine_args)
                 engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
 
-            const String & hms_url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
+            const String & hive_metastore_url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
             const String & hive_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
             const String & hive_table = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
             return StorageHive::create(
-                hms_url,
+                hive_metastore_url,
                 hive_database,
                 hive_table,
                 args.table_id,

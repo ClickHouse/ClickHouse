@@ -166,7 +166,7 @@ private:
 };
 
 /*
- * FIXME:RemoteReadBuffer derive from SeekableReadBuffer may case some risks, since it's not seekable in some cases
+ * FIXME:RemoteReadBuffer derive from SeekableReadBuffer may cause some risks, since it's not seekable in some cases
  * But SeekableReadBuffer is not a interface which make it hard to fixup.
  */
 class RemoteReadBuffer : public BufferWithOwnMemory<SeekableReadBuffer>

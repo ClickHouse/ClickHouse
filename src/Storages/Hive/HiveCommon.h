@@ -92,8 +92,28 @@ private:
     mutable std::mutex mutex;
     std::atomic<bool> expired{false};
 
-    Poco::Logger * log = &Poco::Logger::get("HMSClient");
+    Poco::Logger * log = &Poco::Logger::get("HiveMetastoreClient");
 };
+
+using HiveMetastoreClientPtr = std::shared_ptr<HiveMetastoreClient>;
+
+class HiveMetastoreClientFactory final : private boost::noncopyable
+{
+public:
+    static HiveMetastoreClientFactory & instance();
+
+    HiveMetastoreClientPtr getOrCreate(const String & name, ContextPtr context);
+
+private:
+    std::mutex mutex;
+    std::map<String, HiveMetastoreClientPtr> clients;
+
+    const int conn_timeout_ms = 60000;
+    const int recv_timeout_ms = 60000;
+    const int send_timeout_ms = 60000;
+};
+
 }
+
 
 #endif
