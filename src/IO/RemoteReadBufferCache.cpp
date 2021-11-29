@@ -157,14 +157,9 @@ void RemoteCacheController::backgroupDownload(std::function<void(RemoteCacheCont
         lock.unlock();
         more_data_signal.notify_all();
         finish_callback(this);
-        LOG_TRACE(
-            &Poco::Logger::get("RemoteCacheController"),
-            "finish download.{} into {}. size:{} ",
-            remote_path,
-            local_path.string(),
-            current_offset);
+        LOG_TRACE(log, "finish download.{} into {}. size:{} ", remote_path, local_path.string(), current_offset);
     };
-    RemoteReadBufferCache::instance().GetThreadPool()->scheduleOrThrow(task);
+    RemoteReadBufferCache::instance().getThreadPool()->scheduleOrThrow(task);
 }
 
 void RemoteCacheController::flush(bool need_flush_meta_)
@@ -389,7 +384,7 @@ RemoteReadBufferCache::RemoteReadBufferCache() = default;
 
 RemoteReadBufferCache::~RemoteReadBufferCache()
 {
-    threadPool->wait();
+    thread_pool->wait();
 }
 
 RemoteReadBufferCache & RemoteReadBufferCache::instance()
@@ -432,7 +427,7 @@ void RemoteReadBufferCache::initOnce(
     local_path_prefix = dir;
     limit_size = limit_size_;
     local_cache_bytes_read_before_flush = bytes_read_before_flush_;
-    threadPool = std::make_shared<FreeThreadPool>(max_threads, 1000, 1000, false);
+    thread_pool = std::make_shared<FreeThreadPool>(max_threads, 1000, 1000, false);
 
     // scan local disk dir and recover the cache metas
     std::filesystem::path root_dir(local_path_prefix);
@@ -449,7 +444,7 @@ void RemoteReadBufferCache::initOnce(
         this->inited = true;
         LOG_TRACE(this->log, "recovered from disk ");
     };
-    GetThreadPool()->scheduleOrThrow(recover_task);
+    getThreadPool()->scheduleOrThrow(recover_task);
 }
 
 std::filesystem::path RemoteReadBufferCache::calculateLocalPath(const RemoteFileMeta & meta)

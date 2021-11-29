@@ -128,6 +128,8 @@ private:
     size_t local_cache_bytes_read_before_flush;
     std::shared_ptr<ReadBuffer> remote_readbuffer;
     std::unique_ptr<std::ofstream> out_file;
+
+    Poco::Logger * log = &Poco::Logger::get("RemoteReadBufferCache");
 };
 
 /**
@@ -186,7 +188,7 @@ public:
     ~RemoteReadBufferCache();
     // global instance
     static RemoteReadBufferCache & instance();
-    std::shared_ptr<FreeThreadPool> GetThreadPool() { return threadPool; }
+    std::shared_ptr<FreeThreadPool> getThreadPool() { return thread_pool; }
 
     void initOnce(const std::filesystem::path & dir, size_t limit_size, size_t bytes_read_before_flush_, size_t max_threads);
     inline bool hasInitialized() const { return inited; }
@@ -197,7 +199,7 @@ public:
 private:
     std::string local_path_prefix;
 
-    std::shared_ptr<FreeThreadPool> threadPool;
+    std::shared_ptr<FreeThreadPool> thread_pool;
     std::atomic<bool> inited = false;
     std::mutex mutex;
     size_t limit_size = 0;
