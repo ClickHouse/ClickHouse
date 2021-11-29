@@ -155,11 +155,18 @@ if __name__ == "__main__":
     logging.info("Will upload cache")
     upload_ccache(ccache_path, s3_helper, pr_info.number, temp_path)
 
-    # for release pull requests we use branch names prefixes, not pr numbers
+    release_or_pr = None
     if 'release' in pr_info.labels or 'release-lts' in pr_info.labels:
-        s3_path_prefix = pr_info.head_ref + "/" + pr_info.sha + "/" + build_name
+        # for release pull requests we use branch names prefixes, not pr numbers
+        release_or_pr = pr_info.head_ref
+    elif pr_info.number == 0:
+        # for pushes to master - major version
+        release_or_pr = ".".join(version.as_tuple[:2])
     else:
-        s3_path_prefix = str(pr_info.number) + "/" + pr_info.sha + "/" + build_name
+        # PR number for anything else
+        release_or_pr = str(pr_info.number)
+
+    s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
 
     if os.path.exists(log_path):
         log_url = s3_helper.upload_build_file_to_s3(log_path, s3_path_prefix + "/" + os.path.basename(log_path))
