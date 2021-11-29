@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import os
 import urllib
 
@@ -27,6 +28,12 @@ def get_pr_for_commit(sha, ref):
     except Exception as ex:
         print("Cannot fetch PR info from commit", ex)
     return None
+
+
+def get_event():
+    with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as ef:
+        return json.load(ef)
+
 
 class PRInfo:
     def __init__(self, github_event, need_orgs=False, need_changed_files=False):
