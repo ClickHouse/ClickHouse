@@ -13,7 +13,6 @@
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/isLocalAddress.h>
-#include <Common/config.h>
 #include <base/types.h>
 
 #include "config_core.h"
@@ -28,6 +27,7 @@
 
 namespace Poco::Net { class IPAddress; }
 namespace zkutil { class ZooKeeper; }
+
 
 namespace DB
 {

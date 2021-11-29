@@ -88,6 +88,7 @@
 #include <Interpreters/Lemmatizers.h>
 #include <filesystem>
 
+
 namespace fs = std::filesystem;
 
 namespace ProfileEvents
@@ -1831,7 +1832,9 @@ bool checkZooKeeperConfigIsLocal(const Poco::Util::AbstractConfiguration & confi
     }
     return false;
 }
+
 }
+
 
 bool Context::tryCheckClientConnectionToMyKeeperCluster() const
 {
