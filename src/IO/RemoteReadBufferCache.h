@@ -12,6 +12,8 @@
 #include <IO/SeekableReadBuffer.h>
 #include <condition_variable>
 
+namespace fs = std::filesystem;
+
 namespace DB
 {
 enum class RemoteReadBufferCacheError : int8_t
@@ -20,16 +22,15 @@ enum class RemoteReadBufferCacheError : int8_t
     NOT_INIT = 10,
     DISK_FULL = 11,
     FILE_INVALID = 12,
-
     END_OF_FILE = 20,
 };
 
 struct RemoteFileMetadata
 {
     RemoteFileMetadata(
-        const std::string & schema_,
-        const std::string & cluster_,
-        const std::string & path_,
+        const String & schema_,
+        const String & cluster_,
+        const String & path_,
         UInt64 last_modify_time_,
         size_t file_size_)
         : schema(schema_)
@@ -40,9 +41,9 @@ struct RemoteFileMetadata
     {
     }
 
-    std::string schema; // Hive, S2 etc.
-    std::string cluster;
-    std::string path;
+    String schema; // Hive, S2 etc.
+    String cluster;
+    String path;
     UInt64 last_modify_time;
     size_t file_size;
 };
@@ -52,7 +53,7 @@ class RemoteCacheController
 public:
     RemoteCacheController(
         const RemoteFileMetadata & meta,
-        const std::filesystem::path & local_path_,
+        const String & local_path_,
         size_t cache_bytes_before_flush_,
         std::shared_ptr<ReadBuffer> readbuffer_,
         std::function<void(RemoteCacheController *)> const & finish_callback);
@@ -60,14 +61,14 @@ public:
 
     // recover from local disk
     static std::shared_ptr<RemoteCacheController>
-    recover(const std::filesystem::path & local_path, std::function<void(RemoteCacheController *)> const & finish_callback);
+    recover(const String & local_path, std::function<void(RemoteCacheController *)> const & finish_callback);
 
     /**
      * Called by LocalCachedFileReader, must be used in pair
      * The second value of the return tuple is the local_path to store file.
      * It will be empty if the file has not been downloaded
      */
-    std::pair<FILE *, std::filesystem::path> allocFile();
+    std::pair<FILE *, String> allocFile();
     void deallocFile(FILE * fs_);
 
     /**
@@ -90,8 +91,8 @@ public:
 
     inline size_t size() const { return current_offset; }
 
-    inline const std::filesystem::path & getLocalPath() { return local_path; }
-    inline const std::string & getRemotePath() { return remote_path; }
+    inline String getLocalPath() const { return local_path; }
+    inline String getRemotePath() const { return remote_path; }
 
     inline UInt64 getLastModificationTimestamp() const { return last_modify_time; }
     inline void markInvalid()
@@ -117,10 +118,10 @@ private:
     std::set<FILE *> opened_file_streams;
 
     // meta info
-    std::string schema;
-    std::string cluster;
-    std::string remote_path;
-    std::filesystem::path local_path;
+    String schema;
+    String cluster;
+    String remote_path;
+    String local_path;
     UInt64 last_modify_time;
 
     bool valid;
@@ -140,7 +141,7 @@ private:
 class LocalCachedFileReader
 {
 public:
-    LocalCachedFileReader(RemoteCacheController * cntrl_, size_t size_);
+    LocalCachedFileReader(RemoteCacheController * cache_controller_, size_t size_);
     ~LocalCachedFileReader();
 
     // expect to read size bytes into buf, return is the real bytes read
@@ -148,15 +149,15 @@ public:
     inline off_t getOffset() const { return static_cast<off_t>(offset); }
     size_t size();
     off_t seek(off_t offset);
-    inline std::string getPath() { return local_path; }
+    inline String getPath() const { return local_path; }
 
 private:
     std::mutex mutex;
     size_t offset;
     size_t file_size;
     FILE * fs;
-    std::filesystem::path local_path;
-    RemoteCacheController * controller;
+    String local_path;
+    RemoteCacheController * cache_controller;
 
     Poco::Logger * log = &Poco::Logger::get("RemoteReadBufferCache");
 };
@@ -170,7 +171,7 @@ class RemoteReadBuffer : public BufferWithOwnMemory<SeekableReadBuffer>
 public:
     explicit RemoteReadBuffer(size_t buff_size);
     ~RemoteReadBuffer() override;
-    static std::unique_ptr<RemoteReadBuffer> create(const RemoteFileMetadata & remote_file_meta_, std::unique_ptr<ReadBuffer> readbuffer);
+    static std::unique_ptr<RemoteReadBuffer> create(const RemoteFileMetadata & remote_file_meta, std::unique_ptr<ReadBuffer> read_buffer);
 
     bool nextImpl() override;
     inline bool seekable() { return file_reader != nullptr && file_reader->size() > 0; }
@@ -185,41 +186,47 @@ private:
 
 class RemoteReadBufferCache
 {
-protected:
-    RemoteReadBufferCache();
-
 public:
     ~RemoteReadBufferCache();
     // global instance
     static RemoteReadBufferCache & instance();
+
     std::shared_ptr<FreeThreadPool> getThreadPool() { return thread_pool; }
 
-    void initOnce(const std::filesystem::path & dir, size_t limit_size, size_t bytes_read_before_flush_, size_t max_threads);
+    void initOnce(const String & root_dir_, size_t limit_size_, size_t bytes_read_before_flush_, size_t max_threads_);
+
     inline bool isInitialized() const { return initialized; }
 
     std::pair<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCacheError>
     createReader(const RemoteFileMetadata & remote_file_meta, std::shared_ptr<ReadBuffer> & read_buffer);
 
+    void updateTotalSize(size_t size) { total_size += size; }
+
+protected:
+    RemoteReadBufferCache();
+
 private:
-    std::string local_path_prefix;
+    // root directory of local cache for remote filesystem
+    String root_dir;
+    size_t limit_size = 0;
+    size_t local_cache_bytes_read_before_flush = 0;
 
     std::shared_ptr<FreeThreadPool> thread_pool;
     std::atomic<bool> initialized = false;
-    std::mutex mutex;
-    size_t limit_size = 0;
-    size_t local_cache_bytes_read_before_flush = 0;
     std::atomic<size_t> total_size;
+    std::mutex mutex;
+
     Poco::Logger * log = &Poco::Logger::get("RemoteReadBufferCache");
 
     struct CacheCell
     {
-        std::list<std::string>::iterator key_iterator;
+        std::list<String>::iterator key_iterator;
         std::shared_ptr<RemoteCacheController> cache_controller;
     };
-    std::list<std::string> keys;
-    std::map<std::string, CacheCell> caches;
+    std::list<String> keys;
+    std::map<String, CacheCell> caches;
 
-    std::filesystem::path calculateLocalPath(const RemoteFileMetadata & meta);
+    String calculateLocalPath(const RemoteFileMetadata & meta) const;
 
     void recoverCachedFilesMeta(
         const std::filesystem::path & current_path,

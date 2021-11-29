@@ -518,12 +518,21 @@ if (ThreadFuzzer::instance().isEffective())
         config().getUInt("thread_pool_queue_size", 10000)
     );
 
-    if (config().has("local_cache_dir") && config().has("local_cache_quota"))
-        RemoteReadBufferCache::instance().initOnce(
-                config().getString("local_cache_dir"),
-                config().getUInt64("local_cache_quota"),
-                config().getUInt64("local_cache_bytes_read_before_flush",DBMS_DEFAULT_BUFFER_SIZE),
-                config().getUInt64("local_cache_max_threads", 1000));
+
+    /// Initialize global local cache for remote filesystem.
+    if (config().has("local_cache_for_remote_fs"))
+    {
+        bool enable = config().getBool("local_cache_for_remote_fs.enable", false);
+        if (enable)
+        {
+            String root_dir = config().getString("local_cache_for_remote_fs.root_dir");
+            UInt64 limit_size = config().getUInt64("local_cache_for_remote_fs.limit_size");
+            UInt64 bytes_read_before_flush
+                = config().getUInt64("local_cache_for_remote_fs.bytes_read_before_flush", DBMS_DEFAULT_BUFFER_SIZE);
+            auto max_threads = config().getUInt("local_cache_for_remote_fs.max_threads", 64);
+            RemoteReadBufferCache::instance().initOnce(root_dir, limit_size, bytes_read_before_flush, max_threads);
+        }
+    }
 
     ConnectionCollector::init(global_context, config().getUInt("max_threads_for_connection_collector", 10));
 
