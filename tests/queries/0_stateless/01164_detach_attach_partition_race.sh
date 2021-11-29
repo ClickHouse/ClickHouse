@@ -34,14 +34,14 @@ function thread_drop_detached()
 
 export -f thread_insert;
 export -f thread_detach_attach;
-export -f thread_detach_attach;
+export -f thread_drop_detached;
 
 TIMEOUT=10
 
 timeout $TIMEOUT bash -c thread_insert &
 timeout $TIMEOUT bash -c thread_detach_attach 2> /dev/null &
 timeout $TIMEOUT bash -c thread_detach_attach 2> /dev/null &
-timeout $TIMEOUT bash -c thread_detach_attach 2> /dev/null &
+timeout $TIMEOUT bash -c thread_drop_detached 2> /dev/null &
 
 wait
 
