@@ -1,11 +1,11 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTSelectQuery.h>
 
 namespace DB
 {
 
+class ASTSelectQuery;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 

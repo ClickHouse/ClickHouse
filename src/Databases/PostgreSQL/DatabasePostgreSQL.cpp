@@ -1,5 +1,7 @@
 #include <Databases/PostgreSQL/DatabasePostgreSQL.h>
 
+#include <Parsers/ASTIdentifier.h>
+
 #if USE_LIBPQXX
 
 #include <DataTypes/DataTypeNullable.h>
