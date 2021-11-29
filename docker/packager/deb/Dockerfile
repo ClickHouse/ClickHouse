@@ -1,9 +1,11 @@
 # docker build -t clickhouse/deb-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
+# ARG for quick switch to a given ubuntu mirror
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
 
 RUN apt-get update \
     && apt-get install ca-certificates lsb-release wget gnupg apt-transport-https \
@@ -33,7 +35,6 @@ RUN curl -O https://clickhouse-datasets.s3.yandex.net/utils/1/dpkg-deb \
     && chmod +x dpkg-deb \
     && cp dpkg-deb /usr/bin
 
-# Libraries from OS are only needed to test the "unbundled" build (this is not used in production).
 RUN apt-get update \
     && apt-get install \
         alien \

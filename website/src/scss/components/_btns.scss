@@ -1,13 +1,32 @@
 .btns {
 	align-items: center;
-	display: flex;
+	display: grid;
+	column-gap: $spacer * 3;
+	row-gap: $spacer * 2;
+	grid-auto-flow: column;
 	justify-content: center;
 
-	.btn + .btn {
-		margin-left: $spacer * 3;
+	@media screen and (max-width: 767.98px) {
+		grid-auto-flow: row;
 	}
+}
 
-	.btn-lg + .btn-lg {
-		margin-left: $spacer * 5;
+.btns.btns-lg {
+	column-gap: $spacer * 5;
+}
+
+.btns.is-2 {
+	grid-template-columns: 1fr 1fr;
+
+	@media screen and (max-width: 767.98px) {
+		grid-template-columns: 1fr;
+	}
+}
+
+.btns.is-3 {
+	grid-template-columns: 1fr 1fr 1fr;
+
+	@media screen and (max-width: 767.98px) {
+		grid-template-columns: 1fr;
 	}
 }
