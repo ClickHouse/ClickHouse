@@ -1,3 +1,5 @@
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/ConcatProcessor.h>

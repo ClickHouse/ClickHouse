@@ -39,6 +39,7 @@
 
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
@@ -64,12 +65,14 @@
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 
-
 #include <Poco/DirectoryIterator.h>
 
 #include <base/range.h>
 #include <base/scope_guard.h>
 #include <base/scope_guard_safe.h>
+
+#include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/replace.hpp>
 
 #include <algorithm>
 #include <ctime>
@@ -78,8 +81,6 @@
 #include <numeric>
 #include <thread>
 #include <future>
-
-#include <boost/algorithm/string/join.hpp>
 
 namespace fs = std::filesystem;
 

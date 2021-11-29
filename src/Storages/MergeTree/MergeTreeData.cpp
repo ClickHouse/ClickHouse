@@ -35,6 +35,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/MergeTree/MergeTreeBaseSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
@@ -4412,8 +4413,13 @@ static void selectBestProjection(
         if (normal_result_ptr->error())
             return;
 
-        sum_marks += normal_result_ptr->marks();
-        candidate.merge_tree_normal_select_result_ptr = normal_result_ptr;
+        if (normal_result_ptr->marks() == 0)
+            candidate.complete = true;
+        else
+        {
+            sum_marks += normal_result_ptr->marks();
+            candidate.merge_tree_normal_select_result_ptr = normal_result_ptr;
+        }
     }
     candidate.merge_tree_projection_select_result_ptr = projection_result_ptr;
 
@@ -4448,7 +4454,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             required_columns.begin(), required_columns.end(), [&](const auto & name) { return primary_key_max_column_name == name; });
     }
 
-    auto minmax_count_columns = block.mutateColumns();
+    auto partition_minmax_count_columns = block.mutateColumns();
     auto insert = [](ColumnAggregateFunction & column, const Field & value)
     {
         auto func = column.getAggregateFunction();
@@ -4493,11 +4499,18 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         }
 
         size_t pos = 0;
+        for (size_t i : metadata_snapshot->minmax_count_projection->partition_value_indices)
+        {
+            if (i >= part->partition.value.size())
+                throw Exception("Partition value index is out of boundary. It's a bug", ErrorCodes::LOGICAL_ERROR);
+            partition_minmax_count_columns[pos++]->insert(part->partition.value[i]);
+        }
+
         size_t minmax_idx_size = part->minmax_idx->hyperrectangle.size();
         for (size_t i = 0; i < minmax_idx_size; ++i)
         {
-            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
-            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
+            auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos++]);
+            auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos++]);
             const auto & range = part->minmax_idx->hyperrectangle[i];
             insert(min_column, range.left);
             insert(max_column, range.right);
@@ -4506,15 +4519,14 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
         if (!primary_key_max_column_name.empty())
         {
             const auto & primary_key_column = *part->index[0];
-            auto primary_key_column_size = primary_key_column.size();
-            auto & min_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
-            auto & max_column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns[pos++]);
+            auto & min_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos++]);
+            auto & max_column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns[pos++]);
             insert(min_column, primary_key_column[0]);
-            insert(max_column, primary_key_column[primary_key_column_size - 1]);
+            insert(max_column, primary_key_column[primary_key_column.size() - 1]);
         }
 
         {
-            auto & column = assert_cast<ColumnAggregateFunction &>(*minmax_count_columns.back());
+            auto & column = assert_cast<ColumnAggregateFunction &>(*partition_minmax_count_columns.back());
             auto func = column.getAggregateFunction();
             Arena & arena = column.createOrGetArena();
             size_t size_of_state = func->sizeOfData();
@@ -4526,7 +4538,7 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             column.insertFrom(place);
         }
     }
-    block.setColumns(std::move(minmax_count_columns));
+    block.setColumns(std::move(partition_minmax_count_columns));
 
     Block res;
     for (const auto & name : required_columns)
@@ -4545,12 +4557,12 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
 }
 
 
-bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
+std::optional<ProjectionCandidate> MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot, SelectQueryInfo & query_info) const
 {
     const auto & settings = query_context->getSettingsRef();
     if (!settings.allow_experimental_projection_optimization || query_info.ignore_projections || query_info.is_projection_query)
-        return false;
+        return std::nullopt;
 
     const auto & query_ptr = query_info.original_query;
 
@@ -4558,16 +4570,16 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     {
         // Currently projections don't support final yet.
         if (select->final())
-            return false;
+            return std::nullopt;
 
         // Currently projections don't support ARRAY JOIN yet.
         if (select->arrayJoinExpressionList().first)
-            return false;
+            return std::nullopt;
     }
 
     // Currently projections don't support sampling yet.
     if (settings.parallel_replicas_count > 1)
-        return false;
+        return std::nullopt;
 
     InterpreterSelectQuery select(
         query_ptr,
@@ -4795,6 +4807,25 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
         query_info.minmax_count_projection_block = getMinMaxCountProjectionBlock(
             metadata_snapshot, minmax_conut_projection_candidate->required_columns, query_info, parts, normal_parts, query_context);
 
+        if (minmax_conut_projection_candidate->prewhere_info)
+        {
+            const auto & prewhere_info = minmax_conut_projection_candidate->prewhere_info;
+            if (prewhere_info->alias_actions)
+                ExpressionActions(prewhere_info->alias_actions, actions_settings).execute(query_info.minmax_count_projection_block);
+
+            if (prewhere_info->row_level_filter)
+            {
+                ExpressionActions(prewhere_info->row_level_filter, actions_settings).execute(query_info.minmax_count_projection_block);
+                query_info.minmax_count_projection_block.erase(prewhere_info->row_level_column_name);
+            }
+
+            if (prewhere_info->prewhere_actions)
+                ExpressionActions(prewhere_info->prewhere_actions, actions_settings).execute(query_info.minmax_count_projection_block);
+
+            if (prewhere_info->remove_prewhere_column)
+                query_info.minmax_count_projection_block.erase(prewhere_info->prewhere_column_name);
+        }
+
         if (normal_parts.empty())
         {
             selected_candidate = &*minmax_conut_projection_candidate;
@@ -4905,14 +4936,14 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
     }
 
     if (!selected_candidate)
-        return false;
+        return std::nullopt;
     else if (min_sum_marks == 0)
     {
         /// If selected_projection indicated an empty result set. Remember it in query_info but
         /// don't use projection to run the query, because projection pipeline with empty result
         /// set will not work correctly with empty_result_for_aggregation_by_empty_set.
         query_info.merge_tree_empty_result = true;
-        return false;
+        return std::nullopt;
     }
 
     if (selected_candidate->desc->type == ProjectionDescription::Type::Aggregate)
@@ -4923,8 +4954,7 @@ bool MergeTreeData::getQueryProcessingStageWithAggregateProjection(
             = std::make_shared<SubqueriesForSets>(std::move(select.getQueryAnalyzer()->getSubqueriesForSets()));
     }
 
-    query_info.projection = std::move(*selected_candidate);
-    return true;
+    return *selected_candidate;
 }
 
 
@@ -4936,11 +4966,14 @@ QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
 {
     if (to_stage >= QueryProcessingStage::Enum::WithMergeableState)
     {
-        if (getQueryProcessingStageWithAggregateProjection(query_context, metadata_snapshot, query_info))
+        if (auto projection = getQueryProcessingStageWithAggregateProjection(query_context, metadata_snapshot, query_info))
         {
+            query_info.projection = std::move(projection);
             if (query_info.projection->desc->type == ProjectionDescription::Type::Aggregate)
                 return QueryProcessingStage::Enum::WithMergeableState;
         }
+        else
+            query_info.projection = std::nullopt;
     }
 
     return QueryProcessingStage::Enum::FetchColumns;
