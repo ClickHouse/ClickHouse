@@ -79,26 +79,6 @@ void SerializationBool::serializeTextEscaped(const IColumn & column, size_t row_
     }
 }
 
-void SerializationBool::deserializeFromString(IColumn & column, String & input, const FormatSettings & settings) const
-{
-    ColumnUInt8 * col = typeid_cast<ColumnUInt8 *>(&column);
-    if (!col)
-    {
-        throw Exception("Bool type can only deserialize columns of type UInt8." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
-    }
-
-    if (settings.bool_true_representation == input)
-    {
-        col->insert(true);
-    }
-    else if (settings.bool_false_representation == input)
-    {
-        col->insert(false);
-    }
-    else
-        throw Exception("Invalid boolean value, should be " + settings.bool_true_representation + " or " + settings.bool_false_representation + " controlled by setting bool_true_representation and bool_false_representation.", ErrorCodes::ILLEGAL_COLUMN);
-}
-
 void SerializationBool::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (istr.eof())
@@ -167,4 +147,23 @@ void SerializationBool::deserializeTextRaw(IColumn & column, ReadBuffer & istr, 
     deserializeFromString(column, input, settings);
 }
 
+void SerializationBool::deserializeFromString(IColumn & column, String & input, const FormatSettings & settings)
+{
+    ColumnUInt8 * col = typeid_cast<ColumnUInt8 *>(&column);
+    if (!col)
+    {
+        throw Exception("Bool type can only deserialize columns of type UInt8." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
+    }
+
+    if (settings.bool_true_representation == input)
+    {
+        col->insert(true);
+    }
+    else if (settings.bool_false_representation == input)
+    {
+        col->insert(false);
+    }
+    else
+        throw Exception("Invalid boolean value, should be " + settings.bool_true_representation + " or " + settings.bool_false_representation + " controlled by setting bool_true_representation and bool_false_representation.", ErrorCodes::ILLEGAL_COLUMN);
+}
 }
