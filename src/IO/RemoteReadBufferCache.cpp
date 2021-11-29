@@ -43,7 +43,7 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(
     auto modification_ts = meta_jobj->get("last_modification_timestamp").convert<UInt64>();
     if (downloaded == "false")
     {
-        LOG_ERROR(&Poco::Logger::get("RemoteCacheController"), "not a downloaded file: " + local_path_.string());
+        LOG_ERROR(log, "not a downloaded file: " + local_path_.string());
         return nullptr;
     }
     auto file_size = std::filesystem::file_size(data_file);
@@ -189,11 +189,11 @@ RemoteCacheController::~RemoteCacheController() = default;
 void RemoteCacheController::close()
 {
     // delete the directory
-    LOG_TRACE(&Poco::Logger::get("RemoteCacheController"), "release local resource: " + remote_path + ", " + local_path.string());
+    LOG_TRACE(log, "release local resource: " + remote_path + ", " + local_path.string());
     std::filesystem::remove_all(local_path);
 }
 
-std::tuple<FILE *, std::filesystem::path> RemoteCacheController::allocFile()
+std::pair<FILE *, std::filesystem::path> RemoteCacheController::allocFile()
 {
     std::filesystem::path result_local_path;
     if (download_finished)
@@ -262,7 +262,7 @@ size_t LocalCachedFileReader::size()
         return file_size;
     if (local_path.empty())
     {
-        LOG_TRACE(&Poco::Logger::get("LocalCachedFileReader"), "empty local_path");
+        LOG_TRACE(log, "empty local_path");
         return 0;
     }
 
@@ -280,6 +280,7 @@ RemoteReadBuffer::~RemoteReadBuffer() = default;
 
 std::unique_ptr<RemoteReadBuffer> RemoteReadBuffer::create(const RemoteFileMeta & remote_file_meta_, std::unique_ptr<ReadBuffer> readbuffer)
 {
+    auto * log = &Poco::Logger::get("RemoteReadBuffer");
     size_t buff_size = DBMS_DEFAULT_BUFFER_SIZE;
     if (readbuffer != nullptr)
         buff_size = readbuffer->internalBuffer().size();
@@ -310,7 +311,7 @@ std::unique_ptr<RemoteReadBuffer> RemoteReadBuffer::create(const RemoteFileMeta 
     } while (error == RemoteReadBufferCacheError::FILE_INVALID && retry < 10);
     if (rrb->file_reader == nullptr)
     {
-        LOG_ERROR(&Poco::Logger::get("RemoteReadBuffer"), "allocate local file failed for " + remote_path + "{}", error);
+        LOG_ERROR(log, "allocate local file failed for " + remote_path + "{}", error);
         rrb->original_readbuffer = srb;
     }
     return rrb;
@@ -335,7 +336,6 @@ bool RemoteReadBuffer::nextImpl()
         auto status = original_readbuffer->next();
         // we don't need to worry about the memory buffer allocated in RemoteReadBuffer, since it is owned by
         // BufferWithOwnMemory, BufferWithOwnMemory would release it.
-        //LOG_TRACE(&Poco::Logger::get("RemoteReadBuffer"), "from original rb {} {}", original_readbuffer->buffer().size(), original_readbuffer->offset());
         if (status)
             BufferBase::set(original_readbuffer->buffer().begin(), original_readbuffer->buffer().size(), original_readbuffer->offset());
         return status;
