@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
 
@@ -22,17 +23,21 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/TreeOptimizer.h>
 #include <Interpreters/replaceAliasColumnsInQuery.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/PredicateExpressionsOptimizer.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTLiteral.h>
 
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <IO/WriteHelpers.h>
 #include <Storages/IStorage.h>
@@ -564,9 +569,68 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
     out_table_join = table_join;
 }
 
+/// Evaluate expression and return boolean value if it can be interpreted as bool.
+/// Only UInt8 or NULL are allowed.
+/// Returns `false` for 0 or NULL values, `true` for any non-negative value.
+std::optional<bool> tryEvaluateConstCondition(ASTPtr expr, ContextPtr context)
+{
+    if (!expr)
+        return {};
+
+    Field eval_res;
+    DataTypePtr eval_res_type;
+    try
+    {
+        std::tie(eval_res, eval_res_type) = evaluateConstantExpression(expr, context);
+    }
+    catch (DB::Exception &)
+    {
+        /// not a constant expression
+        return {};
+    }
+    /// UInt8, maybe Nullable, maybe LowCardinality, and NULL are allowed
+    eval_res_type = removeNullable(removeLowCardinality(eval_res_type));
+    if (auto which = WhichDataType(eval_res_type); !which.isUInt8() && !which.isNothing())
+        return {};
+
+    if (eval_res.isNull())
+        return false;
+
+    UInt8 res = eval_res.template safeGet<UInt8>();
+    return res > 0;
+}
+
+bool tryJoinOnConst(TableJoin & analyzed_join, ASTPtr & on_expression, ContextPtr context)
+{
+    bool join_on_value;
+    if (auto eval_const_res = tryEvaluateConstCondition(on_expression, context))
+        join_on_value = *eval_const_res;
+    else
+        return false;
+
+    if (!analyzed_join.forceHashJoin())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "JOIN ON constant ({}) supported only with join algorithm 'hash'",
+                        queryToString(on_expression));
+
+    on_expression = nullptr;
+    if (join_on_value)
+    {
+        LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as cross join");
+        analyzed_join.resetToCross();
+    }
+    else
+    {
+        LOG_DEBUG(&Poco::Logger::get("TreeRewriter"), "Join on constant executed as empty join");
+        analyzed_join.resetKeys();
+    }
+
+    return true;
+}
+
 /// Find the columns that are obtained by JOIN.
-void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_join,
-                          const TablesWithColumns & tables, const Aliases & aliases)
+void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
+                          const TablesWithColumns & tables, const Aliases & aliases, ContextPtr context)
 {
     assert(tables.size() >= 2);
 
@@ -599,29 +663,41 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTTableJoin & table_
             assert(analyzed_join.oneDisjunct());
         }
 
-        if (analyzed_join.getClauses().empty())
+        auto check_keys_empty = [] (auto e) { return e.key_names_left.empty(); };
+
+        /// All clauses should to have keys or be empty simultaneously
+        bool all_keys_empty = std::all_of(analyzed_join.getClauses().begin(), analyzed_join.getClauses().end(), check_keys_empty);
+        if (all_keys_empty)
+        {
+            /// Try join on constant (cross or empty join) or fail
+            if (is_asof)
+                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                                "Cannot get JOIN keys from JOIN ON section: {}", queryToString(table_join.on_expression));
+
+            bool join_on_const_ok = tryJoinOnConst(analyzed_join, table_join.on_expression, context);
+            if (!join_on_const_ok)
+                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                                "Cannot get JOIN keys from JOIN ON section: {}", queryToString(table_join.on_expression));
+        }
+        else
+        {
+            bool any_keys_empty = std::any_of(analyzed_join.getClauses().begin(), analyzed_join.getClauses().end(), check_keys_empty);
+
+            if (any_keys_empty)
                 throw DB::Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                                     "Cannot get JOIN keys from JOIN ON section: '{}'",
                                     queryToString(table_join.on_expression));
 
-        for (const auto & onexpr : analyzed_join.getClauses())
-        {
-            if (onexpr.key_names_left.empty())
-                throw DB::Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                                    "Cannot get JOIN keys from JOIN ON section: '{}'",
-                                    queryToString(table_join.on_expression));
+            if (is_asof)
+            {
+                if (!analyzed_join.oneDisjunct())
+                    throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join doesn't support multiple ORs for keys in JOIN ON section");
+                data.asofToJoinKeys();
+            }
+
+            if (!analyzed_join.oneDisjunct() && !analyzed_join.forceHashJoin())
+                throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
         }
-
-        if (is_asof)
-        {
-            if (!analyzed_join.oneDisjunct())
-                throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "ASOF join doesn't support multiple ORs for keys in JOIN ON section");
-            data.asofToJoinKeys();
-        }
-
-        if (!analyzed_join.oneDisjunct() && !analyzed_join.forceHashJoin())
-            throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
-
     }
 }
 
@@ -1052,7 +1128,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
 
     auto * table_join_ast = select_query->join() ? select_query->join()->table_join->as<ASTTableJoin>() : nullptr;
     if (table_join_ast && tables_with_columns.size() >= 2)
-        collectJoinedColumns(*result.analyzed_join, *table_join_ast, tables_with_columns, result.aliases);
+        collectJoinedColumns(*result.analyzed_join, *table_join_ast, tables_with_columns, result.aliases, getContext());
 
     result.aggregates = getAggregates(query, *select_query);
     result.window_function_asts = getWindowFunctions(query, *select_query);
@@ -1175,7 +1251,7 @@ void TreeRewriter::normalize(
     // if we have at least two different functions. E.g. we will replace sum(x)
     // and count(x) with sumCount(x).1 and sumCount(x).2, and sumCount() will
     // be calculated only once because of CSE.
-    if (settings.optimize_fuse_sum_count_avg || settings.optimize_syntax_fuse_functions)
+    if (settings.optimize_fuse_sum_count_avg && settings.optimize_syntax_fuse_functions)
     {
         FuseSumCountAggregatesVisitor::Data data;
         FuseSumCountAggregatesVisitor(data).visit(query);

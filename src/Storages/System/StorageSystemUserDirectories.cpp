@@ -4,7 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 
 
 namespace DB
@@ -23,7 +23,7 @@ NamesAndTypesList StorageSystemUserDirectories::getNamesAndTypes()
 
 void StorageSystemUserDirectories::fillData(MutableColumns & res_columns, ContextPtr context, const SelectQueryInfo &) const
 {
-    const auto & access_control = context->getAccessControlManager();
+    const auto & access_control = context->getAccessControl();
     auto storages = access_control.getStorages();
 
     size_t column_index = 0;

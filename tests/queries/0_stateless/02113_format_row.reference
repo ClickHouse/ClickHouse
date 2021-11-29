@@ -1,0 +1,20 @@
+0\t1970-01-01\n
+1\t1970-01-02\n
+2\t1970-01-03\n
+3\t1970-01-04\n
+4\t1970-01-05\n
+0,"1970-01-01"\n
+1,"1970-01-02"\n
+2,"1970-01-03"\n
+3,"1970-01-04"\n
+4,"1970-01-05"\n
+["0", "1970-01-01"]\n
+["1", "1970-01-02"]\n
+["2", "1970-01-03"]\n
+["3", "1970-01-04"]\n
+["4", "1970-01-05"]\n
+\t\t<row>\n\t\t\t<number>0</number>\n\t\t\t<field>1970-01-01</field>\n\t\t</row>\n
+\t\t<row>\n\t\t\t<number>1</number>\n\t\t\t<field>1970-01-02</field>\n\t\t</row>\n
+\t\t<row>\n\t\t\t<number>2</number>\n\t\t\t<field>1970-01-03</field>\n\t\t</row>\n
+\t\t<row>\n\t\t\t<number>3</number>\n\t\t\t<field>1970-01-04</field>\n\t\t</row>\n
+\t\t<row>\n\t\t\t<number>4</number>\n\t\t\t<field>1970-01-05</field>\n\t\t</row>\n

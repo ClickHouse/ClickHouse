@@ -53,7 +53,7 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/UserDefinedSQLObjectsLoader.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
@@ -85,9 +85,6 @@
 #if !defined(ARCADIA_BUILD)
 #   include "config_core.h"
 #   include "Common/config_version.h"
-#   if USE_OPENCL
-#       include "Common/BitonicSort.h"
-#   endif
 #endif
 
 #if defined(OS_LINUX)
@@ -111,7 +108,8 @@
 #endif
 
 #if USE_NURAFT
-#   include <Server/KeeperTCPHandlerFactory.h>
+#    include <Coordination/FourLetterCommand.h>
+#    include <Server/KeeperTCPHandlerFactory.h>
 #endif
 
 #if USE_BASE64
@@ -513,7 +511,11 @@ if (ThreadFuzzer::instance().isEffective())
     // Initialize global thread pool. Do it before we fetch configs from zookeeper
     // nodes (`from_zk`), because ZooKeeper interface uses the pool. We will
     // ignore `max_thread_pool_size` in configs we fetch from ZK, but oh well.
-    GlobalThreadPool::initialize(config().getUInt("max_thread_pool_size", 10000));
+    GlobalThreadPool::initialize(
+        config().getUInt("max_thread_pool_size", 10000),
+        config().getUInt("max_thread_pool_free_size", 1000),
+        config().getUInt("thread_pool_queue_size", 10000)
+    );
 
     ConnectionCollector::init(global_context, config().getUInt("max_threads_for_connection_collector", 10));
 
@@ -595,8 +597,8 @@ if (ThreadFuzzer::instance().isEffective())
         if (config().getBool("remap_executable", false))
         {
             LOG_DEBUG(log, "Will remap executable in memory.");
-            remapExecutable();
-            LOG_DEBUG(log, "The code in memory has been successfully remapped.");
+            size_t size = remapExecutable();
+            LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
         }
 
         if (config().getBool("mlock_executable", false))
@@ -702,10 +704,6 @@ if (ThreadFuzzer::instance().isEffective())
         for (const DiskPtr & disk : volume->getDisks())
             setupTmpPath(log, disk->getPath());
     }
-
-    /// Storage keeping all the backups.
-    fs::create_directories(path / "backups");
-    global_context->setBackupsVolume(config().getString("backups_path", path / "backups"), config().getString("backups_policy", ""));
 
     /** Directory with 'flags': files indicating temporary settings for the server set by system administrator.
       * Flags may be cleared automatically after being applied by the server.
@@ -883,12 +881,20 @@ if (ThreadFuzzer::instance().isEffective())
         },
         /* already_loaded = */ false);  /// Reload it right now (initial loading)
 
-    auto & access_control = global_context->getAccessControlManager();
+    auto & access_control = global_context->getAccessControl();
     if (config().has("custom_settings_prefixes"))
         access_control.setCustomSettingsPrefixes(config().getString("custom_settings_prefixes"));
 
     /// Initialize access storages.
-    access_control.addStoragesFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
+    try
+    {
+        access_control.addStoragesFromMainConfig(config(), config_path, [&] { return global_context->getZooKeeper(); });
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+        throw;
+    }
 
     /// Reload config in SYSTEM RELOAD CONFIG query.
     global_context->setConfigReloadCallback([&]()
@@ -1017,6 +1023,7 @@ if (ThreadFuzzer::instance().isEffective())
         }
         /// Initialize keeper RAFT.
         global_context->initializeKeeperDispatcher(can_initialize_keeper_async);
+        FourLetterCommandFactory::registerCommands(*global_context->getKeeperDispatcher());
 
         for (const auto & listen_host : listen_hosts)
         {
@@ -1146,7 +1153,7 @@ if (ThreadFuzzer::instance().isEffective())
         global_context->initializeSystemLogs();
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
-        attachSystemTablesServer(*database_catalog.getSystemDatabase(), has_zookeeper);
+        attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
         /// Firstly remove partially dropped databases, to avoid race with MaterializedMySQLSyncThread,
@@ -1256,7 +1263,7 @@ if (ThreadFuzzer::instance().isEffective())
         /// This object will periodically calculate some metrics.
         AsynchronousMetrics async_metrics(
             global_context, config().getUInt("asynchronous_metrics_update_period_s", 1), servers_to_start_before_tables, servers);
-        attachSystemTablesAsync(*DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
+        attachSystemTablesAsync(global_context, *DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
 
         for (const auto & listen_host : listen_hosts)
         {

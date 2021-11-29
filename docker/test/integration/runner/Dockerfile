@@ -1,7 +1,9 @@
 # docker build -t clickhouse/integration-tests-runner .
 FROM ubuntu:20.04
 
-RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
+# ARG for quick switch to a given ubuntu mirror
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
@@ -60,7 +62,7 @@ RUN dockerd --version; docker --version
 RUN python3 -m pip install \
     PyMySQL \
     aerospike==4.0.0 \
-    avro \
+    avro==1.10.2 \
     cassandra-driver \
     confluent-kafka==1.5.0 \
     dict2xml \

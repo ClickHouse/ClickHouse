@@ -8,7 +8,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Access/Common/AccessFlags.h>
-#include <Access/AccessControlManager.h>
+#include <Access/AccessControl.h>
 #include <base/range.h>
 #include <boost/range/algorithm/sort.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
@@ -16,8 +16,6 @@
 
 namespace DB
 {
-using EntityType = IAccessEntity::Type;
-
 
 BlockIO InterpreterShowAccessQuery::execute()
 {
@@ -49,11 +47,11 @@ QueryPipeline InterpreterShowAccessQuery::executeImpl() const
 
 std::vector<AccessEntityPtr> InterpreterShowAccessQuery::getEntities() const
 {
-    const auto & access_control = getContext()->getAccessControlManager();
+    const auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(AccessType::SHOW_ACCESS);
 
     std::vector<AccessEntityPtr> entities;
-    for (auto type : collections::range(EntityType::MAX))
+    for (auto type : collections::range(AccessEntityType::MAX))
     {
         auto ids = access_control.findAll(type);
         for (const auto & id : ids)
@@ -71,13 +69,13 @@ std::vector<AccessEntityPtr> InterpreterShowAccessQuery::getEntities() const
 ASTs InterpreterShowAccessQuery::getCreateAndGrantQueries() const
 {
     auto entities = getEntities();
-    const auto & access_control = getContext()->getAccessControlManager();
+    const auto & access_control = getContext()->getAccessControl();
 
     ASTs create_queries, grant_queries;
     for (const auto & entity : entities)
     {
         create_queries.push_back(InterpreterShowCreateAccessEntityQuery::getCreateQuery(*entity, access_control));
-        if (entity->isTypeOf(EntityType::USER) || entity->isTypeOf(EntityType::ROLE))
+        if (entity->isTypeOf(AccessEntityType::USER) || entity->isTypeOf(AccessEntityType::ROLE))
             boost::range::push_back(grant_queries, InterpreterShowGrantsQuery::getGrantQueries(*entity, access_control));
     }
 
