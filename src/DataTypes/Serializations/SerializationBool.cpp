@@ -34,7 +34,7 @@ void SerializationBool::serializeText(const IColumn &column, size_t row_num, Wri
         ostr.write(str_false, sizeof(str_false) - 1);
 }
 
-void SerializationBool::deserializeText(IColumn &column, ReadBuffer &istr, const FormatSettings &) const
+void SerializationBool::deserializeText(IColumn &column, ReadBuffer &istr, const FormatSettings & settings, bool whole) const
 {
     ColumnUInt8 *col = typeid_cast<ColumnUInt8 *>(&column);
     if (!col)
@@ -58,6 +58,9 @@ void SerializationBool::deserializeText(IColumn &column, ReadBuffer &istr, const
     }
     else
         throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
+
+    if (whole && !istr.eof())
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, "Bool");
 }
 
 void SerializationBool::serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
