@@ -37,10 +37,10 @@ public:
     };
 
     // use for speeding up query metadata
-    struct HiveTableMeta : public WithContext
+    struct HiveTableMetadata : public WithContext
     {
     public:
-        HiveTableMeta(
+        HiveTableMetadata(
             const std::string & db_name_,
             const std::string & table_name_,
             std::shared_ptr<Apache::Hadoop::Hive::Table> table_,
@@ -79,7 +79,7 @@ public:
     {
     }
 
-    std::shared_ptr<HiveTableMeta> getTableMeta(const std::string & db_name, const std::string & table_name);
+    std::shared_ptr<HiveTableMetadata> getTableMetadata(const std::string & db_name, const std::string & table_name);
     void clearTableMeta(const std::string & db_name, const std::string & table_name);
     void setClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_);
     inline bool isExpired() const { return expired; }
@@ -88,7 +88,7 @@ public:
 
 private:
     std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client;
-    LRUCache<std::string, HiveTableMeta> table_meta_cache;
+    LRUCache<std::string, HiveTableMetadata> table_meta_cache;
     mutable std::mutex mutex;
     std::atomic<bool> expired{false};
 

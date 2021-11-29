@@ -14,7 +14,7 @@
 
 namespace DB
 {
-enum class RemoteReadBufferCacheError :int8_t
+enum class RemoteReadBufferCacheError : int8_t
 {
     OK,
     NOT_INIT = 10,
@@ -27,17 +27,14 @@ enum class RemoteReadBufferCacheError :int8_t
 struct RemoteFileMeta
 {
     RemoteFileMeta(
-            const std::string  & schema_,
-            const std::string & cluster_,
-            const std::string & path_,
-            UInt64 last_modification_timestamp_,
-            size_t file_size_):
-        schema(schema_),
-        cluster(cluster_),
-        path(path_),
-        last_modification_timestamp(last_modification_timestamp_),
-        file_size(file_size_)
-    {}
+        const std::string & schema_,
+        const std::string & cluster_,
+        const std::string & path_,
+        UInt64 last_modification_timestamp_,
+        size_t file_size_)
+        : schema(schema_), cluster(cluster_), path(path_), last_modification_timestamp(last_modification_timestamp_), file_size(file_size_)
+    {
+    }
 
     std::string schema; // Hive, S2 etc.
     std::string cluster;
@@ -53,7 +50,7 @@ class RemoteCacheController
 {
 public:
     RemoteCacheController(
-        const RemoteFileMeta &meta,
+        const RemoteFileMeta & meta,
         const std::filesystem::path & local_path_,
         size_t cache_bytes_before_flush_,
         std::shared_ptr<ReadBuffer> readbuffer_,
@@ -167,9 +164,7 @@ class RemoteReadBuffer : public BufferWithOwnMemory<SeekableReadBuffer>
 public:
     explicit RemoteReadBuffer(size_t buff_size);
     ~RemoteReadBuffer() override;
-    static std::unique_ptr<RemoteReadBuffer> create(
-        const RemoteFileMeta &remote_file_meta_,
-        std::unique_ptr<ReadBuffer> readbuffer);
+    static std::unique_ptr<RemoteReadBuffer> create(const RemoteFileMeta & remote_file_meta_, std::unique_ptr<ReadBuffer> readbuffer);
 
     bool nextImpl() override;
     inline bool seekable() { return file_reader != nullptr && file_reader->size() > 0; }
@@ -191,14 +186,13 @@ public:
     ~RemoteReadBufferCache();
     // global instance
     static RemoteReadBufferCache & instance();
-    std::shared_ptr<FreeThreadPool> GetThreadPool(){ return threadPool; }
+    std::shared_ptr<FreeThreadPool> GetThreadPool() { return threadPool; }
 
     void initOnce(const std::filesystem::path & dir, size_t limit_size, size_t bytes_read_before_flush_, size_t max_threads);
     inline bool hasInitialized() const { return inited; }
 
-    std::tuple<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCacheError> createReader(
-        const RemoteFileMeta & remote_file_meta,
-        std::shared_ptr<ReadBuffer> & readbuffer);
+    std::tuple<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCacheError>
+    createReader(const RemoteFileMeta & remote_file_meta, std::shared_ptr<ReadBuffer> & readbuffer);
 
 private:
     std::string local_path_prefix;
@@ -219,13 +213,13 @@ private:
     std::list<std::string> keys;
     std::map<std::string, CacheCell> caches;
 
-    std::filesystem::path calculateLocalPath(const RemoteFileMeta &meta);
+    std::filesystem::path calculateLocalPath(const RemoteFileMeta & meta);
 
     void recoverCachedFilesMeta(
-            const std::filesystem::path & current_path,
-            size_t current_depth,
-            size_t max_depth,
-            std::function<void(RemoteCacheController *)> const & finish_callback);
+        const std::filesystem::path & current_path,
+        size_t current_depth,
+        size_t max_depth,
+        std::function<void(RemoteCacheController *)> const & finish_callback);
     bool clearLocalCache();
 };
 
