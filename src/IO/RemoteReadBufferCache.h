@@ -84,7 +84,7 @@ public:
     /**
      * called in LocalCachedFileReader read(), the reading process would be blocked until
      * enough data be downloaded.
-     * If the file has finished download, the process would be unblock
+     * If the file has finished download, the process would unblocked
      */
     RemoteReadBufferCacheError waitMoreData(size_t start_offset_, size_t end_offset_);
 

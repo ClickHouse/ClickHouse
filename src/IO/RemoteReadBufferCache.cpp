@@ -27,8 +27,7 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(
 {
     std::filesystem::path data_file = local_path_ / "data.bin";
     std::filesystem::path meta_file = local_path_ / "meta.txt";
-    auto * log = &Poco::Logger::get("RemoteCacheController");
-    if (!std::filesystem::exists(data_file) || !std::filesystem::exists(meta_file))
+    if (!std::filesystem::exists(local_path_) || !std::filesystem::exists(data_file) || !std::filesystem::exists(meta_file))
     {
         LOG_ERROR(log, "Directory {} or file {}, {} does not exist", local_path_.string(), data_file.string(), meta_file.string());
         return nullptr;
@@ -229,6 +228,7 @@ void RemoteCacheController::deallocFile(FILE * fs)
 LocalCachedFileReader::LocalCachedFileReader(RemoteCacheController * cntrl_, size_t size_)
     : offset(0), file_size(size_), fs(nullptr), controller(cntrl_)
 {
+    
     std::tie(fs, local_path) = controller->allocFile();
 }
 LocalCachedFileReader::~LocalCachedFileReader()
