@@ -6,7 +6,7 @@
 #include <string>
 
 #include <Common/Exception.h>
-#include <base/demangle.h>
+#include <common/demangle.h>
 
 
 namespace DB

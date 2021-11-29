@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 
 #include <Parsers/ASTSetQuery.h>
@@ -10,8 +11,6 @@
 
 namespace DB
 {
-
-class ASTLiteral;
 
 /// AST for external dictionary lifetime:
 /// lifetime(min 10 max 100)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/IAST.h>
 
 

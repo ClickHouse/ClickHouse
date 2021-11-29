@@ -4,7 +4,7 @@
 
 namespace DB
 {
-    void ParallelFormattingOutputFormat::finalizeImpl()
+    void ParallelFormattingOutputFormat::finalize()
     {
         need_flush = true;
         IOutputFormat::finalized = true;
@@ -53,17 +53,9 @@ namespace DB
         unit.segment.resize(0);
         unit.status = READY_TO_FORMAT;
         unit.type = type;
-        if (type == ProcessingUnitType::FINALIZE)
-        {
-            std::lock_guard lock(statistics_mutex);
-            unit.statistics = std::move(statistics);
-        }
 
-        size_t first_row_num = rows_consumed;
-        if (unit.type == ProcessingUnitType::PLAIN)
-            rows_consumed += unit.chunk.getNumRows();
+        scheduleFormatterThreadForUnitWithNumber(current_unit_number);
 
-        scheduleFormatterThreadForUnitWithNumber(current_unit_number, first_row_num);
         ++writer_unit_number;
     }
 
@@ -152,7 +144,7 @@ namespace DB
     }
 
 
-    void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, size_t first_row_num, const ThreadGroupStatusPtr & thread_group)
+    void ParallelFormattingOutputFormat::formatterThreadFunction(size_t current_unit_number, const ThreadGroupStatusPtr & thread_group)
     {
         setThreadName("Formatter");
         if (thread_group)
@@ -174,23 +166,17 @@ namespace DB
             unit.segment.resize(0);
 
             auto formatter = internal_formatter_creator(out_buffer);
-            formatter->setRowsReadBefore(first_row_num);
 
             switch (unit.type)
             {
                 case ProcessingUnitType::START :
                 {
-                    formatter->writePrefix();
+                    formatter->doWritePrefix();
                     break;
                 }
                 case ProcessingUnitType::PLAIN :
                 {
                     formatter->consume(std::move(unit.chunk));
-                    break;
-                }
-                case ProcessingUnitType::PLAIN_FINISH :
-                {
-                    formatter->writeSuffix();
                     break;
                 }
                 case ProcessingUnitType::TOTALS :
@@ -200,15 +186,12 @@ namespace DB
                 }
                 case ProcessingUnitType::EXTREMES :
                 {
-                    if (are_totals_written)
-                        formatter->setTotalsAreWritten();
                     formatter->consumeExtremes(std::move(unit.chunk));
                     break;
                 }
                 case ProcessingUnitType::FINALIZE :
                 {
-                    formatter->setOutsideStatistics(std::move(unit.statistics));
-                    formatter->finalizeImpl();
+                    formatter->doWriteSuffix();
                     break;
                 }
             }

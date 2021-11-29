@@ -1,6 +1,6 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <IO/WriteHelpers.h>    // toString
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB

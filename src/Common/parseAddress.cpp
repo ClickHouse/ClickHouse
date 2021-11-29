@@ -1,7 +1,7 @@
 #include <Common/parseAddress.h>
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 
 
 namespace DB
@@ -43,7 +43,7 @@ std::pair<std::string, UInt16> parseAddress(const std::string & str, UInt16 defa
 
         UInt16 port_number;
         ReadBufferFromMemory port_buf(port, end - port);
-        if (!tryReadText(port_number, port_buf) || !port_buf.eof())
+        if (!tryReadText<UInt16>(port_number, port_buf) || !port_buf.eof())
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Illegal port passed to function parseAddress: {}", port);

@@ -2,11 +2,6 @@
 
 set -e -x
 
-# Choose random timezone for this test run
-TZ="$(grep -v '#' /usr/share/zoneinfo/zone.tab  | awk '{print $3}' | shuf | head -n1)"
-echo "Choosen random timezone $TZ"
-ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
-
 dpkg -i package_folder/clickhouse-common-static_*.deb;
 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
 dpkg -i package_folder/clickhouse-server_*.deb
@@ -56,7 +51,7 @@ function start()
 
 start
 # shellcheck disable=SC2086 # No quotes because I want to split it into words.
-/s3downloader --url-prefix "$S3_URL" --dataset-names $DATASETS
+/s3downloader --dataset-names $DATASETS
 chmod 777 -R /var/lib/clickhouse
 clickhouse-client --query "SHOW DATABASES"
 
@@ -108,10 +103,8 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('--replicated-database')
     fi
 
-    set +e
-    clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --no-stateless --hung-check --print-time "${ADDITIONAL_OPTIONS[@]}" \
+    clickhouse-test --testname --shard --zookeeper --no-stateless --hung-check --use-skip-list --print-time "${ADDITIONAL_OPTIONS[@]}" \
         "$SKIP_TESTS_OPTION" 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
-    set -e
 }
 
 export -f run_tests
@@ -120,12 +113,8 @@ timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 ./process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 
 grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
-
 pigz < /var/log/clickhouse-server/clickhouse-server.log > /test_output/clickhouse-server.log.gz ||:
-# FIXME: remove once only github actions will be left
-rm /var/log/clickhouse-server/clickhouse-server.log
 mv /var/log/clickhouse-server/stderr.log /test_output/ ||:
-
 if [[ -n "$WITH_COVERAGE" ]] && [[ "$WITH_COVERAGE" -eq 1 ]]; then
     tar -chf /test_output/clickhouse_coverage.tar.gz /profraw ||:
 fi
@@ -134,9 +123,6 @@ if [[ -n "$USE_DATABASE_REPLICATED" ]] && [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]
     grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server2.log ||:
     pigz < /var/log/clickhouse-server/clickhouse-server1.log > /test_output/clickhouse-server1.log.gz ||:
     pigz < /var/log/clickhouse-server/clickhouse-server2.log > /test_output/clickhouse-server2.log.gz ||:
-    # FIXME: remove once only github actions will be left
-    rm /var/log/clickhouse-server/clickhouse-server1.log
-    rm /var/log/clickhouse-server/clickhouse-server2.log
     mv /var/log/clickhouse-server/stderr1.log /test_output/ ||:
     mv /var/log/clickhouse-server/stderr2.log /test_output/ ||:
 fi

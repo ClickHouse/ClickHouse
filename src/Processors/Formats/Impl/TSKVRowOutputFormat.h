@@ -18,10 +18,10 @@ public:
 
     String getName() const override { return "TSKVRowOutputFormat"; }
 
-private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeRowEndDelimiter() override;
 
+protected:
     NamesAndTypes fields;
     size_t field_number = 0;
 };

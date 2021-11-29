@@ -17,6 +17,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -179,15 +180,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.if_exists = command_ast->if_exists;
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::MODIFY_COMMENT)
-    {
-        AlterCommand command;
-        command.ast = command_ast->clone();
-        command.type = COMMENT_TABLE;
-        const auto & ast_comment = command_ast->comment->as<ASTLiteral &>();
-        command.comment = ast_comment.value.get<String>();
-        return command;
-    }
     else if (command_ast->type == ASTAlterCommand::MODIFY_ORDER_BY)
     {
         AlterCommand command;
@@ -202,13 +194,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_SAMPLE_BY;
         command.sample_by = command_ast->sample_by;
-        return command;
-    }
-    else if (command_ast->type == ASTAlterCommand::REMOVE_SAMPLE_BY)
-    {
-        AlterCommand command;
-        command.ast = command_ast->clone();
-        command.type = AlterCommand::REMOVE_SAMPLE_BY;
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::ADD_INDEX)
@@ -324,14 +309,6 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_SETTING;
-        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
-        return command;
-    }
-    else if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
-    {
-        AlterCommand command;
-        command.ast = command_ast->clone();
-        command.type = AlterCommand::MODIFY_DATABASE_SETTING;
         command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
         return command;
     }
@@ -469,18 +446,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     {
         metadata.sampling_key.recalculateWithNewAST(sample_by, metadata.columns, context);
     }
-    else if (type == REMOVE_SAMPLE_BY)
-    {
-        metadata.sampling_key = {};
-    }
     else if (type == COMMENT_COLUMN)
     {
         metadata.columns.modify(column_name,
             [&](ColumnDescription & column) { column.comment = *comment; });
-    }
-    else if (type == COMMENT_TABLE)
-    {
-        metadata.comment = *comment;
     }
     else if (type == ADD_INDEX)
     {
@@ -548,10 +517,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
     }
     else if (type == ADD_CONSTRAINT)
     {
-        auto constraints = metadata.constraints.getConstraints();
         if (std::any_of(
-                constraints.cbegin(),
-                constraints.cend(),
+                metadata.constraints.constraints.cbegin(),
+                metadata.constraints.constraints.cend(),
                 [this](const ASTPtr & constraint_ast)
                 {
                     return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name;
@@ -563,30 +531,28 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
                         ErrorCodes::ILLEGAL_COLUMN);
         }
 
-        auto insert_it = constraints.end();
-        constraints.emplace(insert_it, constraint_decl);
-        metadata.constraints = ConstraintsDescription(constraints);
+        auto insert_it = metadata.constraints.constraints.end();
+
+        metadata.constraints.constraints.emplace(insert_it, std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint_decl));
     }
     else if (type == DROP_CONSTRAINT)
     {
-        auto constraints = metadata.constraints.getConstraints();
         auto erase_it = std::find_if(
-                constraints.begin(),
-                constraints.end(),
+                metadata.constraints.constraints.begin(),
+                metadata.constraints.constraints.end(),
                 [this](const ASTPtr & constraint_ast)
                 {
                     return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name;
                 });
 
-        if (erase_it == constraints.end())
+        if (erase_it == metadata.constraints.constraints.end())
         {
             if (if_exists)
                 return;
             throw Exception("Wrong constraint name. Cannot find constraint `" + constraint_name + "` to drop.",
                     ErrorCodes::BAD_ARGUMENTS);
         }
-        constraints.erase(erase_it);
-        metadata.constraints = ConstraintsDescription(constraints);
+        metadata.constraints.constraints.erase(erase_it);
     }
     else if (type == ADD_PROJECTION)
     {
@@ -656,10 +622,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         if (metadata.table_ttl.definition_ast)
             rename_visitor.visit(metadata.table_ttl.definition_ast);
 
-        auto constraints_data = metadata.constraints.getConstraints();
-        for (auto & constraint : constraints_data)
+        for (auto & constraint : metadata.constraints.constraints)
             rename_visitor.visit(constraint);
-        metadata.constraints = ConstraintsDescription(constraints_data);
 
         if (metadata.isSortingKeyDefined())
             rename_visitor.visit(metadata.sorting_key.definition_ast);
@@ -715,9 +679,6 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
     while (true)
     {
-        if (from->equals(*to))
-            return true;
-
         auto it_range = ALLOWED_CONVERSIONS.equal_range(typeid(*from));
         for (auto it = it_range.first; it != it_range.second; ++it)
         {
@@ -736,9 +697,9 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 
         const auto * nullable_from = typeid_cast<const DataTypeNullable *>(from);
         const auto * nullable_to = typeid_cast<const DataTypeNullable *>(to);
-        if (nullable_to)
+        if (nullable_from && nullable_to)
         {
-            from = nullable_from ? nullable_from->getNestedType().get() : from;
+            from = nullable_from->getNestedType().get();
             to = nullable_to->getNestedType().get();
             continue;
         }
@@ -760,7 +721,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
         return false;
 
     /// We remove properties on metadata level
-    if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
+    if (isRemovingProperty() || type == REMOVE_TTL)
         return false;
 
     if (type == DROP_COLUMN || type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN)
@@ -779,7 +740,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
 
 bool AlterCommand::isCommentAlter() const
 {
-    if (type == COMMENT_COLUMN || type == COMMENT_TABLE)
+    if (type == COMMENT_COLUMN)
     {
         return true;
     }
@@ -878,6 +839,52 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     return result;
 }
 
+
+String alterTypeToString(const AlterCommand::Type type)
+{
+    switch (type)
+    {
+    case AlterCommand::Type::ADD_COLUMN:
+        return "ADD COLUMN";
+    case AlterCommand::Type::ADD_CONSTRAINT:
+        return "ADD CONSTRAINT";
+    case AlterCommand::Type::ADD_INDEX:
+        return "ADD INDEX";
+    case AlterCommand::Type::ADD_PROJECTION:
+        return "ADD PROJECTION";
+    case AlterCommand::Type::COMMENT_COLUMN:
+        return "COMMENT COLUMN";
+    case AlterCommand::Type::DROP_COLUMN:
+        return "DROP COLUMN";
+    case AlterCommand::Type::DROP_CONSTRAINT:
+        return "DROP CONSTRAINT";
+    case AlterCommand::Type::DROP_INDEX:
+        return "DROP INDEX";
+    case AlterCommand::Type::DROP_PROJECTION:
+        return "DROP PROJECTION";
+    case AlterCommand::Type::MODIFY_COLUMN:
+        return "MODIFY COLUMN";
+    case AlterCommand::Type::MODIFY_ORDER_BY:
+        return "MODIFY ORDER BY";
+    case AlterCommand::Type::MODIFY_SAMPLE_BY:
+        return "MODIFY SAMPLE BY";
+    case AlterCommand::Type::MODIFY_TTL:
+        return "MODIFY TTL";
+    case AlterCommand::Type::MODIFY_SETTING:
+        return "MODIFY SETTING";
+    case AlterCommand::Type::RESET_SETTING:
+        return "RESET SETTING";
+    case AlterCommand::Type::MODIFY_QUERY:
+        return "MODIFY QUERY";
+    case AlterCommand::Type::RENAME_COLUMN:
+        return "RENAME COLUMN";
+    case AlterCommand::Type::REMOVE_TTL:
+        return "REMOVE TTL";
+    default:
+        throw Exception("Uninitialized ALTER command", ErrorCodes::LOGICAL_ERROR);
+    }
+
+}
 
 void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
@@ -996,7 +1003,6 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
     }
     prepared = true;
 }
-
 
 void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPtr context) const
 {
@@ -1222,10 +1228,6 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, ContextPt
         else if (command.type == AlterCommand::REMOVE_TTL && !metadata.hasAnyTableTTL())
         {
             throw Exception{"Table doesn't have any table TTL expression, cannot remove", ErrorCodes::BAD_ARGUMENTS};
-        }
-        else if (command.type == AlterCommand::REMOVE_SAMPLE_BY && !metadata.hasSamplingKey())
-        {
-            throw Exception{"Table doesn't have SAMPLE BY, cannot remove", ErrorCodes::BAD_ARGUMENTS};
         }
 
         /// Collect default expressions for MODIFY and ADD comands

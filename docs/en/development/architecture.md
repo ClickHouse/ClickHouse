@@ -196,4 +196,4 @@ Besides, each replica stores its state in ZooKeeper as the set of parts and its 
 !!! note "Note"
     The ClickHouse cluster consists of independent shards, and each shard consists of replicas. The cluster is **not elastic**, so after adding a new shard, data is not rebalanced between shards automatically. Instead, the cluster load is supposed to be adjusted to be uneven. This implementation gives you more control, and it is ok for relatively small clusters, such as tens of nodes. But for clusters with hundreds of nodes that we are using in production, this approach becomes a significant drawback. We should implement a table engine that spans across the cluster with dynamically replicated regions that could be split and balanced between clusters automatically.
 
-{## [Original article](https://clickhouse.com/docs/en/development/architecture/) ##}
+{## [Original article](https://clickhouse.tech/docs/en/development/architecture/) ##}
