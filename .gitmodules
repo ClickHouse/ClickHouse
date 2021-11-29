@@ -14,6 +14,10 @@
 [submodule "contrib/cctz"]
 	path = contrib/cctz
 	url = https://github.com/ClickHouse-Extras/cctz.git
+[submodule "contrib/zlib-ng"]
+	path = contrib/zlib-ng
+	url = https://github.com/ClickHouse-Extras/zlib-ng.git
+	branch = clickhouse-2.0.x
 [submodule "contrib/googletest"]
 	path = contrib/googletest
 	url = https://github.com/google/googletest.git
