@@ -291,8 +291,6 @@ def test_s3_zero_copy_unfreeze(cluster):
     node1.query("ALTER TABLE unfreeze_test FREEZE WITH NAME 'backup1'")
     node2.query("ALTER TABLE unfreeze_test FREEZE WITH NAME 'backup2'")
 
-    time.sleep(1)
-
     objects01 = node1.get_backuped_s3_objects("s31", "backup1")
     objects02 = node2.get_backuped_s3_objects("s31", "backup2")
 
