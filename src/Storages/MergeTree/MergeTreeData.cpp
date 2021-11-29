@@ -3682,8 +3682,16 @@ String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr loc
     }
     else if (fields_count == 1)
     {
+        ASTPtr partition_value_ast = partition_ast.value;
+        if (auto * tuple = partition_value_ast->as<ASTFunction>())
+        {
+            assert(tuple->name == "tuple");
+            assert(tuple->arguments);
+            assert(tuple->arguments->children.size() == 1);
+            partition_value_ast = tuple->arguments->children[0];
+        }
         /// Simple partition key, need to evaluate and cast
-        Field partition_key_value = evaluateConstantExpression(partition_ast.value, local_context).first;
+        Field partition_key_value = evaluateConstantExpression(partition_value_ast, local_context).first;
         partition_row[0] = convertFieldToTypeOrThrow(partition_key_value, *key_sample_block.getByPosition(0).type);
     }
     else
