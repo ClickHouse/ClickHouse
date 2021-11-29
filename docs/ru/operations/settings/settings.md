@@ -3837,13 +3837,12 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 Возможные значения:
 
--   `'None'` — без экранирования.
 -   `'Escaped'` — как в формате [TSV](../../interfaces/formats.md#tabseparated).
 -   `'Quoted'` — как в формате [Values](../../interfaces/formats.md#data-format-values).
 -   `'CSV'` — как в формате [CSV](../../interfaces/formats.md#csv).
 -   `'JSON'` — как в формате [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
 -   `'XML'` — как в формате [XML](../../interfaces/formats.md#xml).
--   `'Raw'` — данные импортируются как есть, без экранирования.
+-   `'Raw'` — данные импортируются как есть, без экранирования, как в формате [TSVRaw](../../interfaces/formats.md#tabseparatedraw).
 
 Значение по умолчанию: `'Escaped'`.
 

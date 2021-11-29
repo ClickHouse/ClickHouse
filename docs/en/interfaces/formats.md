@@ -23,9 +23,9 @@ The supported formats are:
 | [CSV](#csv)                                                                             | ✔     | ✔      |
 | [CSVWithNames](#csvwithnames)                                                           | ✔     | ✔      |
 | [CSVWithNamesAndTypes](#csvwithnamesandtypes)                                                           | ✔     | ✔      |
+| [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
 | [CustomSeparatedWithNames](#customseparatedwithnames)                                   | ✔     | ✔      |
 | [CustomSeparatedWithNamesAndTypes](#customseparatedwithnamesandtypes)                   | ✔     | ✔      |
-| [CustomSeparated](#format-customseparated)                                              | ✔     | ✔      |
 | [Values](#data-format-values)                                                           | ✔     | ✔      |
 | [Vertical](#vertical)                                                                   | ✗     | ✔      |
 | [JSON](#json)                                                                           | ✗     | ✔      |
@@ -429,6 +429,12 @@ Also prints the header row with column names, similar to [TabSeparatedWithNames]
 
 Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
 
+## CustomSeparated {#format-customseparated}
+
+Similar to [Template](#format-template), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](../operations/settings/settings.md#format-custom-escaping-rule) setting and delimiters from [format_custom_field_delimiter](../operations/settings/settings.md#format-custom-field-delimiter), [format_custom_row_before_delimiter](../operations/settings/settings.md#format-custom-row-before-delimiter), [format_custom_row_after_delimiter](../operations/settings/settings.md#format-custom-row-after-delimiter), [format_custom_row_between_delimiter](../operations/settings/settings.md#format-custom-row-between-delimiter), [format_custom_result_before_delimiter](../operations/settings/settings.md#format-custom-result-before-delimiter) and [format_custom_result_after_delimiter](../operations/settings/settings.md#format-custom-result-after-delimiter) settings, not from format strings.
+
+There is also `CustomSeparatedIgnoreSpaces` format, which is similar to [TemplateIgnoreSpaces](#templateignorespaces).
+
 ## CustomSeparatedWithNames {#customseparatedwithnames}
 
 Also prints the header row with column names, similar to [TabSeparatedWithNames](#tabseparatedwithnames).
@@ -436,12 +442,6 @@ Also prints the header row with column names, similar to [TabSeparatedWithNames]
 ## CustomSeparatedWithNamesAndTypes {#customseparatedwithnamesandtypes}
 
 Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](#tabseparatedwithnamesandtypes).
-
-## CustomSeparated {#format-customseparated}
-
-Similar to [Template](#format-template), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](../operations/settings/settings.md#format-custom-escaping-rule) setting and delimiters from [format_custom_field_delimiter](../operations/settings/settings.md#format-custom-field-delimiter), [format_custom_row_before_delimiter](../operations/settings/settings.md#format-custom-row-before-delimiter), [format_custom_row_after_delimiter](../operations/settings/settings.md#format-custom-row-after-delimiter), [format_custom_row_between_delimiter](../operations/settings/settings.md#format-custom-row-between-delimiter), [format_custom_result_before_delimiter](../operations/settings/settings.md#format-custom-result-before-delimiter) and [format_custom_result_after_delimiter](../operations/settings/settings.md#format-custom-result-after-delimiter) settings, not from format strings.
-
-There is also `CustomSeparatedIgnoreSpaces` format, which is similar to [TemplateIgnoreSpaces](#templateignorespaces).
 
 ## JSON {#json}
 
@@ -1555,9 +1555,7 @@ When working with the `Regexp` format, you can use the following settings:
     -   JSON (similarly to [JSONEachRow](#jsoneachrow))
     -   Escaped (similarly to [TSV](#tabseparated))
     -   Quoted (similarly to [Values](#data-format-values))
-    -   Raw (extracts subpatterns as a whole, no escaping rules)
-    -   XML (similarly to [XML](#xml))
-    -   None (no escaping rules)
+    -   Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](#tabseparatedraw))
 	
 -   `format_regexp_skip_unmatched` — [UInt8](../sql-reference/data-types/int-uint.md). Defines the need to throw an exeption in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
 
