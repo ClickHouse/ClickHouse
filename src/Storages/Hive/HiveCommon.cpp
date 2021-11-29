@@ -1,3 +1,7 @@
+#include <ThriftHiveMetastore.h>
+#include <thrift/protocol/TBinaryProtocol.h>
+#include <thrift/transport/TBufferTransports.h>
+#include <thrift/transport/TSocket.h>
 #include <Storages/Hive/HiveCommon.h>
 
 #if USE_HIVE
@@ -184,6 +188,59 @@ std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMetadat
     return result;
 }
 
+HiveMetastoreClientFactory & HiveMetastoreClientFactory::instance()
+{
+    static HiveMetastoreClientFactory factory;
+    return factory;
+}
+
+HiveMetastoreClientPtr HiveMetastoreClientFactory::getOrCreate(const String & name, ContextPtr context)
+{
+    using namespace apache::thrift;
+    using namespace apache::thrift::protocol;
+    using namespace apache::thrift::transport;
+    using namespace Apache::Hadoop::Hive;
+
+    std::lock_guard lock(mutex);
+    auto it = clients.find(name);
+    if (it == clients.end() || it->second->isExpired())
+    {
+        // connect to hive metastore
+        Poco::URI hive_metastore_url(name);
+        const auto & host = hive_metastore_url.getHost();
+        auto port = hive_metastore_url.getPort();
+
+        std::shared_ptr<TSocket> socket = std::make_shared<TSocket>(host, port);
+        socket->setKeepAlive(true);
+        socket->setConnTimeout(conn_timeout_ms);
+        socket->setRecvTimeout(recv_timeout_ms);
+        socket->setSendTimeout(send_timeout_ms);
+        std::shared_ptr<TTransport> transport(new TBufferedTransport(socket));
+        std::shared_ptr<TProtocol> protocol(new TBinaryProtocol(transport));
+        std::shared_ptr<ThriftHiveMetastoreClient> thrift_client = std::make_shared<ThriftHiveMetastoreClient>(protocol);
+        try
+        {
+            transport->open();
+        }
+        catch (TException & tx)
+        {
+            throw Exception("connect to hive metastore:" + name + " failed." + tx.what(), ErrorCodes::BAD_ARGUMENTS);
+        }
+
+        if (it == clients.end())
+        {
+            HiveMetastoreClientPtr client = std::make_shared<HiveMetastoreClient>(std::move(thrift_client), context);
+            clients[name] = client;
+            return client;
+        }
+        else
+        {
+            it->second->setClient(std::move(thrift_client));
+            return it->second;
+        }
+    }
+    return it->second;
+}
 
 }
 #endif

@@ -101,7 +101,7 @@ public:
 
 protected:
     StorageHive(
-        const String & hms_url_,
+        const String & hive_metastore_url_,
         const String & hive_database_,
         const String & hive_table_,
         const StorageID & table_id_,
@@ -116,8 +116,7 @@ protected:
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
 private:
-    // hive metastore url
-    String hms_url;
+    String hive_metastore_url;
 
     // hive database and table
     String hive_database;

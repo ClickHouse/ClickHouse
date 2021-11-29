@@ -88,15 +88,6 @@
 #include <Interpreters/Lemmatizers.h>
 #include <filesystem>
 
-#if USE_HIVE
-#include <ThriftHiveMetastore.h>
-#include <thrift/protocol/TBinaryProtocol.h>
-#include <thrift/transport/TBufferTransports.h>
-#include <thrift/transport/TSocket.h>
-#include <Storages/HDFS/HDFSCommon.h>
-#include <Storages/Hive/HiveCommon.h>
-#endif
-
 namespace fs = std::filesystem;
 
 namespace ProfileEvents
@@ -157,10 +148,6 @@ struct ContextSharedPart
     mutable std::mutex storage_policies_mutex;
     /// Separate mutex for re-initialization of zookeeper session. This operation could take a long time and must not interfere with another operations.
     mutable std::mutex zookeeper_mutex;
-#if USE_HIVE
-    /// Separate mutex for re-initialization of hive metastore client. This operation could take a long time and must not interfere with another operations.
-    mutable std::mutex hive_metastore_mutex;
-#endif
 
     mutable zkutil::ZooKeeperPtr zookeeper;                 /// Client for ZooKeeper.
     ConfigurationPtr zookeeper_config;                      /// Stores zookeeper configs
@@ -172,10 +159,6 @@ struct ContextSharedPart
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers;    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config;           /// Stores auxiliary zookeepers configs
-
-#if USE_HIVE
-    mutable std::map<String, HiveMetastoreClientPtr> hive_metastore_clients; /// Map for hive metastore clients
-#endif
 
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
     UInt16 interserver_io_port = 0;                         /// and port.
@@ -1828,56 +1811,6 @@ zkutil::ZooKeeperPtr Context::getZooKeeper() const
 
     return shared->zookeeper;
 }
-
-#if USE_HIVE
-HiveMetastoreClientPtr Context::getHiveMetastoreClient(const String & name) const
-{
-    using namespace apache::thrift;
-    using namespace apache::thrift::protocol;
-    using namespace apache::thrift::transport;
-    using namespace Apache::Hadoop::Hive;
-
-    std::lock_guard lock(shared->hive_metastore_mutex);
-    auto it = shared->hive_metastore_clients.find(name);
-    if (it == shared->hive_metastore_clients.end() || it->second->isExpired())
-    {
-        // connect to hive metastore
-        Poco::URI hive_metastore_url(name);
-        const auto & host = hive_metastore_url.getHost();
-        auto port = hive_metastore_url.getPort();
-
-        std::shared_ptr<TSocket> socket = std::make_shared<TSocket>(host, port);
-        socket->setKeepAlive(true);
-        socket->setConnTimeout(60000);
-        socket->setRecvTimeout(60000);
-        socket->setSendTimeout(60000);
-        std::shared_ptr<TTransport> transport(new TBufferedTransport(socket));
-        std::shared_ptr<TProtocol> protocol(new TBinaryProtocol(transport));
-        std::shared_ptr<ThriftHiveMetastoreClient> client = std::make_shared<ThriftHiveMetastoreClient>(protocol);
-        try
-        {
-            transport->open();
-        }
-        catch (TException & tx)
-        {
-            throw Exception("connect to hive metastore:" + name + " failed." + tx.what(), ErrorCodes::BAD_ARGUMENTS);
-        }
-
-        if (it == shared->hive_metastore_clients.end())
-        {
-            HiveMetastoreClientPtr hms_client = std::make_shared<HiveMetastoreClient>(std::move(client), shared_from_this());
-            shared->hive_metastore_clients[name] = hms_client;
-            return hms_client;
-        }
-        else
-        {
-            it->second->setClient(std::move(client));
-            return it->second;
-        }
-    }
-    return it->second;
-}
-#endif
 
 namespace
 {

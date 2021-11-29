@@ -175,11 +175,6 @@ private:
     std::unique_ptr<ContextSharedPart> shared;
 };
 
-#if USE_HIVE
-class HiveMetastoreClient;
-using HiveMetastoreClientPtr = std::shared_ptr<HiveMetastoreClient>;
-#endif
-
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
   *  and copied part (which can be its own for each session or query).
@@ -692,10 +687,6 @@ public:
     void resetZooKeeper() const;
     // Reload Zookeeper
     void reloadZooKeeperIfChanged(const ConfigurationPtr & config) const;
-
-#if USE_HIVE
-    HiveMetastoreClientPtr getHiveMetastoreClient(const String & name) const;
-#endif
 
     void setSystemZooKeeperLogAfterInitializationIfNeeded();
 
