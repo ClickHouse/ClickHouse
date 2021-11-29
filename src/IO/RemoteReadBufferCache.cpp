@@ -24,12 +24,12 @@ namespace ErrorCodes
 std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(
     const std::filesystem::path & local_path_, std::function<void(RemoteCacheController *)> const & finish_callback)
 {
-    const auto & dir_handle = local_path_;
     std::filesystem::path data_file = local_path_ / "data.bin";
     std::filesystem::path meta_file = local_path_ / "meta.txt";
-    if (!std::filesystem::exists(dir_handle) || !std::filesystem::exists(data_file) || !std::filesystem::exists(meta_file))
+    auto * log = &Poco::Logger::get("RemoteCacheController");
+    if (!std::filesystem::exists(data_file) || !std::filesystem::exists(meta_file))
     {
-        LOG_ERROR(&Poco::Logger::get("RemoteCacheController"), "not exists directory:" + local_path_.string());
+        LOG_ERROR(log, "Directory {} or file {}, {} does not exist", local_path_.string(), data_file.string(), meta_file.string());
         return nullptr;
     }
 
@@ -423,7 +423,11 @@ void RemoteReadBufferCache::recoverCachedFilesMeta(
 void RemoteReadBufferCache::initOnce(
     const std::filesystem::path & dir, size_t limit_size_, size_t bytes_read_before_flush_, size_t max_threads)
 {
-    LOG_TRACE(log, "init local cache. path: {}, limit {}", dir.string(), limit_size_);
+    LOG_INFO(
+        log,
+        "Initializing local cache for remote data sources. Local cache root path: {}, cache size limit: {}",
+        dir.string(),
+        limit_size_);
     local_path_prefix = dir;
     limit_size = limit_size_;
     local_cache_bytes_read_before_flush = bytes_read_before_flush_;
