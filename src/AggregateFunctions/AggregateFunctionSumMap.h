@@ -88,11 +88,18 @@ public:
         for (const auto & type : values_types)
         {
             values_serializations.emplace_back(type->getDefaultSerialization());
-            if (type->isNullable())
-                promoted_values_serializations.emplace_back(
-                    makeNullable(removeNullable(type)->promoteNumericType())->getDefaultSerialization());
+            if (type->canBePromoted())
+            {
+                if (type->isNullable())
+                    promoted_values_serializations.emplace_back(
+                        makeNullable(removeNullable(type)->promoteNumericType())->getDefaultSerialization());
+                else
+                    promoted_values_serializations.emplace_back(type->promoteNumericType()->getDefaultSerialization());
+            }
             else
-                promoted_values_serializations.emplace_back(type->promoteNumericType()->getDefaultSerialization());
+            {
+                promoted_values_serializations.emplace_back(type->getDefaultSerialization());
+            }
         }
     }
 
