@@ -64,6 +64,10 @@ public:
     static DB::BatchParquetFileSourcePtr parseReadRealWithLocalFile(const io::substrait::ReadRel& rel);
     static DB::Block parseNameStruct(const io::substrait::Type_NamedStruct& struct_);
     static DB::DataTypePtr parseType(const io::substrait::Type& type);
+private:
+    static void parse(DB::QueryPlan & query_plan, const io::substrait::Rel& rel);
+    static void parse(DB::QueryPlan & query_plan, const io::substrait::ReadRel& rel);
+    static void parse(DB::QueryPlan & query_plan, const io::substrait::ProjectRel& rel);
 };
 
 

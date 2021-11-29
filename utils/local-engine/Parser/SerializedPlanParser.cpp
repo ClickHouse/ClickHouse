@@ -76,15 +76,7 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::unique_ptr<io::substrait
     if (plan->relations_size() == 1)
     {
         auto rel = plan->relations().at(0);
-        if (rel.has_read()) {
-            std::shared_ptr<IProcessor> source = std::dynamic_pointer_cast<IProcessor>(SerializedPlanParser::parseReadRealWithLocalFile(rel.read()));
-            auto source_step = std::make_unique<ReadFromStorageStep>(Pipe(source), "Parquet");
-            query_plan->addStep(std::move(source_step));
-        }
-        else
-        {
-            throw std::runtime_error("unsupported relation");
-        }
+        parse(*query_plan, rel);
     }
     else
     {
@@ -97,6 +89,38 @@ DB::QueryPlanPtr dbms::SerializedPlanParser::parse(std::string& plan)
     auto plan_ptr = std::make_unique<io::substrait::Plan>();
     plan_ptr->ParseFromString(plan);
     return parse(std::move(plan_ptr));
+}
+void dbms::SerializedPlanParser::parse(DB::QueryPlan & query_plan, const io::substrait::ReadRel & rel)
+{
+    std::shared_ptr<IProcessor> source = std::dynamic_pointer_cast<IProcessor>(SerializedPlanParser::parseReadRealWithLocalFile(rel));
+    auto source_step = std::make_unique<ReadFromStorageStep>(Pipe(source), "Parquet");
+    query_plan.addStep(std::move(source_step));
+}
+void dbms::SerializedPlanParser::parse(DB::QueryPlan & query_plan, const io::substrait::Rel& rel)
+{
+    if (rel.has_read()) {
+        parse(query_plan, rel.read());
+    }
+    else if (rel.has_project())
+    {
+        parse(query_plan, rel.project());
+    }
+    else
+    {
+        throw std::runtime_error("unsupported relation");
+    }
+}
+void dbms::SerializedPlanParser::parse(DB::QueryPlan & query_plan, const io::substrait::ProjectRel & rel)
+{
+    if (rel.has_input())
+    {
+        parse(query_plan, rel.input());
+    }
+    else
+    {
+        throw std::runtime_error("project relation should contains a input relation");
+    }
+    //TODO add project step
 }
 DB::Chunk DB::BatchParquetFileSource::generate()
 {
