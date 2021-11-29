@@ -76,15 +76,11 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
 
     auto function_body_to_update = function_core_expression->children.at(1)->clone();
 
-    if (auto * inner_function = function_body_to_update->as<ASTFunction>())
-    {
-        auto replace_result = tryToReplaceFunction(*inner_function, udf_in_replace_process);
-        if (replace_result)
-            function_body_to_update = replace_result;
-    }
+    auto expression_list = std::make_shared<ASTExpressionList>();
+    expression_list->children.emplace_back(std::move(function_body_to_update));
 
     std::stack<ASTPtr> ast_nodes_to_update;
-    ast_nodes_to_update.push(function_body_to_update);
+    ast_nodes_to_update.push(expression_list);
 
     while (!ast_nodes_to_update.empty())
     {
@@ -122,6 +118,8 @@ ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & f
     }
 
     udf_in_replace_process.erase(it);
+
+    function_body_to_update = expression_list->children[0];
 
     auto function_alias = function.tryGetAlias();
 
