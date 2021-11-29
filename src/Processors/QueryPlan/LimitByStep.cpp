@@ -1,6 +1,6 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/Transforms/LimitByTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 
@@ -34,13 +34,13 @@ LimitByStep::LimitByStep(
 }
 
 
-void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void LimitByStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.resize(1);
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
-        if (stream_type != QueryPipelineBuilder::StreamType::Main)
+        if (stream_type != QueryPipeline::StreamType::Main)
             return nullptr;
 
         return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns);

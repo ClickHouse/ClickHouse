@@ -1,20 +1,18 @@
 #pragma once
-#include "config_formats.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
 
 #include <arrow/io/interfaces.h>
-#include <optional>
 
 namespace DB
 {
 
 class ReadBuffer;
-class WriteBuffer;
-
 class SeekableReadBuffer;
-class SeekableReadBufferWithSize;
-struct FormatSettings;
+class WriteBuffer;
 
 class ArrowBufferedOutputStream : public arrow::io::OutputStream
 {
@@ -44,8 +42,6 @@ class RandomAccessFileFromSeekableReadBuffer : public arrow::io::RandomAccessFil
 public:
     RandomAccessFileFromSeekableReadBuffer(SeekableReadBuffer & in_, off_t file_size_);
 
-    RandomAccessFileFromSeekableReadBuffer(SeekableReadBufferWithSize & in_);
-
     arrow::Result<int64_t> GetSize() override;
 
     arrow::Status Close() override;
@@ -62,7 +58,7 @@ public:
 
 private:
     SeekableReadBuffer & in;
-    std::optional<off_t> file_size;
+    off_t file_size;
     bool is_open = false;
 
     ARROW_DISALLOW_COPY_AND_ASSIGN(RandomAccessFileFromSeekableReadBuffer);
@@ -86,7 +82,7 @@ private:
     ARROW_DISALLOW_COPY_AND_ASSIGN(ArrowInputStreamFromReadBuffer);
 };
 
-std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in, const FormatSettings & settings);
+std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in);
 
 }
 

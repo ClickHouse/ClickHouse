@@ -2,13 +2,14 @@
 
 ROOT_PATH="$(git rev-parse --show-toplevel)"
 LIBS_PATH="${ROOT_PATH}/contrib"
+LC_ALL=C
 
-ls -1 -d ${LIBS_PATH}/*/ | grep -F -v -- '-cmake' | LC_ALL=C sort | while read LIB; do
+ls -1 -d ${LIBS_PATH}/*/ | grep -F -v -- '-cmake' | sort | while read LIB; do
     LIB_NAME=$(basename $LIB)
 
     LIB_LICENSE=$(
         LC_ALL=C find "$LIB" -type f -and '(' -iname 'LICENSE*' -or -iname 'COPYING*' -or -iname 'COPYRIGHT*' ')' -and -not '(' -iname '*.html' -or -iname '*.htm' -or -iname '*.rtf' -or -name '*.cpp' -or -name '*.h' -or -iname '*.json' ')' -printf "%d\t%p\n" |
-            LC_ALL=C sort | LC_ALL=C awk '
+            awk '
                 BEGIN { IGNORECASE=1; min_depth = 0 }
                 /LICENSE/ { if (!min_depth || $1 <= min_depth) { min_depth = $1; license = $2 } }
                 /COPY/    { if (!min_depth || $1 <= min_depth) { min_depth = $1; copying = $2 } }

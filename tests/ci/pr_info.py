@@ -6,7 +6,7 @@ import requests
 from unidiff import PatchSet
 
 
-DIFF_IN_DOCUMENTATION_EXT = [".html", ".md", ".yml", ".txt", ".css", ".js", ".xml", ".ico", ".conf", ".svg", ".png", ".jpg", ".py", ".sh", ".json"]
+DIFF_IN_DOCUMENTATION_EXT = [".html", ".md", ".yml", ".txt", ".css", ".js", ".xml", ".ico", ".conf", ".svg", ".png", ".jpg", ".py", ".sh"]
 
 def get_pr_for_commit(sha, ref):
     try_get_pr_url = f"https://api.github.com/repos/{os.getenv('GITHUB_REPOSITORY', 'ClickHouse/ClickHouse')}/commits/{sha}/pulls"
@@ -30,6 +30,7 @@ def get_pr_for_commit(sha, ref):
 
 class PRInfo:
     def __init__(self, github_event, need_orgs=False, need_changed_files=False):
+        print("EVENT", github_event)
         if 'pull_request' in github_event: # pull request and other similar events
             self.number = github_event['number']
             if 'after' in github_event:
@@ -132,9 +133,7 @@ class PRInfo:
 
         for f in self.changed_files:
             _, ext = os.path.splitext(f)
-            path_in_docs = 'docs' in f
-            path_in_website = 'website' in f
-            if (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs and path_in_website) or 'docker/docs' in f:
+            if ext in DIFF_IN_DOCUMENTATION_EXT or 'Dockerfile' in f:
                 return True
         return False
 

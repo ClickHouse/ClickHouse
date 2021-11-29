@@ -1,14 +1,16 @@
 Source: clickhouse
 Section: database
 Priority: optional
-Maintainer: Alexey Milovidov <milovidov@clickhouse.com>
+Maintainer: Alexey Milovidov <milovidov@yandex-team.ru>
 Build-Depends: debhelper (>= 9),
                cmake | cmake3,
                ninja-build,
-               clang-13,
-               llvm-13,
-               lld-13,
+               clang-11,
+               llvm-11,
                libc6-dev,
+               libicu-dev,
+               libreadline-dev,
+               gperf,
                tzdata
 Standards-Version: 3.9.8
 

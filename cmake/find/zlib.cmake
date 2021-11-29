@@ -1,4 +1,4 @@
-option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ON)
+option (USE_INTERNAL_ZLIB_LIBRARY "Set to FALSE to use system zlib library instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT MSVC)
     set (INTERNAL_ZLIB_NAME "zlib-ng" CACHE INTERNAL "")
@@ -12,7 +12,7 @@ endif ()
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/${INTERNAL_ZLIB_NAME}/zlib.h")
     if(USE_INTERNAL_ZLIB_LIBRARY)
-        message(WARNING "submodule contrib/${INTERNAL_ZLIB_NAME} is missing. to fix try run: \n git submodule update --init")
+        message(WARNING "submodule contrib/${INTERNAL_ZLIB_NAME} is missing. to fix try run: \n git submodule update --init --recursive")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal zlib library")
     endif()
     set(USE_INTERNAL_ZLIB_LIBRARY 0)

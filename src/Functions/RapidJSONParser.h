@@ -1,10 +1,12 @@
 #pragma once
 
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 #if USE_RAPIDJSON
-#    include <base/types.h>
-#    include <base/defines.h>
+#    include <common/types.h>
+#    include <common/defines.h>
 #    include <rapidjson/document.h>
 
 

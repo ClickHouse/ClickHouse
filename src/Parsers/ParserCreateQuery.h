@@ -5,7 +5,8 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTNameTypePair.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTIdentifier_fwd.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserDataType.h>
 #include <Poco/String.h>

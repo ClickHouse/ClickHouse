@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
@@ -39,9 +39,9 @@ IntersectOrExceptStep::IntersectOrExceptStep(
     output_stream = DataStream{.header = header};
 }
 
-QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
+QueryPipelinePtr IntersectOrExceptStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings &)
 {
-    auto pipeline = std::make_unique<QueryPipelineBuilder>();
+    auto pipeline = std::make_unique<QueryPipeline>();
     QueryPipelineProcessorsCollector collector(*pipeline, this);
 
     if (pipelines.empty())
@@ -72,7 +72,7 @@ QueryPipelineBuilderPtr IntersectOrExceptStep::updatePipeline(QueryPipelineBuild
         cur_pipeline->addTransform(std::make_shared<ResizeProcessor>(header, cur_pipeline->getNumStreams(), 1));
     }
 
-    *pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines), max_threads);
+    *pipeline = QueryPipeline::unitePipelines(std::move(pipelines), max_threads);
     pipeline->addTransform(std::make_shared<IntersectOrExceptTransform>(header, current_operator));
 
     processors = collector.detachProcessors();
