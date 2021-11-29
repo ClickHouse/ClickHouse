@@ -16,6 +16,7 @@
 #include <IO/createReadBufferFromFileBase.h>
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
+#include <boost/algorithm/string/join.hpp>
 #include <iterator>
 #include <regex>
 
@@ -24,6 +25,7 @@ namespace fs = std::filesystem;
 namespace CurrentMetrics
 {
     extern const Metric ReplicatedSend;
+    extern const Metric ReplicatedFetch;
 }
 
 namespace DB
