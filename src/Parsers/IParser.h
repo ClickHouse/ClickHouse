@@ -1,7 +1,7 @@
 #pragma once
 
-#include <set>
 #include <memory>
+#include <vector>
 
 #include <Core/Defines.h>
 #include <Parsers/IAST_fwd.h>
@@ -25,7 +25,7 @@ namespace ErrorCodes
 struct Expected
 {
     const char * max_parsed_pos = nullptr;
-    std::set<const char *> variants;
+    std::vector<const char *> variants;
 
     /// 'description' should be statically allocated string.
     void add(const char * current_pos, const char * description)
@@ -37,7 +37,7 @@ struct Expected
         }
 
         if (!max_parsed_pos || current_pos >= max_parsed_pos)
-            variants.insert(description);
+            variants.push_back(description);
     }
 
     void add(TokenIterator it, const char * description)
