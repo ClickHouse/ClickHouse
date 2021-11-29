@@ -1,12 +1,13 @@
-#include <Backups/renameInCreateQuery.h>
 #include <Backups/BackupRenamingConfig.h>
+#include <Backups/renameInCreateQuery.h>
+#include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include <Interpreters/InDepthNodeVisitor.h>
-#include <Interpreters/evaluateConstantExpression.h>
 
 
 namespace DB
