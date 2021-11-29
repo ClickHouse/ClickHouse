@@ -89,7 +89,7 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 
 ## sipHash128 {#hash_functions-siphash128}
 
-Генерирует 128-битное хеш-значение [SipHash](https://131002.net/siphash/). Отличается от [sipHash64](#hash_functions-siphash64) тем, что финальный xor-folding состояния делается только до 128 бит.
+Генерирует 128-битное хеш-значение [SipHash](https://131002.net/siphash/). Отличается от [sipHash64](#hash_functions-siphash64) тем, что финальный xor-folding состояния делается до 128 бит.
 
 **Синтаксис**
 
