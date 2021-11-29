@@ -60,18 +60,18 @@ public:
 
         Pos(Tokens & tokens_, uint32_t max_depth_) : TokenIterator(tokens_), max_depth(max_depth_) {}
 
-        void increaseDepth()
+        ALWAYS_INLINE void increaseDepth()
         {
             ++depth;
-            if (max_depth > 0 && depth > max_depth)
+            if (unlikely(max_depth > 0 && depth > max_depth))
                 throw Exception(
                     "Maximum parse depth (" + std::to_string(max_depth) + ") exceeded. Consider rising max_parser_depth parameter.",
                     ErrorCodes::TOO_DEEP_RECURSION);
         }
 
-        void decreaseDepth()
+        ALWAYS_INLINE void decreaseDepth()
         {
-            if (depth == 0)
+            if (unlikely(depth == 0))
                 throw Exception("Logical error in parser: incorrect calculation of parse depth", ErrorCodes::LOGICAL_ERROR);
             --depth;
         }
