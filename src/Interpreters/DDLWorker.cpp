@@ -104,6 +104,8 @@ public:
 
     void unlock()
     {
+        if (!is_locked)
+            return;
         Coordination::Stat stat;
         std::string dummy;
         bool result = zookeeper->tryGet(lock_path, dummy, &stat);
@@ -112,6 +114,7 @@ public:
             zookeeper->remove(lock_path, -1);
         else
             LOG_WARNING(log, "Lock is lost. It is normal if session was expired. Path: {}/{}", lock_path, lock_message);
+        is_locked = false;
     }
 
     bool tryLock()
@@ -125,6 +128,7 @@ public:
         }
         else if (code == Coordination::Error::ZOK)
         {
+            is_locked = true;
             return true;
         }
         else
@@ -139,7 +143,7 @@ private:
     std::string lock_path;
     std::string lock_message;
     Poco::Logger * log;
-
+    bool is_locked = false;
 };
 
 std::unique_ptr<ZooKeeperLock> createSimpleZooKeeperLock(
@@ -855,6 +859,12 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
             /// and on the next iteration new leader will take lock
             if (tryExecuteQuery(rewritten_query, task, zookeeper))
             {
+                /// If task is not executed by distributed transaction, do it now.
+                if (!task.ops.empty())
+                {
+                    zookeeper->multi(task.ops);
+                    task.ops.clear();
+                }
                 executed_by_us = true;
                 break;
             }
