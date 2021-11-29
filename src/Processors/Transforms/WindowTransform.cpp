@@ -1057,6 +1057,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // Another problem with Const columns is that the aggregate functions
         // can't work with them, so we have to materialize them like the
         // Aggregator does.
+        // Likewise, aggregate functions can't work with LowCardinality,
+        // so we have to materialize them too.
         // Just materialize everything.
         auto columns = chunk.detachColumns();
         for (auto & column : columns)
