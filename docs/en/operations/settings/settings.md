@@ -4078,13 +4078,12 @@ Sets the field escaping rule for [CustomSeparated](../../interfaces/formats.md#f
 
 Possible values:
 
--   `'None'` — No escaping rules.
 -   `'Escaped'` — Similarly to [TSV](../../interfaces/formats.md#tabseparated).
 -   `'Quoted'` — Similarly to [Values](../../interfaces/formats.md#data-format-values).
 -   `'CSV'` — Similarly to [CSV](../../interfaces/formats.md#csv).
 -   `'JSON'` — Similarly to [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
 -   `'XML'` — Similarly to [XML](../../interfaces/formats.md#xml).
--   `'Raw'` — Extracts subpatterns as a whole, no escaping rules.
+-   `'Raw'` — Extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](../../interfaces/formats.md#tabseparatedraw).
 
 Default value: `'Escaped'`.
 
