@@ -975,11 +975,11 @@ StorageWindowView::StorageWindowView(
     }
     else
     {
-        /// TODO: can as well pass final_query instead of inner_query?
         auto inner_create_query
             = getInnerTableCreateQuery(inner_query, query.storage, table_id_.database_name, generate_inner_table_name(table_id_.table_name));
 
-        InterpreterCreateQuery create_interpreter(inner_create_query, window_view_context);
+        auto create_context = Context::createCopy(context_);
+        InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
         create_interpreter.setInternal(true);
         create_interpreter.execute();
         inner_storage = DatabaseCatalog::instance().getTable(StorageID(inner_create_query->getDatabase(), inner_create_query->getTable()), getContext());
