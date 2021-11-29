@@ -43,9 +43,9 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
    && rm -rf /tmp/clickhouse-odbc-tmp
 
-echo "[ClickHouse]
-Driver=ClickHouse ODBC Driver (ANSI)
-Description=DSN (localhost) for ClickHouse ODBC Driver (ANSI)
+RUN echo "[ClickHouse] \
+Driver=ClickHouse ODBC Driver (ANSI) \
+Description=DSN (localhost) for ClickHouse ODBC Driver (ANSI) \
 Url = http://localhost:8123/query?database=default&buffer_size=3000000" >> /etc/odbcinst.ini
 
 ENV TZ=Europe/Moscow
