@@ -14,6 +14,9 @@
 #include <IO/RemoteReadBufferCache.h>
 #include <IO/WriteHelpers.h>
 
+
+namespace fs = std::filesystem;
+
 namespace DB
 {
 namespace ErrorCodes
@@ -65,7 +68,7 @@ RemoteCacheController::RemoteCacheController(
     const RemoteFileMetadata & remote_file_meta,
     const String & local_path_,
     size_t cache_bytes_before_flush_,
-    std::shared_ptr<ReadBuffer> readbuffer_,
+    std::shared_ptr<ReadBuffer> read_buffer_,
     std::function<void(RemoteCacheController *)> const & finish_callback)
     : schema(remote_file_meta.schema)
     , cluster(remote_file_meta.cluster)
@@ -76,9 +79,10 @@ RemoteCacheController::RemoteCacheController(
     , local_cache_bytes_read_before_flush(cache_bytes_before_flush_)
     , download_finished(false)
     , current_offset(0)
-    , remote_readbuffer(readbuffer_)
+    , remote_read_buffer(read_buffer_)
 {
-    if (remote_readbuffer)
+    /// readbuffer == nullptr if `RemoteCacheController` is created in `initOnce`, when metadata and local cache already exist.
+    if (remote_read_buffer)
     {
         // setup local files
         out_file = std::make_unique<std::ofstream>(fs::path(local_path_) / "data.bin", std::ios::out | std::ios::binary);
@@ -132,12 +136,12 @@ void RemoteCacheController::backgroundDownload(std::function<void(RemoteCacheCon
     {
         size_t before_unflush_bytes = 0;
         size_t total_bytes = 0;
-        while (!remote_readbuffer->eof())
+        while (!remote_read_buffer->eof())
         {
-            size_t bytes = remote_readbuffer->available();
+            size_t bytes = remote_read_buffer->available();
 
-            out_file->write(remote_readbuffer->position(), bytes);
-            remote_readbuffer->position() += bytes;
+            out_file->write(remote_read_buffer->position(), bytes);
+            remote_read_buffer->position() += bytes;
             total_bytes += bytes;
             before_unflush_bytes += bytes;
             if (before_unflush_bytes >= local_cache_bytes_read_before_flush)
@@ -156,8 +160,8 @@ void RemoteCacheController::backgroundDownload(std::function<void(RemoteCacheCon
         download_finished = true;
         flush(true);
         out_file->close();
-        out_file = nullptr;
-        remote_readbuffer = nullptr;
+        out_file.reset();
+        remote_read_buffer.reset();
         lock.unlock();
         more_data_signal.notify_all();
         finish_callback(this);
@@ -212,16 +216,20 @@ std::pair<FILE *, String> RemoteCacheController::allocFile()
     return {fs, result_local_path};
 }
 
-void RemoteCacheController::deallocFile(FILE * fs)
+void RemoteCacheController::deallocFile(FILE * file_stream)
 {
     {
         std::lock_guard lock{mutex};
-        auto it = opened_file_streams.find(fs);
+        auto it = opened_file_streams.find(file_stream);
         if (it == opened_file_streams.end())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Try to deallocate file {} with invalid handler", remote_path);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Try to deallocate file with invalid handler remote path: {}, local path: {}",
+                remote_path,
+                local_path);
         opened_file_streams.erase(it);
     }
-    fclose(fs);
+    fclose(file_stream);
 }
 
 LocalCachedFileReader::LocalCachedFileReader(RemoteCacheController * cache_controller_, size_t file_size_)
@@ -260,6 +268,7 @@ off_t LocalCachedFileReader::seek(off_t off)
     offset = off;
     return off;
 }
+
 size_t LocalCachedFileReader::getSize()
 {
     if (file_size != 0)
@@ -276,7 +285,7 @@ size_t LocalCachedFileReader::getSize()
 }
 
 // the size need be equal to the original buffer
-RemoteReadBuffer::RemoteReadBuffer(size_t buff_size) : BufferWithOwnMemory<SeekableReadBuffer>(buff_size)
+RemoteReadBuffer::RemoteReadBuffer(size_t buff_size) : BufferWithOwnMemory<SeekableReadBufferWithSize>(buff_size)
 {
 }
 
@@ -316,7 +325,7 @@ std::unique_ptr<RemoteReadBuffer> RemoteReadBuffer::create(const RemoteFileMetad
     if (remote_read_buffer->file_reader == nullptr)
     {
         LOG_ERROR(log, "Failed to allocate local file for remote path: {}, reason: {}", remote_path, error);
-        remote_read_buffer->original_readbuffer = srb;
+        remote_read_buffer->original_read_buffer = srb;
     }
     return remote_read_buffer;
 }
@@ -329,20 +338,19 @@ bool RemoteReadBuffer::nextImpl()
         if (bytes_read)
             working_buffer.resize(bytes_read);
         else
-        {
             return false;
-        }
     }
-    else // in the case we cannot use local cache, read from the original readbuffer directly
+    else 
     {
-        if (original_readbuffer)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid original read buffer");
+        // In the case we cannot use local cache, read from the original readbuffer directly
+        if (!original_read_buffer)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Original read buffer is not initialized. It's a bug");
 
-        auto status = original_readbuffer->next();
-        // we don't need to worry about the memory buffer allocated in RemoteReadBuffer, since it is owned by
+        auto status = original_read_buffer->next();
+        // We don't need to worry about the memory buffer allocated in RemoteReadBuffer, since it is owned by
         // BufferWithOwnMemory, BufferWithOwnMemory would release it.
         if (status)
-            BufferBase::set(original_readbuffer->buffer().begin(), original_readbuffer->buffer().size(), original_readbuffer->offset());
+            BufferBase::set(original_read_buffer->buffer().begin(), original_read_buffer->buffer().size(), original_read_buffer->offset());
         return status;
     }
     return true;

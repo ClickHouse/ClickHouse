@@ -12,7 +12,6 @@
 #include <IO/SeekableReadBuffer.h>
 #include <condition_variable>
 
-namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -55,7 +54,7 @@ public:
         const RemoteFileMetadata & meta,
         const String & local_path_,
         size_t cache_bytes_before_flush_,
-        std::shared_ptr<ReadBuffer> readbuffer_,
+        std::shared_ptr<ReadBuffer> read_buffer_,
         std::function<void(RemoteCacheController *)> const & finish_callback);
     ~RemoteCacheController();
 
@@ -69,7 +68,7 @@ public:
      * It will be empty if the file has not been downloaded
      */
     std::pair<FILE *, String> allocFile();
-    void deallocFile(FILE * fs_);
+    void deallocFile(FILE * file_stream);
 
     /**
      * when allocFile be called, count++. deallocFile be called, count--.
@@ -78,7 +77,7 @@ public:
     inline bool closable()
     {
         std::lock_guard lock{mutex};
-        return opened_file_streams.empty() && remote_readbuffer == nullptr;
+        return opened_file_streams.empty() && remote_read_buffer == nullptr;
     }
     void close();
 
@@ -129,7 +128,7 @@ private:
     bool download_finished;
     size_t current_offset;
 
-    std::shared_ptr<ReadBuffer> remote_readbuffer;
+    std::shared_ptr<ReadBuffer> remote_read_buffer;
     std::unique_ptr<std::ofstream> out_file;
 
     Poco::Logger * log = &Poco::Logger::get("RemoteReadBufferCache");
@@ -166,10 +165,10 @@ private:
 };
 
 /*
- * FIXME:RemoteReadBuffer derive from SeekableReadBuffer may cause some risks, since it's not seekable in some cases
+ * FIXME:RemoteReadBuffer derive from SeekableReadBufferWithSize may cause some risks, since it's not seekable in some cases
  * But SeekableReadBuffer is not a interface which make it hard to fixup.
  */
-class RemoteReadBuffer : public BufferWithOwnMemory<SeekableReadBuffer>
+class RemoteReadBuffer : public BufferWithOwnMemory<SeekableReadBufferWithSize>
 {
 public:
     explicit RemoteReadBuffer(size_t buff_size);
@@ -180,11 +179,11 @@ public:
     inline bool seekable() { return file_reader != nullptr && file_reader->getSize() > 0; }
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
-    inline size_t size() { return file_reader->getSize(); }
+    std::optional<size_t> getTotalSize() override { return file_reader->getSize(); }
 
 private:
     std::shared_ptr<LocalCachedFileReader> file_reader;
-    std::shared_ptr<ReadBuffer> original_readbuffer;
+    std::shared_ptr<ReadBuffer> original_read_buffer;
 };
 
 class RemoteReadBufferCache

@@ -159,12 +159,6 @@ std::shared_ptr<arrow::io::RandomAccessFile> asArrowFile(ReadBuffer & in, const 
             return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*seekable_in);
     }
 
-    if (auto * fd_in = dynamic_cast<RemoteReadBuffer *>(&in))
-    {
-        if (fd_in->seekable())
-            return std::make_shared<RandomAccessFileFromSeekableReadBuffer>(*fd_in, fd_in->size());
-    }
-
     // fallback to loading the entire file in memory
     std::string file_data;
     {
