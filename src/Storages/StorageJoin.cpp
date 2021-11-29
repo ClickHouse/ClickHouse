@@ -5,7 +5,7 @@
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/joinDispatch.h>

@@ -18,10 +18,7 @@
 
 #include <DataTypes/NestedUtils.h>
 
-#include <Columns/ColumnArray.h>
-
 #include <Interpreters/Context.h>
-#include <Parsers/ASTLiteral.h>
 #include "StorageLogSettings.h"
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceWithProgress.h>

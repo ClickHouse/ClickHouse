@@ -110,6 +110,9 @@ set(libprotobuf_files
 )
 
 add_library(libprotobuf ${libprotobuf_lite_files} ${libprotobuf_files})
+if (ENABLE_FUZZING)
+    target_compile_options(libprotobuf PRIVATE "-fsanitize-recover=all")
+endif()
 target_link_libraries(libprotobuf pthread)
 target_link_libraries(libprotobuf ${ZLIB_LIBRARIES})
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
@@ -211,7 +214,9 @@ add_library(protobuf::libprotoc ALIAS libprotoc)
 
 set(protoc_files ${protobuf_source_dir}/src/google/protobuf/compiler/main.cc)
 
-if (NOT CMAKE_CROSSCOMPILING)
+if (CMAKE_HOST_SYSTEM_NAME STREQUAL CMAKE_SYSTEM_NAME
+    AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL CMAKE_SYSTEM_PROCESSOR)
+
     add_executable(protoc ${protoc_files})
     target_link_libraries(protoc libprotoc libprotobuf pthread)
     add_executable(protobuf::protoc ALIAS protoc)

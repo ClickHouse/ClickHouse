@@ -28,7 +28,8 @@ configure_file (Common/config_version.h.in ${CONFIG_VERSION})
 configure_file (Core/config_core.h.in "${CMAKE_CURRENT_BINARY_DIR}/Core/include/config_core.h")
 
 if (USE_DEBUG_HELPERS)
-    set (INCLUDE_DEBUG_HELPERS "-I\"${ClickHouse_SOURCE_DIR}/base\" -include \"${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h\"")
+    get_target_property(MAGIC_ENUM_INCLUDE_DIR magic_enum INTERFACE_INCLUDE_DIRECTORIES)
+    set (INCLUDE_DEBUG_HELPERS "-I\"${ClickHouse_SOURCE_DIR}/base\" -I\"${MAGIC_ENUM_INCLUDE_DIR}\" -include \"${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h\"")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
 endif ()
 

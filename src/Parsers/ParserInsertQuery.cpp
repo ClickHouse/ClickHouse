@@ -1,6 +1,6 @@
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
