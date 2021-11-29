@@ -237,7 +237,8 @@ inline void readBoolTextWord(bool & x, ReadBuffer & buf, bool support_upper_case
     if (buf.eof())
         throwReadAfterEOF();
 
-    switch (*buf.position()) {
+    switch (*buf.position())
+    {
         case 't':
             assertString("true", buf);
             x = true;
