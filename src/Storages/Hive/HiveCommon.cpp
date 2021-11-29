@@ -9,7 +9,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-std::shared_ptr<HiveMetastoreClient::HiveTableMeta> HiveMetastoreClient::getTableMeta(const std::string & db_name, const std::string & table_name)
+std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> HiveMetastoreClient::getTableMetadata(const std::string & db_name, const std::string & table_name)
 {
     LOG_TRACE(log, "get table meta:" + db_name + ":" + table_name);
     std::lock_guard lock{mutex};
@@ -32,7 +32,7 @@ std::shared_ptr<HiveMetastoreClient::HiveTableMeta> HiveMetastoreClient::getTabl
     }
 
     std::string cache_key = db_name + "." + table_name;
-    std::shared_ptr<HiveMetastoreClient::HiveTableMeta> result = table_meta_cache.get(cache_key);
+    std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> result = table_meta_cache.get(cache_key);
     bool update_cache = false;
     std::map<std::string, PartitionInfo> old_partition_infos;
     std::map<std::string, PartitionInfo> partition_infos;
@@ -49,15 +49,15 @@ std::shared_ptr<HiveMetastoreClient::HiveTableMeta> HiveMetastoreClient::getTabl
 
     for (const auto & partition : partitions)
     {
-        auto & pinfo = partition_infos[partition.sd.location];
-        pinfo.partition = partition;
+        auto & partition_info = partition_infos[partition.sd.location];
+        partition_info.partition = partition;
 
         // query files under the partition by hdfs api is costly, we reuse the files in case the partition has no change
         if (result)
         {
             auto it = old_partition_infos.find(partition.sd.location);
             if (it != old_partition_infos.end() && it->second.equal(partition))
-                pinfo.files = it->second.files;
+                partition_info.files = it->second.files;
             else
                 update_cache = true;
         }
@@ -72,7 +72,7 @@ std::shared_ptr<HiveMetastoreClient::HiveTableMeta> HiveMetastoreClient::getTabl
     if (update_cache)
     {
         LOG_INFO(log, "reload hive partition meta info:" + db_name + ":" + table_name);
-        result = std::make_shared<HiveMetastoreClient::HiveTableMeta>(db_name, table_name, table, std::move(partition_infos), getContext());
+        result = std::make_shared<HiveMetastoreClient::HiveTableMetadata>(db_name, table_name, table, std::move(partition_infos), getContext());
         table_meta_cache.set(cache_key, result);
     }
     return result;
@@ -82,7 +82,7 @@ void HiveMetastoreClient::clearTableMeta(const std::string & db_name, const std:
 {
     std::lock_guard lock{mutex};
     std::string cache_key = db_name + "." + table_name;
-    std::shared_ptr<HiveMetastoreClient::HiveTableMeta> meta = table_meta_cache.get(cache_key);
+    std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> meta = table_meta_cache.get(cache_key);
     if (meta)
         table_meta_cache.set(cache_key, nullptr);
 }
@@ -107,7 +107,7 @@ bool HiveMetastoreClient::PartitionInfo::equal(const Apache::Hadoop::Hive::Parti
     return (it1 == partition.parameters.end() && it2 == other.parameters.end());
 }
 
-std::vector<Apache::Hadoop::Hive::Partition> HiveMetastoreClient::HiveTableMeta::getPartitions()
+std::vector<Apache::Hadoop::Hive::Partition> HiveMetastoreClient::HiveTableMetadata::getPartitions()
 {
     std::vector<Apache::Hadoop::Hive::Partition> result;
 
@@ -117,7 +117,7 @@ std::vector<Apache::Hadoop::Hive::Partition> HiveMetastoreClient::HiveTableMeta:
     return result;
 }
 
-std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMeta::getLocationFiles(const std::string & location)
+std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMetadata::getLocationFiles(const std::string & location)
 {
     std::map<std::string, PartitionInfo>::const_iterator it;
     if (!empty_partition_keys)
@@ -153,7 +153,7 @@ std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMeta::g
     return result;
 }
 
-std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMeta::getLocationFiles(const HDFSFSPtr & fs, const std::string & location)
+std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMetadata::getLocationFiles(const HDFSFSPtr & fs, const std::string & location)
 {
     std::map<std::string, PartitionInfo>::const_iterator it;
     if (!empty_partition_keys)
