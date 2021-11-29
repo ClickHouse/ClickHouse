@@ -47,12 +47,12 @@ void SerializationBool::deserializeText(IColumn &column, ReadBuffer &istr, const
     {
         bool value = false;
 
-        if (*istr.position() == 't' || *istr.position() == 'f')
-            readBoolTextWord(value, istr);
+        if (*istr.position() == 't' || *istr.position() == 'f' || *istr.position() == 'T' || *istr.position() == 'F')
+            readBoolTextWord(value, istr, true);
         else if (*istr.position() == '1' || *istr.position() == '0')
             readBoolText(value, istr);
         else
-            throw Exception("Invalid boolean value, should be true, false, 1, or 0.",
+            throw Exception("Invalid boolean value, should be true/false, TRUE/FALSE, 1/0.",
                             ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
         col->insert(value);
     }
@@ -110,9 +110,30 @@ void SerializationBool::serializeTextJSON(const IColumn &column, size_t row_num,
     serializeText(column, row_num, ostr, settings);
 }
 
-void SerializationBool::deserializeTextJSON(IColumn &column, ReadBuffer &istr, const FormatSettings &settings) const
+void SerializationBool::deserializeTextJSON(IColumn &column, ReadBuffer &istr, const FormatSettings &) const
 {
-    deserializeText(column, istr, settings);
+    ColumnUInt8 *col = typeid_cast<ColumnUInt8 *>(&column);
+    if (!col)
+    {
+        throw Exception("Bool type can only deserialize columns of type UInt8." + column.getName(),
+                        ErrorCodes::ILLEGAL_COLUMN);
+    }
+
+    if (!istr.eof())
+    {
+        bool value = false;
+
+        if (*istr.position() == 't' || *istr.position() == 'f')
+            readBoolTextWord(value, istr);
+        else if (*istr.position() == '1' || *istr.position() == '0')
+            readBoolText(value, istr);
+        else
+            throw Exception("Invalid boolean value, should be true/false, 1/0.",
+                            ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
+        col->insert(value);
+    }
+    else
+        throw Exception("Expected boolean value but get EOF.", ErrorCodes::CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING);
 }
 
 void SerializationBool::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
