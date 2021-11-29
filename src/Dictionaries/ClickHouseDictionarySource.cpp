@@ -7,6 +7,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
@@ -221,39 +222,67 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  Block & sample_block,
                                  ContextPtr global_context,
                                  const std::string & default_database [[maybe_unused]],
-                                 bool /* created_from_ddl */) -> DictionarySourcePtr
+                                 bool created_from_ddl) -> DictionarySourcePtr
     {
         bool secure = config.getBool(config_prefix + ".secure", false);
 
         UInt16 default_port = getPortFromContext(global_context, secure);
 
         std::string settings_config_prefix = config_prefix + ".clickhouse";
-        std::string host = config.getString(settings_config_prefix + ".host", "localhost");
-        UInt16 port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", default_port));
 
-        ClickHouseDictionarySource::Configuration configuration
+        std::unique_ptr<ClickHouseDictionarySource::Configuration> configuration;
+        auto named_collection = created_from_ddl ?
+            getExternalDataSourceConfiguration(config, settings_config_prefix, global_context) : std::nullopt;
+        if (named_collection)
         {
-            .host = host,
-            .user = config.getString(settings_config_prefix + ".user", "default"),
-            .password = config.getString(settings_config_prefix + ".password", ""),
-            .db = config.getString(settings_config_prefix + ".db", default_database),
-            .table = config.getString(settings_config_prefix + ".table", ""),
-            .query = config.getString(settings_config_prefix + ".query", ""),
-            .where = config.getString(settings_config_prefix + ".where", ""),
-            .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
-            .update_field = config.getString(settings_config_prefix + ".update_field", ""),
-            .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
-            .port = port,
-            .is_local = isLocalAddress({host, port}, default_port),
-            .secure = config.getBool(settings_config_prefix + ".secure", false)
-        };
+            std::string host = named_collection->host;
+            UInt16 port = named_collection->port;
+            configuration = std::make_unique<ClickHouseDictionarySource::Configuration>(
+                ClickHouseDictionarySource::Configuration{
+                .host = host,
+                .user = named_collection->username,
+                .password = named_collection->password,
+                .db = named_collection->database,
+                .table = named_collection->table,
+                .query = config.getString(settings_config_prefix + ".query", ""),
+                .where = config.getString(settings_config_prefix + ".where", ""),
+                .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
+                .update_field = config.getString(settings_config_prefix + ".update_field", ""),
+                .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
+                .port = port,
+                .is_local = isLocalAddress({host, port}, default_port),
+                .secure = config.getBool(settings_config_prefix + ".secure", false)
+            });
+        }
+        else
+        {
+            std::string host = config.getString(settings_config_prefix + ".host", "localhost");
+            UInt16 port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", default_port));
+            configuration = std::make_unique<ClickHouseDictionarySource::Configuration>(
+                ClickHouseDictionarySource::Configuration{
+                .host = host,
+                .user = config.getString(settings_config_prefix + ".user", "default"),
+                .password = config.getString(settings_config_prefix + ".password", ""),
+                .db = config.getString(settings_config_prefix + ".db", default_database),
+                .table = config.getString(settings_config_prefix + ".table", ""),
+                .query = config.getString(settings_config_prefix + ".query", ""),
+                .where = config.getString(settings_config_prefix + ".where", ""),
+                .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
+                .update_field = config.getString(settings_config_prefix + ".update_field", ""),
+                .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
+                .port = port,
+                .is_local = isLocalAddress({host, port}, default_port),
+                .secure = config.getBool(settings_config_prefix + ".secure", false)
+            });
+        }
+
 
         ContextMutablePtr context;
-        if (configuration.is_local)
+        if (configuration->is_local)
         {
             /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
             Session session(global_context, ClientInfo::Interface::LOCAL);
-            session.authenticate(configuration.user, configuration.password, {});
+            session.authenticate(configuration->user, configuration->password, {});
             context = session.makeQueryContext();
         }
         else
@@ -265,10 +294,10 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         String dictionary_name = config.getString(".dictionary.name", "");
         String dictionary_database = config.getString(".dictionary.database", "");
 
-        if (dictionary_name == configuration.table && dictionary_database == configuration.db)
+        if (dictionary_name == configuration->table && dictionary_database == configuration->db)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ClickHouseDictionarySource table cannot be dictionary table");
 
-        return std::make_unique<ClickHouseDictionarySource>(dict_struct, configuration, sample_block, context);
+        return std::make_unique<ClickHouseDictionarySource>(dict_struct, *configuration, sample_block, context);
     };
 
     factory.registerSource("clickhouse", create_table_source);

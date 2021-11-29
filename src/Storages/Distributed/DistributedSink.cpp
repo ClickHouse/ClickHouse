@@ -4,6 +4,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Disks/StoragePolicy.h>
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/queryToString.h>
