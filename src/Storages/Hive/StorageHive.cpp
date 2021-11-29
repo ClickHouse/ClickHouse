@@ -155,10 +155,15 @@ public:
                     }
                 }
 
-                std::unique_ptr<ReadBuffer> remote_read_buf = RemoteReadBuffer::create(
-                    {"Hive", getNameNodeCluster(hdfs_namenode_url), uri_with_path, curr_file->getLastModTs(), curr_file->getSize()},
-                    std::move(raw_read_buf));
-                // std::unique_ptr<ReadBuffer> remote_read_buf = std::move(raw_read_buf);
+                // Use local cache for remote filesystem if enabled.
+                std::unique_ptr<ReadBuffer> remote_read_buf;
+                if (RemoteReadBufferCache::instance().isInitialized() && getContext()->getSettingsRef().use_local_cache_for_remote_fs)
+                    remote_read_buf = RemoteReadBuffer::create(
+                        {"Hive", getNameNodeCluster(hdfs_namenode_url), uri_with_path, curr_file->getLastModTs(), curr_file->getSize()},
+                        std::move(raw_read_buf));
+                else
+                    remote_read_buf = std::move(raw_read_buf);
+
                 if (curr_file->getFormat() == StorageHive::FileFormat::TEXT)
                     read_buf = wrapReadBufferWithCompressionMethod(std::move(remote_read_buf), compression);
                 else
