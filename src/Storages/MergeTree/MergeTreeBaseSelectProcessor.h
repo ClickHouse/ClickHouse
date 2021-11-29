@@ -58,12 +58,13 @@ public:
 
 protected:
 
-    /// Creates new this->task, and initializes readers.
-    bool getNewTask();
-
     Chunk generate() final;
 
+    /// Creates new this->task and return a flag whether it was successfull or not
     virtual bool getNewTaskImpl() = 0;
+    /// Creates new readers for a task it is needed. These methods are separate, because
+    /// in case of parallel reading from replicas the whole task could be denied by a coodinator
+    /// or it could modified somehow.
     virtual void finalizeNewTask() = 0;
 
     /// Closes readers and unlock part locks
@@ -122,11 +123,19 @@ private:
     enum class Status
     {
         Accepted,
+        Cancelled,
         Denied
     };
 
+    /// Calls getNewTaskImpl() to get new task, then performs a request to a coordinator
+    /// The coordinator may modify the set of ranges to read from a part or could
+    /// deny the whole request. In the latter case it creates new task and retries.
+    /// Then it calls finalizeNewTask() to create readers for a task if it is needed.
+    bool getNewTask();
+
     /// It will reinitialize
     Status performRequestToCoordinator(MarkRanges requested_ranges);
+
 
     template <typename Predicate>
     void fillBufferedRanged(MergeTreeReadTask * current_task, Predicate && predicate);

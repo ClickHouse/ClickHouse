@@ -89,8 +89,13 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
 
             assert(!ranges.empty());
 
-            if (Status::Accepted == performRequestToCoordinator(ranges))
+            auto res = performRequestToCoordinator(ranges);
+
+            if (Status::Accepted == res)
                 return true;
+
+            if (Status::Cancelled == res)
+                break;
         }
         return false;
     };
@@ -105,8 +110,13 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
 
             assert(!task->mark_ranges.empty());
 
-            if (Status::Accepted == performRequestToCoordinator(task->mark_ranges))
+            auto res = performRequestToCoordinator(task->mark_ranges);
+
+            if (Status::Accepted == res)
                 return true;
+
+            if (Status::Cancelled == res)
+                break;
         }
 
         finish();
@@ -601,7 +611,12 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
 
     AtomicStopwatch stop;
 
-    auto response = extension.value().callback(std::move(request));
+    auto optional_response = extension.value().callback(std::move(request));
+
+    if (!optional_response.has_value())
+        return Status::Cancelled;
+
+    auto response = optional_response.value();
 
     LOG_TRACE(log, "Elapsed time to perform request: {}ns", stop.elapsed());
 
@@ -660,7 +675,7 @@ void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * curren
 
     const size_t max_batch_size = (8UL * 1024 * 1024 * 1024) / sum_average_marks_size;
 
-    LOG_TRACE(log, "Using max batch size to performa request equals {} marks", max_batch_size);
+    LOG_TRACE(log, "Using max batch size to perform a request equals {} marks", max_batch_size);
 
     size_t current_batch_size = 0;
 

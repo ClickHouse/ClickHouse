@@ -149,7 +149,7 @@ using InputBlocksReader = std::function<Block(ContextPtr)>;
 /// Used in distributed task processing
 using ReadTaskCallback = std::function<String()>;
 
-using MergeTreeReadTaskCallback = std::function<PartitionReadResponse(PartitionReadRequest)>;
+using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
 /// An empty interface for an arbitrary object that may be attached by a shared pointer
 /// to query context, when using ClickHouse as a library.
@@ -219,9 +219,11 @@ private:
     Scalars scalars;
     Scalars local_scalars;
 
-    /// Fields for distributed s3 function
+    /// Used in s3Cluster table function. With this callback, a worker node could ask an initiator
+    /// about next file to read from s3.
     std::optional<ReadTaskCallback> next_task_callback;
-
+    /// Used in parallel reading from replicas. A replica tells about its intentions to read
+    /// some ranges from some part and initiator will tell the replica about whether it is accepted or denied.
     std::optional<MergeTreeReadTaskCallback> merge_tree_read_task_callback;
 
     /// Record entities accessed by current query, and store this information in system.query_log.

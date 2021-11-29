@@ -197,7 +197,7 @@ private:
     void receiveQuery();
     void receiveIgnoredPartUUIDs();
     String receiveReadTaskResponseAssumeLocked();
-    PartitionReadResponse receivePartitionMergeTreeReadTaskResponseAssumeLocked();
+    std::optional<PartitionReadResponse> receivePartitionMergeTreeReadTaskResponseAssumeLocked();
     bool receiveData(bool scalar);
     bool readDataNext();
     void readData();

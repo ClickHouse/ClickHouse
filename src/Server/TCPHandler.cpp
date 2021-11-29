@@ -313,18 +313,18 @@ void TCPHandler::runImpl()
                 std::lock_guard lock(task_callback_mutex);
 
                 if (state.is_cancelled)
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Cancelled");
+                    return {};
 
                 sendReadTaskRequestAssumeLocked();
                 return receiveReadTaskResponseAssumeLocked();
             });
 
-            query_context->setMergeTreeReadTaskCallback([this](PartitionReadRequest request) -> PartitionReadResponse
+            query_context->setMergeTreeReadTaskCallback([this](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
             {
                 std::lock_guard lock(task_callback_mutex);
 
                 if (state.is_cancelled)
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Cancelled");
+                    return std::nullopt;
 
                 sendMergeTreeReadTaskRequstAssumeLocked(std::move(request));
                 return receivePartitionMergeTreeReadTaskResponseAssumeLocked();
@@ -1311,7 +1311,7 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
 }
 
 
-PartitionReadResponse TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
+std::optional<PartitionReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
 {
     UInt64 packet_type = 0;
     readVarUInt(packet_type, *in);
@@ -1326,7 +1326,7 @@ PartitionReadResponse TCPHandler::receivePartitionMergeTreeReadTaskResponseAssum
                 std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
                 std::this_thread::sleep_for(ms);
             }
-            return {};
+            return std::nullopt;
         }
         else
         {

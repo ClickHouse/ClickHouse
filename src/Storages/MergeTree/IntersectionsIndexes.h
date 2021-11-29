@@ -65,11 +65,13 @@ struct PartSegments
                     return IntersectionResult::REJECT;
 
                 /// We have intersection with part with different name
+                /// or with different min or max block
                 /// It could happens if we have merged part on one replica
                 /// but not on another.
-                if (segment.name != part.name)
+                if (segment != part)
                     return IntersectionResult::REJECT;
 
+                /// We allow only the intersection with the same part as we have
                 intersected_before = true;
             }
         }
@@ -81,6 +83,16 @@ struct PartSegments
     OrderedSegments segments;
 };
 
+/// This is used only in parallel reading from replicas
+/// This struct is an ordered set of half intervals and it is responsible for
+/// giving an inversion of that intervals (e.g. [a, b) => {[-inf, a), [b, +inf)})
+/// Or you can insersect two sets of half-intervals.
+/// This is needed, because MarkRange is actually a half-opened interval
+/// and during the query execution we receive some kind of request from everty replica
+/// to read some ranges from a specific part.
+/// We have to avoid the situation, where some range is read twice.
+/// This struct helps us to do it using only two operations (intersection and negation)
+/// over a set of half opened intervals.
 struct HalfIntervals
 {
     static HalfIntervals initializeWithEntireSpace()
@@ -121,22 +133,14 @@ struct HalfIntervals
 
         while (first != first_intervals.end() && second != second_intervals.end())
         {
-            auto are_intersect = [](auto & x, auto & y)
-            {
-                if ((x->begin <= y->begin) && (y->begin < x->end))
-                    return true;
-                if ((y->begin <= x->begin) && (x->begin < y->end))
-                    return true;
-                return false;
+            auto curr_intersection = MarkRange{
+                std::max(second->begin, first->begin),
+                std::min(second->end, first->end)
             };
 
-            if (are_intersect(first, second))
-            {
-                intersected.insert(MarkRange{
-                    std::max(second->begin, first->begin),
-                    std::min(second->end, first->end)
-                });
-            }
+            /// Insert only if segments are intersect
+            if (curr_intersection.begin < curr_intersection.end)
+                intersected.insert(std::move(curr_intersection));
 
             if (first->end <= second->end)
                 ++first;
@@ -153,12 +157,18 @@ struct HalfIntervals
     {
         auto left_inf = std::numeric_limits<decltype(MarkRange::begin)>::min();
         auto right_inf = std::numeric_limits<decltype(MarkRange::end)>::max();
+
+        if (intervals.empty())
+        {
+            intervals.insert(MarkRange{left_inf, right_inf});
+            return *this;
+        }
+
         OrderedRanges new_ranges;
 
         /// Possibly add (-inf; begin)
-        if (!intervals.empty())
-            if (auto begin = intervals.begin()->begin; begin != left_inf)
-                new_ranges.insert(MarkRange{left_inf, begin});
+        if (auto begin = intervals.begin()->begin; begin != left_inf)
+            new_ranges.insert(MarkRange{left_inf, begin});
 
         auto prev = intervals.begin();
         for (auto it = std::next(intervals.begin()); it != intervals.end(); ++it)
@@ -169,9 +179,8 @@ struct HalfIntervals
         }
 
         /// Try to add (end; +inf)
-        if (!intervals.empty())
-            if (auto end = intervals.rbegin()->end; end != right_inf)
-                new_ranges.insert(MarkRange{end, right_inf});
+        if (auto end = intervals.rbegin()->end; end != right_inf)
+            new_ranges.insert(MarkRange{end, right_inf});
 
         std::swap(new_ranges, intervals);
 

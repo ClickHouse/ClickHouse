@@ -1,5 +1,8 @@
 #pragma once
 
+#include <functional>
+#include <optional>
+
 #include <base/types.h>
 
 #include <IO/WriteBuffer.h>
@@ -25,6 +28,7 @@ struct PartBlockRange
 
 struct PartitionReadRequest
 {
+    
     String partition_id;
     String part_name;
     String projection_name;
@@ -46,7 +50,7 @@ struct PartitionReadResponse
 };
 
 
-using MergeTreeReadTaskCallback = std::function<PartitionReadResponse(PartitionReadRequest)>;
+using MergeTreeReadTaskCallback = std::function<std::optional<PartitionReadResponse>(PartitionReadRequest)>;
 
 
 }

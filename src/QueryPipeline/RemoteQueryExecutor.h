@@ -41,7 +41,8 @@ public:
     /// For example for s3Cluster table function we provide an Iterator over tasks to do.
     /// Nodes involved into the query send request for a new task and we answer them using this object.
     /// In case of parallel reading from replicas we provide a Coordinator object
-    /// Every replica will tell us about parts and 
+    /// Every replica will tell us about parts and mark ranges it wants to read and coordinator will
+    /// decide whether to deny or to accept that request.
     struct Extension
     {
       std::shared_ptr<TaskIterator> task_iterator{nullptr};
@@ -152,6 +153,9 @@ private:
 
     std::shared_ptr<ParallelReplicasReadingCoordinator> parallel_reading_coordinator;
 
+    /// This is needed only for parallel reading from replicas, because
+    /// we create a RemoteQueryExecutor per replica and have to store additional info
+    /// about the number of the current replica or the count of replicas at all.
     IConnections::ReplicaInfo replica_info;
 
     std::function<std::shared_ptr<IConnections>()> create_connections;
