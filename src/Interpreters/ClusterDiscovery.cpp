@@ -178,10 +178,10 @@ bool ClusterDiscovery::needUpdate(const Strings & node_uuids, const NodesInfo & 
 
             if (sz == 0)
                 return fmt::format("{} nodes", sz);
-            return fmt::format("{} nodes ({}{})", sz, fmt::join(diff, ", "), need_crop ? "" : ",...");
+            return fmt::format("{} node{} [{}{}]", sz, sz != 1 ? "s" : "", fmt::join(diff, ", "), need_crop ? ",..." : "");
         };
 
-        LOG_DEBUG(log, "Cluster update: added {}, removed {}",
+        LOG_TRACE(log, "Cluster update: added {}, removed {}",
             format_cluster_update(new_names, old_names),
             format_cluster_update(old_names, new_names));
     }
@@ -231,15 +231,16 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
 
     int start_version;
     Strings node_uuids = getNodeNames(zk, cluster_info.zk_root, cluster_info.name, &start_version, false);
+    auto & nodes_info = cluster_info.nodes_info;
 
     if (std::find(node_uuids.begin(), node_uuids.end(), current_node_name) == node_uuids.end())
     {
         LOG_ERROR(log, "Can't find current node in cluster '{}', will register again", cluster_info.name);
         registerInZk(zk, cluster_info);
+        nodes_info.clear();
         return false;
     }
 
-    auto & nodes_info = cluster_info.nodes_info;
     if (!needUpdate(node_uuids, nodes_info))
     {
         LOG_TRACE(log, "No update required for cluster '{}'", cluster_info.name);

@@ -2222,7 +2222,7 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
     shared->clusters_config = config;
 
     if (!shared->clusters)
-        shared->clusters = std::make_unique<Clusters>(*shared->clusters_config, settings, config_name);
+        shared->clusters = std::make_shared<Clusters>(*shared->clusters_config, settings, config_name);
     else
         shared->clusters->updateClusters(*shared->clusters_config, settings, config_name, old_clusters_config);
 }
