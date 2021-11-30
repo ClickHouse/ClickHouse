@@ -17,6 +17,18 @@ namespace ErrorCodes
 }
 
 
+// TODO: abstract this function from DiskS3.cpp, from where it was copy-pasted
+// NOTE: name suffixed with -Disk, getting errors with getRandomName defined also in WriteBuffer
+String getRandomNameDisk(char first = 'a', char last = 'z', size_t len = 64)
+{
+    std::uniform_int_distribution<int> distribution(first, last);
+    String res(len, ' ');
+    for (auto & c : res)
+        c = distribution(thread_local_rng);
+    return res;
+}
+
+
 DiskBlobStorageSettings::DiskBlobStorageSettings(
     UInt64 max_single_part_upload_size_,
     UInt64 min_bytes_for_seek_,
@@ -96,7 +108,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskBlobStorage::writeFile(
     WriteMode mode)
 {
     auto metadata = readOrCreateMetaForWriting(path, mode);
-    auto blob_path = path; // TODO: maybe use getRandomName() or modify the path (now it contains the tmp_* directory part)
+    auto blob_path = path + "_" + getRandomNameDisk('a', 'z', 8); // TODO: maybe use getRandomName() or modify the path (now it contains the tmp_* directory part)
 
     LOG_TRACE(log, "{} to file by path: {}. Blob Storage path: {}",
         mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), remote_fs_root_path + blob_path);
