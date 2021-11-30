@@ -39,7 +39,7 @@ std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> HiveMetastoreClient::get
     std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> result = table_meta_cache.get(cache_key);
     bool update_cache = false;
     std::map<std::string, PartitionInfo> old_partition_infos;
-    std::map<std::string, PartitionInfo> partition_infos;
+    std::map<std::string, PartitionInfo> new_partition_infos;
     if (result)
     {
         old_partition_infos = result->getPartitionInfos();
@@ -53,7 +53,7 @@ std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> HiveMetastoreClient::get
 
     for (const auto & partition : partitions)
     {
-        auto & partition_info = partition_infos[partition.sd.location];
+        auto & partition_info = new_partition_infos[partition.sd.location];
         partition_info.partition = partition;
 
         // query files under the partition by hdfs api is costly, we reuse the files in case the partition has no change
@@ -76,7 +76,7 @@ std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> HiveMetastoreClient::get
     if (update_cache)
     {
         LOG_INFO(log, "reload hive partition meta info:" + db_name + ":" + table_name);
-        result = std::make_shared<HiveMetastoreClient::HiveTableMetadata>(db_name, table_name, table, std::move(partition_infos), getContext());
+        result = std::make_shared<HiveMetastoreClient::HiveTableMetadata>(db_name, table_name, table, std::move(new_partition_infos), getContext());
         table_meta_cache.set(cache_key, result);
     }
     return result;
@@ -159,13 +159,17 @@ std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMetadat
 
 std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMetadata::getLocationFiles(const HDFSFSPtr & fs, const std::string & location)
 {
+    LOG_TRACE(&Poco::Logger::get("HiveMetastoreClient"), "ls  {}", location);
     std::map<std::string, PartitionInfo>::const_iterator it;
-    if (!empty_partition_keys)
+    bool x = false;
+    if (!empty_partition_keys && x)
     {
         std::lock_guard lock{mutex};
         it = partition_infos.find(location);
         if (it == partition_infos.end())
             throw Exception("invalid location " + location, ErrorCodes::BAD_ARGUMENTS);
+        
+        LOG_TRACE(&Poco::Logger::get("HiveMetastoreClient"), "empty_partition_keys  {} {}", location, it->second.files.size());
         return it->second.files;
     }
 
@@ -173,9 +177,11 @@ std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMetadat
     HDFSFileInfo ls;
     ls.file_info = hdfsListDirectory(fs.get(), location_uri.getPath().c_str(), &ls.length);
     std::vector<FileInfo> result;
+    LOG_TRACE(&Poco::Logger::get("HiveMetastoreClient"), "ls result. {} {}", ls.length, location);
     for (int i = 0; i < ls.length; ++i)
     {
         auto & file_info = ls.file_info[i];
+        LOG_TRACE(&Poco::Logger::get("HiveMetastoreClient"), "get file:{} {} {}", file_info.mName, file_info.mKind, file_info.mSize);
         if (file_info.mKind != 'D' && file_info.mSize > 0)
             result.emplace_back(String(file_info.mName), file_info.mLastMod, file_info.mSize);
     }
