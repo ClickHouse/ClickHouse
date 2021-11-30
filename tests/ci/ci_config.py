@@ -93,11 +93,11 @@ CI_CONFIG = {
             "tidy": "disable",
             "with_coverage": False
         },
-        "package_tidy": {
+        "binary_tidy": {
             "compiler": "clang-13",
             "build_type": "debug",
             "sanitizer": "",
-            "package_type": "deb",
+            "package_type": "binary",
             "bundled": "bundled",
             "splitted": "unsplitted",
             "tidy": "enable",
