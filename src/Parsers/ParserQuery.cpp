@@ -21,7 +21,7 @@
 #include <Parsers/ParserSystemQuery.h>
 #include <Parsers/ParserUseQuery.h>
 #include <Parsers/ParserExternalDDLQuery.h>
-
+#include <Parsers/ParserDeleteQuery.h>
 
 namespace DB
 {
@@ -46,6 +46,7 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserSetRoleQuery set_role_p;
     ParserExternalDDLQuery external_ddl_p;
     ParserBackupQuery backup_p;
+    ParserDeleteQuery delete_p;
 
     bool res = query_with_output_p.parse(pos, node, expected)
         || insert_p.parse(pos, node, expected)
@@ -63,7 +64,8 @@ bool ParserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         || drop_access_entity_p.parse(pos, node, expected)
         || grant_p.parse(pos, node, expected)
         || external_ddl_p.parse(pos, node, expected)
-        || backup_p.parse(pos, node, expected);
+        || backup_p.parse(pos, node, expected)
+        || delete_p.parse(pos, node, expected);
 
     return res;
 }
