@@ -25,7 +25,10 @@ public:
 
     String getName() const override { return "CSVRowInputFormat"; }
 
-    void readPrefix() override;
+protected:
+    std::vector<String> readNames() override { return readHeaderRow(); }
+    std::vector<String> readTypes() override { return readHeaderRow(); }
+    std::vector<String> readHeaderRow();
 
 private:
     bool allowSyncAfterError() const override { return true; }
@@ -50,13 +53,7 @@ private:
     void skipFieldDelimiter() override;
     void skipRowEndDelimiter() override;
 
-    std::vector<String> readHeaderRow();
-    std::vector<String> readNames() override { return readHeaderRow(); }
-    std::vector<String> readTypes() override { return readHeaderRow(); }
-
     String readFieldIntoString();
-
-    std::vector<String> input_field_names;
 };
 
 }

@@ -30,11 +30,12 @@ public:
         const Params & params_,
         bool with_names_, bool with_types_, const FormatSettings & format_settings_);
 
-    virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-    virtual void readPrefix() override;
     void resetParser() override;
 
 protected:
+    void readPrefix() override;
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+
     /// Read single field from input. Return false if there was no real value and we inserted default value.
     virtual bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) = 0;
 
@@ -64,7 +65,6 @@ protected:
     virtual bool tryParseSuffixWithDiagnosticInfo(WriteBuffer &) { return true; }
     bool isGarbageAfterField(size_t, ReadBuffer::Position) override {return false; }
 
-    virtual void insertDefaultsForNotSeenColumns(MutableColumns & columns, RowReadExtension & ext);
 
     /// Read row with names and return the list of them.
     virtual std::vector<String> readNames() = 0;
@@ -72,21 +72,21 @@ protected:
     virtual std::vector<String> readTypes() = 0;
 
     virtual void addInputColumn(const String & column_name, std::vector<bool> & read_columns);
-    virtual void setupAllColumnsByTableSchema();
 
     const FormatSettings format_settings;
     DataTypes data_types;
     bool end_of_stream = false;
 
-    bool with_names;
-    bool with_types;
-    std::unordered_map<String, size_t> column_indexes_by_names;
-
 private:
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
 
+    void setupAllColumnsByTableSchema();
+    void insertDefaultsForNotSeenColumns(MutableColumns & columns, RowReadExtension & ext);
 
+    bool with_names;
+    bool with_types;
+    std::unordered_map<String, size_t> column_indexes_by_names;
 };
 
 void registerFileSegmentationEngineForFormatWithNamesAndTypes(
