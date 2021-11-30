@@ -30,7 +30,6 @@ void CascadeWriteBuffer::nextImpl()
 {
     if (!curr_buffer)
         return;
-
     try
     {
         curr_buffer->position() = position();
