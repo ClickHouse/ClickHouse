@@ -273,29 +273,36 @@ std::optional<Row> MergeTreePartition::tryParseValueFromID(const String & partit
     /// All columns are numeric, will parse partition value
     for (size_t i = 0; i < num_keys; ++i)
     {
-        if (key_types[i] == DATE)
+        switch (key_types[i])
         {
-            UInt32 date_yyyymmdd;
-            readText(date_yyyymmdd, buf);
-            constexpr UInt32 min_yyyymmdd = 10000000;
-            constexpr UInt32 max_yyyymmdd = 99999999;
-            if (date_yyyymmdd < min_yyyymmdd || max_yyyymmdd < date_yyyymmdd)
-                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE, "Cannot parse partition_id: got unexpected Date: {}", date_yyyymmdd);
+            case DATE:
+            {
+                UInt32 date_yyyymmdd;
+                readText(date_yyyymmdd, buf);
+                constexpr UInt32 min_yyyymmdd = 10000000;
+                constexpr UInt32 max_yyyymmdd = 99999999;
+                if (date_yyyymmdd < min_yyyymmdd || max_yyyymmdd < date_yyyymmdd)
+                    throw Exception(
+                        ErrorCodes::INVALID_PARTITION_VALUE, "Cannot parse partition_id: got unexpected Date: {}", date_yyyymmdd);
 
-            UInt32 date = DateLUT::instance().YYYYMMDDToDayNum(date_yyyymmdd);
-            res.emplace_back(date);
-        }
-        else if (key_types[i] == UNSIGNED)
-        {
-            UInt64 value;
-            readText(value, buf);
-            res.emplace_back(value);
-        }
-        else if (key_types[i] == SIGNED)
-        {
-            Int64 value;
-            readText(value, buf);
-            res.emplace_back(value);
+                UInt32 date = DateLUT::instance().YYYYMMDDToDayNum(date_yyyymmdd);
+                res.emplace_back(date);
+                break;
+            }
+            case UNSIGNED:
+            {
+                UInt64 value;
+                readText(value, buf);
+                res.emplace_back(value);
+                break;
+            }
+            case SIGNED:
+            {
+                Int64 value;
+                readText(value, buf);
+                res.emplace_back(value);
+                break;
+            }
         }
 
         if (i + 1 != num_keys)
