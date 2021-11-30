@@ -63,13 +63,13 @@ void checkReadWithOffset(IDisk & disk)
 void checkRemoveAccess(IDisk & disk)
 {
     // TODO: remove these checks if the names of blobs will be changed
-    if (!disk.checkUniqueId(test_file))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Expected the file to exist, but did not find it: {}", test_file);
+    // if (!disk.checkUniqueId(test_file))
+    //     throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Expected the file to exist, but did not find it: {}", test_file);
 
     disk.removeFile(test_file);
 
-    if (disk.checkUniqueId(test_file))
-        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Expected the file not to exist, but found it: {}", test_file);
+    // if (disk.checkUniqueId(test_file))
+    //     throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Expected the file not to exist, but found it: {}", test_file);
 }
 
 
