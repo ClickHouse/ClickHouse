@@ -161,7 +161,7 @@ if __name__ == "__main__":
         release_or_pr = pr_info.head_ref
     elif pr_info.number == 0:
         # for pushes to master - major version
-        release_or_pr = ".".join(version.as_tuple[:2])
+        release_or_pr = ".".join(version.as_tuple()[:2])
     else:
         # PR number for anything else
         release_or_pr = str(pr_info.number)
