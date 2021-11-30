@@ -17,8 +17,8 @@ CREATE TABLE IF NOT EXISTS decimal
 INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j) VALUES (42, 42, 42, 0.42, 0.42, 0.42, 42.42, 42.42, 42.42, 42.42);
 INSERT INTO decimal (a, b, c, d, e, f, g, h, i, j) VALUES (-42, -42, -42, -0.42, -0.42, -0.42, -42.42, -42.42, -42.42, -42.42);
 
-SELECT a > toFloat64(0) FROM decimal; -- { serverError 43 }
-SELECT g > toFloat32(0) FROM decimal; -- { serverError 43 }
+SELECT a > toFloat64(0) FROM decimal;
+SELECT g > toFloat32(0) FROM decimal;
 SELECT a > '0.0' FROM decimal ORDER BY a;
 
 SELECT a, b, a = b, a < b, a > b, a != b, a <= b, a >= b FROM decimal ORDER BY a;
@@ -36,8 +36,8 @@ SELECT a, b, c FROM decimal WHERE a = toInt8(42) AND b = toInt8(42) AND c = toIn
 SELECT a, b, c FROM decimal WHERE a = toInt16(42) AND b = toInt16(42) AND c = toInt16(42);
 SELECT a, b, c FROM decimal WHERE a = toInt32(42) AND b = toInt32(42) AND c = toInt32(42);
 SELECT a, b, c FROM decimal WHERE a = toInt64(42) AND b = toInt64(42) AND c = toInt64(42);
-SELECT a, b, c FROM decimal WHERE a = toFloat32(42); -- { serverError 43 }
-SELECT a, b, c FROM decimal WHERE a = toFloat64(42); -- { serverError 43 }
+SELECT a, b, c FROM decimal WHERE a = toFloat32(42);
+SELECT a, b, c FROM decimal WHERE a = toFloat64(42);
 
 SELECT least(a, b), least(a, g), greatest(a, b), greatest(a, g) FROM decimal ORDER BY a;
 SELECT least(a, 0), least(b, 0), least(g, 0) FROM decimal ORDER BY a;
@@ -46,18 +46,18 @@ SELECT greatest(a, 0), greatest(b, 0), greatest(g, 0) FROM decimal ORDER BY a;
 SELECT (a, d, g) = (b, e, h), (a, d, g) != (b, e, h) FROM decimal ORDER BY a;
 SELECT (a, d, g) = (c, f, i), (a, d, g) != (c, f, i) FROM decimal ORDER BY a;
 
-SELECT toUInt32(2147483648) AS x, a == x FROM decimal WHERE a = 42; -- { serverError 407 }
+SELECT toUInt32(2147483648) AS x, a == x FROM decimal WHERE a = 42; -- { serverError 407  }
 SELECT toUInt64(2147483648) AS x, b == x, x == ((b - 42) + x) FROM decimal WHERE a = 42;
-SELECT toUInt64(9223372036854775808) AS x, b == x FROM decimal WHERE a = 42; -- { serverError 407 }
+SELECT toUInt64(9223372036854775808) AS x, b == x FROM decimal WHERE a = 42; -- { serverError 407  }
 SELECT toUInt64(9223372036854775808) AS x, c == x, x == ((c - 42) + x) FROM decimal WHERE a = 42;
 
 SELECT g = 10000, (g - g + 10000) == 10000 FROM decimal WHERE a = 42;
 SELECT 10000 = g, 10000 = (g - g + 10000) FROM decimal WHERE a = 42;
-SELECT g = 30000 FROM decimal WHERE a = 42; -- { serverError 407 }
-SELECT 30000 = g FROM decimal WHERE a = 42; -- { serverError 407 }
+SELECT g = 30000 FROM decimal WHERE a = 42; -- { serverError 407  }
+SELECT 30000 = g FROM decimal WHERE a = 42; -- { serverError 407  }
 SELECT h = 30000, (h - g + 30000) = 30000 FROM decimal WHERE a = 42;
 SELECT 30000 = h, 30000 = (h - g + 30000) FROM decimal WHERE a = 42;
-SELECT h = 10000000000 FROM decimal WHERE a = 42; -- { serverError 407 }
+SELECT h = 10000000000 FROM decimal WHERE a = 42; -- { serverError 407  }
 SELECT i = 10000000000, (i - g + 10000000000) = 10000000000 FROM decimal WHERE a = 42;
 SELECT 10000000000 = i, 10000000000 = (i - g + 10000000000) FROM decimal WHERE a = 42;
 
