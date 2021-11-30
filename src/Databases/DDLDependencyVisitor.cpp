@@ -1,10 +1,11 @@
 #include <Databases/DDLDependencyVisitor.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/Context.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Poco/String.h>
 
 namespace DB

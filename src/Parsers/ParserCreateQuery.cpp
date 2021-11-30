@@ -5,6 +5,7 @@
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -143,24 +144,32 @@ bool ParserIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserKeyword s_check("CHECK");
+    ParserKeyword s_assume("ASSUME");
 
     ParserIdentifier name_p;
     ParserLogicalOrExpression expression_p;
 
     ASTPtr name;
     ASTPtr expr;
+    ASTConstraintDeclaration::Type type = ASTConstraintDeclaration::Type::CHECK;
 
     if (!name_p.parse(pos, name, expected))
         return false;
 
     if (!s_check.ignore(pos, expected))
-        return false;
+    {
+        if (s_assume.ignore(pos, expected))
+            type = ASTConstraintDeclaration::Type::ASSUME;
+        else
+            return false;
+    }
 
     if (!expression_p.parse(pos, expr, expected))
         return false;
 
     auto constraint = std::make_shared<ASTConstraintDeclaration>();
     constraint->name = name->as<ASTIdentifier &>().name();
+    constraint->type = type;
     constraint->set(constraint->expr, expr);
     node = constraint;
 

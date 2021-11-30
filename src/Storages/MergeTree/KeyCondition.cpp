@@ -18,9 +18,10 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Storages/KeyDescription.h>

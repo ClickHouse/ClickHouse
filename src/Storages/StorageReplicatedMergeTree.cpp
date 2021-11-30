@@ -39,6 +39,7 @@
 
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
@@ -60,12 +61,14 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/InterserverCredentials.h>
 
-
 #include <Poco/DirectoryIterator.h>
 
 #include <base/range.h>
 #include <base/scope_guard.h>
 #include <base/scope_guard_safe.h>
+
+#include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/replace.hpp>
 
 #include <algorithm>
 #include <ctime>
@@ -74,8 +77,6 @@
 #include <numeric>
 #include <thread>
 #include <future>
-
-#include <boost/algorithm/string/join.hpp>
 
 namespace fs = std::filesystem;
 
@@ -5026,7 +5027,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
 
         output.writeExistingPart(loaded_parts[i]);
 
-        renamed_parts.old_and_new_names[i].first.clear();
+        renamed_parts.old_and_new_names[i].old_name.clear();
 
         LOG_DEBUG(log, "Attached part {} as {}", old_name, loaded_parts[i]->name);
 

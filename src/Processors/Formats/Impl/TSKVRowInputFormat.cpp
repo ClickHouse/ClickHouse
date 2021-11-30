@@ -52,6 +52,7 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
         if (next_pos == buf.buffer().end())
         {
             tmp.append(buf.position(), next_pos - buf.position());
+            buf.position() = buf.buffer().end();
             buf.next();
             continue;
         }
