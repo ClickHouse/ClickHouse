@@ -27,17 +27,18 @@ public:
         size_t max_single_part_upload_size_,
         size_t buf_size_);
 
+    ~WriteBufferFromBlobStorage() override;
+
     void nextImpl() override;
 
-    void finalize() override;
-
 private:
+
+    void finalizeImpl() override;
 
     std::vector<std::string> block_ids;
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     size_t max_single_part_upload_size;
     const String blob_path;
-    bool finalized = false;
 };
 
 }
