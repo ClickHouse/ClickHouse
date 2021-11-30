@@ -174,7 +174,6 @@ function clone_submodules
             contrib/double-conversion
             contrib/libcxx
             contrib/libcxxabi
-            contrib/libc-headers
             contrib/lz4
             contrib/zstd
             contrib/fastops
