@@ -119,7 +119,8 @@ void StorageFileLog::loadMetaFiles(bool attach)
                 "Metadata files already exist by path: {}, remove them manually if it is intended",
                 root_meta_path);
         }
-        std::filesystem::create_directories(root_meta_path);
+        /// We do not create the root_meta_path directory at creation time, create it at the moment of serializing
+        /// meta files, such that can avoid unnecessarily create this directory if create table failed.
     }
 }
 
