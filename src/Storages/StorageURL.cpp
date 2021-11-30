@@ -132,7 +132,7 @@ namespace
                         if (!userInfo.empty())
                         {
                             std::size_t n = userInfo.find(":");
-                            if(n != std::string::npos)
+                            if (n != std::string::npos)
                             {
                                 credentials.setUsername(userInfo.substr(0, n));
                                 credentials.setPassword(userInfo.substr(n+1));
