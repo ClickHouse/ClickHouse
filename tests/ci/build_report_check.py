@@ -8,7 +8,7 @@ from github import Github
 from report import create_build_html_report
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from commit_status_helper import  get_commit
 
 class BuildResult():
@@ -105,18 +105,16 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token())
     s3_helper = S3Helper('https://s3.amazonaws.com')
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
-        event = json.load(event_file)
 
-    pr_info = PRInfo(event)
+    pr_info = PRInfo(get_event())
 
-    branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
+    branch_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/commits/master"
     branch_name = "master"
     if pr_info.number != 0:
         branch_name = "PR #{}".format(pr_info.number)
-        branch_url = "https://github.com/ClickHouse/ClickHouse/pull/" + str(pr_info.number)
-    commit_url = f"https://github.com/ClickHouse/ClickHouse/commit/{pr_info.sha}"
-    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID', '0')}"
+        branch_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/pull/{pr_info.number}"
+    commit_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/commit/{pr_info.sha}"
+    task_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID', '0')}"
     report = create_build_html_report(
         build_check_name,
         build_results,

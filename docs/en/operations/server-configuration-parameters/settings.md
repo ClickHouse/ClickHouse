@@ -69,8 +69,6 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 </compression>
 ```
 
-<!--
-
 ## encryption {#server-settings-encryption}
 
 Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
@@ -150,7 +148,6 @@ Or it can be set in hex:
 
 Everything mentioned above can be applied for `aes_256_gcm_siv` (but the key must be 32 bytes long).
 
--->
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
@@ -588,7 +585,7 @@ For more information, see the section [Creating replicated tables](../../engines
 
 Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family.
 
-The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
+The cache is shared for the server and memory is allocated as needed.
 
 **Example**
 
@@ -1460,4 +1457,53 @@ To add an LDAP server as a remote user directory of users that are not defined l
 </ldap>
 ```
 
-[Original article](https://clickhouse.com/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->
+## total_memory_profiler_step {#total-memory-profiler-step}
+
+Sets the memory size (in bytes) for a stack trace at every peak allocation step. The data is stored in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `query_id` equal to an empty string.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `4194304`.
+
+## total_memory_tracker_sample_probability {#total-memory-tracker-sample-probability}
+
+Allows to collect random allocations and deallocations and writes them in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `trace_type` equal to a `MemorySample` with the specified probability. The probability is for every allocation or deallocations, regardless of the size of the allocation. Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit (default value is `4` MiB). It can be lowered if [total_memory_profiler_step](#total-memory-profiler-step) is lowered. You can set `total_memory_profiler_step` equal to `1` for extra fine-grained sampling.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Writing of random allocations and deallocations in the `system.trace_log` system table is disabled.
+
+Default value: `0`.
+
+## mmap_cache_size {#mmap-cache-size}
+
+Sets the cache size (in bytes) for mapped files. This setting allows to avoid frequent open/[mmap/munmap](https://en.wikipedia.org/wiki/Mmap)/close calls (which are very expensive due to consequent page faults) and to reuse mappings from several threads and queries. The setting value is the number of mapped regions (usually equal to the number of mapped files). The amount of data in mapped files can be monitored in [system.metrics](../../operations/system-tables/metrics.md), [system.metric_log](../../operations/system-tables/metric_log.md) system tables by the `MMappedFiles` and `MMappedFileBytes` metrics, in [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md), [system.asynchronous_metrics_log](../../operations/system-tables/asynchronous_metric_log.md) by the `MMapCacheCells` metric, and also in [system.events](../../operations/system-tables/events.md), [system.processes](../../operations/system-tables/processes.md), [system.query_log](../../operations/system-tables/query_log.md), [system.query_thread_log](../../operations/system-tables/query_thread_log.md), [system.query_views_log](../../operations/system-tables/query_views_log.md) by the `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses` events. Note that the amount of data in mapped files does not consume memory directly and is not accounted in query or server memory usage — because this memory can be discarded similar to OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `1000`.
+
+## compiled_expression_cache_size {#compiled-expression-cache-size}
+
+Sets the cache size (in bytes) for [compiled expressions](../../operations/caches.md).
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `134217728`.
+
+## compiled_expression_cache_elements_size {#compiled_expression_cache_elements_size}
+
+Sets the cache size (in elements) for [compiled expressions](../../operations/caches.md).
+
+Possible values:
+
+-   Positive integer.
+
+Default value: `10000`.
