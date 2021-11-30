@@ -118,6 +118,9 @@ struct MergeTreePartInfo
     static constexpr UInt32 LEGACY_MAX_LEVEL = std::numeric_limits<decltype(level)>::max();
 };
 
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+
 /// Information about detached part, which includes its prefix in
 /// addition to the above fields.
 struct DetachedPartInfo : public MergeTreePartInfo
@@ -125,7 +128,7 @@ struct DetachedPartInfo : public MergeTreePartInfo
     String dir_name;
     String prefix;
 
-    String disk;
+    DiskPtr disk;
 
     /// If false, MergeTreePartInfo is in invalid state (directory name was not successfully parsed).
     bool valid_name;
@@ -148,7 +151,7 @@ struct DetachedPartInfo : public MergeTreePartInfo
     // This method has different semantics with MergeTreePartInfo::tryParsePartName.
     // Detached parts are always parsed regardless of their validity.
     // DetachedPartInfo::valid_name field specifies whether parsing was successful or not.
-    static DetachedPartInfo parseDetachedPartName(std::string_view dir_name, MergeTreeDataFormatVersion format_version);
+    static DetachedPartInfo parseDetachedPartName(const DiskPtr & disk, std::string_view dir_name, MergeTreeDataFormatVersion format_version);
 
 private:
     void addParsedPartInfo(const MergeTreePartInfo& part);
