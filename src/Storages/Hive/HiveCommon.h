@@ -24,7 +24,7 @@ public:
         size_t size;
 
         FileInfo() = default;
-        FileInfo(const FileInfo &) = default;
+        //FileInfo(const FileInfo & b) : path(b.path), last_modify_time(b.last_modify_time), size(b.size){}
         FileInfo(const std::string & path_, UInt64 last_modify_time_, size_t size_) : path(path_), last_modify_time(last_modify_time_), size(size_) {}
     };
 

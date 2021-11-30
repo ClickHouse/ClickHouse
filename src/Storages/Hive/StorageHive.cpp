@@ -431,6 +431,7 @@ Pipe StorageHive::read(
 
     auto append_hive_files = [&](const HiveMetastoreClient::FileInfo & hfile, const FieldVector & fields)
     {
+        LOG_TRACE(log, "append hive file:{}", hfile.path);
         String filename = getBaseName(hfile.path);
 
         // Skip temporary files starts with '.'
@@ -507,7 +508,7 @@ Pipe StorageHive::read(
                 }
                 if (has_default_partition)
                 {
-                    LOG_DEBUG(log, "skip partition:__HIVE_DEFAULT_PARTITION__");
+                    //LOG_DEBUG(log, "skip partition:__HIVE_DEFAULT_PARTITION__");
                     return;
                 }
 
@@ -545,10 +546,11 @@ Pipe StorageHive::read(
                 const KeyCondition partition_key_condition(query_info, getContext(), partition_names, partition_minmax_idx_expr);
                 if (!partition_key_condition.checkInHyperrectangle(ranges, partition_types).can_be_true)
                 {
-                    LOG_DEBUG(log, "skip partition:{}", boost::algorithm::join(p.values, "|"));
+                    //LOG_DEBUG(log, "skip partition:{}", boost::algorithm::join(p.values, "|"));
                     return;
                 }
 
+                LOG_TRACE(log, "list location:{}", p.sd.location);
                 auto paths = list_paths(p.sd.location);
                 for (const auto & path : paths)
                 {
