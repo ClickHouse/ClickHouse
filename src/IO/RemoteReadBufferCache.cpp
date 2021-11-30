@@ -55,7 +55,8 @@ void RemoteFileMetadata::save(const std::filesystem::path & local_path)
     meta_file << toString();
     meta_file.close();
 }
-String RemoteFileMetadata::toString(){
+String RemoteFileMetadata::toString()
+{
     Poco::JSON::Object jobj;
     jobj.set("schema", schema);
     jobj.set("cluster", cluster);
@@ -431,7 +432,8 @@ void RemoteReadBufferCache::recoverCachedFilesMetaData(
     }
 }
 
-void RemoteReadBufferCache::recoverTask(){
+void RemoteReadBufferCache::recoverTask()
+{
     std::lock_guard lock(mutex);
     recoverCachedFilesMetaData(root_dir, 1, 2);
     initialized = true;
@@ -510,6 +512,7 @@ RemoteReadBufferCache::createReader(const RemoteFileMetadata & remote_file_meta,
         }
     }
 
+    LOG_TRACE(log, "not found cache:{}", local_path);
     auto clear_ret = clearLocalCache();
     cache_iter = caches.find(local_path);
     if (cache_iter != caches.end())
@@ -550,10 +553,13 @@ RemoteReadBufferCache::createReader(const RemoteFileMetadata & remote_file_meta,
 
 bool RemoteReadBufferCache::clearLocalCache()
 {
+    // clear closable cache from the list head
     for (auto it = keys.begin(); it != keys.end();)
     {
-        // TODO keys is not thread-safe
         auto cache_it = caches.find(*it);
+        if (cache_it == caches.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found no entry in local cache with key: {}", *it);
+        
         auto cache_controller = cache_it->second.cache_controller;
         if (!cache_controller->isValid() && cache_controller->closable())
         {
@@ -563,36 +569,26 @@ bool RemoteReadBufferCache::clearLocalCache()
             cache_controller->close();
             it = keys.erase(it);
             caches.erase(cache_it);
+            continue;
         }
-        else
-            it++;
-    }
-    // clear closable cache from the list head
-    for (auto it = keys.begin(); it != keys.end();)
-    {
-        if (total_size < limit_size)
-            break;
-        auto cache_it = caches.find(*it);
-        if (cache_it == caches.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found no entry in local cache with key: {}", *it);
 
-        if (cache_it->second.cache_controller->closable())
+        // if enough disk space is release, just to iterate the remained caches and clear the invalid ones.
+        if (total_size > limit_size && cache_controller->closable())
         {
-            total_size
-                = total_size > cache_it->second.cache_controller->size() ? total_size - cache_it->second.cache_controller->size() : 0;
-            cache_it->second.cache_controller->close();
+            total_size = total_size > cache_controller->size() ? total_size - cache_controller->size() : 0;
+            cache_controller->close();
             caches.erase(cache_it);
             it = keys.erase(it);
             LOG_TRACE(
                 log,
                 "clear local file {} for {}. key size:{}. next{}",
-                cache_it->second.cache_controller->getLocalPath().string(),
-                cache_it->second.cache_controller->getRemotePath(),
+                cache_controller->getLocalPath().string(),
+                cache_controller->getRemotePath(),
                 keys.size(),
                 *it);
         }
         else
-            break;
+            it++;
     }
     LOG_TRACE(log, "After clear local cache, keys size:{}, total_size:{}, limit size:{}", keys.size(), total_size, limit_size);
     return total_size < limit_size;

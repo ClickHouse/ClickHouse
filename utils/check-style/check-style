@@ -138,7 +138,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.xml' |
     xargs xmllint --noout --nonet
 
 # FIXME: for now only clickhouse-test
-pylint --rcfile=$ROOT_PATH/.pylintrc --persistent=no --score=n $ROOT_PATH/tests/clickhouse-test $ROOT_PATH/tests/ci/*.py
+#pylint --rcfile=$ROOT_PATH/.pylintrc --persistent=no --score=n $ROOT_PATH/tests/clickhouse-test $ROOT_PATH/tests/ci/*.py
 
 find $ROOT_PATH -not -path $ROOT_PATH'/contrib*' \( -name '*.yaml' -or -name '*.yml' \) -type f |
     grep -vP $EXCLUDE_DIRS |
@@ -256,7 +256,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
 # Trailing whitespaces
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE_DIRS |
-    xargs grep -P ' $' | grep -P '.' && echo "^ Trailing whitespaces."
+    xargs grep -n -P ' $' | grep -n -P '.' && echo "^ Trailing whitespaces."
 
 # Forbid stringstream because it's easy to use them incorrectly and hard to debug possible issues
 find $ROOT_PATH/{src,programs,utils} -name '*.h' -or -name '*.cpp' |
