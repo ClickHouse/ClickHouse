@@ -6,7 +6,7 @@ toc_title: INTO OUTFILE
 
 Секция `INTO OUTFILE` перенаправляет результат запроса `SELECT` в файл на стороне **клиента**.
 
-Поддерживаются сжатые файлы. Формат сжатия определяется по расширению файла, либо он может быть задан в секции `COMPRESSION`. 
+Поддерживаются сжатые файлы. Формат сжатия определяется по расширению файла (по умолчанию используется режим `'auto'`), либо он может быть задан явно в секции `COMPRESSION`. 
 
 **Синтаксис**
 
@@ -14,7 +14,7 @@ toc_title: INTO OUTFILE
 SELECT <expr_list> INTO OUTFILE file_name [COMPRESSION type]
 ```
 
-`file_name` и `type` задаются в виде строковых литералов. Поддерживаются форматы сжатия: `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+`file_name` и `type` задаются в виде строковых литералов. Поддерживаются форматы сжатия: `'none`', `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
 
 ## Детали реализации {#implementation-details}
 
@@ -24,7 +24,7 @@ SELECT <expr_list> INTO OUTFILE file_name [COMPRESSION type]
 
 **Пример**
 
-Выполните следующий запрос в [клиенте командной строки](../../../interfaces/cli.md):
+Выполните следующий запрос, используя [клиент командной строки](../../../interfaces/cli.md):
 
 ```bash
 clickhouse-client --query="SELECT 1,'ABC' INTO OUTFILE 'select.gz' FORMAT CSV;"
