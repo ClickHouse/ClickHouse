@@ -263,7 +263,7 @@ size_t LocalCachedFileReader::read(char * buf, size_t size)
 
 off_t LocalCachedFileReader::seek(off_t off)
 {
-    cache_controller->waitMoreData(off, 1);
+    cache_controller->waitMoreData(off, 0);
     std::lock_guard lock(mutex);
     auto ret = fseek(file_stream, off, SEEK_SET);
     if (ret < 0)
@@ -276,9 +276,6 @@ off_t LocalCachedFileReader::seek(off_t off)
 
 size_t LocalCachedFileReader::getSize()
 {
-    if (file_size != 0)
-        return file_size;
-
     if (local_path.empty())
     {
         LOG_TRACE(log, "Empty local_path");
@@ -318,15 +315,8 @@ std::unique_ptr<RemoteReadBuffer> RemoteReadBuffer::create(const RemoteFileMetad
     auto * raw_rbp = read_buffer.release();
     std::shared_ptr<ReadBuffer> srb(raw_rbp);
     RemoteReadBufferCacheError error;
-    int retry = 0;
-    do
-    {
-        if (retry > 0)
-            sleepForMicroseconds(20 * retry);
 
-        std::tie(remote_read_buffer->file_reader, error) = RemoteReadBufferCache::instance().createReader(remote_file_meta, srb);
-        retry++;
-    } while (error == RemoteReadBufferCacheError::FILE_INVALID && retry < 10);
+    std::tie(remote_read_buffer->file_reader, error) = RemoteReadBufferCache::instance().createReader(remote_file_meta, srb);
     if (remote_read_buffer->file_reader == nullptr)
     {
         LOG_ERROR(log, "Failed to allocate local file for remote path: {}, reason: {}", remote_path, error);
@@ -437,7 +427,7 @@ void RemoteReadBufferCache::recoverTask()
     std::lock_guard lock(mutex);
     recoverCachedFilesMetaData(root_dir, 1, 2);
     initialized = true;
-    LOG_TRACE(log, "Recovered from directory:{}", root_dir);
+    LOG_TRACE(log, "Recovered from directory:{}", root_dir);   
 }
 
 void RemoteReadBufferCache::initOnce(
@@ -511,14 +501,12 @@ RemoteReadBufferCache::createReader(const RemoteFileMetadata & remote_file_meta,
         }
     }
 
-    LOG_TRACE(log, "not found cache:{}", local_path);
     auto clear_ret = clearLocalCache();
     cache_iter = caches.find(local_path);
     if (cache_iter != caches.end())
     {
         if (cache_iter->second.cache_controller->isValid())
         {
-            // move the key to the list end, this case should not happen?
             keys.splice(keys.end(), keys, cache_iter->second.key_iterator);
             return {
                 std::make_shared<LocalCachedFileReader>(cache_iter->second.cache_controller.get(), file_size),
