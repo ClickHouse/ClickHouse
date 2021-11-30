@@ -14,8 +14,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-using EntityType = IAccessEntity::Type;
-
 
 InterpreterShowAccessEntitiesQuery::InterpreterShowAccessEntitiesQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
     : WithMutableContext(context_), query_ptr(query_ptr_)
@@ -41,7 +39,7 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
 
     switch (query.type)
     {
-        case EntityType::ROW_POLICY:
+        case AccessEntityType::ROW_POLICY:
         {
             origin = "row_policies";
             expr = "name";
@@ -63,7 +61,7 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
             break;
         }
 
-        case EntityType::QUOTA:
+        case AccessEntityType::QUOTA:
         {
             if (query.current_quota)
             {
@@ -78,21 +76,21 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
             break;
         }
 
-        case EntityType::SETTINGS_PROFILE:
+        case AccessEntityType::SETTINGS_PROFILE:
         {
             origin = "settings_profiles";
             expr = "name";
             break;
         }
 
-        case EntityType::USER:
+        case AccessEntityType::USER:
         {
             origin = "users";
             expr = "name";
             break;
         }
 
-        case EntityType::ROLE:
+        case AccessEntityType::ROLE:
         {
             if (query.current_roles)
             {
@@ -112,7 +110,7 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
             break;
         }
 
-        case EntityType::MAX:
+        case AccessEntityType::MAX:
             break;
     }
 

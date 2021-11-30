@@ -124,6 +124,8 @@ void registerOutputFormatPrettySpace(FormatFactory & factory)
         return std::make_shared<PrettySpaceBlockOutputFormat>(buf, sample, format_settings);
     });
 
+    factory.markOutputFormatSupportsParallelFormatting("PrettySpace");
+
     factory.registerOutputFormat("PrettySpaceNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
@@ -134,6 +136,8 @@ void registerOutputFormatPrettySpace(FormatFactory & factory)
         changed_settings.pretty.color = false;
         return std::make_shared<PrettySpaceBlockOutputFormat>(buf, sample, changed_settings);
     });
+
+    factory.markOutputFormatSupportsParallelFormatting("PrettySpaceNoEscapes");
 }
 
 }
