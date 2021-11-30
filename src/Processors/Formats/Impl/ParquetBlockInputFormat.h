@@ -23,6 +23,8 @@ public:
 
     String getName() const override { return "ParquetBlockInputFormat"; }
 
+    const BlockMissingValues & getMissingValues() const override;
+
 private:
     Chunk generate() override;
 
@@ -34,6 +36,7 @@ private:
     std::vector<int> column_indices;
     std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
     int row_group_current = 0;
+    BlockMissingValues block_missing_values;
     const FormatSettings format_settings;
 };
 

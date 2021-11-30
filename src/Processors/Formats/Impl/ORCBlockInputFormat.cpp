@@ -34,6 +34,7 @@ ORCBlockInputFormat::ORCBlockInputFormat(ReadBuffer & in_, Block header_, const 
 Chunk ORCBlockInputFormat::generate()
 {
     Chunk res;
+    block_missing_values.clear();
 
     if (!file_reader)
         prepareReader();
@@ -67,7 +68,11 @@ Chunk ORCBlockInputFormat::generate()
         std::shared_ptr<arrow::ChunkedArray> arrow_column = std::make_shared<arrow::ChunkedArray>(vec);
         name_to_column_ptr[column_name] = arrow_column;
     }
-    arrow_column_to_ch_column->arrowColumnsToCHChunk(res, name_to_column_ptr);
+
+    auto missing_column_indexes = arrow_column_to_ch_column->arrowColumnsToCHChunk(res, name_to_column_ptr);
+    for (size_t row_idx = 0; row_idx < res.getNumRows(); ++row_idx)
+        for (const auto & column_idx : missing_column_indexes)
+            block_missing_values.setBit(column_idx, row_idx);
     batch_reader.reset();
 
     return res;
@@ -80,6 +85,12 @@ void ORCBlockInputFormat::resetParser()
     file_reader.reset();
     include_indices.clear();
     stripe_current = 0;
+    block_missing_values.clear();
+}
+
+const BlockMissingValues & ORCBlockInputFormat::getMissingValues() const
+{
+    return block_missing_values;
 }
 
 static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)

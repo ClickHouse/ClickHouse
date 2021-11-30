@@ -30,6 +30,7 @@ ArrowBlockInputFormat::ArrowBlockInputFormat(ReadBuffer & in_, const Block & hea
 Chunk ArrowBlockInputFormat::generate()
 {
     Chunk res;
+    block_missing_values.clear();
     arrow::Result<std::shared_ptr<arrow::RecordBatch>> batch_result;
 
     if (stream)
@@ -63,7 +64,10 @@ Chunk ArrowBlockInputFormat::generate()
 
     ++record_batch_current;
 
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result);
+    auto missing_column_indexes = arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result);
+    for (size_t row_idx = 0; row_idx < res.getNumRows(); ++row_idx)
+        for (const auto & column_idx : missing_column_indexes)
+            block_missing_values.setBit(column_idx, row_idx);
 
     return res;
 }
@@ -77,6 +81,12 @@ void ArrowBlockInputFormat::resetParser()
     else
         file_reader.reset();
     record_batch_current = 0;
+    block_missing_values.clear();
+}
+
+const BlockMissingValues & ArrowBlockInputFormat::getMissingValues() const
+{
+    return block_missing_values;
 }
 
 void ArrowBlockInputFormat::prepareReader()

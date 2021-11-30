@@ -40,6 +40,7 @@ ParquetBlockInputFormat::ParquetBlockInputFormat(ReadBuffer & in_, Block header_
 Chunk ParquetBlockInputFormat::generate()
 {
     Chunk res;
+    block_missing_values.clear();
 
     if (!file_reader)
         prepareReader();
@@ -55,7 +56,10 @@ Chunk ParquetBlockInputFormat::generate()
 
     ++row_group_current;
 
-    arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
+    auto missing_column_indexes = arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
+    for (size_t row_idx = 0; row_idx < res.getNumRows(); ++row_idx)
+        for (const auto & column_idx : missing_column_indexes)
+            block_missing_values.setBit(column_idx, row_idx);
     return res;
 }
 
@@ -66,6 +70,12 @@ void ParquetBlockInputFormat::resetParser()
     file_reader.reset();
     column_indices.clear();
     row_group_current = 0;
+    block_missing_values.clear();
+}
+
+const BlockMissingValues & ParquetBlockInputFormat::getMissingValues() const
+{
+    return block_missing_values;
 }
 
 static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
