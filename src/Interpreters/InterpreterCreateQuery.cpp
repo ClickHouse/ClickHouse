@@ -726,7 +726,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         return;
     }
 
-    if (create.temporary && !create.is_window_view)
+    if (create.temporary)
     {
         auto engine_ast = std::make_shared<ASTFunction>();
         engine_ast->name = "Memory";
@@ -841,7 +841,7 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
     /// Temporary tables are created out of databases.
-    if (create.temporary && create.database && !create.is_window_view)
+    if (create.temporary && create.database)
         throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
             ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 

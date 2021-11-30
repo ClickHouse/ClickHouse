@@ -203,19 +203,23 @@ namespace
     private:
         static void visit(const ASTFunction & node, ASTPtr & node_ptr, Data &)
         {
-            /// TODO: why?
             if (node.name == "tuple")
+            {
+                /// tuple(WINDOW_ID(timestamp, toIntervalSecond('5')))
                 return;
+            }
             else
+            {
+                /// WINDOW_ID(timestamp, toIntervalSecond('5')) -> identifier.
+                /// and other...
                 node_ptr = std::make_shared<ASTIdentifier>(node.getColumnName());
+            }
         }
 
         static void visit(const ASTIdentifier & node, ASTPtr & node_ptr, Data & data)
         {
             if (node.getColumnName() == data.window_id_alias)
             {
-                /// TODO: why we need this?
-                /// related to the fatch that we replace TUMBLE/HOP with WINDOW_ID?
                 if (auto identifier = std::dynamic_pointer_cast<ASTIdentifier>(node_ptr))
                     identifier->setShortName(data.window_id_name);
             }
@@ -249,7 +253,7 @@ namespace
         if (!arg || !startsWith(arg->name, "toInterval"))
             throw Exception(err_msg, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        kind = strToIntervalKind(arg->name.substr(10)); /// TODO: why substr?
+        kind = strToIntervalKind(arg->name.substr(10));
         const auto * interval_unit = arg->children.front()->children.front()->as<ASTLiteral>();
         if (!interval_unit
             || (interval_unit->value.getType() != Field::Types::String
@@ -475,7 +479,6 @@ std::pair<BlocksPtr, Block> StorageWindowView::getNewBlocks(UInt32 watermark)
     Block block;
     BlocksPtr new_blocks = std::make_shared<Blocks>();
 
-    /// TODO: Get rid of this blocks collected in memory...
     while (executor.pull(block))
     {
         if (block.rows() == 0)
@@ -754,7 +757,7 @@ void StorageWindowView::updateMaxWatermark(UInt32 watermark)
     std::lock_guard lock(fire_signal_mutex);
     if (max_watermark == 0)
     {
-        max_watermark = getWindowUpperBound(watermark - 1); /// TODO: why -1?
+        max_watermark = getWindowUpperBound(watermark - 1);
         return;
     }
 
@@ -945,14 +948,13 @@ StorageWindowView::StorageWindowView(
     if (is_time_column_func_now)
         window_id_name = func_now_data.window_id_name;
 
-    // Parse final query
+    // Parse final query (same as mergeable query but has TUMBLE/HOP instead of WINDOW_ID)
     final_query = mergeable_query->clone();
     ReplaceWindowIdMatcher::Data final_query_data;
     if (is_tumble)
         final_query_data.window_name = "TUMBLE";
     else
         final_query_data.window_name = "HOP";
-    /// TODO: Differs from mergeable_query only in this substitution, confusing... May be try to simplify.
     ReplaceWindowIdMatcher::Visitor(final_query_data).visit(final_query);
 
     is_watermark_strictly_ascending = query.is_watermark_strictly_ascending;
@@ -1157,6 +1159,8 @@ void StorageWindowView::writeIntoWindowView(
     if (window_view.is_proctime)
     {
         fire_signal_lock = std::shared_lock<std::shared_mutex>(window_view.fire_signal_mutex);
+
+        /// Fill ____timestamp column with current time in case of now() time column.
         if (window_view.is_time_column_func_now)
         {
             ColumnWithTypeAndName column;
@@ -1215,17 +1219,22 @@ void StorageWindowView::writeIntoWindowView(
             }
         }
 
+        if (block_max_timestamp)
+            window_view.updateMaxTimestamp(block_max_timestamp);
+
         UInt32 lateness_upper_bound = 0;
-        if (window_view.allowed_lateness && t_max_fired_watermark != 0)
+        if (window_view.allowed_lateness && t_max_fired_watermark)
             lateness_upper_bound = t_max_fired_watermark;
 
+        /// On each chunk check window end for each row in a window column, calculating max.
+        /// Update max watermark (latest seen window end) if needed.
+        /// If lateness is allowed, add lateness signals.
         builder.addSimpleTransform([&](const Block & current_header)
         {
             return std::make_shared<WatermarkTransform>(
                 current_header,
                 window_view,
                 window_view.window_id_name,
-                block_max_timestamp,
                 lateness_upper_bound);
         });
     }

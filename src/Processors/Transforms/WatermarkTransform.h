@@ -14,7 +14,6 @@ public:
         const Block & header_,
         StorageWindowView & storage_,
         const String & window_column_name_,
-        UInt32 max_timestamp_,
         UInt32 lateness_upper_bound_);
 
     String getName() const override { return "WatermarkTransform"; }
@@ -29,7 +28,6 @@ protected:
     StorageWindowView & storage;
     String window_column_name;
 
-    UInt32 max_timestamp;
     UInt32 lateness_upper_bound = 0;
     UInt32 max_watermark = 0;
 
