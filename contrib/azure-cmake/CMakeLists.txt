@@ -1,4 +1,4 @@
-set(AZURE_DIR "${ClickHouse_SOURCE_DIR}/contrib/azure/")
+set(AZURE_DIR "${ClickHouse_SOURCE_DIR}/contrib/azure")
 set(AZURE_SDK_LIBRARY_DIR "${AZURE_DIR}/sdk")
 
 file(GLOB AZURE_SDK_CORE_SRC
