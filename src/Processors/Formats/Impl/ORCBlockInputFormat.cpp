@@ -114,7 +114,8 @@ void ORCBlockInputFormat::prepareReader()
     std::shared_ptr<arrow::Schema> schema;
     THROW_ARROW_NOT_OK(file_reader->ReadSchema(&schema));
 
-    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "ORC", format_settings.orc.import_nested);
+    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
+        getPort().getHeader(), "ORC", format_settings.orc.import_nested, format_settings.defaults_for_omitted_fields);
 
     std::unordered_set<String> nested_table_names;
     if (format_settings.orc.import_nested)

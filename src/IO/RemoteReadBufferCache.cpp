@@ -340,7 +340,7 @@ bool RemoteReadBuffer::nextImpl()
         else
             return false;
     }
-    else 
+    else
     {
         // In the case we cannot use local cache, read from the original readbuffer directly
         if (!original_read_buffer)

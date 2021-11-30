@@ -63,6 +63,7 @@ namespace ErrorCodes
     extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_EXCEPTION;
+    extern const int THERE_IS_NO_COLUMN;
 }
 
 
@@ -504,14 +505,17 @@ static Block arrowSchemaToCHHeader(const arrow::Schema & schema, const std::stri
 }
 
 ArrowColumnToCHColumn::ArrowColumnToCHColumn(
-    const arrow::Schema & schema, const std::string & format_name_, bool import_nested_)
-    : header(arrowSchemaToCHHeader(schema, format_name_)), format_name(format_name_), import_nested(import_nested_)
+    const arrow::Schema & schema, const std::string & format_name_, bool import_nested_, bool defaults_for_omitted_fields_)
+    : header(arrowSchemaToCHHeader(schema, format_name_))
+    , format_name(format_name_)
+    , import_nested(import_nested_)
+    , defaults_for_omitted_fields(defaults_for_omitted_fields_)
 {
 }
 
 ArrowColumnToCHColumn::ArrowColumnToCHColumn(
-    const Block & header_, const std::string & format_name_, bool import_nested_)
-    : header(header_), format_name(format_name_), import_nested(import_nested_)
+    const Block & header_, const std::string & format_name_, bool import_nested_, bool defaults_for_omitted_fields_)
+    : header(header_), format_name(format_name_), import_nested(import_nested_), defaults_for_omitted_fields(defaults_for_omitted_fields_)
 {
 }
 
@@ -530,7 +534,7 @@ void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arr
 void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr)
 {
     Columns columns_list;
-    
+
     if (name_to_column_ptr.empty())
         return;
     UInt64 num_rows = name_to_column_ptr.begin()->second->length();
@@ -562,12 +566,19 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
 
             if (!read_from_nested)
             {
-                ColumnWithTypeAndName column;
-                column.name = header_column.name;
-                column.type = header_column.type;
-                column.column = header_column.column->cloneResized(num_rows);
-                columns_list.push_back(std::move(column.column));
-                continue;
+                if (defaults_for_omitted_fields)
+                {
+                    ColumnWithTypeAndName column;
+                    column.name = header_column.name;
+                    column.type = header_column.type;
+                    column.column = header_column.column->cloneResized(num_rows);
+                    columns_list.push_back(std::move(column.column));
+                    continue;
+                }
+                else
+                {
+                    throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
+                }
             }
         }
 

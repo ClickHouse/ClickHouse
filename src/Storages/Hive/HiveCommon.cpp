@@ -82,7 +82,7 @@ std::shared_ptr<HiveMetastoreClient::HiveTableMetadata> HiveMetastoreClient::get
     return result;
 }
 
-void HiveMetastoreClient::clearTableMeta(const std::string & db_name, const std::string & table_name)
+void HiveMetastoreClient::clearTableMetadata(const std::string & db_name, const std::string & table_name)
 {
     std::lock_guard lock{mutex};
     std::string cache_key = db_name + "." + table_name;
