@@ -328,7 +328,11 @@ struct Checker
     {
         checkRequiredInstructions();
     }
-} checker __attribute__((init_priority(101)));  /// Run before other static initializers.
+} checker
+#ifndef __APPLE__
+    __attribute__((init_priority(101)))    /// Run before other static initializers.
+#endif
+;
 
 }
 

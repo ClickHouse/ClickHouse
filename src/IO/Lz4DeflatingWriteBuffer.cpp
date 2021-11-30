@@ -1,6 +1,5 @@
 #include <IO/Lz4DeflatingWriteBuffer.h>
 #include <Common/Exception.h>
-#include <Common/MemoryTracker.h>
 
 
 namespace DB
@@ -12,8 +11,7 @@ namespace ErrorCodes
 
 Lz4DeflatingWriteBuffer::Lz4DeflatingWriteBuffer(
     std::unique_ptr<WriteBuffer> out_, int compression_level, size_t buf_size, char * existing_memory, size_t alignment)
-    : BufferWithOwnMemory<WriteBuffer>(buf_size, existing_memory, alignment)
-    , out(std::move(out_))
+    : WriteBufferWithOwnMemoryDecorator(std::move(out_), buf_size, existing_memory, alignment)
     , in_data(nullptr)
     , out_data(nullptr)
     , in_capacity(0)
@@ -45,9 +43,7 @@ Lz4DeflatingWriteBuffer::Lz4DeflatingWriteBuffer(
 
 Lz4DeflatingWriteBuffer::~Lz4DeflatingWriteBuffer()
 {
-    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
-    finish();
-    LZ4F_freeCompressionContext(ctx);
+    finalize();
 }
 
 void Lz4DeflatingWriteBuffer::nextImpl()
@@ -120,27 +116,7 @@ void Lz4DeflatingWriteBuffer::nextImpl()
     }
 }
 
-void Lz4DeflatingWriteBuffer::finish()
-{
-    if (finished)
-        return;
-
-    try
-    {
-        finishImpl();
-        out->finalize();
-        finished = true;
-    }
-    catch (...)
-    {
-        /// Do not try to flush next time after exception.
-        out->position() = out->buffer().begin();
-        finished = true;
-        throw;
-    }
-}
-
-void Lz4DeflatingWriteBuffer::finishImpl()
+void Lz4DeflatingWriteBuffer::finalizeBefore()
 {
     next();
 
@@ -163,6 +139,11 @@ void Lz4DeflatingWriteBuffer::finishImpl()
 
     out_capacity -= end_size;
     out->position() = out->buffer().end() - out_capacity;
+}
+
+void Lz4DeflatingWriteBuffer::finalizeAfter()
+{
+    LZ4F_freeCompressionContext(ctx);
 }
 
 }

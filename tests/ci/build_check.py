@@ -12,19 +12,17 @@ from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from version_helper import get_version_from_repo, update_version_local
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
-from ci_config import build_config_to_string, CI_CONFIG
+from ci_config import CI_CONFIG
 from docker_pull_helper import get_image_with_version
 
 
-def get_build_config(build_check_name, build_number):
+def get_build_config(build_check_name, build_name):
     if build_check_name == 'ClickHouse build check (actions)':
         build_config_name = 'build_config'
-    elif build_check_name == 'ClickHouse special build check (actions)':
-        build_config_name = 'special_build_config'
     else:
         raise Exception(f"Unknown build check name {build_check_name}")
 
-    return CI_CONFIG[build_config_name][build_number]
+    return CI_CONFIG[build_config_name][build_name]
 
 
 def _can_export_binaries(build_config):
@@ -50,8 +48,6 @@ def get_packager_cmd(build_config, packager_path, output_path, build_version, im
         cmd += ' --build-type={}'.format(build_config['build_type'])
     if build_config['sanitizer']:
         cmd += ' --sanitizer={}'.format(build_config['sanitizer'])
-    if build_config['bundled'] == 'unbundled':
-        cmd += ' --unbundled'
     if build_config['splitted'] == 'splitted':
         cmd += ' --split-binary'
     if build_config['tidy'] == 'enable':
@@ -73,9 +69,7 @@ def get_packager_cmd(build_config, packager_path, output_path, build_version, im
     return cmd
 
 def get_image_name(build_config):
-    if build_config['bundled'] != 'bundled':
-        return 'clickhouse/unbundled-builder'
-    elif build_config['package_type'] != 'deb':
+    if build_config['package_type'] != 'deb':
         return 'clickhouse/binary-builder'
     else:
         return 'clickhouse/deb-builder'
@@ -98,9 +92,9 @@ if __name__ == "__main__":
     caches_path = os.getenv("CACHES_PATH", temp_path)
 
     build_check_name = sys.argv[1]
-    build_number = int(sys.argv[2])
+    build_name = sys.argv[2]
 
-    build_config = get_build_config(build_check_name, build_number)
+    build_config = get_build_config(build_check_name, build_name)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
@@ -119,10 +113,16 @@ if __name__ == "__main__":
     image_version = docker_image.version
 
     version = get_version_from_repo(repo_path)
-    version.tweak_update()
-    update_version_local(repo_path, pr_info.sha, version)
+    logging.info("Got version from repo %s", version.get_version_string())
 
-    build_name = build_config_to_string(build_config)
+    version_type = 'testing'
+    if 'release' in pr_info.labels or 'release-lts' in pr_info.labels:
+        version_type = 'stable'
+
+    update_version_local(repo_path, pr_info.sha, version, version_type)
+
+    logging.info("Updated local files with version")
+
     logging.info("Build short name %s", build_name)
     subprocess.check_call(f"echo 'BUILD_NAME=build_urls_{build_name}' >> $GITHUB_ENV", shell=True)
 
@@ -158,7 +158,12 @@ if __name__ == "__main__":
     logging.info("Will upload cache")
     upload_ccache(ccache_path, s3_helper, pr_info.number, temp_path)
 
-    s3_path_prefix = str(pr_info.number) + "/" + pr_info.sha + "/" + build_check_name.lower().replace(' ', '_') + "/" + build_name
+    # for release pull requests we use branch names prefixes, not pr numbers
+    if 'release' in pr_info.labels or 'release-lts' in pr_info.labels:
+        s3_path_prefix = pr_info.head_ref + "/" + pr_info.sha + "/" + build_name
+    else:
+        s3_path_prefix = str(pr_info.number) + "/" + pr_info.sha + "/" + build_name
+
     if os.path.exists(log_path):
         log_url = s3_helper.upload_build_file_to_s3(log_path, s3_path_prefix + "/" + os.path.basename(log_path))
         logging.info("Log url %s", log_url)
@@ -182,3 +187,7 @@ if __name__ == "__main__":
 
     with open(os.path.join(temp_path, "build_urls_" + build_name + '.json'), 'w') as build_links:
         json.dump(result, build_links)
+
+    # Fail build job if not successeded
+    if not success:
+        sys.exit(1)

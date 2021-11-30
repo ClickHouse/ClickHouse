@@ -1,0 +1,45 @@
+4
+0
+0
+0
+4
+4
+4
+0
+4
+1
+1
+1
+0
+1
+1
+1
+1
+0
+0
+1
+1
+1
+1
+0
+0
+1
+1
+0
+1
+1
+0
+1
+1
+0
+SELECT count() AS `count()`
+FROM constraint_test_constants
+WHERE (c > 100) OR (b > 100)
+SELECT count() AS `count()`
+FROM constraint_test_constants
+WHERE c > 100
+SELECT count() AS `count()`
+FROM constraint_test_constants
+WHERE c > 100
+SELECT count() AS `count()`
+FROM constraint_test_constants
