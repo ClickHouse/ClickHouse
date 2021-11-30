@@ -76,6 +76,7 @@ void registerInputFormatRegexp(FormatFactory & factory);
 void registerInputFormatJSONAsString(FormatFactory & factory);
 void registerInputFormatLineAsString(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory);
+void registerInputFormatHiveText(FormatFactory & factory);
 
 /// Non trivial prefix and suffix checkers for disabling parallel parsing.
 void registerNonTrivialPrefixAndSuffixCheckerJSONEachRow(FormatFactory & factory);
@@ -147,6 +148,7 @@ void registerFormats()
     registerInputFormatRegexp(factory);
     registerInputFormatJSONAsString(factory);
     registerInputFormatLineAsString(factory);
+    registerInputFormatHiveText(factory);
 
     registerInputFormatCapnProto(factory);
 

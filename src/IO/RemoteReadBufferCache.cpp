@@ -438,7 +438,6 @@ void RemoteReadBufferCache::recoverTask()
     recoverCachedFilesMetaData(root_dir, 1, 2);
     initialized = true;
     LOG_TRACE(log, "Recovered from directory:{}", root_dir);
-    
 }
 
 void RemoteReadBufferCache::initOnce(
@@ -559,7 +558,7 @@ bool RemoteReadBufferCache::clearLocalCache()
         auto cache_it = caches.find(*it);
         if (cache_it == caches.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Found no entry in local cache with key: {}", *it);
-        
+
         auto cache_controller = cache_it->second.cache_controller;
         if (!cache_controller->isValid() && cache_controller->closable())
         {

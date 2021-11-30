@@ -168,7 +168,7 @@ std::vector<HiveMetastoreClient::FileInfo> HiveMetastoreClient::HiveTableMetadat
         it = partition_infos.find(location);
         if (it == partition_infos.end())
             throw Exception("invalid location " + location, ErrorCodes::BAD_ARGUMENTS);
-        
+
         LOG_TRACE(&Poco::Logger::get("HiveMetastoreClient"), "empty_partition_keys  {} {}", location, it->second.files.size());
         return it->second.files;
     }
