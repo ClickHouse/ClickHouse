@@ -26,41 +26,52 @@ enum class RemoteReadBufferCacheError : int8_t
 
 struct RemoteFileMetadata
 {
+    enum LocalStatus{
+        TO_DOWNLOAD = 0,
+        DOWNLOADING = 1,
+        DOWNLOADED  = 2,
+    };
+    RemoteFileMetadata(): last_modification_timestamp(0l), file_size(0), status(TO_DOWNLOAD){}
     RemoteFileMetadata(
         const String & schema_,
         const String & cluster_,
         const String & path_,
-        UInt64 last_modify_time_,
+        UInt64 last_modification_timestamp_,
         size_t file_size_)
         : schema(schema_)
         , cluster(cluster_)
-        , path(path_)
-        , last_modify_time(last_modify_time_)
+        , remote_path(path_)
+        , last_modification_timestamp(last_modification_timestamp_)
         , file_size(file_size_)
+        , status(TO_DOWNLOAD)
     {
     }
 
+    bool load(const std::filesystem::path & local_path);
+    void save(const std::filesystem::path & local_path);
+    String toString();
+
     String schema; // Hive, S2 etc.
     String cluster;
-    String path;
-    UInt64 last_modify_time;
+    String remote_path;
+    UInt64 last_modification_timestamp;
     size_t file_size;
+    LocalStatus status;
 };
 
 class RemoteCacheController
 {
 public:
     RemoteCacheController(
-        const RemoteFileMetadata & meta,
-        const String & local_path_,
+        const RemoteFileMetadata & file_meta_data_,
+        const std::filesystem::path & local_path_,
         size_t cache_bytes_before_flush_,
-        std::shared_ptr<ReadBuffer> read_buffer_,
-        std::function<void(RemoteCacheController *)> const & finish_callback);
+        std::shared_ptr<ReadBuffer> read_buffer_);
     ~RemoteCacheController();
 
     // recover from local disk
     static std::shared_ptr<RemoteCacheController>
-    recover(const String & local_path, std::function<void(RemoteCacheController *)> const & finish_callback);
+    recover(const std::filesystem::path & local_path);
 
     /**
      * Called by LocalCachedFileReader, must be used in pair
@@ -90,10 +101,10 @@ public:
 
     inline size_t size() const { return current_offset; }
 
-    inline String getLocalPath() const { return local_path; }
-    inline String getRemotePath() const { return remote_path; }
+    inline const std::filesystem::path & getLocalPath() { return local_path; }
+    inline const String & getRemotePath() { return file_meta_data.remote_path; }
 
-    inline UInt64 getLastModificationTimestamp() const { return last_modify_time; }
+    inline UInt64 getLastModificationTimestamp() const { return file_meta_data.last_modification_timestamp; }
     inline void markInvalid()
     {
         std::lock_guard lock(mutex);
@@ -107,9 +118,9 @@ public:
 
 private:
     // flush file and meta info into disk
-    void flush(bool need_flush_meta_ = false);
+    void flush(bool need_flush_meta_data_ = false);
 
-    void backgroundDownload(std::function<void(RemoteCacheController *)> const & finish_callback);
+    void backgroundDownload();
 
     std::mutex mutex;
     std::condition_variable more_data_signal;
@@ -117,15 +128,11 @@ private:
     std::set<FILE *> opened_file_streams;
 
     // meta info
-    String schema;
-    String cluster;
-    String remote_path;
-    String local_path;
-    UInt64 last_modify_time;
-
+    RemoteFileMetadata file_meta_data;
+    std::filesystem::path local_path;
+    
     bool valid;
     size_t local_cache_bytes_read_before_flush;
-    bool download_finished;
     size_t current_offset;
 
     std::shared_ptr<ReadBuffer> remote_read_buffer;
@@ -230,11 +237,11 @@ private:
 
     String calculateLocalPath(const RemoteFileMetadata & meta) const;
 
-    void recoverCachedFilesMeta(
+    void recoverTask();
+    void recoverCachedFilesMetaData(
         const std::filesystem::path & current_path,
         size_t current_depth,
-        size_t max_depth,
-        std::function<void(RemoteCacheController *)> const & finish_callback);
+        size_t max_depth);
     bool clearLocalCache();
 };
 
