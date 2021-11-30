@@ -10,6 +10,8 @@
 #include <Client/Suggest.h>
 #include <Client/QueryFuzzer.h>
 #include <boost/program_options.hpp>
+#include <Storages/StorageFile.h>
+#include <Storages/SelectQueryInfo.h>
 
 namespace po = boost::program_options;
 
@@ -120,15 +122,13 @@ private:
     void sendData(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
     void sendDataFrom(ReadBuffer & buf, Block & sample,
                       const ColumnsDescription & columns_description, ASTPtr parsed_query);
+    void sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query);
     void sendExternalTables(ASTPtr parsed_query);
 
     void initBlockOutputStream(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
 
-    inline String prompt() const
-    {
-        return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
-    }
+    String prompt() const;
 
     void resetOutput();
     void outputQueryInfo(bool echo_query_);
@@ -138,6 +138,7 @@ private:
 protected:
     bool is_interactive = false; /// Use either interactive line editing interface or batch mode.
     bool is_multiquery = false;
+    bool delayed_interactive = false;
 
     bool echo_queries = false; /// Print queries before execution in batch mode.
     bool ignore_error = false; /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.

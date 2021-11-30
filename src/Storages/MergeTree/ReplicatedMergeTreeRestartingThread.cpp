@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/randomSeed.h>
+#include <boost/algorithm/string/replace.hpp>
 
 
 namespace ProfileEvents
