@@ -105,47 +105,39 @@ def test_aggregate_function_versioning_fetch_data_from_old_to_new_server(start_c
     assert(data_from_old_to_new_server == old_server_data)
 
 
-#def test_aggregate_function_versioning_fetch_data_from_new_to_old_server(start_cluster):
-#    for node in [node1, node4]:
-#        create_table(node)
-#        insert_data(node)
-#
-#    expected = "([1],[300])"
-#
-#    new_server_data = node1.query("select finalizeAggregation(col3) from default.test_table;").strip()
-#    assert(new_server_data == expected)
-#
-#    old_server_data = node4.query("select finalizeAggregation(col3) from default.test_table;").strip()
-#    assert(old_server_data != expected)
-#
-#    data_from_new_to_old_server = node4.query("select finalizeAggregation(col3) from remote('node1', default.test_table);").strip()
-#    print(data_from_new_to_old_server)
-
-
 def test_aggregate_function_versioning_server_upgrade(start_cluster):
     for node in [node1, node5]:
         create_table(node)
     insert_data(node1, col2=5)
     insert_data(node5, col2=1)
 
-    # Serialization with version 0.
+    # Serialization with version 0, server does not support versioning of aggregate function states.
     old_server_data = node5.query("select finalizeAggregation(col3) from default.test_table;").strip()
     assert(old_server_data == "([1],[44])")
+    create = node5.query("describe table default.test_table;").strip()
+    assert(create.strip().endswith("col3\tAggregateFunction(sumMap, Array(UInt8), Array(UInt8))"))
     print('Ok 1')
 
     # Upgrade server.
     node5.restart_with_latest_version()
 
-    # Deserialized with version 0.
+    # Deserialized with version 0, server supports versioning.
     upgraded_server_data = node5.query("select finalizeAggregation(col3) from default.test_table;").strip()
     assert(upgraded_server_data == "([1],[44])")
+    create = node5.query("describe table default.test_table;").strip()
+    assert(create.strip().endswith("col3\tAggregateFunction(sumMap, Array(UInt8), Array(UInt8))"))
     print('Ok 2')
+
+    create = node1.query("describe table default.test_table;").strip()
+    print(create)
+    assert(create.strip().endswith("col3\tAggregateFunction(1, sumMap, Array(UInt8), Array(UInt8))"))
 
     # Data from upgraded server to new server. Deserialize with version 0.
     data_from_upgraded_to_new_server = node1.query("select finalizeAggregation(col3) from remote('node5', default.test_table);").strip()
     assert(data_from_upgraded_to_new_server == upgraded_server_data == "([1],[44])")
     print('Ok 3')
 
+    # Data is serialized according to version 0 (though one of the states is version 1, but result is version 0).
     upgraded_server_data = node5.query("select finalizeAggregation(col3) from remote('127.0.0.{1,2}', default.test_table);").strip()
     assert(upgraded_server_data == "([1],[44])\n([1],[44])")
     print('Ok 4')
@@ -153,33 +145,36 @@ def test_aggregate_function_versioning_server_upgrade(start_cluster):
     # Check insertion after server upgarde.
     insert_data(node5, col2=2)
 
+    # Check newly inserted data is still serialized with 0 version.
     upgraded_server_data = node5.query("select finalizeAggregation(col3) from default.test_table order by col2;").strip()
     assert(upgraded_server_data == "([1],[44])\n([1],[44])")
     print('Ok 5')
 
+    # New table has latest version.
     new_server_data = node1.query("select finalizeAggregation(col3) from default.test_table;").strip()
     assert(new_server_data == "([1],[300])")
     print('Ok 6')
 
-    # Insert from new server to upgraded server, data version 1.
+    # Insert from new server (with version 1) to upgraded server (where version will be 0), result version 0.
     node1.query("insert into table function remote('node5', default.test_table) select * from default.test_table;").strip()
     upgraded_server_data = node5.query("select finalizeAggregation(col3) from default.test_table order by col2;").strip()
     assert(upgraded_server_data == "([1],[44])\n([1],[44])\n([1],[44])")
     print('Ok 7')
 
+    # But new table gets data with latest version.
     insert_data(node1)
     new_server_data = node1.query("select finalizeAggregation(col3) from default.test_table;").strip()
     assert(new_server_data == "([1],[300])\n([1],[300])")
     print('Ok 8')
 
-    # Create table with column with version 0 serialiazation to be used for futher check.
+    # Create table with column implicitly with older version (version 0).
     create_table(node1, name='test_table_0', version=0)
     insert_data(node1, table_name='test_table_0', col2=3)
     data = node1.query("select finalizeAggregation(col3) from default.test_table_0;").strip()
     assert(data == "([1],[44])")
     print('Ok')
 
-    # Insert from new server to upgraded server, data version 0.
+    # Insert from new server to upgraded server to a new table but the version was set implicitly to 0, so data version 0.
     node1.query("insert into table function remote('node5', default.test_table) select * from default.test_table_0;").strip()
     upgraded_server_data = node5.query("select finalizeAggregation(col3) from default.test_table order by col2;").strip()
     assert(upgraded_server_data == "([1],[44])\n([1],[44])\n([1],[44])\n([1],[44])")

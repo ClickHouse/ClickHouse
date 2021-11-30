@@ -125,7 +125,6 @@ void NativeWriter::write(const Block & block)
             }
             else
             {
-                /// TODO: set maximum supported version according to revision
                 aggregate_function_data_type->setVersion(0, /* if_empty */false);
             }
         }
