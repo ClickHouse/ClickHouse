@@ -27,9 +27,10 @@ public:
     /// data from file without knowing table structure.
     ArrowColumnToCHColumn(const arrow::Schema & schema, const std::string & format_name, bool import_nested_, bool defaults_for_omitted_fields_);
 
-    void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table);
+    /// Convert arrow::Table to chunk. Returns missing header columns not exists in arrow::Table.
+    std::vector<size_t> arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table);
 
-    void arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr);
+    std::vector<size_t> arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr);
 
 private:
     const Block header;

@@ -26,6 +26,8 @@ public:
 
     void resetParser() override;
 
+    const BlockMissingValues & getMissingValues() const override;
+
 protected:
     Chunk generate() override;
 
@@ -47,6 +49,8 @@ private:
 
     // indices of columns to read from ORC file
     std::vector<int> include_indices;
+
+    BlockMissingValues block_missing_values;
 
     const FormatSettings format_settings;
 

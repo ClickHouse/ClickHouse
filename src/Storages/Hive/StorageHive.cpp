@@ -119,7 +119,7 @@ public:
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
         , to_read_block(sample_block)
-        , columns_description(getColumnsDescription(sample_block_, source_info_))
+        , columns_description(getColumnsDescription(sample_block, source_info))
         , text_input_field_names(text_input_field_names_)
         , format_settings(getFormatSettings(getContext()))
     {
