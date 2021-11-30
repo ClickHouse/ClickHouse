@@ -32,6 +32,12 @@ WriteBufferFromBlobStorage::WriteBufferFromBlobStorage(
     blob_path(blob_path_) {}
 
 
+WriteBufferFromBlobStorage::~WriteBufferFromBlobStorage()
+{
+    finalize();
+}
+
+
 void WriteBufferFromBlobStorage::nextImpl()
 {
     if (!offset())
@@ -56,11 +62,9 @@ void WriteBufferFromBlobStorage::nextImpl()
     }
 }
 
-void WriteBufferFromBlobStorage::finalize()
-{
-    if (finalized)
-        return;
 
+void WriteBufferFromBlobStorage::finalizeImpl()
+{
     next();
 
     auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
