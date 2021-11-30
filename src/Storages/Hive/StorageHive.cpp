@@ -297,7 +297,7 @@ StorageHive::StorageHive(
     {
         case FileFormat::TEXT:
         case FileFormat::LZO_TEXT:
-            format_name = "CSVWithNames";
+            format_name = "HiveText";
             break;
         case FileFormat::RC_FILE:
             // TODO to be implemented
@@ -317,7 +317,7 @@ StorageHive::StorageHive(
     }
 
     // Need to specify text_input_fields_names from table_schema for TextInputFormated Hive table
-    if (format_name == "CSVWithNames")
+    if (format_name == "HiveText")
     {
         size_t i = 0;
         text_input_field_names.resize(table_schema.size());
@@ -328,6 +328,7 @@ StorageHive::StorageHive(
             text_input_field_names[i++] = std::move(name);
         }
     }
+
     initMinMaxIndexExpression();
 }
 
@@ -389,7 +390,7 @@ HiveFilePtr createHiveFile(
     ContextPtr context)
 {
     HiveFilePtr hive_file;
-    if (format_name == "CSVWithNames")
+    if (format_name == "HiveText")
     {
         hive_file = std::make_shared<HiveTextFile>(fields, namenode_url, path, ts, size, index_names_and_types, hive_settings, context);
     }

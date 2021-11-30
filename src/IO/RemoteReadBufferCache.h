@@ -131,7 +131,7 @@ private:
     // meta info
     RemoteFileMetadata file_meta_data;
     std::filesystem::path local_path;
-    
+
     bool valid;
     size_t local_cache_bytes_read_before_flush;
     size_t current_offset;

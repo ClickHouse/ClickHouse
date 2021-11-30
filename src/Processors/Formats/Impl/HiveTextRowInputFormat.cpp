@@ -46,5 +46,14 @@ std::vector<String> HiveTextRowInputFormat::readTypes()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "HiveTextRowInputFormat::readTypes is not implemented");
 }
 
+void registerInputFormatHiveText(FormatFactory & factory)
+{
+    factory.registerInputFormat(
+        "HiveText",
+        [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams & params, const FormatSettings & settings)
+        {
+            return std::make_shared<HiveTextRowInputFormat>(sample, buf, params, settings);
+        });
+}
 }
 #endif
