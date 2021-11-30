@@ -3,7 +3,6 @@
 #include <base/shared_ptr_helper.h>
 
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/StorageInMemoryMetadata.h>

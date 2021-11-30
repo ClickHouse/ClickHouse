@@ -1,23 +1,16 @@
-#include <base/map.h>
-
 #include <DataTypes/Serializations/SerializationMap.h>
-#include <DataTypes/Serializations/SerializationArray.h>
-#include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/DataTypeMap.h>
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnArray.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
-#include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -176,13 +169,16 @@ void SerializationMap::serializeText(const IColumn & column, size_t row_num, Wri
     serializeTextImpl(column, row_num, ostr, writer, writer);
 }
 
-void SerializationMap::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationMap::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
     deserializeTextImpl(column, istr,
         [&settings](ReadBuffer & buf, const SerializationPtr & subcolumn_serialization, IColumn & subcolumn)
         {
             subcolumn_serialization->deserializeTextQuoted(subcolumn, buf, settings);
         });
+
+    if (whole && !istr.eof())
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, "Map");
 }
 
 void SerializationMap::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
@@ -248,7 +244,7 @@ void SerializationMap::deserializeTextCSV(IColumn & column, ReadBuffer & istr, c
     String s;
     readCSV(s, istr, settings.csv);
     ReadBufferFromString rb(s);
-    deserializeText(column, rb, settings);
+    deserializeText(column, rb, settings, true);
 }
 
 void SerializationMap::enumerateStreams(

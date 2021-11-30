@@ -110,8 +110,6 @@ public:
 private:
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
-
-    bool is_first_chunk = true;
 };
 
 class StorageURL : public shared_ptr_helper<StorageURL>, public IStorageURLBase

@@ -5,6 +5,7 @@
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <base/range.h>
+#include <boost/container/flat_set.hpp>
 #include <boost/range/algorithm/transform.hpp>
 
 
@@ -12,10 +13,6 @@ namespace DB
 {
 namespace
 {
-    using ConditionType = RowPolicy::ConditionType;
-    using ConditionTypeInfo = RowPolicy::ConditionTypeInfo;
-
-
     void formatRenameTo(const String & new_short_name, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
@@ -30,7 +27,7 @@ namespace
     }
 
 
-    void formatConditionalExpression(const ASTPtr & expr, const IAST::FormatSettings & settings)
+    void formatFilterExpression(const ASTPtr & expr, const IAST::FormatSettings & settings)
     {
         settings.ostr << " ";
         if (expr)
@@ -59,15 +56,15 @@ namespace
     }
 
 
-    void formatForClauses(const std::vector<std::pair<ConditionType, ASTPtr>> & conditions, bool alter, const IAST::FormatSettings & settings)
+    void formatForClauses(const std::vector<std::pair<RowPolicyFilterType, ASTPtr>> & filters, bool alter, const IAST::FormatSettings & settings)
     {
-        std::vector<std::pair<ConditionType, String>> conditions_as_strings;
+        std::vector<std::pair<RowPolicyFilterType, String>> filters_as_strings;
         WriteBufferFromOwnString temp_buf;
         IAST::FormatSettings temp_settings(temp_buf, settings);
-        for (const auto & [condition_type, condition] : conditions)
+        for (const auto & [filter_type, filter] : filters)
         {
-            formatConditionalExpression(condition, temp_settings);
-            conditions_as_strings.emplace_back(condition_type, temp_buf.str());
+            formatFilterExpression(filter, temp_settings);
+            filters_as_strings.emplace_back(filter_type, temp_buf.str());
             temp_buf.restart();
         }
 
@@ -81,27 +78,27 @@ namespace
             check.clear();
 
             /// Collect commands using the same filter and check conditions.
-            for (auto & [condition_type, condition] : conditions_as_strings)
+            for (auto & [filter_type, str] : filters_as_strings)
             {
-                if (condition.empty())
+                if (str.empty())
                     continue;
-                const auto & type_info = ConditionTypeInfo::get(condition_type);
+                const auto & type_info = RowPolicyFilterTypeInfo::get(filter_type);
                 if (type_info.is_check)
                 {
                     if (check.empty())
-                        check = condition;
-                    else if (check != condition)
+                        check = str;
+                    else if (check != str)
                         continue;
                 }
                 else
                 {
                     if (filter.empty())
-                        filter = condition;
-                    else if (filter != condition)
+                        filter = str;
+                    else if (filter != str)
                         continue;
                 }
                 commands.emplace(type_info.command);
-                condition.clear(); /// Skip this condition on the next iteration.
+                str.clear(); /// Skip this condition on the next iteration.
             }
 
             if (!filter.empty() || !check.empty())
@@ -162,7 +159,7 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
     if (is_restrictive)
         formatAsRestrictiveOrPermissive(*is_restrictive, settings);
 
-    formatForClauses(conditions, alter, settings);
+    formatForClauses(filters, alter, settings);
 
     if (roles && (!roles->empty() || alter))
         formatToRoles(*roles, settings);
