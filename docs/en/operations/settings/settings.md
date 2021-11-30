@@ -425,12 +425,12 @@ Enabled by default.
 
 ## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
 
-Enables or disables parsing enum values as enum ids for TSV input format.
+When enabled, always treat enum values as enum ids for TSV input format. It's recommended to enable this setting if data contains only enum ids to optimize enum parsing.
 
 Possible values:
 
--   0 — Enum values are parsed as values.
--   1 — Enum values are parsed as enum IDs.
+-   0 — Enum values are parsed as values or as enum IDs.
+-   1 — Enum values are parsed only as enum IDs.
 
 Default value: 0.
 
@@ -444,10 +444,39 @@ CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' 
 
 When the `input_format_tsv_enum_as_number` setting is enabled:
 
+Query:
+
 ```sql
 SET input_format_tsv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	1;
+SELECT * FROM table_with_enum_column_for_tsv_insert;
+```
+
+Result:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+```
+
+Query:
+
+```sql
+SET input_format_tsv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
+```
+
+throws an exception.
+
+When the `input_format_tsv_enum_as_number` setting is disabled:
+
+Query:
+
+```sql
+SET input_format_tsv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
 SELECT * FROM table_with_enum_column_for_tsv_insert;
 ```
 
@@ -461,15 +490,6 @@ Result:
 │ 103 │ first  │
 └─────┴────────┘
 ```
-
-When the `input_format_tsv_enum_as_number` setting is disabled, the `INSERT` query:
-
-```sql
-SET input_format_tsv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-```
-
-throws an exception.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
@@ -992,6 +1012,16 @@ Example:
 log_query_views=1
 ```
 
+## log_formatted_queries {#settings-log-formatted-queries}
+
+Allows to log formatted queries to the [system.query_log](../../operations/system-tables/query_log.md) system table.
+
+Possible values:
+
+-   0 — Formatted queries are not logged in the system table.
+-   1 — Formatted queries are logged in the system table.
+
+Default value: `0`.
 
 ## log_comment {#settings-log-comment}
 
@@ -1206,6 +1236,9 @@ Default value: `0`.
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
 
+!!! note "Note"
+    60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
+
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
 Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) sends for the server. Only has meaning at server startup.  You can also limit the speed for a particular table with [max_replicated_sends_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth) setting.
@@ -1222,6 +1255,9 @@ Default value: `0`.
 **Usage**
 
 Could be used for throttling speed when replicating the data to add or replace new nodes.
+
+!!! note "Note"
+    60000000 bytes/s approximatly corresponds to 457 Mbps (60000000 / 1024 / 1024 * 8).
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
@@ -1578,12 +1614,12 @@ The character is interpreted as a delimiter in the CSV data. By default, the del
 
 ## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
 
-Enables or disables parsing enum values as enum ids for CSV input format.
+When enabled, always treat enum values as enum ids for CSV input format. It's recommended to enable this setting if data contains only enum ids to optimize enum parsing.
 
 Possible values:
 
--   0 — Enum values are parsed as values.
--   1 — Enum values are parsed as enum IDs.
+-   0 — Enum values are parsed as values or as enum IDs.
+-   1 — Enum values are parsed only as enum IDs.
 
 Default value: 0.
 
@@ -1597,28 +1633,51 @@ CREATE TABLE table_with_enum_column_for_csv_insert (Id Int32,Value Enum('first' 
 
 When the `input_format_csv_enum_as_number` setting is enabled:
 
+Query:
+
 ```sql
 SET input_format_csv_enum_as_number = 1;
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2
+```
+
+Result:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+```
+
+Query:
+
+```sql
+SET input_format_csv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
+```
+
+throws an exception.
+
+When the `input_format_csv_enum_as_number` setting is disabled:
+
+Query:
+
+```sql
+SET input_format_csv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
 SELECT * FROM table_with_enum_column_for_csv_insert;
 ```
 
 Result:
 
 ```text
-┌──Id─┬─Value─────┐
-│ 102 │ second    │
-└─────┴───────────┘
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+┌──Id─┬─Value─┐
+│ 103 │ first │
+└─────┴───────┘
 ```
-
-When the `input_format_csv_enum_as_number` setting is disabled, the `INSERT` query:
-
-```sql
-SET input_format_csv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
-```
-
-throws an exception.
 
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
@@ -3997,3 +4056,77 @@ Possible values:
 -   0 — Timeout disabled.
 
 Default value: `0`.
+
+## format_capn_proto_enum_comparising_mode {#format-capn-proto-enum-comparising-mode}
+
+Determines how to map ClickHouse `Enum` data type and [CapnProto](../../interfaces/formats.md#capnproto) `Enum` data type from schema.
+
+Possible values:
+
+-   `'by_values'` — Values in enums should be the same, names can be different.
+-   `'by_names'` — Names in enums should be the same, values can be different.
+-   `'by_name_case_insensitive'` — Names in enums should be the same case-insensitive, values can be different.
+
+Default value: `'by_values'`.
+
+## min_bytes_to_use_mmap_io {#min-bytes-to-use-mmap-io}
+
+This is an experimental setting. Sets the minimum amount of memory for reading large files without copying data from the kernel to userspace. Recommended threshold is about 64 MB, because [mmap/munmap](https://en.wikipedia.org/wiki/Mmap) is slow. It makes sense only for large files and helps only if data reside in the page cache.
+
+Possible values:
+
+-   Positive integer.
+-   0 — Big files read with only copying data from kernel to userspace.
+
+Default value: `0`.
+
+## format_custom_escaping_rule {#format-custom-escaping-rule}
+
+Sets the field escaping rule for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Possible values:
+
+-   `'Escaped'` — Similarly to [TSV](../../interfaces/formats.md#tabseparated).
+-   `'Quoted'` — Similarly to [Values](../../interfaces/formats.md#data-format-values).
+-   `'CSV'` — Similarly to [CSV](../../interfaces/formats.md#csv).
+-   `'JSON'` — Similarly to [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+-   `'XML'` — Similarly to [XML](../../interfaces/formats.md#xml).
+-   `'Raw'` — Extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](../../interfaces/formats.md#tabseparatedraw).
+
+Default value: `'Escaped'`.
+
+## format_custom_field_delimiter {#format-custom-field-delimiter}
+
+Sets the character that is interpreted as a delimiter between the fields for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `'\t'`.
+
+## format_custom_row_before_delimiter {#format-custom-row-before-delimiter}
+
+Sets the character that is interpreted as a delimiter before the field of the first column for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `''`.
+
+## format_custom_row_after_delimiter {#format-custom-row-after-delimiter}
+
+Sets the character that is interpreted as a delimiter after the field of the last column for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `'\n'`.
+
+## format_custom_row_between_delimiter {#format-custom-row-between-delimiter}
+
+Sets the character that is interpreted as a delimiter between the rows for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `''`.
+
+## format_custom_result_before_delimiter {#format-custom-result-before-delimiter}
+
+Sets the character that is interpreted as a prefix before the result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `''`.
+
+## format_custom_result_after_delimiter {#format-custom-result-after-delimiter}
+
+Sets the character that is interpreted as a suffix after the result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `''`.

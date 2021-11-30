@@ -4,8 +4,6 @@
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDictionary.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/StorageID.h>
 
 namespace DB
@@ -13,6 +11,7 @@ namespace DB
 
 class ASTFunction;
 class ASTSetQuery;
+class ASTSelectWithUnionQuery;
 
 class ASTStorage : public IAST
 {
@@ -91,7 +90,7 @@ public:
     bool create_or_replace{false};
 
     /** Get the text that identifies this element. */
-    String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + database) + delim + table; }
+    String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + getDatabase()) + delim + getTable(); }
 
     ASTPtr clone() const override;
 

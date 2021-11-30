@@ -14,7 +14,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <base/map.h>
 
-
 namespace DB
 {
 
