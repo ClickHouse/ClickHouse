@@ -591,6 +591,13 @@ void UsersConfigAccessStorage::startPeriodicReloading()
         config_reloader->start();
 }
 
+void UsersConfigAccessStorage::stopPeriodicReloading()
+{
+    std::lock_guard lock{load_mutex};
+    if (config_reloader)
+        config_reloader->stop();
+}
+
 std::optional<UUID> UsersConfigAccessStorage::findImpl(AccessEntityType type, const String & name) const
 {
     return memory_storage.find(type, name);

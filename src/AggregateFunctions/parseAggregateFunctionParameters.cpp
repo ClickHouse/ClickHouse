@@ -1,6 +1,6 @@
 #include <AggregateFunctions/parseAggregateFunctionParameters.h>
 
-#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 

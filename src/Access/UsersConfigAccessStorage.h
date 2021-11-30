@@ -39,6 +39,7 @@ public:
               const zkutil::GetZooKeeper & get_zookeeper_function = {});
     void reload();
     void startPeriodicReloading();
+    void stopPeriodicReloading();
 
 private:
     void parseFromConfig(const Poco::Util::AbstractConfiguration & config);
