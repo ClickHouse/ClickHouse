@@ -26,7 +26,8 @@ enum class RemoteReadBufferCacheError : int8_t
 
 struct RemoteFileMetadata
 {
-    enum LocalStatus{
+    enum LocalStatus
+    {
         TO_DOWNLOAD = 0,
         DOWNLOADING = 1,
         DOWNLOADED  = 2,
