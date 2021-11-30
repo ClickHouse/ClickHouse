@@ -660,14 +660,14 @@ void StorageMergeTree::loadDeduplicationLog()
 
 void StorageMergeTree::loadMutations()
 {
-    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+    for (const auto & disk : getDisks())
     {
-        for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
+        for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
             if (startsWith(it->name(), "mutation_"))
             {
-                MergeTreeMutationEntry entry(disk, path, it->name());
-                Int64 block_number = entry.block_number;
+                MergeTreeMutationEntry entry(disk, relative_data_path, it->name());
+                UInt64 block_number = entry.block_number;
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands.size());
                 auto insertion = current_mutations_by_id.emplace(it->name(), std::move(entry));
                 current_mutations_by_version.emplace(block_number, insertion.first->second);
@@ -1310,10 +1310,10 @@ PartitionCommandsResultInfo StorageMergeTree::attachPartition(
 
     for (size_t i = 0; i < loaded_parts.size(); ++i)
     {
-        LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].second);
-        String old_name = renamed_parts.old_and_new_names[i].first;
+        LOG_INFO(log, "Attaching part {} from {}", loaded_parts[i]->name, renamed_parts.old_and_new_names[i].new_name);
+        String old_name = renamed_parts.old_and_new_names[i].old_name;
         renameTempPartAndAdd(loaded_parts[i], &increment);
-        renamed_parts.old_and_new_names[i].first.clear();
+        renamed_parts.old_and_new_names[i].old_name.clear();
 
         results.push_back(PartitionCommandResultInfo{
             .partition_id = loaded_parts[i]->info.partition_id,
