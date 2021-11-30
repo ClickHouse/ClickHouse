@@ -530,7 +530,10 @@ void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arr
 void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr)
 {
     Columns columns_list;
-    UInt64 num_rows = 0;
+    
+    if (name_to_column_ptr.empty())
+        return;
+    UInt64 num_rows = name_to_column_ptr.begin()->second->length();
 
     columns_list.reserve(header.rows());
 

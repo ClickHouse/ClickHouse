@@ -473,7 +473,7 @@ RemoteReadBufferCache::createReader(const RemoteFileMetadata & remote_file_meta,
     // If something is wrong on startup, rollback to read from the original ReadBuffer
     if (!isInitialized())
     {
-        LOG_ERROR(log, "RemoteReadBufferCache not initialized yet");
+        LOG_ERROR(log, "RemoteReadBufferCache has not been initialized");
         return {nullptr, RemoteReadBufferCacheError::NOT_INIT};
     }
 
