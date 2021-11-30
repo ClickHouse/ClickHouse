@@ -131,7 +131,7 @@ namespace
                         std::string userInfo = request_uri.getUserInfo();
                         if (!userInfo.empty())
                         {
-                            std::size_t n = userInfo.find(":");
+                            std::size_t n = userInfo.find(':');
                             if (n != std::string::npos)
                             {
                                 credentials.setUsername(userInfo.substr(0, n));
