@@ -9,7 +9,7 @@ import logging
 import sys
 from github import Github
 from s3_helper import S3Helper
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from upload_result_helper import upload_results
 from commit_status_helper import get_commit
@@ -44,9 +44,7 @@ if __name__ == "__main__":
     repo_path = os.path.join(os.getenv("REPO_COPY", os.path.abspath("../../")))
     temp_path = os.path.join(os.getenv("TEMP_PATH"))
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
-        event = json.load(event_file)
-    pr_info = PRInfo(event)
+    pr_info = PRInfo(get_event())
     # this check modify repository so copy it to the temp directory
     logging.info("Repo copy path %s", repo_path)
 
