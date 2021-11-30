@@ -128,14 +128,14 @@ namespace
 
                     try
                     {
-                        std::string userInfo = request_uri.getUserInfo();
-                        if (!userInfo.empty())
+                        std::string user_info = request_uri.getUserInfo();
+                        if (!user_info.empty())
                         {
-                            std::size_t n = userInfo.find(':');
+                            std::size_t n = user_info.find(':');
                             if (n != std::string::npos)
                             {
-                                credentials.setUsername(userInfo.substr(0, n));
-                                credentials.setPassword(userInfo.substr(n+1));
+                                credentials.setUsername(user_info.substr(0, n));
+                                credentials.setPassword(user_info.substr(n+1));
                             }
                         }
 
