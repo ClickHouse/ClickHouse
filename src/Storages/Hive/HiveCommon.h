@@ -80,7 +80,7 @@ public:
     }
 
     std::shared_ptr<HiveTableMetadata> getTableMetadata(const std::string & db_name, const std::string & table_name);
-    void clearTableMeta(const std::string & db_name, const std::string & table_name);
+    void clearTableMetadata(const std::string & db_name, const std::string & table_name);
     void setClient(std::shared_ptr<Apache::Hadoop::Hive::ThriftHiveMetastoreClient> client_);
     inline bool isExpired() const { return expired; }
     inline void setExpired() { expired = true; }

@@ -32,6 +32,7 @@
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/Impl/ArrowBlockInputFormat.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/Hive/HiveFile.h>
@@ -90,6 +91,16 @@ public:
         return header;
     }
 
+    static ColumnsDescription getColumnsDescription(Block header, const SourcesInfoPtr & source_info)
+    {
+        ColumnsDescription columns_description{header.getNamesAndTypesList()};
+        if (source_info->need_path_column)
+            columns_description.add({"_path", std::make_shared<DataTypeString>()});
+        if (source_info->need_file_column)
+            columns_description.add({"_file", std::make_shared<DataTypeString>()});
+        return columns_description;
+    }
+
     HiveSource(
         SourcesInfoPtr source_info_,
         String hdfs_namenode_url_,
@@ -108,19 +119,22 @@ public:
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
         , to_read_block(sample_block)
+        , columns_description(getColumnsDescription(sample_block_, source_info_))
         , text_input_field_names(text_input_field_names_)
         , format_settings(getFormatSettings(getContext()))
     {
+        /// Initialize to_read_block, which is used to read data from HDFS.
         to_read_block = sample_block;
         for (const auto & name_type : source_info->partition_name_types)
         {
             to_read_block.erase(name_type.name);
         }
 
-        /// initialize format settings of CSV
+        /// Initialize format settings
         format_settings.csv.delimiter = '\x01';
         format_settings.csv.input_field_names = text_input_field_names;
         format_settings.csv.read_bool_as_uint8 = true;
+        format_settings.defaults_for_omitted_fields = true;
     }
 
     String getName() const override { return "Hive"; }
@@ -150,7 +164,7 @@ public:
                 {
                     if (e.code() == ErrorCodes::CANNOT_OPEN_FILE)
                     {
-                        source_info->hive_metastore_client->clearTableMeta(source_info->database, source_info->table_name);
+                        source_info->hive_metastore_client->clearTableMetadata(source_info->database, source_info->table_name);
                         throw;
                     }
                 }
@@ -171,8 +185,18 @@ public:
 
                 auto input_format = FormatFactory::instance().getInputFormat(
                     format, *read_buf, to_read_block, getContext(), max_block_size, format_settings);
-                pipeline = QueryPipeline(std::move(input_format));
-                reader = std::make_unique<PullingPipelineExecutor>(pipeline);
+
+                QueryPipelineBuilder builder;
+                builder.init(Pipe(input_format));
+                if (columns_description.hasDefaults())
+                {
+                    builder.addSimpleTransform([&](const Block & header)
+                    {
+                        return std::make_shared<AddingDefaultsTransform>(header, columns_description, *input_format, getContext());
+                    });
+                }
+                pipeline = std::make_unique<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(builder)));
+                reader = std::make_unique<PullingPipelineExecutor>(*pipeline);
             }
 
             Block res;
@@ -180,6 +204,8 @@ public:
             {
                 Columns columns = res.getColumns();
                 UInt64 num_rows = res.rows();
+
+                /// Enrich with partition columns.
                 auto types = source_info->partition_name_types.getTypes();
                 for (size_t i = 0; i < types.size(); ++i)
                 {
@@ -213,7 +239,7 @@ public:
 
 private:
     std::unique_ptr<ReadBuffer> read_buf;
-    QueryPipeline pipeline;
+    std::unique_ptr<QueryPipeline> pipeline;
     std::unique_ptr<PullingPipelineExecutor> reader;
     SourcesInfoPtr source_info;
     String hdfs_namenode_url;
@@ -222,6 +248,7 @@ private:
     UInt64 max_block_size;
     Block sample_block;
     Block to_read_block;
+    ColumnsDescription columns_description;
     const Names & text_input_field_names;
     FormatSettings format_settings;
 

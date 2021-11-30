@@ -102,7 +102,8 @@ void ArrowBlockInputFormat::prepareReader()
         schema = file_reader->schema();
     }
 
-    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "Arrow", format_settings.arrow.import_nested);
+    arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
+        getPort().getHeader(), "Arrow", format_settings.arrow.import_nested, format_settings.defaults_for_omitted_fields);
 
     if (stream)
         record_batch_total = -1;
