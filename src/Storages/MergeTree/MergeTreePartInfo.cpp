@@ -236,10 +236,10 @@ String MergeTreePartInfo::getPartNameV0(DayNum left_date, DayNum right_date) con
 }
 
 DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
-    std::string_view dir_name, MergeTreeDataFormatVersion format_version)
+    const DiskPtr & disk, std::string_view dir_name, MergeTreeDataFormatVersion format_version)
 {
     DetachedPartInfo part_info;
-
+    part_info.disk = disk;
     part_info.dir_name = dir_name;
 
     /// First, try to find known prefix and parse dir_name as <prefix>_<part_name>.
@@ -298,6 +298,7 @@ DetachedPartInfo DetachedPartInfo::parseDetachedPartName(
     else
         part_info.valid_name = false;
 
+    // TODO what if name contains "_tryN" suffix?
     return part_info;
 }
 
