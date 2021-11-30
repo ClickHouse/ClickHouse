@@ -207,8 +207,6 @@ jobs:
       - BuilderDebRelease
       - BuilderDebAsan
       - BuilderDebTsan
-      - BuilderDebUBsan
-      - BuilderDebMsan
       - BuilderDebDebug
     runs-on: [self-hosted, style-checker]
     steps:
