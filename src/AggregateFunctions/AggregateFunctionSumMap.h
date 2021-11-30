@@ -66,6 +66,8 @@ class AggregateFunctionMapBase : public IAggregateFunctionDataHelper<
     AggregateFunctionMapData<NearestFieldType<T>>, Derived>
 {
 private:
+    static constexpr auto STATE_VERSION_0_MAX_REVISION = 54450;
+
     DataTypePtr keys_type;
     SerializationPtr keys_serialization;
     DataTypes values_types;
@@ -109,7 +111,7 @@ public:
 
     size_t getVersionFromRevision(size_t revision) const override
     {
-        if (revision >= 54448)
+        if (revision >= STATE_VERSION_0_MAX_REVISION)
             return 1;
         else
             return 0;
