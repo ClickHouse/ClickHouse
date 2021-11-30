@@ -687,7 +687,7 @@ private:
                 return (res = DecimalComparison<LeftDataType, RightDataType, Op, false>::apply(col_left, col_right)) != nullptr;
         };
 
-        if (!callOnBasicTypes<true, false, true, true>(left_number, right_number, call))
+        if (!callOnBasicTypes<true, true, true, true>(left_number, right_number, call))
             throw Exception("Wrong call for " + getName() + " with " + col_left.type->getName() + " and " + col_right.type->getName(),
                             ErrorCodes::LOGICAL_ERROR);
 
