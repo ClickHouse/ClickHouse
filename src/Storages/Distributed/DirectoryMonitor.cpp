@@ -1,6 +1,7 @@
 #include <QueryPipeline/RemoteInserter.h>
 #include <Formats/NativeReader.h>
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Common/escapeForFileName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/SipHash.h>

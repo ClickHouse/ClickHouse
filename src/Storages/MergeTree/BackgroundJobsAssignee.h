@@ -41,7 +41,7 @@ private:
 
     /// How many times execution of background job failed or we have
     /// no new jobs.
-    size_t no_work_done_count = 0;
+    std::atomic<size_t> no_work_done_count{0};
 
     /// Scheduling task which assign jobs in background pool
     BackgroundSchedulePool::TaskHolder holder;
@@ -69,7 +69,7 @@ public:
     void scheduleMergeMutateTask(ExecutableTaskPtr merge_task);
     void scheduleFetchTask(ExecutableTaskPtr fetch_task);
     void scheduleMoveTask(ExecutableTaskPtr move_task);
-    void scheduleCommonTask(ExecutableTaskPtr common_task, bool need_trigger);
+    void scheduleCommonTask(ExecutableTaskPtr common_task);
 
     /// Just call finish
     ~BackgroundJobsAssignee();

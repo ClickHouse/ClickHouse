@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-unbundled, no-fasttest
 
 SELECT h3kRing(581276613233082367, 65535); -- { serverError 12 }
 SELECT h3kRing(581276613233082367, -1); -- { serverError 12 }

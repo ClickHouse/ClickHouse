@@ -1,6 +1,5 @@
 #include <string>
 #include <Interpreters/GatherFunctionQuantileVisitor.h>
-#include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
 #include <base/types.h>
 

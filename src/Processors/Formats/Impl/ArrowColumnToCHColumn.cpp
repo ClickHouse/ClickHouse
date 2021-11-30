@@ -518,22 +518,19 @@ ArrowColumnToCHColumn::ArrowColumnToCHColumn(
 
 void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table)
 {
+    Columns columns_list;
+    UInt64 num_rows = 0;
+
+    columns_list.reserve(header.rows());
+
+    using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::ChunkedArray>>;
+
     NameToColumnPtr name_to_column_ptr;
     for (const auto& column_name : table->ColumnNames())
     {
         std::shared_ptr<arrow::ChunkedArray> arrow_column = table->GetColumnByName(column_name);
         name_to_column_ptr[column_name] = arrow_column;
     }
-
-    arrowColumnsToCHChunk(res, name_to_column_ptr);
-}
-
-void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr)
-{
-    Columns columns_list;
-    UInt64 num_rows = 0;
-
-    columns_list.reserve(header.rows());
 
     std::unordered_map<String, BlockPtr> nested_tables;
     for (size_t column_i = 0, columns = header.columns(); column_i < columns; ++column_i)
@@ -590,5 +587,7 @@ void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr &
 
     res.setColumns(columns_list, num_rows);
 }
+
 }
 #endif
+

@@ -21,13 +21,13 @@ public:
 
     virtual ~WriteIndirectBufferFromRemoteFS() override;
 
+    void finalize() override;
+
     void sync() override;
 
     String getFileName() const override { return metadata.metadata_file_path; }
 
 private:
-    void finalizeImpl() override;
-
     IDiskRemote::Metadata metadata;
 
     String remote_fs_path;

@@ -25,6 +25,7 @@ Int32 IntervalKind::toAvgSeconds() const
     __builtin_unreachable();
 }
 
+
 IntervalKind IntervalKind::fromAvgSeconds(Int64 num_seconds)
 {
     if (num_seconds)

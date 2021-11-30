@@ -1,7 +1,7 @@
 #include "GatherUtils.h"
 #include "Sinks.h"
 #include "Sources.h"
-#include <base/TypeLists.h>
+#include <base/Typelists.h>
 
 namespace DB::GatherUtils
 {
@@ -58,7 +58,7 @@ struct ArraySourceCreator<>
 
 std::unique_ptr<IArraySource> createArraySource(const ColumnArray & col, bool is_const, size_t total_rows)
 {
-    using Creator = TypeListChangeRoot<ArraySourceCreator, TypeListNumberWithUUID>;
+    using Creator = TLChangeRoot<ArraySourceCreator, TLNumbersWithUUID>;
     if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(&col.getData()))
     {
         auto column = ColumnArray::create(column_nullable->getNestedColumnPtr(), col.getOffsetsPtr());

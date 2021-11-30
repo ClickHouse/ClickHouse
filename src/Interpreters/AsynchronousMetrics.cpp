@@ -1222,9 +1222,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
     {
         auto stat = getStatVFS(getContext()->getPath());
 
-        new_values["FilesystemMainPathTotalBytes"] = stat.f_blocks * stat.f_frsize;
-        new_values["FilesystemMainPathAvailableBytes"] = stat.f_bavail * stat.f_frsize;
-        new_values["FilesystemMainPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_frsize;
+        new_values["FilesystemMainPathTotalBytes"] = stat.f_blocks * stat.f_bsize;
+        new_values["FilesystemMainPathAvailableBytes"] = stat.f_bavail * stat.f_bsize;
+        new_values["FilesystemMainPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_bsize;
         new_values["FilesystemMainPathTotalINodes"] = stat.f_files;
         new_values["FilesystemMainPathAvailableINodes"] = stat.f_favail;
         new_values["FilesystemMainPathUsedINodes"] = stat.f_files - stat.f_favail;
@@ -1234,9 +1234,9 @@ void AsynchronousMetrics::update(std::chrono::system_clock::time_point update_ti
         /// Current working directory of the server is the directory with logs.
         auto stat = getStatVFS(".");
 
-        new_values["FilesystemLogsPathTotalBytes"] = stat.f_blocks * stat.f_frsize;
-        new_values["FilesystemLogsPathAvailableBytes"] = stat.f_bavail * stat.f_frsize;
-        new_values["FilesystemLogsPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_frsize;
+        new_values["FilesystemLogsPathTotalBytes"] = stat.f_blocks * stat.f_bsize;
+        new_values["FilesystemLogsPathAvailableBytes"] = stat.f_bavail * stat.f_bsize;
+        new_values["FilesystemLogsPathUsedBytes"] = (stat.f_blocks - stat.f_bavail) * stat.f_bsize;
         new_values["FilesystemLogsPathTotalINodes"] = stat.f_files;
         new_values["FilesystemLogsPathAvailableINodes"] = stat.f_favail;
         new_values["FilesystemLogsPathUsedINodes"] = stat.f_files - stat.f_favail;

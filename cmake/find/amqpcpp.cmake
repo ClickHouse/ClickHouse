@@ -9,7 +9,7 @@ if (NOT ENABLE_AMQPCPP)
     return()
 endif()
 
-if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/AMQP-CPP/src")
+if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/AMQP-CPP/CMakeLists.txt")
     message (WARNING "submodule contrib/AMQP-CPP is missing. to fix try run: \n git submodule update --init")
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal AMQP-CPP library")
     set (USE_AMQPCPP 0)

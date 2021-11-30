@@ -6,7 +6,6 @@
     {% include "templates/common_css.html" %}
 </head>
 <body dir="{{ direction or 'ltr' }}" {{ extra_body_attrs }}>
-    {% block banner %}{% endblock %}
     {% block nav %}{% endblock %}
     <div class="page">
         {% block content %}{% endblock %}

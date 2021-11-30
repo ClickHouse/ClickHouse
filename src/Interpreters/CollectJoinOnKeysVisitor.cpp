@@ -1,4 +1,3 @@
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/queryToString.h>
 
 #include <Interpreters/CollectJoinOnKeysVisitor.h>

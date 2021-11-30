@@ -8,7 +8,7 @@ from github import Github
 from report import create_build_html_report
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo, get_event
+from pr_info import PRInfo
 from commit_status_helper import  get_commit
 
 class BuildResult():
@@ -105,8 +105,10 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token())
     s3_helper = S3Helper('https://s3.amazonaws.com')
+    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
+        event = json.load(event_file)
 
-    pr_info = PRInfo(get_event())
+    pr_info = PRInfo(event)
 
     branch_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/commits/master"
     branch_name = "master"

@@ -1,5 +1,4 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/DataTypeInterval.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -11,7 +10,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
 
-#include <Access/Common/AccessFlags.h>
+#include <Access/AccessFlags.h>
 #include <Access/ContextAccess.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
@@ -358,7 +357,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
     if (storage)
-        row_policy_filter = context->getRowPolicyFilter(table_id.getDatabaseName(), table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        row_policy_filter = context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
 
     StorageView * view = nullptr;
     if (storage)
@@ -716,25 +715,12 @@ Block InterpreterSelectQuery::getSampleBlockImpl()
 
 static Field getWithFillFieldValue(const ASTPtr & node, ContextPtr context)
 {
-    auto [field, type] = evaluateConstantExpression(node, context);
+    const auto & [field, type] = evaluateConstantExpression(node, context);
 
     if (!isColumnedAsNumber(type))
         throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 
     return field;
-}
-
-static std::pair<Field, std::optional<IntervalKind>> getWithFillStep(const ASTPtr & node, ContextPtr context)
-{
-    auto [field, type] = evaluateConstantExpression(node, context);
-
-    if (const auto * type_interval = typeid_cast<const DataTypeInterval *>(type.get()))
-        return std::make_pair(std::move(field), type_interval->getKind());
-
-    if (isColumnedAsNumber(type))
-        return std::make_pair(std::move(field), std::nullopt);
-
-    throw Exception("Illegal type " + type->getName() + " of WITH FILL expression, must be numeric type", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
 }
 
 static FillColumnDescription getWithFillDescription(const ASTOrderByElement & order_by_elem, ContextPtr context)
@@ -744,9 +730,8 @@ static FillColumnDescription getWithFillDescription(const ASTOrderByElement & or
         descr.fill_from = getWithFillFieldValue(order_by_elem.fill_from, context);
     if (order_by_elem.fill_to)
         descr.fill_to = getWithFillFieldValue(order_by_elem.fill_to, context);
-
     if (order_by_elem.fill_step)
-        std::tie(descr.fill_step, descr.step_kind) = getWithFillStep(order_by_elem.fill_step, context);
+        descr.fill_step = getWithFillFieldValue(order_by_elem.fill_step, context);
     else
         descr.fill_step = order_by_elem.direction;
 

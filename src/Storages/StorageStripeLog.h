@@ -50,9 +50,6 @@ public:
 
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder&) override;
 
-    BackupEntries backup(const ASTs & partitions, ContextPtr context) override;
-    RestoreDataTasks restoreFromBackup(const BackupPtr & backup, const String & data_path_in_backup, const ASTs & partitions, ContextMutablePtr context) override;
-
 protected:
     StorageStripeLog(
         DiskPtr disk_,
@@ -95,7 +92,7 @@ private:
 
     const size_t max_compress_block_size;
 
-    mutable std::shared_timed_mutex rwlock;
+    std::shared_timed_mutex rwlock;
 
     Poco::Logger * log;
 };

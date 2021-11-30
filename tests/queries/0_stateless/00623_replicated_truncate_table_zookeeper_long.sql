@@ -16,7 +16,7 @@ SELECT * FROM replicated_truncate1 ORDER BY k;
 SELECT * FROM replicated_truncate2 ORDER BY k;
 
 SELECT '======After Truncate And Empty======';
-TRUNCATE TABLE replicated_truncate1 SETTINGS replication_alter_partitions_sync=2;
+TRUNCATE TABLE replicated_truncate1;
 
 SELECT * FROM replicated_truncate1 ORDER BY k;
 SELECT * FROM replicated_truncate2 ORDER BY k;

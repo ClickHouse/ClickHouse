@@ -65,8 +65,6 @@ void registerOutputFormatMarkdown(FormatFactory & factory)
     {
         return std::make_shared<MarkdownRowOutputFormat>(buf, sample, params, settings);
     });
-
-    factory.markOutputFormatSupportsParallelFormatting("Markdown");
 }
 
 }

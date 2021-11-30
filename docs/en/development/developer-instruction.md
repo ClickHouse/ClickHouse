@@ -37,7 +37,7 @@ Next, you need to download the source files onto your working machine. This is c
 
 In the command line terminal run:
 
-    git clone --recursive git@github.com:your_github_username/ClickHouse.git
+    git clone git@github.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
 Note: please, substitute *your_github_username* with what is appropriate!
@@ -65,7 +65,7 @@ It generally means that the SSH keys for connecting to GitHub are missing. These
 
 You can also clone the repository via https protocol:
 
-    git clone --recursive https://github.com/ClickHouse/ClickHouse.git
+    git clone https://github.com/ClickHouse/ClickHouse.git
 
 This, however, will not let you send your changes to the server. You can still use it temporarily and add the SSH keys later replacing the remote address of the repository with `git remote` command.
 
@@ -241,7 +241,7 @@ Adding third-party libraries: https://clickhouse.com/docs/en/development/contrib
 
 Writing tests: https://clickhouse.com/docs/en/development/tests/
 
-List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3Ahacktoberfest
+List of tasks: https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22
 
 ## Test Data {#test-data}
 

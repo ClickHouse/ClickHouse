@@ -68,11 +68,14 @@ public:
         size_t row)>;
 
 private:
-    using InputCreator = std::function<InputFormatPtr(
-            ReadBuffer & buf,
-            const Block & header,
-            const RowInputFormatParams & params,
-            const FormatSettings & settings)>;
+
+    using InputCreatorFunc = InputFormatPtr(
+        ReadBuffer & buf,
+        const Block & header,
+        const RowInputFormatParams & params,
+        const FormatSettings & settings);
+
+    using InputCreator = std::function<InputCreatorFunc>;
 
     using OutputCreator = std::function<OutputFormatPtr(
             WriteBuffer & buf,

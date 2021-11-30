@@ -922,17 +922,6 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 log_query_threads=1
 ```
 
-## log_formatted_queries {#settings-log-formatted-queries}
-
-Позволяет регистрировать отформатированные запросы в системной таблице [system.query_log](../../operations/system-tables/query_log.md).
-
-Возможные значения:
-
--   0 — отформатированные запросы не регистрируются в системной таблице.
--   1 — отформатированные запросы регистрируются в системной таблице.
-
-Значение по умолчанию: `0`.
-
 ## log_comment {#settings-log-comment}
 
 Задаёт значение поля `log_comment` таблицы [system.query_log](../system-tables/query_log.md) и текст комментария в логе сервера.
@@ -1146,9 +1135,6 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
 
-!!! note "Note"
-    60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8). 
-
 ## max_replicated_sends_network_bandwidth_for_server {#max_replicated_sends_network_bandwidth_for_server}
 
 Ограничивает максимальную скорость обмена данными в сети (в байтах в секунду) для [репликационных](../../engines/table-engines/mergetree-family/replication.md) отправок. Применяется только при запуске сервера. Можно также ограничить скорость для конкретной таблицы с помощью настройки [max_replicated_sends_network_bandwidth](../../operations/settings/merge-tree-settings.md#max_replicated_sends_network_bandwidth).
@@ -1165,9 +1151,6 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 **Использование**
 
 Может быть использована для ограничения скорости сети при репликации данных для добавления или замены новых узлов.
-
-!!! note "Note"
-    60000000 байт/с примерно соответствует 457 Мбит/с (60000000 / 1024 / 1024 * 8). 
 
 ## connect_timeout_with_failover_ms {#connect-timeout-with-failover-ms}
 
@@ -1375,32 +1358,6 @@ load_balancing = round_robin
 ## min_count_to_compile_expression {#min-count-to-compile-expression}
 
 Минимальное количество выполнений одного и того же выражения до его компиляции.
-
-Значение по умолчанию: `3`.
-
-## compile_aggregate_expressions {#compile_aggregate_expressions}
-
-Включает или отключает компиляцию агрегатных функций в нативный код во время выполнения запроса. Включение этой настройки может улучшить производительность выполнения запросов.
-
-Возможные значения:
-
--   0 — агрегатные функции не компилируются в нативный код.
--   1 — агрегатные функции компилируются в нативный код в процессе выполнения запроса.
-
-Значение по умолчанию: `1`.
-
-**См. также** 
-
--   [min_count_to_compile_aggregate_expression](#min_count_to_compile_aggregate_expression)
-
-## min_count_to_compile_aggregate_expression {#min_count_to_compile_aggregate_expression}
-
-Минимальное количество вызовов агрегатной функции с одинаковым выражением, при котором функция будет компилироваться в нативный код в ходе выполнения запроса. Работает только если включена настройка [compile_aggregate_expressions](#compile_aggregate_expressions).  
-
-Возможные значения:
-
--   Целое положительное число.
--   0 — агрегатные функциии всегда компилируются в ходе выполнения запроса.
 
 Значение по умолчанию: `3`.
 
@@ -3808,76 +3765,3 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 Значение по умолчанию: `0`.
 
-## format_capn_proto_enum_comparising_mode {#format-capn-proto-enum-comparising-mode}
-
-Определяет, как сопоставить тип данных ClickHouse `Enum` и тип данных `Enum` формата [CapnProto](../../interfaces/formats.md#capnproto) из схемы.
-
-Возможные значения:
-
--   `'by_values'` — значения в перечислениях должны быть одинаковыми, а имена могут быть разными.
--   `'by_names'` — имена в перечислениях должны быть одинаковыми, а значения могут быть разными.
--   `'by_name_case_insensitive'` — имена в перечислениях должны быть одинаковыми без учета регистра, а значения могут быть разными.
-
-Значение по умолчанию: `'by_values'`.
-
-## min_bytes_to_use_mmap_io {#min-bytes-to-use-mmap-io}
-
-Это экспериментальная настройка. Устанавливает минимальный объем памяти для чтения больших файлов без копирования данных из ядра в пространство пользователей. Рекомендуемый лимит составляет около 64 MB, поскольку [mmap/munmap](https://en.wikipedia.org/wiki/Mmap) работает медленно. Это имеет смысл только для больших файлов и помогает только в том случае, если данные находятся в кеше страниц.
-
-Возможные значения:
-
--   Положительное целое число.
--   0 — большие файлы считываются только с копированием данных из ядра в пространство пользователей.
-
-Значение по умолчанию: `0`.
-
-## format_custom_escaping_rule {#format-custom-escaping-rule}
-
-Устанавливает правило экранирования данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
-
-Возможные значения:
-
--   `'Escaped'` — как в формате [TSV](../../interfaces/formats.md#tabseparated).
--   `'Quoted'` — как в формате [Values](../../interfaces/formats.md#data-format-values).
--   `'CSV'` — как в формате [CSV](../../interfaces/formats.md#csv).
--   `'JSON'` — как в формате [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
--   `'XML'` — как в формате [XML](../../interfaces/formats.md#xml).
--   `'Raw'` — данные импортируются как есть, без экранирования, как в формате [TSVRaw](../../interfaces/formats.md#tabseparatedraw).
-
-Значение по умолчанию: `'Escaped'`.
-
-## format_custom_field_delimiter {#format-custom-field-delimiter}
-
-Задает символ, который интерпретируется как разделитель между полями данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
-
-Значение по умолчанию: `'\t'`.
-
-## format_custom_row_before_delimiter {#format-custom-row-before-delimiter}
-
-Задает символ, который интерпретируется как разделитель перед полем первого столбца данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
-
-Значение по умолчанию: `''`.
-
-## format_custom_row_after_delimiter {#format-custom-row-after-delimiter}
-
-Задает символ, который интерпретируется как разделитель после поля последнего столбца данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
-
-Значение по умолчанию: `'\n'`.
-
-## format_custom_row_between_delimiter {#format-custom-row-between-delimiter}
-
-Задает символ, который интерпретируется как разделитель между строками данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
-
-Значение по умолчанию: `''`.
-
-## format_custom_result_before_delimiter {#format-custom-result-before-delimiter}
-
-Задает символ, который интерпретируется как префикс перед результирующим набором данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
-
-Значение по умолчанию: `''`.
-
-## format_custom_result_after_delimiter {#format-custom-result-after-delimiter}
-
-Задает символ, который интерпретируется как суффикс после результирующего набора данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
-
-Значение по умолчанию: `''`.

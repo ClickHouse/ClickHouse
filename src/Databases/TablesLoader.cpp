@@ -1,6 +1,5 @@
 #include <Databases/TablesLoader.h>
 #include <Databases/IDatabase.h>
-#include <Databases/DDLDependencyVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -21,37 +20,6 @@ namespace ErrorCodes
 static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
 static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
 
-void mergeDependenciesGraphs(DependenciesInfos & main_dependencies_info, const DependenciesInfos & additional_info)
-{
-    for (const auto & table_and_info : additional_info)
-    {
-        const QualifiedTableName & table = table_and_info.first;
-        const TableNamesSet & dependent_tables = table_and_info.second.dependent_database_objects;
-        const TableNamesSet & dependencies = table_and_info.second.dependencies;
-
-        DependenciesInfo & maybe_existing_info = main_dependencies_info[table];
-        maybe_existing_info.dependent_database_objects.insert(dependent_tables.begin(), dependent_tables.end());
-        if (!dependencies.empty())
-        {
-            if (maybe_existing_info.dependencies.empty())
-                maybe_existing_info.dependencies = dependencies;
-            else if (maybe_existing_info.dependencies != dependencies)
-            {
-                /// Can happen on DatabaseReplicated recovery
-                LOG_WARNING(&Poco::Logger::get("TablesLoader"), "Replacing outdated dependencies ({}) of {} with: {}",
-                            fmt::join(maybe_existing_info.dependencies, ", "),
-                            table,
-                            fmt::join(dependencies, ", "));
-                for (const auto & old_dependency : maybe_existing_info.dependencies)
-                {
-                    [[maybe_unused]] bool removed = main_dependencies_info[old_dependency].dependent_database_objects.erase(table);
-                    assert(removed);
-                }
-                maybe_existing_info.dependencies = dependencies;
-            }
-        }
-    }
-}
 
 void logAboutProgress(Poco::Logger * log, size_t processed, size_t total, AtomicStopwatch & watch)
 {
@@ -103,14 +71,8 @@ void TablesLoader::loadTables()
 
     logDependencyGraph();
 
-    /// Remove tables that do not exist
-    removeUnresolvableDependencies(/* remove_loaded */ false);
-
-    /// Update existing info (it's important for ATTACH DATABASE)
-    DatabaseCatalog::instance().addLoadingDependencies(metadata.dependencies_info);
-
     /// Some tables were loaded by database with loadStoredObjects(...). Remove them from graph if necessary.
-    removeUnresolvableDependencies(/* remove_loaded */ true);
+    removeUnresolvableDependencies();
 
     loadTablesInTopologicalOrder(pool);
 }
@@ -123,20 +85,20 @@ void TablesLoader::startupTables()
 }
 
 
-void TablesLoader::removeUnresolvableDependencies(bool remove_loaded)
+void TablesLoader::removeUnresolvableDependencies()
 {
-    auto need_exclude_dependency = [this, remove_loaded](const QualifiedTableName & dependency_name, const DependenciesInfo & info)
+    auto need_exclude_dependency = [this](const QualifiedTableName & dependency_name, const DependenciesInfo & info)
     {
         /// Table exists and will be loaded
         if (metadata.parsed_tables.contains(dependency_name))
             return false;
         /// Table exists and it's already loaded
         if (DatabaseCatalog::instance().isTableExist(StorageID(dependency_name.database, dependency_name.table), global_context))
-            return remove_loaded;
+            return true;
         /// It's XML dictionary. It was loaded before tables and DDL dictionaries.
         if (dependency_name.database == metadata.default_database &&
             global_context->getExternalDictionariesLoader().has(dependency_name.table))
-            return remove_loaded;
+            return true;
 
         /// Some tables depends on table "dependency_name", but there is no such table in DatabaseCatalog and we don't have its metadata.
         /// We will ignore it and try to load dependent tables without "dependency_name"
@@ -144,9 +106,9 @@ void TablesLoader::removeUnresolvableDependencies(bool remove_loaded)
         LOG_WARNING(log, "Tables {} depend on {}, but seems like the it does not exist. Will ignore it and try to load existing tables",
                     fmt::join(info.dependent_database_objects, ", "), dependency_name);
 
-        if (!info.dependencies.empty())
+        if (info.dependencies_count)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not exist, but we have seen its AST and found {} dependencies."
-                                                       "It's a bug", dependency_name, info.dependencies.size());
+                                                       "It's a bug", dependency_name, info.dependencies_count);
         if (info.dependent_database_objects.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependencies and dependent tables as it expected to."
                                                        "It's a bug", dependency_name);
@@ -204,25 +166,22 @@ void TablesLoader::loadTablesInTopologicalOrder(ThreadPool & pool)
 
 DependenciesInfosIter TablesLoader::removeResolvedDependency(const DependenciesInfosIter & info_it, TableNames & independent_database_objects)
 {
-    const QualifiedTableName & table_name = info_it->first;
-    const DependenciesInfo & info = info_it->second;
-    if (!info.dependencies.empty())
+    auto & info = info_it->second;
+    if (info.dependencies_count)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} is in list of independent tables, but dependencies count is {}."
-                                                   "It's a bug", table_name, info.dependencies.size());
+                                                   "It's a bug", info_it->first, info.dependencies_count);
     if (info.dependent_database_objects.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependent tables. It's a bug", table_name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {} does not have dependent tables. It's a bug", info_it->first);
 
     /// Decrement number of dependencies for each dependent table
-    for (const auto & dependent_table : info.dependent_database_objects)
+    for (auto & dependent_table : info.dependent_database_objects)
     {
         auto & dependent_info = metadata.dependencies_info[dependent_table];
-        auto & dependencies_set = dependent_info.dependencies;
-        if (dependencies_set.empty())
+        auto & dependencies_count = dependent_info.dependencies_count;
+        if (dependencies_count == 0)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to decrement 0 dependencies counter for {}. It's a bug", dependent_table);
-        if (!dependencies_set.erase(table_name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove {} from dependencies set of {}, it contains only {}",
-                            table_name, dependent_table, fmt::join(dependencies_set, ", "));
-        if (dependencies_set.empty())
+        --dependencies_count;
+        if (dependencies_count == 0)
         {
             independent_database_objects.push_back(dependent_table);
             if (dependent_info.dependent_database_objects.empty())
@@ -254,7 +213,7 @@ size_t TablesLoader::getNumberOfTablesWithDependencies() const
 {
     size_t number_of_tables_with_dependencies = 0;
     for (const auto & info : metadata.dependencies_info)
-        if (!info.second.dependencies.empty())
+        if (info.second.dependencies_count)
             ++number_of_tables_with_dependencies;
     return number_of_tables_with_dependencies;
 }
@@ -268,9 +227,9 @@ void TablesLoader::checkCyclicDependencies() const
     for (const auto & info : metadata.dependencies_info)
     {
         LOG_WARNING(log, "Cannot resolve dependencies: Table {} have {} dependencies and {} dependent tables. List of dependent tables: {}",
-                    info.first, info.second.dependencies.size(),
+                    info.first, info.second.dependencies_count,
                     info.second.dependent_database_objects.size(), fmt::join(info.second.dependent_database_objects, ", "));
-        assert(info.second.dependencies.empty());
+        assert(info.second.dependencies_count == 0);
     }
 
     throw Exception(ErrorCodes::INFINITE_LOOP, "Cannot attach {} tables due to cyclic dependencies. "
@@ -287,7 +246,7 @@ void TablesLoader::logDependencyGraph() const
         LOG_TEST(log,
             "Table {} have {} dependencies and {} dependent tables. List of dependent tables: {}",
             dependencies.first,
-            dependencies.second.dependencies.size(),
+            dependencies.second.dependencies_count,
             dependencies.second.dependent_database_objects.size(),
             fmt::join(dependencies.second.dependent_database_objects, ", "));
     }

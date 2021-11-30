@@ -72,7 +72,7 @@ toc_title: "Операторы"
 
 ## Операторы для работы с множествами {#operatory-dlia-raboty-s-mnozhestvami}
 
-Смотрите [операторы IN](../../sql-reference/operators/in.md#select-in-operators) и оператор [EXISTS](../../sql-reference/operators/exists.md).
+*Смотрите раздел [Операторы IN](../../sql-reference/operators/in.md#select-in-operators).*
 
 `a IN ...` - функция `in(a, b)`
 

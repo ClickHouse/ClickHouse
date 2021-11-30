@@ -518,7 +518,7 @@ StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & are
 {
     WriteBufferFromArena out(arena, begin);
     func->serialize(data[n], out);
-    return out.complete();
+    return out.finish();
 }
 
 const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char * src_arena)

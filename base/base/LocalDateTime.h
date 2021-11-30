@@ -108,11 +108,6 @@ public:
     LocalDate toDate() const { return LocalDate(m_year, m_month, m_day); }
     LocalDateTime toStartOfDate() const { return LocalDateTime(m_year, m_month, m_day, 0, 0, 0); }
 
-    time_t to_time_t(const DateLUTImpl & time_zone = DateLUT::instance()) const
-    {
-        return time_zone.makeDateTime(m_year, m_month, m_day, m_hour, m_minute, m_second);
-    }
-
     std::string toString() const
     {
         std::string s{"0000-00-00 00:00:00"};

@@ -73,11 +73,6 @@ target_compile_options(cxx PRIVATE -w)
 
 target_link_libraries(cxx PUBLIC cxxabi)
 
-# For __udivmodti4, __divmodti4.
-if (OS_DARWIN AND COMPILER_GCC)
-    target_link_libraries(cxx PRIVATE gcc)
-endif ()
-
 install(
     TARGETS cxx
     EXPORT global

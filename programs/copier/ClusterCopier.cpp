@@ -8,7 +8,6 @@
 #include <Common/setThreadName.h>
 #include <IO/ConnectionTimeoutsContext.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Chain.h>
@@ -745,8 +744,8 @@ std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(const ASTPtr & create_
     if (create.storage == nullptr || new_storage_ast == nullptr)
         throw Exception("Storage is not specified", ErrorCodes::LOGICAL_ERROR);
 
-    res->setDatabase(new_table.first);
-    res->setTable(new_table.second);
+    res->database = new_table.first;
+    res->table = new_table.second;
 
     res->children.clear();
     res->set(res->columns_list, create.columns_list->clone());
@@ -1660,11 +1659,9 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
 void ClusterCopier::dropAndCreateLocalTable(const ASTPtr & create_ast)
 {
     const auto & create = create_ast->as<ASTCreateQuery &>();
-    dropLocalTableIfExists({create.getDatabase(), create.getTable()});
+    dropLocalTableIfExists({create.database, create.table});
 
-    auto create_context = Context::createCopy(getContext());
-
-    InterpreterCreateQuery interpreter(create_ast, create_context);
+    InterpreterCreateQuery interpreter(create_ast, getContext());
     interpreter.execute();
 }
 
@@ -1672,12 +1669,10 @@ void ClusterCopier::dropLocalTableIfExists(const DatabaseAndTableName & table_na
 {
     auto drop_ast = std::make_shared<ASTDropQuery>();
     drop_ast->if_exists = true;
-    drop_ast->setDatabase(table_name.first);
-    drop_ast->setTable(table_name.second);
+    drop_ast->database = table_name.first;
+    drop_ast->table = table_name.second;
 
-    auto drop_context = Context::createCopy(getContext());
-
-    InterpreterDropQuery interpreter(drop_ast, drop_context);
+    InterpreterDropQuery interpreter(drop_ast, getContext());
     interpreter.execute();
 }
 

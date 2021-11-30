@@ -13,8 +13,6 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Transforms/FilterTransform.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/executeQuery.h>
@@ -371,8 +369,8 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(PostgreSQLTableS
     auto create_table_query = std::make_shared<ASTCreateQuery>();
 
     auto table_id = getStorageID();
-    create_table_query->setTable(getNestedTableName());
-    create_table_query->setDatabase(table_id.database_name);
+    create_table_query->table = getNestedTableName();
+    create_table_query->database = table_id.database_name;
     if (is_materialized_postgresql_database)
         create_table_query->uuid = table_id.uuid;
 

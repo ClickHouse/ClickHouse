@@ -5,7 +5,6 @@
 #include "ClusterPartition.h"
 
 #include <Core/Defines.h>
-#include <Parsers/ASTFunction.h>
 
 #include <base/map.h>
 #include <boost/algorithm/string/join.hpp>

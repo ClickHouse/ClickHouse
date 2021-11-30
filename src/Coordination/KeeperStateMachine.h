@@ -67,36 +67,19 @@ public:
         nuraft::ptr<nuraft::buffer> & data_out,
         bool & is_last_obj) override;
 
-    /// just for test
     KeeperStorage & getStorage()
     {
         return *storage;
     }
-
-    void shutdownStorage();
-
-    ClusterConfigPtr getClusterConfig() const;
 
     /// Process local read request
     void processReadRequest(const KeeperStorage::RequestForSession & request_for_session);
 
     std::vector<int64_t> getDeadSessions();
 
-    /// Introspection functions for 4lw commands
-    uint64_t getLastProcessedZxid() const;
+    void shutdownStorage();
 
-    uint64_t getNodesCount() const;
-    uint64_t getTotalWatchesCount() const;
-    uint64_t getWatchedPathsCount() const;
-    uint64_t getSessionsWithWatchesCount() const;
-
-    void dumpWatches(WriteBufferFromOwnString & buf) const;
-    void dumpWatchesByPath(WriteBufferFromOwnString & buf) const;
-    void dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const;
-
-    uint64_t getSessionWithEphemeralNodesCount() const;
-    uint64_t getTotalEphemeralNodesCount() const;
-    uint64_t getApproximateDataSize() const;
+    ClusterConfigPtr getClusterConfig() const;
 
 private:
 
@@ -127,7 +110,7 @@ private:
     /// we can get strange cases when, for example client send read request with
     /// watch and after that receive watch response and only receive response
     /// for request.
-    mutable std::mutex storage_and_responses_lock;
+    std::mutex storage_and_responses_lock;
 
     /// Last committed Raft log number.
     std::atomic<uint64_t> last_committed_idx;

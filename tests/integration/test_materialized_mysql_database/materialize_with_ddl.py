@@ -21,7 +21,7 @@ def check_query(clickhouse_node, query, result_set, retry_count=10, interval_sec
             if result_set == lastest_result:
                 return
 
-            logging.debug(f"latest_result {lastest_result}")
+            logging.debug(f"latest_result{lastest_result}")
             time.sleep(interval_seconds)
         except Exception as e:
             logging.debug(f"check_query retry {i+1} exception {e}")
@@ -223,31 +223,6 @@ def drop_table_with_materialized_mysql_database(clickhouse_node, mysql_node, ser
 
     clickhouse_node.query("DROP DATABASE test_database_drop")
     mysql_node.query("DROP DATABASE test_database_drop")
-
-
-def create_table_like_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
-    mysql_node.query("DROP DATABASE IF EXISTS create_like")
-    mysql_node.query("DROP DATABASE IF EXISTS create_like2")
-    clickhouse_node.query("DROP DATABASE IF EXISTS create_like")
-
-    mysql_node.query("CREATE DATABASE create_like")
-    mysql_node.query("CREATE DATABASE create_like2")
-    mysql_node.query("CREATE TABLE create_like.t1 (id INT NOT NULL PRIMARY KEY)")
-    mysql_node.query("CREATE TABLE create_like2.t1 LIKE create_like.t1")
-
-    clickhouse_node.query(
-        f"CREATE DATABASE create_like ENGINE = MaterializeMySQL('{service_name}:3306', 'create_like', 'root', 'clickhouse')")
-    mysql_node.query("CREATE TABLE create_like.t2 LIKE create_like.t1")
-    mysql_node.query("USE create_like")
-    mysql_node.query("CREATE TABLE t3 LIKE create_like2.t1")
-    mysql_node.query("CREATE TABLE t4 LIKE t1")
-
-    check_query(clickhouse_node, "SHOW TABLES FROM create_like", "t1\nt2\nt4\n")
-    check_query(clickhouse_node, "SHOW DATABASES LIKE 'create_like%'", "create_like\n")
-
-    clickhouse_node.query("DROP DATABASE create_like")
-    mysql_node.query("DROP DATABASE create_like")
-    mysql_node.query("DROP DATABASE create_like2")
 
 
 def create_table_with_materialized_mysql_database(clickhouse_node, mysql_node, service_name):

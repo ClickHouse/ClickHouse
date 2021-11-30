@@ -217,15 +217,11 @@ void JSONRowOutputFormat::writeAfterExtremes()
     writeCString("\t}", *ostr);
 }
 
-void JSONRowOutputFormat::finalizeImpl()
+void JSONRowOutputFormat::writeLastSuffix()
 {
     writeCString(",\n\n", *ostr);
     writeCString("\t\"rows\": ", *ostr);
     writeIntText(row_count, *ostr);
-
-    auto outside_statistics = getOutsideStatistics();
-    if (outside_statistics)
-        statistics = std::move(*outside_statistics);
 
     writeRowsBeforeLimitAtLeast();
 
@@ -239,11 +235,11 @@ void JSONRowOutputFormat::finalizeImpl()
 
 void JSONRowOutputFormat::writeRowsBeforeLimitAtLeast()
 {
-    if (statistics.applied_limit)
+    if (applied_limit)
     {
         writeCString(",\n\n", *ostr);
         writeCString("\t\"rows_before_limit_at_least\": ", *ostr);
-        writeIntText(statistics.rows_before_limit, *ostr);
+        writeIntText(rows_before_limit, *ostr);
     }
 }
 
@@ -254,13 +250,13 @@ void JSONRowOutputFormat::writeStatistics()
     writeCString("\t{\n", *ostr);
 
     writeCString("\t\t\"elapsed\": ", *ostr);
-    writeText(statistics.watch.elapsedSeconds(), *ostr);
+    writeText(watch.elapsedSeconds(), *ostr);
     writeCString(",\n", *ostr);
     writeCString("\t\t\"rows_read\": ", *ostr);
-    writeText(statistics.progress.read_rows.load(), *ostr);
+    writeText(progress.read_rows.load(), *ostr);
     writeCString(",\n", *ostr);
     writeCString("\t\t\"bytes_read\": ", *ostr);
-    writeText(statistics.progress.read_bytes.load(), *ostr);
+    writeText(progress.read_bytes.load(), *ostr);
     writeChar('\n', *ostr);
 
     writeCString("\t}", *ostr);
@@ -268,7 +264,7 @@ void JSONRowOutputFormat::writeStatistics()
 
 void JSONRowOutputFormat::onProgress(const Progress & value)
 {
-    statistics.progress.incrementPiecewiseAtomically(value);
+    progress.incrementPiecewiseAtomically(value);
 }
 
 
@@ -283,8 +279,6 @@ void registerOutputFormatJSON(FormatFactory & factory)
         return std::make_shared<JSONRowOutputFormat>(buf, sample, params, format_settings, false);
     });
 
-    factory.markOutputFormatSupportsParallelFormatting("JSON");
-
     factory.registerOutputFormat("JSONStrings", [](
         WriteBuffer & buf,
         const Block & sample,
@@ -293,8 +287,6 @@ void registerOutputFormatJSON(FormatFactory & factory)
     {
         return std::make_shared<JSONRowOutputFormat>(buf, sample, params, format_settings, true);
     });
-
-    factory.markOutputFormatSupportsParallelFormatting("JSONStrings");
 }
 
 }

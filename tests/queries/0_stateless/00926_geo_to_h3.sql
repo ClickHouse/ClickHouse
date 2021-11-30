@@ -1,4 +1,4 @@
--- Tags: no-fasttest
+-- Tags: no-unbundled, no-fasttest
 
 DROP TABLE IF EXISTS table1;
 

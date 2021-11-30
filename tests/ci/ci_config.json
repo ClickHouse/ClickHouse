@@ -82,6 +82,16 @@
             "with_coverage": false
         },
         {
+            "compiler": "gcc-11",
+            "build-type": "",
+            "sanitizer": "",
+            "package-type": "deb",
+            "bundled": "unbundled",
+            "splitted": "unsplitted",
+            "tidy": "disable",
+            "with_coverage": false
+        },
+        {
             "compiler": "clang-13",
             "build-type": "",
             "sanitizer": "",
@@ -328,6 +338,30 @@
                 "build_type": "relwithdebuginfo",
                 "sanitizer": "none",
                 "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
+        "Functional stateless tests (pytest)": {
+            "required_build_properties": {
+                "compiler": "clang-13",
+                "package_type": "deb",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "none",
+                "bundled": "bundled",
+                "splitted": "unsplitted",
+                "clang-tidy": "disable",
+                "with_coverage": false
+            }
+        },
+        "Functional stateless tests (unbundled)": {
+            "required_build_properties": {
+                "compiler": "gcc-11",
+                "package_type": "deb",
+                "build_type": "relwithdebuginfo",
+                "sanitizer": "none",
+                "bundled": "unbundled",
                 "splitted": "unsplitted",
                 "clang-tidy": "disable",
                 "with_coverage": false
@@ -590,7 +624,7 @@
                 "compiler": "clang-13",
                 "package_type": "binary",
                 "build_type": "relwithdebuginfo",
-                "sanitizer": "undefined",
+                "sanitizer": "thread",
                 "bundled": "bundled",
                 "splitted": "unsplitted",
                 "clang-tidy": "disable",

@@ -53,6 +53,8 @@ public:
 
     void assertMySQLAvailable();
 
+    static bool isMySQLSyncThread();
+
 private:
     Poco::Logger * log;
 

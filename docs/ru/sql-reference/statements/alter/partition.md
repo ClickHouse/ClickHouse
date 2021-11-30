@@ -165,7 +165,7 @@ ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 ## FREEZE PARTITION {#alter_freeze-partition}
 
 ``` sql
-ALTER TABLE table_name FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
+ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 ```
 
 Создаёт резервную копию для заданной партиции. Если выражение `PARTITION` опущено, резервные копии будут созданы для всех партиций.
@@ -179,7 +179,6 @@ ALTER TABLE table_name FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name
 
 -   `/var/lib/clickhouse/` — рабочая директория ClickHouse, заданная в конфигурационном файле;
 -   `N` — инкрементальный номер резервной копии.
--   если задан параметр `WITH NAME`, то вместо инкрементального номера используется значение параметра `'backup_name'`.
 
 !!! note "Примечание"
     При использовании [нескольких дисков для хранения данных таблицы](../../statements/alter/index.md#table_engine-mergetree-multiple-volumes) директория `shadow/N` появляется на каждом из дисков, на которых были куски, попавшие под выражение `PARTITION`.

@@ -326,82 +326,16 @@ void KeeperStateMachine::processReadRequest(const KeeperStorage::RequestForSessi
             throw Exception(ErrorCodes::SYSTEM_ERROR, "Could not push response with session id {} into responses queue", response.session_id);
 }
 
-void KeeperStateMachine::shutdownStorage()
-{
-    std::lock_guard lock(storage_and_responses_lock);
-    storage->finalize();
-}
-
 std::vector<int64_t> KeeperStateMachine::getDeadSessions()
 {
     std::lock_guard lock(storage_and_responses_lock);
     return storage->getDeadSessions();
 }
 
-uint64_t KeeperStateMachine::getLastProcessedZxid() const
+void KeeperStateMachine::shutdownStorage()
 {
     std::lock_guard lock(storage_and_responses_lock);
-    return storage->getZXID();
-}
-
-uint64_t KeeperStateMachine::getNodesCount() const
-{
-    std::lock_guard lock(storage_and_responses_lock);
-    return storage->getNodesCount();
-}
-
-uint64_t KeeperStateMachine::getTotalWatchesCount() const
-{
-    std::lock_guard lock(storage_and_responses_lock);
-    return storage->getTotalWatchesCount();
-}
-
-uint64_t KeeperStateMachine::getWatchedPathsCount() const
-{
-    std::lock_guard lock(storage_and_responses_lock);
-    return storage->getWatchedPathsCount();
-}
-
-uint64_t KeeperStateMachine::getSessionsWithWatchesCount() const
-{
-    std::lock_guard lock(storage_and_responses_lock);
-    return storage->getSessionsWithWatchesCount();
-}
-
-uint64_t KeeperStateMachine::getTotalEphemeralNodesCount() const
-{
-    std::lock_guard lock(storage_and_responses_lock);
-    return storage->getTotalEphemeralNodesCount();
-}
-
-uint64_t KeeperStateMachine::getSessionWithEphemeralNodesCount() const
-{
-    std::lock_guard lock(storage_and_responses_lock);
-    return storage->getSessionWithEphemeralNodesCount();
-}
-
-void KeeperStateMachine::dumpWatches(WriteBufferFromOwnString & buf) const
-{
-    std::lock_guard lock(storage_and_responses_lock);
-    storage->dumpWatches(buf);
-}
-
-void KeeperStateMachine::dumpWatchesByPath(WriteBufferFromOwnString & buf) const
-{
-    std::lock_guard lock(storage_and_responses_lock);
-    storage->dumpWatchesByPath(buf);
-}
-
-void KeeperStateMachine::dumpSessionsAndEphemerals(WriteBufferFromOwnString & buf) const
-{
-    std::lock_guard lock(storage_and_responses_lock);
-    storage->dumpSessionsAndEphemerals(buf);
-}
-
-uint64_t KeeperStateMachine::getApproximateDataSize() const
-{
-    std::lock_guard lock(storage_and_responses_lock);
-    return storage->getApproximateDataSize();
+    storage->finalize();
 }
 
 ClusterConfigPtr KeeperStateMachine::getClusterConfig() const

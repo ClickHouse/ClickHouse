@@ -3,7 +3,6 @@
 
 import socket
 import os
-import uuid
 
 CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '127.0.0.1')
 CLICKHOUSE_PORT = int(os.environ.get('CLICKHOUSE_PORT_TCP', '900000'))
@@ -110,9 +109,9 @@ def receiveHello(s):
     # print("Version patch: ", server_version_patch)
 
 
-def serializeClientInfo(ba, query_id):
+def serializeClientInfo(ba):
     writeStringBinary('default', ba) # initial_user
-    writeStringBinary(query_id, ba) # initial_query_id
+    writeStringBinary('123456', ba) # initial_query_id
     writeStringBinary('127.0.0.1:9000', ba) # initial_address
     ba.extend([0] * 8) # initial_query_start_time_microseconds
     ba.append(1) # TCP
@@ -130,14 +129,13 @@ def serializeClientInfo(ba, query_id):
 
 def sendQuery(s, query):
     ba = bytearray()
-    query_id = uuid.uuid4().hex
     writeVarUInt(1, ba) # query
-    writeStringBinary(query_id, ba)
+    writeStringBinary('123456', ba)
 
     ba.append(1) # INITIAL_QUERY
 
     # client info
-    serializeClientInfo(ba, query_id)
+    serializeClientInfo(ba)
 
     writeStringBinary('', ba) # No settings
     writeStringBinary('', ba) # No interserver secret
@@ -165,22 +163,15 @@ def sendEmptyBlock(s):
     s.sendall(ba)
 
 
-def assertPacket(packet, expected):
-    assert(packet == expected), packet
-
 def readHeader(s):
-    packet_type = readVarUInt(s)
-    if packet_type == 2: # Exception
-        raise RuntimeError(readException(s))
-    assertPacket(packet_type, 1) # Data
-
+    readVarUInt(s) # Data
     readStringBinary(s) # external table name
     # BlockInfo
-    assertPacket(readVarUInt(s), 1) # 1
-    assertPacket(readUInt8(s), 0) # is_overflows
-    assertPacket(readVarUInt(s), 2) # 2
-    assertPacket(readUInt32(s), 4294967295) # bucket_num
-    assertPacket(readVarUInt(s), 0) # 0
+    readVarUInt(s) # 1
+    readUInt8(s) # is_overflows
+    readVarUInt(s) # 2
+    readUInt32(s) # bucket_num
+    readVarUInt(s) # 0
     columns = readVarUInt(s) # rows
     rows = readVarUInt(s) # columns
     print("Rows {} Columns {}".format(rows, columns))
@@ -191,12 +182,13 @@ def readHeader(s):
 
 
 def readException(s):
+    assert(readVarUInt(s) == 2)
     code = readUInt32(s)
     name = readStringBinary(s)
     text = readStringBinary(s)
     readStringBinary(s) # trace
-    assertPacket(readUInt8(s), 0) # has_nested
-    return "code {}: {}".format(code, text.replace('DB::Exception:', ''))
+    assert(readUInt8(s) == 0) # has_nested
+    print("code {}: {}".format(code, text.replace('DB::Exception:', '')))
 
 
 def insertValidLowCardinalityRow():
@@ -231,7 +223,7 @@ def insertValidLowCardinalityRow():
         # Fin block
         sendEmptyBlock(s)
 
-        assertPacket(readVarUInt(s), 5) # End of stream
+        assert(readVarUInt(s) == 5) # End of stream
         s.close()
 
 
@@ -264,8 +256,7 @@ def insertLowCardinalityRowWithIndexOverflow():
         ba.extend([0] * 7 + [1]) # UInt64 index (overflow)
         s.sendall(ba)
 
-        assertPacket(readVarUInt(s), 2)
-        print(readException(s))
+        readException(s)
         s.close()
 
 
@@ -298,8 +289,7 @@ def insertLowCardinalityRowWithIncorrectDictType():
         ba.extend([0] * 8) # UInt64 index (overflow)
         s.sendall(ba)
 
-        assertPacket(readVarUInt(s), 2)
-        print(readException(s))
+        readException(s)
         s.close()
 
 

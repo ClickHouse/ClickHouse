@@ -106,16 +106,6 @@ String Macros::expand(const String & s,
             res += toString(info.table_id.uuid);
             info.expanded_uuid = true;
         }
-        else if (info.shard && macro_name == "shard")
-        {
-            res += *info.shard;
-            info.expanded_uuid = true;
-        }
-        else if (info.replica && macro_name == "replica")
-        {
-            res += *info.replica;
-            info.expanded_uuid = true;
-        }
         else if (info.ignore_unknown || info.expand_special_macros_only)
         {
             if (info.expand_special_macros_only)

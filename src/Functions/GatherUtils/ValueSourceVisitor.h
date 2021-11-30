@@ -1,6 +1,6 @@
 #pragma once
 #include <Common/Visitor.h>
-#include <base/TypeLists.h>
+#include <base/Typelists.h>
 
 namespace DB::GatherUtils
 {
@@ -17,14 +17,14 @@ struct NullableValueSource;
 template <typename Base>
 struct ConstSource;
 
-using NumericValueSources = TypeListMap<NumericValueSource, TypeListNumberWithUUID>;
-using BasicValueSources = TypeListAppend<GenericValueSource, NumericValueSources>;
-using NullableValueSources = TypeListMap<NullableValueSource, BasicValueSources>;
-using BasicAndNullableValueSources = TypeListConcat<BasicValueSources, NullableValueSources>;
-using ConstValueSources = TypeListMap<ConstSource, BasicAndNullableValueSources>;
-using TypeListValueSources = TypeListConcat<BasicAndNullableValueSources, ConstValueSources>;
+using NumericValueSources = TLMap<NumericValueSource, TLNumbersWithUUID>;
+using BasicValueSources = TLAppend<GenericValueSource, NumericValueSources>;
+using NullableValueSources = TLMap<NullableValueSource, BasicValueSources>;
+using BasicAndNullableValueSources = TLConcat<BasicValueSources, NullableValueSources>;
+using ConstValueSources = TLMap<ConstSource, BasicAndNullableValueSources>;
+using TypeListValueSources = TLConcat<BasicAndNullableValueSources, ConstValueSources>;
 
-class ValueSourceVisitor : public TypeListChangeRoot<Visitor, TypeListValueSources>
+class ValueSourceVisitor : public TLChangeRoot<Visitor, TypeListValueSources>
 {
 protected:
     ~ValueSourceVisitor() = default;

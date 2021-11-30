@@ -201,7 +201,7 @@ StoragePtr StorageFactory::get(
         .storage_def = storage_def,
         .query = query,
         .relative_data_path = relative_data_path,
-        .table_id = StorageID(query.getDatabase(), query.getTable(), query.uuid),
+        .table_id = StorageID(query.database, query.table, query.uuid),
         .local_context = local_context,
         .context = context,
         .columns = columns,

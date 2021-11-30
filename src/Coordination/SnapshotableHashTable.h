@@ -15,7 +15,6 @@ struct ListNode
     bool active_in_map;
 };
 
-
 template <class V>
 class SnapshotableHashTable
 {
@@ -28,82 +27,6 @@ private:
     List list;
     IndexMap map;
     bool snapshot_mode{false};
-
-    uint64_t approximate_data_size{0};
-
-    enum OperationType
-    {
-        INSERT = 0,
-        INSERT_OR_REPLACE = 1,
-        ERASE = 2,
-        UPDATE_VALUE = 3,
-        GET_VALUE = 4,
-        FIND = 5,
-        CONTAINS = 6,
-        CLEAR = 7,
-        CLEAR_OUTDATED_NODES = 8
-    };
-
-    /// Update hash table approximate data size
-    ///    op_type: operation type
-    ///    key_size: key size
-    ///    value_size: size of value to add
-    ///    old_value_size: size of value to minus
-    /// old_value_size=0 means there is no old value with the same key.
-    void updateDataSize(OperationType op_type, uint64_t key_size, uint64_t value_size, uint64_t old_value_size)
-    {
-        switch (op_type)
-        {
-            case INSERT:
-                approximate_data_size += key_size;
-                approximate_data_size += value_size;
-                break;
-            case INSERT_OR_REPLACE:
-                /// replace
-                if (old_value_size != 0)
-                {
-                    approximate_data_size += key_size;
-                    approximate_data_size += value_size;
-                    if (!snapshot_mode)
-                    {
-                        approximate_data_size += key_size;
-                        approximate_data_size -= old_value_size;
-                    }
-                }
-                /// insert
-                else
-                {
-                    approximate_data_size += key_size;
-                    approximate_data_size += value_size;
-                }
-                break;
-            case UPDATE_VALUE:
-                approximate_data_size += key_size;
-                approximate_data_size += value_size;
-                if (!snapshot_mode)
-                {
-                    approximate_data_size -= key_size;
-                    approximate_data_size -= old_value_size;
-                }
-                break;
-            case ERASE:
-                if (!snapshot_mode)
-                {
-                    approximate_data_size -= key_size;
-                    approximate_data_size -= old_value_size;
-                }
-                break;
-            case CLEAR:
-                approximate_data_size = 0;
-                break;
-            case CLEAR_OUTDATED_NODES:
-                approximate_data_size -= key_size;
-                approximate_data_size -= value_size;
-                break;
-            default:
-                break;
-        }
-    }
 
 public:
 
@@ -121,7 +44,6 @@ public:
             ListElem elem{key, value, true};
             auto itr = list.insert(list.end(), elem);
             map.emplace(itr->key, itr);
-            updateDataSize(INSERT, key.size(), value.sizeInBytes(), 0);
             return true;
         }
 
@@ -132,8 +54,6 @@ public:
     void insertOrReplace(const std::string & key, const V & value)
     {
         auto it = map.find(key);
-        uint64_t old_value_size = it == map.end() ? 0 : it->second->value.sizeInBytes();
-
         if (it == map.end())
         {
             ListElem elem{key, value, true};
@@ -156,7 +76,6 @@ public:
                 list_itr->value = value;
             }
         }
-        updateDataSize(INSERT_OR_REPLACE, key.size(), value.sizeInBytes(), old_value_size);
     }
 
     bool erase(const std::string & key)
@@ -166,7 +85,6 @@ public:
             return false;
 
         auto list_itr = it->second;
-        uint64_t old_data_size = list_itr->value.sizeInBytes();
         if (snapshot_mode)
         {
             list_itr->active_in_map = false;
@@ -178,7 +96,6 @@ public:
             list.erase(list_itr);
         }
 
-        updateDataSize(ERASE, key.size(), 0, old_data_size);
         return true;
     }
 
@@ -191,29 +108,23 @@ public:
     {
         auto it = map.find(key);
         assert(it != map.end());
-
-        auto list_itr = it->second;
-        uint64_t old_value_size = list_itr->value.sizeInBytes();
-
-        const_iterator ret;
-
         if (snapshot_mode)
         {
+            auto list_itr = it->second;
             auto elem_copy = *(list_itr);
             list_itr->active_in_map = false;
             map.erase(it);
             updater(elem_copy.value);
             auto itr = list.insert(list.end(), elem_copy);
             map.emplace(itr->key, itr);
-            ret = itr;
+            return itr;
         }
         else
         {
+            auto list_itr = it->second;
             updater(list_itr->value);
-            ret = list_itr;
+            return list_itr;
         }
-        updateDataSize(UPDATE_VALUE, key.size(), ret->value.sizeInBytes(), old_value_size);
-        return ret;
     }
 
     const_iterator find(const std::string & key) const
@@ -238,10 +149,7 @@ public:
         for (auto itr = start; itr != end;)
         {
             if (!itr->active_in_map)
-            {
-                updateDataSize(CLEAR_OUTDATED_NODES, itr->key.size(), itr->value.sizeInBytes(), 0);
                 itr = list.erase(itr);
-            }
             else
                 itr++;
         }
@@ -251,7 +159,6 @@ public:
     {
         list.clear();
         map.clear();
-        updateDataSize(CLEAR, 0, 0, 0);
     }
 
     void enableSnapshotMode()
@@ -274,10 +181,6 @@ public:
         return list.size();
     }
 
-    uint64_t getApproximateDataSize() const
-    {
-        return approximate_data_size;
-    }
 
     iterator begin() { return list.begin(); }
     const_iterator begin() const { return list.cbegin(); }
