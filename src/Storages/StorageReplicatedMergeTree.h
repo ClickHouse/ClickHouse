@@ -237,12 +237,15 @@ public:
     /// Return false if data is still used by another node
     bool unlockSharedData(const IMergeTreeDataPart & part) const override;
 
+    /// Unlock same part with other (old) name
+    bool unlockSharedData(const IMergeTreeDataPart & part, const String & name) const override;
+
     /// Unlock shared data part in zookeeper by part id
     /// Return true if data unlocked
     /// Return false if data is still used by another node
     static bool unlockSharedDataById(String id, const String & part_name, const String & replica_name_,
         DiskPtr disk, zkutil::ZooKeeperPtr zookeeper_, const MergeTreeSettings & settings, Poco::Logger * logger,
-        const String * zookeeper_path_ptr);
+        const String & zookeeper_path_old);
 
     /// Fetch part only if some replica has it on shared storage like S3
     bool tryToFetchIfShared(const IMergeTreeDataPart & part, const DiskPtr & disk, const String & path) override;
@@ -272,6 +275,7 @@ public:
     bool createEmptyPartInsteadOfLost(zkutil::ZooKeeperPtr zookeeper, const String & lost_part_name);
 
     virtual String getZooKeeperName() const override { return zookeeper_name; }
+    virtual String getZooKeeperPath() const override { return zookeeper_path; }
 
 private:
     std::atomic_bool are_restoring_replica {false};
@@ -737,7 +741,7 @@ private:
     PartitionBlockNumbersHolder allocateBlockNumbersInAffectedPartitions(
         const MutationCommands & commands, ContextPtr query_context, const zkutil::ZooKeeperPtr & zookeeper) const;
 
-    static Strings getZeroCopyRootPath(const MergeTreeSettings & settings, const String * zookeeper_path_ptr = nullptr);
+    static Strings getZeroCopyRootPath(const MergeTreeSettings & settings, const String & zookeeper_path_old);
 
     /// Upgrave zero-copy version
     /// version 1 - lock for shared part inside table node in ZooKeeper

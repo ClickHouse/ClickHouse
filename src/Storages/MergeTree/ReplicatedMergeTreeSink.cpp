@@ -222,6 +222,8 @@ void ReplicatedMergeTreeSink::commitPart(
 
     bool is_already_existing_part = false;
 
+    String old_part_name = part->name;
+
     while (true)
     {
         /// Obtain incremental block number and lock it. The lock holds our intention to add the block to the filesystem.
@@ -502,6 +504,8 @@ void ReplicatedMergeTreeSink::commitPart(
 
         waitForQuorum(zookeeper, part->name, quorum_info.status_path, quorum_info.is_active_node_value);
     }
+
+    part->cleanupOldName(old_part_name);
 }
 
 void ReplicatedMergeTreeSink::onStart()

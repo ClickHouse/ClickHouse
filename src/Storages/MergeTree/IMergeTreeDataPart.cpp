@@ -1100,6 +1100,14 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     storage.lockSharedData(*this);
 }
 
+void IMergeTreeDataPart::cleanupOldName(const String & old_name) const
+{
+    if (name == old_name)
+        return;
+
+    storage.unlockSharedData(*this, old_name);
+}
+
 std::optional<bool> IMergeTreeDataPart::keepSharedDataInDecoupledStorage() const
 {
     /// NOTE: It's needed for zero-copy replication
