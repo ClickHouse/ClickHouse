@@ -121,7 +121,7 @@ BlobStorageEndpoint processBlobStorageEndpoint(const Poco::Util::AbstractConfigu
 {
     String storage_account_url = config.getString(config_prefix + ".storage_account_url");
     validateStorageAccountUrl(storage_account_url);
-    String container_name = config.getString(config_prefix + ".container_name", "default_container");
+    String container_name = config.getString(config_prefix + ".container_name", "default-container");
     validateContainerName(container_name);
     std::optional<bool> container_already_exists {};
     if (config.has(config_prefix + ".container_already_exists"))
@@ -130,35 +130,54 @@ BlobStorageEndpoint processBlobStorageEndpoint(const Poco::Util::AbstractConfigu
 }
 
 
-std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> getBlobContainerClient(const BlobStorageEndpoint & endpoint)
+/// StorageSharedKeyCredential and ManagedIdentityCredential do not inherit from the same base class
+/// This is why it is necessary to have two different ways of invoking the client constructor
+template <class T>
+std::shared_ptr<T> getBlobStorageClientWithAuth(
+    const String & url, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    if (config.has(config_prefix + ".account_key") && config.has(config_prefix + ".account_name")) {
+        auto storage_shared_key_credential = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(
+            config.getString(config_prefix + ".account_name"),
+            config.getString(config_prefix + ".account_key")
+        );
+        return std::make_shared<T>(url, storage_shared_key_credential);
+    }
+
+    auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
+    return std::make_shared<T>(url, managed_identity_credential);
+}
+
+
+std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> getBlobContainerClient(
+    const BlobStorageEndpoint & endpoint, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     using namespace Azure::Storage::Blobs;
 
-    auto credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
     auto final_url = endpoint.storage_account_url
         + (endpoint.storage_account_url.back() == '/' ? "" : "/")
         + endpoint.container_name;
 
     if (endpoint.container_already_exists.value_or(false))
-        return std::make_shared<BlobContainerClient>(final_url, credential);
+        return getBlobStorageClientWithAuth<BlobContainerClient>(final_url, config, config_prefix);
 
-    auto blob_service_client = Azure::Storage::Blobs::BlobServiceClient(endpoint.storage_account_url, credential);
+    auto blob_service_client = getBlobStorageClientWithAuth<BlobServiceClient>(final_url, config, config_prefix);
 
     if (!endpoint.container_already_exists.has_value())
     {
         ListBlobContainersOptions blob_containers_list_options;
         blob_containers_list_options.Prefix = endpoint.container_name;
         blob_containers_list_options.PageSizeHint = 1;
-        auto blob_containers = blob_service_client.ListBlobContainers().BlobContainers;
+        auto blob_containers = blob_service_client->ListBlobContainers().BlobContainers;
         for (const auto & blob_container : blob_containers)
         {
             if (blob_container.Name == endpoint.container_name)
-                return std::make_shared<BlobContainerClient>(final_url, credential);
+                return getBlobStorageClientWithAuth<BlobContainerClient>(final_url, config, config_prefix);
         }
     }
 
     return std::make_shared<BlobContainerClient>(
-        blob_service_client.CreateBlobContainer(endpoint.container_name).Value);
+        blob_service_client->CreateBlobContainer(endpoint.container_name).Value);
 }
 
 
@@ -172,7 +191,7 @@ void registerDiskBlobStorage(DiskFactory & factory)
         const DisksMap & /*map*/)
     {
         auto endpoint_details = processBlobStorageEndpoint(config, config_prefix);
-        auto blob_container_client = getBlobContainerClient(endpoint_details);
+        auto blob_container_client = getBlobContainerClient(endpoint_details, config, config_prefix);
 
         /// where the metadata files are stored locally
         auto metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
