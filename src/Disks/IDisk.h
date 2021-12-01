@@ -248,7 +248,7 @@ public:
     virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) {}
 
     /// Open the local file for read and return ReadBufferFromFileBase object.
-    /// Overriden in IDiskRemote.
+    /// Overridden in IDiskRemote.
     /// Used for work with custom metadata.
     virtual std::unique_ptr<ReadBufferFromFileBase> readMetaFile(
         const String & path,
@@ -256,7 +256,7 @@ public:
         std::optional<size_t> size = {}) const;
 
     /// Open the local file for write and return WriteBufferFromFileBase object.
-    /// Overriden in IDiskRemote.
+    /// Overridden in IDiskRemote.
     /// Used for work with custom metadata.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeMetaFile(
         const String & path,
@@ -264,7 +264,7 @@ public:
         WriteMode mode = WriteMode::Rewrite);
 
     /// Return reference count for remote FS.
-    /// Overriden in IDiskRemote.
+    /// Overridden in IDiskRemote.
     virtual UInt32 getRefCount(const String &) const { return 0; }
 
 protected:
