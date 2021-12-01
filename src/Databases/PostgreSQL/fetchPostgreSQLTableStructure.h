@@ -19,6 +19,7 @@ struct PostgreSQLTableStructure
 
 using PostgreSQLTableStructurePtr = std::unique_ptr<PostgreSQLTableStructure>;
 
+/// We need order for materialized version.
 std::set<String> fetchPostgreSQLTablesList(pqxx::connection & connection, const String & postgres_schema);
 
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(

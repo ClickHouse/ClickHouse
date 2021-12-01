@@ -137,7 +137,9 @@ StoragePtr DatabaseMaterializedMySQL::tryGetTable(const String & name, ContextPt
     StoragePtr nested_storage = DatabaseAtomic::tryGetTable(name, context_);
     if (context_->isInternalQuery())
         return nested_storage;
-    return std::make_shared<StorageMaterializedMySQL>(std::move(nested_storage), this);
+    if (nested_storage)
+        return std::make_shared<StorageMaterializedMySQL>(std::move(nested_storage), this);
+    return nullptr;
 }
 
 DatabaseTablesIteratorPtr

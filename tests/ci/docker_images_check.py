@@ -7,7 +7,7 @@ import time
 import shutil
 from github import Github
 from s3_helper import S3Helper
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from upload_result_helper import upload_results
 from commit_status_helper import get_commit
@@ -39,17 +39,13 @@ def get_changed_docker_images(pr_info, repo_path, image_file_path):
         if image_description['name'].startswith('clickhouse/'):
             dockerhub_repo_name = 'clickhouse'
 
-        if 'release' in pr_info.labels:
-            logging.info("Release PR, will rebuild all images from branch, including %s", dockerfile_dir)
-            changed_images.append(dockerfile_dir)
-        else:
-            for f in files_changed:
-                if f.startswith(dockerfile_dir):
-                    logging.info(
-                        "Found changed file '%s' which affects docker image '%s' with path '%s'",
-                        f, image_description['name'], dockerfile_dir)
-                    changed_images.append(dockerfile_dir)
-                    break
+        for f in files_changed:
+            if f.startswith(dockerfile_dir):
+                logging.info(
+                    "Found changed file '%s' which affects docker image '%s' with path '%s'",
+                    f, image_description['name'], dockerfile_dir)
+                changed_images.append(dockerfile_dir)
+                break
 
     # The order is important: dependents should go later than bases, so that
     # they are built with updated base versions.
@@ -171,10 +167,7 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
-        event = json.load(event_file)
-
-    pr_info = PRInfo(event, False, True)
+    pr_info = PRInfo(get_event(), need_changed_files=True)
     changed_images, dockerhub_repo_name = get_changed_docker_images(pr_info, repo_path, "docker/images.json")
     logging.info("Has changed images %s", ', '.join([str(image[0]) for image in changed_images]))
     pr_commit_version = str(pr_info.number) + '-' + pr_info.sha

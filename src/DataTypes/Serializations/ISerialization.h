@@ -348,6 +348,8 @@ public:
 protected:
     template <typename State, typename StatePtr>
     State * checkAndGetState(const StatePtr & state) const;
+
+    [[noreturn]] void throwUnexpectedDataAfterParsedValue(IColumn & column, ReadBuffer & istr, const FormatSettings &, const String & type_name) const;
 };
 
 using SerializationPtr = std::shared_ptr<const ISerialization>;
