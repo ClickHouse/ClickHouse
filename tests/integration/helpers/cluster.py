@@ -422,20 +422,17 @@ class ClickHouseCluster:
 
         # Just in case kill unstopped containers from previous launch
         try:
-            # docker-compose names containers using the following formula:
-            # container_name = project_name + '_' + instance_name + '_1'
-            # We need to have "^/" and "$" in the "--filter name" option below to filter by exact name of the container, see
-            # https://stackoverflow.com/questions/48767760/how-to-make-docker-container-ls-f-name-filter-by-exact-name
-            filter_name = f'^/{self.project_name}_.*_1$'
-            if int(run_and_check(f'docker container list --all --filter name={filter_name} | wc -l', shell=True)) > 1:
-                logging.debug(f"Trying to kill unstopped containers for project {self.project_name}:")
-                unstopped_containers = run_and_check(f'docker container list --all --filter name={filter_name}', shell=True).splitlines()
-                logging.debug(f"Unstopped containers {unstopped_containers}")
+            unstopped_containers = self.get_running_containers()
+            if unstopped_containers:
+                logging.debug(f"Trying to kill unstopped containers: {unstopped_containers}")
                 for id in unstopped_containers:
                     run_and_check(f'docker kill {id}', shell=True, nothrow=True)
                     run_and_check(f'docker rm {id}', shell=True, nothrow=True)
-                left_ids = run_and_check(f'docker container list --all --filter name={filter_name}', shell=True)
-                logging.debug(f"Unstopped containers killed. Left {left_ids}")
+                unstopped_containers = self.get_running_containers()
+                if unstopped_containers:
+                    logging.debug(f"Left unstopped containers: {unstopped_containers}")
+                else:
+                    logging.debug(f"Unstopped containers killed.")
             else:
                 logging.debug(f"No running containers for project: {self.project_name}")
         except:
@@ -486,6 +483,19 @@ class ClickHouseCluster:
         if p.basename(cmd) == 'clickhouse':
             cmd += " client"
         return cmd
+
+    # Returns the list of currently running docker containers corresponding to this ClickHouseCluster.
+    def get_running_containers(self):
+        # docker-compose names containers using the following formula:
+        # container_name = project_name + '_' + instance_name + '_1'
+        # We need to have "^/" and "$" in the "--filter name" option below to filter by exact name of the container, see
+        # https://stackoverflow.com/questions/48767760/how-to-make-docker-container-ls-f-name-filter-by-exact-name
+        filter_name = f'^/{self.project_name}_.*_1$'
+        # We want the command "docker container list" to show only containers' ID and their names, separated by colon.
+        format = '{{.ID}}:{{.Names}}'
+        containers = run_and_check(f"docker container list --all --filter name='{filter_name}' --format '{format}'", shell=True)
+        containers = dict(line.split(':', 1) for line in containers.decode('utf8').splitlines())
+        return containers
 
     def copy_file_from_container_to_container(self, src_node, src_path, dst_node, dst_path):
         fname = os.path.basename(src_path)
@@ -767,7 +777,7 @@ class ClickHouseCluster:
                      hostname=None, env_variables=None, image="clickhouse/integration-test", tag=None,
                      stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, external_dirs=None, tmpfs=None,
                      zookeeper_docker_compose_path=None, minio_certs_dir=None, use_keeper=True,
-                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="clickhouse"):
+                     main_config_name="config.xml", users_config_name="users.xml", copy_common_configs=True, config_root_name="clickhouse") -> 'ClickHouseInstance':
 
         """Add an instance to the cluster.
 

@@ -16,28 +16,16 @@ namespace
 {
     constexpr UInt64 ALL_THREADS = 0;
 
-    UInt64 calculateNewCoresNumber(DB::ThreadIdToTimeMap const & prev, DB::ThreadIdToTimeMap const& next)
+    UInt64 calculateCoresNumber(DB::ThreadIdToTimeMap times, UInt64 elapsed)
     {
-        if (next.find(ALL_THREADS) == next.end())
-            return 0;
-
-        auto accumulated = std::accumulate(next.cbegin(), next.cend(), 0,
-            [&prev](UInt64 acc, const auto & elem)
-            {
-                if (elem.first == ALL_THREADS)
-                    return acc;
-
-                auto thread_time = elem.second.time();
-                auto it = prev.find(elem.first);
-                if (it != prev.end())
-                    thread_time -= it->second.time();
-                return acc + thread_time;
-            });
-
-        auto elapsed = next.at(ALL_THREADS).time() - (prev.contains(ALL_THREADS) ? prev.at(ALL_THREADS).time() : 0);
-        if (elapsed == 0)
-            return 0;
-        return (accumulated + elapsed - 1) / elapsed;
+        auto accumulated = std::accumulate(times.begin(), times.end(), 0,
+        [](Int64 acc, const auto & elem)
+        {
+            if (elem.first == ALL_THREADS)
+                return acc;
+            return acc + elem.second.time();
+        });
+        return (static_cast<UInt64>(accumulated) + elapsed - 1) / elapsed;
     }
 }
 
@@ -89,14 +77,13 @@ void ProgressIndication::addThreadIdToList(String const & host, UInt64 thread_id
     thread_to_times[thread_id] = {};
 }
 
-void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread_data)
+void ProgressIndication::updateThreadEventData(HostToThreadTimesMap & new_thread_data, UInt64 elapsed_time)
 {
     for (auto & new_host_map : new_thread_data)
     {
-        auto & host_map = thread_data[new_host_map.first];
-        auto new_cores = calculateNewCoresNumber(host_map, new_host_map.second);
+        auto new_cores = calculateCoresNumber(new_host_map.second, elapsed_time);
         host_active_cores[new_host_map.first] = new_cores;
-        host_map = std::move(new_host_map.second);
+        thread_data[new_host_map.first] = std::move(new_host_map.second);
     }
 }
 
