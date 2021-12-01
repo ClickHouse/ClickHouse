@@ -152,9 +152,9 @@ if __name__ == "__main__":
         log_url = ''
         for url in build_results:
             if 'build_log.log' in url:
-                log_url = 'https://s3.amazonaws.com/' + s3_path_prefix + '/' + url.replace('+', '%2B').replace(' ', '%20')
+                log_url = 'https://s3.amazonaws.com/clickhouse-builds/' + s3_path_prefix + '/' + url.replace('+', '%2B').replace(' ', '%20')
             else:
-                build_urls.append('https://s3.amazonaws.com/' + s3_path_prefix + '/' + url.replace('+', '%2B').replace(' ', '%20'))
+                build_urls.append('https://s3.amazonaws.com/clickhouse-builds/' + s3_path_prefix + '/' + url.replace('+', '%2B').replace(' ', '%20'))
         create_json_artifact(temp_path, build_name, log_url, build_urls, build_config, 0, True)
         sys.exit(0)
 
