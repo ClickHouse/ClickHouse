@@ -35,10 +35,10 @@ Chunk ORCBlockInputFormat::generate()
     {
         auto result = file_reader->NextStripeReader(DBMS_DEFAULT_BUFFER_SIZE, include_indices);
         if (!result.ok())
-        {
             throw ParsingException(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to create batch reader: {}", result.status().ToString());
-        }
-        batch_reader.reset(result->get());
+        batch_reader = std::move(result).ValueOrDie();
+        if (!batch_reader)
+            return res;
     }
 
     std::shared_ptr<arrow::RecordBatch> batch_result;
@@ -101,15 +101,14 @@ void ORCBlockInputFormat::prepareReader()
     auto result = arrow::adapters::orc::ORCFileReader::Open(asArrowFile(*in, format_settings), arrow::default_memory_pool());
     if (!result.ok())
         throw Exception(result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
-    file_reader.reset(result->get());
+    file_reader = std::move(result).ValueOrDie();
     stripe_total = file_reader->NumberOfStripes();
     stripe_current = 0;
 
     auto read_schema_result = file_reader->ReadSchema();
     if (!read_schema_result.ok())
         throw Exception(read_schema_result.status().ToString(), ErrorCodes::BAD_ARGUMENTS);
-
-    std::shared_ptr<arrow::Schema> schema = *read_schema_result;
+    std::shared_ptr<arrow::Schema> schema = std::move(read_schema_result).ValueOrDie();
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(getPort().getHeader(), "ORC", format_settings.orc.import_nested);
 

@@ -171,7 +171,7 @@ set(LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/src/arrow")
 
 configure_file("${LIBRARY_DIR}/util/config.h.cmake" "${CMAKE_CURRENT_BINARY_DIR}/cpp/src/arrow/util/config.h")
 
-# arrow/cpp/src/arrow/CMakeLists.txt (ARROW_SRCS + ARROW_COMPUTE)
+# arrow/cpp/src/arrow/CMakeLists.txt (ARROW_SRCS + ARROW_COMPUTE + ARROW_IPC)
 set(ARROW_SRCS
         "${LIBRARY_DIR}/array/array_base.cc"
         "${LIBRARY_DIR}/array/array_binary.cc"
@@ -262,6 +262,7 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/util/utf8.cc"
         "${LIBRARY_DIR}/util/value_parsing.cc"
         "${LIBRARY_DIR}/vendored/base64.cpp"
+        "${LIBRARY_DIR}/vendored/datetime/tz.cpp"
 
         "${LIBRARY_DIR}/compute/api_aggregate.cc"
         "${LIBRARY_DIR}/compute/api_scalar.cc"
@@ -322,6 +323,14 @@ set(ARROW_SRCS
         "${LIBRARY_DIR}/compute/exec/hash_join.cc"
         "${LIBRARY_DIR}/compute/exec/hash_join_node.cc"
         "${LIBRARY_DIR}/compute/exec/task_util.cc"
+
+        "${LIBRARY_DIR}/ipc/dictionary.cc"
+        "${LIBRARY_DIR}/ipc/feather.cc"
+        "${LIBRARY_DIR}/ipc/message.cc"
+        "${LIBRARY_DIR}/ipc/metadata_internal.cc"
+        "${LIBRARY_DIR}/ipc/options.cc"
+        "${LIBRARY_DIR}/ipc/reader.cc"
+        "${LIBRARY_DIR}/ipc/writer.cc"
 
         ${ORC_SRCS}
         )
