@@ -4,8 +4,6 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 
-#include <Parsers/ASTFunction.h>
-
 #include <Poco/Logger.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
 

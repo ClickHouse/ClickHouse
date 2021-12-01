@@ -1,5 +1,5 @@
-#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTShowTablesQuery.h>
 
 #include <Parsers/CommonParsers.h>

@@ -1,4 +1,6 @@
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 #if USE_H3
 
@@ -10,7 +12,7 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <base/range.h>
+#include <common/range.h>
 
 #include <constants.h>
 #include <h3api.h>

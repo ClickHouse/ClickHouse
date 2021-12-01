@@ -1,6 +1,8 @@
 #pragma once
 
-#include "config_formats.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
 
 #if USE_PROTOBUF
 #    include <Processors/Formats/IRowInputFormat.h>
@@ -32,11 +34,11 @@ public:
 
     String getName() const override { return "ProtobufRowInputFormat"; }
 
-private:
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
 
+private:
     std::unique_ptr<ProtobufReader> reader;
     std::vector<size_t> missing_column_indices;
     std::unique_ptr<ProtobufSerializer> serializer;

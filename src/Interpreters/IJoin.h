@@ -27,8 +27,6 @@ public:
     /// @returns false, if some limit was exceeded and you should not insert more data.
     virtual bool addJoinedBlock(const Block & block, bool check_limits = true) = 0;
 
-    virtual void checkTypesOfKeys(const Block & block) const = 0;
-
     /// Join the block with data from left hand of JOIN to the right hand data (that was previously built by calls to addJoinedBlock).
     /// Could be called from different threads in parallel.
     virtual void joinBlock(Block & block, std::shared_ptr<ExtraBlock> & not_processed) = 0;
@@ -45,8 +43,7 @@ public:
     /// Different query plan is used for such joins.
     virtual bool isFilled() const { return false; }
 
-    virtual std::shared_ptr<NotJoinedBlocks>
-    getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const = 0;
+    virtual std::shared_ptr<NotJoinedBlocks> getNonJoinedBlocks(const Block &, UInt64) const = 0;
 };
 
 using JoinPtr = std::shared_ptr<IJoin>;

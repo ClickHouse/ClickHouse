@@ -8,7 +8,6 @@ import logging
 import io
 import string
 import ast
-import math
 
 import avro.schema
 import avro.io
@@ -43,7 +42,7 @@ from . import social_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/kafka.xml', 'configs/named_collection.xml'],
+                                main_configs=['configs/kafka.xml'],
                                 with_kafka=True,
                                 with_zookeeper=True, # For Replicated Table
                                 macros={"kafka_broker":"kafka1",
@@ -120,19 +119,16 @@ def kafka_produce(kafka_cluster, topic, messages, timestamp=None, retries=15):
 def kafka_producer_send_heartbeat_msg(max_retries=50):
     kafka_produce(kafka_cluster, 'test_heartbeat_topic', ['test'], retries=max_retries)
 
-def kafka_consume(kafka_cluster, topic, needDecode = True, timestamp = 0):
+def kafka_consume(kafka_cluster, topic):
     consumer = KafkaConsumer(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port), auto_offset_reset="earliest")
     consumer.subscribe(topics=(topic))
     for toppar, messages in list(consumer.poll(5000).items()):
         if toppar.topic == topic:
             for message in messages:
-                assert timestamp == 0 or message.timestamp / 1000 == timestamp
-                if needDecode:
-                    yield message.value.decode()
-                else:
-                    yield message.value
+                yield message.value.decode()
     consumer.unsubscribe()
     consumer.close()
+
 
 def kafka_produce_protobuf_messages(kafka_cluster, topic, start_index, num_messages):
     data = b''
@@ -683,16 +679,6 @@ def kafka_check_result(result, check=False, ref_file='test_kafka_json.reference'
             assert TSV(result) == TSV(reference)
         else:
             return TSV(result) == TSV(reference)
-
-
-def decode_avro(message):
-    b = io.BytesIO(message)
-    ret = avro.datafile.DataFileReader(b, avro.io.DatumReader())
-
-    output = io.StringIO()
-    for record in ret:
-        print(record, file=output)
-    return output.getvalue()
 
 
 # https://stackoverflow.com/a/57692111/1555175
@@ -1761,8 +1747,8 @@ def test_kafka_virtual_columns2(kafka_cluster):
 
     members = describe_consumer_group(kafka_cluster, 'virt2')
     # pprint.pprint(members)
-    # members[0]['client_id'] = 'ClickHouse-instance-test-kafka-0'
-    # members[1]['client_id'] = 'ClickHouse-instance-test-kafka-1'
+    members[0]['client_id'] = 'ClickHouse-instance-test-kafka-0'
+    members[1]['client_id'] = 'ClickHouse-instance-test-kafka-1'
 
     result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
 
@@ -1779,13 +1765,9 @@ def test_kafka_virtual_columns2(kafka_cluster):
 
     assert TSV(result) == TSV(expected)
 
-    instance.query('''
-        DROP TABLE test.kafka;
-        DROP TABLE test.view;
-    ''')
     kafka_delete_topic(admin_client, "virt2_0")
     kafka_delete_topic(admin_client, "virt2_1")
-    instance.rotate_logs()
+
 
 def test_kafka_produce_key_timestamp(kafka_cluster):
 
@@ -1843,86 +1825,6 @@ def test_kafka_produce_key_timestamp(kafka_cluster):
 '''
 
     assert TSV(result) == TSV(expected)
-
-    kafka_delete_topic(admin_client, topic_name)
-
-
-def test_kafka_insert_avro(kafka_cluster):
-    instance.query('''
-        DROP TABLE IF EXISTS test.kafka;
-        CREATE TABLE test.kafka (key UInt64, value UInt64, _timestamp DateTime('UTC'))
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'avro1',
-                     kafka_group_name = 'avro1',
-                     kafka_format = 'Avro';
-    ''')
-
-
-    instance.query("INSERT INTO test.kafka select number*10 as key, number*100 as value, 1636505534 as _timestamp from numbers(4) SETTINGS output_format_avro_rows_in_file = 2, output_format_avro_codec = 'deflate'")
-
-    messages = []
-    while True:
-        messages.extend(kafka_consume(kafka_cluster, 'avro1', needDecode = False, timestamp = 1636505534))
-        if len(messages) == 2:
-            break
-
-    result = ''
-    for a_message in messages:
-        result += decode_avro(a_message) + '\n'
-
-    expected_result = """{'key': 0, 'value': 0, '_timestamp': 1636505534}
-{'key': 10, 'value': 100, '_timestamp': 1636505534}
-
-{'key': 20, 'value': 200, '_timestamp': 1636505534}
-{'key': 30, 'value': 300, '_timestamp': 1636505534}
-
-"""
-    assert (result == expected_result)
-
-
-def test_kafka_produce_consume_avro(kafka_cluster):
-
-    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
-
-    topic_name = "insert_avro"
-    kafka_create_topic(admin_client, topic_name)
-
-    num_rows = 75
-
-    instance.query('''
-        DROP TABLE IF EXISTS test.view;
-        DROP TABLE IF EXISTS test.kafka;
-        DROP TABLE IF EXISTS test.kafka_writer;
-
-        CREATE TABLE test.kafka_writer (key UInt64, value UInt64)
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'avro',
-                     kafka_group_name = 'avro',
-                     kafka_format = 'Avro';
-
-
-        CREATE TABLE test.kafka (key UInt64, value UInt64)
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'avro',
-                     kafka_group_name = 'avro',
-                     kafka_format = 'Avro';
-
-        CREATE MATERIALIZED VIEW test.view Engine=Log AS
-            SELECT key, value FROM test.kafka;
-    ''')
-
-    instance.query("INSERT INTO test.kafka_writer select number*10 as key, number*100 as value from numbers({num_rows}) SETTINGS output_format_avro_rows_in_file = 7".format(num_rows=num_rows))
-
-    instance.wait_for_log_line("Committed offset {offset}".format(offset=math.ceil(num_rows/7)))
-
-    expected_num_rows = instance.query("SELECT COUNT(1) FROM test.view", ignore_error=True)
-    assert (int(expected_num_rows) == num_rows)
-
-    expected_max_key = instance.query("SELECT max(key) FROM test.view", ignore_error=True)
-    assert (int(expected_max_key) == (num_rows - 1) * 10)
 
     kafka_delete_topic(admin_client, topic_name)
 
@@ -2259,7 +2161,7 @@ def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
     # we have 0.25 (sleepEachRow) * 20 ( Rows ) = 5 sec window after "Polled batch of 20 messages"
     # while materialized view is working to inject zookeeper failure
     pm.drop_instance_zk_connections(instance)
-    instance.wait_for_log_line("Error.*(session has been expired|Connection loss).*while pushing to view")
+    instance.wait_for_log_line("Error.*(session has been expired|Connection loss).*while writing suffix to view")
     pm.heal_all()
     instance.wait_for_log_line("Committed offset 22")
 
@@ -2948,7 +2850,7 @@ def test_kafka_formats_with_broken_message(kafka_cluster):
                 # broken message
             b'\x05\x02\x69\x64\x07\x62\x6c\x6f\x63\x6b\x4e\x6f\x04\x76\x61\x6c\x31\x04\x76\x61\x6c\x32\x04\x76\x61\x6c\x33\x05\x49\x6e\x74\x36\x34\x06\x53\x74\x72\x69\x6e\x67\x06\x53\x74\x72\x69\x6e\x67\x07\x46\x6c\x6f\x61\x74\x33\x32\x05\x55\x49\x6e\x74\x38\x00\x00\x00\x00\x00\x00\x00\x00\x03\x42\x41\x44\x02\x41\x4d\x00\x00\x00\x3f\x01',
             ],
-            'expected':'{"raw_message":"0502696407626C6F636B4E6F0476616C310476616C320476616C3305496E74363406537472696E6706537472696E6707466C6F617433320555496E743800000000000000000342414402414D0000003F01","error":"Type of \'blockNo\' must be UInt16, not String"}',
+            'expected':'{"raw_message":"0502696407626C6F636B4E6F0476616C310476616C320476616C3305496E74363406537472696E6706537472696E6707466C6F617433320555496E743800000000000000000342414402414D0000003F01","error":"Cannot read all data. Bytes read: 9. Bytes expected: 65.: (at row 1)\\n"}',
             'printable':False,
         },
         'ORC': {
@@ -3173,28 +3075,6 @@ def test_kafka_consumer_failover(kafka_cluster):
     producer.flush()
     prev_count = wait_for_new_data('test.destination', prev_count)
     kafka_delete_topic(admin_client, topic_name)
-
-
-def test_kafka_predefined_configuration(kafka_cluster):
-    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
-    topic_name = 'conf'
-    kafka_create_topic(admin_client, topic_name)
-
-    messages = []
-    for i in range(50):
-        messages.append('{i}, {i}'.format(i=i))
-    kafka_produce(kafka_cluster, topic_name, messages)
-
-    instance.query(f'''
-        CREATE TABLE test.kafka (key UInt64, value UInt64) ENGINE = Kafka(kafka1, kafka_format='CSV');
-        ''')
-
-    result = ''
-    while True:
-        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
-        if kafka_check_result(result):
-            break
-    kafka_check_result(result, True)
 
 
 if __name__ == '__main__':

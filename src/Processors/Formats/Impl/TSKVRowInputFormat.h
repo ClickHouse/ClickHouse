@@ -27,14 +27,14 @@ public:
 
     String getName() const override { return "TSKVRowInputFormat"; }
 
-    void resetParser() override;
-
-private:
     void readPrefix() override;
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
+    void resetParser() override;
 
+
+private:
     const FormatSettings format_settings;
 
     /// Buffer for the read from the stream the field name. Used when you have to copy it.

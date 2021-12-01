@@ -8,10 +8,9 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
-#include <Common/escapeForFileName.h>
 
-#include <base/logger_useful.h>
-#include <base/scope_guard_safe.h>
+#include <common/logger_useful.h>
+#include <common/scope_guard_safe.h>
 #include <iomanip>
 #include <filesystem>
 
@@ -37,11 +36,11 @@ DatabaseLazy::DatabaseLazy(const String & name_, const String & metadata_path_, 
 
 
 void DatabaseLazy::loadStoredObjects(
-    ContextMutablePtr local_context, bool /* force_restore */, bool /*force_attach*/, bool /* skip_startup_tables */)
+    ContextMutablePtr local_context, bool /* has_force_restore_data_flag */, bool /*force_attach*/, bool /* skip_startup_tables */)
 {
-    iterateMetadataFiles(local_context, [this, &local_context](const String & file_name)
+    iterateMetadataFiles(local_context, [this](const String & file_name)
     {
-        const std::string table_name = unescapeForFileName(file_name.substr(0, file_name.size() - 4));
+        const std::string table_name = file_name.substr(0, file_name.size() - 4);
 
         fs::path detached_permanently_flag = fs::path(getMetadataPath()) / (file_name + detached_suffix);
         if (fs::exists(detached_permanently_flag))
@@ -50,7 +49,7 @@ void DatabaseLazy::loadStoredObjects(
             return;
         }
 
-        attachTable(local_context, table_name, nullptr, {});
+        attachTable(table_name, nullptr, {});
     });
 }
 
@@ -160,7 +159,7 @@ bool DatabaseLazy::empty() const
     return tables_cache.empty();
 }
 
-void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
+void DatabaseLazy::attachTable(const String & table_name, const StoragePtr & table, const String &)
 {
     LOG_DEBUG(log, "Attach table {}.", backQuote(table_name));
     std::lock_guard lock(mutex);
@@ -175,7 +174,7 @@ void DatabaseLazy::attachTable(ContextPtr /* context_ */, const String & table_n
     it->second.expiration_iterator = cache_expiration_queue.emplace(cache_expiration_queue.end(), current_time, table_name);
 }
 
-StoragePtr DatabaseLazy::detachTable(ContextPtr /* context */, const String & table_name)
+StoragePtr DatabaseLazy::detachTable(const String & table_name)
 {
     StoragePtr res;
     {

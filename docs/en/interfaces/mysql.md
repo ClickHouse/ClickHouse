@@ -50,4 +50,4 @@ To cancel a long query use `KILL QUERY connection_id` statement (it is replaced 
 $ mysql --protocol tcp -h mysql_server -P 9004 default -u default --password=123 -e "KILL QUERY 123456;"
 ```
 
-[Original article](https://clickhouse.com/docs/en/interfaces/mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/mysql/) <!--hide-->

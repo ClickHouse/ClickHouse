@@ -1,4 +1,0 @@
-# format_csv_null_representation should initially be \\N
-"val1",\N,"val3"
-# Changing format_csv_null_representation
-"val1",∅,"val3"

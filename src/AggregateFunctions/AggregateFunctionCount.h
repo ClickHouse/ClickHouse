@@ -10,7 +10,9 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/assert_cast.h>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -201,21 +203,6 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         data(place).count += !assert_cast<const ColumnNullable &>(*columns[0]).isNullAt(row_num);
-    }
-
-    void addBatchSinglePlace(
-        size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena *, ssize_t if_argument_pos) const override
-    {
-        auto & nc = assert_cast<const ColumnNullable &>(*columns[0]);
-        if (if_argument_pos >= 0)
-        {
-            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
-            data(place).count += countBytesInFilterWithNull(flags, nc.getNullMapData().data());
-        }
-        else
-        {
-            data(place).count += batch_size - countBytesInFilter(nc.getNullMapData().data(), batch_size);
-        }
     }
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override

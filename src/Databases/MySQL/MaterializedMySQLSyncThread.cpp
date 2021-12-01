@@ -1,29 +1,30 @@
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_MYSQL
 
 #include <Databases/MySQL/MaterializedMySQLSyncThread.h>
-#include <cstdlib>
-#include <random>
-#include <string_view>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnDecimal.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Transforms/CountingTransform.h>
-#include <Databases/MySQL/DatabaseMaterializedMySQL.h>
-#include <Databases/MySQL/MaterializeMetadata.h>
-#include <Processors/Sources/MySQLSource.h>
-#include <IO/ReadBufferFromString.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/executeQuery.h>
-#include <Storages/StorageMergeTree.h>
-#include <Common/quoteString.h>
-#include <Common/setThreadName.h>
-#include <base/sleep.h>
-#include <base/bit_cast.h>
+#    include <cstdlib>
+#    include <random>
+#    include <Columns/ColumnTuple.h>
+#    include <Columns/ColumnDecimal.h>
+#    include <Processors/QueryPipeline.h>
+#    include <Processors/Executors/PullingPipelineExecutor.h>
+#    include <DataStreams/CountingBlockOutputStream.h>
+#    include <DataStreams/OneBlockInputStream.h>
+#    include <DataStreams/copyData.h>
+#    include <Databases/MySQL/DatabaseMaterializedMySQL.h>
+#    include <Databases/MySQL/MaterializeMetadata.h>
+#    include <Formats/MySQLSource.h>
+#    include <IO/ReadBufferFromString.h>
+#    include <Interpreters/Context.h>
+#    include <Interpreters/executeQuery.h>
+#    include <Storages/StorageMergeTree.h>
+#    include <Common/quoteString.h>
+#    include <Common/setThreadName.h>
+#    include <common/sleep.h>
+#    include <common/bit_cast.h>
 
 namespace DB
 {
@@ -53,7 +54,7 @@ static ContextMutablePtr createQueryContext(ContextPtr context)
 
     auto query_context = Context::createCopy(context);
     query_context->setSettings(new_query_settings);
-    query_context->setInternalQuery(true);
+    CurrentThread::QueryScope query_scope(query_context);
 
     query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     query_context->setCurrentQueryId(""); // generate random query_id
@@ -111,7 +112,8 @@ static void checkMySQLVariables(const mysqlxx::Pool::Entry & connection, const S
         {"log_bin_use_v1_row_events", "OFF"}
     };
 
-    QueryPipeline pipeline(std::move(variables_input));
+    QueryPipeline pipeline;
+    pipeline.init(Pipe(std::move(variables_input)));
 
     PullingPipelineExecutor executor(pipeline);
     Block variables_block;
@@ -231,8 +233,7 @@ void MaterializedMySQLSyncThread::stopSynchronization()
     if (!sync_quit && background_thread_pool)
     {
         sync_quit = true;
-        if (background_thread_pool->joinable())
-            background_thread_pool->join();
+        background_thread_pool->join();
         client.disconnect();
     }
 }
@@ -274,8 +275,6 @@ static inline void cleanOutdatedTables(const String & database_name, ContextPtr 
         for (auto iterator = clean_database->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
             auto query_context = createQueryContext(context);
-            CurrentThread::QueryScope query_scope(query_context);
-
             String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
             cleaning_table_name = backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(iterator->name());
             tryToExecuteQuery(" DROP TABLE " + cleaning_table_name, query_context, database_name, comment);
@@ -288,7 +287,7 @@ static inline void cleanOutdatedTables(const String & database_name, ContextPtr 
     }
 }
 
-static inline QueryPipeline
+static inline BlockOutputStreamPtr
 getTableOutput(const String & database_name, const String & table_name, ContextMutablePtr query_context, bool insert_materialized = false)
 {
     const StoragePtr & storage = DatabaseCatalog::instance().getTable(StorageID(database_name, table_name), query_context);
@@ -309,10 +308,13 @@ getTableOutput(const String & database_name, const String & table_name, ContextM
 
 
     String comment = "Materialize MySQL step 1: execute dump data";
-    BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuote(table_name) + " (" + insert_columns_str.str() + ")" + " VALUES",
+    BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuoteIfNeed(table_name) + "(" + insert_columns_str.str() + ")" + " VALUES",
         query_context, database_name, comment);
 
-    return std::move(res.pipeline);
+    if (!res.out)
+        throw Exception("LOGICAL ERROR: It is a bug.", ErrorCodes::LOGICAL_ERROR);
+
+    return res.out;
 }
 
 static inline void dumpDataForTables(
@@ -327,26 +329,28 @@ static inline void dumpDataForTables(
         {
             const auto & table_name = iterator->first;
             auto query_context = createQueryContext(context);
-            CurrentThread::QueryScope query_scope(query_context);
-
             String comment = "Materialize MySQL step 1: execute MySQL DDL for dump data";
             tryToExecuteQuery(query_prefix + " " + iterator->second, query_context, database_name, comment); /// create table.
 
-            auto pipeline = getTableOutput(database_name, table_name, query_context);
+            auto out = std::make_shared<CountingBlockOutputStream>(getTableOutput(database_name, table_name, query_context));
             StreamSettings mysql_input_stream_settings(context->getSettingsRef());
             auto input = std::make_unique<MySQLSource>(
                 connection, "SELECT * FROM " + backQuoteIfNeed(mysql_database_name) + "." + backQuoteIfNeed(table_name),
-                pipeline.getHeader(), mysql_input_stream_settings);
-            auto counting = std::make_shared<CountingTransform>(pipeline.getHeader());
-            Pipe pipe(std::move(input));
-            pipe.addTransform(counting);
-            pipeline.complete(std::move(pipe));
+                out->getHeader(), mysql_input_stream_settings);
+
+            QueryPipeline pipeline;
+            pipeline.init(Pipe(std::move(input)));
+            PullingPipelineExecutor executor(pipeline);
 
             Stopwatch watch;
-            CompletedPipelineExecutor executor(pipeline);
-            executor.execute();
 
-            const Progress & progress = counting->getProgress();
+            out->writePrefix();
+            Block block;
+            while (executor.pull(block))
+                out->write(block);
+            out->writeSuffix();
+
+            const Progress & progress = out->getProgress();
             LOG_INFO(&Poco::Logger::get("MaterializedMySQLSyncThread(" + database_name + ")"),
                 "Materialize MySQL step 1: dump {}, {} rows, {} in {} sec., {} rows/sec., {}/sec."
                 , table_name, formatReadableQuantity(progress.written_rows), formatReadableSizeWithBinarySuffix(progress.written_bytes)
@@ -747,8 +751,6 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
     try
     {
         auto query_context = createQueryContext(getContext());
-        CurrentThread::QueryScope query_scope(query_context);
-
         String comment = "Materialize MySQL step 2: execute MySQL DDL for sync data";
         String event_database = query_event.schema == mysql_database_name ? database_name : "";
         tryToExecuteQuery(query_prefix + query_event.query, query_context, event_database, comment);
@@ -766,9 +768,15 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
     }
 }
 
+bool MaterializedMySQLSyncThread::isMySQLSyncThread()
+{
+    return getThreadName() == MYSQL_BACKGROUND_THREAD_NAME;
+}
+
 void MaterializedMySQLSyncThread::setSynchronizationThreadException(const std::exception_ptr & exception)
 {
-    assert_cast<DatabaseMaterializedMySQL *>(DatabaseCatalog::instance().getDatabase(database_name).get())->setException(exception);
+    auto db = DatabaseCatalog::instance().getDatabase(database_name);
+    DB::setSynchronizationThreadException(db, exception);
 }
 
 void MaterializedMySQLSyncThread::Buffers::add(size_t block_rows, size_t block_bytes, size_t written_rows, size_t written_bytes)
@@ -792,14 +800,9 @@ void MaterializedMySQLSyncThread::Buffers::commit(ContextPtr context)
         for (auto & table_name_and_buffer : data)
         {
             auto query_context = createQueryContext(context);
-            CurrentThread::QueryScope query_scope(query_context);
-
-            auto input = std::make_shared<SourceFromSingleChunk>(table_name_and_buffer.second->first);
-            auto pipeline = getTableOutput(database, table_name_and_buffer.first, query_context, true);
-            pipeline.complete(Pipe(std::move(input)));
-
-            CompletedPipelineExecutor executor(pipeline);
-            executor.execute();
+            OneBlockInputStream input(table_name_and_buffer.second->first);
+            BlockOutputStreamPtr out = getTableOutput(database, table_name_and_buffer.first, query_context, true);
+            copyData(input, *out);
         }
 
         data.clear();

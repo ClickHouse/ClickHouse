@@ -21,8 +21,8 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/IO.h>
 
-#include <base/phdr_cache.h>
-#include <base/scope_guard.h>
+#include <common/phdr_cache.h>
+#include <common/scope_guard.h>
 
 
 /// Universal executable for various clickhouse applications
@@ -328,11 +328,7 @@ struct Checker
     {
         checkRequiredInstructions();
     }
-} checker
-#ifndef __APPLE__
-    __attribute__((init_priority(101)))    /// Run before other static initializers.
-#endif
-;
+} checker __attribute__((init_priority(101)));  /// Run before other static initializers.
 
 }
 

@@ -4,13 +4,14 @@
 
 #    include <IO/WriteBufferFromS3.h>
 #    include <IO/WriteHelpers.h>
+#    include <Common/MemoryTracker.h>
 
 #    include <aws/s3/S3Client.h>
 #    include <aws/s3/model/CreateMultipartUploadRequest.h>
 #    include <aws/s3/model/CompleteMultipartUploadRequest.h>
 #    include <aws/s3/model/PutObjectRequest.h>
 #    include <aws/s3/model/UploadPartRequest.h>
-#    include <base/logger_useful.h>
+#    include <common/logger_useful.h>
 
 #    include <utility>
 
@@ -83,13 +84,18 @@ void WriteBufferFromS3::allocateBuffer()
     last_part_size = 0;
 }
 
-WriteBufferFromS3::~WriteBufferFromS3()
+void WriteBufferFromS3::finalize()
 {
-    finalize();
+    /// FIXME move final flush into the caller
+    MemoryTracker::LockExceptionInThread lock(VariableContext::Global);
+    finalizeImpl();
 }
 
 void WriteBufferFromS3::finalizeImpl()
 {
+    if (finalized)
+        return;
+
     next();
 
     if (multipart_upload_id.empty())
@@ -102,6 +108,8 @@ void WriteBufferFromS3::finalizeImpl()
         writePart();
         completeMultipartUpload();
     }
+
+    finalized = true;
 }
 
 void WriteBufferFromS3::createMultipartUpload()
