@@ -69,18 +69,6 @@ void checkRemoveAccess(IDisk & disk)
 }
 
 
-void validate_endpoint_url(const String & endpoint_url)
-{
-    const auto * endpoint_url_pattern_str = R"(http(()|s)://[a-z0-9-]+\.blob\.core\.windows\.net/[a-z0-9-]+)";
-    static const RE2 endpoint_url_pattern(endpoint_url_pattern_str);
-
-    if (!re2::RE2::FullMatch(endpoint_url, endpoint_url_pattern))
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Blob Storage URL is not valid, should follow the format: {}, got: {}", endpoint_url_pattern_str, endpoint_url);
-    }
-}
-
-
 std::unique_ptr<DiskBlobStorageSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, ContextPtr /*context*/)
 {
     return std::make_unique<DiskBlobStorageSettings>(
@@ -102,10 +90,39 @@ struct BlobStorageEndpoint
 };
 
 
+void validateStorageAccountUrl(const String & storage_account_url)
+{
+    const auto * storage_account_url_pattern_str = R"(http(()|s)://[a-z0-9-.:]+(()|/))";
+    static const RE2 storage_account_url_pattern(storage_account_url_pattern_str);
+
+    if (!re2::RE2::FullMatch(storage_account_url, storage_account_url_pattern))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Blob Storage URL is not valid, should follow the format: {}, got: {}", storage_account_url_pattern_str, storage_account_url);
+}
+
+
+void validateContainerName(const String & container_name)
+{
+    auto len = container_name.length();
+    if (len < 3 || len > 64)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Blob Storage container name is not valid, should have length between 3 and 64, but has length: {}", len);
+
+    const auto * container_name_pattern_str = R"([a-z][a-z0-9-]+)";
+    static const RE2 container_name_pattern(container_name_pattern_str);
+
+    if (!re2::RE2::FullMatch(container_name, container_name_pattern))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Blob Storage container name is not valid, should follow the format: {}, got: {}", container_name_pattern_str, container_name);
+}
+
+
 BlobStorageEndpoint processBlobStorageEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
     String storage_account_url = config.getString(config_prefix + ".storage_account_url");
+    validateStorageAccountUrl(storage_account_url);
     String container_name = config.getString(config_prefix + ".container_name", "default_container");
+    validateContainerName(container_name);
     std::optional<bool> container_already_exists {};
     if (config.has(config_prefix + ".container_already_exists"))
         container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};

@@ -3,7 +3,8 @@
         <disks>
             <blob_storage_disk>
                 <type>blob_storage</type>
-                <endpoint>http://azurite1:10000/</endpoint>
+                <storage_account_url>http://azurite1:10000/</storage_account_url>
+                <container_already_exists>false</container_already_exists>
                 <skip_access_check>true</skip_access_check>
             </blob_storage_disk>
         </disks>
