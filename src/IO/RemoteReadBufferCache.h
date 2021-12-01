@@ -5,12 +5,14 @@
 #include <map>
 #include <memory>
 #include <filesystem>
+#include <Core/BackgroundSchedulePool.h>
 #include <Poco/Logger.h>
 #include <Common/ThreadPool.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/SeekableReadBuffer.h>
 #include <condition_variable>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -64,6 +66,7 @@ class RemoteCacheController
 {
 public:
     RemoteCacheController(
+        ContextPtr context,
         const RemoteFileMetadata & file_meta_data_,
         const std::filesystem::path & local_path_,
         size_t cache_bytes_before_flush_,
@@ -77,9 +80,8 @@ public:
     /**
      * Called by LocalCachedFileReader, must be used in pair
      * The second value of the return tuple is the local_path to store file.
-     * It will be empty if the file has not been downloaded
      */
-    std::pair<FILE *, String> allocFile();
+    std::pair<FILE *, std::filesystem::path> allocFile();
     void deallocFile(FILE * file_stream);
 
     /**
@@ -116,11 +118,13 @@ public:
         std::lock_guard lock(mutex);
         return valid;
     }
+    const RemoteFileMetadata & getFileMetaData() { return file_meta_data; }
 
 private:
     // flush file and meta info into disk
     void flush(bool need_flush_meta_data_ = false);
 
+    BackgroundSchedulePool::TaskHolder download_task_holder;
     void backgroundDownload();
 
     std::mutex mutex;
@@ -139,7 +143,7 @@ private:
     std::shared_ptr<ReadBuffer> remote_read_buffer;
     std::unique_ptr<std::ofstream> out_file;
 
-    Poco::Logger * log = &Poco::Logger::get("RemoteReadBufferCache");
+    Poco::Logger * log = &Poco::Logger::get("RemoteCacheController");
 };
 
 /**
@@ -148,14 +152,14 @@ private:
 class LocalCachedFileReader
 {
 public:
-    LocalCachedFileReader(RemoteCacheController * cache_controller_, size_t file_size_);
+    LocalCachedFileReader(RemoteCacheController * cache_controller_);
     ~LocalCachedFileReader();
 
     // expect to read size bytes into buf, return is the real bytes read
     size_t read(char * buf, size_t size);
     off_t seek(off_t offset);
 
-    inline String getPath() const { return local_path; }
+    inline std::filesystem::path getPath() const { return local_path; }
     inline off_t getOffset() const { return static_cast<off_t>(offset); }
     size_t getSize();
 
@@ -167,9 +171,9 @@ private:
 
     std::mutex mutex;
     FILE * file_stream;
-    String local_path;
+    std::filesystem::path local_path;
 
-    Poco::Logger * log = &Poco::Logger::get("RemoteReadBufferCache");
+    Poco::Logger * log = &Poco::Logger::get("LocalCachedFileReader");
 };
 
 /*
@@ -181,7 +185,7 @@ class RemoteReadBuffer : public BufferWithOwnMemory<SeekableReadBufferWithSize>
 public:
     explicit RemoteReadBuffer(size_t buff_size);
     ~RemoteReadBuffer() override;
-    static std::unique_ptr<RemoteReadBuffer> create(const RemoteFileMetadata & remote_file_meta, std::unique_ptr<ReadBuffer> read_buffer);
+    static std::unique_ptr<RemoteReadBuffer> create(ContextPtr contex, const RemoteFileMetadata & remote_file_meta, std::unique_ptr<ReadBuffer> read_buffer);
 
     bool nextImpl() override;
     inline bool seekable() { return file_reader != nullptr && file_reader->getSize() > 0; }
@@ -201,14 +205,12 @@ public:
     // global instance
     static RemoteReadBufferCache & instance();
 
-    std::shared_ptr<FreeThreadPool> getThreadPool() { return thread_pool; }
-
-    void initOnce(const String & root_dir_, size_t limit_size_, size_t bytes_read_before_flush_, size_t max_threads_);
+    void initOnce(ContextPtr context, const String & root_dir_, size_t limit_size_, size_t bytes_read_before_flush_);
 
     inline bool isInitialized() const { return initialized; }
 
     std::pair<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCacheError>
-    createReader(const RemoteFileMetadata & remote_file_meta, std::shared_ptr<ReadBuffer> & read_buffer);
+    createReader(ContextPtr context, const RemoteFileMetadata & remote_file_meta, std::shared_ptr<ReadBuffer> & read_buffer);
 
     void updateTotalSize(size_t size) { total_size += size; }
 
@@ -221,7 +223,6 @@ private:
     size_t limit_size = 0;
     size_t local_cache_bytes_read_before_flush = 0;
 
-    std::shared_ptr<FreeThreadPool> thread_pool;
     std::atomic<bool> initialized = false;
     std::atomic<size_t> total_size;
     std::mutex mutex;
@@ -238,6 +239,7 @@ private:
 
     String calculateLocalPath(const RemoteFileMetadata & meta) const;
 
+    BackgroundSchedulePool::TaskHolder recover_task_holder;
     void recoverTask();
     void recoverCachedFilesMetaData(
         const std::filesystem::path & current_path,
