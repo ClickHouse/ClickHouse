@@ -172,7 +172,7 @@ public:
                 // Use local cache for remote filesystem if enabled.
                 std::unique_ptr<ReadBuffer> remote_read_buf;
                 if (RemoteReadBufferCache::instance().isInitialized() && getContext()->getSettingsRef().use_local_cache_for_remote_fs)
-                    remote_read_buf = RemoteReadBuffer::create(
+                    remote_read_buf = RemoteReadBuffer::create(getContext(),
                         {"Hive", getNameNodeCluster(hdfs_namenode_url), uri_with_path, curr_file->getLastModTs(), curr_file->getSize()},
                         std::move(raw_read_buf));
                 else

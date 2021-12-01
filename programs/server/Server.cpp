@@ -529,8 +529,7 @@ if (ThreadFuzzer::instance().isEffective())
             UInt64 limit_size = config().getUInt64("local_cache_for_remote_fs.limit_size");
             UInt64 bytes_read_before_flush
                 = config().getUInt64("local_cache_for_remote_fs.bytes_read_before_flush", DBMS_DEFAULT_BUFFER_SIZE);
-            auto max_threads = config().getUInt("local_cache_for_remote_fs.max_threads", 64);
-            RemoteReadBufferCache::instance().initOnce(root_dir, limit_size, bytes_read_before_flush, max_threads);
+            RemoteReadBufferCache::instance().initOnce(global_context, root_dir, limit_size, bytes_read_before_flush);
         }
     }
 
