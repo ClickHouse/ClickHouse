@@ -168,7 +168,7 @@ if __name__ == "__main__":
             ok_builds += 1
 
     if ok_builds == 0:
-        summary_status = "failure"
+        summary_status = "error"
 
     description = "{}/{} builds are OK".format(ok_builds, total_builds)
 
