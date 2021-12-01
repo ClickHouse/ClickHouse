@@ -13,6 +13,8 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
 #include <Processors/Transforms/FilterTransform.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/executeQuery.h>
@@ -113,7 +115,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
         ContextPtr context_,
         const String & postgres_database_name,
         const String & postgres_table_name)
-    : IStorage(nested_storage_->getStorageID())
+    : IStorage(StorageID(nested_storage_->getStorageID().database_name, nested_storage_->getStorageID().table_name))
     , WithContext(context_->getGlobalContext())
     , log(&Poco::Logger::get("StorageMaterializedPostgreSQL(" + postgres::formatNameForLogs(postgres_database_name, postgres_table_name) + ")"))
     , is_materialized_postgresql_database(true)
@@ -214,12 +216,11 @@ std::shared_ptr<Context> StorageMaterializedPostgreSQL::makeNestedTableContext(C
 }
 
 
-StoragePtr StorageMaterializedPostgreSQL::prepare()
+void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 {
-    auto nested_table = getNested();
-    setInMemoryMetadata(nested_table->getInMemoryMetadata());
+    nested_table_id = nested_storage->getStorageID();
+    setInMemoryMetadata(nested_storage->getInMemoryMetadata());
     has_nested.store(true);
-    return nested_table;
 }
 
 
@@ -369,8 +370,8 @@ ASTPtr StorageMaterializedPostgreSQL::getCreateNestedTableQuery(PostgreSQLTableS
     auto create_table_query = std::make_shared<ASTCreateQuery>();
 
     auto table_id = getStorageID();
-    create_table_query->table = getNestedTableName();
-    create_table_query->database = table_id.database_name;
+    create_table_query->setTable(getNestedTableName());
+    create_table_query->setDatabase(table_id.database_name);
     if (is_materialized_postgresql_database)
         create_table_query->uuid = table_id.uuid;
 

@@ -1,5 +1,6 @@
-#include <Interpreters/RenameColumnVisitor.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/RenameColumnVisitor.h>
+#include <Parsers/ASTIdentifier.h>
 
 namespace DB
 {
