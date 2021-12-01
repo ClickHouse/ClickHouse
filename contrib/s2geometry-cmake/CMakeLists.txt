@@ -106,20 +106,6 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/util/math/mathutil.cc"
     "${S2_SOURCE_DIR}/s2/util/units/length-units.cc"
 
-
-    # ClickHouse doesn't use strings from abseil.
-    # So, there is no duplicate symbols.
-#    "${ABSL_SOURCE_DIR}/absl/base/internal/raw_logging.cc"
-#    "${ABSL_SOURCE_DIR}/absl/base/internal/throw_delegate.cc"
-#    "${ABSL_SOURCE_DIR}/absl/numeric/int128.cc"
-#    "${ABSL_SOURCE_DIR}/absl/strings/ascii.cc"
-#    "${ABSL_SOURCE_DIR}/absl/strings/match.cc"
-#    "${ABSL_SOURCE_DIR}/absl/strings/numbers.cc"
-#    "${ABSL_SOURCE_DIR}/absl/strings/str_cat.cc"
-#    "${ABSL_SOURCE_DIR}/absl/strings/str_split.cc"
-#    "${ABSL_SOURCE_DIR}/absl/strings/string_view.cc"
-#    "${ABSL_SOURCE_DIR}/absl/strings/strip.cc"
-#    "${ABSL_SOURCE_DIR}/absl/strings/internal/memutil.cc"
 )
 
 add_library(s2 ${S2_SRCS})
@@ -129,6 +115,7 @@ if (OPENSSL_FOUND)
     target_link_libraries(s2 PRIVATE ${OPENSSL_LIBRARIES})
 endif()
 
+# Copied from contrib/s2geometry/CMakeLists
 target_link_libraries(s2 PRIVATE
         absl::base
         absl::btree
