@@ -357,7 +357,7 @@ public:
     /// Calculate column and secondary indices sizes on disk.
     void calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
-    String getRelativePathForPrefix(const String & prefix) const;
+    String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
