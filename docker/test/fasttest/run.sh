@@ -186,9 +186,6 @@ function clone_submodules
             contrib/dragonbox
             contrib/fast_float
             contrib/NuRaft
-            contrib/azure
-            contrib/boringssl
-            contrib/curl
         )
 
         git submodule sync
