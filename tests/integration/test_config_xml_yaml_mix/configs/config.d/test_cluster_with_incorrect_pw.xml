@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <remote_servers>
         <test_cluster_with_incorrect_pw>
              <shard>
@@ -18,4 +18,4 @@
              </shard>
          </test_cluster_with_incorrect_pw>
     </remote_servers>
-</clickhouse>
+</yandex>

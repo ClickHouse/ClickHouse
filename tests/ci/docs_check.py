@@ -2,10 +2,11 @@
 import logging
 import subprocess
 import os
+import json
 import sys
 from github import Github
 from s3_helper import S3Helper
-from pr_info import PRInfo, get_event
+from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
@@ -24,7 +25,10 @@ if __name__ == "__main__":
     temp_path = os.path.join(os.getenv("TEMP_PATH"))
     repo_path = os.path.join(os.getenv("REPO_COPY"))
 
-    pr_info = PRInfo(get_event(), need_changed_files=True)
+    with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
+        event = json.load(event_file)
+
+    pr_info = PRInfo(event, need_changed_files=True)
 
     gh = Github(get_best_robot_token())
     if not pr_info.has_changes_in_documentation():

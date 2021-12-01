@@ -9,7 +9,7 @@ toc_title: AggregatingMergeTree
 
 Таблицы типа `AggregatingMergeTree` могут использоваться для инкрементальной агрегации данных, в том числе, для агрегирующих материализованных представлений.
 
-Движок обрабатывает все столбцы типа [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md).
+Движок обрабатывает все столбцы типа [AggregateFunction](../../../engines/table-engines/mergetree-family/aggregatingmergetree.md).
 
 Использование `AggregatingMergeTree` оправдано только в том случае, когда это уменьшает количество строк на порядки.
 

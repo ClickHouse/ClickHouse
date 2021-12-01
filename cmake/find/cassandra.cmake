@@ -14,7 +14,7 @@ if (APPLE)
 endif()
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/cassandra")
-    message (ERROR "submodule contrib/cassandra is missing. to fix try run: \n git submodule update --init")
+    message (ERROR "submodule contrib/cassandra is missing. to fix try run: \n git submodule update --init --recursive")
     message (${RECONFIGURE_MESSAGE_LEVEL} "Can't find internal Cassandra")
     set (USE_CASSANDRA 0)
     return()

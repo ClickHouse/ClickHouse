@@ -1,10 +1,11 @@
 #pragma once
+#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
+#endif
 
 #if USE_LIBPQXX
 #include <TableFunctions/ITableFunction.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace DB
@@ -26,8 +27,9 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
+    String connection_str;
+    String remote_table_name, remote_table_schema;
     postgres::PoolWithFailoverPtr connection_pool;
-    std::optional<StoragePostgreSQLConfiguration> configuration;
 };
 
 }

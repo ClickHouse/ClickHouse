@@ -1,13 +1,16 @@
 #include <Storages/registerStorages.h>
 #include <Storages/StorageFactory.h>
 
-#include <Common/config.h>
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#    include "config_core.h"
+#endif
 
 namespace DB
 {
 
 void registerStorageLog(StorageFactory & factory);
+void registerStorageTinyLog(StorageFactory & factory);
 void registerStorageStripeLog(StorageFactory & factory);
 void registerStorageMergeTree(StorageFactory & factory);
 void registerStorageNull(StorageFactory & factory);
@@ -24,8 +27,6 @@ void registerStorageView(StorageFactory & factory);
 void registerStorageMaterializedView(StorageFactory & factory);
 void registerStorageLiveView(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory);
-void registerStorageExecutable(StorageFactory & factory);
-void registerStorageWindowView(StorageFactory & factory);
 
 #if USE_AWS_S3
 void registerStorageS3(StorageFactory & factory);
@@ -66,10 +67,6 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory);
 void registerStorageExternalDistributed(StorageFactory & factory);
 #endif
 
-#if USE_FILELOG
-void registerStorageFileLog(StorageFactory & factory);
-#endif
-
 #if USE_SQLITE
 void registerStorageSQLite(StorageFactory & factory);
 #endif
@@ -80,6 +77,7 @@ void registerStorages()
     auto & factory = StorageFactory::instance();
 
     registerStorageLog(factory);
+    registerStorageTinyLog(factory);
     registerStorageStripeLog(factory);
     registerStorageMergeTree(factory);
     registerStorageNull(factory);
@@ -96,8 +94,6 @@ void registerStorages()
     registerStorageMaterializedView(factory);
     registerStorageLiveView(factory);
     registerStorageGenerateRandom(factory);
-    registerStorageExecutable(factory);
-    registerStorageWindowView(factory);
 
     #if USE_AWS_S3
     registerStorageS3(factory);
@@ -121,11 +117,7 @@ void registerStorages()
     registerStorageKafka(factory);
     #endif
 
-#if USE_FILELOG
-    registerStorageFileLog(factory);
-#endif
-
-#if USE_AMQPCPP
+    #if USE_AMQPCPP
     registerStorageRabbitMQ(factory);
     #endif
 

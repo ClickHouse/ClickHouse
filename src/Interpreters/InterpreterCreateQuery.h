@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/NamesAndAliases.h>
-#include <Access/Common/AccessRightsElement.h>
+#include <Access/AccessRightsElement.h>
 #include <Interpreters/IInterpreter.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
@@ -52,11 +52,6 @@ public:
         force_attach = force_attach_;
     }
 
-    void setLoadDatabaseWithoutTables(bool load_database_without_tables_)
-    {
-        load_database_without_tables = load_database_without_tables_;
-    }
-
     /// Obtain information about columns, their types, default values and column comments,
     ///  for case when columns in CREATE query is specified explicitly.
     static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, bool attach);
@@ -99,7 +94,6 @@ private:
     /// Is this an internal query - not from the user.
     bool internal = false;
     bool force_attach = false;
-    bool load_database_without_tables = false;
 
     mutable String as_database_saved;
     mutable String as_table_saved;

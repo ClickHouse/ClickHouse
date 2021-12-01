@@ -8,9 +8,8 @@ from github import Github
 from report import create_build_html_report
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo, get_event
+from pr_info import PRInfo
 from commit_status_helper import  get_commit
-from ci_config import CI_CONFIG
 
 class BuildResult():
     def __init__(self, compiler, build_type, sanitizer, bundled, splitted, status, elapsed_seconds, with_coverage):
@@ -69,8 +68,6 @@ def process_report(build_report):
 
     return build_results, build_urls, build_logs_urls
 
-def get_build_name_from_file_name(file_name):
-    return file_name.replace('build_urls_', '').replace('.json', '')
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -83,23 +80,15 @@ if __name__ == "__main__":
 
     build_check_name = sys.argv[1]
 
-    reports_order = CI_CONFIG["builds_report_config"][build_check_name]
-    logging.info("My reports list %s", reports_order)
-
-    build_reports_map = {}
+    build_reports = []
     for root, dirs, files in os.walk(reports_path):
         for f in files:
             if f.startswith("build_urls_") and f.endswith('.json'):
                 logging.info("Found build report json %s", f)
-                build_name = get_build_name_from_file_name(f)
-                if build_name in reports_order:
-                    with open(os.path.join(root, f), 'r') as file_handler:
-                        build_report = json.load(file_handler)
-                        build_reports_map[build_name] = build_report
-                else:
-                    logging.info("Skipping report %s for build %s, it's not in our reports list", f, build_name)
+                with open(os.path.join(root, f), 'r') as file_handler:
+                    build_report = json.load(file_handler)
+                    build_reports.append(build_report)
 
-    build_reports = [build_reports_map[build_name] for build_name in reports_order if build_name in build_reports_map]
 
     build_results = []
     build_artifacts = []
@@ -116,8 +105,10 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token())
     s3_helper = S3Helper('https://s3.amazonaws.com')
+    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
+        event = json.load(event_file)
 
-    pr_info = PRInfo(get_event())
+    pr_info = PRInfo(event)
 
     branch_url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/commits/master"
     branch_name = "master"
@@ -159,9 +150,6 @@ if __name__ == "__main__":
 
         if build_result.status == "success":
             ok_builds += 1
-
-    if ok_builds == 0:
-        summary_status = "failure"
 
     description = "{}/{} builds are OK".format(ok_builds, total_builds)
 

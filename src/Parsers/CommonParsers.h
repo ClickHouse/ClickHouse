@@ -2,8 +2,6 @@
 
 #include <Parsers/IParserBase.h>
 
-#include <cassert>
-
 namespace DB
 {
 
@@ -15,14 +13,13 @@ namespace DB
 class ParserKeyword : public IParserBase
 {
 private:
-    std::string_view s;
+    const char * s;
 
 public:
-    //NOLINTNEXTLINE Want to be able to init ParserKeyword("literal")
-    constexpr ParserKeyword(std::string_view s_): s(s_) { assert(!s.empty()); }
+    ParserKeyword(const char * s_);
 
 protected:
-    constexpr const char * getName() const override { return s.data(); }
+    const char * getName() const override;
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };

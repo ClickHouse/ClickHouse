@@ -104,29 +104,11 @@ Columns Chunk::detachColumns()
 
 void Chunk::addColumn(ColumnPtr column)
 {
-    if (empty())
-        num_rows = column->size();
-    else if (column->size() != num_rows)
+    if (column->size() != num_rows)
         throw Exception("Invalid number of rows in Chunk column " + column->getName()+ ": expected " +
                         toString(num_rows) + ", got " + toString(column->size()), ErrorCodes::LOGICAL_ERROR);
 
     columns.emplace_back(std::move(column));
-}
-
-void Chunk::addColumn(size_t position, ColumnPtr column)
-{
-    if (position >= columns.size())
-        throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND,
-                        "Position {} out of bound in Chunk::addColumn(), max position = {}",
-                        position, columns.size() - 1);
-    if (empty())
-        num_rows = column->size();
-    else if (column->size() != num_rows)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Invalid number of rows in Chunk column {}: expected {}, got {}",
-                        column->getName(), num_rows, column->size());
-
-    columns.emplace(columns.begin() + position, std::move(column));
 }
 
 void Chunk::erase(size_t position)

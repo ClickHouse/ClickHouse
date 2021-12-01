@@ -1,4 +1,6 @@
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_NLP
 
@@ -9,7 +11,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 
-#include <libstemmer.h>
+#include <libstemmer.h> // Y_IGNORE
 
 
 namespace DB

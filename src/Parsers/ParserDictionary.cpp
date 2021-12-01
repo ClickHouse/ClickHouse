@@ -1,13 +1,12 @@
 #include <Parsers/ParserDictionary.h>
 
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTDictionary.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunctionWithKeyValueArguments.h>
-#include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ASTFunctionWithKeyValueArguments.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTDictionary.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ParserDictionaryAttributeDeclaration.h>
 
 #include <Poco/String.h>
