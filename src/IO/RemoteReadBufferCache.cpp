@@ -439,7 +439,6 @@ void RemoteReadBufferCache::initOnce(
 
     recover_task_holder = context->getSchedulePool().createTask("recover local cache meta data for remote files", [this]{ recoverTask(); });
     recover_task_holder->activateAndSchedule();
-    //getThreadPool()->scheduleOrThrow([this]{recoverTask();});
 }
 
 String RemoteReadBufferCache::calculateLocalPath(const RemoteFileMetadata & meta) const
@@ -503,6 +502,8 @@ RemoteReadBufferCache::createReader(ContextPtr context, const RemoteFileMetadata
         else
         {
             // maybe someone is holding this file
+            LOG_INFO(log, "The remote file {} has been updated, but the previous readers do not finish reading.",
+                    remote_path);
             return {nullptr, RemoteReadBufferCacheError::FILE_INVALID};
         }
     }
