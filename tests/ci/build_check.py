@@ -14,7 +14,6 @@ from version_helper import get_version_from_repo, update_version_local
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
 from ci_config import CI_CONFIG
 from docker_pull_helper import get_image_with_version
-from rerun_helper import RerunHelper
 
 
 def get_build_config(build_check_name, build_name):
@@ -220,7 +219,7 @@ if __name__ == "__main__":
 
     print("::notice ::Log URL: {}".format(log_url))
 
-    create_json_artifact(temp_path, build_name, log_url, builds_urls, build_config, elapsed, success)
+    create_json_artifact(temp_path, build_name, log_url, build_urls, build_config, elapsed, success)
     # Fail build job if not successeded
     if not success:
         sys.exit(1)
