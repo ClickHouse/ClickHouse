@@ -315,3 +315,19 @@ def test_system_detached_parts(drop_detached_parts_table):
             q("alter table sdp_{} attach partition id '{}'".format(i, p))
 
     assert q("select n, x, count() from merge('default', 'sdp_') group by n, x") == "0\t0\t4\n1\t1\t4\n"
+
+
+def test_detached_part_dir_exists(started_cluster):
+    q("create table detached_part_dir_exists (n int) engine=MergeTree order by n")
+    q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
+    q("alter table detached_part_dir_exists detach partition id 'all'")  # will move all_1_1_0 to detached/all_1_1_0
+    q("detach table detached_part_dir_exists")
+    q("attach table detached_part_dir_exists")
+    q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
+    q("insert into detached_part_dir_exists select 1")  # will create all_2_2_0
+    instance.exec_in_container(['bash', '-c', 'mkdir /var/lib/clickhouse/data/default/detached_part_dir_exists/detached/all_2_2_0'], privileged=True)
+    instance.exec_in_container(['bash', '-c', 'touch /var/lib/clickhouse/data/default/detached_part_dir_exists/detached/all_2_2_0/file'], privileged=True)
+    q("alter table detached_part_dir_exists detach partition id 'all'") # directories already exist, but it's ok
+    assert q("select name from system.detached_parts where table='detached_part_dir_exists' order by name") == \
+           "all_1_1_0\nall_1_1_0_try1\nall_2_2_0\nall_2_2_0_try1\n"
+    q("drop table detached_part_dir_exists")
