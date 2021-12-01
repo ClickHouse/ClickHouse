@@ -307,12 +307,23 @@ struct ContextSharedPart
             return;
         shutdown_called = true;
 
+        /// Stop periodic reloading of the configuration files.
+        /// This must be done first because otherwise the reloading may pass a changed config
+        /// to some destroyed parts of ContextSharedPart.
+        if (access_control)
+            access_control->stopPeriodicReloadingUsersConfigs();
+        if (external_dictionaries_loader)
+            external_dictionaries_loader->enablePeriodicUpdates(false);
+        if (external_user_defined_executable_functions_loader)
+            external_user_defined_executable_functions_loader->enablePeriodicUpdates(false);
+        if (external_models_loader)
+            external_models_loader->enablePeriodicUpdates(false);
+
         Session::shutdownNamedSessions();
 
         /**  After system_logs have been shut down it is guaranteed that no system table gets created or written to.
           *  Note that part changes at shutdown won't be logged to part log.
           */
-
         if (system_logs)
             system_logs->shutdown();
 
@@ -773,23 +784,23 @@ std::shared_ptr<const ContextAccess> Context::getAccess() const
     return access ? access : ContextAccess::getFullAccess();
 }
 
-ASTPtr Context::getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType type) const
+ASTPtr Context::getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const
 {
     auto lock = getLock();
-    auto initial_condition = initial_row_policy ? initial_row_policy->getCondition(database, table_name, type) : nullptr;
-    return getAccess()->getRowPolicyCondition(database, table_name, type, initial_condition);
+    auto row_filter_of_initial_user = row_policies_of_initial_user ? row_policies_of_initial_user->getFilter(database, table_name, filter_type) : nullptr;
+    return getAccess()->getRowPolicyFilter(database, table_name, filter_type, row_filter_of_initial_user);
 }
 
-void Context::setInitialRowPolicy()
+void Context::enableRowPoliciesOfInitialUser()
 {
     auto lock = getLock();
-    initial_row_policy = nullptr;
+    row_policies_of_initial_user = nullptr;
     if (client_info.initial_user == client_info.current_user)
         return;
     auto initial_user_id = getAccessControl().find<User>(client_info.initial_user);
     if (!initial_user_id)
         return;
-    initial_row_policy = getAccessControl().tryGetDefaultRowPolicies(*initial_user_id);
+    row_policies_of_initial_user = getAccessControl().tryGetDefaultRowPolicies(*initial_user_id);
 }
 
 
@@ -2118,21 +2129,20 @@ UInt16 Context::getServerPort(const String & port_name) const
 
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
-    auto res = getClusters()->getCluster(cluster_name);
-    if (res)
+    if (auto res = tryGetCluster(cluster_name))
         return res;
-    if (!cluster_name.empty())
-        res = tryGetReplicatedDatabaseCluster(cluster_name);
-    if (res)
-        return res;
-
     throw Exception("Requested cluster '" + cluster_name + "' not found", ErrorCodes::BAD_GET);
 }
 
 
 std::shared_ptr<Cluster> Context::tryGetCluster(const std::string & cluster_name) const
 {
-    return getClusters()->getCluster(cluster_name);
+    auto res = getClusters()->getCluster(cluster_name);
+    if (res)
+        return res;
+    if (!cluster_name.empty())
+        res = tryGetReplicatedDatabaseCluster(cluster_name);
+    return res;
 }
 
 
@@ -3077,6 +3087,8 @@ ReadSettings Context::getReadSettings() const
 
     res.remote_fs_read_max_backoff_ms = settings.remote_fs_read_max_backoff_ms;
     res.remote_fs_read_backoff_max_tries = settings.remote_fs_read_backoff_max_tries;
+
+    res.remote_read_min_bytes_for_seek = settings.remote_read_min_bytes_for_seek;
 
     res.local_fs_buffer_size = settings.max_read_buffer_size;
     res.direct_io_threshold = settings.min_bytes_to_use_direct_io;

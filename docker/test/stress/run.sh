@@ -37,6 +37,12 @@ function configure()
     # install test configs
     /usr/share/clickhouse-test/config/install.sh
 
+    # avoid too slow startup
+    sudo cat /etc/clickhouse-server/config.d/keeper_port.xml | sed "s|<snapshot_distance>100000</snapshot_distance>|<snapshot_distance>10000</snapshot_distance>|" > /etc/clickhouse-server/config.d/keeper_port.xml.tmp
+    sudo mv /etc/clickhouse-server/config.d/keeper_port.xml.tmp /etc/clickhouse-server/config.d/keeper_port.xml
+    sudo chown clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
+    sudo chgrp clickhouse /etc/clickhouse-server/config.d/keeper_port.xml
+
     # for clickhouse-server (via service)
     echo "ASAN_OPTIONS='malloc_context_size=10 verbosity=1 allocator_release_to_os_interval_ms=10000'" >> /etc/environment
     # for clickhouse-client
@@ -145,8 +151,8 @@ zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log*
 # Grep logs for sanitizer asserts, crashes and other critical errors
 
 # Sanitizer asserts
-zgrep -Fa "==================" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
-zgrep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+grep -Fa "==================" /var/log/clickhouse-server/stderr.log | grep -v "in query:" >> /test_output/tmp
+grep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
 zgrep -Fav "ASan doesn't fully support makecontext/swapcontext functions" /test_output/tmp > /dev/null \
     && echo -e 'Sanitizer assert (in stderr.log)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No sanitizer asserts\tOK' >> /test_output/test_results.tsv
@@ -179,6 +185,8 @@ zgrep -Fa "########################################" /test_output/* > /dev/null 
 for log_file in /var/log/clickhouse-server/clickhouse-server.log*
 do
     pigz < "${log_file}" > /test_output/"$(basename ${log_file})".gz
+    # FIXME: remove once only github actions will be left
+    rm "${log_file}"
 done
 
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
