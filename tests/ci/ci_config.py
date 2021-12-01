@@ -115,7 +115,7 @@ CI_CONFIG = {
         },
         "binary_darwin": {
             "compiler": "clang-13-darwin",
-            "build_type": "",
+            "build_type": "debug",
             "sanitizer": "",
             "package_type": "binary",
             "bundled": "bundled",
@@ -145,7 +145,7 @@ CI_CONFIG = {
         },
         "binary_darwin_aarch64": {
             "compiler": "clang-13-darwin-aarch64",
-            "build_type": "",
+            "build_type": "debug",
             "sanitizer": "",
             "package_type": "binary",
             "bundled": "bundled",
