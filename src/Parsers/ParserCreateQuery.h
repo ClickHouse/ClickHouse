@@ -96,6 +96,8 @@ public:
     {
     }
 
+    void enableCheckTypeKeyword() { check_type_keyword = true; }
+
 protected:
     using ASTDeclarePtr = std::shared_ptr<ASTColumnDeclaration>;
 
@@ -106,6 +108,8 @@ protected:
     bool require_type = true;
     bool allow_null_modifiers = false;
     bool check_keywords_after_name = false;
+    /// just for ALTER TABLE ALTER COLUMN use
+    bool check_type_keyword = false;
 };
 
 using ParserColumnDeclaration = IParserColumnDeclaration<ParserIdentifier>;
@@ -125,6 +129,7 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
     ParserKeyword s_codec{"CODEC"};
     ParserKeyword s_ttl{"TTL"};
     ParserKeyword s_remove{"REMOVE"};
+    ParserKeyword s_type{"TYPE"};
     ParserTernaryOperatorExpression expr_parser;
     ParserStringLiteral string_literal_parser;
     ParserCodec codec_parser;
@@ -171,6 +176,8 @@ bool IParserColumnDeclaration<NameParser>::parseImpl(Pos & pos, ASTPtr & node, E
             || (!s_comment.checkWithoutMoving(pos, expected)
                 && !s_codec.checkWithoutMoving(pos, expected))))
     {
+        if (check_type_keyword && !s_type.ignore(pos, expected))
+            return false;
         if (!type_parser.parse(pos, type, expected))
             return false;
     }
