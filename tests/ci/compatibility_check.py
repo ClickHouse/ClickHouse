@@ -4,6 +4,7 @@ from distutils.version import StrictVersion
 import logging
 import os
 import subprocess
+import sys
 
 from github import Github
 
@@ -16,6 +17,7 @@ from docker_pull_helper import get_images_with_versions
 from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
 
 IMAGE_UBUNTU = "clickhouse/test-old-ubuntu"
 IMAGE_CENTOS = "clickhouse/test-old-centos"
@@ -108,6 +110,11 @@ if __name__ == "__main__":
     pr_info = PRInfo(get_event())
 
     gh = Github(get_best_robot_token())
+
+    rerun_helper = RerunHelper(gh, pr_info, CHECK_NAME)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     docker_images = get_images_with_versions(reports_path, [IMAGE_CENTOS, IMAGE_UBUNTU])
 
