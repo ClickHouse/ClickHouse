@@ -41,7 +41,8 @@ protected:
     /// and it's better to do it lazily in `getNewTaskImpl`, which is executing in parallel.
     void initializeReaders();
 
-    void finish() override;
+    void processNewTask() override final;
+    void finish() override final;
 
     /// Used by Task
     Names required_columns;

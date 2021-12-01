@@ -11,7 +11,7 @@ class MergeTreeReadPool;
 /** Used in conjunction with MergeTreeReadPool, asking it for more work to do and performing whatever reads it is asked
   * to perform.
   */
-class MergeTreeThreadSelectProcessor : public MergeTreeBaseSelectProcessor
+class MergeTreeThreadSelectProcessor final : public MergeTreeBaseSelectProcessor
 {
 public:
     MergeTreeThreadSelectProcessor(
@@ -37,6 +37,9 @@ public:
 protected:
     /// Requests read task from MergeTreeReadPool and signals whether it got one
     bool getNewTaskImpl() override;
+
+    void processNewTask() override;
+
     void finalizeNewTask() override;
 
     void finish() override;

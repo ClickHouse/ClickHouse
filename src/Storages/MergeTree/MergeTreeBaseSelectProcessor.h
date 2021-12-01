@@ -62,10 +62,16 @@ protected:
 
     /// Creates new this->task and return a flag whether it was successfull or not
     virtual bool getNewTaskImpl() = 0;
+    /// Depending on the type of reading (concurrent, in order or in reverse order)
+    /// it may cut the task into smaller ones or use consistent hashing algorithm
+    /// to select only proper ranges to read from.
+    virtual void processNewTask() = 0;
     /// Creates new readers for a task it is needed. These methods are separate, because
     /// in case of parallel reading from replicas the whole task could be denied by a coodinator
     /// or it could modified somehow.
     virtual void finalizeNewTask() = 0;
+
+    size_t estimateMaxBatchSizeForHugeRanges();
 
     /// Closes readers and unlock part locks
     virtual void finish() = 0;
@@ -114,9 +120,10 @@ protected:
     MergeTreeReadTaskPtr task;
 
     std::optional<ParallelReadingExtension> extension;
-
     bool no_more_tasks{false};
     std::deque<MergeTreeReadTaskPtr> delayed_tasks;
+    std::deque<MarkRanges> buffered_ranges;
+
 private:
     Poco::Logger * log = &Poco::Logger::get("MergeTreeBaseSelectProcessor");
 
@@ -133,14 +140,29 @@ private:
     /// Then it calls finalizeNewTask() to create readers for a task if it is needed.
     bool getNewTask();
 
-    /// It will reinitialize
+    /// After PK analysis the range of marks could be extremely big
+    /// We divide this range to a set smaller consequtive ranges
+    /// Then, depending on the type of reading (concurrent, in order or in reverse order)
+    /// we can calculate a consistent hash function with the number of buckets equal to
+    /// the number of replicas involved. And after that we can throw away some ranges with
+    /// hash not equals to the number of the current replica.
+    bool getTaskFromBuffer();
+
+    /// But we can't throw that ranges completely, because if we have different sets of parts
+    /// on replicas (have merged part on one, but not on another), then such a situation is possible
+    /// - Coordinator allows to read from a big merged part, but this part is present only on one replica.
+    ///   And that replica calculates consistent hash and throws away some ranges
+    /// - Coordinator denies other replicas to read from another parts (source parts for that big one)
+    /// At the end, the result of the query is wrong, bacause we didn't read all the data.
+    /// So, we have to remember parts and mark ranges with hash different then current replica number.
+    /// An we have to ask the coordinator about its permission to read from that "delayed" parts.
+    /// It won't work with reading in order or reading in reverse order, because we can possibly seek back.
+    bool getDelayedTasks();
+
+    /// It will form a request a request to coordinator and
+    /// then reinitialize the mark ranges of this->task object
     Status performRequestToCoordinator(MarkRanges requested_ranges);
 
-
-    template <typename Predicate>
-    void fillBufferedRanged(MergeTreeReadTask * current_task, Predicate && predicate);
-
-    std::deque<MarkRanges> buffered_ranges;
 };
 
 }

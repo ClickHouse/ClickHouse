@@ -12,7 +12,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
-#include <consistent_hashing.h>
 
 #include <city.h>
 
@@ -79,92 +78,86 @@ MergeTreeBaseSelectProcessor::MergeTreeBaseSelectProcessor(
 
 bool MergeTreeBaseSelectProcessor::getNewTask()
 {
-    auto get_from_buffer = [&]()
+    /// No parallel reading feature
+    if (!extension.has_value())
     {
-        /// Try to get from buffer
-        while (!buffered_ranges.empty())
+        if (getNewTaskImpl())
         {
-            auto ranges = std::move(buffered_ranges.front());
-            buffered_ranges.pop_front();
-
-            assert(!ranges.empty());
-
-            auto res = performRequestToCoordinator(ranges);
-
-            if (Status::Accepted == res)
-                return true;
-
-            if (Status::Cancelled == res)
-                break;
+            finalizeNewTask();
+            return true;
         }
         return false;
-    };
+    }
 
-    auto get_delayed = [&]()
-    {
-        /// Try to get from buffer
-        while (!delayed_tasks.empty())
-        {
-            task = std::move(delayed_tasks.front());
-            delayed_tasks.pop_front();
-
-            assert(!task->mark_ranges.empty());
-
-            auto res = performRequestToCoordinator(task->mark_ranges);
-
-            if (Status::Accepted == res)
-                return true;
-
-            if (Status::Cancelled == res)
-                break;
-        }
-
-        finish();
-        return false;
-    };
-
-    if (get_from_buffer())
+    if (getTaskFromBuffer())
         return true;
 
     if (no_more_tasks)
-        return get_delayed();
+        return getDelayedTasks();
 
     while (true)
     {
         auto res = getNewTaskImpl();
 
-        /// It means that parallel_reading feature is disabled
-        if (!extension.has_value())
-        {
-            if (res)
-                finalizeNewTask();
-
-            return res;
-        }
-
         /// The end of execution. No task.
         if (!res)
         {
             no_more_tasks = true;
-            return get_delayed();
+            return getDelayedTasks();
         }
 
         if (task->mark_ranges.empty())
             continue;
 
-        auto predicate = [this](MarkRange range)
-        {
-            auto what = fmt::format("{}_{}_{}", task->data_part->info.getPartName(), range.begin, range.end);
-            auto hash = CityHash_v1_0_2::CityHash64(what.data(), what.size());
-            auto consistent_hash = ConsistentHashing(hash, extension->count_participating_replicas);
-            return consistent_hash == extension->number_of_current_replica;
-        };
+        processNewTask();
 
-        fillBufferedRanged(task.get(), std::move(predicate));
-
-        if (get_from_buffer())
+        if (getTaskFromBuffer())
             return true;
     }
+}
+
+
+bool MergeTreeBaseSelectProcessor::getTaskFromBuffer()
+{
+    while (!buffered_ranges.empty())
+    {
+        auto ranges = std::move(buffered_ranges.front());
+        buffered_ranges.pop_front();
+
+        assert(!ranges.empty());
+
+        auto res = performRequestToCoordinator(ranges);
+
+        if (Status::Accepted == res)
+            return true;
+
+        if (Status::Cancelled == res)
+            break;
+    }
+    return false;
+}
+
+
+bool MergeTreeBaseSelectProcessor::getDelayedTasks()
+{
+    while (!delayed_tasks.empty())
+    {
+        task = std::move(delayed_tasks.front());
+        delayed_tasks.pop_front();
+
+        assert(!task->mark_ranges.empty());
+
+        auto res = performRequestToCoordinator(task->mark_ranges);
+
+        if (Status::Accepted == res)
+            return true;
+
+        if (Status::Cancelled == res)
+            break;
+    }
+
+    finish();
+    return false;
 }
 
 
@@ -609,8 +602,6 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
         .mark_ranges = std::move(requested_ranges)
     };
 
-    AtomicStopwatch stop;
-
     auto optional_response = extension.value().callback(std::move(request));
 
     if (!optional_response.has_value())
@@ -618,28 +609,10 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
 
     auto response = optional_response.value();
 
-    LOG_TRACE(log, "Elapsed time to perform request: {}ns", stop.elapsed());
-
-    auto dump_mark_ranges = [&] (MarkRanges ranges)
-    {
-        String result;
-        for (const auto & range: ranges)
-            result += fmt::format("[{} {}], ", range.begin, range.end);
-        result += '\n';
-        return result;
-    };
-
-    LOG_TRACE(log, (response.denied ? "denied" : "accepted"), dump_mark_ranges(response.mark_ranges));
-
     task->mark_ranges = std::move(response.mark_ranges);
 
-    if (response.denied)
+    if (response.denied || task->mark_ranges.empty())
         return Status::Denied;
-
-    if (task->mark_ranges.empty())
-        return Status::Denied;
-
-    assert(!task->mark_ranges.empty());
 
     finalizeNewTask();
 
@@ -647,14 +620,21 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
 }
 
 
-template <typename Predicate>
-void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * current_task, Predicate && predicate)
+size_t MergeTreeBaseSelectProcessor::estimateMaxBatchSizeForHugeRanges()
 {
+    /// This is an empirical number and it is so,
+    /// because we have an adaptive granularity by default.
+    const size_t average_granule_size_bytes = 8UL * 1024 * 1024 * 10; // 10 MiB
+
+    /// We want to have one RTT per one gigabyte of data read from disk
+    /// this could be configurable.
+    const size_t max_size_for_one_request = 8UL * 1024 * 1024 * 1024; // 1 GiB
+
     size_t sum_average_marks_size = 0;
     /// getColumnSize is not fully implemented for compact parts
     if (task->data_part->getType() == IMergeTreeDataPart::Type::COMPACT)
     {
-        sum_average_marks_size = 8UL * 1024 * 1024 * 10; // 10 MiB
+        sum_average_marks_size = average_granule_size_bytes;
     }
     else
     {
@@ -668,100 +648,14 @@ void MergeTreeBaseSelectProcessor::fillBufferedRanged(MergeTreeReadTask * curren
     }
 
     if (sum_average_marks_size == 0)
-        sum_average_marks_size = 8UL * 1024 * 1024 * 10; // 10 MiB
+        sum_average_marks_size = average_granule_size_bytes; // 10 MiB
 
     LOG_TEST(log, "Reading from {} part, average mark size is {}",
         task->data_part->getTypeName(), sum_average_marks_size);
 
-    const size_t max_batch_size = (8UL * 1024 * 1024 * 1024) / sum_average_marks_size;
-
-    LOG_TRACE(log, "Using max batch size to perform a request equals {} marks", max_batch_size);
-
-    size_t current_batch_size = 0;
-
-    buffered_ranges.emplace_back();
-
-    MarkRanges delayed_ranges;
-
-    for (const auto & range : current_task->mark_ranges)
-    {
-        auto expand_if_needed = [&]
-        {
-            if (current_batch_size > max_batch_size)
-            {
-                buffered_ranges.emplace_back();
-                current_batch_size = 0;
-            }
-
-        };
-
-        expand_if_needed();
-
-        if (range.end - range.begin < max_batch_size)
-        {
-            if (predicate(range))
-            {
-                buffered_ranges.back().push_back(range);
-                current_batch_size += range.end - range.begin;
-            }
-            else
-            {
-                delayed_ranges.emplace_back(range);
-            }
-            continue;
-        }
-
-        auto current_begin = range.begin;
-        auto current_end = range.begin + max_batch_size;
-
-        while (current_end < range.end)
-        {
-            auto current_range = MarkRange{current_begin, current_end};
-            if (predicate(current_range))
-            {
-                buffered_ranges.back().push_back(current_range);
-                current_batch_size += current_end - current_begin;
-            }
-            else
-            {
-                delayed_ranges.emplace_back(current_range);
-            }
-
-            current_begin = current_end;
-            current_end = current_end + max_batch_size;
-
-            expand_if_needed();
-        }
-
-        if (range.end - current_begin > 0)
-        {
-            auto current_range = MarkRange{current_begin, range.end};
-            if (predicate(current_range))
-            {
-                buffered_ranges.back().push_back(current_range);
-                current_batch_size += range.end - current_begin;
-
-                /// Do not need to update current_begin and current_end
-
-                expand_if_needed();
-            }
-            else
-            {
-                delayed_ranges.emplace_back(current_range);
-            }
-        }
-    }
-
-    if (buffered_ranges.back().empty())
-        buffered_ranges.pop_back();
-
-    if (!delayed_ranges.empty())
-    {
-        auto delayed_task = std::make_unique<MergeTreeReadTask>(*current_task); // Create a copy
-        delayed_task->mark_ranges = std::move(delayed_ranges);
-        delayed_tasks.emplace_back(std::move(delayed_task));
-    }
+    return max_size_for_one_request / sum_average_marks_size;
 }
+
 
 MergeTreeBaseSelectProcessor::~MergeTreeBaseSelectProcessor() = default;
 
