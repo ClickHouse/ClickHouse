@@ -43,11 +43,6 @@ RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && odbcinst -i -s -l -f /tmp/clickhouse-odbc-tmp/share/doc/clickhouse-odbc/config/odbc.ini.sample \
    && rm -rf /tmp/clickhouse-odbc-tmp
 
-RUN echo "[ClickHouse] \
-Driver=ClickHouse ODBC Driver (ANSI) \
-Description=DSN (localhost) for ClickHouse ODBC Driver (ANSI) \
-Url = http://127.0.0.1:8123/query?database=default&buffer_size=3000000" >> /etc/odbcinst.ini
-
 ENV TZ=Europe/Moscow
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
