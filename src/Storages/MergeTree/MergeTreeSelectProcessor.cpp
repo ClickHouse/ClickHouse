@@ -70,66 +70,6 @@ void MergeTreeSelectProcessor::initializeReaders()
 }
 
 
-void MergeTreeSelectProcessor::processNewTask()
-{
-    const size_t max_batch_size = estimateMaxBatchSizeForHugeRanges();
-
-    size_t current_batch_size = 0;
-    buffered_ranges.emplace_back();
-
-    for (const auto & range : task->mark_ranges)
-    {
-        auto expand_if_needed = [&]
-        {
-            if (current_batch_size > max_batch_size)
-            {
-                buffered_ranges.emplace_back();
-                current_batch_size = 0;
-            }
-
-        };
-
-        expand_if_needed();
-
-        if (range.end - range.begin < max_batch_size)
-        {
-            buffered_ranges.back().push_back(range);
-            current_batch_size += range.end - range.begin;
-            continue;
-        }
-
-        auto current_begin = range.begin;
-        auto current_end = range.begin + max_batch_size;
-
-        while (current_end < range.end)
-        {
-            auto current_range = MarkRange{current_begin, current_end};
-            buffered_ranges.back().push_back(current_range);
-            current_batch_size += current_end - current_begin;
-
-            current_begin = current_end;
-            current_end = current_end + max_batch_size;
-
-            expand_if_needed();
-        }
-
-        if (range.end - current_begin > 0)
-        {
-            auto current_range = MarkRange{current_begin, range.end};
-
-            buffered_ranges.back().push_back(current_range);
-            current_batch_size += range.end - current_begin;
-
-            /// Do not need to update current_begin and current_end
-
-            expand_if_needed();
-        }
-    }
-
-    if (buffered_ranges.back().empty())
-        buffered_ranges.pop_back();
-}
-
 void MergeTreeSelectProcessor::finish()
 {
     /** Close the files (before destroying the object).

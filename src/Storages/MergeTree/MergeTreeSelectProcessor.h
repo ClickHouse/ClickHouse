@@ -40,8 +40,6 @@ protected:
     /// Defer initialization from constructor, because it may be heavy
     /// and it's better to do it lazily in `getNewTaskImpl`, which is executing in parallel.
     void initializeReaders();
-
-    void processNewTask() override final;
     void finish() override final;
 
     /// Used by Task

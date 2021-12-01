@@ -62,10 +62,6 @@ protected:
 
     /// Creates new this->task and return a flag whether it was successfull or not
     virtual bool getNewTaskImpl() = 0;
-    /// Depending on the type of reading (concurrent, in order or in reverse order)
-    /// it may cut the task into smaller ones or use consistent hashing algorithm
-    /// to select only proper ranges to read from.
-    virtual void processNewTask() = 0;
     /// Creates new readers for a task it is needed. These methods are separate, because
     /// in case of parallel reading from replicas the whole task could be denied by a coodinator
     /// or it could modified somehow.
@@ -161,7 +157,9 @@ private:
 
     /// It will form a request a request to coordinator and
     /// then reinitialize the mark ranges of this->task object
-    Status performRequestToCoordinator(MarkRanges requested_ranges);
+    Status performRequestToCoordinator(MarkRanges requested_ranges, bool delayed);
+
+    void splitCurrentTaskRangesAndFillBuffer();
 
 };
 

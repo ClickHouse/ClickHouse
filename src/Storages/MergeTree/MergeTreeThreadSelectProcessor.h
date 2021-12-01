@@ -38,8 +38,6 @@ protected:
     /// Requests read task from MergeTreeReadPool and signals whether it got one
     bool getNewTaskImpl() override;
 
-    void processNewTask() override;
-
     void finalizeNewTask() override;
 
     void finish() override;

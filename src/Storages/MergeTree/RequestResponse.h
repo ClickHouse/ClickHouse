@@ -28,7 +28,6 @@ struct PartBlockRange
 
 struct PartitionReadRequest
 {
-    
     String partition_id;
     String part_name;
     String projection_name;
@@ -38,6 +37,8 @@ struct PartitionReadRequest
     void serialize(WriteBuffer & out) const;
     void describe(WriteBuffer & out) const;
     void deserialize(ReadBuffer & in);
+
+    UInt64 getConsistentHash(size_t buckets) const;
 };
 
 struct PartitionReadResponse

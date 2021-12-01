@@ -109,7 +109,7 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
         if (task->mark_ranges.empty())
             continue;
 
-        processNewTask();
+        splitCurrentTaskRangesAndFillBuffer();
 
         if (getTaskFromBuffer())
             return true;
@@ -126,7 +126,7 @@ bool MergeTreeBaseSelectProcessor::getTaskFromBuffer()
 
         assert(!ranges.empty());
 
-        auto res = performRequestToCoordinator(ranges);
+        auto res = performRequestToCoordinator(ranges, /*delayed=*/false);
 
         if (Status::Accepted == res)
             return true;
@@ -147,7 +147,7 @@ bool MergeTreeBaseSelectProcessor::getDelayedTasks()
 
         assert(!task->mark_ranges.empty());
 
-        auto res = performRequestToCoordinator(task->mark_ranges);
+        auto res = performRequestToCoordinator(task->mark_ranges, /*delayed=*/true);
 
         if (Status::Accepted == res)
             return true;
@@ -570,7 +570,7 @@ std::unique_ptr<MergeTreeBlockSizePredictor> MergeTreeBaseSelectProcessor::getSi
 }
 
 
-MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performRequestToCoordinator(MarkRanges requested_ranges)
+MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performRequestToCoordinator(MarkRanges requested_ranges, bool delayed)
 {
     String partition_id = task->data_part->info.partition_id;
     String part_name;
@@ -601,6 +601,20 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
         .block_range = std::move(block_range),
         .mark_ranges = std::move(requested_ranges)
     };
+
+    /// Constistent hashing won't work with reading in order, because at the end of the execution
+    /// we could possibly seek back
+    if (!delayed && getName() == "MergeTreeThread")
+    {
+        const auto hash = request.getConsistentHash(extension->count_participating_replicas);
+        if (hash != extension->number_of_current_replica)
+        {
+            auto delayed_task = std::make_unique<MergeTreeReadTask>(*task); // Create a copy
+            delayed_task->mark_ranges = std::move(request.mark_ranges);
+            delayed_tasks.emplace_back(std::move(delayed_task));
+            return Status::Denied;
+        }
+    }
 
     auto optional_response = extension.value().callback(std::move(request));
 
@@ -656,6 +670,65 @@ size_t MergeTreeBaseSelectProcessor::estimateMaxBatchSizeForHugeRanges()
     return max_size_for_one_request / sum_average_marks_size;
 }
 
+void MergeTreeBaseSelectProcessor::splitCurrentTaskRangesAndFillBuffer()
+{
+    const size_t max_batch_size = estimateMaxBatchSizeForHugeRanges();
+
+    size_t current_batch_size = 0;
+    buffered_ranges.emplace_back();
+
+    for (const auto & range : task->mark_ranges)
+    {
+        auto expand_if_needed = [&]
+        {
+            if (current_batch_size > max_batch_size)
+            {
+                buffered_ranges.emplace_back();
+                current_batch_size = 0;
+            }
+
+        };
+
+        expand_if_needed();
+
+        if (range.end - range.begin < max_batch_size)
+        {
+            buffered_ranges.back().push_back(range);
+            current_batch_size += range.end - range.begin;
+            continue;
+        }
+
+        auto current_begin = range.begin;
+        auto current_end = range.begin + max_batch_size;
+
+        while (current_end < range.end)
+        {
+            auto current_range = MarkRange{current_begin, current_end};
+            buffered_ranges.back().push_back(current_range);
+            current_batch_size += current_end - current_begin;
+
+            current_begin = current_end;
+            current_end = current_end + max_batch_size;
+
+            expand_if_needed();
+        }
+
+        if (range.end - current_begin > 0)
+        {
+            auto current_range = MarkRange{current_begin, range.end};
+
+            buffered_ranges.back().push_back(current_range);
+            current_batch_size += range.end - current_begin;
+
+            /// Do not need to update current_begin and current_end
+
+            expand_if_needed();
+        }
+    }
+
+    if (buffered_ranges.back().empty())
+        buffered_ranges.pop_back();
+}
 
 MergeTreeBaseSelectProcessor::~MergeTreeBaseSelectProcessor() = default;
 

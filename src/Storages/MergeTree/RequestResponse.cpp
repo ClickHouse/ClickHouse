@@ -1,8 +1,11 @@
 #include <Storages/MergeTree/RequestResponse.h>
 
 #include <Core/ProtocolDefines.h>
+#include <Common/SipHash.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
+
+#include <consistent_hashing.h>
 
 namespace DB
 {
@@ -88,6 +91,25 @@ void PartitionReadRequest::deserialize(ReadBuffer & in)
     readVarInt(block_range.end, in);
 
     readMarkRangesBinary(mark_ranges, in);
+}
+
+UInt64 PartitionReadRequest::getConsistentHash(size_t buckets) const
+{
+    auto hash = SipHash();
+    hash.update(partition_id);
+    hash.update(part_name);
+    hash.update(projection_name);
+
+    hash.update(block_range.begin);
+    hash.update(block_range.end);
+
+    for (const auto & range : mark_ranges)
+    {
+        hash.update(range.begin);
+        hash.update(range.end);
+    }
+
+    return ConsistentHashing(hash.get64(), buckets);
 }
 
 

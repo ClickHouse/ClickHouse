@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTreeThreadSelectProcessor.h>
 #include <Interpreters/Context.h>
 
-#include <consistent_hashing.h>
 
 namespace DB
 {
@@ -77,107 +76,6 @@ bool MergeTreeThreadSelectProcessor::getNewTaskImpl()
 {
     task = pool->getTask(min_marks_to_read, thread, ordered_names);
     return static_cast<bool>(task);
-}
-
-
-void MergeTreeThreadSelectProcessor::processNewTask()
-{
-    const size_t max_batch_size = estimateMaxBatchSizeForHugeRanges();
-
-    auto predicate = [this](MarkRange range)
-    {
-        auto what = fmt::format("{}_{}_{}", task->data_part->info.getPartName(), range.begin, range.end);
-        auto hash = CityHash_v1_0_2::CityHash64(what.data(), what.size());
-        auto consistent_hash = ConsistentHashing(hash, extension->count_participating_replicas);
-        return consistent_hash == extension->number_of_current_replica;
-    };
-
-    // LOG_TRACE(log, "Using max batch size to perform a request equals {} marks", max_batch_size);
-
-    size_t current_batch_size = 0;
-
-    buffered_ranges.emplace_back();
-
-    MarkRanges delayed_ranges;
-
-    for (const auto & range : task->mark_ranges)
-    {
-        auto expand_if_needed = [&]
-        {
-            if (current_batch_size > max_batch_size)
-            {
-                buffered_ranges.emplace_back();
-                current_batch_size = 0;
-            }
-
-        };
-
-        expand_if_needed();
-
-        if (range.end - range.begin < max_batch_size)
-        {
-            if (predicate(range))
-            {
-                buffered_ranges.back().push_back(range);
-                current_batch_size += range.end - range.begin;
-            }
-            else
-            {
-                delayed_ranges.emplace_back(range);
-            }
-            continue;
-        }
-
-        auto current_begin = range.begin;
-        auto current_end = range.begin + max_batch_size;
-
-        while (current_end < range.end)
-        {
-            auto current_range = MarkRange{current_begin, current_end};
-            if (predicate(current_range))
-            {
-                buffered_ranges.back().push_back(current_range);
-                current_batch_size += current_end - current_begin;
-            }
-            else
-            {
-                delayed_ranges.emplace_back(current_range);
-            }
-
-            current_begin = current_end;
-            current_end = current_end + max_batch_size;
-
-            expand_if_needed();
-        }
-
-        if (range.end - current_begin > 0)
-        {
-            auto current_range = MarkRange{current_begin, range.end};
-            if (predicate(current_range))
-            {
-                buffered_ranges.back().push_back(current_range);
-                current_batch_size += range.end - current_begin;
-
-                /// Do not need to update current_begin and current_end
-
-                expand_if_needed();
-            }
-            else
-            {
-                delayed_ranges.emplace_back(current_range);
-            }
-        }
-    }
-
-    if (buffered_ranges.back().empty())
-        buffered_ranges.pop_back();
-
-    if (!delayed_ranges.empty())
-    {
-        auto delayed_task = std::make_unique<MergeTreeReadTask>(*task); // Create a copy
-        delayed_task->mark_ranges = std::move(delayed_ranges);
-        delayed_tasks.emplace_back(std::move(delayed_task));
-    }
 }
 
 
