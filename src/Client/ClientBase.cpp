@@ -40,7 +40,6 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTUseQuery.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTLiteral.h>
@@ -56,6 +55,8 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/CompressionMethod.h>
 #include <Client/InternalTextLogs.h>
+#include <boost/algorithm/string/replace.hpp>
+
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -405,7 +406,7 @@ void ClientBase::initBlockOutputStream(const Block & block, ASTPtr parsed_query)
             output_format = global_context->getOutputFormat(
                 current_format, out_file_buf ? *out_file_buf : *out_buf, block);
 
-        output_format->doWritePrefix();
+        output_format->setAutoFlush();
     }
 }
 
@@ -490,7 +491,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
         ReplaceQueryParameterVisitor visitor(query_parameters);
         visitor.visit(parsed_query);
 
-        /// Get new query after substitutions. Note that it cannot be done for INSERT query with embedded data.
+        /// Get new query after substitutions.
         query = serializeAST(*parsed_query);
     }
 
@@ -685,7 +686,7 @@ void ClientBase::onEndOfStream()
     progress_indication.clearProgressOutput();
 
     if (output_format)
-        output_format->doWriteSuffix();
+        output_format->finalize();
 
     resetOutput();
 
@@ -708,7 +709,7 @@ void ClientBase::onProfileEvents(Block & block)
         const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
         const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
         const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
-        const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
+        const auto & array_values = typeid_cast<const ColumnInt64 &>(*block.getByName("value").column).getData();
 
         const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
         const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
@@ -735,7 +736,8 @@ void ClientBase::onProfileEvents(Block & block)
                 thread_times[host_name][thread_id].memory_usage = value;
             }
         }
-        progress_indication.updateThreadEventData(thread_times);
+        auto elapsed_time = profile_events.watch.elapsedMicroseconds();
+        progress_indication.updateThreadEventData(thread_times, elapsed_time);
     }
 
     if (profile_events.print)
@@ -747,7 +749,6 @@ void ClientBase::onProfileEvents(Block & block)
             logs_out_stream->writeProfileEvents(block);
             logs_out_stream->flush();
 
-            profile_events.watch.restart();
             profile_events.last_block = {};
         }
         else
@@ -755,6 +756,7 @@ void ClientBase::onProfileEvents(Block & block)
             profile_events.last_block = block;
         }
     }
+    profile_events.watch.restart();
 }
 
 
@@ -824,6 +826,17 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
 
 void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr parsed_query)
 {
+    auto query = query_to_execute;
+    if (!query_parameters.empty())
+    {
+        /// Replace ASTQueryParameter with ASTLiteral for prepared statements.
+        ReplaceQueryParameterVisitor visitor(query_parameters);
+        visitor.visit(parsed_query);
+
+        /// Get new query after substitutions.
+        query = serializeAST(*parsed_query);
+    }
+
     /// Process the query that requires transferring data blocks to the server.
     const auto parsed_insert_query = parsed_query->as<ASTInsertQuery &>();
     if ((!parsed_insert_query.data && !parsed_insert_query.infile) && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
@@ -831,7 +844,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 
     connection->sendQuery(
         connection_parameters.timeouts,
-        query_to_execute,
+        query,
         global_context->getCurrentQueryId(),
         query_processing_stage,
         &global_context->getSettingsRef(),
@@ -884,8 +897,7 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
         /// Get name of this file (path to file)
         const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
         const auto in_file = in_file_node.value.safeGet<std::string>();
-        /// Get name of table
-        const auto table_name = parsed_insert_query->table_id.getTableName();
+
         std::string compression_method;
         /// Compression method can be specified in query
         if (parsed_insert_query->compression)
@@ -1321,6 +1333,12 @@ bool ClientBase::processQueryText(const String & text)
 }
 
 
+String ClientBase::prompt() const
+{
+    return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
+}
+
+
 void ClientBase::runInteractive()
 {
     if (config().has("query_id"))
@@ -1703,6 +1721,7 @@ void ClientBase::init(int argc, char ** argv)
         ("profile-events-delay-ms", po::value<UInt64>()->default_value(profile_events.delay_ms), "Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet)")
 
         ("interactive", "Process queries-file or --query query and start interactive mode")
+        ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
     ;
 
     addOptions(options_description);
@@ -1774,6 +1793,8 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("verbose", true);
     if (options.count("interactive"))
         config().setBool("interactive", true);
+    if (options.count("pager"))
+        config().setString("pager", options["pager"].as<std::string>());
 
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());

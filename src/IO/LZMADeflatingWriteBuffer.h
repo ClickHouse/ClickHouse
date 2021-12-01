@@ -2,6 +2,7 @@
 
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteBufferDecorator.h>
 
 #include <lzma.h>
 
@@ -10,7 +11,7 @@ namespace DB
 {
 
 /// Performs compression using lzma library and writes compressed data to out_ WriteBuffer.
-class LZMADeflatingWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
+class LZMADeflatingWriteBuffer : public WriteBufferWithOwnMemoryDecorator
 {
 public:
     LZMADeflatingWriteBuffer(
@@ -20,19 +21,15 @@ public:
         char * existing_memory = nullptr,
         size_t alignment = 0);
 
-    void finalize() override { finish(); }
-
     ~LZMADeflatingWriteBuffer() override;
 
 private:
     void nextImpl() override;
 
-    void finish();
-    void finishImpl();
+    void finalizeBefore() override;
+    void finalizeAfter() override;
 
-    std::unique_ptr<WriteBuffer> out;
     lzma_stream lstr;
-    bool finished = false;
 };
 
 }
