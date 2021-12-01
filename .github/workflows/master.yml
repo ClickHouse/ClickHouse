@@ -748,10 +748,39 @@ jobs:
         uses: actions/checkout@v2
       - name: Functional test
         env:
-          TEMP_PATH: ${{runner.temp}}/stateless_debug
+          TEMP_PATH: ${{runner.temp}}/stateless_release
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Stateless tests (release, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
+          REPO_COPY: ${{runner.temp}}/stateless_release/ClickHouse
+          KILL_TIMEOUT: 10800
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestReleaseDatabaseOrdinary:
+    needs: [BuilderDebRelease]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_release_database_ordinary
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (release, DatabaseOrdinary, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_release_database_ordinary/ClickHouse
           KILL_TIMEOUT: 10800
         run: |
           sudo rm -fr $TEMP_PATH
@@ -925,10 +954,39 @@ jobs:
         uses: actions/checkout@v2
       - name: Functional test
         env:
-          TEMP_PATH: ${{runner.temp}}/stateful_debug
+          TEMP_PATH: ${{runner.temp}}/stateful_release
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Stateful tests (release, actions)'
-          REPO_COPY: ${{runner.temp}}/stateful_debug/ClickHouse
+          REPO_COPY: ${{runner.temp}}/stateful_release/ClickHouse
+          KILL_TIMEOUT: 3600
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatefulTestReleaseDatabaseOrdinary:
+    needs: [BuilderDebRelease]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateful_release_database_ordinary
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateful tests (release, DatabaseOrdinary, actions)'
+          REPO_COPY: ${{runner.temp}}/stateful_release_database_ordinary/ClickHouse
           KILL_TIMEOUT: 3600
         run: |
           sudo rm -fr $TEMP_PATH
@@ -1609,12 +1667,14 @@ jobs:
       - BuilderReport
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease
+      - FunctionalStatelessTestReleaseDatabaseOrdinary
       - FunctionalStatelessTestAsan
       - FunctionalStatelessTestTsan
       - FunctionalStatelessTestMsan
       - FunctionalStatelessTestUBsan
       - FunctionalStatefulTestDebug
       - FunctionalStatefulTestRelease
+      - FunctionalStatefulTestReleaseDatabaseOrdinary
       - FunctionalStatefulTestAsan
       - FunctionalStatefulTestTsan
       - FunctionalStatefulTestMsan
