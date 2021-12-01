@@ -33,15 +33,15 @@ NamesAndTypesList StorageSnapshot::getColumns(const GetColumnsOptions & options)
     {
         /// Virtual columns must be appended after ordinary,
         /// because user can override them.
-        auto virtuals = storage.getVirtuals();
-        if (!virtuals.empty())
+        if (!virtual_columns.empty())
         {
             NameSet column_names;
             for (const auto & column : all_columns)
                 column_names.insert(column.name);
-            for (auto && column : virtuals)
-                if (!column_names.count(column.name))
-                    all_columns.push_back(std::move(column));
+
+            for (const auto & [name, type] : virtual_columns)
+                if (!column_names.count(name))
+                    all_columns.emplace_back(name, type);
         }
     }
 

@@ -3,6 +3,7 @@
 #include <IO/ReadHelpers.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/checkStackSize.h>
+#include <boost/dynamic_bitset.hpp>
 
 namespace DB
 {
@@ -10,7 +11,49 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_DIMENSIONS_MISMATHED;
 }
+
+class ReadBuffer;
+class WriteBuffer;
+
+class Path
+{
+public:
+    // using BitSet = boost::dynamic_bitset<UInt8, AllocatorWithStackMemory<Allocator<false>, 8>>;
+
+    Path() = default;
+    explicit Path(std::string_view path_);
+
+    void append(const Path & other);
+    void append(std::string_view key);
+
+    const String & getPath() const { return path; }
+    bool isNested(size_t i) const { return is_nested.test(i); }
+    bool hasNested() const { return is_nested.any(); }
+
+    size_t getNumParts() const { return num_parts; }
+    bool empty() const { return path.empty(); }
+
+    Strings getParts() const;
+
+    static Path getNext(const Path & current_path, const Path & key, bool make_nested = false);
+
+    void writeBinary(WriteBuffer & out) const;
+    void readBinary(ReadBuffer & in);
+
+    bool operator==(const Path & other) const { return path == other.path; }
+    bool operator!=(const Path & other) const { return !(*this == other); }
+    struct Hash { size_t operator()(const Path & value) const; };
+
+private:
+    String path;
+    size_t num_parts = 0;
+    /// TODO: use dynamic bitset
+    std::bitset<64> is_nested;
+};
+
+using Paths = std::vector<Path>;
 
 template <typename Element>
 static Field getValueAsField(const Element & element)
@@ -25,22 +68,9 @@ static Field getValueAsField(const Element & element)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported type of JSON field");
 }
 
-static String getNextPath(const String & current_path, const std::string_view & key)
-{
-    String next_path = current_path;
-    if (!key.empty())
-    {
-        if (!next_path.empty())
-            next_path += ".";
-        next_path += key;
-    }
-
-    return next_path;
-}
-
 struct ParseResult
 {
-    Strings paths;
+    std::vector<Path> paths;
     std::vector<Field> values;
 };
 
@@ -63,12 +93,12 @@ public:
             return {};
 
         ParseResult result;
-        traverse(document, "", result);
+        traverse(document, {}, result);
         return result;
     }
 
 private:
-    void traverse(const Element & element, String current_path, ParseResult & result)
+    void traverse(const Element & element, Path current_path, ParseResult & result)
     {
         checkStackSize();
 
@@ -81,14 +111,16 @@ private:
             for (auto it = object.begin(); it != object.end(); ++it)
             {
                 const auto & [key, value] = *it;
-                traverse(value, getNextPath(current_path, key), result);
+                traverse(value, Path::getNext(current_path, Path(key)), result);
             }
         }
         else if (element.isArray())
         {
             auto array = element.getArray();
 
-            using PathToArray = HashMap<StringRef, Array, StringRefHash>;
+            using PathWithArray = std::pair<Path, Array>;
+            using PathToArray = HashMap<StringRef, PathWithArray, StringRefHash>;
+
             PathToArray arrays_by_path;
             Arena strings_pool;
 
@@ -97,32 +129,37 @@ private:
             for (auto it = array.begin(); it != array.end(); ++it)
             {
                 ParseResult element_result;
-                traverse(*it, "", element_result);
+                traverse(*it, {}, element_result);
 
-                auto && [paths, values] = element_result;
+                auto & [paths, values] = element_result;
                 for (size_t i = 0; i < paths.size(); ++i)
                 {
-                    const auto & path = paths[i];
-
-                    if (auto found = arrays_by_path.find(path))
+                    if (auto * found = arrays_by_path.find(paths[i].getPath()))
                     {
-                        auto & path_array = found->getMapped();
+                        auto & path_array = found->getMapped().second;
+
                         assert(path_array.size() == current_size);
                         path_array.push_back(std::move(values[i]));
                     }
                     else
                     {
-                        StringRef ref{strings_pool.insert(path.data(), path.size()), path.size()};
-                        auto & path_array = arrays_by_path[ref];
-
+                        Array path_array;
                         path_array.reserve(array.size());
                         path_array.resize(current_size);
                         path_array.push_back(std::move(values[i]));
+
+                        const auto & path_str = paths[i].getPath();
+                        StringRef ref{strings_pool.insert(path_str.data(), path_str.size()), path_str.size()};
+
+                        auto & elem = arrays_by_path[ref];
+                        elem.first = std::move(paths[i]);
+                        elem.second = std::move(path_array);
                     }
                 }
 
-                for (auto & [path, path_array] : arrays_by_path)
+                for (auto & [_, value] : arrays_by_path)
                 {
+                    auto & path_array = value.second;
                     assert(path_array.size() == current_size || path_array.size() == current_size + 1);
                     if (path_array.size() == current_size)
                         path_array.push_back(Field());
@@ -141,16 +178,19 @@ private:
                 result.paths.reserve(result.paths.size() + arrays_by_path.size());
                 result.values.reserve(result.paths.size() + arrays_by_path.size());
 
-                for (auto && [path, path_array] : arrays_by_path)
+                bool is_nested = arrays_by_path.size() > 1 || arrays_by_path.begin()->getKey().size != 0;
+
+                for (auto && [_, value] : arrays_by_path)
                 {
-                    result.paths.push_back(getNextPath(current_path, static_cast<std::string_view>(path)));
+                    auto && [path, path_array] = value;
+                    result.paths.push_back(Path::getNext(current_path, path, is_nested));
                     result.values.push_back(std::move(path_array));
                 }
             }
         }
         else
         {
-            result.paths.push_back(current_path);
+            result.paths.push_back(std::move(current_path));
             result.values.push_back(getValueAsField(element));
         }
     }

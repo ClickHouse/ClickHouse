@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/NestedUtils.h>
 #include <Common/JSONParsers/SimdJSONParser.h>
 #include <Common/JSONParsers/RapidJSONParser.h>
 #include <Common/HashTable/HashSet.h>
@@ -24,6 +25,37 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+class FieldVisitorReplaceScalars : public StaticVisitor<Field>
+{
+public:
+    explicit FieldVisitorReplaceScalars(const Field & replacement_) : replacement(replacement_)
+    {
+    }
+
+    template <typename T>
+    Field operator()(const T & x) const
+    {
+        if constexpr (std::is_same_v<T, Array>)
+        {
+            const size_t size = x.size();
+            Array res(size);
+            for (size_t i = 0; i < size; ++i)
+                res[i] = applyVisitor(*this, x[i]);
+            return res;
+        }
+        else
+            return replacement;
+    }
+
+private:
+    const Field & replacement;
+};
+
+}
+
 template <typename Parser>
 template <typename Reader>
 void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader && reader) const
@@ -37,12 +69,12 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
     if (!result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse object");
 
-    auto && [paths, values] = *result;
+    auto & [paths, values] = *result;
     assert(paths.size() == values.size());
 
     HashSet<StringRef, StringRefHash> paths_set;
     for (const auto & path : paths)
-        paths_set.insert(path);
+        paths_set.insert(path.getPath());
 
     if (paths.size() != paths_set.size())
         throw Exception(ErrorCodes::INCORRECT_DATA, "Object has ambiguous paths");
@@ -61,8 +93,33 @@ void SerializationObject<Parser>::deserializeTextImpl(IColumn & column, Reader &
 
     for (auto & [key, subcolumn] : column_object.getSubcolumns())
     {
-        if (!paths_set.has(key))
-            subcolumn.insertDefault();
+        if (!paths_set.has(key.getPath()))
+        {
+            if (key.hasNested())
+            {
+                auto nested_key = column_object.findSubcolumnForNested(key, subcolumn.size() + 1);
+
+                if (nested_key)
+                {
+                    const auto & subcolumn_nested = column_object.getSubcolumn(*nested_key);
+                    auto last_field = subcolumn_nested.getLastField();
+                    if (last_field.isNull())
+                        continue;
+
+                    auto default_scalar = getBaseTypeOfArray(subcolumn_nested.getLeastCommonType())->getDefault();
+                    auto default_field = applyVisitor(FieldVisitorReplaceScalars(default_scalar), last_field);
+                    subcolumn.insert(std::move(default_field));
+                }
+                else
+                {
+                    subcolumn.insertDefault();
+                }
+            }
+            else
+            {
+                subcolumn.insertDefault();
+            }
+        }
     }
 }
 
@@ -154,17 +211,17 @@ void SerializationObject<Parser>::serializeBinaryBulkWithMultipleStreams(
     for (const auto & [key, subcolumn] : column_object.getSubcolumns())
     {
         settings.path.back() = Substream::ObjectStructure;
-        settings.path.back().object_key_name = key;
+        settings.path.back().object_key_name = key.getPath();
 
         const auto & type = subcolumn.getLeastCommonType();
         if (auto * stream = settings.getter(settings.path))
         {
-            writeStringBinary(key, *stream);
+            key.writeBinary(*stream);
             writeStringBinary(type->getName(), *stream);
         }
 
         settings.path.back() = Substream::ObjectElement;
-        settings.path.back().object_key_name = key;
+        settings.path.back().object_key_name = key.getPath();
 
         if (auto * stream = settings.getter(settings.path))
         {
@@ -201,13 +258,13 @@ void SerializationObject<Parser>::deserializeBinaryBulkWithMultipleStreams(
     settings.path.back() = Substream::ObjectElement;
     for (size_t i = 0; i < num_subcolumns; ++i)
     {
-        String key;
+        Path key;
         String type_name;
 
         settings.path.back() = Substream::ObjectStructure;
         if (auto * stream = settings.getter(settings.path))
         {
-            readStringBinary(key, *stream);
+            key.readBinary(*stream);
             readStringBinary(type_name, *stream);
         }
         else
@@ -217,7 +274,7 @@ void SerializationObject<Parser>::deserializeBinaryBulkWithMultipleStreams(
         }
 
         settings.path.back() = Substream::ObjectElement;
-        settings.path.back().object_key_name = key;
+        settings.path.back().object_key_name = key.getPath();
 
         if (auto * stream = settings.getter(settings.path))
         {
@@ -225,12 +282,12 @@ void SerializationObject<Parser>::deserializeBinaryBulkWithMultipleStreams(
             auto serialization = type->getDefaultSerialization();
             ColumnPtr subcolumn_data = type->createColumn();
             serialization->deserializeBinaryBulkWithMultipleStreams(subcolumn_data, limit, settings, state, cache);
-            column_object.addSubcolumn(key, subcolumn_data->assumeMutable());
+            column_object.addSubcolumn(Path(key), subcolumn_data->assumeMutable());
         }
         else
         {
             throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
-                "Cannot read subcolumn '{}' of DataTypeObject, because its stream is missing", key);
+                "Cannot read subcolumn '{}' of DataTypeObject, because its stream is missing", key.getPath());
         }
     }
 
@@ -278,7 +335,7 @@ void SerializationObject<Parser>::serializeTextImpl(const IColumn & column, size
         if (it != subcolumns.begin())
             writeCString(",", ostr);
 
-        writeDoubleQuoted(it->first, ostr);
+        writeDoubleQuoted(it->first.getPath(), ostr);
         writeChar(':', ostr);
 
         auto serialization = it->second.getLeastCommonType()->getDefaultSerialization();
