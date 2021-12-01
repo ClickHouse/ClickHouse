@@ -468,8 +468,8 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         res_client_info.initial_address = res_client_info.current_address;
     }
 
-    /// Sets that row policies from the initial user should be used too.
-    query_context->setInitialRowPolicy();
+    /// Sets that row policies of the initial user should be used too.
+    query_context->enableRowPoliciesOfInitialUser();
 
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getUser())

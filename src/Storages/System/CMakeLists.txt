@@ -6,7 +6,6 @@ include(${ClickHouse_SOURCE_DIR}/cmake/embed_binary.cmake)
 
 set (CONFIG_BUILD "${CMAKE_CURRENT_BINARY_DIR}/StorageSystemBuildOptions.generated.cpp")
 get_property (BUILD_COMPILE_DEFINITIONS DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY COMPILE_DEFINITIONS)
-get_property (BUILD_INCLUDE_DIRECTORIES DIRECTORY ${ClickHouse_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
 
 get_property(TZDATA_VERSION GLOBAL PROPERTY TZDATA_VERSION_PROP)
 
@@ -49,7 +48,8 @@ clickhouse_embed_binaries(
         RESOURCES schemata.sql tables.sql views.sql columns.sql
 )
 
-add_library(clickhouse_storages_system ${storages_system_headers} ${storages_system_sources})
+list (SORT storages_system_sources) # Reproducible build
+add_library(clickhouse_storages_system ${storages_system_sources})
 
 add_dependencies(clickhouse_storages_system information_schema_metadata)
 

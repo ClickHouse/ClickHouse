@@ -8,26 +8,18 @@ import json
 import logging
 import sys
 from github import Github
-from report import create_test_html_report
 from s3_helper import S3Helper
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
+from upload_result_helper import upload_results
+from commit_status_helper import get_commit
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from stopwatch import Stopwatch
 
 NAME = 'PVS Studio (actions)'
 LICENCE_NAME = 'Free license: ClickHouse, Yandex'
 HTML_REPORT_FOLDER = 'pvs-studio-html-report'
 TXT_REPORT_NAME = 'pvs-studio-task-report.txt'
-
-def process_logs(s3_client, additional_logs, s3_path_prefix):
-    additional_urls = []
-    for log_path in additional_logs:
-        if log_path:
-            additional_urls.append(
-                s3_client.upload_test_report_to_s3(
-                    log_path,
-                    s3_path_prefix + "/" + os.path.basename(log_path)))
-
-    return additional_urls
 
 def _process_txt_report(path):
     warnings = []
@@ -44,44 +36,15 @@ def _process_txt_report(path):
 
     return warnings, errors
 
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
-
-def upload_results(s3_client, pr_number, commit_sha, test_results, additional_files):
-    s3_path_prefix = str(pr_number) + "/" + commit_sha + "/" + NAME.lower().replace(' ', '_').replace('(', '_').replace(')', '_')
-    additional_urls = process_logs(s3_client, additional_files, s3_path_prefix)
-
-    branch_url = "https://github.com/ClickHouse/ClickHouse/commits/master"
-    branch_name = "master"
-    if pr_number != 0:
-        branch_name = "PR #{}".format(pr_number)
-        branch_url = "https://github.com/ClickHouse/ClickHouse/pull/" + str(pr_number)
-    commit_url = f"https://github.com/ClickHouse/ClickHouse/commit/{commit_sha}"
-
-    task_url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
-
-    raw_log_url = additional_urls[0]
-    additional_urls.pop(0)
-
-    html_report = create_test_html_report(NAME, test_results, raw_log_url, task_url, branch_url, branch_name, commit_url, additional_urls, False)
-    with open('report.html', 'w') as f:
-        f.write(html_report)
-
-    url = s3_client.upload_test_report_to_s3('report.html', s3_path_prefix + ".html")
-    logging.info("Search result in url %s", url)
-    return url
-
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+
+    stopwatch = Stopwatch()
+
     repo_path = os.path.join(os.getenv("REPO_COPY", os.path.abspath("../../")))
     temp_path = os.path.join(os.getenv("TEMP_PATH"))
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
-        event = json.load(event_file)
-    pr_info = PRInfo(event)
+    pr_info = PRInfo(get_event())
     # this check modify repository so copy it to the temp directory
     logging.info("Repo copy path %s", repo_path)
 
@@ -122,7 +85,8 @@ if __name__ == "__main__":
                 break
 
         if not index_html:
-            commit.create_status(context=NAME, description='PVS report failed to build', state='failure', target_url=f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}")
+            commit.create_status(context=NAME, description='PVS report failed to build', state='failure',
+                                 target_url=f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID')}")
             sys.exit(1)
 
         txt_report = os.path.join(temp_path, TXT_REPORT_NAME)
@@ -133,11 +97,15 @@ if __name__ == "__main__":
         test_results = [(index_html, "Look at the report"), ("Errors count not checked", "OK")]
         description = "Total errors {}".format(len(errors))
         additional_logs = [txt_report, os.path.join(temp_path, 'pvs-studio.log')]
-        report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_logs)
+        report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, additional_logs, NAME)
 
         print("::notice ::Report url: {}".format(report_url))
         commit = get_commit(gh, pr_info.sha)
         commit.create_status(context=NAME, description=description, state=status, target_url=report_url)
+
+        ch_helper = ClickHouseHelper()
+        prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_results, status, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, NAME)
+        ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
     except Exception as ex:
         print("Got an exception", ex)
         sys.exit(1)

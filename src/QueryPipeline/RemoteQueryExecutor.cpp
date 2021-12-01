@@ -9,6 +9,7 @@
 #include "Core/Protocol.h"
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
+#include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/castColumn.h>
@@ -296,6 +297,12 @@ std::variant<Block, int> RemoteQueryExecutor::read(std::unique_ptr<ReadContext> 
         }
         else
         {
+            /// We need to check that query was not cancelled again,
+            /// to avoid the race between cancel() thread and read() thread.
+            /// (since cancel() thread will steal the fiber and may update the packet).
+            if (was_cancelled)
+                return Block();
+
             if (auto data = processPacket(std::move(read_context->packet)))
                 return std::move(*data);
             else if (got_duplicated_part_uuids)
@@ -494,6 +501,12 @@ void RemoteQueryExecutor::sendExternalTables()
         external_tables_data.clear();
         external_tables_data.reserve(count);
 
+        StreamLocalLimits limits;
+        const auto & settings = context->getSettingsRef();
+        limits.mode = LimitsMode::LIMITS_TOTAL;
+        limits.speed_limits.max_execution_time = settings.max_execution_time;
+        limits.timeout_overflow_mode = settings.timeout_overflow_mode;
+
         for (size_t i = 0; i < count; ++i)
         {
             ExternalTablesData res;
@@ -503,7 +516,7 @@ void RemoteQueryExecutor::sendExternalTables()
 
                 auto data = std::make_unique<ExternalTableData>();
                 data->table_name = table.first;
-                data->creating_pipe_callback = [cur, context = this->context]()
+                data->creating_pipe_callback = [cur, limits, context = this->context]()
                 {
                     SelectQueryInfo query_info;
                     auto metadata_snapshot = cur->getInMemoryMetadataPtr();
@@ -518,6 +531,8 @@ void RemoteQueryExecutor::sendExternalTables()
                     if (pipe.empty())
                         return std::make_unique<Pipe>(
                             std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock(), Chunk()));
+
+                    pipe.addTransform(std::make_shared<LimitsCheckingTransform>(pipe.getHeader(), limits));
 
                     return std::make_unique<Pipe>(std::move(pipe));
                 };

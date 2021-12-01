@@ -3,6 +3,7 @@
 #include <Interpreters/Aliases.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Storages/IStorage_fwd.h>
 #include <Parsers/IAST_fwd.h>
 
 namespace DB
@@ -15,6 +16,7 @@ struct TreeRewriterResult;
 class TreeOptimizer
 {
 public:
+
     static void apply(
         ASTPtr & query,
         TreeRewriterResult & result,
