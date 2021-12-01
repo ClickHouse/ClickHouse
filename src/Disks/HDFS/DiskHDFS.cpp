@@ -97,7 +97,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
 
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(hdfs_path,
-                                                             config, buf_size,
+                                                             config, settings->replication, buf_size,
                                                              mode == WriteMode::Rewrite ? O_WRONLY :  O_WRONLY | O_APPEND);
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromHDFS>>(std::move(hdfs_buffer),
@@ -147,7 +147,8 @@ std::unique_ptr<DiskHDFSSettings> getSettings(const Poco::Util::AbstractConfigur
     return std::make_unique<DiskHDFSSettings>(
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".thread_pool_size", 16),
-        config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000));
+        config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
+        config.getInt(config_prefix + ".dfs.replication", 3));
 }
 }
 
