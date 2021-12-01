@@ -118,8 +118,8 @@ Allows to automatically close the connection after query execution, i.e. disable
 
 Possible values:
 
--   1 — The connection reuse is disabled.
--   0 — The connection reuse is enabled.
+-   1 — Auto-close connection is allowed, so the connection reuse is disabled
+-   0 — Auto-close connection is not allowed, so the connection reuse is enabled
 
 Default value: `1`.
 
