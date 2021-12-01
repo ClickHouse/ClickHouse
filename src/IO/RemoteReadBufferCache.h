@@ -49,8 +49,8 @@ struct RemoteFileMetadata
     }
 
     bool load(const std::filesystem::path & local_path);
-    void save(const std::filesystem::path & local_path);
-    String toString();
+    void save(const std::filesystem::path & local_path) const;
+    String toString() const;
 
     String schema; // Hive, S2 etc.
     String cluster;
@@ -103,7 +103,7 @@ public:
     inline size_t size() const { return current_offset; }
 
     inline const std::filesystem::path & getLocalPath() { return local_path; }
-    inline const String & getRemotePath() { return file_meta_data.remote_path; }
+    inline const String & getRemotePath() const { return file_meta_data.remote_path; }
 
     inline UInt64 getLastModificationTimestamp() const { return file_meta_data.last_modification_timestamp; }
     inline void markInvalid()

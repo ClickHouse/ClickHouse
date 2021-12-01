@@ -1,6 +1,7 @@
 #include <Processors/Formats/Impl/HiveTextRowInputFormat.h>
 
 #if USE_HIVE
+
 namespace DB
 {
 
