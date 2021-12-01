@@ -341,6 +341,8 @@ ReturnType readFloatTextFastImpl(T & x, ReadBuffer & in)
         negative = true;
         ++in.position();
     }
+    else if (*in.position() == '+')
+        ++in.position();
 
     auto count_after_sign = in.count();
 
