@@ -13,14 +13,14 @@ if (NOT ENABLE_PARQUET)
 endif()
 
 if (NOT OS_FREEBSD) # Freebsd: ../contrib/arrow/cpp/src/arrow/util/bit-util.h:27:10: fatal error: endian.h: No such file or directory
-    option(USE_INTERNAL_PARQUET_LIBRARY "Set to FALSE to use system parquet library instead of bundled" ON)
+    option(USE_INTERNAL_PARQUET_LIBRARY "Set to FALSE to use system parquet library instead of bundled" ${NOT_UNBUNDLED})
 elseif(USE_INTERNAL_PARQUET_LIBRARY)
     message (${RECONFIGURE_MESSAGE_LEVEL} "Using internal parquet is not supported on freebsd")
 endif()
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/arrow/cpp/CMakeLists.txt")
     if(USE_INTERNAL_PARQUET_LIBRARY)
-        message(WARNING "submodule contrib/arrow (required for Parquet) is missing. to fix try run: \n git submodule update --init")
+        message(WARNING "submodule contrib/arrow (required for Parquet) is missing. to fix try run: \n git submodule update --init --recursive")
         message (${RECONFIGURE_MESSAGE_LEVEL} "Can't use internal parquet library")
         set(USE_INTERNAL_PARQUET_LIBRARY 0)
     endif()

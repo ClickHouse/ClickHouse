@@ -12,7 +12,7 @@ namespace DB
 
 class TemplateBlockOutputFormat : public IOutputFormat
 {
-    using EscapingRule = FormatSettings::EscapingRule;
+    using ColumnFormat = ParsedTemplateFormatString::ColumnFormat;
 public:
     TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_,
                               ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
@@ -20,8 +20,10 @@ public:
 
     String getName() const override { return "TemplateBlockOutputFormat"; }
 
-    void setRowsBeforeLimit(size_t rows_before_limit_) override { statistics.rows_before_limit = rows_before_limit_; statistics.applied_limit = true; }
-    void onProgress(const Progress & progress_) override { statistics.progress.incrementPiecewiseAtomically(progress_); }
+    void doWritePrefix() override;
+
+    void setRowsBeforeLimit(size_t rows_before_limit_) override { rows_before_limit = rows_before_limit_; rows_before_limit_set = true; }
+    void onProgress(const Progress & progress_) override { progress.incrementPiecewiseAtomically(progress_); }
 
     enum class ResultsetPart : size_t
     {
@@ -38,28 +40,32 @@ public:
 
     static ResultsetPart stringToResultsetPart(const String & part);
 
-private:
-    void writePrefix() override;
+protected:
     void consume(Chunk chunk) override;
-    void consumeTotals(Chunk chunk) override { statistics.totals = std::move(chunk); }
-    void consumeExtremes(Chunk chunk) override { statistics.extremes = std::move(chunk); }
-    void finalizeImpl() override;
+    void consumeTotals(Chunk chunk) override { totals = std::move(chunk); }
+    void consumeExtremes(Chunk chunk) override { extremes = std::move(chunk); }
+    void finalize() override;
 
     void writeRow(const Chunk & chunk, size_t row_num);
-    template <typename U, typename V> void writeValue(U value, EscapingRule escaping_rule);
+    void serializeField(const IColumn & column, const ISerialization & serialization, size_t row_num, ColumnFormat format);
+    template <typename U, typename V> void writeValue(U value, ColumnFormat col_format);
 
-    void onRowsReadBeforeUpdate() override { row_count = getRowsReadBefore(); }
-    bool areTotalsAndExtremesUsedInFinalize() const override { return true; }
-
+protected:
     const FormatSettings settings;
     Serializations serializations;
 
     ParsedTemplateFormatString format;
     ParsedTemplateFormatString row_format;
 
-    Statistics statistics;
+    size_t rows_before_limit = 0;
+    bool rows_before_limit_set = false;
+    Chunk totals;
+    Chunk extremes;
+    Progress progress;
+    Stopwatch watch;
 
     size_t row_count = 0;
+    bool need_write_prefix = true;
 
     std::string row_between_delimiter;
 };

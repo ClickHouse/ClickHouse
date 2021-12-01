@@ -1,18 +1,16 @@
-#include <Interpreters/AsynchronousMetricLog.h>
-#include <Interpreters/CrashLog.h>
-#include <Interpreters/MetricLog.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
-#include <Interpreters/PartLog.h>
+#include <Interpreters/SystemLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryThreadLog.h>
-#include <Interpreters/QueryViewsLog.h>
-#include <Interpreters/SessionLog.h>
+#include <Interpreters/PartLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/TraceLog.h>
-#include <Interpreters/ZooKeeperLog.h>
+#include <Interpreters/CrashLog.h>
+#include <Interpreters/MetricLog.h>
+#include <Interpreters/AsynchronousMetricLog.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -39,13 +37,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     const String & config_prefix)
 {
     if (!config.has(config_prefix))
-    {
-        LOG_DEBUG(&Poco::Logger::get("SystemLog"),
-                "Not creating {}.{} since corresponding section '{}' is missing from config",
-                default_database_name, default_table_name, config_prefix);
-
         return {};
-    }
 
     String database = config.getString(config_prefix + ".database", default_database_name);
     String table = config.getString(config_prefix + ".table", default_table_name);
@@ -96,22 +88,6 @@ std::shared_ptr<TSystemLog> createSystemLog(
 }
 
 
-ASTPtr ISystemLog::getCreateTableQueryClean(const StorageID & table_id, ContextPtr context)
-{
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
-    ASTPtr old_ast = database->getCreateTableQuery(table_id.table_name, context);
-    auto & old_create_query_ast = old_ast->as<ASTCreateQuery &>();
-    /// Reset UUID
-    old_create_query_ast.uuid = UUIDHelpers::Nil;
-    /// Existing table has default settings (i.e. `index_granularity = 8192`), reset them.
-    if (ASTStorage * storage = old_create_query_ast.storage)
-    {
-        storage->reset(storage->settings);
-    }
-    return old_ast;
-}
-
-
 SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config)
 {
     query_log = createSystemLog<QueryLog>(global_context, "system", "query_log", config, "query_log");
@@ -127,9 +103,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
     opentelemetry_span_log = createSystemLog<OpenTelemetrySpanLog>(
         global_context, "system", "opentelemetry_span_log", config,
         "opentelemetry_span_log");
-    query_views_log = createSystemLog<QueryViewsLog>(global_context, "system", "query_views_log", config, "query_views_log");
-    zookeeper_log = createSystemLog<ZooKeeperLog>(global_context, "system", "zookeeper_log", config, "zookeeper_log");
-    session_log = createSystemLog<SessionLog>(global_context, "system", "session_log", config, "session_log");
 
     if (query_log)
         logs.emplace_back(query_log.get());
@@ -149,12 +122,6 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         logs.emplace_back(asynchronous_metric_log.get());
     if (opentelemetry_span_log)
         logs.emplace_back(opentelemetry_span_log.get());
-    if (query_views_log)
-        logs.emplace_back(query_views_log.get());
-    if (zookeeper_log)
-        logs.emplace_back(zookeeper_log.get());
-    if (session_log)
-        logs.emplace_back(session_log.get());
 
     try
     {

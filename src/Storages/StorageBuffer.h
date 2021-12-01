@@ -2,8 +2,9 @@
 
 #include <Core/BackgroundSchedulePool.h>
 #include <Core/NamesAndTypes.h>
+#include <DataStreams/IBlockOutputStream.h>
 #include <Storages/IStorage.h>
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 
 #include <Poco/Event.h>
 
@@ -45,7 +46,7 @@ class StorageBuffer final : public shared_ptr_helper<StorageBuffer>, public ISto
 {
 friend struct shared_ptr_helper<StorageBuffer>;
 friend class BufferSource;
-friend class BufferSink;
+friend class BufferBlockOutputStream;
 
 public:
     struct Thresholds
@@ -83,7 +84,7 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
@@ -107,7 +108,7 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
     /// The structure of the subordinate table is not checked and does not change.
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, TableLockHolder & table_lock_holder) override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;

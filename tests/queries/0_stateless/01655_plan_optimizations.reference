@@ -5,8 +5,11 @@ FUNCTION sipHash64
 Filter column: equals
 > sorting steps should know about limit
 Limit 10
-Sorting
-Sorting
+MergingSorted
+Limit 10
+MergeSorting
+Limit 10
+PartialSorting
 Limit 10
 -- filter push down --
 > filter should be pushed down after aggregating
@@ -53,7 +56,7 @@ Filter column: notEquals(y, 0)
 9	10
 > one condition of filter should be pushed down after aggregating, other condition is casted
 Filter column
-FUNCTION _CAST(minus(s, 4) :: 1, UInt8 :: 3) -> and(notEquals(y, 0), minus(s, 4))
+FUNCTION CAST(minus(s, 4) :: 1, UInt8 :: 3) -> and(notEquals(y, 0), minus(s, 4))
 Aggregating
 Filter column: notEquals(y, 0)
 0	1
@@ -105,8 +108,9 @@ Filter column: notEquals(y, 2)
 1	0
 1	1
 > filter is pushed down before sorting steps
-Sorting
-Sorting
+MergingSorted
+MergeSorting
+PartialSorting
 Filter column: and(notEquals(x, 0), notEquals(y, 0))
 1	2
 1	1

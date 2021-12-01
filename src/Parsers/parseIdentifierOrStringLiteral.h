@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Types.h>
 #include <Parsers/IParser.h>
 
 namespace DB

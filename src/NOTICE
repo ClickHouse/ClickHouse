@@ -18,6 +18,9 @@ Common/UInt128.h
 Core/Block.h
 Core/Defines.h
 Core/Settings.h
+DataStreams/PushingToViewsBlockOutputStream.cpp
+DataStreams/PushingToViewsBlockOutputStream.h
+DataStreams/copyData.cpp
 Databases/DatabasesCommon.cpp
 IO/WriteBufferValidUTF8.cpp
 Interpreters/InterpreterAlterQuery.cpp

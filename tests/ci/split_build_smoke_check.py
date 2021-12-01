@@ -2,13 +2,14 @@
 
 import os
 import logging
+import json
 import subprocess
 
 from github import Github
 
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo, get_event
+from pr_info import PRInfo
 from build_download_helper import download_shared_build
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
@@ -62,7 +63,10 @@ if __name__ == "__main__":
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
     reports_path = os.getenv("REPORTS_PATH", "./reports")
 
-    pr_info = PRInfo(get_event())
+    with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
+        event = json.load(event_file)
+
+    pr_info = PRInfo(event)
 
     gh = Github(get_best_robot_token())
 

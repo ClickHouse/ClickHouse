@@ -4,9 +4,7 @@ toc_title: ORDER BY
 
 # ORDER BY Clause {#select-order-by}
 
-The `ORDER BY` clause contains a list of expressions, which can each be attributed with `DESC` (descending) or `ASC` (ascending) modifier which determine the sorting direction. If the direction is not specified, `ASC` is assumed, so it’s usually omitted. The sorting direction applies to a single expression, not to the entire list. Example: `ORDER BY Visits DESC, SearchPhrase`.
-
-If you want to sort by column numbers instead of column names, enable the setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments).
+The `ORDER BY` clause contains a list of expressions, which can each be attributed with `DESC` (descending) or `ASC` (ascending) modifier which determine the sorting direction. If the direction is not specified, `ASC` is assumed, so it’s usually omitted. The sorting direction applies to a single expression, not to the entire list. Example: `ORDER BY Visits DESC, SearchPhrase`
 
 Rows that have identical values for the list of sorting expressions are output in an arbitrary order, which can also be non-deterministic (different each time).
 If the ORDER BY clause is omitted, the order of the rows is also undefined, and may be non-deterministic as well.
@@ -252,8 +250,8 @@ External sorting works much less effectively than sorting in RAM.
 
 ## Optimization of Data Reading {#optimize_read_in_order}
 
- If `ORDER BY` expression has a prefix that coincides with the table sorting key, you can optimize the query by using the [optimize_read_in_order](../../../operations/settings/settings.md#optimize_read_in_order) setting.
-
+ If `ORDER BY` expression has a prefix that coincides with the table sorting key, you can optimize the query by using the [optimize_read_in_order](../../../operations/settings/settings.md#optimize_read_in_order) setting.  
+ 
  When the `optimize_read_in_order` setting is enabled, the ClickHouse server uses the table index and reads the data in order of the `ORDER BY` key. This allows to avoid reading all data in case of specified [LIMIT](../../../sql-reference/statements/select/limit.md). So queries on big data with small limit are processed faster.
 
 Optimization works with both `ASC` and `DESC` and does not work together with [GROUP BY](../../../sql-reference/statements/select/group-by.md) clause and [FINAL](../../../sql-reference/statements/select/from.md#select-from-final) modifier.
@@ -276,28 +274,28 @@ This modifier also can be combined with [LIMIT … WITH TIES modifier](../../../
 `WITH FILL` modifier can be set after `ORDER BY expr` with optional `FROM expr`, `TO expr` and `STEP expr` parameters.
 All missed values of `expr` column will be filled sequentially and other columns will be filled as defaults.
 
-To fill multiple columns, add `WITH FILL` modifier with optional parameters after each field name in `ORDER BY` section.
+Use following syntax for filling multiple columns add `WITH FILL` modifier with optional parameters after each field name in `ORDER BY` section.
 
 ``` sql
 ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_expr], ... exprN [WITH FILL] [FROM expr] [TO expr] [STEP numeric_expr]
 ```
 
-`WITH FILL` can be applied for fields with Numeric (all kinds of float, decimal, int) or Date/DateTime types. When applied for `String` fields, missed values are filled with empty strings.
+`WITH FILL` can be applied only for fields with Numeric (all kind of float, decimal, int) or Date/DateTime types.
 When `FROM const_expr` not defined sequence of filling use minimal `expr` field value from `ORDER BY`.
 When `TO const_expr` not defined sequence of filling use maximum `expr` field value from `ORDER BY`.
 When `STEP const_numeric_expr` defined then `const_numeric_expr` interprets `as is` for numeric types as `days` for Date type and as `seconds` for DateTime type.
 When `STEP const_numeric_expr` omitted then sequence of filling use `1.0` for numeric type, `1 day` for Date type and `1 second` for DateTime type.
 
-Example of a query without `WITH FILL`:
+For example, the following query
 
 ``` sql
 SELECT n, source FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source
    FROM numbers(10) WHERE number % 3 = 1
-) ORDER BY n;
+) ORDER BY n
 ```
 
-Result:
+returns
 
 ``` text
 ┌─n─┬─source───┐
@@ -307,16 +305,16 @@ Result:
 └───┴──────────┘
 ```
 
-Same query after applying `WITH FILL` modifier:
+but after apply `WITH FILL` modifier
 
 ``` sql
 SELECT n, source FROM (
    SELECT toFloat32(number % 10) AS n, 'original' AS source
    FROM numbers(10) WHERE number % 3 = 1
-) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5;
+) ORDER BY n WITH FILL FROM 0 TO 5.51 STEP 0.5
 ```
 
-Result:
+returns
 
 ``` text
 ┌───n─┬─source───┐
@@ -336,7 +334,7 @@ Result:
 └─────┴──────────┘
 ```
 
-For the case with multiple fields `ORDER BY field2 WITH FILL, field1 WITH FILL` order of filling will follow the order of fields in the `ORDER BY` clause.
+For the case when we have multiple fields `ORDER BY field2 WITH FILL, field1 WITH FILL` order of filling will follow the order of fields in `ORDER BY` clause.
 
 Example:
 
@@ -352,7 +350,7 @@ ORDER BY
     d1 WITH FILL STEP 5;
 ```
 
-Result:
+returns
 
 ``` text
 ┌───d1───────┬───d2───────┬─source───┐
@@ -366,9 +364,9 @@ Result:
 └────────────┴────────────┴──────────┘
 ```
 
-Field `d1` does not fill in and use the default value cause we do not have repeated values for `d2` value, and the sequence for `d1` can’t be properly calculated.
+Field `d1` does not fill and use default value cause we do not have repeated values for `d2` value, and sequence for `d1` can’t be properly calculated.
 
-The following query with the changed field in `ORDER BY`:
+The following query with a changed field in `ORDER BY`
 
 ``` sql
 SELECT
@@ -382,7 +380,7 @@ ORDER BY
     d2 WITH FILL;
 ```
 
-Result:
+returns
 
 ``` text
 ┌───d1───────┬───d2───────┬─source───┐
@@ -402,4 +400,4 @@ Result:
 └────────────┴────────────┴──────────┘
 ```
 
-[Original article](https://clickhouse.com/docs/en/sql-reference/statements/select/order-by/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql-reference/statements/select/order-by/) <!--hide-->

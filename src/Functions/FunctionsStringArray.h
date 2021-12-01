@@ -1,22 +1,19 @@
 #pragma once
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsConversion.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnArray.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Functions/IFunction.h>
 #include <Functions/Regexps.h>
+#include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/Context_fwd.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
+
 
 namespace DB
 {
@@ -24,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
 }
@@ -34,9 +32,6 @@ namespace ErrorCodes
   * splitByChar(sep, s)
   * splitByString(sep, s)
   * splitByRegexp(regexp, s)
-  *
-  * splitByWhitespace(s)      - split the string by whitespace characters
-  * splitByNonAlpha(s)        - split the string by whitespace and punctuation characters
   *
   * extractAll(s, regexp)     - select from the string the subsequences corresponding to the regexp.
   * - first subpattern, if regexp has subpattern;
@@ -116,121 +111,6 @@ public:
     }
 };
 
-class SplitByNonAlphaImpl
-{
-private:
-    Pos pos;
-    Pos end;
-
-public:
-    /// Get the name of the function.
-    static constexpr auto name = "splitByNonAlpha";
-    static String getName() { return name; }
-
-    static size_t getNumberOfArguments() { return 1; }
-
-    /// Check the type of the function's arguments.
-    static void checkArguments(const DataTypes & arguments)
-    {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-
-    /// Initialize by the function arguments.
-    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
-
-    /// Called for each next string.
-    void set(Pos pos_, Pos end_)
-    {
-        pos = pos_;
-        end = end_;
-    }
-
-    /// Returns the position of the argument, that is the column of strings
-    size_t getStringsArgumentPosition()
-    {
-        return 0;
-    }
-
-    /// Get the next token, if any, or return false.
-    bool get(Pos & token_begin, Pos & token_end)
-    {
-        /// Skip garbage
-        while (pos < end && (isWhitespaceASCII(*pos) || isPunctuationASCII(*pos)))
-            ++pos;
-
-        if (pos == end)
-            return false;
-
-        token_begin = pos;
-
-        while (pos < end && !(isWhitespaceASCII(*pos) || isPunctuationASCII(*pos)))
-            ++pos;
-
-        token_end = pos;
-
-        return true;
-    }
-};
-
-class SplitByWhitespaceImpl
-{
-private:
-    Pos pos;
-    Pos end;
-
-public:
-    /// Get the name of the function.
-    static constexpr auto name = "splitByWhitespace";
-    static String getName() { return name; }
-
-    static size_t getNumberOfArguments() { return 1; }
-
-    /// Check the type of the function's arguments.
-    static void checkArguments(const DataTypes & arguments)
-    {
-        if (!isString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of first argument of function " + getName() + ". Must be String.",
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-    }
-
-    /// Initialize by the function arguments.
-    void init(const ColumnsWithTypeAndName & /*arguments*/) {}
-
-    /// Called for each next string.
-    void set(Pos pos_, Pos end_)
-    {
-        pos = pos_;
-        end = end_;
-    }
-
-    /// Returns the position of the argument, that is the column of strings
-    size_t getStringsArgumentPosition()
-    {
-        return 0;
-    }
-
-    /// Get the next token, if any, or return false.
-    bool get(Pos & token_begin, Pos & token_end)
-    {
-        /// Skip garbage
-        while (pos < end && isWhitespaceASCII(*pos))
-            ++pos;
-
-        if (pos == end)
-            return false;
-
-        token_begin = pos;
-
-        while (pos < end && !isWhitespaceASCII(*pos))
-            ++pos;
-
-        token_end = pos;
-
-        return true;
-    }
-};
 
 class SplitByCharImpl
 {
@@ -554,8 +434,6 @@ public:
         return name;
     }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
-
     size_t getNumberOfArguments() const override { return Generator::getNumberOfArguments(); }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -648,19 +526,17 @@ public:
 };
 
 
-/// Joins an array of type serializable to string into one string via a separator.
+/// Joins an array of strings into one string via a separator.
 class FunctionArrayStringConcat : public IFunction
 {
 private:
-    static void executeInternal(
+    void executeInternal(
         const ColumnString::Chars & src_chars,
         const ColumnString::Offsets & src_string_offsets,
         const ColumnArray::Offsets & src_array_offsets,
-        const char * delimiter,
-        const size_t delimiter_size,
+        const char * delimiter, const size_t delimiter_size,
         ColumnString::Chars & dst_chars,
-        ColumnString::Offsets & dst_string_offsets,
-        const char8_t * null_map)
+        ColumnString::Offsets & dst_string_offsets) const
     {
         size_t size = src_array_offsets.size();
 
@@ -678,33 +554,29 @@ private:
         dst_string_offsets.resize(src_array_offsets.size());
 
         ColumnArray::Offset current_src_array_offset = 0;
+        ColumnString::Offset current_src_string_offset = 0;
 
         ColumnString::Offset current_dst_string_offset = 0;
 
         /// Loop through the array of strings.
         for (size_t i = 0; i < size; ++i)
         {
-            bool first_non_null = true;
             /// Loop through the rows within the array. /// NOTE You can do everything in one copy, if the separator has a size of 1.
             for (auto next_src_array_offset = src_array_offsets[i]; current_src_array_offset < next_src_array_offset; ++current_src_array_offset)
             {
-                if (unlikely(null_map && null_map[current_src_array_offset]))
-                    continue;
-
-                if (!first_non_null)
-                {
-                    memcpy(&dst_chars[current_dst_string_offset], delimiter, delimiter_size);
-                    current_dst_string_offset += delimiter_size;
-                }
-                first_non_null = false;
-
-                const auto current_src_string_offset = current_src_array_offset ? src_string_offsets[current_src_array_offset - 1] : 0;
                 size_t bytes_to_copy = src_string_offsets[current_src_array_offset] - current_src_string_offset - 1;
 
                 memcpySmallAllowReadWriteOverflow15(
                     &dst_chars[current_dst_string_offset], &src_chars[current_src_string_offset], bytes_to_copy);
 
+                current_src_string_offset = src_string_offsets[current_src_array_offset];
                 current_dst_string_offset += bytes_to_copy;
+
+                if (current_src_array_offset + 1 != next_src_array_offset)
+                {
+                    memcpy(&dst_chars[current_dst_string_offset], delimiter, delimiter_size);
+                    current_dst_string_offset += delimiter_size;
+                }
             }
 
             dst_chars[current_dst_string_offset] = 0;
@@ -714,43 +586,6 @@ private:
         }
 
         dst_chars.resize(dst_string_offsets.back());
-    }
-
-    static void executeInternal(
-        const ColumnString & col_string,
-        const ColumnArray & col_arr,
-        const String & delimiter,
-        ColumnString & col_res,
-        const char8_t * null_map = nullptr)
-    {
-        executeInternal(
-            col_string.getChars(),
-            col_string.getOffsets(),
-            col_arr.getOffsets(),
-            delimiter.data(),
-            delimiter.size(),
-            col_res.getChars(),
-            col_res.getOffsets(),
-            null_map);
-    }
-
-    static ColumnPtr serializeNestedColumn(const ColumnArray & col_arr, const DataTypePtr & nested_type)
-    {
-        if (isString(nested_type))
-        {
-            return col_arr.getDataPtr();
-        }
-        else if (const ColumnNullable * col_nullable = checkAndGetColumn<ColumnNullable>(col_arr.getData());
-                 col_nullable && isString(col_nullable->getNestedColumn().getDataType()))
-        {
-            return col_nullable->getNestedColumnPtr();
-        }
-        else
-        {
-            ColumnsWithTypeAndName cols;
-            cols.emplace_back(col_arr.getDataPtr(), nested_type, "tmp");
-            return ConvertImplGenericToString::execute(cols, std::make_shared<DataTypeString>());
-        }
     }
 
 public:
@@ -763,10 +598,25 @@ public:
     }
 
     bool isVariadic() const override { return true; }
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.size() != 1 && arguments.size() != 2)
+            throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
+                + toString(arguments.size()) + ", should be 1 or 2.",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+        if (!array_type || !isString(array_type->getNestedType()))
+            throw Exception("First argument for function " + getName() + " must be array of strings.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (arguments.size() == 2
+            && !isString(arguments[1]))
+            throw Exception("Second argument for function " + getName() + " must be constant string.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeString>();
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t /*input_rows_count*/) const override
     {
@@ -780,45 +630,38 @@ public:
             delimiter = col_delim->getValue<String>();
         }
 
-        const auto & nested_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
-        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get());
-            col_const_arr && isString(nested_type))
+        if (const ColumnConst * col_const_arr = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get()))
         {
             Array src_arr = col_const_arr->getValue<Array>();
             String dst_str;
-            bool first_non_null = true;
             for (size_t i = 0, size = src_arr.size(); i < size; ++i)
             {
-                if (src_arr[i].isNull())
-                    continue;
-                if (!first_non_null)
+                if (i != 0)
                     dst_str += delimiter;
-                first_non_null = false;
                 dst_str += src_arr[i].get<const String &>();
             }
 
             return result_type->createColumnConst(col_const_arr->size(), dst_str);
         }
-
-        ColumnPtr src_column = arguments[0].column->convertToFullColumnIfConst();
-        const ColumnArray & col_arr = assert_cast<const ColumnArray &>(*src_column.get());
-
-        ColumnPtr str_subcolumn = serializeNestedColumn(col_arr, nested_type);
-        const ColumnString & col_string = assert_cast<const ColumnString &>(*str_subcolumn.get());
-
-        auto col_res = ColumnString::create();
-        if (const ColumnNullable * col_nullable = checkAndGetColumn<ColumnNullable>(col_arr.getData()))
-            executeInternal(col_string, col_arr, delimiter, *col_res, col_nullable->getNullMapData().data());
         else
-            executeInternal(col_string, col_arr, delimiter, *col_res);
-        return col_res;
+        {
+            const ColumnArray & col_arr = assert_cast<const ColumnArray &>(*arguments[0].column);
+            const ColumnString & col_string = assert_cast<const ColumnString &>(col_arr.getData());
+
+            auto col_res = ColumnString::create();
+
+            executeInternal(
+                col_string.getChars(), col_string.getOffsets(), col_arr.getOffsets(),
+                delimiter.data(), delimiter.size(),
+                col_res->getChars(), col_res->getOffsets());
+
+            return col_res;
+        }
     }
 };
 
 
 using FunctionAlphaTokens = FunctionTokens<AlphaTokensImpl>;
-using FunctionSplitByNonAlpha = FunctionTokens<SplitByNonAlphaImpl>;
-using FunctionSplitByWhitespace = FunctionTokens<SplitByWhitespaceImpl>;
 using FunctionSplitByChar = FunctionTokens<SplitByCharImpl>;
 using FunctionSplitByString = FunctionTokens<SplitByStringImpl>;
 using FunctionSplitByRegexp = FunctionTokens<SplitByRegexpImpl>;

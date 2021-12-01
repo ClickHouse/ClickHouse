@@ -2,7 +2,7 @@
 
 #include <TableFunctions/ITableFunction.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <base/types.h>
+#include <common/types.h>
 
 namespace DB
 {

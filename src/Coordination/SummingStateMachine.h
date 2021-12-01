@@ -1,6 +1,6 @@
 #pragma once
 
-#include <libnuraft/nuraft.hxx>
+#include <libnuraft/nuraft.hxx> // Y_IGNORE
 #include <Core/Types.h>
 #include <atomic>
 #include <map>

@@ -216,44 +216,6 @@ Example:
 SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
 ```
 
-## JSONExtractKeys {#jsonextractkeysjson-indices-or-keys}
-
-Parses a JSON string and extracts the keys.
-
-**Syntax**
-
-``` sql
-JSONExtractKeys(json[, a, b, c...])
-```
-
-**Arguments**
-
--   `json` — [String](../../sql-reference/data-types/string.md) with valid JSON.
--   `a, b, c...` — Comma-separated indices or keys that specify the path to the inner field in a nested JSON object. Each argument can be either a [String](../../sql-reference/data-types/string.md) to get the field by the key or an [Integer](../../sql-reference/data-types/int-uint.md) to get the N-th field (indexed from 1, negative integers count from the end). If not set, the whole JSON is parsed as the top-level object. Optional parameter.
-
-**Returned value**
-
-Array with the keys of the JSON.
-
-Type: [Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md)).
-
-**Example**
-
-Query:
-
-```sql
-SELECT JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}');
-```
-
-Result:
-
-```
-text
-┌─JSONExtractKeys('{"a": "hello", "b": [-100, 200.0, 300]}')─┐
-│ ['a','b']                                                  │
-└────────────────────────────────────────────────────────────┘
-```
-
 ## JSONExtractRaw(json\[, indices_or_keys\]…) {#jsonextractrawjson-indices-or-keys}
 
 Returns a part of JSON as unparsed string.
@@ -275,7 +237,7 @@ If the part does not exist or isn’t array, an empty array will be returned.
 Example:
 
 ``` sql
-SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"'];
+SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"']';
 ```
 
 ## JSONExtractKeysAndValuesRaw {#json-extract-keys-and-values-raw}
@@ -344,120 +306,3 @@ Result:
 └───────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## JSON_EXISTS(json, path) {#json-exists}
-
-If the value exists in the JSON document, `1` will be returned.
-
-If the value does not exist, `0` will be returned.
-
-Examples:
-
-``` sql
-SELECT JSON_EXISTS('{"hello":1}', '$.hello');
-SELECT JSON_EXISTS('{"hello":{"world":1}}', '$.hello.world');
-SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[*]');
-SELECT JSON_EXISTS('{"hello":["world"]}', '$.hello[0]');
-```
-
-!!! note "Note"
-    before version 21.11 the order of arguments was wrong, i.e. JSON_EXISTS(path, json)
-
-## JSON_QUERY(json, path) {#json-query}
-
-Parses a JSON and extract a value as JSON array or JSON object.
-
-If the value does not exist, an empty string will be returned.
-
-Example:
-
-``` sql
-SELECT JSON_QUERY('{"hello":"world"}', '$.hello');
-SELECT JSON_QUERY('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
-SELECT JSON_QUERY('{"hello":2}', '$.hello');
-SELECT toTypeName(JSON_QUERY('{"hello":2}', '$.hello'));
-```
-
-Result:
-
-``` text
-["world"]
-[0, 1, 4, 0, -1, -4]
-[2]
-String
-```
-!!! note "Note"
-    before version 21.11 the order of arguments was wrong, i.e. JSON_QUERY(path, json)
-
-## JSON_VALUE(json, path) {#json-value}
-
-Parses a JSON and extract a value as JSON scalar.
-
-If the value does not exist, an empty string will be returned.
-
-Example:
-
-``` sql
-SELECT JSON_VALUE('{"hello":"world"}', '$.hello');
-SELECT JSON_VALUE('{"array":[[0, 1, 2, 3, 4, 5], [0, -1, -2, -3, -4, -5]]}', '$.array[*][0 to 2, 4]');
-SELECT JSON_VALUE('{"hello":2}', '$.hello');
-SELECT toTypeName(JSON_VALUE('{"hello":2}', '$.hello'));
-```
-
-Result:
-
-``` text
-"world"
-0
-2
-String
-```
-
-!!! note "Note"
-    before version 21.11 the order of arguments was wrong, i.e. JSON_VALUE(path, json)
-
-## toJSONString {#tojsonstring}
-
-Serializes a value to its JSON representation. Various data types and nested structures are supported.
-64-bit [integers](../../sql-reference/data-types/int-uint.md) or bigger (like `UInt64` or `Int128`) are enclosed in quotes by default. [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) controls this behavior.
-Special values `NaN` and `inf` are replaced with `null`. Enable [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals) setting to show them.
-When serializing an [Enum](../../sql-reference/data-types/enum.md) value, the function outputs its name.
-
-**Syntax**
-
-``` sql
-toJSONString(value)
-```
-
-**Arguments**
-
--   `value` — Value to serialize. Value may be of any data type.
-
-**Returned value**
-
--   JSON representation of the value.
-
-Type: [String](../../sql-reference/data-types/string.md).
-
-**Example**
-
-The first example shows serialization of a [Map](../../sql-reference/data-types/map.md).
-The second example shows some special values wrapped into a [Tuple](../../sql-reference/data-types/tuple.md).
-
-Query:
-
-``` sql
-SELECT toJSONString(map('key1', 1, 'key2', 2));
-SELECT toJSONString(tuple(1.25, NULL, NaN, +inf, -inf, [])) SETTINGS output_format_json_quote_denormals = 1;
-```
-
-Result:
-
-``` text
-{"key1":1,"key2":2}
-[1.25,null,"nan","inf","-inf",[]]
-```
-
-**See Also**
-
--   [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers)
--   [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)
