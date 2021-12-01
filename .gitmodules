@@ -190,8 +190,8 @@
 	url = https://github.com/xz-mirror/xz
 [submodule "contrib/abseil-cpp"]
 	path = contrib/abseil-cpp
-	url = https://github.com/ClickHouse-Extras/abseil-cpp.git
-	branch = lts_2020_02_25
+	url = https://github.com/abseil/abseil-cpp.git
+	branch = lts_2021_11_02
 [submodule "contrib/dragonbox"]
 	path = contrib/dragonbox
 	url = https://github.com/ClickHouse-Extras/dragonbox.git
