@@ -89,7 +89,7 @@ def create_table(node, table_name, **additional_settings):
         CREATE TABLE {table_name} (
             dt Date,
             id Int64,
-            data String,
+            data LowCardinality(String),
             INDEX min_max (id) TYPE minmax GRANULARITY 3
         ) ENGINE=MergeTree()
         PARTITION BY dt
