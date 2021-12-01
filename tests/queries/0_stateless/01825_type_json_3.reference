@@ -3,29 +3,29 @@
 1		0
 2	v1	2
 ========
-1	([],[])	Tuple(`k1.k2` Array(String), `k1.k3` Array(String))
-2	(['v1','v4'],['v3',''])	Tuple(`k1.k2` Array(String), `k1.k3` Array(String))
+1	([])	Tuple(k1 Nested(k2 String, k3 String))
+2	([('v1','v3'),('v4','')])	Tuple(k1 Nested(k2 String, k3 String))
 1	[]	[]
 2	['v1','v4']	['v3','']
-1	([],[])	Tuple(`k1.k2` Array(String), `k1.k3` Array(String))
-2	(['v1','v4'],['v3',''])	Tuple(`k1.k2` Array(String), `k1.k3` Array(String))
-3	([],[])	Tuple(`k1.k2` Array(String), `k1.k3` Array(String))
-4	([],[])	Tuple(`k1.k2` Array(String), `k1.k3` Array(String))
-all_2_2_0	data	Tuple(`k1.k2` Array(String), `k1.k3` Array(String))
+1	([])	Tuple(k1 Nested(k2 String, k3 String))
+2	([('v1','v3'),('v4','')])	Tuple(k1 Nested(k2 String, k3 String))
+3	([])	Tuple(k1 Nested(k2 String, k3 String))
+4	([])	Tuple(k1 Nested(k2 String, k3 String))
+all_2_2_0	data	Tuple(k1 Nested(k2 String, k3 String))
 all_3_3_0	data	Tuple(_dummy UInt8)
 1	[]	[]
 2	['v1','v4']	['v3','']
 3	[]	[]
 4	[]	[]
-data	Tuple(`k1.k2` Array(String), `k1.k3` Array(String))
+data	Tuple(k1 Nested(k2 String, k3 String))
 1	[]	[]
 2	['v1','v4']	['v3','']
 3	[]	[]
 4	[]	[]
 ========
-1	(1,'foo',[])	Tuple(`k1.k2` Int8, `k1.k3` String, k4 Array(Int8))
-2	(0,'',[1,2,3])	Tuple(`k1.k2` Int8, `k1.k3` String, k4 Array(Int8))
-3	(10,'',[])	Tuple(`k1.k2` Int8, `k1.k3` String, k4 Array(Int8))
+1	((1,'foo'),[])	Tuple(k1 Tuple(k2 Int8, k3 String), k4 Array(Int8))
+2	((0,''),[1,2,3])	Tuple(k1 Tuple(k2 Int8, k3 String), k4 Array(Int8))
+3	((10,''),[])	Tuple(k1 Tuple(k2 Int8, k3 String), k4 Array(Int8))
 1	1	foo	[]
 2	0		[1,2,3]
 3	10		[]

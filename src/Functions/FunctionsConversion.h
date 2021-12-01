@@ -3046,15 +3046,15 @@ private:
                 size_t tuple_size = to_types.size();
                 const ColumnTuple & column_tuple = assert_cast<const ColumnTuple &>(*arguments.front().column);
 
-                ColumnObject::SubcolumnsMap subcolumns;
+                auto res = ColumnObject::create(has_nullable_subcolumns);
                 for (size_t i = 0; i < tuple_size; ++i)
                 {
                     ColumnsWithTypeAndName element = {{column_tuple.getColumns()[i], from_types[i], "" }};
                     auto converted_column = element_wrappers[i](element, to_types[i], nullable_source, input_rows_count);
-                    subcolumns[names[i]] = converted_column->assumeMutable();
+                    res->addSubcolumn(Path(names[i]), converted_column->assumeMutable());
                 }
 
-                return ColumnObject::create(std::move(subcolumns), has_nullable_subcolumns);
+                return res;
             };
         }
         else if (checkAndGetDataType<DataTypeString>(from_type.get()))
@@ -3069,7 +3069,7 @@ private:
         }
 
         throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Cast to Object can be performed only from flatten named tuple. Got: {}", from_type->getName());
+            "Cast to Object can be performed only from flatten named tuple or string. Got: {}", from_type->getName());
     }
 
     template <typename FieldType>

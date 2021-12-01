@@ -5,6 +5,7 @@
 #include <Columns/IColumn.h>
 #include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
+#include <DataTypes/Serializations/JSONDataParser.h>
 
 #include <DataTypes/IDataType.h>
 
@@ -23,8 +24,8 @@ public:
     {
     public:
         Subcolumn() = default;
-        Subcolumn(size_t size_, bool is_nullable);
-        Subcolumn(MutableColumnPtr && data_);
+        Subcolumn(size_t size_, bool is_nullable_);
+        Subcolumn(MutableColumnPtr && data_, bool is_nullable_);
 
         size_t size() const;
         size_t byteSize() const;
@@ -40,7 +41,8 @@ public:
         void insertRangeFrom(const Subcolumn & src, size_t start, size_t length);
 
         void finalize();
-        void setNullable(bool value) { is_nullable = value; }
+
+        Field getLastField() const;
 
         IColumn & getFinalizedColumn();
         const IColumn & getFinalizedColumn() const;
@@ -55,7 +57,7 @@ public:
         size_t num_of_defaults_in_prefix = 0;
     };
 
-    using SubcolumnsMap = std::unordered_map<String, Subcolumn>;
+    using SubcolumnsMap = std::unordered_map<Path, Subcolumn, Path::Hash>;
 
 private:
     SubcolumnsMap subcolumns;
@@ -64,22 +66,23 @@ private:
 public:
     static constexpr auto COLUMN_NAME_DUMMY = "_dummy";
 
-    ColumnObject(bool is_nullable);
+    explicit ColumnObject(bool is_nullable_);
     ColumnObject(SubcolumnsMap && subcolumns_, bool is_nullable_);
 
     void checkConsistency() const;
 
-    bool hasSubcolumn(const String & key) const;
+    bool hasSubcolumn(const Path & key) const;
 
-    const Subcolumn & getSubcolumn(const String & key) const;
-    Subcolumn & getSubcolumn(const String & key);
+    const Subcolumn & getSubcolumn(const Path & key) const;
+    Subcolumn & getSubcolumn(const Path & key);
+    std::optional<Path> findSubcolumnForNested(const Path & key, size_t expected_size) const;
 
-    void addSubcolumn(const String & key, size_t new_size, bool check_size = false);
-    void addSubcolumn(const String & key, Subcolumn && subcolumn, bool check_size = false);
+    void addSubcolumn(const Path & key, size_t new_size, bool check_size = false);
+    void addSubcolumn(const Path & key, MutableColumnPtr && subcolumn, bool check_size = false);
 
     const SubcolumnsMap & getSubcolumns() const { return subcolumns; }
     SubcolumnsMap & getSubcolumns() { return subcolumns; }
-    Strings getKeys() const;
+    Paths getKeys() const;
 
     bool isFinalized() const;
     void finalize();

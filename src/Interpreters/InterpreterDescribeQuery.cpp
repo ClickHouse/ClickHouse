@@ -93,7 +93,9 @@ BlockIO InterpreterDescribeQuery::execute()
         columns = metadata_snapshot->getColumns();
     }
 
-    bool include_subcolumns = getContext()->getSettingsRef().describe_include_subcolumns;
+    bool extend_object_types = settings.describe_extend_object_types && storage_snapshot;
+    bool include_subcolumns = settings.describe_include_subcolumns;
+
     Block sample_block = getSampleBlock(include_subcolumns);
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
@@ -101,7 +103,7 @@ BlockIO InterpreterDescribeQuery::execute()
     {
         res_columns[0]->insert(column.name);
 
-        if (settings.describe_extend_object_types && storage_snapshot)
+        if (extend_object_types)
             res_columns[1]->insert(storage_snapshot->getConcreteType(column.name)->getName());
         else
             res_columns[1]->insert(column.type->getName());
@@ -137,6 +139,8 @@ BlockIO InterpreterDescribeQuery::execute()
     {
         for (const auto & column : columns)
         {
+            auto type = extend_object_types ? storage_snapshot->getConcreteType(column.name) : column.type;
+
             IDataType::forEachSubcolumn([&](const auto & path, const auto & name, const auto & data)
             {
                 res_columns[0]->insert(Nested::concatenateName(column.name, name));
@@ -159,7 +163,7 @@ BlockIO InterpreterDescribeQuery::execute()
                     res_columns[6]->insertDefault();
 
                 res_columns[7]->insert(1u);
-            }, {column.type->getDefaultSerialization(), column.type, nullptr, nullptr});
+            }, { type->getDefaultSerialization(), type, nullptr, nullptr });
         }
     }
 

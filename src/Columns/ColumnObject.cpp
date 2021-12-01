@@ -2,6 +2,7 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnVector.h>
+#include <Columns/ColumnArray.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -9,9 +10,12 @@
 #include <DataTypes/FieldToDataType.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/NestedUtils.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashSet.h>
+
+#include <Common/FieldVisitorToString.h>
 
 namespace DB
 {
@@ -39,6 +43,14 @@ Array createEmptyArrayField(size_t num_dimensions)
     }
 
     return array;
+}
+
+ColumnPtr recreateWithDefaultValues(const ColumnPtr & column)
+{
+    if (const auto * column_array = checkAndGetColumn<ColumnArray>(column.get()))
+        return ColumnArray::create(recreateWithDefaultValues(column_array->getDataPtr()), IColumn::mutate(column_array->getOffsetsPtr()));
+    else
+        return column->cloneEmpty()->cloneResized(column->size());
 }
 
 class FieldVisitorReplaceNull : public StaticVisitor<Field>
@@ -83,9 +95,6 @@ class FieldVisitorToNumberOfDimensions : public StaticVisitor<size_t>
 public:
     size_t operator()(const Array & x) const
     {
-        if (x.empty())
-            return 1;
-
         const size_t size = x.size();
         std::optional<size_t> dimensions;
 
@@ -111,7 +120,7 @@ public:
     size_t operator()(const T &) const { return 0; }
 };
 
-class FieldVisitorToScalarType: public StaticVisitor<>
+class FieldVisitorToScalarType : public StaticVisitor<>
 {
 public:
     using FieldType = Field::Types::Which;
@@ -182,14 +191,15 @@ private:
 
 }
 
-ColumnObject::Subcolumn::Subcolumn(MutableColumnPtr && data_)
+ColumnObject::Subcolumn::Subcolumn(MutableColumnPtr && data_, bool is_nullable_)
     : least_common_type(getDataTypeByColumn(*data_))
-    , is_nullable(least_common_type->isNullable())
+    , is_nullable(is_nullable_)
 {
     data.push_back(std::move(data_));
 }
 
-ColumnObject::Subcolumn::Subcolumn(size_t size_, bool is_nullable_)
+ColumnObject::Subcolumn::Subcolumn(
+    size_t size_, bool is_nullable_)
     : least_common_type(std::make_shared<DataTypeNothing>())
     , is_nullable(is_nullable_)
     , num_of_defaults_in_prefix(size_)
@@ -277,7 +287,7 @@ void ColumnObject::Subcolumn::insert(Field field)
         }
 
         value_type = createArrayOfType(base_type, value_dim);
-        auto default_value = value_type->getDefault();
+        auto default_value = base_type->getDefault();
         field = applyVisitor(FieldVisitorReplaceNull(default_value, value_dim), std::move(field));
     }
     else
@@ -384,6 +394,17 @@ void ColumnObject::Subcolumn::finalize()
     num_of_defaults_in_prefix = 0;
 }
 
+Field ColumnObject::Subcolumn::getLastField() const
+{
+    if (data.empty())
+        return Field();
+
+    const auto & last_part = data.back();
+    assert(!last_part.empty());
+    return (*last_part)[last_part->size() - 1];
+}
+
+
 void ColumnObject::Subcolumn::insertDefault()
 {
     if (data.empty())
@@ -436,13 +457,13 @@ void ColumnObject::checkConsistency() const
         return;
 
     size_t first_size = subcolumns.begin()->second.size();
-    for (const auto & [name, column] : subcolumns)
+    for (const auto & [key, column] : subcolumns)
     {
         if (first_size != column.size())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Sizes of subcolumns are inconsistent in ColumnObject."
                 " Subcolumn '{}' has {} rows, subcolumn '{}' has {} rows",
-                subcolumns.begin()->first, first_size, name, column.size());
+                subcolumns.begin()->first.getPath(), first_size, key.getPath(), column.size());
         }
     }
 }
@@ -495,9 +516,10 @@ void ColumnObject::insert(const Field & field)
 
     HashSet<StringRef, StringRefHash> inserted;
     size_t old_size = size();
-    for (const auto & [key, value] : object)
+    for (const auto & [key_str, value] : object)
     {
-        inserted.insert(key);
+        Path key(key_str);
+        inserted.insert(key_str);
         if (!hasSubcolumn(key))
             addSubcolumn(key, old_size);
 
@@ -506,7 +528,7 @@ void ColumnObject::insert(const Field & field)
     }
 
     for (auto & [key, subcolumn] : subcolumns)
-        if (!inserted.has(key))
+        if (!inserted.has(key.getPath()))
             subcolumn.insertDefault();
 }
 
@@ -523,7 +545,7 @@ Field ColumnObject::operator[](size_t n) const
 
     Object object;
     for (const auto & [key, subcolumn] : subcolumns)
-        object[key] = (*subcolumn.data.back())[n];
+        object[key.getPath()] = (*subcolumn.data.back())[n];
 
     return object;
 }
@@ -536,7 +558,7 @@ void ColumnObject::get(size_t n, Field & res) const
     auto & object = res.get<Object &>();
     for (const auto & [key, subcolumn] : subcolumns)
     {
-        auto it = object.try_emplace(key).first;
+        auto it = object.try_emplace(key.getPath()).first;
         subcolumn.data.back()->get(n, it->second);
     }
 }
@@ -562,8 +584,11 @@ ColumnPtr ColumnObject::replicate(const Offsets & offsets) const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot replicate non-finalized ColumnObject");
 
     auto res_column = ColumnObject::create(is_nullable);
-    for (auto & [key, subcolumn] : subcolumns)
-        res_column->addSubcolumn(key, Subcolumn(subcolumn.data.back()->replicate(offsets)->assumeMutable()));
+    for (const auto & [key, subcolumn] : subcolumns)
+    {
+        auto replicated_data = subcolumn.data.back()->replicate(offsets)->assumeMutable();
+        res_column->addSubcolumn(key, std::move(replicated_data), is_nullable);
+    }
 
     return res_column;
 }
@@ -577,59 +602,93 @@ void ColumnObject::popBack(size_t length)
         subcolumn.data.back()->popBack(length);
 }
 
-const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const String & key) const
+const ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const Path & key) const
 {
     auto it = subcolumns.find(key);
     if (it != subcolumns.end())
         return it->second;
 
-    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in ColumnObject", key);
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in ColumnObject", key.getPath());
 }
 
-ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const String & key)
+ColumnObject::Subcolumn & ColumnObject::getSubcolumn(const Path & key)
 {
     auto it = subcolumns.find(key);
     if (it != subcolumns.end())
         return it->second;
 
-    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in ColumnObject", key);
+    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in ColumnObject", key.getPath());
 }
 
-bool ColumnObject::hasSubcolumn(const String & key) const
+std::optional<Path> ColumnObject::findSubcolumnForNested(const Path & key, size_t expected_size) const
+{
+    for (const auto & [other_key, other_subcolumn] : subcolumns)
+    {
+        if (key == other_key || expected_size != other_subcolumn.size())
+            continue;
+
+        auto split_lhs = Nested::splitName(key.getPath(), true);
+        auto split_rhs = Nested::splitName(other_key.getPath(), true);
+
+        if (!split_lhs.first.empty() && split_lhs.first == split_rhs.first)
+            return other_key;
+    }
+
+    return {};
+}
+
+bool ColumnObject::hasSubcolumn(const Path & key) const
 {
     return subcolumns.count(key) != 0;
 }
 
-void ColumnObject::addSubcolumn(const String & key, size_t new_size, bool check_size)
+void ColumnObject::addSubcolumn(const Path & key, size_t new_size, bool check_size)
 {
     if (subcolumns.count(key))
-        throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Subcolumn '{}' already exists", key);
+        throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Subcolumn '{}' already exists", key.getPath());
 
     if (check_size && new_size != size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Cannot add subcolumn '{}' with {} rows to ColumnObject with {} rows",
-            key, new_size, size());
+            key.getPath(), new_size, size());
 
-    subcolumns[key] = Subcolumn(new_size, is_nullable);
+    if (key.hasNested())
+    {
+        auto nested_key = findSubcolumnForNested(key, new_size);
+        if (nested_key)
+        {
+            auto & nested_subcolumn = subcolumns[*nested_key];
+            nested_subcolumn.finalize();
+            auto default_column = recreateWithDefaultValues(nested_subcolumn.getFinalizedColumnPtr());
+            subcolumns[key] = Subcolumn(default_column->assumeMutable(), is_nullable);
+        }
+        else
+        {
+            subcolumns[key] = Subcolumn(new_size, is_nullable);
+        }
+    }
+    else
+    {
+        subcolumns[key] = Subcolumn(new_size, is_nullable);
+    }
 }
 
-void ColumnObject::addSubcolumn(const String & key, Subcolumn && subcolumn, bool check_size)
+void ColumnObject::addSubcolumn(const Path & key, MutableColumnPtr && subcolumn, bool check_size)
 {
     if (subcolumns.count(key))
-        throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Subcolumn '{}' already exists", key);
+        throw Exception(ErrorCodes::DUPLICATE_COLUMN, "Subcolumn '{}' already exists", key.getPath());
 
-    if (check_size && subcolumn.size() != size())
+    if (check_size && subcolumn->size() != size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Cannot add subcolumn '{}' with {} rows to ColumnObject with {} rows",
-            key, subcolumn.size(), size());
+            key.getPath(), subcolumn->size(), size());
 
-    subcolumn.setNullable(is_nullable);
-    subcolumns[key] = std::move(subcolumn);
+    subcolumns[key] = Subcolumn(std::move(subcolumn), is_nullable);
 }
 
-Strings ColumnObject::getKeys() const
+Paths ColumnObject::getKeys() const
 {
-    Strings keys;
+    Paths keys;
     keys.reserve(subcolumns.size());
     for (const auto & [key, _] : subcolumns)
         keys.emplace_back(key);
@@ -657,7 +716,7 @@ void ColumnObject::finalize()
     }
 
     if (new_subcolumns.empty())
-        new_subcolumns[COLUMN_NAME_DUMMY] = Subcolumn{ColumnUInt8::create(old_size)};
+        new_subcolumns[Path(COLUMN_NAME_DUMMY)] = Subcolumn{ColumnUInt8::create(old_size), is_nullable};
 
     std::swap(subcolumns, new_subcolumns);
     checkObjectHasNoAmbiguosPaths(getKeys());
