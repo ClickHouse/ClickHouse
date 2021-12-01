@@ -308,7 +308,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
         span.parent_span_id = context->getClientInfo().client_trace_context.span_id;
         span.operation_name = "query";
         span.start_time_us = current_time_us;
-        span.finish_time_us = current_time_us;
+        span.finish_time_us = time_in_microseconds(std::chrono::system_clock::now());
 
         /// Keep values synchronized to type enum in QueryLogElement::createBlock.
         span.attribute_names.push_back("clickhouse.query_status");
