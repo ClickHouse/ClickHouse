@@ -12,6 +12,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>

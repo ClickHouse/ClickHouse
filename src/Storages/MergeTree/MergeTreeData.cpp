@@ -261,11 +261,11 @@ MergeTreeData::MergeTreeData(
     /// format_file always contained on any data path
     PathWithDisk version_file;
     /// Creating directories, if not exist.
-    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+    for (const auto & disk : getDisks())
     {
-        disk->createDirectories(path);
-        disk->createDirectories(fs::path(path) / MergeTreeData::DETACHED_DIR_NAME);
-        String current_version_file_path = fs::path(path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
+        disk->createDirectories(relative_data_path);
+        disk->createDirectories(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
+        String current_version_file_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
         if (disk->exists(current_version_file_path))
         {
             if (!version_file.first.empty())
@@ -1362,9 +1362,9 @@ size_t MergeTreeData::clearOldTemporaryDirectories(const MergeTreeDataMergerMuta
     size_t cleared_count = 0;
 
     /// Delete temporary directories older than a day.
-    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+    for (const auto & disk : getDisks())
     {
-        for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
+        for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
             const std::string & basename = it->name();
             if (!startsWith(basename, "tmp_"))
@@ -1703,11 +1703,11 @@ void MergeTreeData::dropAllData()
     /// Removing of each data part before recursive removal of directory is to speed-up removal, because there will be less number of syscalls.
     clearPartsFromFilesystem(all_parts);
 
-    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+    for (const auto & disk : getDisks())
     {
         try
         {
-            disk->removeRecursive(path);
+            disk->removeRecursive(relative_data_path);
         }
         catch (const fs::filesystem_error & e)
         {
@@ -1737,12 +1737,12 @@ void MergeTreeData::dropIfEmpty()
 
     try
     {
-        for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+        for (const auto & disk : getDisks())
         {
             /// Non recursive, exception is thrown if there are more files.
-            disk->removeFileIfExists(fs::path(path) / MergeTreeData::FORMAT_VERSION_FILE_NAME);
-            disk->removeDirectory(fs::path(path) / MergeTreeData::DETACHED_DIR_NAME);
-            disk->removeDirectory(path);
+            disk->removeFileIfExists(fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME);
+            disk->removeDirectory(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
+            disk->removeDirectory(relative_data_path);
         }
     }
     catch (...)
@@ -2294,20 +2294,9 @@ void MergeTreeData::changeSettings(
     }
 }
 
-void MergeTreeData::PartsTemporaryRename::addPart(const String & old_name, const String & new_name)
+void MergeTreeData::PartsTemporaryRename::addPart(const String & old_name, const String & new_name, const DiskPtr & disk)
 {
-    old_and_new_names.push_back({old_name, new_name});
-    for (const auto & [path, disk] : storage.getRelativeDataPathsWithDisks())
-    {
-        for (auto it = disk->iterateDirectory(fs::path(path) / source_dir); it->isValid(); it->next())
-        {
-            if (it->name() == old_name)
-            {
-                old_part_name_to_path_and_disk[old_name] = {path, disk};
-                break;
-            }
-        }
-    }
+    old_and_new_names.push_back({old_name, new_name, disk});
 }
 
 void MergeTreeData::PartsTemporaryRename::tryRenameAll()
@@ -2317,11 +2306,10 @@ void MergeTreeData::PartsTemporaryRename::tryRenameAll()
     {
         try
         {
-            const auto & [old_name, new_name] = old_and_new_names[i];
+            const auto & [old_name, new_name, disk] = old_and_new_names[i];
             if (old_name.empty() || new_name.empty())
-                throw DB::Exception("Empty part name. Most likely it's a bug.", ErrorCodes::INCORRECT_FILE_NAME);
-            const auto & [path, disk] = old_part_name_to_path_and_disk[old_name];
-            const auto full_path = fs::path(path) / source_dir; /// for old_name
+                throw DB::Exception("Empty part name. Most likely it's a bug.", ErrorCodes::LOGICAL_ERROR);
+            const auto full_path = fs::path(storage.relative_data_path) / source_dir;
             disk->moveFile(fs::path(full_path) / old_name, fs::path(full_path) / new_name);
         }
         catch (...)
@@ -2338,15 +2326,14 @@ MergeTreeData::PartsTemporaryRename::~PartsTemporaryRename()
     // TODO what if server had crashed before this destructor was called?
     if (!renamed)
         return;
-    for (const auto & [old_name, new_name] : old_and_new_names)
+    for (const auto & [old_name, new_name, disk] : old_and_new_names)
     {
         if (old_name.empty())
             continue;
 
         try
         {
-            const auto & [path, disk] = old_part_name_to_path_and_disk[old_name];
-            const String full_path = fs::path(path) / source_dir; /// for old_name
+            const String full_path = fs::path(storage.relative_data_path) / source_dir;
             disk->moveFile(fs::path(full_path) / new_name, fs::path(full_path) / old_name);
         }
         catch (...)
@@ -3826,38 +3813,30 @@ MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_st
     return res;
 }
 
-std::vector<DetachedPartInfo> MergeTreeData::getDetachedParts() const
+DetachedPartsInfo MergeTreeData::getDetachedParts() const
 {
-    std::vector<DetachedPartInfo> res;
+    DetachedPartsInfo res;
 
-    for (const auto & [path, disk] : getRelativeDataPathsWithDisks())
+    for (const auto & disk : getDisks())
     {
-        String detached_path = fs::path(path) / MergeTreeData::DETACHED_DIR_NAME;
+        String detached_path = fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME;
 
         /// Note: we don't care about TOCTOU issue here.
         if (disk->exists(detached_path))
         {
             for (auto it = disk->iterateDirectory(detached_path); it->isValid(); it->next())
             {
-                auto part = DetachedPartInfo::parseDetachedPartName(it->name(), format_version);
-                part.disk = disk->getName();
-
-                res.push_back(std::move(part));
+                res.push_back(DetachedPartInfo::parseDetachedPartName(disk, it->name(), format_version));
             }
         }
     }
     return res;
 }
 
-void MergeTreeData::validateDetachedPartName(const String & name) const
+void MergeTreeData::validateDetachedPartName(const String & name)
 {
     if (name.find('/') != std::string::npos || name == "." || name == "..")
         throw DB::Exception("Invalid part name '" + name + "'", ErrorCodes::INCORRECT_FILE_NAME);
-
-    auto full_path = getFullRelativePathForPart(name, "detached/");
-
-    if (!full_path)
-        throw DB::Exception("Detached part \"" + name + "\" not found" , ErrorCodes::BAD_DATA_PART_NAME);
 
     if (startsWith(name, "attaching_") || startsWith(name, "deleting_"))
         throw DB::Exception("Cannot drop part " + name + ": "
@@ -3873,7 +3852,8 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
     {
         String part_name = partition->as<ASTLiteral &>().value.safeGet<String>();
         validateDetachedPartName(part_name);
-        renamed_parts.addPart(part_name, "deleting_" + part_name);
+        auto disk = getDiskForDetachedPart(part_name);
+        renamed_parts.addPart(part_name, "deleting_" + part_name, disk);
     }
     else
     {
@@ -3882,17 +3862,16 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
         for (const auto & part_info : detached_parts)
             if (part_info.valid_name && part_info.partition_id == partition_id
                 && part_info.prefix != "attaching" && part_info.prefix != "deleting")
-                renamed_parts.addPart(part_info.dir_name, "deleting_" + part_info.dir_name);
+                renamed_parts.addPart(part_info.dir_name, "deleting_" + part_info.dir_name, part_info.disk);
     }
 
     LOG_DEBUG(log, "Will drop {} detached parts.", renamed_parts.old_and_new_names.size());
 
     renamed_parts.tryRenameAll();
 
-    for (auto & [old_name, new_name] : renamed_parts.old_and_new_names)
+    for (auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
     {
-        const auto & [path, disk] = renamed_parts.old_part_name_to_path_and_disk[old_name];
-        disk->removeRecursive(fs::path(path) / "detached" / new_name / "");
+        disk->removeRecursive(fs::path(relative_data_path) / "detached" / new_name / "");
         LOG_DEBUG(log, "Dropped detached part {}", old_name);
         old_name.clear();
     }
@@ -3909,53 +3888,45 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     if (attach_part)
     {
         const String part_id = partition->as<ASTLiteral &>().value.safeGet<String>();
-
         validateDetachedPartName(part_id);
-        renamed_parts.addPart(part_id, "attaching_" + part_id);
+        auto disk = getDiskForDetachedPart(part_id);
+        renamed_parts.addPart(part_id, "attaching_" + part_id, disk);
 
         if (MergeTreePartInfo::tryParsePartName(part_id, format_version))
-            name_to_disk[part_id] = getDiskForPart(part_id, source_dir);
+            name_to_disk[part_id] = getDiskForDetachedPart(part_id);
     }
     else
     {
         String partition_id = getPartitionIDFromQuery(partition, local_context);
         LOG_DEBUG(log, "Looking for parts for partition {} in {}", partition_id, source_dir);
+
         ActiveDataPartSet active_parts(format_version);
 
-        const auto disks = getStoragePolicy()->getDisks();
-
-        for (const auto & disk : disks)
+        auto detached_parts = getDetachedParts();
+        auto new_end_it = std::remove_if(detached_parts.begin(), detached_parts.end(), [&partition_id](const DetachedPartInfo & part_info)
         {
-            for (auto it = disk->iterateDirectory(relative_data_path + source_dir); it->isValid(); it->next())
-            {
-                const String & name = it->name();
+            return !part_info.valid_name || !part_info.prefix.empty() || part_info.partition_id != partition_id;
+        });
+        detached_parts.resize(std::distance(detached_parts.begin(), new_end_it));
 
-                // TODO what if name contains "_tryN" suffix?
-                /// Parts with prefix in name (e.g. attaching_1_3_3_0, deleting_1_3_3_0) will be ignored
-                if (auto part_opt = MergeTreePartInfo::tryParsePartName(name, format_version);
-                    !part_opt || part_opt->partition_id != partition_id)
-                {
-                    continue;
-                }
-
-                LOG_DEBUG(log, "Found part {}", name);
-                active_parts.add(name);
-                name_to_disk[name] = disk;
-            }
+        for (const auto & part_info : detached_parts)
+        {
+            LOG_DEBUG(log, "Found part {}", part_info.dir_name);
+            active_parts.add(part_info.dir_name);
         }
+
         LOG_DEBUG(log, "{} of them are active", active_parts.size());
 
         /// Inactive parts are renamed so they can not be attached in case of repeated ATTACH.
-        for (const auto & [name, disk] : name_to_disk)
+        for (const auto & part_info : detached_parts)
         {
-            const String containing_part = active_parts.getContainingPart(name);
+            const String containing_part = active_parts.getContainingPart(part_info.dir_name);
 
-            if (!containing_part.empty() && containing_part != name)
-                // TODO maybe use PartsTemporaryRename here?
-                disk->moveDirectory(fs::path(relative_data_path) / source_dir / name,
-                    fs::path(relative_data_path) / source_dir / ("inactive_" + name));
+            if (!containing_part.empty() && containing_part != part_info.dir_name)
+                part_info.disk->moveDirectory(fs::path(relative_data_path) / source_dir / part_info.dir_name,
+                    fs::path(relative_data_path) / source_dir / ("inactive_" + part_info.dir_name));
             else
-                renamed_parts.addPart(name, "attaching_" + name);
+                renamed_parts.addPart(part_info.dir_name, "attaching_" + part_info.dir_name, part_info.disk);
         }
     }
 
@@ -3968,11 +3939,11 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     MutableDataPartsVector loaded_parts;
     loaded_parts.reserve(renamed_parts.old_and_new_names.size());
 
-    for (const auto & [old_name, new_name] : renamed_parts.old_and_new_names)
+    for (const auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
     {
         LOG_DEBUG(log, "Checking part {}", new_name);
 
-        auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + old_name, name_to_disk[old_name]);
+        auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + old_name, disk);
         MutableDataPartPtr part = createPart(old_name, single_disk_volume, source_dir + new_name);
 
         loadPartAndFixMetadataImpl(part);
@@ -5079,26 +5050,25 @@ String MergeTreeData::getFullPathOnDisk(const DiskPtr & disk) const
 }
 
 
-DiskPtr MergeTreeData::getDiskForPart(const String & part_name, const String & additional_path) const
+DiskPtr MergeTreeData::tryGetDiskForDetachedPart(const String & part_name) const
 {
+    String additional_path = "detached/";
     const auto disks = getStoragePolicy()->getDisks();
 
     for (const DiskPtr & disk : disks)
-        for (auto it = disk->iterateDirectory(relative_data_path + additional_path); it->isValid(); it->next())
-            if (it->name() == part_name)
-                return disk;
+        if (disk->exists(relative_data_path + additional_path + part_name))
+            return disk;
 
     return nullptr;
 }
 
-
-std::optional<String> MergeTreeData::getFullRelativePathForPart(const String & part_name, const String & additional_path) const
+DiskPtr MergeTreeData::getDiskForDetachedPart(const String & part_name) const
 {
-    auto disk = getDiskForPart(part_name, additional_path);
-    if (disk)
-        return relative_data_path + additional_path;
-    return {};
+    if (auto disk = tryGetDiskForDetachedPart(part_name))
+        return disk;
+    throw DB::Exception(ErrorCodes::BAD_DATA_PART_NAME, "Detached part \"{}\" not found", part_name);
 }
+
 
 Strings MergeTreeData::getDataPaths() const
 {
@@ -5109,14 +5079,6 @@ Strings MergeTreeData::getDataPaths() const
     return res;
 }
 
-MergeTreeData::PathsWithDisks MergeTreeData::getRelativeDataPathsWithDisks() const
-{
-    PathsWithDisks res;
-    auto disks = getStoragePolicy()->getDisks();
-    for (const auto & disk : disks)
-        res.emplace_back(relative_data_path, disk);
-    return res;
-}
 
 MergeTreeData::MatcherFn MergeTreeData::getPartitionMatcher(const ASTPtr & partition_ast, ContextPtr local_context) const
 {

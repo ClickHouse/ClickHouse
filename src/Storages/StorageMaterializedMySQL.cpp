@@ -4,17 +4,10 @@
 
 #include <Storages/StorageMaterializedMySQL.h>
 
-#include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/FilterTransform.h>
