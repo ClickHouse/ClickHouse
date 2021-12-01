@@ -110,6 +110,10 @@ public:
         IColumn::MutablePtr result = return_type->createColumn();
         result->reserve(null_map_data_size);
 
+        ColumnNullable * result_nullable = nullptr;
+        if (result->isNullable())
+            result_nullable = assert_cast<ColumnNullable *>(&*result);
+
         size_t start_insert_index = 0;
 
         /// Created separate branch because cast and inserting field from other column is slower
@@ -125,7 +129,12 @@ public:
                     continue;
 
                 if (i != start_insert_index)
-                    result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
+                {
+                    if (result_nullable)
+                        result_nullable->insertRangeFromNotNullable(nested_column, start_insert_index, i - start_insert_index);
+                    else
+                        result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
+                }
 
                 result->insertFrom(*default_column, i);
                 start_insert_index = i + 1;
@@ -140,7 +149,12 @@ public:
                     continue;
 
                 if (i != start_insert_index)
-                    result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
+                {
+                    if (result_nullable)
+                        result_nullable->insertRangeFromNotNullable(nested_column, start_insert_index, i - start_insert_index);
+                    else
+                        result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
+                }
 
                 result->insertDefault();
                 start_insert_index = i + 1;
@@ -148,7 +162,12 @@ public:
         }
 
         if (null_map_data_size != start_insert_index)
-            result->insertRangeFrom(nested_column, start_insert_index, null_map_data_size - start_insert_index);
+        {
+            if (result_nullable)
+                result_nullable->insertRangeFromNotNullable(nested_column, start_insert_index, null_map_data_size - start_insert_index);
+            else
+                result->insertRangeFrom(nested_column, start_insert_index, null_map_data_size - start_insert_index);
+        }
 
         return result;
     }
