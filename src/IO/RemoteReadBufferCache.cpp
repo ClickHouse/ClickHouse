@@ -82,7 +82,7 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
     RemoteFileMetadata remote_file_meta_data;
     if (!remote_file_meta_data.load(local_path_ / "meta.txt") || remote_file_meta_data.status != RemoteFileMetadata::DOWNLOADED)
     {
-        LOG_INFO(log, "recover cached file failed. local path:{}, file meta data:", local_path_.string(), remote_file_meta_data.toString());
+        LOG_INFO(log, "recover cached file failed. local path:{}, file meta data:{}", local_path_.string(), remote_file_meta_data.toString());
         return nullptr;
     }
 
