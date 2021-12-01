@@ -501,6 +501,9 @@ namespace MySQLReplication
                             UInt32 mask = 0;
                             DecimalType res(0);
 
+                            if (payload.eof())
+                                throw Exception("Attempt to read after EOF.", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+
                             if ((*payload.position() & 0x80) == 0)
                                 mask = UInt32(-1);
 
