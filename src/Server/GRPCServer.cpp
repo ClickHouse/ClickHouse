@@ -20,7 +20,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ParserQuery.h>
@@ -1103,7 +1103,6 @@ namespace
 
         write_buffer.emplace(*result.mutable_output());
         output_format_processor = query_context->getOutputFormat(output_format, *write_buffer, header);
-        output_format_processor->doWritePrefix();
         Stopwatch after_send_progress;
 
         /// Unless the input() function is used we are not going to receive input data anymore.
@@ -1182,7 +1181,7 @@ namespace
             executor->execute();
         }
 
-        output_format_processor->doWriteSuffix();
+        output_format_processor->finalize();
     }
 
     void Call::finishQuery()
@@ -1393,9 +1392,8 @@ namespace
 
         WriteBufferFromString buf{*result.mutable_totals()};
         auto format = query_context->getOutputFormat(output_format, buf, totals);
-        format->doWritePrefix();
         format->write(materializeBlock(totals));
-        format->doWriteSuffix();
+        format->finalize();
     }
 
     void Call::addExtremesToResult(const Block & extremes)
@@ -1405,9 +1403,8 @@ namespace
 
         WriteBufferFromString buf{*result.mutable_extremes()};
         auto format = query_context->getOutputFormat(output_format, buf, extremes);
-        format->doWritePrefix();
         format->write(materializeBlock(extremes));
-        format->doWriteSuffix();
+        format->finalize();
     }
 
     void Call::addProfileInfoToResult(const ProfileInfo & info)

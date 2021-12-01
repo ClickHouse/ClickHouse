@@ -1,4 +1,3 @@
-#include <base/map.h>
 #include <base/range.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -8,7 +7,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
 
 
 namespace DB
@@ -121,7 +119,7 @@ void SerializationTuple::serializeText(const IColumn & column, size_t row_num, W
     writeChar(')', ostr);
 }
 
-void SerializationTuple::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationTuple::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
     const size_t size = elems.size();
     assertChar('(', istr);
@@ -149,6 +147,9 @@ void SerializationTuple::deserializeText(IColumn & column, ReadBuffer & istr, co
     }
     skipWhitespaceIfAny(istr);
     assertChar(')', istr);
+
+    if (whole && !istr.eof())
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, "Tuple");
 }
 
 void SerializationTuple::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

@@ -53,6 +53,8 @@ static ContextMutablePtr createQueryContext(ContextPtr context)
 
     auto query_context = Context::createCopy(context);
     query_context->setSettings(new_query_settings);
+    query_context->setInternalQuery(true);
+
     query_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
     query_context->setCurrentQueryId(""); // generate random query_id
     return query_context;
@@ -307,7 +309,7 @@ getTableOutput(const String & database_name, const String & table_name, ContextM
 
 
     String comment = "Materialize MySQL step 1: execute dump data";
-    BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuoteIfNeed(table_name) + "(" + insert_columns_str.str() + ")" + " VALUES",
+    BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuote(table_name) + " (" + insert_columns_str.str() + ")" + " VALUES",
         query_context, database_name, comment);
 
     return std::move(res.pipeline);
@@ -764,15 +766,9 @@ void MaterializedMySQLSyncThread::executeDDLAtomic(const QueryEvent & query_even
     }
 }
 
-bool MaterializedMySQLSyncThread::isMySQLSyncThread()
-{
-    return getThreadName() == std::string_view(MYSQL_BACKGROUND_THREAD_NAME);
-}
-
 void MaterializedMySQLSyncThread::setSynchronizationThreadException(const std::exception_ptr & exception)
 {
-    auto db = DatabaseCatalog::instance().getDatabase(database_name);
-    DB::setSynchronizationThreadException(db, exception);
+    assert_cast<DatabaseMaterializedMySQL *>(DatabaseCatalog::instance().getDatabase(database_name).get())->setException(exception);
 }
 
 void MaterializedMySQLSyncThread::Buffers::add(size_t block_rows, size_t block_bytes, size_t written_rows, size_t written_bytes)

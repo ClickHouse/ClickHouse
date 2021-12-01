@@ -381,8 +381,11 @@ We ran queries using a client located in a Yandex datacenter in Finland on a clu
 
 | servers | Q1    | Q2    | Q3    | Q4    |
 |---------|-------|-------|-------|-------|
-| 1       | 0.490 | 1.224 | 2.104 | 3.593 |
-| 3       | 0.212 | 0.438 | 0.733 | 1.241 |
-| 140     | 0.028 | 0.043 | 0.051 | 0.072 |
+| 1, E5-2650v2          | 0.490 | 1.224 | 2.104 | 3.593 |
+| 3, E5-2650v2          | 0.212 | 0.438 | 0.733 | 1.241 |
+| 1, AWS c5n.4xlarge    | 0.249 | 1.279 | 1.738 | 3.527 |
+| 1, AWS c5n.9xlarge    | 0.130 | 0.584 | 0.777 | 1.811 |
+| 3, AWS c5n.9xlarge    | 0.057 | 0.231 | 0.285 | 0.641 |
+| 140, E5-2650v2        | 0.028 | 0.043 | 0.051 | 0.072 |
 
 [Original article](https://clickhouse.com/docs/en/getting_started/example_datasets/nyc_taxi/) <!--hide-->
