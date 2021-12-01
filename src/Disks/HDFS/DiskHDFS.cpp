@@ -148,7 +148,7 @@ std::unique_ptr<DiskHDFSSettings> getSettings(const Poco::Util::AbstractConfigur
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".thread_pool_size", 16),
         config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
-        config.getInt(config_prefix + ".dfs.replication", 3));
+        config.getInt(config_prefix + ".replication", 3));
 }
 }
 
