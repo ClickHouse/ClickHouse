@@ -223,7 +223,7 @@ if (OS_DARWIN)
     # from a _specific_ library, which is what we need.
     set(WHOLE_ARCHIVE -force_load)
     # The `-noall_load` flag is the default and now obsolete.
-    set(NO_WHOLE_ARCHIVE "")
+    set(NO_WHOLE_ARCHIVE "-undefined,error") # Effectively, a no-op. Here to avoid empty "-Wl, " sequence to be generated in the command line.
 else ()
     set(WHOLE_ARCHIVE --whole-archive)
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
