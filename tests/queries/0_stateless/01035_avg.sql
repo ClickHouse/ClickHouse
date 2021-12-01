@@ -41,3 +41,11 @@ SELECT avg(f32 + f64) FROM test_01035_avg;
 SELECT avg(d128 - d64) FROM test_01035_avg;
 
 DROP TABLE IF EXISTS test_01035_avg;
+
+-- Checks that the internal SUM does not overflow Int8
+SELECT avg(key), avgIf(key, key > 0), avg(key2), avgIf(key2, key2 > 0), avg(key3), avgIf(key3, key3 > 0)
+FROM
+(
+     SELECT 1::Int8 as key, Null::Nullable(Int8) AS key2, 1::Nullable(Int8) as key3
+     FROM numbers(100000)
+)

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 import os
-import json
 import sys
 import logging
 from github import Github
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from get_robot_token import get_best_robot_token
+from commit_status_helper import get_commit
 
 NAME = 'Run Check (actions)'
 
@@ -33,9 +33,10 @@ TRUSTED_CONTRIBUTORS = {
     "bharatnc",     # Newbie, but already with many contributions.
     "bobrik",       # Seasoned contributor, CloundFlare
     "BohuTANG",
+    "codyrobert",   # Flickerbox engineer
     "damozhaeva",   # DOCSUP
     "den-crane",
-    "gyuton",       # DOCSUP
+    "flickerbox-tom", # Flickerbox
     "gyuton",       # technical writer, Yandex
     "hagen1778",    # Roman Khavronenko, seasoned contributor
     "hczhcz",
@@ -101,21 +102,14 @@ def should_run_checks_for_pr(pr_info):
 
     return True, "No special conditions apply"
 
-def get_commit(gh, commit_sha):
-    repo = gh.get_repo(os.getenv("GITHUB_REPOSITORY", "ClickHouse/ClickHouse"))
-    commit = repo.get_commit(commit_sha)
-    return commit
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
-        event = json.load(event_file)
 
-    pr_info = PRInfo(event, need_orgs=True)
+    pr_info = PRInfo(get_event(), need_orgs=True)
     can_run, description = should_run_checks_for_pr(pr_info)
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
-    url = f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
+    url = f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID')}"
     if not can_run:
         print("::notice ::Cannot run")
         commit.create_status(context=NAME, description=description, state="failure", target_url=url)

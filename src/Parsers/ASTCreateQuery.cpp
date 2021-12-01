@@ -212,6 +212,7 @@ ASTPtr ASTCreateQuery::clone() const
         res->set(res->comment, comment->clone());
 
     cloneOutputOptions(*res);
+    cloneTableOptions(*res);
 
     return res;
 }
@@ -220,13 +221,13 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 {
     frame.need_parens = false;
 
-    if (!database.empty() && table.empty())
+    if (database && !table)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "")
             << (attach ? "ATTACH DATABASE " : "CREATE DATABASE ")
             << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
-            << backQuoteIfNeed(database);
+            << backQuoteIfNeed(getDatabase());
 
         if (uuid != UUIDHelpers::Nil)
         {
@@ -267,6 +268,8 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
             what = "MATERIALIZED VIEW";
         else if (is_live_view)
             what = "LIVE VIEW";
+        if (is_window_view)
+            what = "WINDOW VIEW";
 
         settings.ostr
             << (settings.hilite ? hilite_keyword : "")
@@ -275,7 +278,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
                 << what << " "
                 << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
-            << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+            << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
 
         if (uuid != UUIDHelpers::Nil)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
@@ -316,7 +319,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
         /// Always DICTIONARY
         settings.ostr << (settings.hilite ? hilite_keyword : "") << action << " DICTIONARY "
                       << (if_not_exists ? "IF NOT EXISTS " : "") << (settings.hilite ? hilite_none : "")
-                      << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
+                      << (database ? backQuoteIfNeed(getDatabase()) + "." : "") << backQuoteIfNeed(getTable());
         if (uuid != UUIDHelpers::Nil)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " UUID " << (settings.hilite ? hilite_none : "")
                           << quoteString(toString(uuid));
@@ -325,7 +328,7 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (to_table_id)
     {
-        assert(is_materialized_view && to_inner_uuid == UUIDHelpers::Nil);
+        assert((is_materialized_view || is_window_view) && to_inner_uuid == UUIDHelpers::Nil);
         settings.ostr
             << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "")
             << (!to_table_id.database_name.empty() ? backQuoteIfNeed(to_table_id.database_name) + "." : "")
@@ -393,6 +396,26 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
 
     if (is_populate)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " POPULATE" << (settings.hilite ? hilite_none : "");
+
+    if (is_watermark_strictly_ascending)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK STRICTLY_ASCENDING" << (settings.hilite ? hilite_none : "");
+    }
+    else if (is_watermark_ascending)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK ASCENDING" << (settings.hilite ? hilite_none : "");
+    }
+    else if (is_watermark_bounded)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " WATERMARK " << (settings.hilite ? hilite_none : "");
+        watermark_function->formatImpl(settings, state, frame);
+    }
+
+    if (allowed_lateness)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << " ALLOWED_LATENESS " << (settings.hilite ? hilite_none : "");
+        lateness_function->formatImpl(settings, state, frame);
+    }
 
     if (select)
     {
