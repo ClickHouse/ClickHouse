@@ -1296,9 +1296,8 @@ String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool 
     auto full_relative_path = fs::path(storage.relative_data_path);
     if (detached)
         full_relative_path /= "detached";
-    /// TODO What shall we do with projections?
     if (detached && parent_part)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot detach projection");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot detach projection");
     else if (parent_part)
         full_relative_path /= parent_part->relative_path;
 
