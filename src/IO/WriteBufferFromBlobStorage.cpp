@@ -5,21 +5,11 @@
 #if USE_AZURE_BLOB_STORAGE
 
 #include <IO/WriteBufferFromBlobStorage.h>
+#include <Disks/RemoteDisksCommon.h>
 
 
 namespace DB
 {
-
-// TODO: abstract this function from DiskS3.cpp, from where it was copy-pasted
-String getRandomName(char first = 'a', char last = 'z', size_t len = 64)
-{
-    std::uniform_int_distribution<int> distribution(first, last);
-    String res(len, ' ');
-    for (auto & c : res)
-        c = distribution(thread_local_rng);
-    return res;
-}
-
 
 WriteBufferFromBlobStorage::WriteBufferFromBlobStorage(
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
@@ -52,7 +42,7 @@ void WriteBufferFromBlobStorage::nextImpl()
     {
         auto part_len = std::min(len - read, max_single_part_upload_size);
 
-        auto block_id = getRandomName();
+        auto block_id = getRandomName(64);
         block_ids.push_back(block_id);
 
         Azure::Core::IO::MemoryBodyStream tmp_buffer(reinterpret_cast<uint8_t *>(pos + read), part_len);

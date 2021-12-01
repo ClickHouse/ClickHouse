@@ -25,15 +25,13 @@ struct DiskBlobStorageSettings final
         UInt64 min_bytes_for_seek_,
         int max_single_read_retries,
         int max_single_download_retries,
-        int thread_pool_size_,
-        int objects_chunk_size_to_delete_);
+        int thread_pool_size_);
 
-    size_t max_single_part_upload_size; // NOTE: on 32-bit machines it will be at most 4GB, but size_t is also used in BufferBase for offset
+    size_t max_single_part_upload_size; /// NOTE: on 32-bit machines it will be at most 4GB, but size_t is also used in BufferBase for offset
     UInt64 min_bytes_for_seek;
     size_t max_single_read_retries;
     size_t max_single_download_retries;
     size_t thread_pool_size;
-    size_t objects_chunk_size_to_delete;
 };
 
 

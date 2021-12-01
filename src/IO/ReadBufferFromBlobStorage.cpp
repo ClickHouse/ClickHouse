@@ -51,8 +51,6 @@ ReadBufferFromBlobStorage::ReadBufferFromBlobStorage(
 
 bool ReadBufferFromBlobStorage::nextImpl()
 {
-    // TODO: is this "stream" approach better than a single DownloadTo approach (last commit 90fc230c4dfacc1a9d50d2d65b91363150caa784) ?
-
     if (read_until_position)
     {
         if (read_until_position == offset)

@@ -2,6 +2,7 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
+#include <Disks/RemoteDisksCommon.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousReadIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadIndirectBufferFromRemoteFS.h>
@@ -17,46 +18,30 @@ namespace ErrorCodes
 }
 
 
-// TODO: abstract this function from DiskS3.cpp, from where it was copy-pasted
-// NOTE: name suffixed with -Disk, getting errors with getRandomName defined also in WriteBuffer
-String getRandomNameDisk(char first = 'a', char last = 'z', size_t len = 64)
-{
-    std::uniform_int_distribution<int> distribution(first, last);
-    String res(len, ' ');
-    for (auto & c : res)
-        c = distribution(thread_local_rng);
-    return res;
-}
-
-
 DiskBlobStorageSettings::DiskBlobStorageSettings(
     UInt64 max_single_part_upload_size_,
     UInt64 min_bytes_for_seek_,
     int max_single_read_retries_,
     int max_single_download_retries_,
-    int thread_pool_size_,
-    int objects_chunk_size_to_delete_) :
+    int thread_pool_size_) :
     max_single_part_upload_size(max_single_part_upload_size_),
     min_bytes_for_seek(min_bytes_for_seek_),
     max_single_read_retries(max_single_read_retries_),
     max_single_download_retries(max_single_download_retries_),
-    thread_pool_size(thread_pool_size_),
-    objects_chunk_size_to_delete(objects_chunk_size_to_delete_) {}
+    thread_pool_size(thread_pool_size_) {}
 
 
 class BlobStoragePathKeeper : public RemoteFSPathKeeper
 {
 public:
-    // NOTE : chunk_limit unused
-    BlobStoragePathKeeper(size_t chunk_limit_) : RemoteFSPathKeeper(chunk_limit_) {}
+    /// RemoteFSPathKeeper constructed with a placeholder argument for chunk_limit, it is unused in this class
+    BlobStoragePathKeeper() : RemoteFSPathKeeper(1000) {}
 
     void addPath(const String & path) override
     {
         paths.push_back(path);
     }
 
-// TODO: maybe introduce a getter?
-// private:
     std::vector<String> paths;
 };
 
@@ -108,14 +93,14 @@ std::unique_ptr<WriteBufferFromFileBase> DiskBlobStorage::writeFile(
     WriteMode mode)
 {
     auto metadata = readOrCreateMetaForWriting(path, mode);
-    auto blob_path = path + "_" + getRandomNameDisk('a', 'z', 8); // TODO: maybe use getRandomName() or modify the path (now it contains the tmp_* directory part)
+    auto blob_path = path + "_" + getRandomName(8); /// NOTE: path contains the tmp_* prefix in the blob name
 
     LOG_TRACE(log, "{} to file by path: {}. Blob Storage path: {}",
-        mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), remote_fs_root_path + blob_path);
+        mode == WriteMode::Rewrite ? "Write" : "Append", backQuote(metadata_disk->getPath() + path), blob_path);
 
     auto buffer = std::make_unique<WriteBufferFromBlobStorage>(
         blob_container_client,
-        metadata.remote_fs_root_path + blob_path,
+        blob_path,
         current_settings.get()->max_single_part_upload_size,
         buf_size);
 
@@ -187,7 +172,7 @@ void DiskBlobStorage::removeFromRemoteFS(RemoteFSPathKeeperPtr fs_paths_keeper)
 
 RemoteFSPathKeeperPtr DiskBlobStorage::createFSPathKeeper() const
 {
-    return std::make_shared<BlobStoragePathKeeper>(current_settings.get()->objects_chunk_size_to_delete);
+    return std::make_shared<BlobStoragePathKeeper>();
 }
 
 // NOTE: applyNewSettings - direct copy-paste from DiskS3

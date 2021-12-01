@@ -105,7 +105,7 @@ private:
 
 
 #if USE_AZURE_BLOB_STORAGE
-/// Reads data from Blob Storage using stored paths in metadata.
+/// Reads data from Blob Storage using paths stored in metadata.
 class ReadBufferFromBlobStorageGather final : public ReadBufferFromRemoteFSGather
 {
 public:
