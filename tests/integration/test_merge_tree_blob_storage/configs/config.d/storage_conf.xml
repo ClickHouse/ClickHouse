@@ -3,7 +3,7 @@
         <disks>
             <blob_storage_disk>
                 <type>blob_storage</type>
-                <endpoint>?</endpoint>
+                <endpoint>http://azurite1:10000/</endpoint>
                 <skip_access_check>true</skip_access_check>
             </blob_storage_disk>
         </disks>
