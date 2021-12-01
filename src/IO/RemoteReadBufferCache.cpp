@@ -29,7 +29,7 @@ namespace ErrorCodes
 
 bool RemoteFileMetadata::load(const std::filesystem::path & local_path)
 {
-    auto log = &Poco::Logger::get("RemoteFileMetadata");
+    auto * log = &Poco::Logger::get("RemoteFileMetadata");
     if (!std::filesystem::exists(local_path))
     {
         LOG_ERROR(log, "file path not exists:{}", local_path.string());
@@ -49,13 +49,14 @@ bool RemoteFileMetadata::load(const std::filesystem::path & local_path)
     return true;
 }
 
-void RemoteFileMetadata::save(const std::filesystem::path & local_path)
+void RemoteFileMetadata::save(const std::filesystem::path & local_path) const
 {
     std::ofstream meta_file(local_path.string(), std::ios::out);
     meta_file << toString();
     meta_file.close();
 }
-String RemoteFileMetadata::toString()
+
+String RemoteFileMetadata::toString() const
 {
     Poco::JSON::Object jobj;
     jobj.set("schema", schema);
