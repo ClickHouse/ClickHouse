@@ -39,7 +39,9 @@ bool UserDefinedSQLFunctionMatcher::needChildVisit(const ASTPtr &, const ASTPtr 
 ASTPtr UserDefinedSQLFunctionMatcher::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process)
 {
     if (udf_in_replace_process.find(function.name) != udf_in_replace_process.end())
-        throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Recursive function call during function user defined function call {}", function.name);
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Recursive function call detected during function call {}",
+            function.name);
 
     auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function.name);
     if (!user_defined_function)
