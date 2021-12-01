@@ -30,6 +30,6 @@ class RerunHelper:
     def is_already_finished_by_status(self):
         # currently we agree even for failed statuses
         for status in self.statuses:
-            if self.check_name in status.context:
+            if self.check_name in status.context and status.state in ('success', 'failure'):
                 return True
         return False
