@@ -1775,7 +1775,6 @@ jobs:
       - FunctionalStatefulTestTsan
       - FunctionalStatefulTestMsan
       - FunctionalStatefulTestUBsan
-      - DocsCheck
       - StressTestDebug
       - StressTestAsan
       - StressTestTsan
