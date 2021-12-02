@@ -10,6 +10,11 @@
 #include <Common/ThreadPool.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <IO/createReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadSettings.h>
 #include <IO/SeekableReadBuffer.h>
 #include <condition_variable>
 #include <Interpreters/Context.h>
@@ -81,8 +86,8 @@ public:
      * Called by LocalCachedFileReader, must be used in pair
      * The second value of the return tuple is the local_path to store file.
      */
-    std::pair<FILE *, std::filesystem::path> allocFile();
-    void deallocFile(FILE * file_stream);
+    std::unique_ptr<ReadBufferFromFileBase> allocFile();
+    void deallocFile(std::unique_ptr<ReadBufferFromFileBase> buffer);
 
     /**
      * when allocFile be called, count++. deallocFile be called, count--.
@@ -91,7 +96,8 @@ public:
     inline bool closable()
     {
         std::lock_guard lock{mutex};
-        return opened_file_streams.empty() && remote_read_buffer == nullptr;
+        //return opened_file_streams.empty() && remote_read_buffer == nullptr;
+        return opened_file_buffer_refs.empty() && remote_read_buffer == nullptr;
     }
     void close();
 
@@ -130,7 +136,7 @@ private:
     std::mutex mutex;
     std::condition_variable more_data_signal;
 
-    std::set<FILE *> opened_file_streams;
+    std::set<uintptr_t> opened_file_buffer_refs; // refer to a buffer address
 
     // meta info
     RemoteFileMetadata file_meta_data;
@@ -141,40 +147,11 @@ private:
     size_t current_offset;
 
     std::shared_ptr<ReadBuffer> remote_read_buffer;
-    std::unique_ptr<std::ofstream> out_file;
+    std::unique_ptr<WriteBufferFromFileBase> data_file_writer;
 
     Poco::Logger * log = &Poco::Logger::get("RemoteCacheController");
 };
-
-/**
- * access local cached files by RemoteCacheController, and be used in RemoteReadBuffer
- */
-class LocalCachedFileReader
-{
-public:
-    LocalCachedFileReader(RemoteCacheController * cache_controller_);
-    ~LocalCachedFileReader();
-
-    // expect to read size bytes into buf, return is the real bytes read
-    size_t read(char * buf, size_t size);
-    off_t seek(off_t offset);
-
-    inline std::filesystem::path getPath() const { return local_path; }
-    inline off_t getOffset() const { return static_cast<off_t>(offset); }
-    size_t getSize();
-
-
-private:
-    RemoteCacheController * cache_controller;
-    size_t file_size;
-    size_t offset;
-
-    std::mutex mutex;
-    FILE * file_stream;
-    std::filesystem::path local_path;
-
-    Poco::Logger * log = &Poco::Logger::get("LocalCachedFileReader");
-};
+using RemoteCacheControllerPtr = std::shared_ptr<RemoteCacheController>;
 
 /*
  * FIXME:RemoteReadBuffer derive from SeekableReadBufferWithSize may cause some risks, since it's not seekable in some cases
@@ -188,13 +165,16 @@ public:
     static std::unique_ptr<RemoteReadBuffer> create(ContextPtr contex, const RemoteFileMetadata & remote_file_meta, std::unique_ptr<ReadBuffer> read_buffer);
 
     bool nextImpl() override;
-    inline bool seekable() { return file_reader != nullptr && file_reader->getSize() > 0; }
+    inline bool seekable() { return !file_buffer && file_cache_controller->getFileMetaData().file_size > 0; }
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
-    std::optional<size_t> getTotalSize() override { return file_reader->getSize(); }
+    std::optional<size_t> getTotalSize() override { return file_cache_controller->getFileMetaData().file_size; }
 
 private:
-    std::shared_ptr<LocalCachedFileReader> file_reader;
+    std::shared_ptr<RemoteCacheController> file_cache_controller;
+    std::unique_ptr<ReadBufferFromFileBase> file_buffer;
+
+    // in case local cache don't work, this buffer is setted;
     std::shared_ptr<ReadBuffer> original_read_buffer;
 };
 
@@ -209,7 +189,7 @@ public:
 
     inline bool isInitialized() const { return initialized; }
 
-    std::pair<std::shared_ptr<LocalCachedFileReader>, RemoteReadBufferCacheError>
+    std::pair<RemoteCacheControllerPtr, RemoteReadBufferCacheError>
     createReader(ContextPtr context, const RemoteFileMetadata & remote_file_meta, std::shared_ptr<ReadBuffer> & read_buffer);
 
     void updateTotalSize(size_t size) { total_size += size; }
