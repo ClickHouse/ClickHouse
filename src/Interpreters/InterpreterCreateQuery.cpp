@@ -768,7 +768,11 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 ErrorCodes::INCORRECT_QUERY);
 
         if (as_create.storage)
+        {
             create.set(create.storage, as_create.storage->ptr());
+            if (create.storage->engine->name.starts_with("Replicated"))
+                create.storage->engine->arguments.reset();
+        }
         else if (as_create.as_table_function)
             create.as_table_function = as_create.as_table_function->clone();
         else
