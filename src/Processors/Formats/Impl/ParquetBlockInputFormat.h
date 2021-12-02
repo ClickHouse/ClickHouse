@@ -36,6 +36,7 @@ private:
     std::vector<int> column_indices;
     std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
     int row_group_current = 0;
+    std::vector<size_t> missing_columns;
     BlockMissingValues block_missing_values;
     const FormatSettings format_settings;
 };
