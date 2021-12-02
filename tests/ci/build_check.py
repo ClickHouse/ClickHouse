@@ -130,6 +130,7 @@ if __name__ == "__main__":
     gh = Github(get_best_robot_token())
     s3_helper = S3Helper('https://s3.amazonaws.com')
 
+    version = get_version_from_repo(repo_path)
     release_or_pr = None
     if 'release' in pr_info.labels or 'release-lts' in pr_info.labels:
         # for release pull requests we use branch names prefixes, not pr numbers
@@ -162,7 +163,6 @@ if __name__ == "__main__":
     docker_image = get_image_with_version(os.getenv("IMAGES_PATH"), image_name)
     image_version = docker_image.version
 
-    version = get_version_from_repo(repo_path)
     logging.info("Got version from repo %s", version.get_version_string())
 
     version_type = 'testing'
