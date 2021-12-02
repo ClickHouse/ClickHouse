@@ -7,26 +7,27 @@
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
 #include <Core/Defines.h>
-#include <Interpreters/InterpreterCreateQuotaQuery.h>
-#include <Interpreters/InterpreterCreateRoleQuery.h>
-#include <Interpreters/InterpreterCreateRowPolicyQuery.h>
-#include <Interpreters/InterpreterCreateSettingsProfileQuery.h>
-#include <Interpreters/InterpreterCreateUserQuery.h>
-#include <Interpreters/InterpreterGrantQuery.h>
-#include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
-#include <Interpreters/InterpreterShowGrantsQuery.h>
-#include <Parsers/ASTCreateQuotaQuery.h>
-#include <Parsers/ASTCreateRoleQuery.h>
-#include <Parsers/ASTCreateRowPolicyQuery.h>
-#include <Parsers/ASTCreateSettingsProfileQuery.h>
-#include <Parsers/ASTCreateUserQuery.h>
-#include <Parsers/ASTGrantQuery.h>
-#include <Parsers/ParserCreateQuotaQuery.h>
-#include <Parsers/ParserCreateRoleQuery.h>
-#include <Parsers/ParserCreateRowPolicyQuery.h>
-#include <Parsers/ParserCreateSettingsProfileQuery.h>
-#include <Parsers/ParserCreateUserQuery.h>
-#include <Parsers/ParserGrantQuery.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Access/InterpreterCreateQuotaQuery.h>
+#include <Interpreters/Access/InterpreterCreateRoleQuery.h>
+#include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>
+#include <Interpreters/Access/InterpreterCreateSettingsProfileQuery.h>
+#include <Interpreters/Access/InterpreterCreateUserQuery.h>
+#include <Interpreters/Access/InterpreterGrantQuery.h>
+#include <Interpreters/Access/InterpreterShowCreateAccessEntityQuery.h>
+#include <Interpreters/Access/InterpreterShowGrantsQuery.h>
+#include <Parsers/Access/ASTCreateQuotaQuery.h>
+#include <Parsers/Access/ASTCreateRoleQuery.h>
+#include <Parsers/Access/ASTCreateRowPolicyQuery.h>
+#include <Parsers/Access/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/Access/ASTCreateUserQuery.h>
+#include <Parsers/Access/ASTGrantQuery.h>
+#include <Parsers/Access/ParserCreateQuotaQuery.h>
+#include <Parsers/Access/ParserCreateRoleQuery.h>
+#include <Parsers/Access/ParserCreateRowPolicyQuery.h>
+#include <Parsers/Access/ParserCreateSettingsProfileQuery.h>
+#include <Parsers/Access/ParserCreateUserQuery.h>
+#include <Parsers/Access/ParserGrantQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <boost/range/algorithm/copy.hpp>
@@ -38,9 +39,6 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_ACCESS_ENTITY_DEFINITION;
 }
-
-using EntityType = IAccessStorage::EntityType;
-using EntityTypeInfo = IAccessStorage::EntityTypeInfo;
 
 namespace
 {
@@ -80,7 +78,7 @@ String serializeAccessEntity(const IAccessEntity & entity)
     /// Build list of ATTACH queries.
     ASTs queries;
     queries.push_back(InterpreterShowCreateAccessEntityQuery::getAttachQuery(entity));
-    if ((entity.getType() == EntityType::USER) || (entity.getType() == EntityType::ROLE))
+    if ((entity.getType() == AccessEntityType::USER) || (entity.getType() == AccessEntityType::ROLE))
         boost::range::push_back(queries, InterpreterShowGrantsQuery::getAttachGrantQueries(entity));
 
     /// Serialize the list of ATTACH queries to a string.

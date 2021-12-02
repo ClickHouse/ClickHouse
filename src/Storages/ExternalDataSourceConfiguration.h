@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Parsers/ASTIdentifier.h>
 #include <Interpreters/Context.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -19,6 +18,7 @@ struct ExternalDataSourceConfiguration
     String schema;
 
     std::vector<std::pair<String, UInt16>> addresses; /// Failover replicas.
+    String addresses_expr;
 
     String toString() const;
 
@@ -45,7 +45,7 @@ struct StorageMongoDBConfiguration : ExternalDataSourceConfiguration
 };
 
 
-using StorageSpecificArgs = std::vector<std::pair<String, DB::Field>>;
+using StorageSpecificArgs = std::vector<std::pair<String, ASTPtr>>;
 
 struct ExternalDataSourceConfig
 {
@@ -63,7 +63,7 @@ struct ExternalDataSourceConfig
  * Any key-value engine argument except common (`host`, `port`, `username`, `password`, `database`)
  * is returned in EngineArgs struct.
  */
-std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine = false);
+std::optional<ExternalDataSourceConfig> getExternalDataSourceConfiguration(const ASTs & args, ContextPtr context, bool is_database_engine = false, bool throw_on_no_collection = true);
 
 std::optional<ExternalDataSourceConfiguration> getExternalDataSourceConfiguration(
     const Poco::Util::AbstractConfiguration & dict_config, const String & dict_config_prefix, ContextPtr context);
@@ -92,6 +92,7 @@ struct URLBasedDataSourceConfiguration
     String structure;
 
     std::vector<std::pair<String, Field>> headers;
+    String http_method;
 
     void set(const URLBasedDataSourceConfiguration & conf);
 };
@@ -109,5 +110,8 @@ struct URLBasedDataSourceConfig
 };
 
 std::optional<URLBasedDataSourceConfig> getURLBasedDataSourceConfiguration(const ASTs & args, ContextPtr context);
+
+template<typename T>
+bool getExternalDataSourceConfiguration(const ASTs & args, BaseSettings<T> & settings, ContextPtr context);
 
 }

@@ -62,6 +62,27 @@
         -->
     </logger>
 
+    <!-- Add headers to response in options request. OPTIONS method is used in CORS preflight requests. -->
+    <!-- It is off by default. Next headers are obligate for CORS.-->
+    <!-- http_options_response>
+        <header>
+            <name>Access-Control-Allow-Origin</name>
+            <value>*</value>
+        </header>
+        <header>
+            <name>Access-Control-Allow-Headers</name>
+            <value>origin, x-requested-with</value>
+        </header>
+        <header>
+            <name>Access-Control-Allow-Methods</name>
+            <value>POST, GET, OPTIONS</value>
+        </header>
+        <header>
+            <name>Access-Control-Max-Age</name>
+            <value>86400</value>
+        </header>
+    </http_options_response -->
+
     <!-- It is the name that will be shown in the clickhouse-client.
          By default, anything with "production" will be highlighted in red in query prompt.
     -->
@@ -330,8 +351,11 @@
       -->
     <mmap_cache_size>1000</mmap_cache_size>
 
-    <!-- Cache size for compiled expressions.-->
+    <!-- Cache size in bytes for compiled expressions.-->
     <compiled_expression_cache_size>134217728</compiled_expression_cache_size>
+
+    <!-- Cache size in elements for compiled expressions.-->
+    <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size>
 
     <!-- Path to data directory, with trailing slash. -->
     <path>/var/lib/clickhouse/</path>

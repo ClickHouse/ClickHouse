@@ -93,7 +93,7 @@ public:
         }
     }
 
-    void finalize() override
+    void finalizeImpl() override
     {
         if (impl.isFinished())
             return;
@@ -315,7 +315,7 @@ void DiskMemory::replaceFileImpl(const String & from_path, const String & to_pat
     files.insert(std::move(node));
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, const ReadSettings &, size_t) const
+std::unique_ptr<ReadBufferFromFileBase> DiskMemory::readFile(const String & path, const ReadSettings &, std::optional<size_t>) const
 {
     std::lock_guard lock(mutex);
 

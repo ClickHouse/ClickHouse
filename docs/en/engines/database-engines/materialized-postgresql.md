@@ -23,15 +23,15 @@ ENGINE = MaterializedPostgreSQL('host:port', ['database' | database], 'user', 'p
 -   `user` — PostgreSQL user.
 -   `password` — User password.
 
-## Dynamically adding new tables to replication
+## Dynamically adding new tables to replication {#dynamically-adding-table-to-replication}
 
 ``` sql
 ATTACH TABLE postgres_database.new_table;
 ```
 
-It will work as well if there is a setting `materialized_postgresql_tables_list`.
+When specifying a specific list of tables in the database using the setting [materialized_postgresql_tables_list](../../operations/settings/settings.md#materialized-postgresql-tables-list), it will be updated to the current state, taking into account the tables which were added by the `ATTACH TABLE` query.
 
-## Dynamically removing tables from replication
+## Dynamically removing tables from replication {#dynamically-removing-table-from-replication}
 
 ``` sql
 DETACH TABLE postgres_database.table_to_remove;
@@ -39,11 +39,15 @@ DETACH TABLE postgres_database.table_to_remove;
 
 ## Settings {#settings}
 
--   [materialized_postgresql_max_block_size](../../operations/settings/settings.md#materialized-postgresql-max-block-size)
-
 -   [materialized_postgresql_tables_list](../../operations/settings/settings.md#materialized-postgresql-tables-list)
 
+-   [materialized_postgresql_schema](../../operations/settings/settings.md#materialized-postgresql-schema)
+
+-   [materialized_postgresql_schema_list](../../operations/settings/settings.md#materialized-postgresql-schema-list)
+
 -   [materialized_postgresql_allow_automatic_update](../../operations/settings/settings.md#materialized-postgresql-allow-automatic-update)
+
+-   [materialized_postgresql_max_block_size](../../operations/settings/settings.md#materialized-postgresql-max-block-size)
 
 -   [materialized_postgresql_replication_slot](../../operations/settings/settings.md#materialized-postgresql-replication-slot)
 
@@ -52,17 +56,65 @@ DETACH TABLE postgres_database.table_to_remove;
 ``` sql
 CREATE DATABASE database1
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
-SETTINGS materialized_postgresql_max_block_size = 65536,
-         materialized_postgresql_tables_list = 'table1,table2,table3';
+SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
 
 SELECT * FROM database1.table1;
 ```
 
-It is also possible to change settings at run time.
+The settings can be changed, if necessary, using a DDL query. But it is impossible to change the setting `materialized_postgresql_tables_list`. To update the list of tables in this setting use the `ATTACH TABLE` query.
 
 ``` sql
 ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
 ```
+
+
+## PostgreSQL schema {#schema}
+
+PostgreSQL [schema](https://www.postgresql.org/docs/9.1/ddl-schemas.html) can be used in two ways.
+
+1. One schema for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_schema`.
+Tables are accessed via table name only:
+
+``` sql
+CREATE DATABASE postgres_database
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_schema = 'postgres_schema';
+
+SELECT * FROM postgres_database.table1;
+```
+
+2. Any number of schemas with specified set of tables for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_tables_list`. Each table is written along with its schema.
+Tables are accessed via schema name and table name at the same time:
+
+``` sql
+CREATE DATABASE database1
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_tables_list = 'schema1.table1,schema2.table2,schema1.table3';
+         materialized_postgresql_tables_list_with_schema = 1;
+
+SELECT * FROM database1.`schema1.table1`;
+SELECT * FROM database1.`schema2.table2`;
+```
+
+But in this case all tables in `materialized_postgresql_tables_list` must be written with its schema name.
+Requires `materialized_postgresql_tables_list_with_schema = 1`.
+
+Warning: for this case dots in table name are not allowed.
+
+3. Any number of schemas with full set of tables for one `MaterializedPostgreSQL` database engine. Requires to use setting `materialized_postgresql_schema_list`.
+
+``` sql
+CREATE DATABASE database1
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_schema_list = 'schema1,schema2,schema3';
+
+SELECT * FROM database1.`schema1.table1`;
+SELECT * FROM database1.`schema1.table2`;
+SELECT * FROM database1.`schema2.table2`;
+```
+
+Warning: for this case dots in table name are not allowed.
+
 
 ## Requirements {#requirements}
 

@@ -88,9 +88,9 @@ void JSONCompactRowOutputFormat::writeExtremesElement(const char * title, const 
     writeChar(']', *ostr);
 }
 
-void registerOutputFormatProcessorJSONCompact(FormatFactory & factory)
+void registerOutputFormatJSONCompact(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("JSONCompact", [](
+    factory.registerOutputFormat("JSONCompact", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -99,7 +99,9 @@ void registerOutputFormatProcessorJSONCompact(FormatFactory & factory)
         return std::make_shared<JSONCompactRowOutputFormat>(buf, sample, params, format_settings, false);
     });
 
-    factory.registerOutputFormatProcessor("JSONCompactStrings", [](
+    factory.markOutputFormatSupportsParallelFormatting("JSONCompact");
+
+    factory.registerOutputFormat("JSONCompactStrings", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams & params,
@@ -107,6 +109,8 @@ void registerOutputFormatProcessorJSONCompact(FormatFactory & factory)
     {
         return std::make_shared<JSONCompactRowOutputFormat>(buf, sample, params, format_settings, true);
     });
+
+    factory.markOutputFormatSupportsParallelFormatting("JSONCompactStrings");
 }
 
 }

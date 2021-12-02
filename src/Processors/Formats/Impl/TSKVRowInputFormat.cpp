@@ -52,6 +52,7 @@ static bool readName(ReadBuffer & buf, StringRef & ref, String & tmp)
         if (next_pos == buf.buffer().end())
         {
             tmp.append(buf.position(), next_pos - buf.position());
+            buf.position() = buf.buffer().end();
             buf.next();
             continue;
         }
@@ -143,7 +144,7 @@ bool TSKVRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & ex
                     seen_columns[index] = read_columns[index] = true;
                     const auto & type = getPort().getHeader().getByPosition(index).type;
                     const auto & serialization = serializations[index];
-                    if (format_settings.null_as_default && !type->isNullable())
+                    if (format_settings.null_as_default && !type->isNullable() && !type->isLowCardinalityNullable())
                         read_columns[index] = SerializationNullable::deserializeTextEscapedImpl(*columns[index], *in, format_settings, serialization);
                     else
                         serialization->deserializeTextEscaped(*columns[index], *in, format_settings);
@@ -210,9 +211,9 @@ void TSKVRowInputFormat::resetParser()
     name_buf.clear();
 }
 
-void registerInputFormatProcessorTSKV(FormatFactory & factory)
+void registerInputFormatTSKV(FormatFactory & factory)
 {
-    factory.registerInputFormatProcessor("TSKV", [](
+    factory.registerInputFormat("TSKV", [](
         ReadBuffer & buf,
         const Block & sample,
         IRowInputFormat::Params params,

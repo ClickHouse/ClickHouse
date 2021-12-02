@@ -4,9 +4,9 @@
 #include <Storages/StorageDistributed.h>
 #include <Disks/StoragePolicy.h>
 
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/queryToString.h>
 
 #include <IO/WriteBufferFromFile.h>
@@ -14,18 +14,16 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ConnectionTimeoutsContext.h>
-#include <DataStreams/NativeBlockOutputStream.h>
-#include <DataStreams/RemoteBlockOutputStream.h>
+#include <Formats/NativeWriter.h>
+#include <Processors/Sinks/RemoteSink.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
@@ -35,9 +33,6 @@
 #include <base/range.h>
 #include <base/scope_guard.h>
 
-#include <future>
-#include <condition_variable>
-#include <mutex>
 #include <filesystem>
 
 
@@ -707,7 +702,7 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
 
             WriteBufferFromFile out{first_file_tmp_path};
             CompressedWriteBuffer compress{out, compression_codec};
-            NativeBlockOutputStream stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+            NativeWriter stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
 
             /// Prepare the header.
             /// See also readDistributedHeader() in DirectoryMonitor (for reading side)
@@ -725,7 +720,7 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             /// Write block header separately in the batch header.
             /// It is required for checking does conversion is required or not.
             {
-                NativeBlockOutputStream header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+                NativeWriter header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
                 header_stream.write(block.cloneEmpty());
             }
 
@@ -739,10 +734,9 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             writeStringBinary(header, out);
             writePODBinary(CityHash_v1_0_2::CityHash128(header.data, header.size), out);
 
-            stream.writePrefix();
             stream.write(block);
-            stream.writeSuffix();
 
+            compress.finalize();
             out.finalize();
             if (fsync)
                 out.sync();

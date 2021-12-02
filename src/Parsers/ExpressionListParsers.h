@@ -5,8 +5,8 @@
 #include <Parsers/IParserBase.h>
 #include <Parsers/CommonParsers.h>
 
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/SelectUnionMode.h>
 #include <Common/IntervalKind.h>
 
 namespace DB
@@ -108,7 +108,7 @@ protected:
     const char * getName() const override { return "list of union elements"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 private:
-    ASTSelectWithUnionQuery::UnionModes union_modes;
+    SelectUnionModes union_modes;
 };
 
 /** An expression with an infix binary left-associative operator.

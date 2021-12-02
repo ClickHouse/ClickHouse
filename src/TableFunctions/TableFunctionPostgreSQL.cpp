@@ -6,13 +6,10 @@
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
-#include <Common/parseAddress.h>
 #include "registerTableFunctions.h"
-#include <Common/quoteString.h>
 #include <Common/parseRemoteDescription.h>
 
 
@@ -49,11 +46,10 @@ ColumnsDescription TableFunctionPostgreSQL::getActualTableStructure(ContextPtr c
     const bool use_nulls = context->getSettingsRef().external_table_functions_use_nulls;
     auto connection_holder = connection_pool->get();
     auto columns = fetchPostgreSQLTableStructure(
-            connection_holder->get(),
-            configuration->schema.empty() ? doubleQuoteString(configuration->table)
-                                          : doubleQuoteString(configuration->schema) + '.' + doubleQuoteString(configuration->table),
-            use_nulls).columns;
+            connection_holder->get(), configuration->table, configuration->schema, use_nulls).columns;
 
+    if (!columns)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table structure not returned");
     return ColumnsDescription{*columns};
 }
 

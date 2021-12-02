@@ -2,7 +2,7 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
 #include <Common/assert_cast.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -518,7 +518,7 @@ StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & are
 {
     WriteBufferFromArena out(arena, begin);
     func->serialize(data[n], out);
-    return out.finish();
+    return out.complete();
 }
 
 const char * ColumnAggregateFunction::deserializeAndInsertFromArena(const char * src_arena)
