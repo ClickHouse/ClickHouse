@@ -360,6 +360,24 @@ void increment(Event event, Count amount)
     DB::CurrentThread::getProfileEvents().increment(event, amount);
 }
 
+CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
+{
+    init();
+    std::memcpy(increment_holder.get(), snapshot.counters_holder.get(), Counters::num_counters * sizeof(Increment));
+}
+
+CountersIncrement::CountersIncrement(Counters::Snapshot const & after, Counters::Snapshot const & before)
+{
+    init();
+    for (Event i = 0; i < Counters::num_counters; ++i)
+        increment_holder[i] = static_cast<Increment>(after[i]) - static_cast<Increment>(before[i]);
+}
+
+void CountersIncrement::init()
+{
+    increment_holder = std::make_unique<Increment[]>(Counters::num_counters);
+}
+
 }
 
 #undef APPLY_FOR_EVENTS
