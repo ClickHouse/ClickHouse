@@ -320,6 +320,12 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
         span.attribute_names.push_back("clickhouse.query_id");
         span.attribute_values.push_back(elem.client_info.current_query_id);
 
+        span.attribute_names.push_back("clickhouse.exception");
+        span.attribute_values.push_back(elem.exception);
+
+        span.attribute_names.push_back("clickhouse.exception_code");
+        span.attribute_values.push_back(elem.exception_code);
+
         if (!context->query_trace_context.tracestate.empty())
         {
             span.attribute_names.push_back("clickhouse.tracestate");
