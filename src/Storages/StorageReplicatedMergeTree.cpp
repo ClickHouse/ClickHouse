@@ -3339,7 +3339,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     /// It's quite dangerous, so clone covered parts to detached.
     auto broken_part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
-    auto partition_range = getDataPartsPartitionRange(broken_part_info.partition_id);
+    auto partition_range = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, broken_part_info.partition_id);
     for (const auto & part : partition_range)
     {
         if (!broken_part_info.contains(part->info))
@@ -7381,13 +7381,23 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     {
         auto lock = lockParts();
         auto parts_in_partition = getDataPartsPartitionRange(new_part_info.partition_id);
-        if (parts_in_partition.empty())
+        if (!parts_in_partition.empty())
         {
-            LOG_WARNING(log, "Empty part {} is not created instead of lost part because there are no parts in partition {} (it's empty), resolve this manually using DROP PARTITION.", lost_part_name, new_part_info.partition_id);
+            new_data_part->partition = (*parts_in_partition.begin())->partition;
+        }
+        else if (auto parsed_partition = MergeTreePartition::tryParseValueFromID(
+                     new_part_info.partition_id,
+                     metadata_snapshot->getPartitionKey().sample_block))
+        {
+            new_data_part->partition = MergeTreePartition(*parsed_partition);
+        }
+        else
+        {
+            LOG_WARNING(log, "Empty part {} is not created instead of lost part because there are no parts in partition {} (it's empty), "
+                             "resolve this manually using DROP/DETACH PARTITION.", lost_part_name, new_part_info.partition_id);
             return false;
         }
 
-        new_data_part->partition = (*parts_in_partition.begin())->partition;
     }
 
     new_data_part->minmax_idx = std::move(minmax_idx);

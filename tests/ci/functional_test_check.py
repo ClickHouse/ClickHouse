@@ -18,6 +18,15 @@ from commit_status_helper import post_commit_status, get_commit
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
 
+def get_additional_envs(check_name):
+    if 'DatabaseReplicated' in check_name:
+        return ["USE_DATABASE_REPLICATED=1"]
+    if 'DatabaseOrdinary' in check_name:
+        return ["USE_DATABASE_ORDINARY=1"]
+    if 'wide parts enabled' in check_name:
+        return ["USE_POLYMORPHIC_PARTS=1"]
+
+    return []
 
 def get_image_name(check_name):
     if 'stateless' in check_name.lower():
@@ -141,7 +150,8 @@ if __name__ == "__main__":
 
     run_log_path = os.path.join(result_path, "runlog.log")
 
-    run_command = get_run_command(packages_path, result_path, server_log_path, kill_timeout, [], docker_image, flaky_check, tests_to_run)
+    additional_envs = get_additional_envs(check_name)
+    run_command = get_run_command(packages_path, result_path, server_log_path, kill_timeout, additional_envs, docker_image, flaky_check, tests_to_run)
     logging.info("Going to run func tests: %s", run_command)
 
     with open(run_log_path, 'w', encoding='utf-8') as log:
@@ -169,4 +179,7 @@ if __name__ == "__main__":
     ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
 
     if state != 'success':
-        sys.exit(1)
+        if 'force-tests' in pr_info.labels:
+            print("'force-tests' enabled, will report success")
+        else:
+            sys.exit(1)
