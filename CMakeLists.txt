@@ -169,9 +169,7 @@ endif ()
 include (cmake/check_flags.cmake)
 include (cmake/add_warning.cmake)
 
-if (NOT MSVC)
-    set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror and many more is also added inside cmake/warnings.cmake
-endif ()
+set (COMMON_WARNING_FLAGS "${COMMON_WARNING_FLAGS} -Wall")    # -Werror and many more is also added inside cmake/warnings.cmake
 
 if (COMPILER_CLANG)
     # clang: warning: argument unused during compilation: '-specs=/usr/share/dpkg/no-pie-compile.specs' [-Wunused-command-line-argument]
@@ -201,7 +199,7 @@ endif ()
 option(ENABLE_TESTS "Provide unit_test_dbms target with Google.Test unit tests" ON)
 option(ENABLE_EXAMPLES "Build all example programs in 'examples' subdirectories" OFF)
 
-if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND NOT USE_MUSL)
+if (OS_LINUX AND (ARCH_AMD64 OR ARCH_AARCH64) AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND NOT USE_MUSL)
     # Only for Linux, x86_64 or aarch64.
     option(GLIBC_COMPATIBILITY "Enable compatibility with older glibc libraries." ON)
 elseif(GLIBC_COMPATIBILITY)
@@ -219,37 +217,13 @@ endif()
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
-find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-13" "llvm-objcopy-12" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
-
-if (NOT OBJCOPY_PATH AND OS_DARWIN)
-    find_program (BREW_PATH NAMES "brew")
-    if (BREW_PATH)
-        execute_process (COMMAND ${BREW_PATH} --prefix llvm ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE LLVM_PREFIX)
-        if (LLVM_PREFIX)
-            find_program (OBJCOPY_PATH NAMES "llvm-objcopy" PATHS "${LLVM_PREFIX}/bin" NO_DEFAULT_PATH)
-        endif ()
-        if (NOT OBJCOPY_PATH)
-            execute_process (COMMAND ${BREW_PATH} --prefix binutils ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE BINUTILS_PREFIX)
-            if (BINUTILS_PREFIX)
-                find_program (OBJCOPY_PATH NAMES "objcopy" PATHS "${BINUTILS_PREFIX}/bin" NO_DEFAULT_PATH)
-            endif ()
-        endif ()
-    endif ()
-endif ()
-
-if (OBJCOPY_PATH)
-    message (STATUS "Using objcopy: ${OBJCOPY_PATH}")
-else ()
-    message (FATAL_ERROR "Cannot find objcopy.")
-endif ()
-
 if (OS_DARWIN)
     # The `-all_load` flag forces loading of all symbols from all libraries,
     # and leads to multiply-defined symbols. This flag allows force loading
     # from a _specific_ library, which is what we need.
     set(WHOLE_ARCHIVE -force_load)
     # The `-noall_load` flag is the default and now obsolete.
-    set(NO_WHOLE_ARCHIVE "")
+    set(NO_WHOLE_ARCHIVE "-undefined,error") # Effectively, a no-op. Here to avoid empty "-Wl, " sequence to be generated in the command line.
 else ()
     set(WHOLE_ARCHIVE --whole-archive)
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
@@ -277,6 +251,13 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
         endif()
     endif ()
 endif()
+
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+    set(USE_DEBUG_HELPERS ON)
+else ()
+    set(USE_DEBUG_HELPERS ON)
+endif()
+option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
 
 # Create BuildID when using lld. For other linkers it is created by default.
 if (LINKER_NAME MATCHES "lld$")
@@ -311,6 +292,10 @@ include(cmake/cpu_features.cmake)
 # They are already by default on some platforms but possibly not on all platforms.
 # Enable it explicitly.
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -fasynchronous-unwind-tables")
+
+# Reproducible builds
+set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
+set (CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} -ffile-prefix-map=${CMAKE_SOURCE_DIR}=.")
 
 if (${CMAKE_VERSION} VERSION_LESS "3.12.4")
     # CMake < 3.12 doesn't support setting 20 as a C++ standard version.
@@ -392,6 +377,8 @@ if (COMPILER_CLANG)
         option(ENABLE_THINLTO "Clang-specific link time optimization" ON)
     endif()
 
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstrict-vtable-pointers")
+
     # Set new experimental pass manager, it's a performance, build time and binary size win.
     # Can be removed after https://reviews.llvm.org/D66490 merged and released to at least two versions of clang.
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fexperimental-new-pass-manager")
@@ -402,30 +389,11 @@ if (COMPILER_CLANG)
     # completely.
     if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         # Link time optimization
-        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin")
-        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin")
-        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin")
+        set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
+        set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
+        set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin -fwhole-program-vtables")
     elseif (ENABLE_THINLTO)
         message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
-    endif ()
-
-    # Always prefer llvm tools when using clang. For instance, we cannot use GNU ar when llvm LTO is enabled
-    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-13" "llvm-ar-12" "llvm-ar-11" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
-
-    if (LLVM_AR_PATH)
-        message(STATUS "Using llvm-ar: ${LLVM_AR_PATH}.")
-        set (CMAKE_AR ${LLVM_AR_PATH})
-    else ()
-        message(WARNING "Cannot find llvm-ar. System ar will be used instead. It does not work with ThinLTO.")
-    endif ()
-
-    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-13" "llvm-ranlib-12" "llvm-ranlib-11" "llvm-ranlib-10" "llvm-ranlib-9" "llvm-ranlib-8")
-
-    if (LLVM_RANLIB_PATH)
-        message(STATUS "Using llvm-ranlib: ${LLVM_RANLIB_PATH}.")
-        set (CMAKE_RANLIB ${LLVM_RANLIB_PATH})
-    else ()
-        message(WARNING "Cannot find llvm-ranlib. System ranlib will be used instead. It does not work with ThinLTO.")
     endif ()
 
 elseif (ENABLE_THINLTO)
@@ -435,20 +403,7 @@ endif ()
 # Turns on all external libs like s3, kafka, ODBC, ...
 option(ENABLE_LIBRARIES "Enable all external libraries by default" ON)
 
-# We recommend avoiding this mode for production builds because we can't guarantee
-# all needed libraries exist in your system.
-# This mode exists for enthusiastic developers who are searching for trouble.
-# The whole idea of using unknown version of libraries from the OS distribution is deeply flawed.
-# Useful for maintainers of OS packages.
-option (UNBUNDLED "Use system libraries instead of ones in contrib/" OFF)
-
-if (UNBUNDLED)
-    set(NOT_UNBUNDLED OFF)
-else ()
-    set(NOT_UNBUNDLED ON)
-endif ()
-
-if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN))
+if (NOT (OS_LINUX OR OS_DARWIN))
     # Using system libs can cause a lot of warnings in includes (on macro expansion).
     option(WERROR "Enable -Werror compiler option" OFF)
 else ()
@@ -494,19 +449,6 @@ else ()
     set (CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif ()
 
-# https://github.com/include-what-you-use/include-what-you-use
-option (USE_INCLUDE_WHAT_YOU_USE "Automatically reduce unneeded includes in source code (external tool)" OFF)
-
-if (USE_INCLUDE_WHAT_YOU_USE)
-    find_program(IWYU_PATH NAMES include-what-you-use iwyu)
-    if (NOT IWYU_PATH)
-        message(FATAL_ERROR "Could not find the program include-what-you-use")
-    endif()
-    if (${CMAKE_VERSION} VERSION_LESS "3.3.0")
-        message(FATAL_ERROR "include-what-you-use requires CMake version at least 3.3.")
-    endif()
-endif ()
-
 if (ENABLE_TESTS)
     message (STATUS "Unit tests are enabled")
 else()
@@ -527,7 +469,6 @@ message (STATUS
     USE_STATIC_LIBRARIES=${USE_STATIC_LIBRARIES}
     MAKE_STATIC_LIBRARIES=${MAKE_STATIC_LIBRARIES}
     SPLIT_SHARED=${SPLIT_SHARED_LIBRARIES}
-    UNBUNDLED=${UNBUNDLED}
     CCACHE=${CCACHE_FOUND} ${CCACHE_VERSION}")
 
 include (GNUInstallDirs)
@@ -590,7 +531,6 @@ include (cmake/find/avro.cmake)
 include (cmake/find/msgpack.cmake)
 include (cmake/find/cassandra.cmake)
 include (cmake/find/sentry.cmake)
-include (cmake/find/stats.cmake)
 include (cmake/find/datasketches.cmake)
 include (cmake/find/libprotobuf-mutator.cmake)
 
@@ -608,8 +548,6 @@ include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
-include (cmake/print_flags.cmake)
-
 if (TARGET global-group)
     install (EXPORT global DESTINATION cmake)
 endif ()
@@ -624,7 +562,7 @@ macro (add_executable target)
     # invoke built-in add_executable
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
     # if GLIBC_COMPATIBILITY is ON and ENABLE_THINLTO is on than provide memcpy symbol explicitly to neutrialize thinlto's libcall generation.
-    if (GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
+    if (ARCH_AMD64 AND GLIBC_COMPATIBILITY AND ENABLE_THINLTO)
         _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc> $<TARGET_OBJECTS:memcpy>)
     else ()
         _add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
@@ -661,6 +599,7 @@ include_directories(${ConfigIncludePath})
 
 # Add as many warnings as possible for our own code.
 include (cmake/warnings.cmake)
+include (cmake/print_flags.cmake)
 
 add_subdirectory (base)
 add_subdirectory (src)

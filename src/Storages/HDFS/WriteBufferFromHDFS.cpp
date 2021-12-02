@@ -2,7 +2,6 @@
 
 #if USE_HDFS
 
-#include <Interpreters/Context.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
 #include <Storages/HDFS/HDFSCommon.h>
 #include <hdfs/hdfs.h>
@@ -109,7 +108,7 @@ void WriteBufferFromHDFS::sync()
 }
 
 
-void WriteBufferFromHDFS::finalize()
+void WriteBufferFromHDFS::finalizeImpl()
 {
     try
     {

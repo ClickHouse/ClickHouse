@@ -10,7 +10,7 @@ We're continuing our monthly release cadence and blog updates at[ ClickHouse, In
 
 Let's highlight some of these new exciting new capabilities in 21.11:
 
-## 1. Async Inserts
+## Async Inserts
 
 New asynchronous INSERT mode allows to accumulate inserted data and store it in a single batch utilizing less disk resources(IOPS) enabling support of high rate of INSERT queries. On a client it can be enabled by setting `async_insert` for `INSERT` queries with data inlined in a query or in a separate buffer (e.g. for `INSERT` queries via HTTP protocol). If `wait_for_async_insert` is true (by default) the client will wait until data will be flushed to the table. On the server-side it can be tuned by the settings `async_insert_threads`, `async_insert_max_data_size` and `async_insert_busy_timeout_ms`. 
 
@@ -20,7 +20,7 @@ A notable pain point for users was around having to insert data in large batches
 
 Now, we've introduced this new mode of Async inserts where you can do a high rate of small inserts concurrently and ClickHouse will automatically group them together into batches and insert it into the table automatically. Every client will get an acknowledgement that the data was inserted successfully.
 
-## Interactive Mode
+## Local Interactive Mode
 
 We have added interactive mode for `clickhouse-local` so that you can just run `clickhouse-local` to get a command line ClickHouse interface without connecting to a server and process data from files and external data sources.
 
@@ -28,7 +28,7 @@ We have added interactive mode for `clickhouse-local` so that you can just run `
 
 What if you have an ad-hoc use case that you want to run analytics on a local file with ClickHouse? Historically, you'd have to spin up an empty ClickHouse server and connect it to the external data source that you were interested in running the query on e.g. S3, HDFS, URL's. Now with ClickHouse Local you can just run it just like a ClickHouse Client and have the same full interactive experience without any additional overhead steps around setup and ingestion of data to try out your idea or hypothesis. Hope you enjoy!
 
-## UDFs
+## Executable UDFs
 
 Added support for executable (scriptable) user defined functions. These are UDFs that can be written in any programming language. 
 

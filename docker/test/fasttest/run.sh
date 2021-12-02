@@ -159,6 +159,7 @@ function clone_submodules
         cd "$FASTTEST_SOURCE"
 
         SUBMODULES_TO_UPDATE=(
+            contrib/sysroot
             contrib/magic_enum
             contrib/abseil-cpp
             contrib/boost
@@ -173,7 +174,6 @@ function clone_submodules
             contrib/double-conversion
             contrib/libcxx
             contrib/libcxxabi
-            contrib/libc-headers
             contrib/lz4
             contrib/zstd
             contrib/fastops

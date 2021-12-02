@@ -21,11 +21,9 @@ public:
 
     String getName() const override { return "TabSeparatedRowInputFormat"; }
 
+private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
-
-private:
-    bool is_raw;
 
     bool readField(IColumn & column, const DataTypePtr & type,
                    const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
@@ -48,6 +46,8 @@ private:
     bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
     bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) override;
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
+
+    bool is_raw;
 };
 
 }

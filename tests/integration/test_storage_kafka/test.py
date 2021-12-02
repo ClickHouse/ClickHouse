@@ -43,7 +43,7 @@ from . import social_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/kafka.xml'],
+                                main_configs=['configs/kafka.xml', 'configs/named_collection.xml'],
                                 with_kafka=True,
                                 with_zookeeper=True, # For Replicated Table
                                 macros={"kafka_broker":"kafka1",
@@ -1779,9 +1779,13 @@ def test_kafka_virtual_columns2(kafka_cluster):
 
     assert TSV(result) == TSV(expected)
 
+    instance.query('''
+        DROP TABLE test.kafka;
+        DROP TABLE test.view;
+    ''')
     kafka_delete_topic(admin_client, "virt2_0")
     kafka_delete_topic(admin_client, "virt2_1")
-
+    instance.rotate_logs()
 
 def test_kafka_produce_key_timestamp(kafka_cluster):
 
@@ -3169,6 +3173,28 @@ def test_kafka_consumer_failover(kafka_cluster):
     producer.flush()
     prev_count = wait_for_new_data('test.destination', prev_count)
     kafka_delete_topic(admin_client, topic_name)
+
+
+def test_kafka_predefined_configuration(kafka_cluster):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+    topic_name = 'conf'
+    kafka_create_topic(admin_client, topic_name)
+
+    messages = []
+    for i in range(50):
+        messages.append('{i}, {i}'.format(i=i))
+    kafka_produce(kafka_cluster, topic_name, messages)
+
+    instance.query(f'''
+        CREATE TABLE test.kafka (key UInt64, value UInt64) ENGINE = Kafka(kafka1, kafka_format='CSV');
+        ''')
+
+    result = ''
+    while True:
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
+        if kafka_check_result(result):
+            break
+    kafka_check_result(result, True)
 
 
 if __name__ == '__main__':

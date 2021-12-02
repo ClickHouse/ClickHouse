@@ -1,4 +1,4 @@
-AlterQuery  t1 (children 1)
+AlterQuery  t1 (children 2)
  ExpressionList (children 1)
   AlterCommand 33 (children 1)
    Function equals (children 1)
@@ -6,3 +6,4 @@ AlterQuery  t1 (children 1)
      Identifier date
      Function today (children 1)
       ExpressionList
+ Identifier t1

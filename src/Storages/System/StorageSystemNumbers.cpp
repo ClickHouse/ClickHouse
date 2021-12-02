@@ -149,7 +149,14 @@ Pipe StorageSystemNumbers::read(
         UInt64 max_counter = offset + *limit;
 
         for (size_t i = 0; i < num_streams; ++i)
-            pipe.addSource(std::make_shared<NumbersMultiThreadedSource>(state, max_block_size, max_counter));
+        {
+            auto source = std::make_shared<NumbersMultiThreadedSource>(state, max_block_size, max_counter);
+
+            if (i == 0)
+                source->addTotalRowsApprox(*limit);
+
+            pipe.addSource(std::move(source));
+        }
 
         return pipe;
     }

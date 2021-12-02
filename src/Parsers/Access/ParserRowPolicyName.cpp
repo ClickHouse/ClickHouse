@@ -91,7 +91,7 @@ namespace
                                      bool allow_multiple_short_names,
                                      bool allow_multiple_tables,
                                      bool allow_on_cluster,
-                                     std::vector<RowPolicy::NameParts> & name_parts,
+                                     std::vector<RowPolicyName> & full_names,
                                      String & cluster)
     {
         return IParserBase::wrapParseImpl(pos, [&]
@@ -132,10 +132,10 @@ namespace
 
             assert(!short_names.empty());
             assert(!database_and_table_names.empty());
-            name_parts.clear();
+            full_names.clear();
             for (const String & short_name : short_names)
                 for (const auto & [database, table_name] : database_and_table_names)
-                    name_parts.push_back({short_name, database, table_name});
+                    full_names.push_back({short_name, database, table_name});
 
             cluster = std::move(res_cluster);
             return true;
@@ -146,14 +146,14 @@ namespace
 
 bool ParserRowPolicyName::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    std::vector<RowPolicy::NameParts> name_parts;
+    std::vector<RowPolicyName> full_names;
     String cluster;
-    if (!parseRowPolicyNamesAroundON(pos, expected, false, false, allow_on_cluster, name_parts, cluster))
+    if (!parseRowPolicyNamesAroundON(pos, expected, false, false, allow_on_cluster, full_names, cluster))
         return false;
 
-    assert(name_parts.size() == 1);
+    assert(full_names.size() == 1);
     auto result = std::make_shared<ASTRowPolicyName>();
-    result->name_parts = std::move(name_parts.front());
+    result->full_name = std::move(full_names.front());
     result->cluster = std::move(cluster);
     node = result;
     return true;
@@ -162,24 +162,24 @@ bool ParserRowPolicyName::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
 bool ParserRowPolicyNames::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    std::vector<RowPolicy::NameParts> name_parts;
+    std::vector<RowPolicyName> full_names;
     size_t num_added_names_last_time = 0;
     String cluster;
 
     auto parse_around_on = [&]
     {
-        if (!name_parts.empty())
+        if (!full_names.empty())
         {
             if ((num_added_names_last_time != 1) || !cluster.empty())
                 return false;
         }
 
-        std::vector<RowPolicy::NameParts> new_name_parts;
-        if (!parseRowPolicyNamesAroundON(pos, expected, name_parts.empty(), name_parts.empty(), allow_on_cluster, new_name_parts, cluster))
+        std::vector<RowPolicyName> new_full_names;
+        if (!parseRowPolicyNamesAroundON(pos, expected, full_names.empty(), full_names.empty(), allow_on_cluster, new_full_names, cluster))
             return false;
 
-        num_added_names_last_time = new_name_parts.size();
-        boost::range::push_back(name_parts, std::move(new_name_parts));
+        num_added_names_last_time = new_full_names.size();
+        boost::range::push_back(full_names, std::move(new_full_names));
         return true;
     };
 
@@ -187,7 +187,7 @@ bool ParserRowPolicyNames::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
 
     auto result = std::make_shared<ASTRowPolicyNames>();
-    result->name_parts = std::move(name_parts);
+    result->full_names = std::move(full_names);
     result->cluster = std::move(cluster);
     node = result;
     return true;
