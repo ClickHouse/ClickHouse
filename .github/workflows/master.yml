@@ -1687,7 +1687,7 @@ jobs:
 #################################### OSS FUZZ ###############################################
 #############################################################################################
   Fuzzing:
-    runs-on: [self-hosted, style-checker]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     strategy:
       fail-fast: false
       matrix:
