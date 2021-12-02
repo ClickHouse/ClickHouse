@@ -34,11 +34,18 @@ struct TaskRuntimeData
 {
     TaskRuntimeData(ExecutableTaskPtr && task_, CurrentMetrics::Metric metric_)
         : task(std::move(task_))
-        , increment(std::move(metric_))
-    {}
+        , metric(metric_)
+    {
+        CurrentMetrics::values[metric].fetch_add(1, std::memory_order_release);
+    }
+
+    ~TaskRuntimeData()
+    {
+        CurrentMetrics::values[metric].fetch_sub(1, std::memory_order_release);
+    }
 
     ExecutableTaskPtr task;
-    CurrentMetrics::Increment increment;
+    CurrentMetrics::Metric metric;
     std::atomic_bool is_currently_deleting{false};
     /// Actually autoreset=false is needed only for unit test
     /// where multiple threads could remove tasks corresponding to the same storage
