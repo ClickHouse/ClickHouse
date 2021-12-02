@@ -498,12 +498,9 @@ void HTTPHandler::processQuery(
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
         std::string error;
-        if (!client_info.client_trace_context.parseTraceparentHeader(
-            opentelemetry_traceparent, error))
+        if (!client_info.client_trace_context.parseTraceparentHeader(opentelemetry_traceparent, error))
         {
-            throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER,
-                "Failed to parse OpenTelemetry traceparent header '{}': {}",
-                opentelemetry_traceparent, error);
+            LOG_DEBUG(log, "Failed to parse OpenTelemetry traceparent header '{}': {}", opentelemetry_traceparent, error);
         }
         client_info.client_trace_context.tracestate = request.get("tracestate", "");
     }
