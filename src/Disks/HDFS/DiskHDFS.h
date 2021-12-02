@@ -14,14 +14,17 @@ struct DiskHDFSSettings
     size_t min_bytes_for_seek;
     int thread_pool_size;
     int objects_chunk_size_to_delete;
+    int replication;
 
     DiskHDFSSettings(
             int min_bytes_for_seek_,
             int thread_pool_size_,
-            int objects_chunk_size_to_delete_)
+            int objects_chunk_size_to_delete_,
+            int replication_)
         : min_bytes_for_seek(min_bytes_for_seek_)
         , thread_pool_size(thread_pool_size_)
-        , objects_chunk_size_to_delete(objects_chunk_size_to_delete_) {}
+        , objects_chunk_size_to_delete(objects_chunk_size_to_delete_)
+        , replication(replication_) {}
 };
 
 
@@ -40,8 +43,7 @@ public:
         const String & hdfs_root_path_,
         SettingsPtr settings_,
         DiskPtr metadata_disk_,
-        const Poco::Util::AbstractConfiguration & config_,
-        const Settings & contextSettings_);
+        const Poco::Util::AbstractConfiguration & config_);
 
     DiskType getType() const override { return DiskType::HDFS; }
     bool isRemote() const override { return true; }
@@ -68,7 +70,6 @@ private:
     String getRandomName() { return toString(UUIDHelpers::generateV4()); }
 
     const Poco::Util::AbstractConfiguration & config;
-    const Settings & contextSettings;
 
     HDFSBuilderWrapper hdfs_builder;
     HDFSFSPtr hdfs_fs;
