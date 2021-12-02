@@ -82,6 +82,9 @@ struct FormatSettings
         UInt64 output_rows_in_file = 1;
     } avro;
 
+    String bool_true_representation = "true";
+    String bool_false_representation = "false";
+
     struct CSV
     {
         char delimiter = ',';

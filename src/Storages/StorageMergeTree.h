@@ -192,10 +192,14 @@ private:
 
     std::shared_ptr<MergeMutateSelectedEntry> selectPartsToMutate(const StorageMetadataPtr & metadata_snapshot, String * disable_reason, TableLockHolder & table_lock_holder, std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock, bool & were_some_mutations_for_some_parts_skipped);
 
-    Int64 getCurrentMutationVersion(
+    /// For current mutations queue, returns maximum version of mutation for a part,
+    /// with respect of mutations which would not change it.
+    /// Returns 0 if there is no such mutation in active status.
+    UInt64 getCurrentMutationVersion(
         const DataPartPtr & part,
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
+    /// Returns maximum version of a part, with respect of mutations which would not change it.
     Int64 getUpdatedDataVersion(
         const DataPartPtr & part,
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
