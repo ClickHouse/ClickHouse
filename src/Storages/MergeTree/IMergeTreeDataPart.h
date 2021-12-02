@@ -398,6 +398,8 @@ public:
 
     const MergeTreeDataPartDeletedMask& getDeletedMask() const { return deleted_mask; }
     MergeTreeDataPartDeletedMask& getDeletedMask() { return deleted_mask; }
+    void setDeletedMask(MergeTreeDataPartDeletedMask && new_mask ) { deleted_mask = std::move(new_mask); }
+
 
 protected:
     /// Loaded in table engines.

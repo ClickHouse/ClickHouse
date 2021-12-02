@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Functions/FunctionFactory.h>
@@ -3127,6 +3128,22 @@ MergeTreeData::DataPartPtr MergeTreeData::getPartIfExists(const String & part_na
     return getPartIfExists(MergeTreePartInfo::fromPartName(part_name, format_version), valid_states);
 }
 
+void MergeTreeData::updateDeletedRowsMask(const String & part_name, MergeTreeDataPartDeletedMask::DeletedRows deleted_rows)
+{
+    const MergeTreeData::DataPartStates parts_to_modify = {
+        IMergeTreeDataPart::State::Committed
+    };
+
+    auto data_part = getPartIfExists(part_name, parts_to_modify);
+    if (!data_part)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} is expected to exist", part_name);
+
+    auto * mutable_data_part = const_cast<IMergeTreeDataPart *>(data_part.get());
+    std::swap(mutable_data_part->getDeletedMask().deleted_rows, deleted_rows);
+
+    // TODO: save the part to disk
+}
+
 
 static void loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr part)
 {
@@ -5537,6 +5554,7 @@ NamesAndTypesList MergeTreeData::getVirtuals() const
         NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
         NameAndTypePair("_partition_value", getPartitionValueType()),
         NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
+        NameAndTypePair("_is_deleted", std::make_shared<DataTypeUInt8>())
     };
 }
 

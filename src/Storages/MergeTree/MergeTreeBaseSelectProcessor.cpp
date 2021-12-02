@@ -229,6 +229,7 @@ namespace
 
         virtual void insertArrayOfStringsColumn(const ColumnPtr & column, const String & name) = 0;
         virtual void insertStringColumn(const ColumnPtr & column, const String & name) = 0;
+        virtual void insertUInt8Column(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUInt64Column(const ColumnPtr & column, const String & name) = 0;
         virtual void insertUUIDColumn(const ColumnPtr & column, const String & name) = 0;
 
@@ -264,9 +265,9 @@ static void injectVirtualColumnsImpl(
         }
         for (const auto & virtual_column_name : virtual_columns)
         {
+            ColumnPtr column;
             if (virtual_column_name == "_part")
             {
-                ColumnPtr column;
                 if (rows)
                     column = DataTypeString().createColumnConst(rows, part->name)->convertToFullColumnIfConst();
                 else
@@ -276,7 +277,6 @@ static void injectVirtualColumnsImpl(
             }
             else if (virtual_column_name == "_part_index")
             {
-                ColumnPtr column;
                 if (rows)
                     column = DataTypeUInt64().createColumnConst(rows, task->part_index_in_query)->convertToFullColumnIfConst();
                 else
@@ -286,7 +286,6 @@ static void injectVirtualColumnsImpl(
             }
             else if (virtual_column_name == "_part_uuid")
             {
-                ColumnPtr column;
                 if (rows)
                     column = DataTypeUUID().createColumnConst(rows, part->uuid)->convertToFullColumnIfConst();
                 else
@@ -296,7 +295,6 @@ static void injectVirtualColumnsImpl(
             }
             else if (virtual_column_name == "_partition_id")
             {
-                ColumnPtr column;
                 if (rows)
                     column = DataTypeString().createColumnConst(rows, part->info.partition_id)->convertToFullColumnIfConst();
                 else
@@ -310,6 +308,15 @@ static void injectVirtualColumnsImpl(
                     inserter.insertPartitionValueColumn(rows, part->partition.value, partition_value_type, virtual_column_name);
                 else
                     inserter.insertPartitionValueColumn(rows, {}, partition_value_type, virtual_column_name);
+            }
+            else if (virtual_column_name == "_is_deleted")
+            {
+                if (rows)
+                    column = DataTypeUInt8().createColumnConst(rows, 0)->convertToFullColumnIfConst();
+                else
+                    column = DataTypeUInt8().createColumn();
+
+                inserter.insertUInt8Column(column, virtual_column_name);
             }
         }
     }
@@ -329,6 +336,11 @@ namespace
         void insertStringColumn(const ColumnPtr & column, const String & name) final
         {
             block.insert({column, std::make_shared<DataTypeString>(), name});
+        }
+
+        void insertUInt8Column(const ColumnPtr & column, const String & name) final
+        {
+            block.insert({column, std::make_shared<DataTypeUInt8>(), name});
         }
 
         void insertUInt64Column(const ColumnPtr & column, const String & name) final
@@ -367,6 +379,11 @@ namespace
         }
 
         void insertStringColumn(const ColumnPtr & column, const String &) final
+        {
+            columns.push_back(column);
+        }
+
+        void insertUInt8Column(const ColumnPtr & column, const String &) final
         {
             columns.push_back(column);
         }

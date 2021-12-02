@@ -1,7 +1,11 @@
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/MergeTree/MergeTreeDataPartDeletedMask.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
+
+#include <Core/iostream_debug_helpers.h>
+#include <Common/StackTrace.h>
 
 namespace DB
 {

@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
+#include <Storages/MergeTree/MergeTreeDataPartDeletedMask.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/DataDestinationType.h>
 #include <IO/ReadBufferFromString.h>
@@ -463,6 +464,8 @@ public:
     /// Returns the part with the given name and state or nullptr if no such part.
     DataPartPtr getPartIfExists(const String & part_name, const DataPartStates & valid_states);
     DataPartPtr getPartIfExists(const MergeTreePartInfo & part_info, const DataPartStates & valid_states);
+
+    void updateDeletedRowsMask(const String & part_name, MergeTreeDataPartDeletedMask::DeletedRows deleted_rows);
 
     /// Total size of active parts in bytes.
     size_t getTotalActiveSizeInBytes() const;
