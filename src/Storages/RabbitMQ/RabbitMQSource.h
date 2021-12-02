@@ -18,7 +18,7 @@ public:
             ContextPtr context_,
             const Names & columns,
             size_t max_block_size_,
-            bool ack_in_suffix = true);
+            bool ack_in_suffix = false);
 
     ~RabbitMQSource() override;
 

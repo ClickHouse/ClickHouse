@@ -22,6 +22,7 @@ import socket
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
                                 main_configs=['configs/kafka.xml'],
+                                user_configs=['configs/users.xml'],
                                 with_kerberized_kafka=True,
                                 clickhouse_path_dir="clickhouse_path")
 
@@ -38,8 +39,8 @@ def get_kafka_producer(port, serializer):
         except Exception as e:
             errors += [str(e)]
             time.sleep(1)
-    
-    raise Exception("Connection not establised, {}".format(errors))   
+
+    raise Exception("Connection not establised, {}".format(errors))
 
 def kafka_produce(kafka_cluster, topic, messages, timestamp=None):
     logging.debug("kafka_produce server:{}:{} topic:{}".format("localhost", kafka_cluster.kerberized_kafka_port, topic))
@@ -78,6 +79,7 @@ def test_kafka_json_as_string(kafka_cluster):
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kerberized_kafka1:19092',
                      kafka_topic_list = 'kafka_json_as_string',
+                     kafka_commit_on_select = 1,
                      kafka_group_name = 'kafka_json_as_string',
                      kafka_format = 'JSONAsString',
                      kafka_flush_interval_ms=1000;
@@ -106,6 +108,7 @@ def test_kafka_json_as_string_no_kdc(kafka_cluster):
             SETTINGS kafka_broker_list = 'kerberized_kafka1:19092',
                      kafka_topic_list = 'kafka_json_as_string_no_kdc',
                      kafka_group_name = 'kafka_json_as_string_no_kdc',
+                     kafka_commit_on_select = 1,
                      kafka_format = 'JSONAsString',
                      kafka_flush_interval_ms=1000;
         ''')
