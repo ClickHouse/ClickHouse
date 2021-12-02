@@ -7,7 +7,6 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <fcntl.h>
-#include <Core/Settings.h>
 #include <string>
 #include <memory>
 
