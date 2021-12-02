@@ -5,7 +5,6 @@
 #include <Core/MultiEnum.h>
 #include <Core/SettingsEnums.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
 #include "DataTypeDate.h"
 #include "DataTypeDateTime.h"

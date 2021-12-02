@@ -163,7 +163,7 @@ def main(github_secret_key, github_app_id, push_to_cloudwatch, delete_offline_ru
     if delete_offline_runners:
         print("Going to delete offline runners")
         for runner in runners:
-            if runner.offline:
+            if runner.offline and not runner.busy:
                 print("Deleting runner", runner)
                 delete_runner(access_token, runner)
 

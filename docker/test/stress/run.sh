@@ -151,8 +151,8 @@ zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log*
 # Grep logs for sanitizer asserts, crashes and other critical errors
 
 # Sanitizer asserts
-zgrep -Fa "==================" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
-zgrep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+grep -Fa "==================" /var/log/clickhouse-server/stderr.log | grep -v "in query:" >> /test_output/tmp
+grep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
 zgrep -Fav "ASan doesn't fully support makecontext/swapcontext functions" /test_output/tmp > /dev/null \
     && echo -e 'Sanitizer assert (in stderr.log)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No sanitizer asserts\tOK' >> /test_output/test_results.tsv

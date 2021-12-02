@@ -2,15 +2,16 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/ProjectionsDescription.h>
 
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
+#include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
 #include <Core/Defines.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Parsers/ASTProjectionSelectQuery.h>
-#include <Parsers/ASTSubquery.h>
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
