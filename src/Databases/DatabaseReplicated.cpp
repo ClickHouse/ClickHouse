@@ -8,6 +8,7 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/queryToString.h>
 #include <Common/Exception.h>
+#include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -15,10 +16,9 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/Cluster.h>
-#include <base/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTDropQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -196,17 +196,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl() const
     UInt16 default_port = getContext()->getTCPPort();
     bool secure = db_settings.cluster_secure_connection;
 
-    bool treat_local_as_remote = false;
-    bool treat_local_port_as_remote = getContext()->getApplicationType() == Context::ApplicationType::LOCAL;
-    return std::make_shared<Cluster>(
-        getContext()->getSettingsRef(),
-        shards,
-        username,
-        password,
-        default_port,
-        treat_local_as_remote,
-        treat_local_port_as_remote,
-        secure);
+    return std::make_shared<Cluster>(getContext()->getSettingsRef(), shards, username, password, default_port, false, secure);
 }
 
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(bool force_attach)
@@ -326,21 +316,12 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
     createEmptyLogEntry(current_zookeeper);
 }
 
-void DatabaseReplicated::beforeLoadingMetadata(ContextMutablePtr /*context*/, bool /*force_restore*/, bool force_attach)
+void DatabaseReplicated::loadStoredObjects(ContextMutablePtr local_context, bool has_force_restore_data_flag, bool force_attach)
 {
     tryConnectToZooKeeperAndInitDatabase(force_attach);
-}
 
-void DatabaseReplicated::loadStoredObjects(
-    ContextMutablePtr local_context, bool force_restore, bool force_attach, bool skip_startup_tables)
-{
-    beforeLoadingMetadata(local_context, force_restore, force_attach);
-    DatabaseAtomic::loadStoredObjects(local_context, force_restore, force_attach, skip_startup_tables);
-}
+    DatabaseAtomic::loadStoredObjects(local_context, has_force_restore_data_flag, force_attach);
 
-void DatabaseReplicated::startupTables(ThreadPool & thread_pool, bool force_restore, bool force_attach)
-{
-    DatabaseAtomic::startupTables(thread_pool, force_restore, force_attach);
     ddl_worker = std::make_unique<DatabaseReplicatedDDLWorker>(this, getContext());
     ddl_worker->startup();
 }
@@ -350,9 +331,9 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
     /// Replicas will set correct name of current database in query context (database name can be different on replicas)
     if (auto * ddl_query = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get()))
     {
-        if (ddl_query->getDatabase() != getDatabaseName())
+        if (ddl_query->database != getDatabaseName())
             throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database was renamed");
-        ddl_query->database.reset();
+        ddl_query->database.clear();
 
         if (auto * create = query->as<ASTCreateQuery>())
         {
@@ -392,7 +373,7 @@ void DatabaseReplicated::checkQueryValid(const ASTPtr & query, ContextPtr query_
             /// NOTE: we cannot check here that substituted values will be actually different on shards and replicas.
 
             Macros::MacroExpansionInfo info;
-            info.table_id = {getDatabaseName(), create->getTable(), create->uuid};
+            info.table_id = {getDatabaseName(), create->table, create->uuid};
             query_context->getMacros()->expand(maybe_path, info);
             bool maybe_shard_macros = info.expanded_other;
             info.expanded_other = false;
@@ -554,7 +535,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         query_context->getClientInfo().is_replicated_database_internal = true;
         query_context->setCurrentDatabase(database_name);
         query_context->setCurrentQueryId("");
-        auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false, "");
+        auto txn = std::make_shared<ZooKeeperMetadataTransaction>(current_zookeeper, zookeeper_path, false);
         query_context->initZooKeeperMetadataTransaction(txn);
         return query_context;
     };
@@ -716,13 +697,13 @@ ASTPtr DatabaseReplicated::parseQueryFromMetadataInZooKeeper(const String & node
     auto ast = parseQuery(parser, query, description, 0, getContext()->getSettingsRef().max_parser_depth);
 
     auto & create = ast->as<ASTCreateQuery &>();
-    if (create.uuid == UUIDHelpers::Nil || create.getTable() != TABLE_WITH_UUID_NAME_PLACEHOLDER || create.database)
+    if (create.uuid == UUIDHelpers::Nil || create.table != TABLE_WITH_UUID_NAME_PLACEHOLDER || !create.database.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Got unexpected query from {}: {}", node_name, query);
 
     bool is_materialized_view_with_inner_table = create.is_materialized_view && create.to_table_id.empty();
 
-    create.setDatabase(getDatabaseName());
-    create.setTable(unescapeForFileName(node_name));
+    create.database = getDatabaseName();
+    create.table = unescapeForFileName(node_name);
     create.attach = is_materialized_view_with_inner_table;
 
     return ast;
@@ -812,7 +793,7 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
     assert(!ddl_worker->isCurrentlyActive() || txn);
     if (txn && txn->isInitialQuery())
     {
-        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(query.getTable());
+        String metadata_zk_path = zookeeper_path + "/metadata/" + escapeForFileName(query.table);
         String statement = getObjectDefinitionFromCreateQuery(query.clone());
         /// zk::multi(...) will throw if `metadata_zk_path` exists
         txn->addOp(zkutil::makeCreateRequest(metadata_zk_path, statement, zkutil::CreateMode::Persistent));

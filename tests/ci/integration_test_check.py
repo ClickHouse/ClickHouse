@@ -11,7 +11,7 @@ from github import Github
 
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo, get_event
+from pr_info import PRInfo
 from build_download_helper import download_all_deb_packages
 from upload_result_helper import upload_results
 from docker_pull_helper import get_images_with_versions
@@ -34,12 +34,12 @@ IMAGES = [
     "yandex/clickhouse-integration-helper",
 ]
 
-def get_json_params_dict(check_name, pr_info, docker_images):
+def get_json_params_dict(check_name, commit_sha, pr_number, docker_images):
     return {
         'context_name': check_name,
-        'commit': pr_info.sha,
-        'pull_request': pr_info.number,
-        'pr_info': {'changed_files' : list(pr_info.changed_files)},
+        'commit': commit_sha,
+        'pull_request': pr_number,
+        'pr_info': None,
         'docker_images_with_versions': docker_images,
         'shuffle_test_groups': False,
         'use_tmpfs': False,
@@ -108,8 +108,10 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    is_flaky_check = 'flaky' in check_name
-    pr_info = PRInfo(get_event(), need_changed_files=is_flaky_check)
+    with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
+        event = json.load(event_file)
+
+    pr_info = PRInfo(event)
 
     gh = Github(get_best_robot_token())
 
@@ -133,7 +135,7 @@ if __name__ == "__main__":
 
     json_path = os.path.join(work_path, 'params.json')
     with open(json_path, 'w', encoding='utf-8') as json_params:
-        json_params.write(json.dumps(get_json_params_dict(check_name, pr_info, images_with_versions)))
+        json_params.write(json.dumps(get_json_params_dict(check_name, pr_info.sha, pr_info.number, images_with_versions)))
 
     output_path_log = os.path.join(result_path, "main_script_log.txt")
 

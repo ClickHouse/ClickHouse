@@ -9,7 +9,6 @@ namespace DB
 
 class AccessRightsElements;
 class ASTAlterCommand;
-class ASTAlterQuery;
 
 
 /** Allows you add or remove a column in the table.
@@ -28,10 +27,6 @@ public:
 
 private:
     AccessRightsElements getRequiredAccess() const;
-
-    BlockIO executeToTable(const ASTAlterQuery & alter);
-
-    BlockIO executeToDatabase(const ASTAlterQuery & alter);
 
     ASTPtr query_ptr;
 };

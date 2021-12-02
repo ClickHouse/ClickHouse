@@ -33,32 +33,30 @@ protected:
 
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        deserializeText(column, istr, settings, true);
+        deserializeText(column, istr, settings);
     }
 
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        deserializeText(column, istr, settings, false);
+        deserializeText(column, istr, settings);
     }
 
     void deserializeTextQuoted(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        deserializeText(column, istr, settings, false);
+        deserializeText(column, istr, settings);
     }
 
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        deserializeText(column, istr, settings, false);
+        deserializeText(column, istr, settings);
     }
 
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override
     {
-        deserializeText(column, istr, settings, false);
+        deserializeText(column, istr, settings);
     }
 
-    /// whole = true means that buffer contains only one value, so we should read until EOF.
-    /// It's needed to check if there is garbage after parsed field.
-    virtual void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &, bool whole) const = 0;
+    virtual void deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const = 0;
 };
 
 }

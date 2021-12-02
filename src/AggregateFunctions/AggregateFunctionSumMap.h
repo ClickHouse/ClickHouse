@@ -190,7 +190,7 @@ public:
                     continue;
 
                 decltype(merged_maps.begin()) it;
-                if constexpr (is_decimal<T>)
+                if constexpr (IsDecimalNumber<T>)
                 {
                     // FIXME why is storing NearestFieldType not enough, and we
                     // have to check for decimals again here?
@@ -217,7 +217,7 @@ public:
                     new_values.resize(size);
                     new_values[col] = value;
 
-                    if constexpr (is_decimal<T>)
+                    if constexpr (IsDecimalNumber<T>)
                     {
                         UInt32 scale = static_cast<const ColumnDecimal<T> &>(key_column).getData().getScale();
                         merged_maps.emplace(DecimalField<T>(key, scale), std::move(new_values));
@@ -280,7 +280,7 @@ public:
             for (size_t col = 0; col < values_types.size(); ++col)
                 values_serializations[col]->deserializeBinary(values[col], buf);
 
-            if constexpr (is_decimal<T>)
+            if constexpr (IsDecimalNumber<T>)
                 merged_maps[key.get<DecimalField<T>>()] = values;
             else
                 merged_maps[key.get<T>()] = values;
@@ -377,17 +377,7 @@ public:
         assertNoParameters(getName(), params_);
     }
 
-    String getName() const override
-    {
-        if constexpr (overflow)
-        {
-            return "sumMapWithOverflow";
-        }
-        else
-        {
-            return "sumMap";
-        }
-    }
+    String getName() const override { return "sumMap"; }
 
     bool keepKey(const T &) const { return true; }
 };
@@ -405,7 +395,9 @@ private:
     using Self = AggregateFunctionSumMapFiltered<T, overflow, tuple_argument>;
     using Base = AggregateFunctionMapBase<T, Self, FieldVisitorSum, overflow, tuple_argument, true>;
 
-    using ContainerT = std::unordered_set<T>;
+    /// ARCADIA_BUILD disallow unordered_set for big ints for some reason
+    static constexpr const bool allow_hash = !OverBigInt<T>;
+    using ContainerT = std::conditional_t<allow_hash, std::unordered_set<T>, std::set<T>>;
 
     ContainerT keys_to_keep;
 
@@ -426,10 +418,13 @@ public:
                 "Aggregate function {} requires an Array as a parameter",
                 getName());
 
-        keys_to_keep.reserve(keys_to_keep_.size());
+        if constexpr (allow_hash)
+            keys_to_keep.reserve(keys_to_keep_.size());
 
         for (const Field & f : keys_to_keep_)
+        {
             keys_to_keep.emplace(f.safeGet<T>());
+        }
     }
 
     String getName() const override

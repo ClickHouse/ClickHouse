@@ -42,8 +42,8 @@ toc_title: Integrations
         -   [mfedotov/clickhouse](https://forge.puppet.com/mfedotov/clickhouse)
 -   Monitoring
     -   [Graphite](https://graphiteapp.org)
-        -   [graphouse](https://github.com/ClickHouse/graphouse)
-        -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse)
+        -   [graphouse](https://github.com/yandex/graphouse)
+        -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
         -   [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
         -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md#graphitemergetree) if rules from [rollup configuration](../../engines/table-engines/mergetree-family/graphitemergetree.md#rollup-configuration) could be applied
     -   [Grafana](https://grafana.com/)
@@ -108,4 +108,4 @@ toc_title: Integrations
     -   [GraphQL](https://github.com/graphql)
         -   [activecube-graphql](https://github.com/bitquery/activecube-graphql)
 
-[Original article](https://clickhouse.com/docs/en/interfaces/third-party/integrations/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/interfaces/third-party/integrations/) <!--hide-->

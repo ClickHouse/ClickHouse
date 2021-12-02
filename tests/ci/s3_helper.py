@@ -49,7 +49,7 @@ class S3Helper():
             else:
                 logging.info("No content type provied for %s", file_path)
         else:
-            if s3_path.endswith("txt") or s3_path.endswith("log") or ".log." in s3_path or s3_path.endswith("err") or s3_path.endswith("out"):
+            if s3_path.endswith("txt") or s3_path.endswith("log") or s3_path.endswith("err") or s3_path.endswith("out"):
                 logging.info("Going to compress file log file %s to %s", file_path, file_path + ".gz")
                 compress_file_fast(file_path, file_path + ".gz")
                 file_path += ".gz"

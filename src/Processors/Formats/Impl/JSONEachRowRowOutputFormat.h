@@ -23,7 +23,6 @@ public:
 
     String getName() const override { return "JSONEachRowRowOutputFormat"; }
 
-protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
@@ -32,6 +31,7 @@ protected:
     void writePrefix() override;
     void writeSuffix() override;
 
+protected:
     /// No totals and extremes.
     void consumeTotals(Chunk) override {}
     void consumeExtremes(Chunk) override {}

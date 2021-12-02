@@ -2,11 +2,11 @@ option (ENABLE_DATASKETCHES "Enable DataSketches" ${ENABLE_LIBRARIES})
 
 if (ENABLE_DATASKETCHES)
 
-option (USE_INTERNAL_DATASKETCHES_LIBRARY "Set to FALSE to use system DataSketches library instead of bundled" ON)
+option (USE_INTERNAL_DATASKETCHES_LIBRARY "Set to FALSE to use system DataSketches library instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/datasketches-cpp/theta/CMakeLists.txt")
     if (USE_INTERNAL_DATASKETCHES_LIBRARY)
-       message(WARNING "submodule contrib/datasketches-cpp is missing. to fix try run: \n git submodule update --init")
+       message(WARNING "submodule contrib/datasketches-cpp is missing. to fix try run: \n git submodule update --init --recursive")
     endif()
     set(MISSING_INTERNAL_DATASKETCHES_LIBRARY 1)
     set(USE_INTERNAL_DATASKETCHES_LIBRARY 0)

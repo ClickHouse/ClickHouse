@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/StorageMaterializedMySQL.h>
+#include <Storages/StorageMaterializeMySQL.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
@@ -124,7 +124,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, Conte
                     String engine_name = storage->getName();
 
 #if USE_MYSQL
-                    if (auto * proxy = dynamic_cast<StorageMaterializedMySQL *>(storage.get()))
+                    if (auto * proxy = dynamic_cast<StorageMaterializeMySQL *>(storage.get()))
                     {
                         auto nested = proxy->getNested();
                         storage.swap(nested);

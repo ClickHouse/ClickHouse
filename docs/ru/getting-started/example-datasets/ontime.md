@@ -153,7 +153,7 @@ ls -1 *.zip | xargs -I{} -P $(nproc) bash -c "echo {}; unzip -cq {} '*.csv' | se
 ## Скачивание готовых партиций {#skachivanie-gotovykh-partitsii}
 
 ``` bash
-$ curl -O https://datasets.clickhouse.com/ontime/partitions/ontime.tar
+$ curl -O https://datasets.clickhouse.tech/ontime/partitions/ontime.tar
 $ tar xvf ontime.tar -C /var/lib/clickhouse # путь к папке с данными ClickHouse
 $ # убедитесь, что установлены корректные права доступа на файлы
 $ sudo service clickhouse-server restart

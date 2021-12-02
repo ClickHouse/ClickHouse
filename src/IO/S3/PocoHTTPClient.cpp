@@ -16,7 +16,7 @@
 #include "Poco/StreamCopier.h"
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 #include <re2/re2.h>
 
 #include <boost/algorithm/string.hpp>
@@ -89,7 +89,6 @@ void PocoHTTPClientConfiguration::updateSchemeAndRegion()
 
 PocoHTTPClient::PocoHTTPClient(const PocoHTTPClientConfiguration & clientConfiguration)
     : per_request_configuration(clientConfiguration.perRequestConfiguration)
-    , error_report(clientConfiguration.error_report)
     , timeouts(ConnectionTimeouts(
           Poco::Timespan(clientConfiguration.connectTimeoutMs * 1000), /// connection timeout.
           Poco::Timespan(clientConfiguration.requestTimeoutMs * 1000), /// send timeout.
@@ -166,14 +165,15 @@ void PocoHTTPClient::makeRequestInternal(
         for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI target_uri(uri);
-            HTTPSessionPtr session;
+
+            /// Reverse proxy can replace host header with resolved ip address instead of host name.
+            /// This can lead to request signature difference on S3 side.
+            auto session = makeHTTPSession(target_uri, timeouts, false);
+
             auto request_configuration = per_request_configuration(request);
 
             if (!request_configuration.proxyHost.empty())
             {
-                /// Reverse proxy can replace host header with resolved ip address instead of host name.
-                /// This can lead to request signature difference on S3 side.
-                session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ false);
                 bool use_tunnel = request_configuration.proxyScheme == Aws::Http::Scheme::HTTP && target_uri.getScheme() == "https";
 
                 session->setProxy(
@@ -183,11 +183,6 @@ void PocoHTTPClient::makeRequestInternal(
                     use_tunnel
                 );
             }
-            else
-            {
-                session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ true);
-            }
-
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 
@@ -301,8 +296,6 @@ void PocoHTTPClient::makeRequestInternal(
             else if (status_code >= 300)
             {
                 ProfileEvents::increment(select_metric(S3MetricType::Errors));
-                if (status_code >= 500 && error_report)
-                    error_report(request_configuration);
             }
 
             response->SetResponseBody(response_body_stream, session);

@@ -4,6 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
+#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB

@@ -99,19 +99,19 @@ def started_cluster():
 
         logging.debug(f"sqlite data received: {sqlite_db}")
         node1.exec_in_container(
-            ["sqlite3", sqlite_db, "CREATE TABLE t1(id INTEGER PRIMARY KEY ASC, x INTEGER, y, z);"],
+            ["sqlite3", sqlite_db, "CREATE TABLE t1(x INTEGER PRIMARY KEY ASC, y, z);"],
             privileged=True, user='root')
         node1.exec_in_container(
-            ["sqlite3", sqlite_db, "CREATE TABLE t2(id INTEGER PRIMARY KEY ASC, X INTEGER, Y, Z);"],
+            ["sqlite3", sqlite_db, "CREATE TABLE t2(X INTEGER PRIMARY KEY ASC, Y, Z);"],
             privileged=True, user='root')
         node1.exec_in_container(
-            ["sqlite3", sqlite_db, "CREATE TABLE t3(id INTEGER PRIMARY KEY ASC, X INTEGER, Y, Z);"],
+            ["sqlite3", sqlite_db, "CREATE TABLE t3(X INTEGER PRIMARY KEY ASC, Y, Z);"],
             privileged=True, user='root')
         node1.exec_in_container(
-            ["sqlite3", sqlite_db, "CREATE TABLE t4(id INTEGER PRIMARY KEY ASC, X INTEGER, Y, Z);"],
+            ["sqlite3", sqlite_db, "CREATE TABLE t4(X INTEGER PRIMARY KEY ASC, Y, Z);"],
             privileged=True, user='root')
         node1.exec_in_container(
-            ["sqlite3", sqlite_db, "CREATE TABLE tf1(id INTEGER PRIMARY KEY ASC, x INTEGER, y, z);"],
+            ["sqlite3", sqlite_db, "CREATE TABLE tf1(x INTEGER PRIMARY KEY ASC, y, z);"],
             privileged=True, user='root')
         logging.debug("sqlite tables created")
         mysql_conn = get_mysql_conn()
@@ -128,7 +128,7 @@ def started_cluster():
 
         cursor = postgres_conn.cursor()
         cursor.execute(
-            "create table if not exists clickhouse.test_table (id int primary key, column1 int not null, column2 varchar(40) not null)")
+            "create table if not exists clickhouse.test_table (column1 int primary key, column2 varchar(40) not null)")
 
         yield cluster
 
@@ -210,9 +210,9 @@ def test_sqlite_simple_select_function_works(started_cluster):
     sqlite_setup = node1.odbc_drivers["SQLite3"]
     sqlite_db = sqlite_setup["Database"]
 
-    node1.exec_in_container(["sqlite3", sqlite_db, "INSERT INTO t1 values(1, 1, 2, 3);"],
+    node1.exec_in_container(["sqlite3", sqlite_db, "INSERT INTO t1 values(1, 2, 3);"],
                             privileged=True, user='root')
-    assert node1.query("select * from odbc('DSN={}', '{}')".format(sqlite_setup["DSN"], 't1')) == "1\t1\t2\t3\n"
+    assert node1.query("select * from odbc('DSN={}', '{}')".format(sqlite_setup["DSN"], 't1')) == "1\t2\t3\n"
 
     assert node1.query("select y from odbc('DSN={}', '{}')".format(sqlite_setup["DSN"], 't1')) == "2\n"
     assert node1.query("select z from odbc('DSN={}', '{}')".format(sqlite_setup["DSN"], 't1')) == "3\n"
@@ -228,10 +228,10 @@ def test_sqlite_table_function(started_cluster):
     sqlite_setup = node1.odbc_drivers["SQLite3"]
     sqlite_db = sqlite_setup["Database"]
 
-    node1.exec_in_container(["sqlite3", sqlite_db, "INSERT INTO tf1 values(1, 1, 2, 3);"],
+    node1.exec_in_container(["sqlite3", sqlite_db, "INSERT INTO tf1 values(1, 2, 3);"],
                             privileged=True, user='root')
     node1.query("create table odbc_tf as odbc('DSN={}', '{}')".format(sqlite_setup["DSN"], 'tf1'))
-    assert node1.query("select * from odbc_tf") == "1\t1\t2\t3\n"
+    assert node1.query("select * from odbc_tf") == "1\t2\t3\n"
 
     assert node1.query("select y from odbc_tf") == "2\n"
     assert node1.query("select z from odbc_tf") == "3\n"
@@ -246,7 +246,7 @@ def test_sqlite_simple_select_storage_works(started_cluster):
     sqlite_setup = node1.odbc_drivers["SQLite3"]
     sqlite_db = sqlite_setup["Database"]
 
-    node1.exec_in_container(["sqlite3", sqlite_db, "INSERT INTO t4 values(1, 1, 2, 3);"],
+    node1.exec_in_container(["sqlite3", sqlite_db, "INSERT INTO t4 values(1, 2, 3);"],
                             privileged=True, user='root')
     node1.query("create table SqliteODBC (x Int32, y String, z String) engine = ODBC('DSN={}', '', 't4')".format(
         sqlite_setup["DSN"]))
@@ -264,7 +264,7 @@ def test_sqlite_odbc_hashed_dictionary(started_cluster):
     skip_test_msan(node1)
 
     sqlite_db = node1.odbc_drivers["SQLite3"]["Database"]
-    node1.exec_in_container(["sqlite3", sqlite_db, "INSERT INTO t2 values(1, 1, 2, 3);"],
+    node1.exec_in_container(["sqlite3", sqlite_db, "INSERT INTO t2 values(1, 2, 3);"],
                             privileged=True, user='root')
 
     node1.query("SYSTEM RELOAD DICTIONARY sqlite3_odbc_hashed")
@@ -282,7 +282,7 @@ def test_sqlite_odbc_hashed_dictionary(started_cluster):
         logging.debug("Waiting dictionary to update for the second time")
         time.sleep(0.1)
 
-    node1.exec_in_container(["sqlite3", sqlite_db, "INSERT INTO t2 values(200, 200, 2, 7);"],
+    node1.exec_in_container(["sqlite3", sqlite_db, "INSERT INTO t2 values(200, 2, 7);"],
                             privileged=True, user='root')
 
     # No reload because of invalidate query
@@ -299,7 +299,7 @@ def test_sqlite_odbc_hashed_dictionary(started_cluster):
     assert_eq_with_retry(node1, "select dictGetUInt8('sqlite3_odbc_hashed', 'Z', toUInt64(1))", "3")
     assert_eq_with_retry(node1, "select dictGetUInt8('sqlite3_odbc_hashed', 'Z', toUInt64(200))", "1") # still default
 
-    node1.exec_in_container(["sqlite3", sqlite_db, "REPLACE INTO t2 values(1, 1, 2, 5);"],
+    node1.exec_in_container(["sqlite3", sqlite_db, "REPLACE INTO t2 values(1, 2, 5);"],
                             privileged=True, user='root')
 
     assert_eq_with_retry(node1, "select dictGetUInt8('sqlite3_odbc_hashed', 'Z', toUInt64(1))", "5")
@@ -310,7 +310,7 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
     skip_test_msan(node1)
 
     sqlite_db = node1.odbc_drivers["SQLite3"]["Database"]
-    node1.exec_in_container(["sqlite3", sqlite_db, "INSERT INTO t3 values(1, 1, 2, 3);"],
+    node1.exec_in_container(["sqlite3", sqlite_db, "INSERT INTO t3 values(1, 2, 3);"],
                             privileged=True, user='root')
 
     assert node1.query("select dictGetUInt8('sqlite3_odbc_cached', 'Z', toUInt64(1))") == "3\n"
@@ -319,12 +319,12 @@ def test_sqlite_odbc_cached_dictionary(started_cluster):
     node1.exec_in_container(["chmod", "a+rw", "/tmp"], privileged=True, user='root')
     node1.exec_in_container(["chmod", "a+rw", sqlite_db], privileged=True, user='root')
 
-    node1.query("insert into table function odbc('DSN={};ReadOnly=0', '', 't3') values (200, 200, 2, 7)".format(
+    node1.query("insert into table function odbc('DSN={};ReadOnly=0', '', 't3') values (200, 2, 7)".format(
         node1.odbc_drivers["SQLite3"]["DSN"]))
 
     assert node1.query("select dictGetUInt8('sqlite3_odbc_cached', 'Z', toUInt64(200))") == "7\n"  # new value
 
-    node1.exec_in_container(["sqlite3", sqlite_db, "REPLACE INTO t3 values(1, 1, 2, 12);"],
+    node1.exec_in_container(["sqlite3", sqlite_db, "REPLACE INTO t3 values(1, 2, 12);"],
                             privileged=True, user='root')
 
     assert_eq_with_retry(node1, "select dictGetUInt8('sqlite3_odbc_cached', 'Z', toUInt64(1))", "12")
@@ -336,7 +336,7 @@ def test_postgres_odbc_hashed_dictionary_with_schema(started_cluster):
     conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
     cursor.execute("truncate table clickhouse.test_table")
-    cursor.execute("insert into clickhouse.test_table values(1, 1, 'hello'),(2, 2, 'world')")
+    cursor.execute("insert into clickhouse.test_table values(1, 'hello'),(2, 'world')")
     node1.query("SYSTEM RELOAD DICTIONARY postgres_odbc_hashed")
     assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(1))", "hello")
     assert_eq_with_retry(node1, "select dictGetString('postgres_odbc_hashed', 'column2', toUInt64(2))", "world")
@@ -348,7 +348,7 @@ def test_postgres_odbc_hashed_dictionary_no_tty_pipe_overflow(started_cluster):
     conn = get_postgres_conn(started_cluster)
     cursor = conn.cursor()
     cursor.execute("truncate table clickhouse.test_table")
-    cursor.execute("insert into clickhouse.test_table values(3, 3, 'xxx')")
+    cursor.execute("insert into clickhouse.test_table values(3, 'xxx')")
     for i in range(100):
         try:
             node1.query("system reload dictionary postgres_odbc_hashed", timeout=15)
@@ -369,13 +369,13 @@ def test_postgres_insert(started_cluster):
     # reconstruction of connection string.
 
     node1.query(
-        "create table pg_insert (id UInt64, column1 UInt8, column2 String) engine=ODBC('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')")
-    node1.query("insert into pg_insert values (1, 1, 'hello'), (2, 2, 'world')")
-    assert node1.query("select * from pg_insert") == '1\t1\thello\n2\t2\tworld\n'
-    node1.query("insert into table function odbc('DSN=postgresql_odbc', 'clickhouse', 'test_table') format CSV 3,3,test")
+        "create table pg_insert (column1 UInt8, column2 String) engine=ODBC('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')")
+    node1.query("insert into pg_insert values (1, 'hello'), (2, 'world')")
+    assert node1.query("select * from pg_insert") == '1\thello\n2\tworld\n'
+    node1.query("insert into table function odbc('DSN=postgresql_odbc', 'clickhouse', 'test_table') format CSV 3,test")
     node1.query(
         "insert into table function odbc('DSN=postgresql_odbc;Servername=postgre-sql.local', 'clickhouse', 'test_table')" \
-        " select number, number, 's' || toString(number) from numbers (4, 7)")
+        " select number, 's' || toString(number) from numbers (4, 7)")
     assert node1.query("select sum(column1), count(column1) from pg_insert") == "55\t10\n"
     assert node1.query(
         "select sum(n), count(n) from (select (*,).1 as n from (select * from odbc('DSN=postgresql_odbc', 'clickhouse', 'test_table')))") == "55\t10\n"
@@ -426,19 +426,19 @@ def test_odbc_postgres_date_data_type(started_cluster):
 
     conn = get_postgres_conn(started_cluster);
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS clickhouse.test_date (id integer, column1 integer, column2 date)")
+    cursor.execute("CREATE TABLE IF NOT EXISTS clickhouse.test_date (column1 integer, column2 date)")
 
-    cursor.execute("INSERT INTO clickhouse.test_date VALUES (1, 1, '2020-12-01')")
-    cursor.execute("INSERT INTO clickhouse.test_date VALUES (2, 2, '2020-12-02')")
-    cursor.execute("INSERT INTO clickhouse.test_date VALUES (3, 3, '2020-12-03')")
+    cursor.execute("INSERT INTO clickhouse.test_date VALUES (1, '2020-12-01')")
+    cursor.execute("INSERT INTO clickhouse.test_date VALUES (2, '2020-12-02')")
+    cursor.execute("INSERT INTO clickhouse.test_date VALUES (3, '2020-12-03')")
     conn.commit()
 
     node1.query(
         '''
-        CREATE TABLE test_date (id UInt64, column1 UInt64, column2 Date)
+        CREATE TABLE test_date (column1 UInt64, column2 Date)
         ENGINE=ODBC('DSN=postgresql_odbc; Servername=postgre-sql.local', 'clickhouse', 'test_date')''')
 
-    expected = '1\t1\t2020-12-01\n2\t2\t2020-12-02\n3\t3\t2020-12-03\n'
+    expected = '1\t2020-12-01\n2\t2020-12-02\n3\t2020-12-03\n'
     result = node1.query('SELECT * FROM test_date');
     assert(result == expected)
     cursor.execute("DROP TABLE IF EXISTS clickhouse.test_date")
@@ -554,7 +554,7 @@ def test_concurrent_queries(started_cluster):
     busy_pool = Pool(5)
     p = busy_pool.map_async(node_insert, range(5))
     p.wait()
-    assert_eq_with_retry(node1, "SELECT count() FROM test_pg_table", str(5*5*1000), retry_count=100)
+    assert_eq_with_retry(node1, "SELECT count() FROM test_pg_table", str(5*5*1000))
 
     def node_insert_select(_):
         for i in range(5):
@@ -564,7 +564,7 @@ def test_concurrent_queries(started_cluster):
     busy_pool = Pool(5)
     p = busy_pool.map_async(node_insert_select, range(5))
     p.wait()
-    assert_eq_with_retry(node1, "SELECT count() FROM test_pg_table", str(5*5*1000*2), retry_count=100)
+    assert_eq_with_retry(node1, "SELECT count() FROM test_pg_table", str(5*5*1000*2))
 
     node1.query('DROP TABLE test_pg_table;')
     cursor.execute('DROP TABLE clickhouse.test_pg_table;')
@@ -627,3 +627,4 @@ def test_odbc_long_text(started_cluster):
     cursor.execute("""insert into clickhouse.test_long_text (flen, field1) values (400000, '{}')""".format(long_text));
     result = node1.query("select field1 from test_long_text where flen=400000;")
     assert(result.strip() == long_text)
+

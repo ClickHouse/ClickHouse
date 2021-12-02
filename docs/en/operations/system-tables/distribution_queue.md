@@ -40,11 +40,11 @@ is_blocked:            1
 error_count:           0
 data_files:            1
 data_compressed_bytes: 499
-last_exception:
+last_exception:        
 ```
 
 **See Also**
 
 -   [Distributed table engine](../../engines/table-engines/special/distributed.md)
 
-[Original article](https://clickhouse.com/docs/en/operations/system_tables/distribution_queue) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/system_tables/distribution_queue) <!--hide-->

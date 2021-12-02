@@ -1,21 +1,21 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
+#endif
 
-#include <base/shared_ptr_helper.h>
+#include <common/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 
 
 namespace DB
 {
 
-struct ExternalDataSourceConfiguration;
-
 /// Storages MySQL and PostgreSQL use ConnectionPoolWithFailover and support multiple replicas.
 /// This class unites multiple storages with replicas into multiple shards with replicas.
 /// A query to external database is passed to one replica on each shard, the result is united.
 /// Replicas on each shard have the same priority, traversed replicas are moved to the end of the queue.
-/// Similar approach is used for URL storage.
+/// TODO: try `load_balancing` setting for replicas priorities same way as for table function `remote`
 class StorageExternalDistributed final : public shared_ptr_helper<StorageExternalDistributed>, public DB::IStorage
 {
     friend struct shared_ptr_helper<StorageExternalDistributed>;
@@ -44,7 +44,10 @@ protected:
         const StorageID & table_id_,
         ExternalStorageEngine table_engine,
         const String & cluster_description,
-        const ExternalDataSourceConfiguration & configuration,
+        const String & remote_database_,
+        const String & remote_table_,
+        const String & username,
+        const String & password,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,

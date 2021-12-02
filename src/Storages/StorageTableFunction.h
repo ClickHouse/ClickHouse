@@ -1,7 +1,7 @@
 #pragma once
 #include <Storages/IStorage.h>
 #include <TableFunctions/ITableFunction.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 #include <Storages/StorageProxy.h>
 #include <Common/CurrentThread.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -32,7 +32,7 @@ public:
         setInMemoryMetadata(cached_metadata);
     }
 
-    StoragePtr getNestedImpl() const
+    StoragePtr getNested() const override
     {
         std::lock_guard lock{nested_mutex};
         if (nested)
@@ -45,20 +45,6 @@ public:
         get_nested = {};
         return nested;
     }
-
-    StoragePtr getNested() const override
-    {
-        StoragePtr nested_storage = getNestedImpl();
-        assert(!nested_storage->getStoragePolicy());
-        assert(!nested_storage->storesDataOnDisk());
-        return nested_storage;
-    }
-
-    /// Table functions cannot have storage policy and cannot store data on disk.
-    /// We may check if table is readonly or stores data on disk on DROP TABLE.
-    /// Avoid loading nested table by returning nullptr/false for all table functions.
-    StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
-    bool storesDataOnDisk() const override { return false; }
 
     String getName() const override
     {
@@ -127,7 +113,7 @@ public:
         return pipe;
     }
 
-    SinkToStoragePtr write(
+    BlockOutputStreamPtr write(
             const ASTPtr & query,
             const StorageMetadataPtr & metadata_snapshot,
             ContextPtr context) override

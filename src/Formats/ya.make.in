@@ -1,0 +1,16 @@
+OWNER(g:clickhouse)
+
+LIBRARY()
+
+PEERDIR(
+    clickhouse/src/Common
+    contrib/libs/protobuf
+    contrib/libs/protoc
+)
+
+
+SRCS(
+<? find . -name '*.cpp' | grep -v -F tests | grep -v -F examples | sed 's/^\.\//    /' | sort ?>
+)
+
+END()

@@ -49,15 +49,9 @@ public:
     MergeTreeData::MutableDataPartPtr
     writeTempPart(BlockWithPartition & block, const StorageMetadataPtr & metadata_snapshot, ContextPtr context);
 
-    /// For insertion.
-    static MergeTreeData::MutableDataPartPtr writeProjectionPart(
-        MergeTreeData & data,
-        Poco::Logger * log,
-        Block block,
-        const ProjectionDescription & projection,
-        const IMergeTreeDataPart * parent_part);
+    MergeTreeData::MutableDataPartPtr writeProjectionPart(
+        Block block, const ProjectionDescription & projection, const IMergeTreeDataPart * parent_part);
 
-    /// For mutation: MATERIALIZE PROJECTION.
     static MergeTreeData::MutableDataPartPtr writeTempProjectionPart(
         MergeTreeData & data,
         Poco::Logger * log,
@@ -66,27 +60,15 @@ public:
         const IMergeTreeDataPart * parent_part,
         size_t block_num);
 
-    /// For WriteAheadLog AddPart.
-    static MergeTreeData::MutableDataPartPtr writeInMemoryProjectionPart(
-        const MergeTreeData & data,
-        Poco::Logger * log,
-        Block block,
-        const ProjectionDescription & projection,
-        const IMergeTreeDataPart * parent_part);
-
     Block mergeBlock(const Block & block, SortDescription sort_description, Names & partition_key_columns, IColumn::Permutation *& permutation);
 
 private:
     static MergeTreeData::MutableDataPartPtr writeProjectionPartImpl(
-        const String part_name,
-        MergeTreeDataPartType part_type,
-        const String & relative_path,
-        bool is_temp,
-        const IMergeTreeDataPart * parent_part,
-        const MergeTreeData & data,
+        MergeTreeData & data,
         Poco::Logger * log,
         Block block,
-        const StorageMetadataPtr & metadata_snapshot);
+        const StorageMetadataPtr & metadata_snapshot,
+        MergeTreeData::MutableDataPartPtr && new_data_part);
 
     MergeTreeData & data;
 
