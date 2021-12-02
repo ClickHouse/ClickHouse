@@ -10,6 +10,8 @@
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 
+#include <boost/algorithm/string/predicate.hpp>
+
 #include <base/logger_useful.h>
 #include <base/FnTraits.h>
 

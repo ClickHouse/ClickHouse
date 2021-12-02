@@ -11,11 +11,14 @@ from github import Github
 
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from build_download_helper import download_all_deb_packages
 from upload_result_helper import upload_results
 from docker_pull_helper import get_images_with_versions
 from commit_status_helper import post_commit_status
+from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
+from stopwatch import Stopwatch
+
 
 DOWNLOAD_RETRIES_COUNT = 5
 
@@ -31,12 +34,12 @@ IMAGES = [
     "yandex/clickhouse-integration-helper",
 ]
 
-def get_json_params_dict(check_name, commit_sha, pr_number, docker_images):
+def get_json_params_dict(check_name, pr_info, docker_images):
     return {
         'context_name': check_name,
-        'commit': commit_sha,
-        'pull_request': pr_number,
-        'pr_info': None,
+        'commit': pr_info.sha,
+        'pull_request': pr_info.number,
+        'pr_info': {'changed_files' : list(pr_info.changed_files)},
         'docker_images_with_versions': docker_images,
         'shuffle_test_groups': False,
         'use_tmpfs': False,
@@ -93,6 +96,9 @@ def process_results(result_folder):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+
+    stopwatch = Stopwatch()
+
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
     reports_path = os.getenv("REPORTS_PATH", "./reports")
@@ -102,10 +108,8 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
-        event = json.load(event_file)
-
-    pr_info = PRInfo(event)
+    is_flaky_check = 'flaky' in check_name
+    pr_info = PRInfo(get_event(), need_changed_files=is_flaky_check)
 
     gh = Github(get_best_robot_token())
 
@@ -129,7 +133,7 @@ if __name__ == "__main__":
 
     json_path = os.path.join(work_path, 'params.json')
     with open(json_path, 'w', encoding='utf-8') as json_params:
-        json_params.write(json.dumps(get_json_params_dict(check_name, pr_info.sha, pr_info.number, images_with_versions)))
+        json_params.write(json.dumps(get_json_params_dict(check_name, pr_info, images_with_versions)))
 
     output_path_log = os.path.join(result_path, "main_script_log.txt")
 
@@ -148,7 +152,13 @@ if __name__ == "__main__":
 
     state, description, test_results, additional_logs = process_results(result_path)
 
+    ch_helper = ClickHouseHelper()
+    mark_flaky_tests(ch_helper, check_name, test_results)
+
     s3_helper = S3Helper('https://s3.amazonaws.com')
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [output_path_log] + additional_logs, check_name, False)
     print(f"::notice ::Report url: {report_url}")
     post_commit_status(gh, pr_info.sha, check_name, description, state, report_url)
+
+    prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_results, state, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, check_name)
+    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)

@@ -117,8 +117,10 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
     if (sigaddset(&sa.sa_mask, pause_signal))
         throwFromErrno("Failed to add signal to mask for query profiler", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
 
-    if (sigaction(pause_signal, &sa, previous_handler))
+    struct sigaction local_previous_handler;
+    if (sigaction(pause_signal, &sa, &local_previous_handler))
         throwFromErrno("Failed to setup signal handler for query profiler", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+    previous_handler.emplace(local_previous_handler);
 
     try
     {
@@ -133,7 +135,8 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
 #else
         sev._sigev_un._tid = thread_id;
 #endif
-        if (timer_create(clock_type, &sev, &timer_id))
+        timer_t local_timer_id;
+        if (timer_create(clock_type, &sev, &local_timer_id))
         {
             /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.
             /// https://mybranch.dev/posts/clickhouse-on-cloud-run/
@@ -143,6 +146,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
 
             throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
         }
+        timer_id.emplace(local_timer_id);
 
         /// Randomize offset as uniform random value from 0 to period - 1.
         /// It will allow to sample short queries even if timer period is large.
@@ -154,7 +158,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
         struct timespec offset{.tv_sec = period_rand / TIMER_PRECISION, .tv_nsec = period_rand % TIMER_PRECISION};
 
         struct itimerspec timer_spec = {.it_interval = interval, .it_value = offset};
-        if (timer_settime(timer_id, 0, &timer_spec, nullptr))
+        if (timer_settime(*timer_id, 0, &timer_spec, nullptr))
             throwFromErrno("Failed to set thread timer period", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
     }
     catch (...)
@@ -175,10 +179,10 @@ template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 {
 #if USE_UNWIND
-    if (timer_id != nullptr && timer_delete(timer_id))
+    if (timer_id.has_value() && timer_delete(*timer_id))
         LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
 
-    if (previous_handler != nullptr && sigaction(pause_signal, previous_handler, nullptr))
+    if (previous_handler.has_value() && sigaction(pause_signal, &*previous_handler, nullptr))
         LOG_ERROR(log, "Failed to restore signal handler after query profiler {}", errnoToString(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER));
 #endif
 }

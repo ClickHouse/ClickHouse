@@ -1,0 +1,93 @@
+SET allow_experimental_window_view = 1;
+
+DROP TABLE IF EXISTS mt;
+DROP TABLE IF EXISTS `.inner.wv`;
+
+CREATE TABLE mt(a Int32, b Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
+
+SELECT '---TUMBLE---';
+SELECT '||---WINDOW COLUMN NAME---';
+DROP TABLE IF EXISTS wv;
+DROP TABLE IF EXISTS `.inner.wv`;
+CREATE WINDOW VIEW wv AS SELECT count(a) AS count, TUMBLE_END(wid) as wend FROM mt GROUP BY TUMBLE(timestamp, INTERVAL 1 SECOND) as wid;
+SHOW CREATE TABLE `.inner.wv`;
+
+SELECT '||---WINDOW COLUMN ALIAS---';
+DROP TABLE IF EXISTS wv;
+DROP TABLE IF EXISTS `.inner.wv`;
+CREATE WINDOW VIEW wv AS SELECT count(a) AS count, TUMBLE(timestamp, INTERVAL '1' SECOND) AS wid FROM mt GROUP BY wid;
+SHOW CREATE TABLE `.inner.wv`;
+
+SELECT '||---IDENTIFIER---';
+DROP TABLE IF EXISTS wv;
+DROP TABLE IF EXISTS `.inner.wv`;
+CREATE WINDOW VIEW wv AS SELECT count(a) AS count FROM mt GROUP BY b, TUMBLE(timestamp, INTERVAL '1' SECOND) AS wid;
+SHOW CREATE TABLE `.inner.wv`;
+
+DROP TABLE IF EXISTS wv;
+DROP TABLE IF EXISTS `.inner.wv`;
+CREATE WINDOW VIEW wv AS SELECT count(a) AS count FROM mt GROUP BY TUMBLE(timestamp, INTERVAL '1' SECOND) AS wid, b;
+SHOW CREATE TABLE `.inner.wv`;
+
+SELECT '||---FUNCTION---';
+DROP TABLE IF EXISTS wv;
+DROP TABLE IF EXISTS `.inner.wv`;
+CREATE WINDOW VIEW wv AS SELECT count(a) AS count FROM mt GROUP BY plus(a, b) as _type, TUMBLE(timestamp, INTERVAL '1' SECOND) AS wid;
+SHOW CREATE TABLE `.inner.wv`;
+
+DROP TABLE IF EXISTS wv;
+DROP TABLE IF EXISTS `.inner.wv`;
+CREATE WINDOW VIEW wv AS SELECT count(a) AS count FROM mt GROUP BY TUMBLE(timestamp, INTERVAL '1' SECOND) AS wid, plus(a, b);
+SHOW CREATE TABLE `.inner.wv`;
+
+SELECT '||---TimeZone---';
+DROP TABLE IF EXISTS wv;
+DROP TABLE IF EXISTS `.inner.wv`;
+CREATE WINDOW VIEW wv AS SELECT count(a) AS count, TUMBLE(timestamp, INTERVAL '1' SECOND, 'Asia/Shanghai') AS wid FROM mt GROUP BY wid;
+SHOW CREATE TABLE `.inner.wv`;
+
+
+SELECT '---HOP---';
+SELECT '||---WINDOW COLUMN NAME---';
+DROP TABLE IF EXISTS wv;
+DROP TABLE IF EXISTS `.inner.wv`;
+CREATE WINDOW VIEW wv AS SELECT count(a) AS count, HOP_END(wid) as wend FROM mt GROUP BY HOP(timestamp, INTERVAL 1 SECOND, INTERVAL 3 SECOND) as wid;
+SHOW CREATE TABLE `.inner.wv`;
+
+SELECT '||---WINDOW COLUMN ALIAS---';
+DROP TABLE IF EXISTS wv;
+DROP TABLE IF EXISTS `.inner.wv`;
+CREATE WINDOW VIEW wv AS SELECT count(a) AS count, HOP(timestamp, INTERVAL '1' SECOND, INTERVAL '3' SECOND) AS wid FROM mt GROUP BY wid;
+SHOW CREATE TABLE `.inner.wv`;
+
+SELECT '||---IDENTIFIER---';
+DROP TABLE IF EXISTS wv;
+DROP TABLE IF EXISTS `.inner.wv`;
+CREATE WINDOW VIEW wv AS SELECT count(a) AS count FROM mt GROUP BY b, HOP(timestamp, INTERVAL '1' SECOND, INTERVAL '3' SECOND) AS wid;
+SHOW CREATE TABLE `.inner.wv`;
+
+DROP TABLE IF EXISTS wv;
+DROP TABLE IF EXISTS `.inner.wv`;
+CREATE WINDOW VIEW wv AS SELECT count(a) AS count FROM mt GROUP BY HOP(timestamp, INTERVAL '1' SECOND, INTERVAL '3' SECOND) AS wid, b;
+SHOW CREATE TABLE `.inner.wv`;
+
+SELECT '||---FUNCTION---';
+DROP TABLE IF EXISTS wv;
+DROP TABLE IF EXISTS `.inner.wv`;
+CREATE WINDOW VIEW wv AS SELECT count(a) AS count FROM mt GROUP BY plus(a, b) as _type, HOP(timestamp, INTERVAL '1' SECOND, INTERVAL '3' SECOND) AS wid;
+SHOW CREATE TABLE `.inner.wv`;
+
+SELECT '||---TimeZone---';
+DROP TABLE IF EXISTS wv;
+DROP TABLE IF EXISTS `.inner.wv`;
+CREATE WINDOW VIEW wv AS SELECT count(a) AS count, HOP_END(wid) as wend FROM mt GROUP BY HOP(timestamp, INTERVAL 1 SECOND, INTERVAL 3 SECOND, 'Asia/Shanghai') as wid;
+SHOW CREATE TABLE `.inner.wv`;
+
+
+DROP TABLE IF EXISTS wv;
+DROP TABLE IF EXISTS `.inner.wv`;
+CREATE WINDOW VIEW wv AS SELECT count(a) AS count FROM mt GROUP BY HOP(timestamp, INTERVAL '1' SECOND, INTERVAL '3' SECOND) AS wid, plus(a, b);
+SHOW CREATE TABLE `.inner.wv`;
+
+DROP TABLE wv;
+DROP TABLE mt;

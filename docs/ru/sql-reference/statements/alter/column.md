@@ -10,7 +10,7 @@ toc_title: "Манипуляции со столбцами"
 Синтаксис:
 
 ``` sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|MODIFY|MATERIALIZE COLUMN ...
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
 ```
 
 В запросе можно указать сразу несколько действий над одной таблицей через запятую.
@@ -138,6 +138,7 @@ ALTER TABLE visits COMMENT COLUMN browser 'Столбец показывает, 
 
 ``` sql
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [AFTER name_after | FIRST]
+ALTER COLUMN [IF EXISTS] name TYPE [type] [default_expr] [codec] [TTL] [AFTER name_after | FIRST]
 ```
 
 Запрос изменяет следующие свойства столбца `name`:

@@ -416,7 +416,7 @@ ASTPtr InterpreterCreateQuery::formatConstraints(const ConstraintsDescription & 
 {
     auto res = std::make_shared<ASTExpressionList>();
 
-    for (const auto & constraint : constraints.constraints)
+    for (const auto & constraint : constraints.getConstraints())
         res->children.push_back(constraint->clone());
 
     return res;
@@ -564,11 +564,12 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
 
 ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(const ASTExpressionList * constraints)
 {
-    ConstraintsDescription res;
+    ASTs constraints_data;
     if (constraints)
         for (const auto & constraint : constraints->children)
-            res.constraints.push_back(std::dynamic_pointer_cast<ASTConstraintDeclaration>(constraint->clone()));
-    return res;
+            constraints_data.push_back(constraint->clone());
+
+    return ConstraintsDescription{constraints_data};
 }
 
 
@@ -754,6 +755,11 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         if (as_create.is_live_view)
             throw Exception(
                 "Cannot CREATE a table AS " + qualified_name + ", it is a Live View",
+                ErrorCodes::INCORRECT_QUERY);
+
+        if (as_create.is_window_view)
+            throw Exception(
+                "Cannot CREATE a table AS " + qualified_name + ", it is a Window View",
                 ErrorCodes::INCORRECT_QUERY);
 
         if (as_create.is_dictionary)
@@ -1022,6 +1028,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                     "{} {}.{} already exists", storage_name, backQuoteIfNeed(create.getDatabase()), backQuoteIfNeed(create.getTable()));
         }
 
+
         data_path = database->getTableDataPath(create);
 
         if (!create.attach && !data_path.empty() && fs::exists(fs::path{getContext()->getPath()} / data_path))
@@ -1237,7 +1244,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
 {
     /// If the query is a CREATE SELECT, insert the data into the table.
     if (create.select && !create.attach
-        && !create.is_ordinary_view && !create.is_live_view && (!create.is_materialized_view || create.is_populate))
+        && !create.is_ordinary_view && !create.is_live_view && !create.is_window_view && (!create.is_materialized_view || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
         insert->table_id = {create.getDatabase(), create.getTable(), create.uuid};

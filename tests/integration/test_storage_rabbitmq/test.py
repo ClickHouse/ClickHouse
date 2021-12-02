@@ -19,7 +19,8 @@ from . import rabbitmq_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/rabbitmq.xml', 'configs/macros.xml'],
+                                main_configs=['configs/rabbitmq.xml', 'configs/macros.xml', 'configs/named_collection.xml'],
+                                user_configs=['configs/users.xml'],
                                 with_rabbitmq=True)
 
 
@@ -78,6 +79,7 @@ def test_rabbitmq_select(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{}:5672',
                      rabbitmq_exchange_name = 'select',
+                     rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'JSONEachRow',
                      rabbitmq_row_delimiter = '\\n';
         '''.format(rabbitmq_cluster.rabbitmq_host))
@@ -113,6 +115,7 @@ def test_rabbitmq_select_empty(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{}:5672',
                      rabbitmq_exchange_name = 'empty',
+                     rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
         '''.format(rabbitmq_cluster.rabbitmq_host))
@@ -125,6 +128,7 @@ def test_rabbitmq_json_without_delimiter(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{}:5672',
+                     rabbitmq_commit_on_select = 1,
                      rabbitmq_exchange_name = 'json',
                      rabbitmq_format = 'JSONEachRow'
         '''.format(rabbitmq_cluster.rabbitmq_host))
@@ -167,6 +171,7 @@ def test_rabbitmq_csv_with_delimiter(rabbitmq_cluster):
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'csv',
+                     rabbitmq_commit_on_select = 1,
                      rabbitmq_format = 'CSV',
                      rabbitmq_row_delimiter = '\\n';
         ''')
@@ -202,6 +207,7 @@ def test_rabbitmq_tsv_with_delimiter(rabbitmq_cluster):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = 'tsv',
                      rabbitmq_format = 'TSV',
+                     rabbitmq_commit_on_select = 1,
                      rabbitmq_queue_base = 'tsv',
                      rabbitmq_row_delimiter = '\\n';
         CREATE TABLE test.view (key UInt64, value UInt64)
@@ -238,6 +244,7 @@ def test_rabbitmq_macros(rabbitmq_cluster):
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = '{rabbitmq_host}:{rabbitmq_port}',
+                     rabbitmq_commit_on_select = 1,
                      rabbitmq_exchange_name = '{rabbitmq_exchange_name}',
                      rabbitmq_format = '{rabbitmq_format}'
         ''')
@@ -2224,6 +2231,23 @@ def test_rabbitmq_random_detach(rabbitmq_cluster):
 
     for thread in threads:
         thread.join()
+
+
+def test_rabbitmq_predefined_configuration(rabbitmq_cluster):
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters(rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, '/', credentials)
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    instance.query('''
+        CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
+            ENGINE = RabbitMQ(rabbit1, rabbitmq_vhost = '/') ''')
+
+    channel.basic_publish(exchange='named', routing_key='', body=json.dumps({'key': 1, 'value': 2}))
+    while True:
+        result = instance.query('SELECT * FROM test.rabbitmq ORDER BY key', ignore_error=True)
+        if result == "1\t2\n":
+            break
 
 
 if __name__ == '__main__':
