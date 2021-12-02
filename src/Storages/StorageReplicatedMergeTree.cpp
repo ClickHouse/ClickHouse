@@ -3313,7 +3313,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     /// It's quite dangerous, so clone covered parts to detached.
     auto broken_part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
-    auto partition_range = getDataPartsPartitionRange(broken_part_info.partition_id);
+    auto partition_range = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, broken_part_info.partition_id);
     for (const auto & part : partition_range)
     {
         if (!broken_part_info.contains(part->info))
