@@ -117,11 +117,14 @@ def prepare_for_hung_check(drop_databases):
             try:
                 # Here we try to drop all databases in async mode. If some queries really hung, than drop will hung too.
                 # Otherwise we will get rid of queries which wait for background pool. It can take a long time on slow builds (more than 900 seconds).
-                databases = check_output('clickhouse client -q "SHOW DATABASES"', shell=True, timeout=30).decode('utf-8').strip().split()
+                #
+                # Also specify max_untracked_memory to allow 100MiB of memory to overcommit.
+                databases = check_output('clickhouse client -q "SHOW DATABASES" --max_untracked_memory=100Mi',
+                    shell=True, timeout=30).decode('utf-8').strip().split()
                 for db in databases:
                     if db == "system":
                         continue
-                    command = f'clickhouse client -q "DROP DATABASE {db}"'
+                    command = f'clickhouse client -q "DROP DATABASE {db}" --max_untracked_memory=100Mi'
                     # we don't wait for drop
                     Popen(command, shell=True)
                 break
