@@ -180,6 +180,8 @@ QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
     for (auto & context : interpreter_context)
         last_pipeline->addInterpreterContext(std::move(context));
 
+    last_pipeline->setProcessListElement(build_pipeline_settings.process_list_element);
+
     return last_pipeline;
 }
 
