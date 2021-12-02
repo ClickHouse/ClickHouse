@@ -179,4 +179,7 @@ if __name__ == "__main__":
     ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
 
     if state != 'success':
-        sys.exit(1)
+        if 'force-tests' in pr_info.labels:
+            print("'force-tests' enabled, will report success")
+        else:
+            sys.exit(1)
