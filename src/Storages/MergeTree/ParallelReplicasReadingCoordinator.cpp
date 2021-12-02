@@ -25,10 +25,8 @@ namespace DB
 class ParallelReplicasReadingCoordinator::Impl
 {
 public:
-
     using PartitionReadRequestPtr = std::unique_ptr<PartitionReadRequest>;
-
-    using PartToMarkRanges = std::map<String, HalfIntervals>;
+    using PartToMarkRanges = std::map<PartToRead::PartAndProjectionNames, HalfIntervals>;
 
     struct PartitionReading
     {
@@ -56,11 +54,15 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
         LOG_TRACE(&Poco::Logger::get("ParallelReplicasReadingCoordinator"), "Time for handling request: {}ns", watch.elapsed());
     });
 
+    PartToRead::PartAndProjectionNames part_and_projection
+    {
+        .part = request.part_name,
+        .projection = request.projection_name
+    };
+
     /// We are the first who wants to process parts in partition
     if (partition_it == partitions.end())
     {
-        auto part_and_projection = request.part_name + "#" + request.projection_name;
-
         PartitionReading partition_reading;
 
         PartToRead part_to_read;
@@ -83,7 +85,6 @@ PartitionReadResponse ParallelReplicasReadingCoordinator::Impl::handleRequest(Pa
 
     auto & partition_reading = partition_it->second;
 
-    auto part_and_projection = request.part_name + "#" + request.projection_name;
     PartToRead part_to_read;
     part_to_read.range = request.block_range;
     part_to_read.name = part_and_projection;

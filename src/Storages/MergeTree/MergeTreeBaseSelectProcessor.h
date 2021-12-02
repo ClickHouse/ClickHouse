@@ -135,6 +135,7 @@ private:
     /// deny the whole request. In the latter case it creates new task and retries.
     /// Then it calls finalizeNewTask() to create readers for a task if it is needed.
     bool getNewTask();
+    bool getNewTaskParallelReading();
 
     /// After PK analysis the range of marks could be extremely big
     /// We divide this range to a set smaller consequtive ranges

@@ -42,6 +42,12 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
     }
     else if (extension.has_value())
     {
+        /// Parallel reading from replicas is enabled.
+        /// We try to estimate the average number of bytes in a granule
+        /// to make one request over the network per one gigabyte of data
+        /// Actually we will ask MergeTreeReadPool to provide us heavier tasks to read
+        /// because the most part of each task will be postponed
+        /// (due to using consistent hash for better cache affinity)
         size_t sum_average_marks_size = 0;
         auto column_sizes = storage.getColumnSizes();
         for (const auto & name : extension->colums_to_read)
@@ -60,7 +66,7 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
         if (sum_average_marks_size == 0)
             sum_average_marks_size = 8UL * 1024 * 1024 * 10; // 10Mib
 
-        min_marks_to_read = extension->count_participating_replicas * (8UL * 1024 * 1024 * 1024) / sum_average_marks_size;
+        min_marks_to_read = extension->count_participating_replicas * (/*1Gb*/ 8UL * 1024 * 1024 * 1024) / sum_average_marks_size;
     }
     else
     {

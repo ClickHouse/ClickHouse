@@ -180,61 +180,61 @@ TEST(Coordinator, PartIntersections)
     {
         PartSegments boundaries;
 
-        boundaries.addPart(PartToRead{{1, 1}, "Test"});
-        boundaries.addPart(PartToRead{{2, 2}, "Test"});
-        boundaries.addPart(PartToRead{{3, 3}, "Test"});
-        boundaries.addPart(PartToRead{{4, 4}, "Test"});
+        boundaries.addPart(PartToRead{{1, 1}, {"TestPart", "TestProjection"}});
+        boundaries.addPart(PartToRead{{2, 2}, {"TestPart", "TestProjection"}});
+        boundaries.addPart(PartToRead{{3, 3}, {"TestPart", "TestProjection"}});
+        boundaries.addPart(PartToRead{{4, 4}, {"TestPart", "TestProjection"}});
 
-        ASSERT_EQ(boundaries.getIntersectionResult({{1, 4}, "Test"}), PartSegments::IntersectionResult::REJECT);
-        ASSERT_EQ(boundaries.getIntersectionResult({{0, 5}, "Test"}), PartSegments::IntersectionResult::REJECT);
-        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, "Test"}), PartSegments::IntersectionResult::EXACTLY_ONE_INTERSECTION);
-        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, "ClickHouse"}), PartSegments::IntersectionResult::REJECT);
-        ASSERT_EQ(boundaries.getIntersectionResult({{1, 2}, "Test"}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 4}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{0, 5}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::EXACTLY_ONE_INTERSECTION);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, {"ClickHouse", "AnotherProjection"}}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 2}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::REJECT);
 
-        boundaries.addPart(PartToRead{{5, 5}, "Test"});
-        boundaries.addPart(PartToRead{{0, 0}, "Test"});
+        boundaries.addPart(PartToRead{{5, 5}, {"TestPart", "TestProjection"}});
+        boundaries.addPart(PartToRead{{0, 0}, {"TestPart", "TestProjection"}});
 
-        ASSERT_EQ(boundaries.getIntersectionResult({{0, 5}, "Test"}), PartSegments::IntersectionResult::REJECT);
-        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, "Test"}), PartSegments::IntersectionResult::EXACTLY_ONE_INTERSECTION);
-        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, "ClickHouse"}), PartSegments::IntersectionResult::REJECT);
-        ASSERT_EQ(boundaries.getIntersectionResult({{1, 2}, "Test"}), PartSegments::IntersectionResult::REJECT);
-        ASSERT_EQ(boundaries.getIntersectionResult({{0, 3}, "Test"}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{0, 5}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::EXACTLY_ONE_INTERSECTION);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, {"ClickHouse", "AnotherProjection"}}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 2}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{0, 3}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::REJECT);
     }
 
     {
         PartSegments boundaries;
-        boundaries.addPart(PartToRead{{1, 3}, "Test"});
-        boundaries.addPart(PartToRead{{3, 5}, "Test"});
+        boundaries.addPart(PartToRead{{1, 3}, {"TestPart", "TestProjection"}});
+        boundaries.addPart(PartToRead{{4, 5}, {"TestPart", "TestProjection"}});
 
-        ASSERT_EQ(boundaries.getIntersectionResult({{2, 4}, "Test"}), PartSegments::IntersectionResult::REJECT);
-        ASSERT_EQ(boundaries.getIntersectionResult({{0, 6}, "Test"}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{2, 4}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{0, 6}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::REJECT);
     }
 
     {
         PartSegments boundaries;
-        boundaries.addPart(PartToRead{{1, 3}, "Test"});
-        boundaries.addPart(PartToRead{{4, 6}, "Test"});
-        boundaries.addPart(PartToRead{{7, 9}, "Test"});
+        boundaries.addPart(PartToRead{{1, 3}, {"TestPart", "TestProjection"}});
+        boundaries.addPart(PartToRead{{4, 6}, {"TestPart", "TestProjection"}});
+        boundaries.addPart(PartToRead{{7, 9}, {"TestPart", "TestProjection"}});
 
-        ASSERT_EQ(boundaries.getIntersectionResult({{2, 8}, "Test"}), PartSegments::IntersectionResult::REJECT);
-        ASSERT_EQ(boundaries.getIntersectionResult({{4, 6}, "Test"}), PartSegments::IntersectionResult::EXACTLY_ONE_INTERSECTION);
-        ASSERT_EQ(boundaries.getIntersectionResult({{3, 7}, "Test"}), PartSegments::IntersectionResult::REJECT);
-        ASSERT_EQ(boundaries.getIntersectionResult({{5, 7}, "Test"}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{2, 8}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{4, 6}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::EXACTLY_ONE_INTERSECTION);
+        ASSERT_EQ(boundaries.getIntersectionResult({{3, 7}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{5, 7}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::REJECT);
     }
 
     {
         PartSegments boundaries;
 
-        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, "Test"}), PartSegments::IntersectionResult::NO_INTERSECTION);
-        ASSERT_EQ(boundaries.getIntersectionResult({{1, 3}, "Test"}), PartSegments::IntersectionResult::NO_INTERSECTION);
-        ASSERT_EQ(boundaries.getIntersectionResult({{0, 100500}, "Test"}), PartSegments::IntersectionResult::NO_INTERSECTION);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::NO_INTERSECTION);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 3}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::NO_INTERSECTION);
+        ASSERT_EQ(boundaries.getIntersectionResult({{0, 100500}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::NO_INTERSECTION);
 
-        boundaries.addPart(PartToRead{{1, 1}, "Test"});
-        boundaries.addPart(PartToRead{{2, 2}, "Test"});
-        boundaries.addPart(PartToRead{{3, 3}, "Test"});
+        boundaries.addPart(PartToRead{{1, 1}, {"TestPart", "TestProjection"}});
+        boundaries.addPart(PartToRead{{2, 2}, {"TestPart", "TestProjection"}});
+        boundaries.addPart(PartToRead{{3, 3}, {"TestPart", "TestProjection"}});
 
-        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, "Test"}), PartSegments::IntersectionResult::EXACTLY_ONE_INTERSECTION);
-        ASSERT_EQ(boundaries.getIntersectionResult({{1, 3}, "Test"}), PartSegments::IntersectionResult::REJECT);
-        ASSERT_EQ(boundaries.getIntersectionResult({{100, 100500}, "Test"}), PartSegments::IntersectionResult::NO_INTERSECTION);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 1}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::EXACTLY_ONE_INTERSECTION);
+        ASSERT_EQ(boundaries.getIntersectionResult({{1, 3}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::REJECT);
+        ASSERT_EQ(boundaries.getIntersectionResult({{100, 100500}, {"TestPart", "TestProjection"}}), PartSegments::IntersectionResult::NO_INTERSECTION);
     }
 }

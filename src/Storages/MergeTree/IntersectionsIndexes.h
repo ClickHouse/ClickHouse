@@ -15,7 +15,23 @@ namespace ErrorCodes
 struct PartToRead
 {
     PartBlockRange range;
-    String name;
+    struct PartAndProjectionNames
+    {
+        String part;
+        String projection;
+        bool operator<(const PartAndProjectionNames & rhs) const
+        {
+            if (part == rhs.part)
+                return projection < rhs.projection;
+            return part < rhs.part;
+        }
+        bool operator==(const PartAndProjectionNames & rhs) const
+        {
+            return part == rhs.part && projection == rhs.projection;
+        }
+    };
+
+    PartAndProjectionNames name;
 
     bool operator==(const PartToRead & rhs) const
     {
@@ -25,13 +41,19 @@ struct PartToRead
     bool operator<(const PartToRead & rhs) const
     {
         /// We allow only consecutive non-intersecting ranges
-        if (rhs.range.begin > range.begin && rhs.range.begin < range.end)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Bad ranges");
+        const bool intersection =
+            (range.begin <= rhs.range.begin && rhs.range.begin < range.end) ||
+            (rhs.range.begin <= range.begin && range.begin <= rhs.range.end);
+        if (intersection)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Got intersecting parts. First [{}, {}]. Second [{}, {}]",
+                range.begin, range.end, rhs.range.begin, rhs.range.end);
         return range.begin < rhs.range.begin && range.end <= rhs.range.begin;
     }
 };
 
-
+/// MergeTreeDataPart is described as a segment (min block and max block)
+/// During request handling we have to know how many intersection
+/// current part has with already saved parts in our state.
 struct PartSegments
 {
     enum class IntersectionResult
@@ -86,12 +108,12 @@ struct PartSegments
 /// This is used only in parallel reading from replicas
 /// This struct is an ordered set of half intervals and it is responsible for
 /// giving an inversion of that intervals (e.g. [a, b) => {[-inf, a), [b, +inf)})
-/// Or you can insersect two sets of half-intervals.
+/// or giving an intersection of two sets of intervals
 /// This is needed, because MarkRange is actually a half-opened interval
-/// and during the query execution we receive some kind of request from everty replica
+/// and during the query execution we receive some kind of request from every replica
 /// to read some ranges from a specific part.
 /// We have to avoid the situation, where some range is read twice.
-/// This struct helps us to do it using only two operations (intersection and negation)
+/// This struct helps us to do it using only two operations (intersection and inversion)
 /// over a set of half opened intervals.
 struct HalfIntervals
 {

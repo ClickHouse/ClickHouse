@@ -88,7 +88,12 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
         }
         return false;
     }
+    return getNewTaskParallelReading();
+}
 
+
+bool MergeTreeBaseSelectProcessor::getNewTaskParallelReading()
+{
     if (getTaskFromBuffer())
         return true;
 
@@ -97,17 +102,12 @@ bool MergeTreeBaseSelectProcessor::getNewTask()
 
     while (true)
     {
-        auto res = getNewTaskImpl();
-
         /// The end of execution. No task.
-        if (!res)
+        if (!getNewTaskImpl())
         {
             no_more_tasks = true;
             return getDelayedTasks();
         }
-
-        if (task->mark_ranges.empty())
-            continue;
 
         splitCurrentTaskRangesAndFillBuffer();
 
@@ -686,7 +686,6 @@ void MergeTreeBaseSelectProcessor::splitCurrentTaskRangesAndFillBuffer()
                 buffered_ranges.emplace_back();
                 current_batch_size = 0;
             }
-
         };
 
         expand_if_needed();
@@ -716,11 +715,8 @@ void MergeTreeBaseSelectProcessor::splitCurrentTaskRangesAndFillBuffer()
         if (range.end - current_begin > 0)
         {
             auto current_range = MarkRange{current_begin, range.end};
-
             buffered_ranges.back().push_back(current_range);
             current_batch_size += range.end - current_begin;
-
-            /// Do not need to update current_begin and current_end
 
             expand_if_needed();
         }
