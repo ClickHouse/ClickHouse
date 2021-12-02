@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP FUNCTION IF EXISTS 02125_function;
 CREATE FUNCTION 02125_function AS x -> 02125_function(x);
 SELECT 02125_function(1); --{serverError 1};
