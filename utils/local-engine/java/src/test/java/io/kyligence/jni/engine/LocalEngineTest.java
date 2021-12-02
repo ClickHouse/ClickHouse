@@ -1,6 +1,9 @@
 package io.kyligence.jni.engine;
 
 
+import org.apache.arrow.vector.ipc.ArrowFileReader;
+import org.apache.arrow.vector.ipc.SeekableReadChannel;
+import org.apache.arrow.vector.ipc.message.ArrowRecordBatch;
 import org.apache.commons.io.IOUtils;
 import org.junit.Assert;
 import org.junit.Before;

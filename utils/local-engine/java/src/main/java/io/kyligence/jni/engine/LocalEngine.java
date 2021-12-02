@@ -16,8 +16,8 @@ public class LocalEngine implements Closeable {
         System.out.println(result);
     }
 
-    public long nativeExecutor;
-    public byte[] plan;
+    private long nativeExecutor;
+    private byte[] plan;
 
     public LocalEngine(byte[] plan) {
         this.plan = plan;
@@ -28,6 +28,7 @@ public class LocalEngine implements Closeable {
     public native boolean hasNext();
 
     public native byte[] next();
+
 
     @Override
     public native void close() throws IOException;

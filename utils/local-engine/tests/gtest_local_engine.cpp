@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <Parser/SerializedPlanParser.h>
 #include <Builder/SerializedPlanBuilder.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <iostream>
 #include "testConfig.h"
 #include <fstream>
@@ -38,6 +39,19 @@ TEST(TestSelect, ReadRel)
         std::string arrow_chunk = local_executor.next();
         ASSERT_GT(arrow_chunk.size(), 0);
     }
+}
+
+TEST(TestSelect, MergeTreeWriteTest)
+{
+    DB::StorageID id("default", "test");
+    std::string relative_path = TEST_DATA(/data/mergetree);
+    DB::StorageInMemoryMetadata storage_in_memory_metadata;
+    auto shared = DB::Context::createShared();
+    auto global = DB::Context::createGlobal(shared.get());
+    auto merging_params = DB::MergeTreeData::MergingParams();
+    auto storage_setting = std::make_unique<DB::MergeTreeSettings>();
+
+//    DB::MergeTreeData(id, relative_path, storage_in_memory_metadata, global, "", merging_params, std::move(storage_setting), false, false, nullptr);
 }
 
 int main(int argc, char **argv)
