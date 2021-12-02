@@ -360,7 +360,7 @@ def test_predefined_connection_configuration(started_cluster):
     cursor.execute(f'CREATE TABLE test_table (key integer PRIMARY KEY, value integer)')
     cursor.execute(f'INSERT INTO test_table SELECT 1, 2')
 
-    instance.query("CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1)")
+    instance.query("CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1) SETTINGS materialized_postgresql_tables_list='test_table'")
     check_tables_are_synchronized("test_table");
     drop_materialized_db()
     cursor.execute('DROP TABLE IF EXISTS test_table')
