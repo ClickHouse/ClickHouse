@@ -4,9 +4,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# TCP CLIENT: As of today (22/11/21) uses PullingAsyncPipelineExecutor
+MAX_PROCESS_WAIT=5
+
+# TCP CLIENT: As of today (02/12/21) uses PullingAsyncPipelineExecutor
 ### Should be cancelled after 1 second and return a 159 exception (timeout)
-timeout -s KILL 5 $CLICKHOUSE_CLIENT --max_execution_time 1 -q \
+timeout -s KILL $MAX_PROCESS_WAIT $CLICKHOUSE_CLIENT --max_execution_time 1 -q \
     "SELECT * FROM
     (
         SELECT a.name as n
@@ -23,7 +25,7 @@ timeout -s KILL 5 $CLICKHOUSE_CLIENT --max_execution_time 1 -q \
     FORMAT Null" 2>&1 | grep -o "Code: 159" | sort | uniq
 
 ### Should stop pulling data and return what has been generated already (return code 0)
-timeout -s KILL 5 $CLICKHOUSE_CLIENT -q \
+timeout -s KILL $MAX_PROCESS_WAIT $CLICKHOUSE_CLIENT -q \
     "SELECT a.name as n
      FROM
      (
@@ -38,9 +40,9 @@ timeout -s KILL 5 $CLICKHOUSE_CLIENT -q \
 echo $?
 
 
-# HTTP CLIENT: As of today (22/11/21) uses PullingPipelineExecutor
+# HTTP CLIENT: As of today (02/12/21) uses PullingPipelineExecutor
 ### Should be cancelled after 1 second and return a 159 exception (timeout)
-${CLICKHOUSE_CURL} -q --max-time 5 -sS "$CLICKHOUSE_URL&max_execution_time=1" -d \
+${CLICKHOUSE_CURL} -q --max-time $MAX_PROCESS_WAIT -sS "$CLICKHOUSE_URL&max_execution_time=1" -d \
     "SELECT * FROM
     (
         SELECT a.name as n
@@ -58,7 +60,7 @@ ${CLICKHOUSE_CURL} -q --max-time 5 -sS "$CLICKHOUSE_URL&max_execution_time=1" -d
 
 
 ### Should stop pulling data and return what has been generated already (return code 0)
-${CLICKHOUSE_CURL} -q --max-time 5 -sS "$CLICKHOUSE_URL" -d \
+${CLICKHOUSE_CURL} -q --max-time $MAX_PROCESS_WAIT -sS "$CLICKHOUSE_URL" -d \
     "SELECT a.name as n
           FROM
           (
