@@ -3877,7 +3877,7 @@ void MergeTreeData::dropDetached(const ASTPtr & partition, bool part, ContextPtr
     for (auto & [old_name, new_name, disk] : renamed_parts.old_and_new_names)
     {
         bool keep_shared = removeSharedDetachedPart(disk, fs::path(relative_data_path) / "detached" / new_name / "", old_name,
-            zookeeper_name, replica_name, zookeeper_path);
+            zookeeper_name, replica_name, zookeeper_path, supportsReplication());
         LOG_DEBUG(log, "Dropped detached part {}, keep shared data: {}", old_name, keep_shared);
         old_name.clear();
     }
@@ -5299,8 +5299,9 @@ bool MergeTreeData::removeSharedDetachedPart(DiskPtr disk, const String & path, 
     if (disk->supportZeroCopyReplication())
     {
         FreezeMetaData meta;
-        if (meta.load(disk, path) && meta.is_replicated)
-            return removeSharedDetachedPart(disk, path, part_name, meta.zookeeper_name, meta.replica_name, "");
+        if (meta.load(disk, path))
+            return removeSharedDetachedPart(disk, path, part_name, meta.zookeeper_name, meta.replica_name,
+                    "", meta.is_replicated);
     }
 
     disk->removeSharedRecursive(path, keep_shared);
@@ -5309,20 +5310,31 @@ bool MergeTreeData::removeSharedDetachedPart(DiskPtr disk, const String & path, 
 }
 
 bool MergeTreeData::removeSharedDetachedPart(DiskPtr disk, const String & path, const String & part_name,
-    const String & zookeeper_name, const String & replica_name, const String & zookeeper_path)
+    const String & zookeeper_name, const String & replica_name, const String & zookeeper_path, bool is_replicated)
 {
     bool keep_shared = false;
 
-    if (disk->supportZeroCopyReplication())
+    if (is_replicated && disk->supportZeroCopyReplication())
     {
+        static constexpr auto default_zookeeper_name = "default";
         zkutil::ZooKeeperPtr zookeeper;
-        if (zookeeper_name == "default")
+        if (zookeeper_name == default_zookeeper_name)
         {
             zookeeper = getContext()->getZooKeeper();
         }
         else
         {
-            zookeeper = getContext()->getAuxiliaryZooKeeper(zookeeper_name);
+            try
+            {
+                zookeeper = getContext()->getAuxiliaryZooKeeper(zookeeper_name);
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() != ErrorCodes::BAD_ARGUMENTS)
+                    throw;
+                /// No more stored non-default zookeeper
+                zookeeper = nullptr;
+            }
         }
 
         if (zookeeper)
