@@ -234,6 +234,9 @@ function build
         time ninja clickhouse-bundle 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee "$FASTTEST_OUTPUT/build_log.txt"
         if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
             cp programs/clickhouse "$FASTTEST_OUTPUT/clickhouse"
+
+            strip programs/clickhouse -o "$FASTTEST_OUTPUT/clickhouse-stripped"
+            gzip "$FASTTEST_OUTPUT/clickhouse-stripped"
         fi
         ccache --show-stats ||:
     )
