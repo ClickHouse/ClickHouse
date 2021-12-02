@@ -104,7 +104,6 @@ void PipelineExecutor::execute(size_t num_threads)
 
 bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 {
-    checkTimeLimitSoft();
     if (!is_execution_initialized)
     {
         initializeExecution(1);
