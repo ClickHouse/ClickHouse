@@ -22,7 +22,6 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTWindowDefinition.h>
-#include <Parsers/IAST.h>
 #include <Parsers/ASTAssignment.h>
 
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -35,7 +34,6 @@
 #include <Parsers/ParserCreateQuery.h>
 
 #include <Parsers/queryToString.h>
-#include <boost/algorithm/string.hpp>
 #include "ASTColumnsMatcher.h"
 
 #include <Interpreters/StorageID.h>
@@ -48,6 +46,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int SYNTAX_ERROR;
     extern const int LOGICAL_ERROR;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int TYPE_MISMATCH;
 }
 
 
@@ -1935,7 +1935,13 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
         {
             if (const auto * func = lambda->as<ASTFunction>(); func && func->name == "lambda")
             {
+                if (func->arguments->children.size() != 2)
+                    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "lambda requires two arguments");
+
                 const auto * lambda_args_tuple = func->arguments->children.at(0)->as<ASTFunction>();
+                if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
+                    throw Exception(ErrorCodes::TYPE_MISMATCH, "First argument of lambda must be a tuple");
+
                 const ASTs & lambda_arg_asts = lambda_args_tuple->arguments->children;
                 if (lambda_arg_asts.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "APPLY column transformer can only accept lambda with one argument");
