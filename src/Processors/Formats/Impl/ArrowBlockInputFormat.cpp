@@ -64,6 +64,8 @@ Chunk ArrowBlockInputFormat::generate()
 
     ++record_batch_current;
 
+    arrow_column_to_ch_column->arrowTableToCHChunk(res, *table_result);
+
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
     if (format_settings.defaults_for_omitted_fields)
