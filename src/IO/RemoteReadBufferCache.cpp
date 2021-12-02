@@ -22,7 +22,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int BAD_GET;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_CREATE_DIRECTORY;
 }
@@ -322,7 +321,7 @@ bool RemoteReadBuffer::nextImpl()
 off_t RemoteReadBuffer::seek(off_t offset, int whence)
 {
     /*
-     * Need to wait here. For example, the current file has been download at position X, but here we try to seek to 
+     * Need to wait here. For example, the current file has been download at position X, but here we try to seek to
      * postition Y ( Y > X), it would fail.
      */
     file_cache_controller->waitMoreData(offset, offset + file_buffer->internalBuffer().size());
