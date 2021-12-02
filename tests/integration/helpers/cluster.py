@@ -1410,6 +1410,8 @@ class ClickHouseCluster:
                 logging.debug("Can't connect to Azurite: %s", str(ex))
                 time.sleep(1)
 
+        raise Exception("Can't wait Azurite to start")
+
     def wait_schema_registry_to_start(self, timeout=180):
         sr_client = CachedSchemaRegistryClient({"url":'http://localhost:{}'.format(self.schema_registry_port)})
         start = time.time()
