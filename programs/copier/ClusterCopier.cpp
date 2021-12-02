@@ -1089,7 +1089,7 @@ bool ClusterCopier::tryProcessTable(const ConnectionTimeouts & timeouts, TaskTab
     else
     {
         /// Delete helping tables in case that whole table is done
-        // dropHelpingTables(task_table);
+        dropHelpingTables(task_table);
     }
 
     return table_is_done;
