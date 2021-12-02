@@ -63,7 +63,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     PPC_SUFFIX = '-ppc64le'
 
     result = []
-    cmake_flags = ['$CMAKE_FLAGS', '-DADD_GDB_INDEX_FOR_GOLD=1']
+    cmake_flags = ['$CMAKE_FLAGS']
 
     is_clang = compiler.startswith(CLANG_PREFIX)
     is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
@@ -72,11 +72,6 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     is_cross_ppc = compiler.endswith(PPC_SUFFIX)
     is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
     is_cross_compile = is_cross_darwin or is_cross_darwin_arm or is_cross_arm or is_cross_freebsd or is_cross_ppc
-
-    # Explicitly use LLD with Clang by default.
-    # Don't force linker for cross-compilation.
-    if is_clang and not is_cross_compile:
-        cmake_flags.append("-DLINKER_NAME=ld.lld")
 
     if is_cross_darwin:
         cc = compiler[:-len(DARWIN_SUFFIX)]

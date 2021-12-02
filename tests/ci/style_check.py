@@ -3,10 +3,9 @@ import logging
 import subprocess
 import os
 import csv
-import json
 from github import Github
 from s3_helper import S3Helper
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
@@ -46,6 +45,7 @@ def process_result(result_folder):
             state, description = "error", "Failed to read test_results.tsv"
         return state, description, test_results, additional_files
 
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
@@ -54,9 +54,7 @@ if __name__ == "__main__":
     repo_path = os.path.join(os.getenv("GITHUB_WORKSPACE", os.path.abspath("../../")))
     temp_path = os.path.join(os.getenv("RUNNER_TEMP", os.path.abspath("./temp")), 'style_check')
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
-        event = json.load(event_file)
-    pr_info = PRInfo(event)
+    pr_info = PRInfo(get_event())
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)

@@ -3,12 +3,11 @@
 import logging
 import subprocess
 import os
-import json
 import csv
 import sys
 
 from github import Github
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
@@ -64,10 +63,7 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
-        event = json.load(event_file)
-
-    pr_info = PRInfo(event)
+    pr_info = PRInfo(get_event())
 
     gh = Github(get_best_robot_token())
 
@@ -147,4 +143,7 @@ if __name__ == "__main__":
 
     # Refuse other checks to run if fast test failed
     if state != 'success':
-        sys.exit(1)
+        if 'force-tests' in pr_info.labels:
+            print("'force-tests' enabled, will report success")
+        else:
+            sys.exit(1)

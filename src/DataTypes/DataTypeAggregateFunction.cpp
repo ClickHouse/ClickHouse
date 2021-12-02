@@ -15,8 +15,8 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB

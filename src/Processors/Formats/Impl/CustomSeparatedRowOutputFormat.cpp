@@ -89,6 +89,8 @@ void registerOutputFormatCustomSeparated(FormatFactory & factory)
         {
             return std::make_shared<CustomSeparatedRowOutputFormat>(sample, buf, params, settings, with_names, with_types);
         });
+
+        factory.markOutputFormatSupportsParallelFormatting(format_name);
     };
 
     registerWithNamesAndTypes("CustomSeparated", register_func);

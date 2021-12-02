@@ -3,16 +3,14 @@
 import logging
 import subprocess
 import os
-import json
 import sys
 
 from github import Github
 
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
-from ci_config import build_config_to_string
-from build_download_helper import get_build_config_for_check, get_build_urls
+from pr_info import PRInfo, get_event
+from build_download_helper import get_build_name_for_check, get_build_urls
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
@@ -45,20 +43,15 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
-        event = json.load(event_file)
-
-    pr_info = PRInfo(event)
+    pr_info = PRInfo(get_event())
 
     gh = Github(get_best_robot_token())
 
     docker_image = get_image_with_version(temp_path, IMAGE_NAME)
 
-    build_config = get_build_config_for_check(check_name)
-    print(build_config)
-    build_config_str = build_config_to_string(build_config)
-    print(build_config_str)
-    urls = get_build_urls(build_config_str, reports_path)
+    build_name = get_build_name_for_check(check_name)
+    print(build_name)
+    urls = get_build_urls(build_name, reports_path)
     if not urls:
         raise Exception("No build URLs found")
 

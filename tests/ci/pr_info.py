@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import os
 import urllib
 
@@ -6,7 +7,7 @@ import requests
 from unidiff import PatchSet
 
 
-DIFF_IN_DOCUMENTATION_EXT = [".html", ".md", ".yml", ".txt", ".css", ".js", ".xml", ".ico", ".conf", ".svg", ".png", ".jpg", ".py", ".sh"]
+DIFF_IN_DOCUMENTATION_EXT = [".html", ".md", ".yml", ".txt", ".css", ".js", ".xml", ".ico", ".conf", ".svg", ".png", ".jpg", ".py", ".sh", ".json"]
 
 def get_pr_for_commit(sha, ref):
     try_get_pr_url = f"https://api.github.com/repos/{os.getenv('GITHUB_REPOSITORY', 'ClickHouse/ClickHouse')}/commits/{sha}/pulls"
@@ -27,6 +28,12 @@ def get_pr_for_commit(sha, ref):
     except Exception as ex:
         print("Cannot fetch PR info from commit", ex)
     return None
+
+
+def get_event():
+    with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as ef:
+        return json.load(ef)
+
 
 class PRInfo:
     def __init__(self, github_event, need_orgs=False, need_changed_files=False):
@@ -132,7 +139,9 @@ class PRInfo:
 
         for f in self.changed_files:
             _, ext = os.path.splitext(f)
-            if ext in DIFF_IN_DOCUMENTATION_EXT or 'Dockerfile' in f:
+            path_in_docs = 'docs' in f
+            path_in_website = 'website' in f
+            if (ext in DIFF_IN_DOCUMENTATION_EXT and (path_in_docs or path_in_website)) or 'docker/docs' in f:
                 return True
         return False
 

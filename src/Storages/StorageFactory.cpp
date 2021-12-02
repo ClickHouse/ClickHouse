@@ -101,6 +101,10 @@ StoragePtr StorageFactory::get(
         {
             name = "MaterializedView";
         }
+        else if (query.is_window_view)
+        {
+            name = "WindowView";
+        }
         else
         {
             if (!storage_def)
@@ -133,6 +137,12 @@ StoragePtr StorageFactory::get(
             {
                 throw Exception(
                     "Direct creation of tables with ENGINE LiveView is not supported, use CREATE LIVE VIEW statement",
+                    ErrorCodes::INCORRECT_QUERY);
+            }
+            else if (name == "WindowView")
+            {
+                throw Exception(
+                    "Direct creation of tables with ENGINE WindowView is not supported, use CREATE WINDOW VIEW statement",
                     ErrorCodes::INCORRECT_QUERY);
             }
 
