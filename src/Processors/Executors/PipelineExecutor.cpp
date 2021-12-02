@@ -104,7 +104,7 @@ void PipelineExecutor::execute(size_t num_threads)
 
 bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
 {
-    checkTimeLimit();
+    checkTimeLimitSoft();
     if (!is_execution_initialized)
     {
         initializeExecution(1);
@@ -128,11 +128,11 @@ bool PipelineExecutor::executeStep(std::atomic_bool * yield_flag)
     return false;
 }
 
-bool PipelineExecutor::checkTimeLimit()
+bool PipelineExecutor::checkTimeLimitSoft()
 {
     if (process_list_element)
     {
-        bool continuing = process_list_element->checkTimeLimit();
+        bool continuing = process_list_element->checkTimeLimitSoft();
         // We call cancel here so that all processors are notified and tasks waken up
         // so that the "break" is faster and doesn't wait for long events
         if (!continuing)
@@ -141,6 +141,15 @@ bool PipelineExecutor::checkTimeLimit()
     }
 
     return true;
+}
+
+bool PipelineExecutor::checkTimeLimit()
+{
+    bool continuing = checkTimeLimitSoft();
+    if (!continuing)
+        process_list_element->checkTimeLimit(); // Will throw if needed
+
+    return continuing;
 }
 
 void PipelineExecutor::finalizeExecution()
@@ -208,7 +217,8 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
             if (tasks.isFinished())
                 break;
 
-            checkTimeLimit();
+            if (!checkTimeLimitSoft())
+                break;
 
 #ifndef NDEBUG
             Stopwatch processing_time_watch;

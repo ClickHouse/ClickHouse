@@ -43,8 +43,10 @@ public:
     /// Cancel execution. May be called from another thread.
     void cancel();
 
-    /// Checks the query time limits (cancelled or timeout)
+    /// Checks the query time limits (cancelled or timeout). Throws on cancellation or when time limit is reached and the query uses "break"
     bool checkTimeLimit();
+    /// Same as checkTimeLimit but it never throws. It returns false on cancellation or time limit reached
+    bool checkTimeLimitSoft();
 
 private:
     ExecutingGraphPtr graph;
