@@ -41,30 +41,6 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  PVSCheck:
-    needs: DockerHubPush
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
-    runs-on: [self-hosted, func-tester]
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
-      - name: PVS Check
-        env:
-          TEMP_PATH: ${{runner.temp}}/pvs_check
-          REPO_COPY: ${{runner.temp}}/pvs_check/ClickHouse
-        run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 pvs_check.py
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
   CompatibilityCheck:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, style-checker]
@@ -430,6 +406,240 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
+  BuilderBinTidy:
+    needs: [DockerHubPush]
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
+    runs-on: [self-hosted, builder]
+    steps:
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/images_path
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0 # otherwise we will have no info about contributors
+      - name: Build
+        env:
+          TEMP_PATH: ${{runner.temp}}/build_check
+          IMAGES_PATH: ${{runner.temp}}/images_path
+          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH: ${{runner.temp}}/../ccaches
+          CHECK_NAME: 'ClickHouse build check (actions)'
+          BUILD_NAME: 'binary_tidy'
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+      - name: Upload build URLs to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.BUILD_NAME }}
+          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  BuilderBinDarwin:
+    needs: [DockerHubPush]
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
+    runs-on: [self-hosted, builder]
+    steps:
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/images_path
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0 # otherwise we will have no info about contributors
+      - name: Build
+        env:
+          TEMP_PATH: ${{runner.temp}}/build_check
+          IMAGES_PATH: ${{runner.temp}}/images_path
+          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH: ${{runner.temp}}/../ccaches
+          CHECK_NAME: 'ClickHouse build check (actions)'
+          BUILD_NAME: 'binary_darwin'
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+      - name: Upload build URLs to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.BUILD_NAME }}
+          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  BuilderBinAarch64:
+    needs: [DockerHubPush]
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
+    runs-on: [self-hosted, builder]
+    steps:
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/images_path
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0 # otherwise we will have no info about contributors
+      - name: Build
+        env:
+          TEMP_PATH: ${{runner.temp}}/build_check
+          IMAGES_PATH: ${{runner.temp}}/images_path
+          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH: ${{runner.temp}}/../ccaches
+          CHECK_NAME: 'ClickHouse build check (actions)'
+          BUILD_NAME: 'binary_aarch64'
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+      - name: Upload build URLs to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.BUILD_NAME }}
+          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  BuilderBinFreeBSD:
+    needs: [DockerHubPush]
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
+    runs-on: [self-hosted, builder]
+    steps:
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/images_path
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0 # otherwise we will have no info about contributors
+      - name: Build
+        env:
+          TEMP_PATH: ${{runner.temp}}/build_check
+          IMAGES_PATH: ${{runner.temp}}/images_path
+          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH: ${{runner.temp}}/../ccaches
+          CHECK_NAME: 'ClickHouse build check (actions)'
+          BUILD_NAME: 'binary_freebsd'
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+      - name: Upload build URLs to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.BUILD_NAME }}
+          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  BuilderBinDarwinAarch64:
+    needs: [DockerHubPush]
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
+    runs-on: [self-hosted, builder]
+    steps:
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/images_path
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0 # otherwise we will have no info about contributors
+      - name: Build
+        env:
+          TEMP_PATH: ${{runner.temp}}/build_check
+          IMAGES_PATH: ${{runner.temp}}/images_path
+          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH: ${{runner.temp}}/../ccaches
+          CHECK_NAME: 'ClickHouse build check (actions)'
+          BUILD_NAME: 'binary_darwin_aarch64'
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+      - name: Upload build URLs to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.BUILD_NAME }}
+          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  BuilderBinPPC64:
+    needs: [DockerHubPush]
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
+    runs-on: [self-hosted, builder]
+    steps:
+      - name: Download changed images
+        uses: actions/download-artifact@v2
+        with:
+          name: changed_images
+          path: ${{ runner.temp }}/images_path
+      - name: Check out repository code
+        uses: actions/checkout@v2
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0 # otherwise we will have no info about contributors
+      - name: Build
+        env:
+          TEMP_PATH: ${{runner.temp}}/build_check
+          IMAGES_PATH: ${{runner.temp}}/images_path
+          REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
+          CACHES_PATH: ${{runner.temp}}/../ccaches
+          CHECK_NAME: 'ClickHouse build check (actions)'
+          BUILD_NAME: 'binary_ppc64le'
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
+      - name: Upload build URLs to artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ env.BUILD_NAME }}
+          path: ${{ runner.temp }}/build_check/${{ env.BUILD_NAME }}.json
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
@@ -442,7 +652,6 @@ jobs:
       - BuilderDebUBsan
       - BuilderDebMsan
       - BuilderDebDebug
-      - BuilderDebSplitted
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Download json reports
@@ -456,6 +665,39 @@ jobs:
           TEMP_PATH: ${{runner.temp}}/report_check
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'ClickHouse build check (actions)'
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cd $GITHUB_WORKSPACE/tests/ci
+          python3 build_report_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  BuilderSpecialReport:
+    needs:
+      - BuilderBinTidy
+      - BuilderDebSplitted
+      - BuilderBinDarwin
+      - BuilderBinAarch64
+      - BuilderBinFreeBSD
+      - BuilderBinDarwinAarch64
+      - BuilderBinPPC64
+    runs-on: [self-hosted, style-checker]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Report Builder
+        env:
+          TEMP_PATH: ${{runner.temp}}/report_check
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'ClickHouse special build check (actions)'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -482,10 +724,39 @@ jobs:
         uses: actions/checkout@v2
       - name: Functional test
         env:
-          TEMP_PATH: ${{runner.temp}}/stateless_debug
+          TEMP_PATH: ${{runner.temp}}/stateless_release
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Stateless tests (release, actions)'
-          REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
+          REPO_COPY: ${{runner.temp}}/stateless_release/ClickHouse
+          KILL_TIMEOUT: 10800
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestReleaseDatabaseOrdinary:
+    needs: [BuilderDebRelease]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_release_database_ordinary
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (release, DatabaseOrdinary, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_release_database_ordinary/ClickHouse
           KILL_TIMEOUT: 10800
         run: |
           sudo rm -fr $TEMP_PATH
@@ -659,10 +930,39 @@ jobs:
         uses: actions/checkout@v2
       - name: Functional test
         env:
-          TEMP_PATH: ${{runner.temp}}/stateful_debug
+          TEMP_PATH: ${{runner.temp}}/stateful_release
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Stateful tests (release, actions)'
-          REPO_COPY: ${{runner.temp}}/stateful_debug/ClickHouse
+          REPO_COPY: ${{runner.temp}}/stateful_release/ClickHouse
+          KILL_TIMEOUT: 3600
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatefulTestReleaseDatabaseOrdinary:
+    needs: [BuilderDebRelease]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateful_release_database_ordinary
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateful tests (release, DatabaseOrdinary, actions)'
+          REPO_COPY: ${{runner.temp}}/stateful_release_database_ordinary/ClickHouse
           KILL_TIMEOUT: 3600
         run: |
           sudo rm -fr $TEMP_PATH
@@ -1343,12 +1643,14 @@ jobs:
       - BuilderReport
       - FunctionalStatelessTestDebug
       - FunctionalStatelessTestRelease
+      - FunctionalStatelessTestReleaseDatabaseOrdinary
       - FunctionalStatelessTestAsan
       - FunctionalStatelessTestTsan
       - FunctionalStatelessTestMsan
       - FunctionalStatelessTestUBsan
       - FunctionalStatefulTestDebug
       - FunctionalStatefulTestRelease
+      - FunctionalStatefulTestReleaseDatabaseOrdinary
       - FunctionalStatefulTestAsan
       - FunctionalStatefulTestTsan
       - FunctionalStatefulTestMsan
@@ -1373,7 +1675,6 @@ jobs:
       - UnitTestsUBsan
       - UnitTestsReleaseClang
       - SplitBuildSmokeTest
-      - PVSCheck
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code

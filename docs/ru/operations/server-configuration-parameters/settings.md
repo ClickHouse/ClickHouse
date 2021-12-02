@@ -131,7 +131,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <nonce>0123456789101</nonce>
+        <nonce>012345678910</nonce>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
