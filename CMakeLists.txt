@@ -217,37 +217,13 @@ endif()
 # Make sure the final executable has symbols exported
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -rdynamic")
 
-find_program (OBJCOPY_PATH NAMES "llvm-objcopy" "llvm-objcopy-13" "llvm-objcopy-12" "llvm-objcopy-11" "llvm-objcopy-10" "llvm-objcopy-9" "llvm-objcopy-8" "objcopy")
-
-if (NOT OBJCOPY_PATH AND OS_DARWIN)
-    find_program (BREW_PATH NAMES "brew")
-    if (BREW_PATH)
-        execute_process (COMMAND ${BREW_PATH} --prefix llvm ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE LLVM_PREFIX)
-        if (LLVM_PREFIX)
-            find_program (OBJCOPY_PATH NAMES "llvm-objcopy" PATHS "${LLVM_PREFIX}/bin" NO_DEFAULT_PATH)
-        endif ()
-        if (NOT OBJCOPY_PATH)
-            execute_process (COMMAND ${BREW_PATH} --prefix binutils ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE BINUTILS_PREFIX)
-            if (BINUTILS_PREFIX)
-                find_program (OBJCOPY_PATH NAMES "objcopy" PATHS "${BINUTILS_PREFIX}/bin" NO_DEFAULT_PATH)
-            endif ()
-        endif ()
-    endif ()
-endif ()
-
-if (OBJCOPY_PATH)
-    message (STATUS "Using objcopy: ${OBJCOPY_PATH}")
-else ()
-    message (FATAL_ERROR "Cannot find objcopy.")
-endif ()
-
 if (OS_DARWIN)
     # The `-all_load` flag forces loading of all symbols from all libraries,
     # and leads to multiply-defined symbols. This flag allows force loading
     # from a _specific_ library, which is what we need.
     set(WHOLE_ARCHIVE -force_load)
     # The `-noall_load` flag is the default and now obsolete.
-    set(NO_WHOLE_ARCHIVE "")
+    set(NO_WHOLE_ARCHIVE "-undefined,error") # Effectively, a no-op. Here to avoid empty "-Wl, " sequence to be generated in the command line.
 else ()
     set(WHOLE_ARCHIVE --whole-archive)
     set(NO_WHOLE_ARCHIVE --no-whole-archive)
@@ -275,6 +251,13 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
         endif()
     endif ()
 endif()
+
+if (CMAKE_BUILD_TYPE_UC STREQUAL "DEBUG")
+    set(USE_DEBUG_HELPERS ON)
+else ()
+    set(USE_DEBUG_HELPERS ON)
+endif()
+option(USE_DEBUG_HELPERS "Enable debug helpers" ${USE_DEBUG_HELPERS})
 
 # Create BuildID when using lld. For other linkers it is created by default.
 if (LINKER_NAME MATCHES "lld$")
@@ -413,25 +396,6 @@ if (COMPILER_CLANG)
         message (${RECONFIGURE_MESSAGE_LEVEL} "Cannot enable ThinLTO")
     endif ()
 
-    # Always prefer llvm tools when using clang. For instance, we cannot use GNU ar when llvm LTO is enabled
-    find_program (LLVM_AR_PATH NAMES "llvm-ar" "llvm-ar-13" "llvm-ar-12" "llvm-ar-11" "llvm-ar-10" "llvm-ar-9" "llvm-ar-8")
-
-    if (LLVM_AR_PATH)
-        message(STATUS "Using llvm-ar: ${LLVM_AR_PATH}.")
-        set (CMAKE_AR ${LLVM_AR_PATH})
-    else ()
-        message(WARNING "Cannot find llvm-ar. System ar will be used instead. It does not work with ThinLTO.")
-    endif ()
-
-    find_program (LLVM_RANLIB_PATH NAMES "llvm-ranlib" "llvm-ranlib-13" "llvm-ranlib-12" "llvm-ranlib-11" "llvm-ranlib-10" "llvm-ranlib-9" "llvm-ranlib-8")
-
-    if (LLVM_RANLIB_PATH)
-        message(STATUS "Using llvm-ranlib: ${LLVM_RANLIB_PATH}.")
-        set (CMAKE_RANLIB ${LLVM_RANLIB_PATH})
-    else ()
-        message(WARNING "Cannot find llvm-ranlib. System ranlib will be used instead. It does not work with ThinLTO.")
-    endif ()
-
 elseif (ENABLE_THINLTO)
     message (${RECONFIGURE_MESSAGE_LEVEL} "ThinLTO is only available with CLang")
 endif ()
@@ -483,19 +447,6 @@ if (MAKE_STATIC_LIBRARIES)
     endif ()
 else ()
     set (CMAKE_POSITION_INDEPENDENT_CODE ON)
-endif ()
-
-# https://github.com/include-what-you-use/include-what-you-use
-option (USE_INCLUDE_WHAT_YOU_USE "Automatically reduce unneeded includes in source code (external tool)" OFF)
-
-if (USE_INCLUDE_WHAT_YOU_USE)
-    find_program(IWYU_PATH NAMES include-what-you-use iwyu)
-    if (NOT IWYU_PATH)
-        message(FATAL_ERROR "Could not find the program include-what-you-use")
-    endif()
-    if (${CMAKE_VERSION} VERSION_LESS "3.3.0")
-        message(FATAL_ERROR "include-what-you-use requires CMake version at least 3.3.")
-    endif()
 endif ()
 
 if (ENABLE_TESTS)
@@ -597,8 +548,6 @@ include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
-include (cmake/print_flags.cmake)
-
 if (TARGET global-group)
     install (EXPORT global DESTINATION cmake)
 endif ()
@@ -650,6 +599,7 @@ include_directories(${ConfigIncludePath})
 
 # Add as many warnings as possible for our own code.
 include (cmake/warnings.cmake)
+include (cmake/print_flags.cmake)
 
 add_subdirectory (base)
 add_subdirectory (src)

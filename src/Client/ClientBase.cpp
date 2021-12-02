@@ -709,7 +709,7 @@ void ClientBase::onProfileEvents(Block & block)
         const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
         const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
         const auto & host_names = typeid_cast<const ColumnString &>(*block.getByName("host_name").column);
-        const auto & array_values = typeid_cast<const ColumnUInt64 &>(*block.getByName("value").column).getData();
+        const auto & array_values = typeid_cast<const ColumnInt64 &>(*block.getByName("value").column).getData();
 
         const auto * user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
         const auto * system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
@@ -736,7 +736,8 @@ void ClientBase::onProfileEvents(Block & block)
                 thread_times[host_name][thread_id].memory_usage = value;
             }
         }
-        progress_indication.updateThreadEventData(thread_times);
+        auto elapsed_time = profile_events.watch.elapsedMicroseconds();
+        progress_indication.updateThreadEventData(thread_times, elapsed_time);
     }
 
     if (profile_events.print)
@@ -748,7 +749,6 @@ void ClientBase::onProfileEvents(Block & block)
             logs_out_stream->writeProfileEvents(block);
             logs_out_stream->flush();
 
-            profile_events.watch.restart();
             profile_events.last_block = {};
         }
         else
@@ -756,6 +756,7 @@ void ClientBase::onProfileEvents(Block & block)
             profile_events.last_block = block;
         }
     }
+    profile_events.watch.restart();
 }
 
 
