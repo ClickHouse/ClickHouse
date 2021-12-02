@@ -122,7 +122,7 @@ def group_runners_by_tag(listed_runners):
 def push_metrics_to_cloudwatch(listed_runners, namespace):
     client = boto3.client('cloudwatch')
     metrics_data = []
-    busy_runners = sum(1 for runner in listed_runners if runner.busy)
+    busy_runners = sum(1 for runner in listed_runners if runner.busy and not runner.offline)
     metrics_data.append({
         'MetricName': 'BusyRunners',
         'Value': busy_runners,
@@ -178,6 +178,7 @@ def main(github_secret_key, github_app_id, push_to_cloudwatch, delete_offline_ru
     grouped_runners = group_runners_by_tag(runners)
     for group, group_runners in grouped_runners.items():
         if push_to_cloudwatch:
+            print(group)
             push_metrics_to_cloudwatch(group_runners, 'RunnersMetrics/' + group)
         else:
             print(group, f"({len(group_runners)})")
