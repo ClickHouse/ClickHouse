@@ -33,9 +33,7 @@ public:
     void resetParser() override;
 
 protected:
-    void readPrefix() override;
-    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-
+   
     /// Read single field from input. Return false if there was no real value and we inserted default value.
     virtual bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) = 0;
 
@@ -71,17 +69,20 @@ protected:
     /// Read row with types and return the list of them.
     virtual std::vector<String> readTypes() = 0;
 
-    virtual void addInputColumn(const String & column_name, std::vector<bool> & read_columns);
 
     const FormatSettings format_settings;
     DataTypes data_types;
     bool end_of_stream = false;
 
 private:
+    void readPrefix() override;
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
 
     void setupAllColumnsByTableSchema();
+    void addInputColumn(const String & column_name, std::vector<bool> & read_columns);
     void insertDefaultsForNotSeenColumns(MutableColumns & columns, RowReadExtension & ext);
 
     bool with_names;
