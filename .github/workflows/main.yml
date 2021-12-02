@@ -888,9 +888,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   FunctionalStatelessTestTsan:
     needs: [BuilderDebTsan]
-    # tests can consume more than 60GB of memory,
-    # so use bigger server
-    runs-on: [self-hosted, stress-tester]
+    runs-on: [self-hosted, func-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2

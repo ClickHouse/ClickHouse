@@ -41,30 +41,6 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  PVSCheck:
-    needs: DockerHubPush
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
-    runs-on: [self-hosted, func-tester]
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
-      - name: PVS Check
-        env:
-          TEMP_PATH: ${{runner.temp}}/pvs_check
-          REPO_COPY: ${{runner.temp}}/pvs_check/ClickHouse
-        run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 pvs_check.py
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
   CompatibilityCheck:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, style-checker]
@@ -1699,7 +1675,6 @@ jobs:
       - UnitTestsUBsan
       - UnitTestsReleaseClang
       - SplitBuildSmokeTest
-      - PVSCheck
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code

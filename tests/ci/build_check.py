@@ -57,7 +57,7 @@ def get_packager_cmd(build_config, packager_path, output_path, build_version, im
     cmd += ' --ccache_dir={}'.format(ccache_path)
 
     if 'alien_pkgs' in build_config and build_config['alien_pkgs']:
-        if pr_info == 0 or 'release' in pr_info.labels:
+        if pr_info.number == 0 or 'release' in pr_info.labels:
             cmd += ' --alien-pkgs rpm tgz'
 
     cmd += ' --docker-image-version={}'.format(image_version)
