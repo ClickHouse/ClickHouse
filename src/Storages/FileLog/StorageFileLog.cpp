@@ -311,14 +311,11 @@ Pipe StorageFileLog::read(
     unsigned /* num_streams */)
 {
     /// If there are MVs depended on this table, we just forbid reading
-    if (has_dependent_mv)
-    {
-        throw Exception(
-            ErrorCodes::QUERY_NOT_ALLOWED,
-            "Can not make `SELECT` query from table {}, because it has attached dependencies. Remove dependent materialized views if "
-            "needed",
-            getStorageID().getTableName());
-    }
+    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+
+    if (mv_attached)
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageFileLog with attached materialized views");
 
     std::lock_guard<std::mutex> lock(file_infos_mutex);
     if (running_streams)
@@ -585,9 +582,9 @@ void StorageFileLog::threadFunc()
 
         if (dependencies_count)
         {
-            has_dependent_mv = true;
             auto start_time = std::chrono::steady_clock::now();
 
+            mv_attached.store(true);
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled)
             {
@@ -628,6 +625,8 @@ void StorageFileLog::threadFunc()
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
+
+    mv_attached.store(false);
 
     // Wait for attached views
     if (!task->stream_cancelled)

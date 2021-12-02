@@ -374,7 +374,7 @@ class TestCase:
         else:
             # If --database is not specified, we will create temporary database with unique name
             # And we will recreate and drop it for each test
-            def random_str(length=6):
+            def random_str(length=8):
                 alphabet = string.ascii_lowercase + string.digits
                 return ''.join(random.choice(alphabet) for _ in range(length))
 

@@ -2,13 +2,14 @@ name: CIGithubActions
 on: # yamllint disable-line rule:truthy
   pull_request:
     types:
-      - labeled
-      - unlabeled
       - synchronize
       - reopened
       - opened
     branches:
       - master
+    paths-ignore:
+      - 'docs/**'
+      - 'website/**'
 ##########################################################################################
 ##################################### SMALL CHECKS #######################################
 ##########################################################################################
@@ -60,34 +61,8 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  DocsCheck:
-    needs: DockerHubPush
-    runs-on: [self-hosted, func-tester]
-    steps:
-      - name: Download changed images
-        uses: actions/download-artifact@v2
-        with:
-          name: changed_images
-          path: ${{ runner.temp }}/docs_check
-      - name: Check out repository code
-        uses: actions/checkout@v2
-      - name: Docs Check
-        env:
-          TEMP_PATH: ${{runner.temp}}/docs_check
-          REPO_COPY: ${{runner.temp}}/docs_check/ClickHouse
-        run: |
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci
-          python3 docs_check.py
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
   FastTest:
     needs: DockerHubPush
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Check out repository code
@@ -109,8 +84,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   PVSCheck:
-    needs: DockerHubPush
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
+    needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, func-tester]
     steps:
       - name: Check out repository code
@@ -134,7 +108,6 @@ jobs:
           sudo rm -fr $TEMP_PATH
   CompatibilityCheck:
     needs: [BuilderDebRelease]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
@@ -161,7 +134,6 @@ jobs:
           sudo rm -fr $TEMP_PATH
   SplitBuildSmokeTest:
     needs: [BuilderDebSplitted]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
@@ -191,7 +163,6 @@ jobs:
 #########################################################################################
   BuilderDebRelease:
     needs: [DockerHubPush, FastTest]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Download changed images
@@ -230,7 +201,6 @@ jobs:
           sudo rm -fr $TEMP_PATH
   BuilderBinRelease:
     needs: [DockerHubPush, FastTest]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Download changed images
@@ -269,7 +239,6 @@ jobs:
           sudo rm -fr $TEMP_PATH
   BuilderDebAsan:
     needs: [DockerHubPush, FastTest]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Download changed images
@@ -308,7 +277,6 @@ jobs:
           sudo rm -fr $TEMP_PATH
   BuilderDebUBsan:
     needs: [DockerHubPush, FastTest]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Download changed images
@@ -347,7 +315,6 @@ jobs:
           sudo rm -fr $TEMP_PATH
   BuilderDebTsan:
     needs: [DockerHubPush, FastTest]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Download changed images
@@ -386,7 +353,6 @@ jobs:
           sudo rm -fr $TEMP_PATH
   BuilderDebMsan:
     needs: [DockerHubPush, FastTest]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Download changed images
@@ -425,7 +391,6 @@ jobs:
           sudo rm -fr $TEMP_PATH
   BuilderDebDebug:
     needs: [DockerHubPush, FastTest]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Download changed images
@@ -467,7 +432,6 @@ jobs:
 ##########################################################################################
   BuilderDebSplitted:
     needs: [DockerHubPush, FastTest]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Download changed images
@@ -506,7 +470,6 @@ jobs:
           sudo rm -fr $TEMP_PATH
   BuilderBinTidy:
     needs: [DockerHubPush, FastTest]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Download changed images
@@ -545,7 +508,6 @@ jobs:
           sudo rm -fr $TEMP_PATH
   BuilderBinDarwin:
     needs: [DockerHubPush, FastTest]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Download changed images
@@ -584,7 +546,6 @@ jobs:
           sudo rm -fr $TEMP_PATH
   BuilderBinAarch64:
     needs: [DockerHubPush, FastTest]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Download changed images
@@ -623,7 +584,6 @@ jobs:
           sudo rm -fr $TEMP_PATH
   BuilderBinFreeBSD:
     needs: [DockerHubPush, FastTest]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Download changed images
@@ -662,7 +622,6 @@ jobs:
           sudo rm -fr $TEMP_PATH
   BuilderBinDarwinAarch64:
     needs: [DockerHubPush, FastTest]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Download changed images
@@ -701,7 +660,6 @@ jobs:
           sudo rm -fr $TEMP_PATH
   BuilderBinPPC64:
     needs: [DockerHubPush, FastTest]
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
     runs-on: [self-hosted, builder]
     steps:
       - name: Download changed images
@@ -930,9 +888,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   FunctionalStatelessTestTsan:
     needs: [BuilderDebTsan]
-    # tests can consume more than 60GB of memory,
-    # so use bigger server
-    runs-on: [self-hosted, stress-tester]
+    runs-on: [self-hosted, func-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1817,7 +1773,6 @@ jobs:
       - FunctionalStatefulTestTsan
       - FunctionalStatefulTestMsan
       - FunctionalStatefulTestUBsan
-      - DocsCheck
       - StressTestDebug
       - StressTestAsan
       - StressTestTsan
