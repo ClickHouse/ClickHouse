@@ -131,10 +131,7 @@ public:
         }
 
         /// Initialize format settings
-        format_settings.csv.delimiter = '\x01';
-        format_settings.csv.input_field_names = text_input_field_names;
-        format_settings.csv.read_bool_as_uint8 = true;
-        format_settings.defaults_for_omitted_fields = true;
+        format_settings.hive_text.input_field_names = text_input_field_names;
     }
 
     String getName() const override { return "Hive"; }
@@ -373,7 +370,7 @@ ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
         /// Primary key consists of one column.
         auto res = std::make_shared<ASTExpressionList>();
         res->children.push_back(node);
-        return res;
+        return std::move(res);
     }
 }
 

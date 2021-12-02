@@ -15,12 +15,15 @@ namespace DB
 class HiveTextRowInputFormat : public CSVRowInputFormat
 {
 public:
-    HiveTextRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_, const FormatSettings & format_settings_);
+    HiveTextRowInputFormat(
+        const Block & header_,
+        ReadBuffer & in_,
+        const Params & params_,
+        const FormatSettings & format_settings_);
 
     String getName() const override { return "HiveTextRowInputFormat"; }
 
 protected:
-    void readPrefix() override;
     std::vector<String> readNames() override;
     std::vector<String> readTypes() override;
 

@@ -14,32 +14,16 @@ HiveTextRowInputFormat::HiveTextRowInputFormat(
     const Block & header_, ReadBuffer & in_, const Params & params_, const FormatSettings & format_settings_)
     : CSVRowInputFormat(header_, buf, params_, true, false, format_settings_)
     , buf(in_)
+    , input_field_names(format_settings_.hive_text.input_field_names)
 {
-}
-
-void HiveTextRowInputFormat::readPrefix()
-{
-    std::vector<bool> read_columns(data_types.size(), false);
-    /// For Hive Text file, read the first row to get exact number of columns.
-    auto values = readNames();
-    input_field_names = format_settings.csv.input_field_names;
-    input_field_names.resize(values.size());
-    for (const auto & column_name : input_field_names)
-        addInputColumn(column_name, read_columns);
-
-    for (size_t i = 0; i != read_columns.size(); ++i)
-    {
-        if (!read_columns[i])
-            column_mapping->not_presented_columns.push_back(i);
-    }
 }
 
 std::vector<String> HiveTextRowInputFormat::readNames()
 {
-    PeekableReadBufferCheckpoint checkpoint{buf};
+    PeekableReadBufferCheckpoint checkpoint{buf, true};
     auto values = readHeaderRow();
-    buf.rollbackToCheckpoint();
-    return values;
+    input_field_names.resize(values.size());
+    return input_field_names;
 }
 
 std::vector<String> HiveTextRowInputFormat::readTypes()
@@ -53,7 +37,10 @@ void registerInputFormatHiveText(FormatFactory & factory)
         "HiveText",
         [](ReadBuffer & buf, const Block & sample, const RowInputFormatParams & params, const FormatSettings & settings)
         {
-            return std::make_shared<HiveTextRowInputFormat>(sample, buf, params, settings);
+            FormatSettings settings_copy = settings;
+            settings_copy.csv.delimiter = settings_copy.hive_text.fields_delimiter;
+            settings_copy.csv.read_bool_as_uint8 = settings_copy.hive_text.read_bool_as_uint8;
+            return std::make_shared<HiveTextRowInputFormat>(sample, buf, params, settings_copy);
         });
 }
 }

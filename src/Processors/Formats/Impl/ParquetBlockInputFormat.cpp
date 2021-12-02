@@ -56,10 +56,12 @@ Chunk ParquetBlockInputFormat::generate()
 
     ++row_group_current;
 
-    auto missing_column_indexes = arrow_column_to_ch_column->arrowTableToCHChunk(res, table);
-    for (size_t row_idx = 0; row_idx < res.getNumRows(); ++row_idx)
-        for (const auto & column_idx : missing_column_indexes)
-            block_missing_values.setBit(column_idx, row_idx);
+    /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
+    /// Otherwise fill the missing columns with zero values of its type.
+    if (format_settings.defaults_for_omitted_fields)
+        for (size_t row_idx = 0; row_idx < res.getNumRows(); ++row_idx)
+            for (const auto & column_idx : missing_columns)
+                block_missing_values.setBit(column_idx, row_idx);
     return res;
 }
 
@@ -111,7 +113,8 @@ void ParquetBlockInputFormat::prepareReader()
     THROW_ARROW_NOT_OK(file_reader->GetSchema(&schema));
 
     arrow_column_to_ch_column = std::make_unique<ArrowColumnToCHColumn>(
-        getPort().getHeader(), "Parquet", format_settings.parquet.import_nested, format_settings.defaults_for_omitted_fields);
+        getPort().getHeader(), "Parquet", format_settings.parquet.import_nested, format_settings.parquet.allow_missing_columns);
+    missing_columns = arrow_column_to_ch_column->getMissingColumns(*schema);
 
     std::unordered_set<String> nested_table_names;
     if (format_settings.parquet.import_nested)

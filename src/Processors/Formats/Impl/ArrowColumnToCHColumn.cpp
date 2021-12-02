@@ -272,7 +272,7 @@ static ColumnPtr readByteMapFromArrowColumn(std::shared_ptr<arrow::ChunkedArray>
         for (size_t value_i = 0; value_i != static_cast<size_t>(chunk->length()); ++value_i)
             bytemap_data.emplace_back(chunk->IsNull(value_i));
     }
-    return nullmap_column;
+    return std::move(nullmap_column);
 }
 
 static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedArray> & arrow_column)
@@ -290,7 +290,7 @@ static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedAr
         for (int64_t i = 1; i < arrow_offsets.length(); ++i)
             offsets_data.emplace_back(start + arrow_offsets.Value(i));
     }
-    return offsets_column;
+    return std::move(offsets_column);
 }
 
 static ColumnPtr readColumnWithIndexesData(std::shared_ptr<arrow::ChunkedArray> & arrow_column)
@@ -505,21 +505,30 @@ static Block arrowSchemaToCHHeader(const arrow::Schema & schema, const std::stri
 }
 
 ArrowColumnToCHColumn::ArrowColumnToCHColumn(
-    const arrow::Schema & schema, const std::string & format_name_, bool import_nested_, bool defaults_for_omitted_fields_)
+    const arrow::Schema & schema,
+    const std::string & format_name_,
+    bool import_nested_,
+    bool allow_missing_columns_)
     : header(arrowSchemaToCHHeader(schema, format_name_))
     , format_name(format_name_)
     , import_nested(import_nested_)
-    , defaults_for_omitted_fields(defaults_for_omitted_fields_)
+    , allow_missing_columns(allow_missing_columns_)
 {
 }
 
 ArrowColumnToCHColumn::ArrowColumnToCHColumn(
-    const Block & header_, const std::string & format_name_, bool import_nested_, bool defaults_for_omitted_fields_)
-    : header(header_), format_name(format_name_), import_nested(import_nested_), defaults_for_omitted_fields(defaults_for_omitted_fields_)
+    const Block & header_,
+    const std::string & format_name_,
+    bool import_nested_,
+    bool allow_missing_columns_)
+    : header(header_)
+    , format_name(format_name_)
+    , import_nested(import_nested_)
+    , allow_missing_columns(allow_missing_columns_)
 {
 }
 
-std::vector<size_t> ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table)
+void ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table)
 {
     NameToColumnPtr name_to_column_ptr;
     for (const auto& column_name : table->ColumnNames())
@@ -528,23 +537,15 @@ std::vector<size_t> ArrowColumnToCHColumn::arrowTableToCHChunk(Chunk & res, std:
         name_to_column_ptr[column_name] = arrow_column;
     }
 
-    return arrowColumnsToCHChunk(res, name_to_column_ptr);
+    arrowColumnsToCHChunk(res, name_to_column_ptr);
 }
 
-std::vector<size_t> ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr)
+void ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr)
 {
     Columns columns_list;
-
-    if (name_to_column_ptr.empty())
-        return {};
-
     UInt64 num_rows = name_to_column_ptr.begin()->second->length();
-
     columns_list.reserve(header.rows());
-
     std::unordered_map<String, BlockPtr> nested_tables;
-    std::vector<size_t> missing_column_indexes;
-    missing_column_indexes.reserve(header.columns());
     for (size_t column_i = 0, columns = header.columns(); column_i < columns; ++column_i)
     {
         const ColumnWithTypeAndName & header_column = header.getByPosition(column_i);
@@ -569,20 +570,15 @@ std::vector<size_t> ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, Na
 
             if (!read_from_nested)
             {
-                missing_column_indexes.push_back(column_i);
-                if (defaults_for_omitted_fields)
-                {
-                    ColumnWithTypeAndName column;
-                    column.name = header_column.name;
-                    column.type = header_column.type;
-                    column.column = header_column.column->cloneResized(num_rows);
-                    columns_list.push_back(std::move(column.column));
-                    continue;
-                }
-                else
-                {
+                if (!allow_missing_columns)
                     throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", header_column.name};
-                }
+
+                ColumnWithTypeAndName column;
+                column.name = header_column.name;
+                column.type = header_column.type;
+                column.column = header_column.column->cloneResized(num_rows);
+                columns_list.push_back(std::move(column.column));
+                continue;
             }
         }
 
@@ -610,7 +606,35 @@ std::vector<size_t> ArrowColumnToCHColumn::arrowColumnsToCHChunk(Chunk & res, Na
     }
 
     res.setColumns(columns_list, num_rows);
-    return missing_column_indexes;
 }
+
+std::vector<size_t> ArrowColumnToCHColumn::getMissingColumns(const arrow::Schema & schema) const
+{
+    std::vector<size_t> missing_columns;
+    auto block_from_arrow = arrowSchemaToCHHeader(schema, format_name);
+    auto flatten_block_from_arrow = Nested::flatten(block_from_arrow);
+    for (size_t i = 0, columns = header.columns(); i < columns; ++i)
+    {
+        const auto & column = header.getByPosition(i);
+        bool read_from_nested = false;
+        String nested_table_name = Nested::extractTableName(column.name);
+        if (!block_from_arrow.has(column.name))
+        {
+            if (import_nested && block_from_arrow.has(nested_table_name))
+                read_from_nested = flatten_block_from_arrow.has(column.name);
+
+            if (!read_from_nested)
+            {
+                if (!allow_missing_columns)
+                    throw Exception{ErrorCodes::THERE_IS_NO_COLUMN, "Column '{}' is not presented in input data.", column.name};
+
+                missing_columns.push_back(i);
+            }
+        }
+    }
+    return missing_columns;
 }
+
+}
+
 #endif

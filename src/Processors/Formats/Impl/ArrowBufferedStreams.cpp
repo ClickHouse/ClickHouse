@@ -5,7 +5,6 @@
 #include "ArrowBufferedStreams.h"
 
 #if USE_ARROW || USE_ORC || USE_PARQUET
-#include <IO/RemoteReadBufferCache.h>
 #include <Common/assert_cast.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
@@ -13,9 +12,6 @@
 #include <arrow/buffer.h>
 #include <arrow/io/memory.h>
 #include <arrow/result.h>
-#include <base/logger_useful.h>
-#include <Common/Stopwatch.h>
-#include <Poco/Logger.h>
 
 #include <sys/stat.h>
 
