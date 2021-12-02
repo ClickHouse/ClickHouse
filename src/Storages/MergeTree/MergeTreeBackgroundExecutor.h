@@ -36,12 +36,12 @@ struct TaskRuntimeData
         : task(std::move(task_))
         , metric(metric_)
     {
-        CurrentMetrics::values[metric].fetch_add(1, std::memory_order_release);
+        CurrentMetrics::values[metric].fetch_add(1);
     }
 
     ~TaskRuntimeData()
     {
-        CurrentMetrics::values[metric].fetch_sub(1, std::memory_order_release);
+        CurrentMetrics::values[metric].fetch_sub(1);
     }
 
     ExecutableTaskPtr task;
