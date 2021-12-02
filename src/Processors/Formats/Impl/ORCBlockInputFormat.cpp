@@ -68,6 +68,7 @@ Chunk ORCBlockInputFormat::generate()
         std::shared_ptr<arrow::ChunkedArray> arrow_column = std::make_shared<arrow::ChunkedArray>(vec);
         name_to_column_ptr[column_name] = arrow_column;
     }
+    arrow_column_to_ch_column->arrowColumnsToCHChunk(res, name_to_column_ptr);
 
     /// If defaults_for_omitted_fields is true, calculate the default values from default expression for omitted fields.
     /// Otherwise fill the missing columns with zero values of its type.
