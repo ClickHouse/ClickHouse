@@ -18,7 +18,7 @@ def started_cluster():
 
 
 def check_log_file():
-    assert node.file_exists("/var/log/clickhouse-server/clickhouse-server.log.lz4")
+    assert node.path_exists("/var/log/clickhouse-server/clickhouse-server.log.lz4")
 
     lz4_output = node.exec_in_container(["bash", "-c", "lz4 -t /var/log/clickhouse-server/clickhouse-server.log.lz4 2>&1"], user='root')
     assert lz4_output.count('Error') == 0, lz4_output
