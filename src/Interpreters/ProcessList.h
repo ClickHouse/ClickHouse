@@ -179,7 +179,7 @@ public:
     /// Checks the query time limits (cancelled or timeout)
     bool checkTimeLimit();
     /// Same as checkTimeLimit but it never throws
-    bool checkTimeLimitSoft();
+    [[nodiscard]] bool checkTimeLimitSoft();
 };
 
 
