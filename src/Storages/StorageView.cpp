@@ -4,9 +4,11 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
@@ -14,7 +16,7 @@
 
 #include <Common/typeid_cast.h>
 
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>

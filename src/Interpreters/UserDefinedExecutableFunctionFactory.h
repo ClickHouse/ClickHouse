@@ -24,6 +24,8 @@ public:
 
     static FunctionOverloadResolverPtr tryGet(const String & function_name, ContextPtr context);
 
+    static bool has(const String & function_name, ContextPtr context);
+
     static std::vector<String> getRegisteredNames(ContextPtr context);
 
 };

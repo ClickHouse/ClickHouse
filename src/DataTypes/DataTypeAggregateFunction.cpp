@@ -3,8 +3,6 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 
-#include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <Common/AlignedBuffer.h>
 #include <Common/FieldVisitorToString.h>
 
@@ -17,8 +15,8 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
 
 
 namespace DB

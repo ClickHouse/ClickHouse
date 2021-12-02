@@ -20,7 +20,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/assert_cast.h>
-#include <base/Typelists.h>
+#include <base/TypeLists.h>
 #include <Interpreters/castColumn.h>
 #include <base/range.h>
 
@@ -403,8 +403,8 @@ ColumnPtr FunctionArrayIntersect::executeImpl(const ColumnsWithTypeAndName & arg
 
     ColumnPtr result_column;
     auto not_nullable_nested_return_type = removeNullable(nested_return_type);
-    TLUtils::forEach(TLIntegral{}, NumberExecutor(arrays, not_nullable_nested_return_type, result_column));
-    TLUtils::forEach(TLDecimals{}, DecimalExecutor(arrays, not_nullable_nested_return_type, result_column));
+    TypeListUtils::forEach(TypeListIntAndFloat{}, NumberExecutor(arrays, not_nullable_nested_return_type, result_column));
+    TypeListUtils::forEach(TypeListDecimal{}, DecimalExecutor(arrays, not_nullable_nested_return_type, result_column));
 
     using DateMap = ClearableHashMapWithStackMemory<DataTypeDate::FieldType,
         size_t, DefaultHash<DataTypeDate::FieldType>, INITIAL_SIZE_DEGREE>;

@@ -1,10 +1,9 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Interpreters/JoinSwitcher.h>
 
 #include <Common/JSONBuilder.h>

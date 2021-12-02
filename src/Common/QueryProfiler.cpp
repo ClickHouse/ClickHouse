@@ -15,6 +15,7 @@
 namespace ProfileEvents
 {
     extern const Event QueryProfilerSignalOverruns;
+    extern const Event QueryProfilerRuns;
 }
 
 namespace DB
@@ -60,6 +61,7 @@ namespace
         const StackTrace stack_trace(signal_context);
 
         TraceCollector::collect(trace_type, stack_trace, 0);
+        ProfileEvents::increment(ProfileEvents::QueryProfilerRuns);
 
         errno = saved_errno;
     }
@@ -82,7 +84,21 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
     : log(&Poco::Logger::get("QueryProfiler"))
     , pause_signal(pause_signal_)
 {
-#if USE_UNWIND
+#if defined(SANITIZER)
+    UNUSED(thread_id);
+    UNUSED(clock_type);
+    UNUSED(period);
+    UNUSED(pause_signal);
+
+    throw Exception("QueryProfiler disabled because they cannot work under sanitizers", ErrorCodes::NOT_IMPLEMENTED);
+#elif !USE_UNWIND
+    UNUSED(thread_id);
+    UNUSED(clock_type);
+    UNUSED(period);
+    UNUSED(pause_signal);
+
+    throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
+#else
     /// Sanity check.
     if (!hasPHDRCache())
         throw Exception("QueryProfiler cannot be used without PHDR cache, that is not available for TSan build", ErrorCodes::NOT_IMPLEMENTED);
@@ -101,8 +117,10 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
     if (sigaddset(&sa.sa_mask, pause_signal))
         throwFromErrno("Failed to add signal to mask for query profiler", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
 
-    if (sigaction(pause_signal, &sa, previous_handler))
+    struct sigaction local_previous_handler;
+    if (sigaction(pause_signal, &sa, &local_previous_handler))
         throwFromErrno("Failed to setup signal handler for query profiler", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
+    previous_handler.emplace(local_previous_handler);
 
     try
     {
@@ -110,12 +128,15 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
         sev.sigev_notify = SIGEV_THREAD_ID;
         sev.sigev_signo = pause_signal;
 
-#   if defined(OS_FREEBSD)
+#if defined(OS_FREEBSD)
         sev._sigev_un._threadid = thread_id;
-#   else
+#elif defined(USE_MUSL)
+        sev.sigev_notify_thread_id = thread_id;
+#else
         sev._sigev_un._tid = thread_id;
-#   endif
-        if (timer_create(clock_type, &sev, &timer_id))
+#endif
+        timer_t local_timer_id;
+        if (timer_create(clock_type, &sev, &local_timer_id))
         {
             /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.
             /// https://mybranch.dev/posts/clickhouse-on-cloud-run/
@@ -125,6 +146,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
 
             throwFromErrno("Failed to create thread timer", ErrorCodes::CANNOT_CREATE_TIMER);
         }
+        timer_id.emplace(local_timer_id);
 
         /// Randomize offset as uniform random value from 0 to period - 1.
         /// It will allow to sample short queries even if timer period is large.
@@ -136,7 +158,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
         struct timespec offset{.tv_sec = period_rand / TIMER_PRECISION, .tv_nsec = period_rand % TIMER_PRECISION};
 
         struct itimerspec timer_spec = {.it_interval = interval, .it_value = offset};
-        if (timer_settime(timer_id, 0, &timer_spec, nullptr))
+        if (timer_settime(*timer_id, 0, &timer_spec, nullptr))
             throwFromErrno("Failed to set thread timer period", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
     }
     catch (...)
@@ -144,13 +166,6 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
         tryCleanup();
         throw;
     }
-#else
-    UNUSED(thread_id);
-    UNUSED(clock_type);
-    UNUSED(period);
-    UNUSED(pause_signal);
-
-    throw Exception("QueryProfiler cannot work with stock libunwind", ErrorCodes::NOT_IMPLEMENTED);
 #endif
 }
 
@@ -164,10 +179,10 @@ template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 {
 #if USE_UNWIND
-    if (timer_id != nullptr && timer_delete(timer_id))
+    if (timer_id.has_value() && timer_delete(*timer_id))
         LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
 
-    if (previous_handler != nullptr && sigaction(pause_signal, previous_handler, nullptr))
+    if (previous_handler.has_value() && sigaction(pause_signal, &*previous_handler, nullptr))
         LOG_ERROR(log, "Failed to restore signal handler after query profiler {}", errnoToString(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER));
 #endif
 }

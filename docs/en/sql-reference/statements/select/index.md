@@ -27,7 +27,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [LIMIT [n, ]m] [WITH TIES]
 [SETTINGS ...]
 [UNION  ...]
-[INTO OUTFILE filename]
+[INTO OUTFILE filename [COMPRESSION type] ]
 [FORMAT format]
 ```
 
@@ -49,6 +49,8 @@ Specifics of each optional clause are covered in separate sections, which are li
 -   [LIMIT clause](../../../sql-reference/statements/select/limit.md)
 -   [OFFSET clause](../../../sql-reference/statements/select/offset.md)
 -   [UNION clause](../../../sql-reference/statements/select/union.md)
+-   [INTERSECT clause](../../../sql-reference/statements/select/intersect.md)
+-   [EXCEPT clause](../../../sql-reference/statements/select/except.md)
 -   [INTO OUTFILE clause](../../../sql-reference/statements/select/into-outfile.md)
 -   [FORMAT clause](../../../sql-reference/statements/select/format.md)
 

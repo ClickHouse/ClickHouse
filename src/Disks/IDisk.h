@@ -28,11 +28,6 @@ namespace Poco
     }
 }
 
-namespace CurrentMetrics
-{
-    extern const Metric DiskSpaceReservedForMerge;
-}
-
 namespace DB
 {
 
@@ -166,7 +161,7 @@ public:
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
         const ReadSettings & settings = ReadSettings{},
-        size_t estimated_size = 0) const = 0;
+        std::optional<size_t> size = {}) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(

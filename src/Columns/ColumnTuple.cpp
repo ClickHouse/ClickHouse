@@ -3,7 +3,7 @@
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnCompressed.h>
 #include <Core/Field.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/WeakHash.h>
