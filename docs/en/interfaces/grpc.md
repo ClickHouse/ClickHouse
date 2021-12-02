@@ -61,17 +61,21 @@ To use the gRPC interface set `grpc_port` in the main [server configuration](../
 You can write a client in any of the programming languages supported by gRPC using the provided [specification](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto)
 Or you can use a built-in Python client. It is placed in [utils/grpc-client/clickhouse-grpc-client.py](https://github.com/ClickHouse/ClickHouse/blob/master/utils/grpc-client/clickhouse-grpc-client.py) in the repository. The built-in client requires [grpcio and grpcio-tools](https://grpc.io/docs/languages/python/quickstart) Python modules. 
 
-To run the client in an interactive mode call it without arguments. The client supports the following arguments:
+The client supports the following arguments:
 
 -   `--help` – Shows a help message and exits.
 -   `--host HOST, -h HOST` – A server name. Default value: `localhost`. You can use IPv4 or IPv6 addresses also.
--   `--port PORT` – A port to connect to. This port should be enabled in the ClickHouse server configuration (see `grpc_port`).
+-   `--port PORT` – A port to connect to. This port should be enabled in the ClickHouse server configuration (see `grpc_port`). Default value: `9100`.
 -   `--user USER_NAME, -u USER_NAME` – A user name. Default value: `default`.
 -   `--password PASSWORD` – A password. Default value: empty string.
 -   `--query QUERY, -q QUERY` – A query to process when using non-interactive mode.
 -   `--database DATABASE, -d DATABASE` – A default database. If not specified, the current database set in the server settings is used (`default` by default).
--   `--format OUTPUT_FORMAT, -f OUTPUT_FORMAT` – A result output [format](formats.md).
+-   `--format OUTPUT_FORMAT, -f OUTPUT_FORMAT` – A result output [format](formats.md). Default value for interactive mode: `PrettyCompact`.
 -   `--debug` – Enables showing debug information.
+
+To run the client in an interactive mode call it without `--query` argument.
+
+In a batch mode query data can be passed via `stdin`.
 
 **Client Usage Example**
 
