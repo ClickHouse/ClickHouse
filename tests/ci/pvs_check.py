@@ -15,6 +15,7 @@ from upload_result_helper import upload_results
 from commit_status_helper import get_commit
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
 
 NAME = 'PVS Studio (actions)'
 LICENCE_NAME = 'Free license: ClickHouse, Yandex'
@@ -49,6 +50,10 @@ if __name__ == "__main__":
     logging.info("Repo copy path %s", repo_path)
 
     gh = Github(get_best_robot_token())
+    rerun_helper = RerunHelper(gh, pr_info, NAME)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     images_path = os.path.join(temp_path, 'changed_images.json')
     docker_image = 'clickhouse/pvs-test'
