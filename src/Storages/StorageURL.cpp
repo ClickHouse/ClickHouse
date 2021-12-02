@@ -128,6 +128,17 @@ namespace
 
                     try
                     {
+                        std::string user_info = request_uri.getUserInfo();
+                        if (!user_info.empty())
+                        {
+                            std::size_t n = user_info.find(':');
+                            if (n != std::string::npos)
+                            {
+                                credentials.setUsername(user_info.substr(0, n));
+                                credentials.setPassword(user_info.substr(n+1));
+                            }
+                        }
+
                         read_buf = wrapReadBufferWithCompressionMethod(
                             std::make_unique<ReadWriteBufferFromHTTP>(
                                 request_uri,

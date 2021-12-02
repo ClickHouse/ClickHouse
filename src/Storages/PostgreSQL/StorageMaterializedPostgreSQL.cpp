@@ -115,7 +115,7 @@ StorageMaterializedPostgreSQL::StorageMaterializedPostgreSQL(
         ContextPtr context_,
         const String & postgres_database_name,
         const String & postgres_table_name)
-    : IStorage(nested_storage_->getStorageID())
+    : IStorage(StorageID(nested_storage_->getStorageID().database_name, nested_storage_->getStorageID().table_name))
     , WithContext(context_->getGlobalContext())
     , log(&Poco::Logger::get("StorageMaterializedPostgreSQL(" + postgres::formatNameForLogs(postgres_database_name, postgres_table_name) + ")"))
     , is_materialized_postgresql_database(true)
@@ -216,12 +216,11 @@ std::shared_ptr<Context> StorageMaterializedPostgreSQL::makeNestedTableContext(C
 }
 
 
-StoragePtr StorageMaterializedPostgreSQL::prepare()
+void StorageMaterializedPostgreSQL::set(StoragePtr nested_storage)
 {
-    auto nested_table = getNested();
-    setInMemoryMetadata(nested_table->getInMemoryMetadata());
+    nested_table_id = nested_storage->getStorageID();
+    setInMemoryMetadata(nested_storage->getInMemoryMetadata());
     has_nested.store(true);
-    return nested_table;
 }
 
 

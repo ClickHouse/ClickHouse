@@ -30,13 +30,34 @@ namespace ErrorCodes
 template<typename T>
 std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schema)
 {
-    std::set<String> tables;
-    std::string query = fmt::format("SELECT tablename FROM pg_catalog.pg_tables "
-                                    "WHERE schemaname != 'pg_catalog' AND {}",
-                                    postgres_schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(postgres_schema));
+    Names schemas;
+    boost::split(schemas, postgres_schema, [](char c){ return c == ','; });
+    for (String & key : schemas)
+        boost::trim(key);
 
-    for (auto table_name : tx.template stream<std::string>(query))
-        tables.insert(std::get<0>(table_name));
+    std::set<std::string> tables;
+    if (schemas.size() <= 1)
+    {
+        std::string query = fmt::format("SELECT tablename FROM pg_catalog.pg_tables "
+                                        "WHERE schemaname != 'pg_catalog' AND {}",
+                                        postgres_schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(postgres_schema));
+        for (auto table_name : tx.template stream<std::string>(query))
+            tables.insert(std::get<0>(table_name));
+
+        return tables;
+    }
+
+    /// We add schema to table name only in case of multiple schemas for the whole database engine.
+    /// Because there is no need to add it if there is only one schema.
+    /// If we add schema to table name then table can be accessed only this way: database_name.`schema_name.table_name`
+    for (const auto & schema : schemas)
+    {
+        std::string query = fmt::format("SELECT tablename FROM pg_catalog.pg_tables "
+                                        "WHERE schemaname != 'pg_catalog' AND {}",
+                                        postgres_schema.empty() ? "schemaname != 'information_schema'" : "schemaname = " + quoteString(schema));
+        for (auto table_name : tx.template stream<std::string>(query))
+            tables.insert(schema + '.' + std::get<0>(table_name));
+    }
 
     return tables;
 }
@@ -308,7 +329,6 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
         pqxx::nontransaction & tx, const String & postgres_table, const String & postrges_schema,
         bool use_nulls, bool with_primary_key, bool with_replica_identity_index);
 
-template
 std::set<String> fetchPostgreSQLTablesList(pqxx::work & tx, const String & postgres_schema);
 
 template

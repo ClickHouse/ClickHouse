@@ -309,7 +309,7 @@ getTableOutput(const String & database_name, const String & table_name, ContextM
 
 
     String comment = "Materialize MySQL step 1: execute dump data";
-    BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuoteIfNeed(table_name) + "(" + insert_columns_str.str() + ")" + " VALUES",
+    BlockIO res = tryToExecuteQuery("INSERT INTO " + backQuote(table_name) + " (" + insert_columns_str.str() + ")" + " VALUES",
         query_context, database_name, comment);
 
     return std::move(res.pipeline);
