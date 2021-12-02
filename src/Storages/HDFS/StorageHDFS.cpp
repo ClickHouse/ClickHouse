@@ -211,11 +211,6 @@ public:
 
     void consume(Chunk chunk) override
     {
-        if (is_first_chunk)
-        {
-            writer->doWritePrefix();
-            is_first_chunk = false;
-        }
         writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
     }
 
@@ -223,7 +218,7 @@ public:
     {
         try
         {
-            writer->doWriteSuffix();
+            writer->finalize();
             writer->flush();
             write_buf->sync();
             write_buf->finalize();
@@ -238,7 +233,6 @@ public:
 private:
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
-    bool is_first_chunk = true;
 };
 
 

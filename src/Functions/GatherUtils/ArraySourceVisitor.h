@@ -1,6 +1,6 @@
 #pragma once
 #include <Common/Visitor.h>
-#include <base/Typelists.h>
+#include <base/TypeLists.h>
 
 namespace DB::GatherUtils
 {
@@ -17,10 +17,10 @@ struct NullableArraySource;
 template <typename Base>
 struct ConstSource;
 
-using NumericArraySources = TLMap<NumericArraySource, TLNumbersWithUUID>;
-using BasicArraySources = TLAppend<GenericArraySource, NumericArraySources>;
+using NumericArraySources = TypeListMap<NumericArraySource, TypeListNumberWithUUID>;
+using BasicArraySources = TypeListAppend<GenericArraySource, NumericArraySources>;
 
-class ArraySourceVisitor : public TLChangeRoot<Visitor, BasicArraySources>
+class ArraySourceVisitor : public TypeListChangeRoot<Visitor, BasicArraySources>
 {
 protected:
     ~ArraySourceVisitor() = default;

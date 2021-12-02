@@ -239,8 +239,8 @@ private:
         if (only_replace_current_database_function)
             return;
 
-        if (node.database.empty())
-            node.database = database_name;
+        if (!node.database)
+            node.setDatabase(database_name);
     }
 
     void visitDDL(ASTRenameQuery & node, ASTPtr &) const
@@ -262,8 +262,8 @@ private:
         if (only_replace_current_database_function)
             return;
 
-        if (node.database.empty())
-            node.database = database_name;
+        if (!node.database)
+            node.setDatabase(database_name);
 
         for (const auto & child : node.command_list->children)
         {

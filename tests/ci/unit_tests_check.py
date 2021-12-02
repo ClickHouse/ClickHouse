@@ -4,17 +4,19 @@ import logging
 import os
 import sys
 import subprocess
-import json
 
 from github import Github
 
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from build_download_helper import download_unit_tests
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
+from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
+from stopwatch import Stopwatch
+
 
 IMAGE_NAME = 'clickhouse/unit-test'
 
@@ -87,6 +89,9 @@ def process_result(result_folder):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+
+    stopwatch = Stopwatch()
+
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
     reports_path = os.getenv("REPORTS_PATH", "./reports")
@@ -96,10 +101,7 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
-        event = json.load(event_file)
-
-    pr_info = PRInfo(event)
+    pr_info = PRInfo(get_event())
 
     gh = Github(get_best_robot_token())
 
@@ -132,6 +134,13 @@ if __name__ == "__main__":
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
     state, description, test_results, additional_logs = process_result(test_output)
+
+    ch_helper = ClickHouseHelper()
+    mark_flaky_tests(ch_helper, check_name, test_results)
+
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [run_log_path] + additional_logs, check_name)
     print(f"::notice ::Report url: {report_url}")
     post_commit_status(gh, pr_info.sha, check_name, description, state, report_url)
+
+    prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_results, state, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, check_name)
+    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)

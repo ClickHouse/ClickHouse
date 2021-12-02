@@ -759,6 +759,7 @@ def test_predefined_connection_configuration(started_cluster):
     result = instance.query("SELECT * FROM s3(s3_conf1, format='CSV', structure='id UInt32')")
     assert result == instance.query("SELECT number FROM numbers(10)")
 
+
 result = ""
 def test_url_reconnect_in_the_middle(started_cluster):
     bucket = started_cluster.minio_bucket
@@ -795,3 +796,47 @@ def test_url_reconnect_in_the_middle(started_cluster):
         thread.join()
 
         assert(int(result), 3914219105369203805)
+
+
+def test_seekable_formats(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]  # type: ClickHouseInstance
+
+    table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
+    instance.query(f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000)")
+
+    result = instance.query(f"SELECT count() FROM {table_function}")
+    assert(int(result) == 5000000)
+
+    table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
+    instance.query(f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000)")
+
+    result = instance.query(f"SELECT count() FROM {table_function}")
+    assert(int(result) == 5000000)
+
+    result = instance.query(f"SELECT formatReadableSize(memory_usage) FROM system.query_log WHERE startsWith(query, 'SELECT count() FROM s3') AND memory_usage > 0 ORDER BY event_time desc")
+    print(result[:3])
+    assert(int(result[:3]) < 200)
+
+
+def test_seekable_formats_url(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+
+    table_function = f"s3(s3_parquet, structure='a Int32, b String', format='Parquet')"
+    instance.query(f"insert into table function {table_function} select number, randomString(100) from numbers(5000000)")
+
+    table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_parquet', 'Parquet', 'a Int32, b String')"
+    result = instance.query(f"SELECT count() FROM {table_function}")
+    assert(int(result) == 5000000)
+
+    table_function = f"s3(s3_orc, structure='a Int32, b String', format='ORC')"
+    instance.query(f"insert into table function {table_function} select number, randomString(100) from numbers(5000000)")
+
+    table_function = f"url('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test_orc', 'ORC', 'a Int32, b String')"
+    result = instance.query(f"SELECT count() FROM {table_function}")
+    assert(int(result) == 5000000)
+
+    result = instance.query(f"SELECT formatReadableSize(memory_usage) FROM system.query_log WHERE startsWith(query, 'SELECT count() FROM url') AND memory_usage > 0 ORDER BY event_time desc")
+    print(result[:3])
+    assert(int(result[:3]) < 200)

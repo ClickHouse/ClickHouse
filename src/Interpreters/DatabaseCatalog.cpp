@@ -66,9 +66,9 @@ TemporaryTableHolder::TemporaryTableHolder(ContextPtr context_, const TemporaryT
         if (create->uuid == UUIDHelpers::Nil)
             create->uuid = UUIDHelpers::generateV4();
         id = create->uuid;
-        create->table = "_tmp_" + toString(id);
-        global_name = create->table;
-        create->database = DatabaseCatalog::TEMPORARY_DATABASE;
+        create->setTable("_tmp_" + toString(id));
+        global_name = create->getTable();
+        create->setDatabase(DatabaseCatalog::TEMPORARY_DATABASE);
     }
     else
     {
@@ -248,10 +248,9 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
 
 #if USE_MYSQL
         /// It's definitely not the best place for this logic, but behaviour must be consistent with DatabaseMaterializedMySQL::tryGetTable(...)
-        if (db_and_table.first->getEngineName() == "MaterializedMySQL")
+        if (!context_->isInternalQuery() && db_and_table.first->getEngineName() == "MaterializedMySQL")
         {
-            if (!MaterializedMySQLSyncThread::isMySQLSyncThread())
-                db_and_table.second = std::make_shared<StorageMaterializedMySQL>(std::move(db_and_table.second), db_and_table.first.get());
+            db_and_table.second = std::make_shared<StorageMaterializedMySQL>(std::move(db_and_table.second), db_and_table.first.get());
         }
 #endif
         return db_and_table;
@@ -786,8 +785,8 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         if (create)
         {
             String data_path = "store/" + getPathForUUID(table_id.uuid);
-            create->database = table_id.database_name;
-            create->table = table_id.table_name;
+            create->setDatabase(table_id.database_name);
+            create->setTable(table_id.table_name);
             try
             {
                 table = createTableFromAST(*create, table_id.getDatabaseName(), data_path, getContext(), false).second;

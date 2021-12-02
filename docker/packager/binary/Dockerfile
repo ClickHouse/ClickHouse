@@ -1,9 +1,11 @@
 #  docker build -t clickhouse/binary-builder .
 FROM ubuntu:20.04
 
-ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
+# ARG for quick switch to a given ubuntu mirror
+ARG apt_archive="http://archive.ubuntu.com"
+RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 
-RUN sed -i 's|http://archive|http://ru.archive|g' /etc/apt/sources.list
+ENV DEBIAN_FRONTEND=noninteractive LLVM_VERSION=13
 
 RUN apt-get update \
     && apt-get install \
@@ -92,9 +94,6 @@ RUN git clone https://github.com/tpoechtrager/cctools-port.git \
 
 # Download toolchain and SDK for Darwin
 RUN wget -nv https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz
-
-# Download toolchain for FreeBSD 11.3
-RUN wget -nv https://clickhouse-datasets.s3.yandex.net/toolchains/toolchains/freebsd-11.3-toolchain.tar.xz
 
 # NOTE: Seems like gcc-11 is too new for ubuntu20 repository
 RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \

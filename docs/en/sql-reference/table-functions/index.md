@@ -18,6 +18,8 @@ You can use table functions in:
 
         It's one of the methods of creating a table.
 
+-   [INSERT INTO TABLE FUNCTION](../../sql-reference/statements/insert-into.md#inserting-into-table-function) query.
+
 !!! warning "Warning"
     You can’t use table functions if the [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) setting is disabled.
 
