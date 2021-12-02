@@ -70,6 +70,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.date_time_output_format = settings.date_time_output_format;
+    format_settings.bool_true_representation = settings.bool_true_representation;
+    format_settings.bool_false_representation = settings.bool_false_representation;
     format_settings.enable_streaming = settings.output_format_enable_streaming;
     format_settings.import_nested_json = settings.input_format_import_nested_json;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;

@@ -8,7 +8,7 @@ import sys
 import time
 from github import Github
 from s3_helper import S3Helper
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from get_robot_token import get_best_robot_token
 from version_helper import get_version_from_repo, update_version_local
 from ccache_utils import get_ccache_if_not_exists, upload_ccache
@@ -57,7 +57,7 @@ def get_packager_cmd(build_config, packager_path, output_path, build_version, im
     cmd += ' --ccache_dir={}'.format(ccache_path)
 
     if 'alien_pkgs' in build_config and build_config['alien_pkgs']:
-        if pr_info == 0 or 'release' in pr_info.labels:
+        if pr_info.number == 0 or 'release' in pr_info.labels:
             cmd += ' --alien-pkgs rpm tgz'
 
     cmd += ' --docker-image-version={}'.format(image_version)
@@ -99,10 +99,7 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
-        event = json.load(event_file)
-
-    pr_info = PRInfo(event)
+    pr_info = PRInfo(get_event())
 
     logging.info("Repo copy path %s", repo_path)
 
@@ -158,11 +155,18 @@ if __name__ == "__main__":
     logging.info("Will upload cache")
     upload_ccache(ccache_path, s3_helper, pr_info.number, temp_path)
 
-    # for release pull requests we use branch names prefixes, not pr numbers
+    release_or_pr = None
     if 'release' in pr_info.labels or 'release-lts' in pr_info.labels:
-        s3_path_prefix = pr_info.head_ref + "/" + pr_info.sha + "/" + build_name
+        # for release pull requests we use branch names prefixes, not pr numbers
+        release_or_pr = pr_info.head_ref
+    elif pr_info.number == 0:
+        # for pushes to master - major version
+        release_or_pr = ".".join(version.as_tuple()[:2])
     else:
-        s3_path_prefix = str(pr_info.number) + "/" + pr_info.sha + "/" + build_name
+        # PR number for anything else
+        release_or_pr = str(pr_info.number)
+
+    s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
 
     if os.path.exists(log_path):
         log_url = s3_helper.upload_build_file_to_s3(log_path, s3_path_prefix + "/" + os.path.basename(log_path))

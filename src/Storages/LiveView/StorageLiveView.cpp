@@ -139,7 +139,7 @@ Pipes StorageLiveView::blocksToPipes(BlocksPtrs blocks, Block & sample_block)
 {
     Pipes pipes;
     for (auto & blocks_for_source : *blocks)
-        pipes.emplace_back(std::make_shared<BlocksSource>(std::make_shared<BlocksPtr>(blocks_for_source), sample_block));
+        pipes.emplace_back(std::make_shared<BlocksSource>(blocks_for_source, sample_block));
 
     return pipes;
 }
@@ -557,7 +557,7 @@ Pipe StorageLiveView::read(
             refresh(false);
     }
 
-    return Pipe(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
+    return Pipe(std::make_shared<BlocksSource>(*blocks_ptr, getHeader()));
 }
 
 Pipe StorageLiveView::watch(

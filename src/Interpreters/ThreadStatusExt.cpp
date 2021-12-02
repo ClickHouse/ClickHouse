@@ -310,7 +310,7 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
 
 void ThreadStatus::initQueryProfiler()
 {
-    if (!query_profiled_enabled)
+    if (!query_profiler_enabled)
         return;
 
     /// query profilers are useless without trace collector
@@ -326,11 +326,11 @@ void ThreadStatus::initQueryProfiler()
     {
         if (settings.query_profiler_real_time_period_ns > 0)
             query_profiler_real = std::make_unique<QueryProfilerReal>(thread_id,
-                /* period */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
+                /* period= */ static_cast<UInt32>(settings.query_profiler_real_time_period_ns));
 
         if (settings.query_profiler_cpu_time_period_ns > 0)
             query_profiler_cpu = std::make_unique<QueryProfilerCPU>(thread_id,
-                /* period */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
+                /* period= */ static_cast<UInt32>(settings.query_profiler_cpu_time_period_ns));
     }
     catch (...)
     {
