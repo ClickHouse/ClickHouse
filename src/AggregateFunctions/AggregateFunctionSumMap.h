@@ -66,7 +66,7 @@ class AggregateFunctionMapBase : public IAggregateFunctionDataHelper<
     AggregateFunctionMapData<NearestFieldType<T>>, Derived>
 {
 private:
-    static constexpr auto STATE_VERSION_1_MIN_REVISION = 54451;
+    static constexpr auto STATE_VERSION_1_MIN_REVISION = 54452;
 
     DataTypePtr keys_type;
     SerializationPtr keys_serialization;
@@ -94,7 +94,7 @@ public:
             {
                 if (type->isNullable())
                     promoted_values_serializations.emplace_back(
-                        makeNullable(removeNullable(type)->promoteNumericType())->getDefaultSerialization());
+                         makeNullable(removeNullable(type)->promoteNumericType())->getDefaultSerialization());
                 else
                     promoted_values_serializations.emplace_back(type->promoteNumericType()->getDefaultSerialization());
             }
