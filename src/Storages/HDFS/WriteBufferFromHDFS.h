@@ -5,6 +5,8 @@
 #if USE_HDFS
 #include <IO/WriteBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
+#include <Poco/Util/AbstractConfiguration.h>
+#include <fcntl.h>
 #include <string>
 #include <memory>
 
@@ -32,9 +34,9 @@ public:
 
     void sync() override;
 
-    void finalize() override;
-
 private:
+    void finalizeImpl() override;
+
     struct WriteBufferFromHDFSImpl;
     std::unique_ptr<WriteBufferFromHDFSImpl> impl;
 };

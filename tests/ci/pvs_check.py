@@ -9,10 +9,12 @@ import logging
 import sys
 from github import Github
 from s3_helper import S3Helper
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from upload_result_helper import upload_results
 from commit_status_helper import get_commit
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from stopwatch import Stopwatch
 
 NAME = 'PVS Studio (actions)'
 LICENCE_NAME = 'Free license: ClickHouse, Yandex'
@@ -36,12 +38,13 @@ def _process_txt_report(path):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+
+    stopwatch = Stopwatch()
+
     repo_path = os.path.join(os.getenv("REPO_COPY", os.path.abspath("../../")))
     temp_path = os.path.join(os.getenv("TEMP_PATH"))
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
-        event = json.load(event_file)
-    pr_info = PRInfo(event)
+    pr_info = PRInfo(get_event())
     # this check modify repository so copy it to the temp directory
     logging.info("Repo copy path %s", repo_path)
 
@@ -82,7 +85,8 @@ if __name__ == "__main__":
                 break
 
         if not index_html:
-            commit.create_status(context=NAME, description='PVS report failed to build', state='failure', target_url=f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}")
+            commit.create_status(context=NAME, description='PVS report failed to build', state='failure',
+                                 target_url=f"{os.getenv('GITHUB_SERVER_URL')}/{os.getenv('GITHUB_REPOSITORY')}/actions/runs/{os.getenv('GITHUB_RUN_ID')}")
             sys.exit(1)
 
         txt_report = os.path.join(temp_path, TXT_REPORT_NAME)
@@ -98,6 +102,10 @@ if __name__ == "__main__":
         print("::notice ::Report url: {}".format(report_url))
         commit = get_commit(gh, pr_info.sha)
         commit.create_status(context=NAME, description=description, state=status, target_url=report_url)
+
+        ch_helper = ClickHouseHelper()
+        prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_results, status, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, NAME)
+        ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
     except Exception as ex:
         print("Got an exception", ex)
         sys.exit(1)
