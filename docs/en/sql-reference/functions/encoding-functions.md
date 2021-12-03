@@ -93,6 +93,8 @@ For [String](../../sql-reference/data-types/string.md) and [FixedString](../../s
 
 Values of [Float](../../sql-reference/data-types/float.md) and [Decimal](../../sql-reference/data-types/decimal.md) types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
 
+Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order string.
+
 **Arguments**
 
 -   `arg` — A value to convert to hexadecimal. Types: [String](../../sql-reference/data-types/string.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md) or [DateTime](../../sql-reference/data-types/datetime.md).
@@ -146,6 +148,21 @@ Result:
 │ 0000000000003040 │
 └──────────────────┘
 ```
+
+Query:
+
+``` sql
+SELECT lower(hex(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))) as big_endian_hex
+```
+
+Result:
+
+``` text
+┌─big_endian_hex───────────────────┐
+│ 907ba6006ad3dba061f0c4045cb311e7 │
+└──────────────────────────────────┘
+```
+
 
 ## unhex {#unhexstr}
 
@@ -224,6 +241,8 @@ For [String](../../sql-reference/data-types/string.md) and [FixedString](../../s
 
 Values of [Float](../../sql-reference/data-types/float.md) and [Decimal](../../sql-reference/data-types/decimal.md) types are encoded as their representation in memory. As we support little-endian architecture, they are encoded in little-endian. Zero leading/trailing bytes are not omitted.
 
+Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order string.
+
 **Arguments**
 
 -   `arg` — A value to convert to binary. [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [UInt](../../sql-reference/data-types/int-uint.md), [Float](../../sql-reference/data-types/float.md), [Decimal](../../sql-reference/data-types/decimal.md), [Date](../../sql-reference/data-types/date.md), or [DateTime](../../sql-reference/data-types/datetime.md).
@@ -279,6 +298,21 @@ Result:
 │ 0000000000000000000000000000000000000000000000000011000001000000 │
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+Query:
+
+``` sql
+SELECT lower(bin(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))) as big_endian_bin
+```
+
+Result:
+
+``` text
+┌─big_endian_bin───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 10010000011110111010011000000000011010101101001111011011101000000110000111110000110001000000010001011100101100110001000111100111 │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 
 ## unbin {#unbinstr}
 
