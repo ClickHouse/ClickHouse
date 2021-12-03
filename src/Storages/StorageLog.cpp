@@ -25,6 +25,7 @@
 #include <Parsers/ASTLiteral.h>
 #include "StorageLogSettings.h"
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Sources/NullSource.h>
 #include <Processors/Pipe.h>
 
 #include <cassert>
@@ -121,9 +122,6 @@ Chunk LogSource::generate()
     if (rows_read == rows_limit)
         return {};
 
-    if (storage.file_checker.empty())
-        return {};
-
     /// How many rows to read for the next block.
     size_t max_rows_to_read = std::min(block_size, rows_limit - rows_read);
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
@@ -184,7 +182,10 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 
             UInt64 offset = 0;
             if (!stream_for_prefix && mark_number)
+            {
+                std::lock_guard marks_lock(file_it->second.marks_mutex);
                 offset = file_it->second.marks[mark_number].offset;
+            }
 
             auto & data_file_path = file_it->second.data_file_path;
             auto it = streams.try_emplace(stream_name, storage.disk, data_file_path, offset, max_read_buffer_size).first;
@@ -455,7 +456,10 @@ void LogBlockOutputStream::writeMarks(MarksForColumns && marks)
         writeIntBinary(mark.second.offset, *marks_stream);
 
         size_t column_index = mark.first;
-        storage.files[storage.column_names_by_idx[column_index]].marks.push_back(mark.second);
+
+        auto & file = storage.files[storage.column_names_by_idx[column_index]];
+        std::lock_guard marks_lock(file.marks_mutex);
+        file.marks.push_back(mark.second);
     }
 }
 
@@ -665,6 +669,9 @@ Pipe StorageLog::read(
     std::shared_lock lock(rwlock, lock_timeout);
     if (!lock)
         throw Exception("Lock timeout exceeded", ErrorCodes::TIMEOUT_EXCEEDED);
+
+    if (file_checker.empty())
+        return Pipe(std::make_shared<NullSource>(metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID())));
 
     Pipes pipes;
 

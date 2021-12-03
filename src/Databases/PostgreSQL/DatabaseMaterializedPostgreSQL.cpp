@@ -65,7 +65,7 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
             /* is_materialized_postgresql_database = */ true);
 
     postgres::Connection connection(connection_info);
-    NameSet tables_to_replicate;
+    std::set<String> tables_to_replicate;
     try
     {
         tables_to_replicate = replication_handler->fetchRequiredTables(connection);

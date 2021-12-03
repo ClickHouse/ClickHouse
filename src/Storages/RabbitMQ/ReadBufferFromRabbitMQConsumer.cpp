@@ -16,7 +16,7 @@ namespace DB
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         ChannelPtr consumer_channel_,
-        HandlerPtr event_handler_,
+        RabbitMQHandler & event_handler_,
         std::vector<String> & queues_,
         size_t channel_id_base_,
         const String & channel_base_,
@@ -35,8 +35,6 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , stopped(stopped_)
         , received(queue_size_)
 {
-    if (consumer_channel)
-        setupChannel();
 }
 
 
@@ -122,6 +120,12 @@ void ReadBufferFromRabbitMQConsumer::updateAckTracker(AckTracker record_info)
 
 void ReadBufferFromRabbitMQConsumer::setupChannel()
 {
+    if (!consumer_channel)
+        return;
+
+    /// We mark initialized only once.
+    initialized = true;
+
     wait_subscription.store(true);
 
     consumer_channel->onReady([&]()
@@ -159,7 +163,7 @@ bool ReadBufferFromRabbitMQConsumer::needChannelUpdate()
 
 void ReadBufferFromRabbitMQConsumer::iterateEventLoop()
 {
-    event_handler->iterateLoop();
+    event_handler.iterateLoop();
 }
 
 

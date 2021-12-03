@@ -22,6 +22,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
+#include <Common/filesystemHelpers.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
@@ -120,8 +121,8 @@ void checkCreationIsAllowed(ContextPtr context_global, const std::string & db_di
         return;
 
     /// "/dev/null" is allowed for perf testing
-    if (!startsWith(table_path, db_dir_path) && table_path != "/dev/null")
-        throw Exception("File is not inside " + db_dir_path, ErrorCodes::DATABASE_ACCESS_DENIED);
+    if (!fileOrSymlinkPathStartsWith(table_path, db_dir_path) && table_path != "/dev/null")
+        throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "File `{}` is not inside `{}`", table_path, db_dir_path);
 
     if (fs::exists(table_path) && fs::is_directory(table_path))
         throw Exception("File must not be a directory", ErrorCodes::INCORRECT_FILE_NAME);
@@ -136,7 +137,10 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
         fs_table_path = user_files_absolute_path / fs_table_path;
 
     Strings paths;
-    const String path = fs::weakly_canonical(fs_table_path);
+    /// Do not use fs::canonical or fs::weakly_canonical.
+    /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
+    String path = fs::absolute(fs_table_path);
+    path = fs::path(path).lexically_normal(); /// Normalize path.
     if (path.find_first_of("*?{") == std::string::npos)
     {
         std::error_code error;

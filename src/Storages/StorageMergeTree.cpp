@@ -862,7 +862,7 @@ bool StorageMergeTree::mergeSelectedParts(
         new_part = merger_mutator.mergePartsToTemporaryPart(
             future_part,
             metadata_snapshot,
-            *(merge_list_entry),
+            (*merge_list_entry)->ref(),
             table_lock_holder,
             time(nullptr),
             getContext(),
@@ -1021,7 +1021,7 @@ bool StorageMergeTree::mutateSelectedPart(const StorageMetadataPtr & metadata_sn
     try
     {
         new_part = merger_mutator.mutatePartToTemporaryPart(
-            future_part, metadata_snapshot, merge_mutate_entry.commands, *(merge_list_entry),
+            future_part, metadata_snapshot, merge_mutate_entry.commands, (*merge_list_entry)->ref(),
             time(nullptr), getContext(), merge_mutate_entry.tagger->reserved_space, table_lock_holder);
 
         renameTempPartAndReplace(new_part);
@@ -1238,6 +1238,7 @@ bool StorageMergeTree::optimize(
 
 ActionLock StorageMergeTree::stopMergesAndWait()
 {
+    /// TODO allow to stop merges in specific partition only (like it's done in ReplicatedMergeTree)
     std::unique_lock lock(currently_processing_in_background_mutex);
 
     /// Asks to complete merges and does not allow them to start.
@@ -1391,6 +1392,7 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 {
     auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto lock2 = source_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    auto merges_blocker = stopMergesAndWait();
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr();
     auto my_metadata_snapshot = getInMemoryMetadataPtr();
 
@@ -1464,6 +1466,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 {
     auto lock1 = lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
     auto lock2 = dest_table->lockForShare(local_context->getCurrentQueryId(), local_context->getSettingsRef().lock_acquire_timeout);
+    auto merges_blocker = stopMergesAndWait();
 
     auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
     if (!dest_table_storage)

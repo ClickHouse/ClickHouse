@@ -161,8 +161,8 @@ public:
     bool isInputProjected() const { return project_input; }
     bool isOutputProjected() const { return projected_output; }
 
-    void removeUnusedActions(const Names & required_names);
-    void removeUnusedActions(const NameSet & required_names);
+    void removeUnusedActions(const Names & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
+    void removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
     NameSet foldActionsByProjection(
         const NameSet & required_columns,
@@ -269,7 +269,7 @@ public:
 private:
     Node & addNode(Node node);
 
-    void removeUnusedActions(bool allow_remove_inputs = true);
+    void removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
 #if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression);

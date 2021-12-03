@@ -85,10 +85,15 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
                 "Fail to read from HDFS: {}, file path: {}. Error: {}",
                 hdfs_uri, hdfs_file_path, std::string(hdfsGetLastError()));
 
-        working_buffer.resize(bytes_read);
-        offset += bytes_read;
+        if (bytes_read)
+        {
+            working_buffer = internal_buffer;
+            working_buffer.resize(bytes_read);
+            offset += bytes_read;
+            return true;
+        }
 
-        return bytes_read;
+        return false;
     }
 
     off_t seek(off_t offset_, int whence) override
@@ -129,16 +134,13 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
 
 bool ReadBufferFromHDFS::nextImpl()
 {
+    impl->position() = impl->buffer().begin() + offset();
     auto result = impl->next();
 
     if (result)
-    {
-        working_buffer = internal_buffer = impl->buffer();
-        pos = working_buffer.begin();
-    }
-    else
-        return false;
-    return true;
+        BufferBase::set(impl->buffer().begin(), impl->buffer().size(), impl->offset); /// use the buffer returned by `impl`
+
+    return result;
 }
 
 

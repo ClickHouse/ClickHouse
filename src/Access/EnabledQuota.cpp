@@ -52,9 +52,7 @@ struct EnabledQuota::Impl
             return end;
         }
 
-        /// We reset counters only if the interval's end has been calculated before.
-        /// If it hasn't we just calculate the interval's end for the first time and don't reset counters yet.
-        bool need_reset_counters = (end_loaded.count() != 0);
+        bool need_reset_counters = false;
 
         do
         {
@@ -66,7 +64,12 @@ struct EnabledQuota::Impl
             UInt64 n = static_cast<UInt64>((current_time - end + duration) / duration);
             end = end + duration * n;
             if (end_of_interval.compare_exchange_strong(end_loaded, end.time_since_epoch()))
+            {
+                /// We reset counters only if the interval's end has been calculated before.
+                /// If it hasn't we just calculate the interval's end for the first time and don't reset counters yet.
+                need_reset_counters = (end_loaded.count() != 0);
                 break;
+            }
             end = std::chrono::system_clock::time_point{end_loaded};
         }
         while (current_time >= end);

@@ -279,7 +279,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
             assert(removed);
         }
         if (added)
-            DatabaseCatalog::instance().detachDatabase(database_name, false, false);
+            DatabaseCatalog::instance().detachDatabase(getContext(), database_name, false, false);
 
         throw;
     }
@@ -932,8 +932,14 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     {
         // Expand CTE before filling default database
         ApplyWithSubqueryVisitor().visit(*create.select);
-        AddDefaultDatabaseVisitor visitor(current_database);
+        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
         visitor.visit(*create.select);
+    }
+
+    if (create.columns_list)
+    {
+        AddDefaultDatabaseVisitor visitor(getContext(), current_database);
+        visitor.visit(*create.columns_list);
     }
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.

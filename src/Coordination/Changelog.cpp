@@ -168,7 +168,8 @@ public:
     explicit ChangelogReader(const std::string & filepath_)
         : filepath(filepath_)
         , read_buf(filepath)
-    {}
+    {
+    }
 
     /// start_log_index -- all entries with index < start_log_index will be skipped, but accounted into total_entries_read_from_log
     ChangelogReadResult readChangelog(IndexToLogEntry & logs, uint64_t start_log_index, IndexToOffset & index_to_offset, Poco::Logger * log)
@@ -349,6 +350,14 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
 
         min_log_id = last_commited_log_index;
         max_log_id = last_commited_log_index == 0 ? 0 : last_commited_log_index - 1;
+    }
+    else if (last_commited_log_index != 0 && max_log_id < last_commited_log_index - 1) /// If we have more fresh snapshot than our logs
+    {
+        LOG_WARNING(log, "Our most fresh log_id {} is smaller than stored data in snapshot {}. It can indicate data loss. Removing outdated logs.", max_log_id, last_commited_log_index - 1);
+
+        removeAllLogs();
+        min_log_id = last_commited_log_index;
+        max_log_id = last_commited_log_index - 1;
     }
     else if (last_log_is_not_complete) /// if it's complete just start new one
     {

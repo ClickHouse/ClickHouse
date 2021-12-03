@@ -27,9 +27,9 @@ namespace ErrorCodes
 
 
 template<typename T>
-std::unordered_set<std::string> fetchPostgreSQLTablesList(T & tx)
+std::set<std::string> fetchPostgreSQLTablesList(T & tx)
 {
-    std::unordered_set<std::string> tables;
+    std::set<std::string> tables;
     std::string query = "SELECT tablename FROM pg_catalog.pg_tables "
         "WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema'";
 
@@ -133,7 +133,7 @@ static DataTypePtr convertPostgreSQLDataType(String & type, const std::function<
 
 template<typename T>
 std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
-        T & tx, const String & postgres_table_name, const String & query, bool use_nulls, bool only_names_and_types)
+        T & tx, const String & postgres_table, const String & query, bool use_nulls, bool only_names_and_types)
 {
     auto columns = NamesAndTypes();
 
@@ -178,7 +178,7 @@ std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
 
             /// All rows must contain the same number of dimensions, so limit 1 is ok. If number of dimensions in all rows is not the same -
             /// such arrays are not able to be used as ClickHouse Array at all.
-            pqxx::result result{tx.exec(fmt::format("SELECT array_ndims({}) FROM {} LIMIT 1", name_and_type.name, postgres_table_name))};
+            pqxx::result result{tx.exec(fmt::format("SELECT array_ndims({}) FROM {} LIMIT 1", name_and_type.name, postgres_table))};
             auto dimensions = result[0][0].as<int>();
 
             /// It is always 1d array if it is in recheck.
@@ -189,10 +189,13 @@ std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
             columns[i] = NameAndTypePair(name_and_type.name, type);
         }
     }
-
     catch (const pqxx::undefined_table &)
     {
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table_name);
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table);
+    }
+    catch (const pqxx::syntax_error & e)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error: {} (in query: {})", e.what(), query);
     }
     catch (Exception & e)
     {
@@ -206,18 +209,27 @@ std::shared_ptr<NamesAndTypesList> readNamesAndTypesList(
 
 template<typename T>
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        T & tx, const String & postgres_table_name, bool use_nulls, bool with_primary_key, bool with_replica_identity_index)
+        T & tx, const String & postgres_table, const String & postgres_schema, bool use_nulls, bool with_primary_key, bool with_replica_identity_index)
 {
     PostgreSQLTableStructure table;
+
+    auto where = fmt::format("relname = {}", quoteString(postgres_table));
+    if (postgres_schema.empty())
+        where += " AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')";
+    else
+        where += fmt::format(" AND relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = {})", quoteString(postgres_schema));
 
     std::string query = fmt::format(
            "SELECT attname AS name, format_type(atttypid, atttypmod) AS type, "
            "attnotnull AS not_null, attndims AS dims "
            "FROM pg_attribute "
-           "WHERE attrelid = {}::regclass "
-           "AND NOT attisdropped AND attnum > 0", quoteString(postgres_table_name));
+           "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) "
+           "AND NOT attisdropped AND attnum > 0", where);
 
-    table.columns = readNamesAndTypesList(tx, postgres_table_name, query, use_nulls, false);
+    table.columns = readNamesAndTypesList(tx, postgres_table, query, use_nulls, false);
+
+    if (!table.columns)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "PostgreSQL table {} does not exist", postgres_table);
 
     if (with_primary_key)
     {
@@ -227,9 +239,9 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
                 "FROM pg_index i "
                 "JOIN pg_attribute a ON a.attrelid = i.indrelid "
                 "AND a.attnum = ANY(i.indkey) "
-                "WHERE  i.indrelid = {}::regclass AND i.indisprimary", quoteString(postgres_table_name));
+                "WHERE attrelid = (SELECT oid FROM pg_class WHERE {}) AND i.indisprimary", where);
 
-        table.primary_key_columns = readNamesAndTypesList(tx, postgres_table_name, query, use_nulls, true);
+        table.primary_key_columns = readNamesAndTypesList(tx, postgres_table, query, use_nulls, true);
     }
 
     if (with_replica_identity_index && !table.primary_key_columns)
@@ -252,25 +264,25 @@ PostgreSQLTableStructure fetchPostgreSQLTableStructure(
             "and t.relname = {} " /// Connection is already done to a needed database, only table name is needed.
             "and ix.indisreplident = 't' " /// index is is replica identity index
             "ORDER BY a.attname", /// column names
-        quoteString(postgres_table_name));
+        quoteString(postgres_table));
 
-        table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table_name, query, use_nulls, true);
+        table.replica_identity_columns = readNamesAndTypesList(tx, postgres_table, query, use_nulls, true);
     }
 
     return table;
 }
 
 
-PostgreSQLTableStructure fetchPostgreSQLTableStructure(pqxx::connection & connection, const String & postgres_table_name, bool use_nulls)
+PostgreSQLTableStructure fetchPostgreSQLTableStructure(pqxx::connection & connection, const String & postgres_table, const String & postgres_schema, bool use_nulls)
 {
     pqxx::ReadTransaction tx(connection);
-    auto result = fetchPostgreSQLTableStructure(tx, postgres_table_name, use_nulls, false, false);
+    auto result = fetchPostgreSQLTableStructure(tx, postgres_table, postgres_schema, use_nulls, false, false);
     tx.commit();
     return result;
 }
 
 
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection)
+std::set<std::string> fetchPostgreSQLTablesList(pqxx::connection & connection)
 {
     pqxx::ReadTransaction tx(connection);
     auto result = fetchPostgreSQLTablesList(tx);
@@ -281,19 +293,19 @@ std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::connection & con
 
 template
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        pqxx::ReadTransaction & tx, const String & postgres_table_name, bool use_nulls,
-        bool with_primary_key, bool with_replica_identity_index);
+        pqxx::ReadTransaction & tx, const String & postgres_table, const String & postgres_schema,
+        bool use_nulls, bool with_primary_key, bool with_replica_identity_index);
 
 template
 PostgreSQLTableStructure fetchPostgreSQLTableStructure(
-        pqxx::ReplicationTransaction & tx, const String & postgres_table_name, bool use_nulls,
-        bool with_primary_key, bool with_replica_identity_index);
+        pqxx::ReplicationTransaction & tx, const String & postgres_table, const String & postgres_schema,
+        bool use_nulls, bool with_primary_key, bool with_replica_identity_index);
 
 template
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::work & tx);
+std::set<std::string> fetchPostgreSQLTablesList(pqxx::work & tx);
 
 template
-std::unordered_set<std::string> fetchPostgreSQLTablesList(pqxx::ReadTransaction & tx);
+std::set<std::string> fetchPostgreSQLTablesList(pqxx::ReadTransaction & tx);
 
 }
 

@@ -341,7 +341,7 @@ std::string ActionsDAG::dumpNames() const
     return out.str();
 }
 
-void ActionsDAG::removeUnusedActions(const NameSet & required_names)
+void ActionsDAG::removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs, bool allow_constant_folding)
 {
     NodeRawConstPtrs required_nodes;
     required_nodes.reserve(required_names.size());
@@ -365,10 +365,10 @@ void ActionsDAG::removeUnusedActions(const NameSet & required_names)
     }
 
     index.swap(required_nodes);
-    removeUnusedActions();
+    removeUnusedActions(allow_remove_inputs, allow_constant_folding);
 }
 
-void ActionsDAG::removeUnusedActions(const Names & required_names)
+void ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_remove_inputs, bool allow_constant_folding)
 {
     NodeRawConstPtrs required_nodes;
     required_nodes.reserve(required_names.size());
@@ -388,10 +388,10 @@ void ActionsDAG::removeUnusedActions(const Names & required_names)
     }
 
     index.swap(required_nodes);
-    removeUnusedActions();
+    removeUnusedActions(allow_remove_inputs, allow_constant_folding);
 }
 
-void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
+void ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding)
 {
     std::unordered_set<const Node *> visited_nodes;
     std::stack<Node *> stack;
@@ -422,9 +422,9 @@ void ActionsDAG::removeUnusedActions(bool allow_remove_inputs)
         auto * node = stack.top();
         stack.pop();
 
-        if (!node->children.empty() && node->column && isColumnConst(*node->column))
+        /// Constant folding.
+        if (allow_constant_folding && !node->children.empty() && node->column && isColumnConst(*node->column))
         {
-            /// Constant folding.
             node->type = ActionsDAG::ActionType::COLUMN;
             node->children.clear();
         }
@@ -1552,11 +1552,37 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
     std::unordered_set<const ActionsDAG::Node *> allowed;
     std::unordered_set<const ActionsDAG::Node *> rejected;
 
+    /// Parts of predicate in case predicate is conjunction (or just predicate itself).
+    std::unordered_set<const ActionsDAG::Node *> predicates;
+    {
+        std::stack<const ActionsDAG::Node *> stack;
+        std::unordered_set<const ActionsDAG::Node *> visited_nodes;
+        stack.push(predicate);
+        visited_nodes.insert(predicate);
+        while (!stack.empty())
+        {
+            const auto * node = stack.top();
+            stack.pop();
+            bool is_conjunction = node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and";
+            if (is_conjunction)
+            {
+                for (const auto & child : node->children)
+                {
+                    if (visited_nodes.count(child) == 0)
+                    {
+                        visited_nodes.insert(child);
+                        stack.push(child);
+                    }
+                }
+            }
+            else
+                predicates.insert(node);
+        }
+    }
+
     struct Frame
     {
         const ActionsDAG::Node * node = nullptr;
-        /// Node is a part of predicate (predicate itself, or some part of AND)
-        bool is_predicate = false;
         size_t next_child_to_visit = 0;
         size_t num_allowed_children = 0;
     };
@@ -1564,14 +1590,11 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
     std::stack<Frame> stack;
     std::unordered_set<const ActionsDAG::Node *> visited_nodes;
 
-    stack.push(Frame{.node = predicate, .is_predicate = true});
+    stack.push(Frame{.node = predicate});
     visited_nodes.insert(predicate);
     while (!stack.empty())
     {
         auto & cur = stack.top();
-        bool is_conjunction = cur.is_predicate
-                                && cur.node->type == ActionsDAG::ActionType::FUNCTION
-                                && cur.node->function_base->getName() == "and";
 
         /// At first, visit all children.
         while (cur.next_child_to_visit < cur.node->children.size())
@@ -1581,7 +1604,7 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
             if (visited_nodes.count(child) == 0)
             {
                 visited_nodes.insert(child);
-                stack.push({.node = child, .is_predicate = is_conjunction});
+                stack.push({.node = child});
                 break;
             }
 
@@ -1598,8 +1621,7 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
                     allowed_nodes.emplace(cur.node);
             }
 
-            /// Add parts of AND to result. Do not add function AND.
-            if (cur.is_predicate && ! is_conjunction)
+            if (predicates.count(cur.node))
             {
                 if (allowed_nodes.count(cur.node))
                 {
@@ -1617,6 +1639,13 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
             stack.pop();
         }
     }
+
+    // std::cerr << "Allowed " << conjunction.allowed.size() << std::endl;
+    // for (const auto & node : conjunction.allowed)
+    //     std::cerr << node->result_name << std::endl;
+    // std::cerr << "Rejected " << conjunction.rejected.size() << std::endl;
+    // for (const auto & node : conjunction.rejected)
+    //     std::cerr << node->result_name << std::endl;
 
     return conjunction;
 }

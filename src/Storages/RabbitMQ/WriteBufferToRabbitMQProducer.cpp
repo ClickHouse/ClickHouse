@@ -15,8 +15,6 @@
 namespace DB
 {
 
-static const auto CONNECT_SLEEP = 200;
-static const auto RETRIES_MAX = 20;
 static const auto BATCH = 1000;
 static const auto RETURNED_LIMIT = 50000;
 
@@ -26,10 +24,8 @@ namespace ErrorCodes
 }
 
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
-        std::pair<String, UInt16> & parsed_address_,
+        const RabbitMQConfiguration & configuration_,
         ContextPtr global_context,
-        const std::pair<String, String> & login_password_,
-        const String & vhost_,
         const Names & routing_keys_,
         const String & exchange_name_,
         const AMQP::ExchangeType exchange_type_,
@@ -41,9 +37,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         size_t rows_per_message,
         size_t chunk_size_)
         : WriteBuffer(nullptr, 0)
-        , parsed_address(parsed_address_)
-        , login_password(login_password_)
-        , vhost(vhost_)
+        , connection(configuration_, log_)
         , routing_keys(routing_keys_)
         , exchange_name(exchange_name_)
         , exchange_type(exchange_type_)
@@ -57,20 +51,10 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         , max_rows(rows_per_message)
         , chunk_size(chunk_size_)
 {
-    event_handler = std::make_unique<RabbitMQHandler>(loop.getLoop(), log);
-
-    if (setupConnection(false))
-    {
+    if (connection.connect())
         setupChannel();
-    }
     else
-    {
-        if (!connection->closed())
-             connection->close(true);
-
-        throw Exception("Cannot connect to RabbitMQ host: " + parsed_address.first + ", port: " + std::to_string(parsed_address.second),
-                ErrorCodes::CANNOT_CONNECT_RABBITMQ);
-    }
+        throw Exception(ErrorCodes::CANNOT_CONNECT_RABBITMQ, "Cannot connect to RabbitMQ {}", connection.connectionInfoForLog());
 
     writing_task = global_context->getSchedulePool().createTask("RabbitMQWritingTask", [this]{ writingFunc(); });
     writing_task->deactivate();
@@ -92,15 +76,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
 WriteBufferToRabbitMQProducer::~WriteBufferToRabbitMQProducer()
 {
     writing_task->deactivate();
-    connection->close();
-
-    size_t cnt_retries = 0;
-    while (!connection->closed() && cnt_retries++ != RETRIES_MAX)
-    {
-        event_handler->iterateLoop();
-        std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
-    }
-
+    connection.disconnect();
     assert(rows == 0 && chunks.empty());
 }
 
@@ -131,42 +107,9 @@ void WriteBufferToRabbitMQProducer::countRow()
 }
 
 
-bool WriteBufferToRabbitMQProducer::setupConnection(bool reconnecting)
-{
-    size_t cnt_retries = 0;
-
-    if (reconnecting)
-    {
-        connection->close();
-
-        while (!connection->closed() && ++cnt_retries != RETRIES_MAX)
-            event_handler->iterateLoop();
-
-        if (!connection->closed())
-            connection->close(true);
-
-        LOG_TRACE(log, "Trying to set up connection");
-    }
-
-    connection = std::make_unique<AMQP::TcpConnection>(event_handler.get(),
-            AMQP::Address(
-                parsed_address.first, parsed_address.second,
-                AMQP::Login(login_password.first, login_password.second), vhost));
-
-    cnt_retries = 0;
-    while (!connection->ready() && ++cnt_retries != RETRIES_MAX)
-    {
-        event_handler->iterateLoop();
-        std::this_thread::sleep_for(std::chrono::milliseconds(CONNECT_SLEEP));
-    }
-
-    return event_handler->connectionRunning();
-}
-
-
 void WriteBufferToRabbitMQProducer::setupChannel()
 {
-    producer_channel = std::make_unique<AMQP::TcpChannel>(connection.get());
+    producer_channel = connection.createChannel();
 
     producer_channel->onError([&](const char * message)
     {
@@ -322,8 +265,11 @@ void WriteBufferToRabbitMQProducer::writingFunc()
 
         if (wait_num.load() && delivery_record.empty() && payloads.empty() && returned.empty())
             wait_all = false;
-        else if ((!producer_channel->usable() && event_handler->connectionRunning()) || (!event_handler->connectionRunning() && setupConnection(true)))
-            setupChannel();
+        else if (!producer_channel->usable())
+        {
+            if (connection.reconnect())
+                setupChannel();
+        }
     }
 
     LOG_DEBUG(log, "Producer on channel {} completed", channel_id);
@@ -355,7 +301,7 @@ void WriteBufferToRabbitMQProducer::reinitializeChunks()
 
 void WriteBufferToRabbitMQProducer::iterateEventLoop()
 {
-    event_handler->iterateLoop();
+    connection.getHandler().iterateLoop();
 }
 
 }

@@ -1,6 +1,6 @@
-# docker build -t yandex/clickhouse-pvs-test .
+# docker build -t clickhouse/pvs-test .
 
-FROM yandex/clickhouse-binary-builder
+FROM clickhouse/binary-builder
 
 RUN apt-get update --yes \
     && apt-get install \

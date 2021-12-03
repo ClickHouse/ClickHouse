@@ -48,12 +48,15 @@ public:
     bool mayBenefitFromIndexForIn(
         const ASTPtr & left_in_operand, ContextPtr query_context, const StorageMetadataPtr & metadata_snapshot) const override;
 
+    /// Evaluate database name or regexp for StorageMerge and TableFunction merge
+    static std::tuple<bool /* is_regexp */, ASTPtr> evaluateDatabaseName(const ASTPtr & node, ContextPtr context);
+
 private:
-    using DbToTableSetMap = std::map<String, std::set<String>>;
+    using DBToTableSetMap = std::map<String, std::set<String>>;
 
     std::optional<OptimizedRegularExpression> source_database_regexp;
     std::optional<OptimizedRegularExpression> source_table_regexp;
-    std::optional<DbToTableSetMap> source_databases_and_tables;
+    std::optional<DBToTableSetMap> source_databases_and_tables;
 
     String source_database_name_or_regexp;
     bool database_is_regexp = false;
@@ -86,7 +89,7 @@ protected:
         const String & comment,
         const String & source_database_name_or_regexp_,
         bool database_is_regexp_,
-        const DbToTableSetMap & source_databases_and_tables_,
+        const DBToTableSetMap & source_databases_and_tables_,
         ContextPtr context_);
 
     StorageMerge(
@@ -126,6 +129,9 @@ protected:
         const Block & header, const StorageMetadataPtr & metadata_snapshot, const Aliases & aliases,
         ContextPtr context, ASTPtr & query,
         Pipe & pipe, QueryProcessingStage::Enum processed_stage);
+
+    static SelectQueryInfo getModifiedQueryInfo(
+        const SelectQueryInfo & query_info, ContextPtr modified_context, const StorageID & current_storage_id, bool is_merge_engine);
 };
 
 }

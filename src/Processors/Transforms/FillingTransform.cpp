@@ -81,7 +81,7 @@ FillingTransform::FillingTransform(
     };
 
     std::vector<bool> is_fill_column(header_.columns());
-    for (size_t i = 0; i < sort_description.size(); ++i)
+    for (size_t i = 0, size = sort_description.size(); i < size; ++i)
     {
         size_t block_position = header_.getPositionByName(sort_description[i].column_name);
         is_fill_column[block_position] = true;
@@ -103,6 +103,11 @@ FillingTransform::FillingTransform(
         }
     }
 
+    std::set<size_t> unique_positions;
+    for (auto pos : fill_column_positions)
+        if (!unique_positions.insert(pos).second)
+            throw Exception("Multiple WITH FILL for identical expressions is not supported in ORDER BY", ErrorCodes::INVALID_WITH_FILL_EXPRESSION);
+
     for (size_t i = 0; i < header_.columns(); ++i)
         if (!is_fill_column[i])
             other_column_positions.push_back(i);
@@ -112,12 +117,12 @@ IProcessor::Status FillingTransform::prepare()
 {
     if (!on_totals && input.isFinished() && !output.isFinished() && !has_input && !generate_suffix)
     {
-        should_insert_first = next_row < filling_row;
+        should_insert_first = next_row < filling_row || first;
 
-        for (size_t i = 0; i < filling_row.size(); ++i)
+        for (size_t i = 0, size = filling_row.size(); i < size; ++i)
             next_row[i] = filling_row.getFillDescription(i).fill_to;
 
-        if (filling_row < next_row)
+        if (first || filling_row < next_row)
         {
             generate_suffix = true;
             return Status::Ready;
@@ -154,6 +159,9 @@ void FillingTransform::transform(Chunk & chunk)
         const auto & empty_columns = input.getHeader().getColumns();
         init_columns_by_positions(empty_columns, old_fill_columns, res_fill_columns, fill_column_positions);
         init_columns_by_positions(empty_columns, old_other_columns, res_other_columns, other_column_positions);
+
+        if (first)
+            filling_row.initFromDefaults();
 
         if (should_insert_first && filling_row < next_row)
             insertFromFillingRow(res_fill_columns, res_other_columns, filling_row);
@@ -227,9 +235,9 @@ void FillingTransform::setResultColumns(Chunk & chunk, MutableColumns & fill_col
     /// fill_columns always non-empty.
     size_t num_rows = fill_columns[0]->size();
 
-    for (size_t i = 0; i < fill_columns.size(); ++i)
+    for (size_t i = 0, size = fill_columns.size(); i < size; ++i)
         result_columns[fill_column_positions[i]] = std::move(fill_columns[i]);
-    for (size_t i = 0; i < other_columns.size(); ++i)
+    for (size_t i = 0, size = other_columns.size(); i < size; ++i)
         result_columns[other_column_positions[i]] = std::move(other_columns[i]);
 
     chunk.setColumns(std::move(result_columns), num_rows);

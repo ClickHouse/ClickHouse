@@ -1044,10 +1044,15 @@ void MergeTreeRangeReader::executePrewhereActionsAndFilterColumns(ReadResult & r
     /// Filter in WHERE instead
     else
     {
-        auto type = getSampleBlock().getByName(prewhere_info->prewhere_column_name).type;
-        ColumnWithTypeAndName col(result.getFilterHolder()->convertToFullColumnIfConst(), std::make_shared<DataTypeUInt8>(), "");
-        result.columns[prewhere_column_pos] = castColumn(col, type);
-        result.clearFilter(); // Acting as a flag to not filter in PREWHERE
+        if (prewhere_info->remove_prewhere_column)
+            result.columns.erase(result.columns.begin() + prewhere_column_pos);
+        else
+        {
+            auto type = getSampleBlock().getByName(prewhere_info->prewhere_column_name).type;
+            ColumnWithTypeAndName col(result.getFilterHolder()->convertToFullColumnIfConst(), std::make_shared<DataTypeUInt8>(), "");
+            result.columns[prewhere_column_pos] = castColumn(col, type);
+            result.clearFilter(); // Acting as a flag to not filter in PREWHERE
+        }
     }
 }
 
