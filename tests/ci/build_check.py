@@ -85,6 +85,30 @@ def build_clickhouse(packager_cmd, logs_path):
             logging.info("Build failed")
     return build_log_path, retcode == 0
 
+
+def get_build_results_if_exists(s3_helper, s3_prefix):
+    try:
+        content = s3_helper.list_prefix(s3_prefix)
+        return content
+    except Exception as ex:
+        logging.info("Got exception %s listing %s", ex, s3_prefix)
+        return None
+
+def create_json_artifact(temp_path, build_name, log_url, build_urls, build_config, elapsed, success):
+    subprocess.check_call(f"echo 'BUILD_NAME=build_urls_{build_name}' >> $GITHUB_ENV", shell=True)
+
+    result = {
+        "log_url": log_url,
+        "build_urls": build_urls,
+        "build_config": build_config,
+        "elapsed_seconds": elapsed,
+        "status": success,
+    }
+
+    with open(os.path.join(temp_path, "build_urls_" + build_name + '.json'), 'w') as build_links:
+        json.dump(result, build_links)
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
@@ -104,12 +128,41 @@ if __name__ == "__main__":
     logging.info("Repo copy path %s", repo_path)
 
     gh = Github(get_best_robot_token())
+    s3_helper = S3Helper('https://s3.amazonaws.com')
+
+    version = get_version_from_repo(repo_path)
+    release_or_pr = None
+    if 'release' in pr_info.labels or 'release-lts' in pr_info.labels:
+        # for release pull requests we use branch names prefixes, not pr numbers
+        release_or_pr = pr_info.head_ref
+    elif pr_info.number == 0:
+        # for pushes to master - major version
+        release_or_pr = ".".join(version.as_tuple()[:2])
+    else:
+        # PR number for anything else
+        release_or_pr = str(pr_info.number)
+
+    s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
+
+    # If this is rerun, then we try to find already created artifacts and just
+    # put them as github actions artifcat (result)
+    build_results = get_build_results_if_exists(s3_helper, s3_path_prefix)
+    if build_results is not None and len(build_results) > 0:
+        logging.info("Some build results found %s", build_results)
+        build_urls = []
+        log_url = ''
+        for url in build_results:
+            if 'build_log.log' in url:
+                log_url = 'https://s3.amazonaws.com/clickhouse-builds/' +  url.replace('+', '%2B').replace(' ', '%20')
+            else:
+                build_urls.append('https://s3.amazonaws.com/clickhouse-builds/' + url.replace('+', '%2B').replace(' ', '%20'))
+        create_json_artifact(temp_path, build_name, log_url, build_urls, build_config, 0, True)
+        sys.exit(0)
 
     image_name = get_image_name(build_config)
     docker_image = get_image_with_version(os.getenv("IMAGES_PATH"), image_name)
     image_version = docker_image.version
 
-    version = get_version_from_repo(repo_path)
     logging.info("Got version from repo %s", version.get_version_string())
 
     version_type = 'testing'
@@ -121,14 +174,12 @@ if __name__ == "__main__":
     logging.info("Updated local files with version")
 
     logging.info("Build short name %s", build_name)
-    subprocess.check_call(f"echo 'BUILD_NAME=build_urls_{build_name}' >> $GITHUB_ENV", shell=True)
 
     build_output_path = os.path.join(temp_path, build_name)
     if not os.path.exists(build_output_path):
         os.makedirs(build_output_path)
 
     ccache_path = os.path.join(caches_path, build_name + '_ccache')
-    s3_helper = S3Helper('https://s3.amazonaws.com')
 
     logging.info("Will try to fetch cache for our build")
     get_ccache_if_not_exists(ccache_path, s3_helper, pr_info.number, temp_path)
@@ -155,19 +206,6 @@ if __name__ == "__main__":
     logging.info("Will upload cache")
     upload_ccache(ccache_path, s3_helper, pr_info.number, temp_path)
 
-    release_or_pr = None
-    if 'release' in pr_info.labels or 'release-lts' in pr_info.labels:
-        # for release pull requests we use branch names prefixes, not pr numbers
-        release_or_pr = pr_info.head_ref
-    elif pr_info.number == 0:
-        # for pushes to master - major version
-        release_or_pr = ".".join(version.as_tuple()[:2])
-    else:
-        # PR number for anything else
-        release_or_pr = str(pr_info.number)
-
-    s3_path_prefix = "/".join((release_or_pr, pr_info.sha, build_name))
-
     if os.path.exists(log_path):
         log_url = s3_helper.upload_build_file_to_s3(log_path, s3_path_prefix + "/" + os.path.basename(log_path))
         logging.info("Log url %s", log_url)
@@ -179,19 +217,9 @@ if __name__ == "__main__":
 
     print("::notice ::Build URLs: {}".format('\n'.join(build_urls)))
 
-    result = {
-        "log_url": log_url,
-        "build_urls": build_urls,
-        "build_config": build_config,
-        "elapsed_seconds": elapsed,
-        "status": success,
-    }
-
     print("::notice ::Log URL: {}".format(log_url))
 
-    with open(os.path.join(temp_path, "build_urls_" + build_name + '.json'), 'w') as build_links:
-        json.dump(result, build_links)
-
+    create_json_artifact(temp_path, build_name, log_url, build_urls, build_config, elapsed, success)
     # Fail build job if not successeded
     if not success:
         sys.exit(1)
