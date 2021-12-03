@@ -49,6 +49,7 @@ public:
 
     // FIXME: behavior differs greately from `BufferBase::set()` and it's very confusing.
     virtual void set(Position ptr, size_t size) override { BufferBase::set(ptr, size, 0); working_buffer.resize(0); }
+    virtual void set(Position ptr, size_t size, size_t off) override { BufferBase::set(ptr, size, off); working_buffer.resize(0); }
 
     /** read next data and fill a buffer with it; set position to the beginning;
       * return `false` in case of end, `true` otherwise; throw an exception, if something is wrong

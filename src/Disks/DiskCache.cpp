@@ -3,6 +3,7 @@
 #include <Common/hex.h>
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
+#include <IO/ReadBufferFromEmptyFile.h>
 #include <base/getThreadId.h>
 
 namespace ProfileEvents
@@ -278,7 +279,7 @@ DiskCachePolicy::CachePart DiskCacheLRUPolicy::find(const String & key, size_t o
 
     uint64_t thread_id = getThreadId();
 
-    static const int retries_max = 25; /// TODO - settings? tuning?
+    static const int retries_max = 3; /// TODO - settings? tuning?
 
     int retry = 0;
 
@@ -331,6 +332,8 @@ DiskCachePolicy::CachePart DiskCacheLRUPolicy::find(const String & key, size_t o
                 else
                 { // need to download
                     res.size = next_offset ? next_offset - offset : 0;
+                    if (!res.size || (size && res.size > size))
+                        res.size = size;
                     LOG_TRACE(log, "Key {} not in cache, download {}+{}", key, res.offset, res.size);
                 }
             }
@@ -493,10 +496,12 @@ public:
     {
         from->BufferBase::set(ptr, size, offset);
     }
+
     BufferBase::Buffer & internalBuffer() override
     {
         return from->internalBuffer();
     }
+
     BufferBase::Buffer & buffer() override
     {
         return from->buffer();
@@ -505,26 +510,32 @@ public:
     {
         return from->position();
     }
+
     size_t offset() const override
     {
         return from->offset();
     }
+
     size_t available() const override
     {
         return from->available();
     }
+
     void swap(BufferBase & other) override
     {
         from->swap(other);
     }
+
     size_t count() const override
     {
         return from->count();
     }
+
     bool hasPendingData() const override
     {
         return from->hasPendingData();
     }
+
     bool isPadded() const override
     {
         return from->isPadded();
@@ -534,6 +545,17 @@ public:
     {
         from->set(ptr, size);
     }
+
+    void setReadUntilPosition(size_t position) override
+    {
+        from->setReadUntilPosition(position);
+    }
+
+    void setReadUntilEnd() override
+    {
+        from->setReadUntilEnd();
+    }
+
     bool next() override
     {
         if (!from->next())
@@ -546,46 +568,57 @@ public:
         cache_part_size += buffer.size();
         return true;
     }
+
     void nextIfAtEnd() override
     {
         from->nextIfAtEnd();
     }
+
     bool eof() override
     {
         return from->eof();
     }
+
     void ignore(size_t n) override
     {
         from->ignore(n);
     }
+
     size_t tryIgnore(size_t n) override
     {
         return from->tryIgnore(n);
     }
+
     void ignoreAll() override
     {
         from->ignoreAll();
     }
+
     bool peek(char & c) override
     {
         return from->peek(c);
     }
+
     bool read(char & c) override
     {
         return from->read(c);
     }
+
     void readStrict(char & c) override
     {
         from->readStrict(c);
     }
+
     size_t read(char * to, size_t n) override
     {
         return from->read(to, n);
     }
+
     void readStrict(char * to, size_t n) override
     {
         from->readStrict(to, n);
     }
+
     void prefetch() override
     {
         from->prefetch();
@@ -652,12 +685,17 @@ public:
     {
         ProfileEvents::increment(ProfileEvents::DiskCacheRequestsIn, 1);
         log = &Poco::Logger::get("CacheableMultipartReadBufferDecorator");
-        ensureFrom();
     }
 
     void set(BufferBase::Position ptr, size_t size, size_t offset) override
     {
-        from->BufferBase::set(ptr, size, offset);
+        use_external_buffer = true;
+        external_buffer_ptr = ptr;
+        external_buffer_size = size;
+        external_buffer_offset = offset;
+
+        if (from)
+            from->set(ptr, size, offset);
     }
 
     BufferBase::Buffer & internalBuffer() override
@@ -667,21 +705,27 @@ public:
 
     BufferBase::Buffer & buffer() override
     {
+        ensureFrom();
         return from->buffer();
     }
 
     BufferBase::Position & position() override
     {
+        ensureFrom();
         return from->position();
     }
 
     size_t offset() const override
     {
+        if (!from)
+            throw Exception("Call method before buffer creation", ErrorCodes::LOGICAL_ERROR);
         return from->offset();
     }
 
     size_t available() const override
     {
+        if (!from)
+            throw Exception("Call method before buffer creation", ErrorCodes::LOGICAL_ERROR);
         return from->available();
     }
 
@@ -697,6 +741,8 @@ public:
 
     bool hasPendingData() const override
     {
+        if (!from)
+            throw Exception("Call method before buffer creation", ErrorCodes::LOGICAL_ERROR);
         return from->hasPendingData();
     }
 
@@ -707,12 +753,34 @@ public:
 
     void set(BufferBase::Position ptr, size_t size) override
     {
-        from->set(ptr, size);
+        use_external_buffer = true;
+        external_buffer_ptr = ptr;
+        external_buffer_size = size;
+        external_buffer_offset = 0;
+
+        if (from)
+            from->set(ptr, size);
+    }
+
+    void setReadUntilPosition(size_t position) override
+    {
+        if (from)
+            throw Exception("Can't set end position after start usage", ErrorCodes::LOGICAL_ERROR);
+        end_offset = position;
+    }
+
+    void setReadUntilEnd() override
+    {
+        if (from)
+            throw Exception("Can't set end position after start usage", ErrorCodes::LOGICAL_ERROR);
+        end_offset = 0;
     }
 
     bool next() override
     {
-        bool res = from->next();
+        bool res = false;
+        if (from)
+            res = from->next();
         if (!res)
         {
             from.reset(nullptr);
@@ -776,31 +844,37 @@ public:
 
     bool peek(char & c) override
     {
+        ensureFrom();
         return from->peek(c);
     }
 
     bool read(char & c) override
     {
+        ensureFrom();
         return from->read(c);
     }
 
     void readStrict(char & c) override
     {
+        ensureFrom();
         from->readStrict(c);
     }
 
     size_t read(char * to, size_t n) override
     {
+        ensureFrom();
         return from->read(to, n);
     }
 
     void readStrict(char * to, size_t n) override
     {
+        ensureFrom();
         from->readStrict(to, n);
     }
 
     void prefetch() override
     {
+        ensureFrom();
         from->prefetch();
     }
 
@@ -812,6 +886,8 @@ private:
         while (!from)
         {
             size_t max_size = end_offset ? end_offset - current_offset : 0;
+            if (use_external_buffer && (!max_size || max_size > external_buffer_size))
+                max_size = external_buffer_size;
             DiskCachePolicy::CachePart part(current_offset, max_size);
             if (retries > 0)
                 part = cache_policy->find(cache_key, current_offset, max_size);
@@ -823,7 +899,10 @@ private:
             }
 
             if (part.type == DiskCachePolicy::CachePart::CachePartType::EMPTY)
+            {
+                from = std::make_unique<ReadBufferFromEmptyFile>();
                 return;
+            }
 
             if (part.type == DiskCachePolicy::CachePart::CachePartType::CACHED)
             {
@@ -832,7 +911,10 @@ private:
                 cache_policy->read(cache_key, part.offset, part.size);
                 try
                 {
-                    auto from_seekable = cache_disk->readFile(cache_path, ReadSettings(), 0);
+                    size_t required_size = part.size;
+                    if (part.offset + part.size > current_offset + max_size)
+                        required_size = current_offset + max_size - part.offset;
+                    auto from_seekable = cache_disk->readFile(cache_path, ReadSettings(), required_size);
                     if (current_offset > part.offset)
                         from_seekable->seek(current_offset - part.offset, SEEK_SET);
                     from = std::move(from_seekable);
@@ -890,6 +972,14 @@ private:
                 }
             }
 
+            if (use_external_buffer)
+            {
+                LOG_TRACE(log, "Set size {}, offset {}", external_buffer_size, external_buffer_offset);
+                from->set(external_buffer_ptr, external_buffer_size, external_buffer_offset);
+                LOG_TRACE(log, "Change offset from {} to {}", external_buffer_offset, external_buffer_offset + part.size);
+                external_buffer_offset += part.size;
+            }
+
             current_type = part.type;
             break;
         }
@@ -909,6 +999,11 @@ private:
     Poco::Logger * log = nullptr;
 
     DiskCachePolicy::CachePart::CachePartType current_type = DiskCachePolicy::CachePart::CachePartType::EMPTY;
+
+    bool use_external_buffer = false;
+    BufferBase::Position external_buffer_ptr = nullptr;
+    size_t external_buffer_size = 0;
+    size_t external_buffer_offset = 0;
 };
 
 

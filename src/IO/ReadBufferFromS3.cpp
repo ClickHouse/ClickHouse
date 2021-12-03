@@ -231,7 +231,7 @@ struct Range
     size_t size = 0;
 
     bool parse(const String & content_range)
-    { // TODO: do not use regex here
+    {
         // supported   '<unit> <start>-<end>/<size>'
         // unsuppotred '<unit> <start>-<end>/*'
         // unsuppurted '<unit> */<size>'
