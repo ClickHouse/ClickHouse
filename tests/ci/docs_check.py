@@ -12,6 +12,7 @@ from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status, get_commit
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
 
 
 NAME = "Docs Check (actions)"
@@ -27,6 +28,12 @@ if __name__ == "__main__":
     pr_info = PRInfo(get_event(), need_changed_files=True)
 
     gh = Github(get_best_robot_token())
+
+    rerun_helper = RerunHelper(gh, pr_info, NAME)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
+
     if not pr_info.has_changes_in_documentation():
         logging.info ("No changes in documentation")
         commit = get_commit(gh, pr_info.sha)

@@ -373,7 +373,8 @@ class TestCase:
             # And we will recreate and drop it for each test
             def random_str(length=6):
                 alphabet = string.ascii_lowercase + string.digits
-                return ''.join(random.choice(alphabet) for _ in range(length))
+                # NOTE: it is important not to use default random generator, since it shares state.
+                return ''.join(random.SystemRandom().choice(alphabet) for _ in range(length))
 
             database = 'test_{suffix}'.format(suffix=random_str())
 
