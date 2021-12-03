@@ -105,7 +105,7 @@ ClickHouse Keeper is bundled into the ClickHouse server package, just add config
 clickhouse-keeper --config /etc/your_path_to_config/config.xml --daemon
 ```
 
-## Four Latter Word Commands
+## Four Letter Word Commands
 
 ClickHouse Keeper also provides 4lw commands which are almost the same with Zookeeper. Each command is composed of four letters such as `mntr`, `stat` etc. There are some more interesting commands: `stat` gives some general information about the server and connected clients, while `srvr` and `cons` give extended details on server and connections respectively.  
 
