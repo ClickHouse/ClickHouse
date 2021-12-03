@@ -53,18 +53,19 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
     if (!cache_controller->loadInnerInformation(local_path_ / "info.txt")
             || cache_controller->file_status != DOWNLOADED)
     {
-        LOG_INFO(log, "recover cached file failed. local path:{}", local_path_.string());
+        LOG_INFO(log, "Recover cached file failed. local path:{}", local_path_.string());
         return nullptr;
     }
 
     cache_controller->file_meta_data_ptr = RemoteFileMetaDataFactory::instance().create_class(cache_controller->meta_data_class);
     if (!cache_controller->file_meta_data_ptr)
     {
-        // do not load this invalid cached file and clear it
+        // do not load this invalid cached file and clear it. the clear action is in
+        // RemoteReadBufferCache::recoverCachedFilesMetaData(), because deleting directories during iteration will
+        // cause unexpected behaviors
         LOG_ERROR(log, "Cannot create the meta data class : {}. The cached file is invalid and will be remove. path:{}",
                 cache_controller->meta_data_class,
                 local_path_.string());
-        fs::remove_all(local_path_);
         return nullptr;
     }
     std::ifstream meta_data_file(local_path_ / "meta_data.txt");
@@ -73,7 +74,6 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
     {
         LOG_ERROR(log, "Cannot load the meta data. The cached file is invalid and will be remove. path:{}",
                 local_path_.string());
-        fs::remove_all(local_path_);
         return nullptr;
     }
 
@@ -93,6 +93,8 @@ RemoteCacheController::RemoteCacheController(
     , local_cache_bytes_read_before_flush(cache_bytes_before_flush_)
     , current_offset(0)
 {
+    // on recover, file_meta_data_ptr is null, but it will be allocated after loading from meta_data.txt
+    // when we allocate a whole new file cache ， file_meta_data_ptr must not be null.
     if (file_meta_data_ptr)
     {
         std::ofstream meta_data_file(local_path_ / "meta_data.txt", std::ios::out);
@@ -129,7 +131,7 @@ RemoteReadBufferCacheError RemoteCacheController::waitMoreData(size_t start_offs
 
 bool RemoteCacheController::checkFileChanged(RemoteFileMetaDataBasePtr file_meta_data_)
 {
-    return !file_meta_data_ptr->equal(file_meta_data_);
+    return !(file_meta_data_ptr->getVersion() == file_meta_data_->getVersion());
 }
 
 void RemoteCacheController::startBackgroundDownload(std::shared_ptr<ReadBuffer> input_readbuffer, BackgroundSchedulePool & thread_pool)
@@ -180,7 +182,6 @@ void RemoteCacheController::flush(bool need_flush_status)
 {
     if (data_file_writer)
     {
-        LOG_DEBUG(&Poco::Logger::get("RemoteCacheController"),"flush file. offset:{}, file:{}. total_size:{}", current_offset, local_path.string(), file_meta_data_ptr->getFileSize());
         data_file_writer->sync();
     }
     if (need_flush_status)
@@ -196,7 +197,11 @@ void RemoteCacheController::flush(bool need_flush_status)
     }
 }
 
-RemoteCacheController::~RemoteCacheController() = default;
+RemoteCacheController::~RemoteCacheController()
+{
+    if (download_task_holder)
+        download_task_holder->deactivate();
+}
 
 void RemoteCacheController::close()
 {
@@ -240,17 +245,17 @@ void RemoteCacheController::deallocFile(std::unique_ptr<ReadBufferFromFileBase> 
     opened_file_buffer_refs.erase(it);
 }
 
-// the size need be equal to the original buffer
 RemoteReadBuffer::RemoteReadBuffer(size_t buff_size) : BufferWithOwnMemory<SeekableReadBufferWithSize>(buff_size)
 {
 }
 
 RemoteReadBuffer::~RemoteReadBuffer()
 {
-    file_cache_controller->deallocFile(std::move(file_buffer));
+    if (file_cache_controller)
+        file_cache_controller->deallocFile(std::move(file_buffer));
 }
 
-std::unique_ptr<RemoteReadBuffer> RemoteReadBuffer::create(ContextPtr context, RemoteFileMetaDataBasePtr remote_file_meta_data, std::unique_ptr<ReadBuffer> read_buffer)
+std::unique_ptr<ReadBuffer> RemoteReadBuffer::create(ContextPtr context, RemoteFileMetaDataBasePtr remote_file_meta_data, std::unique_ptr<ReadBuffer> read_buffer)
 {
     auto * log = &Poco::Logger::get("RemoteReadBuffer");
     size_t buff_size = DBMS_DEFAULT_BUFFER_SIZE;
@@ -269,15 +274,14 @@ std::unique_ptr<RemoteReadBuffer> RemoteReadBuffer::create(ContextPtr context, R
 
     auto remote_path = remote_file_meta_data->getRemotePath();
     auto remote_read_buffer = std::make_unique<RemoteReadBuffer>(buff_size);
-    auto * raw_readbuffer_ptr = read_buffer.release();
-    std::shared_ptr<ReadBuffer> shared_readbuffer_ptr(raw_readbuffer_ptr);
     RemoteReadBufferCacheError error;
 
-    std::tie(remote_read_buffer->file_cache_controller, error) = RemoteReadBufferCache::instance().createReader(context, remote_file_meta_data, shared_readbuffer_ptr);
+    std::tie(remote_read_buffer->file_cache_controller, read_buffer, error) = RemoteReadBufferCache::instance().createReader(context, remote_file_meta_data, read_buffer);
     if (remote_read_buffer->file_cache_controller == nullptr)
     {
-        LOG_ERROR(log, "Failed to allocate local file for remote path: {}, reason: {}", remote_path, error);
-        remote_read_buffer->original_read_buffer = shared_readbuffer_ptr;
+        LOG_ERROR(log, "Failed to allocate local file for remote path: {}, reason: {}.", remote_path, error);
+        // read_buffer is the input one.
+        return read_buffer;
     }
     else
     {
@@ -286,51 +290,33 @@ std::unique_ptr<RemoteReadBuffer> RemoteReadBuffer::create(ContextPtr context, R
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Create file readbuffer failed. {}",
                     remote_read_buffer->file_cache_controller->getLocalPath().string());
     }
+    remote_read_buffer->remote_file_size = remote_file_meta_data->getFileSize();
     return remote_read_buffer;
 }
 
 bool RemoteReadBuffer::nextImpl()
 {
-    if (file_buffer)
-    {
-        auto start_offset = file_buffer->getPosition();
-        auto end_offset = start_offset + file_buffer->internalBuffer().size();
-        LOG_DEBUG(&Poco::Logger::get("RemoteReadBuffer"), "nextImpl. start:{}, end:{}, file:{}, total_size:{}, remote_path:{}",
-                start_offset, end_offset, file_buffer->getFileName(), file_cache_controller->getFileMetaData()->getFileSize(),
-                file_cache_controller->getFileMetaData()->getRemotePath());
-        file_cache_controller->waitMoreData(start_offset, end_offset);
+    auto start_offset = file_buffer->getPosition();
+    auto end_offset = start_offset + file_buffer->internalBuffer().size();
+    file_cache_controller->waitMoreData(start_offset, end_offset);
 
-        auto status = file_buffer->next();
-        if (status)
-            BufferBase::set(file_buffer->buffer().begin(),
-                    file_buffer->buffer().size(),
-                    file_buffer->offset());
-        return status;
-    }
-    else
-    {
-        // In the case we cannot use local cache, read from the original readbuffer directly
-        if (!original_read_buffer)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Original read buffer is not initialized. It's a bug");
-
-        auto status = original_read_buffer->next();
-        // We don't need to worry about the memory buffer allocated in RemoteReadBuffer, since it is owned by
-        // BufferWithOwnMemory, BufferWithOwnMemory would release it.
-        if (status)
-            BufferBase::set(original_read_buffer->buffer().begin(), original_read_buffer->buffer().size(), original_read_buffer->offset());
-        return status;
-    }
+    auto status = file_buffer->next();
+    if (status)
+        BufferBase::set(file_buffer->buffer().begin(),
+                file_buffer->buffer().size(),
+                file_buffer->offset());
+    return status;
 }
 
 off_t RemoteReadBuffer::seek(off_t offset, int whence)
 {
+    if (!file_buffer)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot call seek() in this buffer. It's a bug!");
     /*
      * Need to wait here. For example, the current file has been download at position X, but here we try to seek to
      * postition Y (Y > X), it would fail.
      */
     file_cache_controller->waitMoreData(offset, offset + file_buffer->internalBuffer().size());
-    LOG_DEBUG(&Poco::Logger::get("RemoteReadBuffer"), "seek. offset:{}. file:{}, total_size:{}", offset, file_buffer->getFileName(),
-            file_cache_controller->getFileMetaData()->getFileSize());
     auto ret = file_buffer->seek(offset, whence);
     BufferBase::set(file_buffer->buffer().begin(),
             file_buffer->buffer().size(),
@@ -360,15 +346,24 @@ void RemoteReadBufferCache::recoverCachedFilesMetaData(
 {
     if (current_depth >= max_depth)
     {
+        std::vector<fs::path> invalid_pathes;
         for (auto const & dir : fs::directory_iterator{current_path})
         {
             String path = dir.path();
             auto cache_controller = RemoteCacheController::recover(path);
             if (!cache_controller)
+            {
+                invalid_pathes.emplace_back(path);
                 continue;
-            auto & cell = caches[path];
-            cell.cache_controller = cache_controller;
-            cell.key_iterator = keys.insert(keys.end(), path);
+            }
+            if (!lru_caches->set(path, cache_controller))
+            {
+                invalid_pathes.emplace_back(path);
+            }
+        }
+        for (auto & path : invalid_pathes)
+        {
+            fs::remove_all(path);
         }
         return;
     }
@@ -384,7 +379,7 @@ void RemoteReadBufferCache::recoverTask()
     std::lock_guard lock(mutex);
     recoverCachedFilesMetaData(root_dir, 1, 2);
     initialized = true;
-    LOG_TRACE(log, "Recovered from directory:{}", root_dir);
+    LOG_INFO(log, "Recovered from directory:{}", root_dir);
 }
 
 void RemoteReadBufferCache::initOnce(
@@ -394,8 +389,8 @@ void RemoteReadBufferCache::initOnce(
     LOG_INFO(
         log, "Initializing local cache for remote data sources. Local cache root path: {}, cache size limit: {}", root_dir_, limit_size_);
     root_dir = root_dir_;
-    limit_size = limit_size_;
     local_cache_bytes_read_before_flush = bytes_read_before_flush_;
+    lru_caches = std::make_unique<CacheType>(limit_size_);
 
     /// create if root_dir not exists
     if (!fs::exists(fs::path(root_dir) / ""))
@@ -413,130 +408,62 @@ void RemoteReadBufferCache::initOnce(
 
 String RemoteReadBufferCache::calculateLocalPath(RemoteFileMetaDataBasePtr meta_data) const
 {
-    String full_path = meta_data->getSchema() + ":" + meta_data->getCluster() + ":" + meta_data->getRemotePath();
+    // add version into the full_path, and not block to read the new version
+    String full_path = meta_data->getSchema() + ":" + meta_data->getCluster() + ":" + meta_data->getRemotePath()
+        + ":" + meta_data->getVersion();
     UInt128 hashcode = sipHash128(full_path.c_str(), full_path.size());
     String hashcode_str = getHexUIntLowercase(hashcode);
     return fs::path(root_dir) / hashcode_str.substr(0, 3) / hashcode_str;
 }
 
-std::pair<RemoteCacheControllerPtr, RemoteReadBufferCacheError>
-RemoteReadBufferCache::createReader(ContextPtr context, RemoteFileMetaDataBasePtr remote_file_meta_data, std::shared_ptr<ReadBuffer> & read_buffer)
+std::tuple<RemoteCacheControllerPtr, std::unique_ptr<ReadBuffer>, RemoteReadBufferCacheError>
+RemoteReadBufferCache::createReader(ContextPtr context, RemoteFileMetaDataBasePtr remote_file_meta_data, std::unique_ptr<ReadBuffer> & read_buffer)
 {
-    LOG_TRACE(log, "createReader. {}", remote_file_meta_data->toString());
     // If something is wrong on startup, rollback to read from the original ReadBuffer
     if (!isInitialized())
     {
         LOG_ERROR(log, "RemoteReadBufferCache has not been initialized");
-        return {nullptr, RemoteReadBufferCacheError::NOT_INIT};
+        return {nullptr, std::move(read_buffer), RemoteReadBufferCacheError::NOT_INIT};
     }
 
     auto remote_path = remote_file_meta_data->getRemotePath();
     const auto & last_modification_timestamp = remote_file_meta_data->getLastModificationTimestamp();
     auto local_path = calculateLocalPath(remote_file_meta_data);
     std::lock_guard lock(mutex);
-    auto cache_iter = caches.find(local_path);
-    if (cache_iter != caches.end())
+    auto cache = lru_caches->get(local_path);
+    if (cache)
     {
-        // if the file has been update on remote side, we need to redownload it
-        if (cache_iter->second.cache_controller->checkFileChanged(remote_file_meta_data))
+        // the remote file has been updated, need to redownload
+        if (!cache->isValid() || cache->checkFileChanged(remote_file_meta_data))
         {
             LOG_TRACE(
                 log,
                 "Remote file ({}) has been updated. Last saved modification time: {}, actual last modification time: {}",
                 remote_path,
-                std::to_string(cache_iter->second.cache_controller->getLastModificationTimestamp()),
+                std::to_string(cache->getLastModificationTimestamp()),
                 std::to_string(last_modification_timestamp));
-            cache_iter->second.cache_controller->markInvalid();
+            cache->markInvalid();
         }
         else
         {
-            // move the key to the list end
-            keys.splice(keys.end(), keys, cache_iter->second.key_iterator);
-            return { cache_iter->second.cache_controller, RemoteReadBufferCacheError::OK};
+            return {cache, nullptr, RemoteReadBufferCacheError::OK};
         }
     }
 
-    auto clear_ret = clearLocalCache();
-    cache_iter = caches.find(local_path);
-    if (cache_iter != caches.end())
+    if (!fs::exists(local_path))
+        fs::create_directories(local_path);
+
+    // cache is not found or is invalid
+    auto new_cache = std::make_shared<RemoteCacheController>(remote_file_meta_data, local_path, local_cache_bytes_read_before_flush);
+    if (!lru_caches->set(local_path, new_cache))
     {
-        if (cache_iter->second.cache_controller->isValid())
-        {
-            keys.splice(keys.end(), keys, cache_iter->second.key_iterator);
-            return {
-                cache_iter->second.cache_controller,
-                RemoteReadBufferCacheError::OK};
-        }
-        else
-        {
-            // maybe someone is holding this file
-            LOG_INFO(log, "The remote file {} has been updated, but the previous readers do not finish reading.",
-                    remote_path);
-            return {nullptr, RemoteReadBufferCacheError::FILE_INVALID};
-        }
+        LOG_ERROR(log, "Insert the new cache failed. new file size:{}, current total size:{}",
+                remote_file_meta_data->getFileSize(),
+                lru_caches->weight());
+        return {nullptr, std::move(read_buffer), RemoteReadBufferCacheError::DISK_FULL};
     }
-
-    // reach the disk capacity limit
-    if (!clear_ret)
-    {
-        LOG_INFO(log, "Reached local cache capacity limit size ({})", limit_size);
-        return {nullptr, RemoteReadBufferCacheError::DISK_FULL};
-    }
-
-    fs::create_directories(local_path);
-
-    auto cache_controller
-        = std::make_shared<RemoteCacheController>(remote_file_meta_data, local_path, local_cache_bytes_read_before_flush);
-    cache_controller->startBackgroundDownload(read_buffer, context->getSchedulePool());
-    CacheCell cache_cell;
-    cache_cell.cache_controller = cache_controller;
-    cache_cell.key_iterator = keys.insert(keys.end(), local_path);
-    caches[local_path] = cache_cell;
-
-    return {cache_controller, RemoteReadBufferCacheError::OK};
-}
-
-bool RemoteReadBufferCache::clearLocalCache()
-{
-    // clear closable cache from the list head
-    for (auto it = keys.begin(); it != keys.end();)
-    {
-        auto cache_it = caches.find(*it);
-        if (cache_it == caches.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Found no entry in local cache with key: {}", *it);
-
-        auto cache_controller = cache_it->second.cache_controller;
-        if (!cache_controller->isValid() && cache_controller->closable())
-        {
-            LOG_TRACE(log, "Clear invalid cache entry with key {} from local cache", *it);
-            total_size
-                = total_size > cache_it->second.cache_controller->size() ? total_size - cache_it->second.cache_controller->size() : 0;
-            cache_controller->close();
-            it = keys.erase(it);
-            caches.erase(cache_it);
-            continue;
-        }
-
-        // if enough disk space is release, just to iterate the remained caches and clear the invalid ones.
-        if (total_size > limit_size && cache_controller->closable())
-        {
-            total_size = total_size > cache_controller->size() ? total_size - cache_controller->size() : 0;
-            cache_controller->close();
-            caches.erase(cache_it);
-            it = keys.erase(it);
-            LOG_TRACE(
-                log,
-                "clear local file {} for {}. key size:{}. next{}",
-                cache_controller->getLocalPath().string(),
-                cache_controller->getRemotePath(),
-                keys.size(),
-                *it);
-        }
-        else
-            it++;
-    }
-    LOG_TRACE(log, "After clear local cache, keys size:{}, total_size:{}, limit size:{}", keys.size(), total_size, limit_size);
-    return total_size < limit_size;
+    new_cache->startBackgroundDownload(std::move(read_buffer), context->getSchedulePool());
+    return {new_cache, nullptr, RemoteReadBufferCacheError::OK};
 }
 
 }

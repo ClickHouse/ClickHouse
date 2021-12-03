@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <Core/BackgroundSchedulePool.h>
 #include <Poco/Logger.h>
+#include <Common/UnreleasableLRUCache.h>
 #include <Common/ThreadPool.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -96,6 +97,7 @@ public:
         return valid;
     }
     RemoteFileMetaDataBasePtr getFileMetaData() { return file_meta_data_ptr; }
+    inline size_t getFileSize() const { return file_meta_data_ptr->getFileSize(); }
 
     void startBackgroundDownload(std::shared_ptr<ReadBuffer> input_readbuffer, BackgroundSchedulePool & thread_pool);
 
@@ -137,25 +139,47 @@ class RemoteReadBuffer : public BufferWithOwnMemory<SeekableReadBufferWithSize>
 public:
     explicit RemoteReadBuffer(size_t buff_size);
     ~RemoteReadBuffer() override;
-    static std::unique_ptr<RemoteReadBuffer> create(ContextPtr contex, RemoteFileMetaDataBasePtr remote_file_meta_data, std::unique_ptr<ReadBuffer> read_buffer);
+    static std::unique_ptr<ReadBuffer> create(ContextPtr contex, RemoteFileMetaDataBasePtr remote_file_meta_data, std::unique_ptr<ReadBuffer> read_buffer);
 
     bool nextImpl() override;
-    inline bool seekable() { return !file_buffer && file_cache_controller->getFileMetaData()->getFileSize() > 0; }
+    inline bool seekable() { return file_buffer && remote_file_size > 0; }
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
-    std::optional<size_t> getTotalSize() override { return file_cache_controller->getFileMetaData()->getFileSize(); }
+    std::optional<size_t> getTotalSize() override { return remote_file_size; }
 
 private:
     std::shared_ptr<RemoteCacheController> file_cache_controller;
     std::unique_ptr<ReadBufferFromFileBase> file_buffer;
+    size_t remote_file_size = 0;
+};
 
-    // in case local cache don't work, this buffer is setted;
-    std::shared_ptr<ReadBuffer> original_read_buffer;
+struct RemoteFileCacheWeightFunction
+{
+    size_t operator()(const RemoteCacheController & cache) const
+    {
+        return cache.getFileSize();
+    }
+};
+
+struct RemoteFileCacheEvictPolicy
+{
+    CacheEvictStatus canRelease(RemoteCacheController & cache) const
+    {
+        if (cache.closable())
+            return CacheEvictStatus::CAN_EVITCT;
+        return CacheEvictStatus::SKIP_EVICT;
+    }
+    void release(RemoteCacheController & cache)
+    {
+        cache.close();
+    }
 };
 
 class RemoteReadBufferCache
 {
 public:
+    using CacheType = UnreleasableLRUCache<String, RemoteCacheController, std::hash<String>,
+          RemoteFileCacheWeightFunction, RemoteFileCacheEvictPolicy>;
     ~RemoteReadBufferCache();
     // global instance
     static RemoteReadBufferCache & instance();
@@ -164,8 +188,8 @@ public:
 
     inline bool isInitialized() const { return initialized; }
 
-    std::pair<RemoteCacheControllerPtr, RemoteReadBufferCacheError>
-    createReader(ContextPtr context, RemoteFileMetaDataBasePtr remote_file_meta_data, std::shared_ptr<ReadBuffer> & read_buffer);
+    std::tuple<RemoteCacheControllerPtr, std::unique_ptr<ReadBuffer>, RemoteReadBufferCacheError>
+    createReader(ContextPtr context, RemoteFileMetaDataBasePtr remote_file_meta_data, std::unique_ptr<ReadBuffer> & read_buffer);
 
     void updateTotalSize(size_t size) { total_size += size; }
 
@@ -175,22 +199,14 @@ protected:
 private:
     // root directory of local cache for remote filesystem
     String root_dir;
-    size_t limit_size = 0;
     size_t local_cache_bytes_read_before_flush = 0;
 
     std::atomic<bool> initialized = false;
     std::atomic<size_t> total_size;
     std::mutex mutex;
+    std::unique_ptr<CacheType> lru_caches;
 
     Poco::Logger * log = &Poco::Logger::get("RemoteReadBufferCache");
-
-    struct CacheCell
-    {
-        std::list<String>::iterator key_iterator;
-        std::shared_ptr<RemoteCacheController> cache_controller;
-    };
-    std::list<String> keys;
-    std::map<String, CacheCell> caches;
 
     String calculateLocalPath(RemoteFileMetaDataBasePtr meta) const;
 
@@ -200,7 +216,6 @@ private:
         const std::filesystem::path & current_path,
         size_t current_depth,
         size_t max_depth);
-    bool clearLocalCache();
 };
 
 }
