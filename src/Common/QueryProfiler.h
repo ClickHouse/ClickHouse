@@ -46,9 +46,6 @@ private:
 
     /// Pause signal to interrupt threads to get traces
     int pause_signal;
-
-    /// Previous signal handler to restore after query profiler exits
-    std::optional<struct sigaction> previous_handler;
 };
 
 /// Query profiler with timer based on real clock
