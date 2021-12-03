@@ -313,10 +313,10 @@ String FormatFactory::getContentType(
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
     
-    Block emptyBlock;
-    RowOutputFormatParams emptyParams;
-    WriteBufferFromOwnString emptyBuffer;
-    auto format = output_getter(emptyBuffer, emptyBlock, emptyParams, format_settings);
+    Block empty_block;
+    RowOutputFormatParams empty_params;
+    WriteBufferFromOwnString empty_buffer;
+    auto format = output_getter(empty_buffer, empty_block, empty_params, format_settings);
 
     return format->getContentType();
 }
