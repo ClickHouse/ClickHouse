@@ -15,4 +15,9 @@ select uuid = uuid2;
 with generateUUIDv4() as uuid,
     hex(reverse(reinterpretAsString(uuid))) as str1,
     hex(uuid) as str2
-select str1 = str2
+select str1 = str2;
+
+with generateUUIDv4() as uuid,
+    bin(reverse(reinterpretAsString(uuid))) as bin_str1,
+    bin(uuid) as bin_str2
+select bin_str1 = bin_str2;
