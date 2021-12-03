@@ -1409,7 +1409,7 @@ case "$stage" in
     while env kill -- -$watchdog_pid ; do sleep 1; done
 
     # Stop the servers to free memory for the subsequent query analysis.
-    while killall clickhouse; do echo . ; sleep 1 ; done
+    while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo Servers stopped.
     ;&
 "analyze_queries")
