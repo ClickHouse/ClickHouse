@@ -91,9 +91,7 @@ def prepare_for_hung_check(drop_databases):
     logging.info("Will terminate gdb (if any)")
     call_with_retry("kill -TERM $(pidof gdb)")
 
-    # Some tests set too low memory limit for default user and forget to reset in back.
-    # It may cause SYSTEM queries to fail, let's disable memory limit.
-    call_with_retry("clickhouse client --max_memory_usage_for_user=0 -q 'SELECT 1 FORMAT Null'")
+    call_with_retry(make_query_command('SELECT 1 FORMAT Null'))
 
     # Some tests execute SYSTEM STOP MERGES or similar queries.
     # It may cause some ALTERs to hang.
