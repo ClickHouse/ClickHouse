@@ -142,13 +142,13 @@ bool DiskHDFS::checkUniqueId(const String & hdfs_uri) const
 
 namespace
 {
-std::unique_ptr<DiskHDFSSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Settings & setttings)
+std::unique_ptr<DiskHDFSSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Settings & settings)
 {
     return std::make_unique<DiskHDFSSettings>(
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".thread_pool_size", 16),
         config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
-        setttings.hdfs_replication);
+        settings.hdfs_replication);
 }
 }
 
@@ -174,8 +174,8 @@ void registerDiskHDFS(DiskFactory & factory)
 
         return std::make_shared<DiskHDFS>(
             name, uri,
-            getSettings(config, config_prefix),
-            metadata_disk, config, context.getSettingsRef());
+            getSettings(config, config_prefix, context_.getSettingsRef()),
+            metadata_disk, config);
     };
 
     factory.registerDiskType("hdfs", creator);
