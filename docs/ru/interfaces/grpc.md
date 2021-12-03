@@ -10,7 +10,7 @@ toc_title: gRPC интерфейс
 ClickHouse поддерживает интерфейс [gRPC](https://grpc.io/). Это система удаленного вызова процедур с открытым исходным кодом, которая использует HTTP/2 и [Protocol Buffers](https://ru.wikipedia.org/wiki/Protocol_Buffers). В реализации gRPC в ClickHouse поддерживаются:
 
 -   SSL; 
--   аутентификацию; 
+-   аутентификация; 
 -   сессии; 
 -   сжатие; 
 -   параллельные запросы, выполняемые через один канал; 
@@ -58,24 +58,24 @@ ClickHouse поддерживает интерфейс [gRPC](https://grpc.io/).
 
 ## Встроенный клиент {#grpc-client}
 
-Можно написать клиент на любом языке программирования, который поддерживается gRPC с использованием [спецификации](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto)
+Можно написать клиент на любом языке программирования, который поддерживается gRPC, с использованием [спецификации](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto).
 Также можно воспользоваться встроенным Python клиентом. Он расположен в [utils/grpc-client/clickhouse-grpc-client.py](https://github.com/ClickHouse/ClickHouse/blob/master/utils/grpc-client/clickhouse-grpc-client.py) в репозитории. Для работы встроенного клиента требуются Python модули [grpcio и grpcio-tools](https://grpc.io/docs/languages/python/quickstart). 
 
 Клиент поддерживает аргументы:
 
 -   `--help` – вывести справку и завершить работу.
 -   `--host HOST, -h HOST` – имя сервера. Значение по умолчанию: `localhost`. Можно задать адрес IPv4 или IPv6.
--   `--port PORT` – номер порта. Этот порт должен быть задан в конфигурации сервера ClickHouse настройкой `grpc_port`. Значение по умолчанию: `9100`
+-   `--port PORT` – номер порта. Этот порт должен быть задан в конфигурации сервера ClickHouse настройкой `grpc_port`. Значение по умолчанию: `9100`.
 -   `--user USER_NAME, -u USER_NAME` – имя пользователя. Значение по умолчанию: `default`.
 -   `--password PASSWORD` – пароль. Значение по умолчанию: пустая строка.
--   `--query QUERY, -q QUERY` – запрос, который нужно выполнить.
+-   `--query QUERY, -q QUERY` – запрос, который выполнится, когда используется неинтерактивный режим работы.
 -   `--database DATABASE, -d DATABASE` – база данных по умолчанию. Если не указана, то будет использована база данных, заданная в настройках сервера (по умолчанию `default`).
 -   `--format OUTPUT_FORMAT, -f OUTPUT_FORMAT` – [формат](formats.md) вывода результата. Значение по умолчанию для интерактивного режима: `PrettyCompact`.
 -   `--debug` – вывод отладочной информации.
 
 Чтобы запустить клиент в интерактивном режиме, не указывайте аргумент `--query`.
 
-В пакетном режиме данные запроса можно передать через `stdin`.
+В неинтерактивном режиме данные запроса можно передать через `stdin`.
 
 **Пример использования клиента**
 

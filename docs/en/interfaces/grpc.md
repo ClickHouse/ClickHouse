@@ -58,7 +58,7 @@ To use the gRPC interface set `grpc_port` in the main [server configuration](../
 
 ## Built-in Client {#grpc-client}
 
-You can write a client in any of the programming languages supported by gRPC using the provided [specification](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto)
+You can write a client in any of the programming languages supported by gRPC using the provided [specification](https://github.com/ClickHouse/ClickHouse/blob/master/src/Server/grpc_protos/clickhouse_grpc.proto).
 Or you can use a built-in Python client. It is placed in [utils/grpc-client/clickhouse-grpc-client.py](https://github.com/ClickHouse/ClickHouse/blob/master/utils/grpc-client/clickhouse-grpc-client.py) in the repository. The built-in client requires [grpcio and grpcio-tools](https://grpc.io/docs/languages/python/quickstart) Python modules. 
 
 The client supports the following arguments:
