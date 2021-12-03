@@ -206,6 +206,8 @@ private:
     BackgroundSchedulePool::TaskHolder clean_cache_task;
     BackgroundSchedulePool::TaskHolder fire_task;
 
+    String function_now_timezone;
+
     ASTPtr innerQueryParser(ASTSelectQuery & inner_query);
     void eventTimeParser(const ASTCreateQuery & query);
 

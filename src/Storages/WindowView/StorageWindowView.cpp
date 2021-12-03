@@ -142,6 +142,7 @@ namespace
 
         bool is_time_column_func_now = false;
         String window_id_name;
+        String now_timezone;
 
         void visit(ASTFunction & node, ASTPtr & node_ptr)
         {
@@ -150,6 +151,16 @@ namespace
                 if (const auto * t = node.arguments->children[0]->as<ASTFunction>();
                     t && t->name == "now")
                 {
+                    if (!t->children.empty())
+                    {
+                        const auto & children = t->children[0]->as<ASTExpressionList>()->children;
+                        if (!children.empty())
+                        {
+                            const auto * timezone_ast = children[0]->as<ASTLiteral>();
+                            if (timezone_ast)
+                                now_timezone = timezone_ast->value.safeGet<String>();
+                        }
+                    }
                     is_time_column_func_now = true;
                     node_ptr->children[0]->children[0] = std::make_shared<ASTIdentifier>("____timestamp");
                     window_id_name = node.getColumnName();
@@ -609,7 +620,10 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
                 auto node = ast->clone();
                 /// now() -> ____timestamp
                 if (is_time_column_func_now)
+                {
                     time_now_visitor.visit(node);
+                    function_now_timezone = time_now_data.now_timezone;
+                }
                 /// TUMBLE/HOP -> WINDOW_ID
                 func_window_visitor.visit(node);
                 to_identifier_visitor.visit(node);
@@ -640,7 +654,10 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
 
         ASTPtr order_by_ptr = order_by;
         if (is_time_column_func_now)
+        {
             time_now_visitor.visit(order_by_ptr);
+            function_now_timezone = time_now_data.now_timezone;
+        }
         to_identifier_visitor.visit(order_by_ptr);
 
         for (auto & child : order_by->arguments->children)
@@ -1165,7 +1182,11 @@ void StorageWindowView::writeIntoWindowView(
         {
             ColumnWithTypeAndName column;
             column.name = "____timestamp";
-            column.type = std::make_shared<DataTypeDateTime>();
+            const auto & timezone = window_view.function_now_timezone;
+            if (timezone.empty())
+                column.type = std::make_shared<DataTypeDateTime>();
+            else
+                column.type = std::make_shared<DataTypeDateTime>(timezone);
             column.column = column.type->createColumnConst(0, Field(std::time(nullptr)));
 
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
