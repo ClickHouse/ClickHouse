@@ -50,6 +50,9 @@ static jfieldID local_engine_plan_field_id;
 static jclass local_engine_class;
 static jfieldID local_engine_executor_field_id;
 
+static jclass spark_row_info_class;
+static jmethodID spark_row_info_constructor;
+
 jint JNI_OnLoad(JavaVM * vm, void * reserved)
 {
     JNIEnv * env;
@@ -66,6 +69,9 @@ jint JNI_OnLoad(JavaVM * vm, void * reserved)
     local_engine_class = CreateGlobalClassReference(env, "Lio/kyligence/jni/engine/LocalEngine");
     local_engine_plan_field_id = env->GetFieldID(local_engine_class, "plan", "[B");
     local_engine_executor_field_id = env->GetFieldID(local_engine_class, "nativeExecutor", "J");
+
+    spark_row_info_class = CreateGlobalClassReference(env, "Lio/kyligence/jni/engine/SparkRowInfo");
+    spark_row_info_constructor = GetMethodID(env, spark_row_info_class, "<init>", "([J[JJ)V");
 }
 
 void JNI_OnUnload(JavaVM * vm, void * reserved)
@@ -111,14 +117,25 @@ jboolean Java_io_kyligence_jni_engine_LocalEngine_hasNext(JNIEnv * env, jobject 
     dbms::LocalExecutor * executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
     return executor->hasNext();
 }
-jbyteArray Java_io_kyligence_jni_engine_LocalEngine_next(JNIEnv * env, jobject obj)
+jobject Java_io_kyligence_jni_engine_LocalEngine_next(JNIEnv * env, jobject obj)
 {
     jlong executor_address = env->GetLongField(obj, local_engine_executor_field_id);
     dbms::LocalExecutor * executor = reinterpret_cast<dbms::LocalExecutor *>(executor_address);
-    std::string arrow_batch = executor->next();
-    jbyteArray result = env->NewByteArray(arrow_batch.size());
-    env->SetByteArrayRegion(result, 0, arrow_batch.size(), reinterpret_cast<const jbyte *>(arrow_batch.data()));
-    return result;
+    local_engine::SparkRowInfoPtr spark_row_info = executor->next();
+
+    auto *offsets_arr = env->NewLongArray(spark_row_info->getNumRows());
+    const auto *offsets_src = reinterpret_cast<const jlong*>(spark_row_info->getOffsets().data());
+    env->SetLongArrayRegion(offsets_arr, 0, spark_row_info->getNumRows(), offsets_src);
+    auto *lengths_arr = env->NewLongArray(spark_row_info->getNumRows());
+    const auto *lengths_src = reinterpret_cast<const jlong*>(spark_row_info->getLengths().data());
+    env->SetLongArrayRegion(lengths_arr, 0, spark_row_info->getNumRows(), lengths_src);
+    int64_t address = reinterpret_cast<int64_t>(spark_row_info->getBufferAddress());
+
+    jobject spark_row_info_object = env->NewObject(
+        spark_row_info_class, spark_row_info_constructor,
+        offsets_arr, lengths_arr, address);
+
+    return spark_row_info_object;
 }
 void Java_io_kyligence_jni_engine_LocalEngine_close(JNIEnv * env, jobject obj)
 {

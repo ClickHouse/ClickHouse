@@ -28,7 +28,7 @@ public class LocalEngineTest {
         LocalEngine localEngine = new LocalEngine(plan.getBytes(StandardCharsets.UTF_8));
         localEngine.execute();
         Assert.assertTrue(localEngine.hasNext());
-        byte[] data = localEngine.next();
-        Assert.assertEquals(7106, data.length);
+        SparkRowInfo data = localEngine.next();
+        Assert.assertEquals(150, data.offsets.length);
     }
 }

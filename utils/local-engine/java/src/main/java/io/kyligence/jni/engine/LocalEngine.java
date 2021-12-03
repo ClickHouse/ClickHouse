@@ -27,7 +27,7 @@ public class LocalEngine implements Closeable {
 
     public native boolean hasNext();
 
-    public native byte[] next();
+    public native SparkRowInfo next();
 
 
     @Override
