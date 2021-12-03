@@ -1077,7 +1077,7 @@ Int64 StorageMergeTree::getUpdatedDataVersion(
         return part->info.getDataVersion();
 }
 
-Int64 StorageMergeTree::getCurrentMutationVersion(
+UInt64 StorageMergeTree::getCurrentMutationVersion(
     const DataPartPtr & part,
     std::unique_lock<std::mutex> & currently_processing_in_background_mutex_lock) const
 {

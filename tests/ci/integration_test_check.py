@@ -18,6 +18,7 @@ from docker_pull_helper import get_images_with_versions
 from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
 
 
 DOWNLOAD_RETRIES_COUNT = 5
@@ -112,6 +113,11 @@ if __name__ == "__main__":
     pr_info = PRInfo(get_event(), need_changed_files=is_flaky_check)
 
     gh = Github(get_best_robot_token())
+
+    rerun_helper = RerunHelper(gh, pr_info, check_name)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     images = get_images_with_versions(temp_path, IMAGES)
     images_with_versions = {i.name: i.version for i in images}
