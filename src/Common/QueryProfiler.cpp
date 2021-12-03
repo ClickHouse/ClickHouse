@@ -31,6 +31,8 @@ namespace
     /// And so to overcome this flag is exists,
     /// to ignore delivered signals after timer_delete().
     thread_local bool signal_handler_disarmed = true;
+#else
+    thread_local bool signal_handler_disarmed = false;
 #endif
 
     void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
