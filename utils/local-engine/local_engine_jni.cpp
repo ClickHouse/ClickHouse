@@ -66,12 +66,13 @@ jint JNI_OnLoad(JavaVM * vm, void * reserved)
     illegal_access_exception_class = CreateGlobalClassReference(env, "Ljava/lang/IllegalAccessException;");
     illegal_argument_exception_class = CreateGlobalClassReference(env, "Ljava/lang/IllegalArgumentException;");
 
-    local_engine_class = CreateGlobalClassReference(env, "Lio/kyligence/jni/engine/LocalEngine");
+    local_engine_class = CreateGlobalClassReference(env, "Lio/kyligence/jni/engine/LocalEngine;");
     local_engine_plan_field_id = env->GetFieldID(local_engine_class, "plan", "[B");
     local_engine_executor_field_id = env->GetFieldID(local_engine_class, "nativeExecutor", "J");
 
-    spark_row_info_class = CreateGlobalClassReference(env, "Lio/kyligence/jni/engine/SparkRowInfo");
-    spark_row_info_constructor = GetMethodID(env, spark_row_info_class, "<init>", "([J[JJ)V");
+    spark_row_info_class = CreateGlobalClassReference(env, "Lio/kyligence/jni/engine/SparkRowInfo;");
+    spark_row_info_constructor = env->GetMethodID(spark_row_info_class, "<init>", "([J[JJ)V");
+    return JNI_VERSION_1_8;
 }
 
 void JNI_OnUnload(JavaVM * vm, void * reserved)

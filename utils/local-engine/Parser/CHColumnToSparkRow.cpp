@@ -118,7 +118,7 @@ void writeValue(uint8_t* buffer_address, int64_t field_offset,
     }
     else
     {
-        throw std::runtime_error("doesn't support type "+ nested_col->getDataType().)
+        throw std::runtime_error("doesn't support type "+ std::string(getTypeName(nested_col->getDataType())));
     }
 }
 

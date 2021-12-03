@@ -7,6 +7,7 @@ import org.apache.arrow.vector.ipc.message.ArrowRecordBatch;
 import org.apache.commons.io.IOUtils;
 import org.junit.Assert;
 import org.junit.Before;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -14,12 +15,14 @@ import org.junit.runners.JUnit4;
 import java.nio.charset.StandardCharsets;
 
 @RunWith(JUnit4.class)
+//@Ignore
 public class LocalEngineTest {
 
     @Before
     public void setup() {
+        System.out.println("start load");
         System.load("/home/kyligence/Documents/code/ClickHouse/cmake-build-debug/utils/local-engine/liblocal_engine_jnid.so");
-
+        System.out.println("load success");
     }
 
     @Test
@@ -29,6 +32,7 @@ public class LocalEngineTest {
         localEngine.execute();
         Assert.assertTrue(localEngine.hasNext());
         SparkRowInfo data = localEngine.next();
+        Assert.assertTrue(data.memoryAddress > 0);
         Assert.assertEquals(150, data.offsets.length);
     }
 }

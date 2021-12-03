@@ -5,6 +5,7 @@
 #include <iostream>
 #include "testConfig.h"
 #include <fstream>
+#include <Parser/CHColumnToSparkRow.h>
 
 TEST(TestSelect, ReadRel)
 {
@@ -36,8 +37,8 @@ TEST(TestSelect, ReadRel)
     while(local_executor.hasNext())
     {
         std::cout << "fetch batch" <<std::endl;
-        std::string arrow_chunk = local_executor.next();
-        ASSERT_GT(arrow_chunk.size(), 0);
+        local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
+        ASSERT_GT(spark_row_info->getNumRows(), 0);
     }
 }
 

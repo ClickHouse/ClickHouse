@@ -23,6 +23,7 @@ set(JNI_NATIVE_SOURCES
 
 set(JAVA_MAIN_CLASSES
         ${JAVA_MAIN_CLASS_PATH}/io/kyligence/jni/engine/LocalEngine.java
+        ${JAVA_MAIN_CLASS_PATH}/io/kyligence/jni/engine/SparkRowInfo.java
         )
 # Create the jni header file (from the java class).
 set(JNI_HEADERS_DIR ${PROJECT_SOURCE_DIR}/utils/local-engine/include)
