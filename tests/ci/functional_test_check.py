@@ -4,21 +4,30 @@ import csv
 import logging
 import subprocess
 import os
-import json
 import sys
 
 from github import Github
 
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from build_download_helper import download_all_deb_packages
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status, get_commit
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
 
+def get_additional_envs(check_name):
+    if 'DatabaseReplicated' in check_name:
+        return ["USE_DATABASE_REPLICATED=1"]
+    if 'DatabaseOrdinary' in check_name:
+        return ["USE_DATABASE_ORDINARY=1"]
+    if 'wide parts enabled' in check_name:
+        return ["USE_POLYMORPHIC_PARTS=1"]
+
+    return []
 
 def get_image_name(check_name):
     if 'stateless' in check_name.lower():
@@ -108,15 +117,18 @@ if __name__ == "__main__":
     check_name = sys.argv[1]
     kill_timeout = int(sys.argv[2])
     flaky_check = 'flaky' in check_name.lower()
+    gh = Github(get_best_robot_token())
+
+    pr_info = PRInfo(get_event(), need_changed_files=flaky_check)
+
+    rerun_helper = RerunHelper(gh, pr_info, check_name)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
-        event = json.load(event_file)
-
-    gh = Github(get_best_robot_token())
-    pr_info = PRInfo(event, need_changed_files=flaky_check)
     tests_to_run = []
     if flaky_check:
         tests_to_run = get_tests_to_run(pr_info)
@@ -124,7 +136,6 @@ if __name__ == "__main__":
             commit = get_commit(gh, pr_info.sha)
             commit.create_status(context=check_name, description='Not found changed stateless tests', state='success')
             sys.exit(0)
-
 
     image_name = get_image_name(check_name)
     docker_image = get_image_with_version(reports_path, image_name)
@@ -145,7 +156,8 @@ if __name__ == "__main__":
 
     run_log_path = os.path.join(result_path, "runlog.log")
 
-    run_command = get_run_command(packages_path, result_path, server_log_path, kill_timeout, [], docker_image, flaky_check, tests_to_run)
+    additional_envs = get_additional_envs(check_name)
+    run_command = get_run_command(packages_path, result_path, server_log_path, kill_timeout, additional_envs, docker_image, flaky_check, tests_to_run)
     logging.info("Going to run func tests: %s", run_command)
 
     with open(run_log_path, 'w', encoding='utf-8') as log:
@@ -171,3 +183,9 @@ if __name__ == "__main__":
 
     prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_results, state, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, check_name)
     ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
+
+    if state != 'success':
+        if 'force-tests' in pr_info.labels:
+            print("'force-tests' enabled, will report success")
+        else:
+            sys.exit(1)

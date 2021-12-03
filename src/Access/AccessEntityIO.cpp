@@ -7,6 +7,7 @@
 #include <Access/SettingsProfile.h>
 #include <Access/User.h>
 #include <Core/Defines.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Access/InterpreterCreateQuotaQuery.h>
 #include <Interpreters/Access/InterpreterCreateRoleQuery.h>
 #include <Interpreters/Access/InterpreterCreateRowPolicyQuery.h>

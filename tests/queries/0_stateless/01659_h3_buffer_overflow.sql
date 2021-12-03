@@ -1,4 +1,4 @@
--- Tags: no-unbundled, no-fasttest
+-- Tags: no-fasttest
 
 -- the behaviour on overflow can be implementation specific
 -- and we don't care about the results, but no buffer overflow should be possible.

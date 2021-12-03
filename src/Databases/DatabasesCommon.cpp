@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Storages/StorageDictionary.h>
@@ -187,7 +188,7 @@ bool DatabaseWithOwnTablesBase::empty() const
     return tables.empty();
 }
 
-StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
+StoragePtr DatabaseWithOwnTablesBase::detachTable(ContextPtr /* context_ */, const String & table_name)
 {
     std::unique_lock lock(mutex);
     return detachTableUnlocked(table_name, lock);
@@ -214,7 +215,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     return res;
 }
 
-void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const StoragePtr & table, const String &)
+void DatabaseWithOwnTablesBase::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & table, const String &)
 {
     std::unique_lock lock(mutex);
     attachTableUnlocked(table_name, table, lock);

@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -40,6 +41,7 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int DATABASE_NOT_EMPTY;
+    extern const int INCORRECT_QUERY;
 }
 
 
@@ -185,7 +187,7 @@ void DatabaseOnDisk::createTable(
     {
         /// Metadata already exists, table was detached
         removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, true);
-        attachTable(table_name, table, getTableDataPath(create));
+        attachTable(local_context, table_name, table, getTableDataPath(create));
         return;
     }
 
@@ -246,12 +248,12 @@ void DatabaseOnDisk::removeDetachedPermanentlyFlag(ContextPtr, const String & ta
 
 void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                                        const String & table_metadata_tmp_path, const String & table_metadata_path,
-                                       ContextPtr /*query_context*/)
+                                       ContextPtr query_context)
 {
     try
     {
         /// Add a table to the map of known tables.
-        attachTable(query.getTable(), table, getTableDataPath(query));
+        attachTable(query_context, query.getTable(), table, getTableDataPath(query));
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
@@ -264,9 +266,9 @@ void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const Stora
     }
 }
 
-void DatabaseOnDisk::detachTablePermanently(ContextPtr, const String & table_name)
+void DatabaseOnDisk::detachTablePermanently(ContextPtr query_context, const String & table_name)
 {
-    auto table = detachTable(table_name);
+    auto table = detachTable(query_context, table_name);
 
     fs::path detached_permanently_flag(getObjectMetadataPath(table_name) + detached_suffix);
     try
@@ -288,7 +290,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     if (table_data_path_relative.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Path is empty");
 
-    StoragePtr table = detachTable(table_name);
+    StoragePtr table = detachTable(local_context, table_name);
 
     /// This is possible for Lazy database.
     if (!table)
@@ -309,7 +311,7 @@ void DatabaseOnDisk::dropTable(ContextPtr local_context, const String & table_na
     catch (...)
     {
         LOG_WARNING(log, getCurrentExceptionMessage(__PRETTY_FUNCTION__));
-        attachTable(table_name, table, table_data_path_relative);
+        attachTable(local_context, table_name, table, table_data_path_relative);
         if (renamed)
             fs::rename(table_metadata_path_drop, table_metadata_path);
         throw;
@@ -349,8 +351,6 @@ void DatabaseOnDisk::renameTable(
 {
     if (exchange)
         throw Exception("Tables can be exchanged only in Atomic databases", ErrorCodes::NOT_IMPLEMENTED);
-    if (dictionary)
-        throw Exception("Dictionaries can be renamed only in Atomic databases", ErrorCodes::NOT_IMPLEMENTED);
 
     bool from_ordinary_to_atomic = false;
     bool from_atomic_to_ordinary = false;
@@ -371,8 +371,12 @@ void DatabaseOnDisk::renameTable(
     String table_metadata_path;
     ASTPtr attach_query;
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
-    StoragePtr table = tryGetTable(table_name, getContext());
-    detachTable(table_name);
+    StoragePtr table = tryGetTable(table_name, local_context);
+    if (dictionary && table && !table->isDictionary())
+        throw Exception("Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables", ErrorCodes::INCORRECT_QUERY);
+
+    detachTable(local_context, table_name);
+
     UUID prev_uuid = UUIDHelpers::Nil;
     try
     {
@@ -397,12 +401,12 @@ void DatabaseOnDisk::renameTable(
     }
     catch (const Exception &)
     {
-        attachTable(table_name, table, table_data_relative_path);
+        attachTable(local_context, table_name, table, table_data_relative_path);
         throw;
     }
     catch (const Poco::Exception & e)
     {
-        attachTable(table_name, table, table_data_relative_path);
+        attachTable(local_context, table_name, table, table_data_relative_path);
         /// Better diagnostics.
         throw Exception{Exception::CreateFromPocoTag{}, e};
     }

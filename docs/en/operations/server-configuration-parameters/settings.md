@@ -69,8 +69,6 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 </compression>
 ```
 
-<!--
-
 ## encryption {#server-settings-encryption}
 
 Configures a command to obtain a key to be used by [encryption codecs](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Key (or keys) should be written in environment variables or set in the configuration file.
@@ -150,7 +148,6 @@ Or it can be set in hex:
 
 Everything mentioned above can be applied for `aes_256_gcm_siv` (but the key must be 32 bytes long).
 
--->
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
@@ -588,7 +585,7 @@ For more information, see the section [Creating replicated tables](../../engines
 
 Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) family.
 
-The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
+The cache is shared for the server and memory is allocated as needed.
 
 **Example**
 
