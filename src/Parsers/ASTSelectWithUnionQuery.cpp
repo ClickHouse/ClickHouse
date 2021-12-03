@@ -1,3 +1,4 @@
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Common/typeid_cast.h>
@@ -19,7 +20,6 @@ ASTPtr ASTSelectWithUnionQuery::clone() const
     res->union_mode = union_mode;
 
     res->list_of_modes = list_of_modes;
-    res->set_of_modes = set_of_modes;
 
     cloneOutputOptions(*res);
     return res;
@@ -32,30 +32,27 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
 
     auto mode_to_str = [&](auto mode)
     {
-        if (mode == SelectUnionMode::ALL)
-            return "UNION ALL";
-        else if (mode == SelectUnionMode::DISTINCT)
-            return "UNION DISTINCT";
-        else if (mode == SelectUnionMode::INTERSECT)
-            return "INTERSECT";
-        else if (mode == SelectUnionMode::EXCEPT)
-            return "EXCEPT";
-        return "";
+        if (mode == Mode::Unspecified)
+            return "";
+        else if (mode == Mode::ALL)
+            return "ALL";
+        else
+            return "DISTINCT";
     };
 
     for (ASTs::const_iterator it = list_of_selects->children.begin(); it != list_of_selects->children.end(); ++it)
     {
         if (it != list_of_selects->children.begin())
-            settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "")
+            settings.ostr << settings.nl_or_ws << indent_str << (settings.hilite ? hilite_keyword : "") << "UNION "
                           << mode_to_str((is_normalized) ? union_mode : list_of_modes[it - list_of_selects->children.begin() - 1])
                           << (settings.hilite ? hilite_none : "");
 
         if (auto * node = (*it)->as<ASTSelectWithUnionQuery>())
         {
-            settings.ostr << settings.nl_or_ws << indent_str;
-
             if (node->list_of_selects->children.size() == 1)
             {
+                if (it != list_of_selects->children.begin())
+                    settings.ostr << settings.nl_or_ws;
                 (node->list_of_selects->children.at(0))->formatImpl(settings, state, frame);
             }
             else
@@ -72,13 +69,6 @@ void ASTSelectWithUnionQuery::formatQueryImpl(const FormatSettings & settings, F
             (*it)->formatImpl(settings, state, frame);
         }
     }
-}
-
-
-bool ASTSelectWithUnionQuery::hasNonDefaultUnionMode() const
-{
-    return set_of_modes.contains(SelectUnionMode::DISTINCT) || set_of_modes.contains(SelectUnionMode::INTERSECT)
-        || set_of_modes.contains(SelectUnionMode::EXCEPT);
 }
 
 }

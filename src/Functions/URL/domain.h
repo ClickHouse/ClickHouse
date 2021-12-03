@@ -1,7 +1,7 @@
 #pragma once
 
 #include "protocol.h"
-#include <base/find_symbols.h>
+#include <common/find_symbols.h>
 #include <cstring>
 #include <Common/StringUtils/StringUtils.h>
 
@@ -26,8 +26,6 @@ inline StringRef checkAndReturnHost(const Pos & pos, const Pos & dot_pos, const 
 }
 
 /// Extracts host from given url.
-///
-/// @return empty StringRef if the host is not valid (i.e. it does not have dot, or there no symbol after dot).
 inline StringRef getURLHost(const char * data, size_t size)
 {
     Pos pos = data;

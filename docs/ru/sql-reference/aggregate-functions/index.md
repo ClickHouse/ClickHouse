@@ -1,7 +1,8 @@
 ---
-toc_folder_title: "Агрегатные функции"
+toc_folder_title: "\u0410\u0433\u0440\u0435\u0433\u0430\u0442\u043D\u044B\u0435 \u0444\
+  \u0443\u043D\u043A\u0446\u0438\u0438"
 toc_priority: 33
-toc_title: "Введение"
+toc_title: "\u0412\u0432\u0435\u0434\u0435\u043D\u0438\u0435"
 ---
 
 # Агрегатные функции {#aggregate-functions}
@@ -57,3 +58,4 @@ SELECT groupArray(y) FROM t_null_big
 
 `groupArray` не включает `NULL` в результирующий массив.
 
+[Оригинальная статья](https://clickhouse.tech/docs/ru/sql-reference/aggregate-functions/) <!--hide-->

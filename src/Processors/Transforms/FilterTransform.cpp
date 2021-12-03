@@ -29,11 +29,12 @@ static void replaceFilterToConstant(Block & block, const String & filter_column_
 
 Block FilterTransform::transformHeader(
     Block header,
-    const ActionsDAG & expression,
+    const ExpressionActionsPtr & expression,
     const String & filter_column_name,
     bool remove_filter_column)
 {
-    header = expression.updateHeader(std::move(header));
+    size_t num_rows = header.rows();
+    expression->execute(header, num_rows);
 
     if (remove_filter_column)
         header.erase(filter_column_name);
@@ -49,10 +50,7 @@ FilterTransform::FilterTransform(
     String filter_column_name_,
     bool remove_filter_column_,
     bool on_totals_)
-    : ISimpleTransform(
-            header_,
-            transformHeader(header_, expression_->getActionsDAG(), filter_column_name_, remove_filter_column_),
-            true)
+    : ISimpleTransform(header_, transformHeader(header_, expression_, filter_column_name_, remove_filter_column_), true)
     , expression(std::move(expression_))
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)

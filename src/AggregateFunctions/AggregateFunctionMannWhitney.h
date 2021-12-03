@@ -6,8 +6,9 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/assert_cast.h>
+#include <Common/FieldVisitors.h>
 #include <Common/PODArray_fwd.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -20,10 +21,9 @@
 
 #include <Common/ArenaAllocator.h>
 
-
+#include <iostream>
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -215,12 +215,12 @@ public:
         a.merge(b, arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         this->data(place).read(buf, arena);
     }

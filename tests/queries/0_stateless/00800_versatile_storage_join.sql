@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 CREATE DATABASE IF NOT EXISTS test_00800;
 
 USE test_00800;
@@ -24,10 +22,10 @@ INSERT INTO join_all_left VALUES ('abc', [0], 1), ('def', [1, 2], 2);
 -- read from StorageJoin
 
 SELECT '--------read--------';
-SELECT * from join_any_inner ORDER BY k;
-SELECT * from join_any_left ORDER BY k;
-SELECT * from join_all_inner ORDER BY k;
-SELECT * from join_all_left ORDER BY k;
+SELECT * from join_any_inner;
+SELECT * from join_any_left;
+SELECT * from join_all_inner;
+SELECT * from join_all_left;
 
 -- create StorageJoin tables with customized settings
 

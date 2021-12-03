@@ -26,8 +26,6 @@
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_ARRAY_SIZE;
@@ -237,7 +235,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         const auto & value = this->data(place).value;
         size_t size = value.size();
@@ -256,7 +254,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         size_t size = 0;
         readVarUInt(size, buf);
@@ -298,7 +296,12 @@ public:
         if (size)
         {
             typename ColumnVector<T>::Container & data_to = assert_cast<ColumnVector<T> &>(arr_to.getData()).getData();
-            data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
+            if constexpr (is_big_int_v<T>)
+                // is data_to empty? we should probably use std::vector::insert then
+                for (auto it = this->data(place).value.begin(); it != this->data(place).value.end(); it++)
+                    data_to.push_back(*it);
+            else
+                data_to.insert(this->data(place).value.begin(), this->data(place).value.end());
         }
     }
 
@@ -550,7 +553,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         writeVarUInt(data(place).value.size(), buf);
 
@@ -570,7 +573,7 @@ public:
         // if constexpr (Trait::sampler == Sampler::DETERMINATOR)
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
     {
         UInt64 elems;
         readVarUInt(elems, buf);

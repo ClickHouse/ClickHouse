@@ -8,21 +8,21 @@
 namespace DB
 {
 
-NamesAndTypesList MetricLogElement::getNamesAndTypes()
+Block MetricLogElement::createBlock()
 {
-    NamesAndTypesList columns_with_type_and_name;
+    ColumnsWithTypeAndName columns_with_type_and_name;
 
-    columns_with_type_and_name.emplace_back("event_date", std::make_shared<DataTypeDate>());
-    columns_with_type_and_name.emplace_back("event_time", std::make_shared<DataTypeDateTime>());
-    columns_with_type_and_name.emplace_back("event_time_microseconds", std::make_shared<DataTypeDateTime64>(6));
-    columns_with_type_and_name.emplace_back("milliseconds", std::make_shared<DataTypeUInt64>());
+    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDate>(),           "event_date");
+    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDateTime>(),       "event_time");
+    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeDateTime64>(6),    "event_time_microseconds");
+    columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(),         "milliseconds");
 
     for (size_t i = 0, end = ProfileEvents::end(); i < end; ++i)
     {
         std::string name;
         name += "ProfileEvent_";
         name += ProfileEvents::getName(ProfileEvents::Event(i));
-        columns_with_type_and_name.emplace_back(std::move(name), std::make_shared<DataTypeUInt64>());
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeUInt64>(), std::move(name));
     }
 
     for (size_t i = 0, end = CurrentMetrics::end(); i < end; ++i)
@@ -30,10 +30,10 @@ NamesAndTypesList MetricLogElement::getNamesAndTypes()
         std::string name;
         name += "CurrentMetric_";
         name += CurrentMetrics::getName(CurrentMetrics::Metric(i));
-        columns_with_type_and_name.emplace_back(std::move(name), std::make_shared<DataTypeInt64>());
+        columns_with_type_and_name.emplace_back(std::make_shared<DataTypeInt64>(), std::move(name));
     }
 
-    return columns_with_type_and_name;
+    return Block(columns_with_type_and_name);
 }
 
 
@@ -41,7 +41,7 @@ void MetricLogElement::appendToBlock(MutableColumns & columns) const
 {
     size_t column_idx = 0;
 
-    columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
+    columns[column_idx++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[column_idx++]->insert(event_time);
     columns[column_idx++]->insert(event_time_microseconds);
     columns[column_idx++]->insert(milliseconds);

@@ -1,5 +1,7 @@
 #pragma once
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 #if USE_BASE64
 #    include <Columns/ColumnConst.h>
@@ -59,7 +61,7 @@ class FunctionBase64Conversion : public IFunction
 public:
     static constexpr auto name = Func::name;
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionBase64Conversion>();
     }
@@ -73,8 +75,6 @@ public:
     {
         return 1;
     }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const override
     {
@@ -146,7 +146,7 @@ public:
                     if (!outlen)
                     {
                         outlen = 0;
-                        dst_pos = savepoint; //-V1048
+                        dst_pos = savepoint;
                         // clean the symbol
                         dst_pos[0] = 0;
                     }

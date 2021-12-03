@@ -1,8 +1,7 @@
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/Transforms/LimitByTransform.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Processors/QueryPipeline.h>
 #include <IO/Operators.h>
-#include <Common/JSONBuilder.h>
 
 namespace DB
 {
@@ -34,13 +33,13 @@ LimitByStep::LimitByStep(
 }
 
 
-void LimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void LimitByStep::transformPipeline(QueryPipeline & pipeline)
 {
     pipeline.resize(1);
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
-        if (stream_type != QueryPipelineBuilder::StreamType::Main)
+        if (stream_type != QueryPipeline::StreamType::Main)
             return nullptr;
 
         return std::make_shared<LimitByTransform>(header, group_length, group_offset, columns);
@@ -71,17 +70,6 @@ void LimitByStep::describeActions(FormatSettings & settings) const
 
     settings.out << prefix << "Length " << group_length << '\n';
     settings.out << prefix << "Offset " << group_offset << '\n';
-}
-
-void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
-{
-    auto columns_array = std::make_unique<JSONBuilder::JSONArray>();
-    for (const auto & column : columns)
-        columns_array->add(column);
-
-    map.add("Columns", std::move(columns_array));
-    map.add("Length", group_length);
-    map.add("Offset", group_offset);
 }
 
 }

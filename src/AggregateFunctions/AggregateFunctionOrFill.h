@@ -11,7 +11,6 @@
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -50,16 +49,6 @@ public:
             return nested_function->getName() + "OrNull";
         else
             return nested_function->getName() + "OrDefault";
-    }
-
-    bool isVersioned() const override
-    {
-        return nested_function->isVersioned();
-    }
-
-    size_t getDefaultVersion() const override
-    {
-        return nested_function->getDefaultVersion();
     }
 
     bool isState() const override
@@ -121,7 +110,7 @@ public:
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
             for (size_t i = 0; i < batch_size; ++i)
             {
-                if (flags[i] && places[i])
+                if (flags[i])
                     add(places[i] + place_offset, columns, i, arena);
             }
         }
@@ -129,8 +118,7 @@ public:
         {
             nested_function->addBatch(batch_size, places, place_offset, columns, arena, if_argument_pos);
             for (size_t i = 0; i < batch_size; ++i)
-                if (places[i])
-                    (places[i] + place_offset)[size_of_data] = 1;
+                (places[i] + place_offset)[size_of_data] = 1;
         }
     }
 
@@ -207,28 +195,21 @@ public:
         place[size_of_data] |= rhs[size_of_data];
     }
 
-    void mergeBatch(
-        size_t batch_size,
-        AggregateDataPtr * places,
-        size_t place_offset,
-        const AggregateDataPtr * rhs,
-        Arena * arena) const override
+    void serialize(
+        ConstAggregateDataPtr place,
+        WriteBuffer & buf) const override
     {
-        nested_function->mergeBatch(batch_size, places, place_offset, rhs, arena);
-        for (size_t i = 0; i < batch_size; ++i)
-            (places[i] + place_offset)[size_of_data] |= rhs[i][size_of_data];
-    }
-
-    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t> version) const override
-    {
-        nested_function->serialize(place, buf, version);
+        nested_function->serialize(place, buf);
 
         writeChar(place[size_of_data], buf);
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
+    void deserialize(
+        AggregateDataPtr place,
+        ReadBuffer & buf,
+        Arena * arena) const override
     {
-        nested_function->deserialize(place, buf, version, arena);
+        nested_function->deserialize(place, buf, arena);
 
         readChar(place[size_of_data], buf);
     }

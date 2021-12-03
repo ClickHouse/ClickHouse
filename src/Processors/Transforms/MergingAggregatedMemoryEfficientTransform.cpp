@@ -3,7 +3,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ResizeProcessor.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 
 namespace DB
 {
@@ -11,6 +11,13 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+struct ChunksToMerge : public ChunkInfo
+{
+    std::unique_ptr<Chunks> chunks;
+    Int32 bucket_num = -1;
+    bool is_overflows = false;
+};
 
 GroupingAggregatedTransform::GroupingAggregatedTransform(
     const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_)
@@ -221,14 +228,13 @@ IProcessor::Status GroupingAggregatedTransform::prepare()
             return Status::PortFull;
 
         /// Sanity check. If new bucket was read, we should be able to push it.
-        /// This is always false, but we still keep this condition in case the code will be changed.
-        if (!all_inputs_finished) // -V547
+        if (!all_inputs_finished)
             throw Exception("GroupingAggregatedTransform has read new two-level bucket, but couldn't push it.",
                             ErrorCodes::LOGICAL_ERROR);
     }
     else
     {
-        if (!all_inputs_finished) // -V547
+        if (!all_inputs_finished)
             throw Exception("GroupingAggregatedTransform should have read all chunks for single level aggregation, "
                             "but not all of the inputs are finished.", ErrorCodes::LOGICAL_ERROR);
 

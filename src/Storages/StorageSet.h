@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
@@ -18,12 +18,12 @@ using SetPtr = std::shared_ptr<Set>;
   */
 class StorageSetOrJoinBase : public IStorage
 {
-    friend class SetOrJoinSink;
+    friend class SetOrJoinBlockOutputStream;
 
 public:
     void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
-    SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context) override;
+    BlockOutputStreamPtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, const Context & context) override;
 
     bool storesDataOnDisk() const override { return true; }
     Strings getDataPaths() const override { return {path}; }
@@ -35,7 +35,6 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & comment,
         bool persistent_);
 
     DiskPtr disk;
@@ -51,10 +50,10 @@ private:
     void restoreFromFile(const String & file_path);
 
     /// Insert the block into the state.
-    virtual void insertBlock(const Block & block, ContextPtr context) = 0;
+    virtual void insertBlock(const Block & block) = 0;
     /// Call after all blocks were inserted.
     virtual void finishInsert() = 0;
-    virtual size_t getSize(ContextPtr context) const = 0;
+    virtual size_t getSize() const = 0;
 };
 
 
@@ -63,9 +62,9 @@ private:
   *  and also written to a file-backup, for recovery after a restart.
   * Reading from the table is not possible directly - it is possible to specify only the right part of the IN statement.
   */
-class StorageSet final : public shared_ptr_helper<StorageSet>, public StorageSetOrJoinBase
+class StorageSet final : public ext::shared_ptr_helper<StorageSet>, public StorageSetOrJoinBase
 {
-friend struct shared_ptr_helper<StorageSet>;
+friend struct ext::shared_ptr_helper<StorageSet>;
 
 public:
     String getName() const override { return "Set"; }
@@ -73,7 +72,7 @@ public:
     /// Access the insides.
     SetPtr & getSet() { return set; }
 
-    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
+    void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, const Context &, TableExclusiveLockHolder &) override;
 
     std::optional<UInt64> totalRows(const Settings & settings) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
@@ -81,9 +80,9 @@ public:
 private:
     SetPtr set;
 
-    void insertBlock(const Block & block, ContextPtr) override;
+    void insertBlock(const Block & block) override;
     void finishInsert() override;
-    size_t getSize(ContextPtr) const override;
+    size_t getSize() const override;
 
 protected:
     StorageSet(
@@ -92,7 +91,6 @@ protected:
         const StorageID & table_id_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
-        const String & comment,
         bool persistent_);
 };
 

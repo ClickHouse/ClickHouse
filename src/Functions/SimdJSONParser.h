@@ -1,11 +1,13 @@
 #pragma once
 
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 #if USE_SIMDJSON
-#    include <base/types.h>
+#    include <common/types.h>
 #    include <Common/Exception.h>
-#    include <base/defines.h>
+#    include <common/defines.h>
 #    include <simdjson.h>
 
 
@@ -40,15 +42,13 @@ struct SimdJSONParser
         ALWAYS_INLINE bool isBool() const { return element.type() == simdjson::dom::element_type::BOOL; }
         ALWAYS_INLINE bool isNull() const { return element.type() == simdjson::dom::element_type::NULL_VALUE; }
 
-        ALWAYS_INLINE Int64 getInt64() const { return element.get_int64().value_unsafe(); }
-        ALWAYS_INLINE UInt64 getUInt64() const { return element.get_uint64().value_unsafe(); }
-        ALWAYS_INLINE double getDouble() const { return element.get_double().value_unsafe(); }
-        ALWAYS_INLINE bool getBool() const { return element.get_bool().value_unsafe(); }
-        ALWAYS_INLINE std::string_view getString() const { return element.get_string().value_unsafe(); }
+        ALWAYS_INLINE Int64 getInt64() const { return element.get_int64().first; }
+        ALWAYS_INLINE UInt64 getUInt64() const { return element.get_uint64().first; }
+        ALWAYS_INLINE double getDouble() const { return element.get_double().first; }
+        ALWAYS_INLINE bool getBool() const { return element.get_bool().first; }
+        ALWAYS_INLINE std::string_view getString() const { return element.get_string().first; }
         ALWAYS_INLINE Array getArray() const;
         ALWAYS_INLINE Object getObject() const;
-
-        ALWAYS_INLINE simdjson::dom::element getElement() const { return element; }
 
     private:
         simdjson::dom::element element;
@@ -75,7 +75,7 @@ struct SimdJSONParser
         ALWAYS_INLINE Iterator begin() const { return array.begin(); }
         ALWAYS_INLINE Iterator end() const { return array.end(); }
         ALWAYS_INLINE size_t size() const { return array.size(); }
-        ALWAYS_INLINE Element operator[](size_t index) const { assert(index < size()); return array.at(index).value_unsafe(); }
+        ALWAYS_INLINE Element operator[](size_t index) const { assert(index < size()); return array.at(index).first; }
 
     private:
         simdjson::dom::array array;
@@ -111,7 +111,7 @@ struct SimdJSONParser
             if (x.error())
                 return false;
 
-            result = x.value_unsafe();
+            result = x.first;
             return true;
         }
 
@@ -137,7 +137,7 @@ struct SimdJSONParser
         if (document.error())
             return false;
 
-        result = document.value_unsafe();
+        result = document.first;
         return true;
     }
 
@@ -155,12 +155,12 @@ private:
 
 inline ALWAYS_INLINE SimdJSONParser::Array SimdJSONParser::Element::getArray() const
 {
-    return element.get_array().value_unsafe();
+    return element.get_array().first;
 }
 
 inline ALWAYS_INLINE SimdJSONParser::Object SimdJSONParser::Element::getObject() const
 {
-    return element.get_object().value_unsafe();
+    return element.get_object().first;
 }
 
 }

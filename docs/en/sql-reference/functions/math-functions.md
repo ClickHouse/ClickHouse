@@ -54,7 +54,7 @@ If ‘x’ is non-negative, then `erf(x / σ√2)` is the probability that a ran
 Example (three sigma rule):
 
 ``` sql
-SELECT erf(3 / sqrt(2));
+SELECT erf(3 / sqrt(2))
 ```
 
 ``` text
@@ -415,7 +415,7 @@ Result:
 
 ## sign(x) {#signx}
 
-Returns the sign of a real number.
+The `sign` function can extract the sign of a real number.
 
 **Syntax**
 
@@ -433,9 +433,9 @@ sign(x)
 -  0 for `x = 0`
 -  1 for `x > 0`
 
-**Examples**
+**Example**
 
-Sign for the zero value:
+Query:
 
 ``` sql
 SELECT sign(0);
@@ -449,7 +449,7 @@ Result:
 └─────────┘
 ```
 
-Sign for the positive value:
+Query:
 
 ``` sql
 SELECT sign(1);
@@ -463,7 +463,7 @@ Result:
 └─────────┘
 ```
 
-Sign for the negative value:
+Query:
 
 ``` sql
 SELECT sign(-1);
@@ -477,3 +477,4 @@ Result:
 └──────────┘
 ```
 
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/math_functions/) <!--hide-->

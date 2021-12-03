@@ -3,16 +3,14 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Common/typeid_cast.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeArray.h>
 #include "IAggregateFunction.h"
 
 namespace DB
 {
-struct Settings;
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -46,7 +44,7 @@ public:
         size_t limit,
         const std::vector<Float64> & weights,
         Float64 bias,
-        ContextPtr context) const = 0;
+        const Context & context) const = 0;
 };
 
 
@@ -71,7 +69,7 @@ public:
         size_t limit,
         const std::vector<Float64> & weights,
         Float64 bias,
-        ContextPtr context) const override;
+        const Context & context) const override;
 };
 
 
@@ -96,7 +94,7 @@ public:
         size_t limit,
         const std::vector<Float64> & weights,
         Float64 bias,
-        ContextPtr context) const override;
+        const Context & context) const override;
 };
 
 
@@ -266,7 +264,7 @@ public:
         const ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        ContextPtr context) const;
+        const Context & context) const;
 
     void returnWeights(IColumn & to) const;
 private:
@@ -325,8 +323,6 @@ public:
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     /// This function is called from evalMLMethod function for correct predictValues call
     DataTypePtr getReturnTypeToPredict() const override
     {
@@ -357,9 +353,9 @@ public:
 
     void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override { this->data(place).merge(this->data(rhs)); }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override { this->data(place).write(buf); }
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override { this->data(place).write(buf); }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override { this->data(place).read(buf); }
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override { this->data(place).read(buf); }
 
     void predictValues(
         ConstAggregateDataPtr place,
@@ -367,7 +363,7 @@ public:
         const ColumnsWithTypeAndName & arguments,
         size_t offset,
         size_t limit,
-        ContextPtr context) const override
+        const Context & context) const override
     {
         if (arguments.size() != param_num + 1)
             throw Exception(

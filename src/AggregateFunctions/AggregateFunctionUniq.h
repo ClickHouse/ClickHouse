@@ -3,7 +3,7 @@
 #include <city.h>
 #include <type_traits>
 
-#include <base/bit_cast.h>
+#include <ext/bit_cast.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -22,13 +22,11 @@
 
 #include <AggregateFunctions/UniquesHashSet.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/ThetaSketchData.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 
 
 namespace DB
 {
-struct Settings;
 
 /// uniq
 
@@ -71,7 +69,7 @@ struct AggregateFunctionUniqHLL12Data<String>
 };
 
 template <>
-struct AggregateFunctionUniqHLL12Data<UUID>
+struct AggregateFunctionUniqHLL12Data<UInt128>
 {
     using Set = HyperLogLogWithSmallSetOptimization<UInt64, 16, 12>;
     Set set;
@@ -126,19 +124,6 @@ struct AggregateFunctionUniqExactData<String>
 };
 
 
-/// uniqTheta
-#if USE_DATASKETCHES
-
-struct AggregateFunctionUniqThetaData
-{
-    using Set = ThetaSketchData<UInt64>;
-    Set set;
-
-    static String getName() { return "uniqTheta"; }
-};
-
-#endif
-
 namespace detail
 {
 
@@ -148,14 +133,16 @@ template <typename T> struct AggregateFunctionUniqTraits
 {
     static UInt64 hash(T x)
     {
-        if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, Float64>)
+        if constexpr (std::is_same_v<T, UInt128>)
         {
-            return bit_cast<UInt64>(x);
+            return sipHash64(x);
+        }
+        else if constexpr (std::is_same_v<T, Float32> || std::is_same_v<T, Float64>)
+        {
+            return ext::bit_cast<UInt64>(x);
         }
         else if constexpr (sizeof(T) <= sizeof(UInt64))
-        {
             return x;
-        }
         else
             return DefaultHash64<T>(x);
     }
@@ -197,17 +184,11 @@ struct OneAdder
                 UInt128 key;
                 SipHash hash;
                 hash.update(value.data, value.size);
-                hash.get128(key);
+                hash.get128(key.low, key.high);
 
                 data.set.insert(key);
             }
         }
-#if USE_DATASKETCHES
-        else if constexpr (std::is_same_v<Data, AggregateFunctionUniqThetaData>)
-        {
-            data.set.insertOriginal(column.getDataAt(row_num));
-        }
-#endif
     }
 };
 
@@ -229,8 +210,6 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     /// ALWAYS_INLINE is required to have better code layout for uniqHLL12 function
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -242,12 +221,12 @@ public:
         this->data(place).set.merge(this->data(rhs).set);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).set.read(buf);
     }
@@ -286,8 +265,6 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
-    bool allocatesMemoryInArena() const override { return false; }
-
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         this->data(place).set.insert(typename Data::Set::value_type(
@@ -299,12 +276,12 @@ public:
         this->data(place).set.merge(this->data(rhs).set);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
     {
         this->data(place).set.write(buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
     {
         this->data(place).set.read(buf);
     }

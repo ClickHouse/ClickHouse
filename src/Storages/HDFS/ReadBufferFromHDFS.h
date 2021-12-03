@@ -7,41 +7,28 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <string>
 #include <memory>
+
 #include <hdfs/hdfs.h>
-#include <base/types.h>
+
+#include <common/types.h>
+
 #include <Interpreters/Context.h>
-#include <IO/SeekableReadBuffer.h>
 
 
 namespace DB
 {
-
 /** Accepts HDFS path to file and opens it.
  * Closes file by himself (thus "owns" a file descriptor).
  */
-class ReadBufferFromHDFS : public SeekableReadBufferWithSize
+class ReadBufferFromHDFS : public BufferWithOwnMemory<ReadBuffer>
 {
-struct ReadBufferFromHDFSImpl;
-
+    struct ReadBufferFromHDFSImpl;
+    std::unique_ptr<ReadBufferFromHDFSImpl> impl;
 public:
-    ReadBufferFromHDFS(const String & hdfs_uri_, const String & hdfs_file_path_,
-                       const Poco::Util::AbstractConfiguration & config_,
-                       size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE,
-                       size_t read_until_position_ = 0);
-
+    ReadBufferFromHDFS(const std::string & hdfs_name_, const Poco::Util::AbstractConfiguration &, size_t buf_size_ = DBMS_DEFAULT_BUFFER_SIZE);
     ~ReadBufferFromHDFS() override;
 
     bool nextImpl() override;
-
-    off_t seek(off_t offset_, int whence) override;
-
-    off_t getPosition() override;
-
-    std::optional<size_t> getTotalSize() override;
-
-private:
-    std::unique_ptr<ReadBufferFromHDFSImpl> impl;
 };
 }
-
 #endif

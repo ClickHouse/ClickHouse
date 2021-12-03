@@ -14,19 +14,26 @@ avg(x)
 
 **Arguments**
 
--   `x` — input values, must be [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), or [Decimal](../../../sql-reference/data-types/decimal.md).
+-   `x` — Values.
+
+`x` must be
+[Integer](../../../sql-reference/data-types/int-uint.md),
+[floating-point](../../../sql-reference/data-types/float.md), or 
+[Decimal](../../../sql-reference/data-types/decimal.md).
 
 **Returned value**
 
--   The arithmetic mean, always as [Float64](../../../sql-reference/data-types/float.md).
--   `NaN` if the input parameter `x` is empty.
+- `NaN` if the supplied parameter is empty.
+- Mean otherwise.
+
+**Return type** is always [Float64](../../../sql-reference/data-types/float.md).
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT avg(x) FROM values('x Int8', 0, 1, 2, 3, 4, 5);
+SELECT avg(x) FROM values('x Int8', 0, 1, 2, 3, 4, 5)
 ```
 
 Result:
@@ -39,20 +46,11 @@ Result:
 
 **Example**
 
-Create a temp table:
-
 Query:
 
 ``` sql
 CREATE table test (t UInt8) ENGINE = Memory;
-```
-
-Get the arithmetic mean:
-
-Query:
-
-```
-SELECT avg(t) FROM test;
+SELECT avg(t) FROM test
 ```
 
 Result:
@@ -62,5 +60,3 @@ Result:
 │    nan │
 └────────┘
 ```
-
-[Original article](https://clickhouse.com/docs/en/sql-reference/aggregate-functions/reference/avg/) <!--hide-->

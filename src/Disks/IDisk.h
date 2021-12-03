@@ -1,36 +1,26 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/Context.h>
 #include <Core/Defines.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Disks/Executor.h>
-#include <Disks/DiskType.h>
-#include <IO/ReadSettings.h>
 
 #include <memory>
 #include <mutex>
 #include <utility>
 #include <boost/noncopyable.hpp>
+#include <Poco/Path.h>
 #include <Poco/Timestamp.h>
-#include <filesystem>
 
 
-namespace fs = std::filesystem;
-
-namespace Poco
+namespace CurrentMetrics
 {
-    namespace Util
-    {
-        class AbstractConfiguration;
-    }
+extern const Metric DiskSpaceReservedForMerge;
 }
 
 namespace DB
 {
-
 class IDiskDirectoryIterator;
 using DiskDirectoryIteratorPtr = std::unique_ptr<IDiskDirectoryIterator>;
 
@@ -40,7 +30,6 @@ using Reservations = std::vector<ReservationPtr>;
 
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
-class MMappedFileCache;
 
 /**
  * Mode of opening a file for write.
@@ -67,6 +56,29 @@ public:
 };
 
 using SpacePtr = std::shared_ptr<Space>;
+
+struct DiskType
+{
+    enum class Type
+    {
+        Local,
+        RAM,
+        S3
+    };
+    static String toString(Type disk_type)
+    {
+        switch (disk_type)
+        {
+            case Type::Local:
+                return "local";
+            case Type::RAM:
+                return "memory";
+            case Type::S3:
+                return "s3";
+        }
+        __builtin_unreachable();
+    }
+};
 
 /**
  * A guard, that should synchronize file's or directory's state
@@ -160,8 +172,10 @@ public:
     /// Open the file for read and return ReadBufferFromFileBase object.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        const ReadSettings & settings = ReadSettings{},
-        std::optional<size_t> size = {}) const = 0;
+        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
+        size_t estimated_size = 0,
+        size_t aio_threshold = 0,
+        size_t mmap_threshold = 0) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
@@ -181,21 +195,6 @@ public:
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     virtual void removeRecursive(const String & path) = 0;
 
-    /// Remove file. Throws exception if file doesn't exists or if directory is not empty.
-    /// Differs from removeFile for S3/HDFS disks
-    /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
-    virtual void removeSharedFile(const String & path, bool) { removeFile(path); }
-
-    /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
-    /// Differs from removeRecursive for S3/HDFS disks
-    /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
-    virtual void removeSharedRecursive(const String & path, bool) { removeRecursive(path); }
-
-    /// Remove file or directory if it exists.
-    /// Differs from removeFileIfExists for S3/HDFS disks
-    /// Second bool param is a flag to remove (true) or keep (false) shared data on S3
-    virtual void removeSharedFileIfExists(const String & path, bool) { removeFileIfExists(path); }
-
     /// Set last modified time to file or directory at `path`.
     virtual void setLastModified(const String & path, const Poco::Timestamp & timestamp) = 0;
 
@@ -212,51 +211,19 @@ public:
     virtual void truncateFile(const String & path, size_t size);
 
     /// Return disk type - "local", "s3", etc.
-    virtual DiskType getType() const = 0;
-
-    /// Involves network interaction.
-    virtual bool isRemote() const = 0;
-
-    /// Whether this disk support zero-copy replication.
-    /// Overrode in remote fs disks.
-    virtual bool supportZeroCopyReplication() const = 0;
-
-    virtual bool isReadOnly() const { return false; }
+    virtual DiskType::Type getType() const = 0;
 
     /// Invoked when Global Context is shutdown.
-    virtual void shutdown() {}
+    virtual void shutdown() { }
 
-    /// Performs action on disk startup.
-    virtual void startup() {}
-
-    /// Return some uniq string for file, overrode for IDiskRemote
-    /// Required for distinguish different copies of the same part on remote disk
-    virtual String getUniqueId(const String & path) const { return path; }
-
-    /// Check file exists and ClickHouse has an access to it
-    /// Overrode in remote FS disks (s3/hdfs)
-    /// Required for remote disk to ensure that replica has access to data written by other node
-    virtual bool checkUniqueId(const String & id) const { return exists(id); }
+    /// Returns executor to perform asynchronous operations.
+    virtual Executor & getExecutor() { return *executor; }
 
     /// Invoked on partitions freeze query.
     virtual void onFreeze(const String &) { }
 
     /// Returns guard, that insures synchronization of directory metadata with storage device.
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
-
-    /// Applies new settings for disk in runtime.
-    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) {}
-
-protected:
-    friend class DiskDecorator;
-
-    /// Returns executor to perform asynchronous operations.
-    virtual Executor & getExecutor() { return *executor; }
-
-    /// Base implementation of the function copy().
-    /// It just opens two files, reads data by portions from the first file, and writes it to the second one.
-    /// A derived class may override copy() to provide a faster implementation.
-    void copyThroughBuffers(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path);
 
 private:
     std::unique_ptr<Executor> executor;
@@ -311,27 +278,25 @@ public:
 /// Return full path to a file on disk.
 inline String fullPath(const DiskPtr & disk, const String & path)
 {
-    return fs::path(disk->getPath()) / path;
+    return disk->getPath() + path;
 }
 
 /// Return parent path for the specified path.
 inline String parentPath(const String & path)
 {
-    if (path.ends_with('/'))
-        return fs::path(path).parent_path().parent_path() / "";
-    return fs::path(path).parent_path() / "";
+    return Poco::Path(path).parent().toString();
 }
 
 /// Return file name for the specified path.
 inline String fileName(const String & path)
 {
-    return fs::path(path).filename();
+    return Poco::Path(path).getFileName();
 }
 
 /// Return directory path for the specified path.
 inline String directoryPath(const String & path)
 {
-    return fs::path(path).parent_path() / "";
+    return Poco::Path(path).setFileName("").toString();
 }
 
 }

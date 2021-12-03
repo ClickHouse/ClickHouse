@@ -4,11 +4,11 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
-struct Settings;
 
 namespace ErrorCodes
 {
@@ -49,8 +49,7 @@ inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataType
 }
 
 
-AggregateFunctionPtr createAggregateFunctionGroupArray(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertUnary(name, argument_types);
 
@@ -84,8 +83,7 @@ AggregateFunctionPtr createAggregateFunctionGroupArray(
         return createAggregateFunctionGroupArrayImpl<GroupArrayTrait<true, Sampler::NONE>>(argument_types[0], parameters, max_elems);
 }
 
-AggregateFunctionPtr createAggregateFunctionGroupArraySample(
-    const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+AggregateFunctionPtr createAggregateFunctionGroupArraySample(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertUnary(name, argument_types);
 

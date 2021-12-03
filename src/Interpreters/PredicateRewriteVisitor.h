@@ -1,18 +1,14 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Parsers/IAST.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Interpreters/InDepthNodeVisitor.h>
-#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
 
-class ASTSelectIntersectExceptQuery;
-class ASTSelectQuery;
-class ASTSelectWithUnionQuery;
-
-class PredicateRewriteVisitorData : WithContext
+class PredicateRewriteVisitorData
 {
 public:
     bool is_rewrite = false;
@@ -22,19 +18,18 @@ public:
 
     static bool needChild(const ASTPtr & node, const ASTPtr &)
     {
-        return !(node && node->as<TypeToVisit>());
+        if (node && node->as<TypeToVisit>())
+            return false;
+
+        return true;
     }
 
-    PredicateRewriteVisitorData(
-        ContextPtr context_,
-        const ASTs & predicates_,
-        const TableWithColumnNamesAndTypes & table_columns_,
-        bool optimize_final_,
-        bool optimize_with_);
+    PredicateRewriteVisitorData(const Context & context_, const ASTs & predicates_, Names && column_names_, bool optimize_final_, bool optimize_with_);
 
 private:
+    const Context & context;
     const ASTs & predicates;
-    const TableWithColumnNamesAndTypes & table_columns;
+    const Names column_names;
     bool optimize_final;
     bool optimize_with;
 
@@ -42,14 +37,9 @@ private:
 
     void visitOtherInternalSelect(ASTSelectQuery & select_query, ASTPtr &);
 
-    void visit(ASTSelectIntersectExceptQuery & intersect_except_query, ASTPtr &);
-
-    bool rewriteSubquery(ASTSelectQuery & subquery, const Names & inner_columns);
-
-    void visitInternalSelect(size_t index, ASTSelectQuery & select_node, ASTPtr & node);
+    bool rewriteSubquery(ASTSelectQuery & subquery, const Names & outer_columns, const Names & inner_columns);
 };
 
 using PredicateRewriteMatcher = OneTypeMatcher<PredicateRewriteVisitorData, PredicateRewriteVisitorData::needChild>;
 using PredicateRewriteVisitor = InDepthNodeVisitor<PredicateRewriteMatcher, true>;
-
 }

@@ -2,7 +2,7 @@
 #include <map>
 #include <optional>
 #include <city.h>
-#include <base/types.h>
+#include <common/types.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -52,8 +52,6 @@ struct MergeTreeDataPartChecksums
 
     void add(MergeTreeDataPartChecksums && rhs_checksums);
 
-    bool has(const String & file_name) const { return files.find(file_name) != files.end(); }
-
     bool empty() const
     {
         return files.empty();
@@ -84,8 +82,6 @@ struct MergeTreeDataPartChecksums
 
     /// SipHash of all all files hashes represented as hex string
     String getTotalChecksumHex() const;
-
-    Checksum::uint128 getTotalChecksumUInt128() const;
 
     String getSerializedString() const;
     static MergeTreeDataPartChecksums deserializeFrom(const String & s);

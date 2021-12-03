@@ -5,7 +5,7 @@ toc_title: DROP
 
 # DROP Statements {#drop}
 
-Deletes existing entity. If the `IF EXISTS` clause is specified, these queries do not return an error if the entity does not exist.
+Deletes existing entity. If the `IF EXISTS` clause is specified, these queries don’t return an error if the entity doesn’t exist.
 
 ## DROP DATABASE {#drop-database}
 
@@ -97,20 +97,4 @@ Syntax:
 DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-## DROP FUNCTION {#drop-function}
-
-Deletes a user defined function created by [CREATE FUNCTION](./create/function.md).
-System functions can not be dropped.
-
-**Syntax**
-
-``` sql
-DROP FUNCTION [IF EXISTS] function_name
-```
-
-**Example**
-
-``` sql
-CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
-DROP FUNCTION linear_equation;
-```
+[Оriginal article](https://clickhouse.tech/docs/en/sql-reference/statements/drop/) <!--hide-->

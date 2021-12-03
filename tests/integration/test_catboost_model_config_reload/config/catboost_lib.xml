@@ -1,3 +1,0 @@
-<clickhouse>
-    <catboost_dynamic_library_path>/etc/clickhouse-server/model/libcatboostmodel.so</catboost_dynamic_library_path>
-</clickhouse>

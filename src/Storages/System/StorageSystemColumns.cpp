@@ -5,10 +5,9 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
@@ -45,12 +44,6 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
         { "is_in_primary_key",   std::make_shared<DataTypeUInt8>() },
         { "is_in_sampling_key",  std::make_shared<DataTypeUInt8>() },
         { "compression_codec",   std::make_shared<DataTypeString>() },
-        { "character_octet_length",     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()) },
-        { "numeric_precision",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()) },
-        { "numeric_precision_radix",    std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()) },
-        { "numeric_scale",              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()) },
-        { "datetime_precision",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()) },
-
     }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -72,12 +65,12 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
-        ContextPtr context)
+        const Context & context)
         : SourceWithProgress(header_)
         , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
         , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
-        , total_tables(tables->size()), access(context->getAccess())
-        , query_id(context->getCurrentQueryId()), lock_acquire_timeout(context->getSettingsRef().lock_acquire_timeout)
+        , total_tables(tables->size()), access(context.getAccess())
+        , query_id(context.getCurrentQueryId()), lock_acquire_timeout(context.getSettingsRef().lock_acquire_timeout)
     {
     }
 
@@ -105,7 +98,7 @@ protected:
             Names cols_required_for_sorting_key;
             Names cols_required_for_primary_key;
             Names cols_required_for_sampling;
-            IStorage::ColumnSizeByName column_sizes;
+            MergeTreeData::ColumnSizeByName column_sizes;
 
             {
                 StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
@@ -225,60 +218,6 @@ protected:
                         res_columns[res_index++]->insertDefault();
                 }
 
-                /// character_octet_length makes sense for FixedString only
-                DataTypePtr not_nullable_type = removeNullable(column.type);
-                if (columns_mask[src_index++])
-                {
-                    if (isFixedString(not_nullable_type))
-                        res_columns[res_index++]->insert(not_nullable_type->getSizeOfValueInMemory());
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
-                /// numeric_precision
-                if (columns_mask[src_index++])
-                {
-                    if (isInteger(not_nullable_type))
-                        res_columns[res_index++]->insert(not_nullable_type->getSizeOfValueInMemory() * 8);  /// radix is 2
-                    else if (isDecimal(not_nullable_type))
-                        res_columns[res_index++]->insert(getDecimalPrecision(*not_nullable_type));  /// radix is 10
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
-                /// numeric_precision_radix
-                if (columns_mask[src_index++])
-                {
-                    if (isInteger(not_nullable_type))
-                        res_columns[res_index++]->insert(2);
-                    else if (isDecimal(not_nullable_type))
-                        res_columns[res_index++]->insert(10);
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
-                /// numeric_scale
-                if (columns_mask[src_index++])
-                {
-                    if (isInteger(not_nullable_type))
-                        res_columns[res_index++]->insert(0);
-                    else if (isDecimal(not_nullable_type))
-                        res_columns[res_index++]->insert(getDecimalScale(*not_nullable_type));
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
-                /// datetime_precision
-                if (columns_mask[src_index++])
-                {
-                    if (isDateTime64(not_nullable_type))
-                        res_columns[res_index++]->insert(assert_cast<const DataTypeDateTime64 &>(*not_nullable_type).getScale());
-                    else if (isDateOrDate32(not_nullable_type) || isDateTime(not_nullable_type) || isDateTime64(not_nullable_type))
-                        res_columns[res_index++]->insert(0);
-                    else
-                        res_columns[res_index++]->insertDefault();
-                }
-
                 ++rows_count;
             }
         }
@@ -304,7 +243,7 @@ Pipe StorageSystemColumns::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & query_info,
-    ContextPtr context,
+    const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     const size_t max_block_size,
     const unsigned /*num_streams*/)
@@ -350,9 +289,9 @@ Pipe StorageSystemColumns::read(
         }
 
         Tables external_tables;
-        if (context->hasSessionContext())
+        if (context.hasSessionContext())
         {
-            external_tables = context->getSessionContext()->getExternalTables();
+            external_tables = context.getSessionContext().getExternalTables();
             if (!external_tables.empty())
                 database_column_mut->insertDefault(); /// Empty database for external tables.
         }

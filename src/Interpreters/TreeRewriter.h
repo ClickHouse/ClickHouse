@@ -3,9 +3,8 @@
 #include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Aliases.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Storages/IStorage_fwd.h>
 
 namespace DB
@@ -14,6 +13,7 @@ namespace DB
 class ASTFunction;
 struct ASTTablesInSelectQueryElement;
 class TableJoin;
+class Context;
 struct Settings;
 struct SelectQueryOptions;
 using Scalars = std::map<String, Block>;
@@ -31,11 +31,6 @@ struct TreeRewriterResult
     NameSet source_columns_set; /// Set of names of source_columns.
     /// Set of columns that are enough to read from the table to evaluate the expression. It does not include joined columns.
     NamesAndTypesList required_source_columns;
-    /// Same as above but also record alias columns which are expanded. This is for RBAC access check.
-    Names required_source_columns_before_expanding_alias_columns;
-
-    /// Set of alias columns that are expanded to their alias expressions. We still need the original columns to check access permission.
-    NameSet expanded_aliases;
 
     Aliases aliases;
     std::vector<const ASTFunction *> aggregates;
@@ -73,7 +68,7 @@ struct TreeRewriterResult
     /// Results of scalar sub queries
     Scalars scalars;
 
-    explicit TreeRewriterResult(
+    TreeRewriterResult(
         const NamesAndTypesList & source_columns_,
         ConstStoragePtr storage_ = {},
         const StorageMetadataPtr & metadata_snapshot_ = {},
@@ -82,7 +77,6 @@ struct TreeRewriterResult
     void collectSourceColumns(bool add_special);
     void collectUsedColumns(const ASTPtr & query, bool is_select);
     Names requiredSourceColumns() const { return required_source_columns.getNames(); }
-    const Names & requiredSourceColumnsForAccessCheck() const { return required_source_columns_before_expanding_alias_columns; }
     NameSet getArrayJoinSourceNameSet() const;
     const Scalars & getScalars() const { return scalars; }
 };
@@ -98,10 +92,12 @@ using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 ///  * scalar subqueries are executed replaced with constants
 ///  * unneeded columns are removed from SELECT clause
 ///  * duplicated columns are removed from ORDER BY, LIMIT BY, USING(...).
-class TreeRewriter : WithContext
+class TreeRewriter
 {
 public:
-    explicit TreeRewriter(ContextPtr context_) : WithContext(context_) {}
+    TreeRewriter(const Context & context_)
+        : context(context_)
+    {}
 
     /// Analyze and rewrite not select query
     TreeRewriterResultPtr analyze(
@@ -110,8 +106,7 @@ public:
         ConstStoragePtr storage = {},
         const StorageMetadataPtr & metadata_snapshot = {},
         bool allow_aggregations = false,
-        bool allow_self_aliases = true,
-        bool execute_scalar_subqueries = true) const;
+        bool allow_self_aliases = true) const;
 
     /// Analyze and rewrite select query
     TreeRewriterResultPtr analyzeSelect(
@@ -123,7 +118,9 @@ public:
         std::shared_ptr<TableJoin> table_join = {}) const;
 
 private:
-    static void normalize(ASTPtr & query, Aliases & aliases, const NameSet & source_columns_set, bool ignore_alias, const Settings & settings, bool allow_self_aliases);
+    const Context & context;
+
+    static void normalize(ASTPtr & query, Aliases & aliases, const Settings & settings, bool allow_self_aliases);
 };
 
 }

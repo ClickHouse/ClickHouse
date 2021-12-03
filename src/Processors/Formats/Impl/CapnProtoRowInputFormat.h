@@ -4,8 +4,8 @@
 #if USE_CAPNP
 
 #include <Core/Block.h>
-#include <Formats/CapnProtoUtils.h>
 #include <Processors/Formats/IRowInputFormat.h>
+#include <capnp/schema-parser.h>
 
 namespace DB
 {
@@ -22,20 +22,54 @@ class ReadBuffer;
 class CapnProtoRowInputFormat : public IRowInputFormat
 {
 public:
-    CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info, const FormatSettings & format_settings_);
+    struct NestedField
+    {
+        std::vector<std::string> tokens;
+        size_t pos;
+    };
+    using NestedFieldList = std::vector<NestedField>;
+
+    /** schema_dir  - base path for schema files
+      * schema_file - location of the capnproto schema, e.g. "schema.capnp"
+      * root_object - name to the root object, e.g. "Message"
+      */
+    CapnProtoRowInputFormat(ReadBuffer & in_, Block header, Params params_, const FormatSchemaInfo & info);
 
     String getName() const override { return "CapnProtoRowInputFormat"; }
 
-private:
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
 
+private:
     kj::Array<capnp::word> readMessage();
 
-    std::shared_ptr<CapnProtoSchemaParser> parser;
+    // Build a traversal plan from a sorted list of fields
+    void createActions(const NestedFieldList & sorted_fields, capnp::StructSchema reader);
+
+    /* Action for state machine for traversing nested structures. */
+    using BlockPositionList = std::vector<size_t>;
+    struct Action
+    {
+        enum Type { POP, PUSH, READ };
+        Type type;
+        capnp::StructSchema::Field field = {};
+        BlockPositionList columns = {};
+    };
+
+    // Wrapper for classes that could throw in destructor
+    // https://github.com/capnproto/capnproto/issues/553
+    template <typename T>
+    struct DestructorCatcher
+    {
+        T impl;
+        template <typename ... Arg>
+        DestructorCatcher(Arg && ... args) : impl(kj::fwd<Arg>(args)...) {}
+        ~DestructorCatcher() noexcept try { } catch (...) { return; }
+    };
+    using SchemaParser = DestructorCatcher<capnp::SchemaParser>;
+
+    std::shared_ptr<SchemaParser> parser;
     capnp::StructSchema root;
-    const FormatSettings format_settings;
-    DataTypes column_types;
-    Names column_names;
+    std::vector<Action> actions;
 };
 
 }

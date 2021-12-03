@@ -2,89 +2,70 @@
 
 #if USE_HDFS
 
-#include <Common/parseGlobs.h>
-#include <DataTypes/DataTypeString.h>
-
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTInsertQuery.h>
-#include <Processors/Sinks/SinkToStorage.h>
-#include <Processors/Formats/IOutputFormat.h>
-#include <Processors/Sources/SourceWithProgress.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <Processors/Formats/IInputFormat.h>
-
-#include <IO/WriteHelpers.h>
-#include <IO/ReadHelpers.h>
-
-#include <Interpreters/Context.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
-
 #include <Storages/StorageFactory.h>
 #include <Storages/HDFS/StorageHDFS.h>
-#include <Storages/HDFS/HDFSCommon.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTLiteral.h>
+#include <IO/ReadHelpers.h>
 #include <Storages/HDFS/ReadBufferFromHDFS.h>
 #include <Storages/HDFS/WriteBufferFromHDFS.h>
-#include <Storages/PartitionedSink.h>
-
+#include <IO/WriteHelpers.h>
+#include <Storages/HDFS/HDFSCommon.h>
 #include <Formats/FormatFactory.h>
-#include <Functions/FunctionsConversion.h>
+#include <Processors/Formats/InputStreamFromInputFormat.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataStreams/IBlockOutputStream.h>
+#include <DataStreams/OwningBlockInputStream.h>
+#include <DataStreams/IBlockInputStream.h>
 
-#include <QueryPipeline/QueryPipeline.h>
-#include <QueryPipeline/Pipe.h>
-
+#include <Common/parseGlobs.h>
 #include <Poco/URI.h>
 #include <re2/re2.h>
 #include <re2/stringpiece.h>
 #include <hdfs/hdfs.h>
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Pipe.h>
 
-#include <filesystem>
-
-
-namespace fs = std::filesystem;
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ACCESS_DENIED;
 }
 
-StorageHDFS::StorageHDFS(
-    const String & uri_,
+StorageHDFS::StorageHDFS(const String & uri_,
     const StorageID & table_id_,
     const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    const String & comment,
-    ContextPtr context_,
-    const String & compression_method_ = "",
-    ASTPtr partition_by_)
-    : IStorage(table_id_), WithContext(context_), uri(uri_), format_name(format_name_), compression_method(compression_method_)
-    , partition_by(partition_by_)
+    Context & context_,
+    const String & compression_method_ = "")
+    : IStorage(table_id_)
+    , uri(uri_)
+    , format_name(format_name_)
+    , context(context_)
+    , compression_method(compression_method_)
 {
-    context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    checkHDFSURL(uri);
+    context.getRemoteHostFilter().checkURL(Poco::URI(uri));
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
-    storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
 }
 
 namespace
 {
 
-class HDFSSource : public SourceWithProgress, WithContext
+class HDFSSource : public SourceWithProgress
 {
 public:
     struct SourcesInfo
     {
         std::vector<String> uris;
+
         std::atomic<size_t> next_uri_to_read = 0;
 
         bool need_path_column = false;
@@ -109,16 +90,16 @@ public:
         String format_,
         String compression_method_,
         Block sample_block_,
-        ContextPtr context_,
+        const Context & context_,
         UInt64 max_block_size_)
         : SourceWithProgress(getHeader(sample_block_, source_info_->need_path_column, source_info_->need_file_column))
-        , WithContext(context_)
         , source_info(std::move(source_info_))
         , uri(std::move(uri_))
         , format(std::move(format_))
         , compression_method(compression_method_)
         , max_block_size(max_block_size_)
         , sample_block(std::move(sample_block_))
+        , context(context_)
     {
     }
 
@@ -141,15 +122,15 @@ public:
                 current_path = uri + path;
 
                 auto compression = chooseCompressionMethod(path, compression_method);
-                read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(uri, path, getContext()->getGlobalContext()->getConfigRef()), compression);
-                auto input_format = getContext()->getInputFormat(format, *read_buf, sample_block, max_block_size);
-                pipeline = QueryPipeline(std::move(input_format));
+                auto read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromHDFS>(current_path, context.getGlobalContext().getConfigRef()), compression);
+                auto input_format = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
+                auto input_stream = std::make_shared<InputStreamFromInputFormat>(input_format);
 
-                reader = std::make_unique<PullingPipelineExecutor>(pipeline);
+                reader = std::make_shared<OwningBlockInputStream<ReadBuffer>>(input_stream, std::move(read_buf));
+                reader->readPrefix();
             }
 
-            Block res;
-            if (reader->pull(res))
+            if (auto res = reader->read())
             {
                 Columns columns = res.getColumns();
                 UInt64 num_rows = res.rows();
@@ -173,16 +154,13 @@ public:
                 return Chunk(std::move(columns), num_rows);
             }
 
+            reader->readSuffix();
             reader.reset();
-            pipeline.reset();
-            read_buf.reset();
         }
     }
 
 private:
-    std::unique_ptr<ReadBuffer> read_buf;
-    QueryPipeline pipeline;
-    std::unique_ptr<PullingPipelineExecutor> reader;
+    BlockInputStreamPtr reader;
     SourcesInfoPtr source_info;
     String uri;
     String format;
@@ -191,34 +169,43 @@ private:
 
     UInt64 max_block_size;
     Block sample_block;
+    const Context & context;
 };
 
-class HDFSSink : public SinkToStorage
+class HDFSBlockOutputStream : public IBlockOutputStream
 {
 public:
-    HDFSSink(const String & uri,
+    HDFSBlockOutputStream(const String & uri,
         const String & format,
-        const Block & sample_block,
-        ContextPtr context,
+        const Block & sample_block_,
+        const Context & context,
         const CompressionMethod compression_method)
-        : SinkToStorage(sample_block)
+        : sample_block(sample_block_)
     {
-        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context->getGlobalContext()->getConfigRef()), compression_method, 3);
-        writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format, *write_buf, sample_block, context);
+        write_buf = wrapWriteBufferWithCompressionMethod(std::make_unique<WriteBufferFromHDFS>(uri, context.getGlobalContext().getConfigRef()), compression_method, 3);
+        writer = FormatFactory::instance().getOutputStream(format, *write_buf, sample_block, context);
     }
 
-    String getName() const override { return "HDFSSink"; }
-
-    void consume(Chunk chunk) override
+    Block getHeader() const override
     {
-        writer->write(getHeader().cloneWithColumns(chunk.detachColumns()));
+        return sample_block;
     }
 
-    void onFinish() override
+    void write(const Block & block) override
+    {
+        writer->write(block);
+    }
+
+    void writePrefix() override
+    {
+        writer->writePrefix();
+    }
+
+    void writeSuffix() override
     {
         try
         {
-            writer->finalize();
+            writer->writeSuffix();
             writer->flush();
             write_buf->sync();
             write_buf->finalize();
@@ -231,46 +218,10 @@ public:
     }
 
 private:
+    Block sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
-    OutputFormatPtr writer;
+    BlockOutputStreamPtr writer;
 };
-
-
-class PartitionedHDFSSink : public PartitionedSink
-{
-public:
-    PartitionedHDFSSink(
-        const ASTPtr & partition_by,
-        const String & uri_,
-        const String & format_,
-        const Block & sample_block_,
-        ContextPtr context_,
-        const CompressionMethod compression_method_)
-            : PartitionedSink(partition_by, context_, sample_block_)
-            , uri(uri_)
-            , format(format_)
-            , sample_block(sample_block_)
-            , context(context_)
-            , compression_method(compression_method_)
-    {
-    }
-
-    SinkPtr createSinkForPartition(const String & partition_id) override
-    {
-        auto path = PartitionedSink::replaceWildcards(uri, partition_id);
-        PartitionedSink::validatePartitionKey(path, true);
-        return std::make_shared<HDFSSink>(path, format, sample_block, context, compression_method);
-    }
-
-private:
-    const String uri;
-
-    const String format;
-    const Block sample_block;
-    ContextPtr context;
-    const CompressionMethod compression_method;
-};
-
 
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageFile.
@@ -308,7 +259,7 @@ Strings LSWithRegexpMatching(const String & path_for_ls, const HDFSFSPtr & fs, c
         {
             if (re2::RE2::FullMatch(file_name, matcher))
             {
-                Strings result_part = LSWithRegexpMatching(fs::path(full_path) / "", fs, suffix_with_globs.substr(next_slash));
+                Strings result_part = LSWithRegexpMatching(full_path + "/", fs, suffix_with_globs.substr(next_slash));
                 /// Recursion depth is limited by pattern. '*' works only for depth = 1, for depth = 2 pattern path is '*/*'. So we do not need additional check.
                 std::move(result_part.begin(), result_part.end(), std::back_inserter(result));
             }
@@ -325,7 +276,7 @@ Pipe StorageHDFS::read(
     const Names & column_names,
     const StorageMetadataPtr & metadata_snapshot,
     SelectQueryInfo & /*query_info*/,
-    ContextPtr context_,
+    const Context & context_,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     unsigned num_streams)
@@ -334,14 +285,11 @@ Pipe StorageHDFS::read(
     const String path_from_uri = uri.substr(begin_of_path);
     const String uri_without_path = uri.substr(0, begin_of_path);
 
-    HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context_->getGlobalContext()->getConfigRef());
+    HDFSBuilderWrapper builder = createHDFSBuilder(uri_without_path + "/", context_.getGlobalContext().getConfigRef());
     HDFSFSPtr fs = createHDFSFS(builder.get());
 
     auto sources_info = std::make_shared<HDFSSource::SourcesInfo>();
     sources_info->uris = LSWithRegexpMatching("/", fs, path_from_uri);
-
-    if (sources_info->uris.empty())
-        LOG_WARNING(log, "No file in HDFS matches the path: {}", uri);
 
     for (const auto & column : column_names)
     {
@@ -363,47 +311,14 @@ Pipe StorageHDFS::read(
     return Pipe::unitePipes(std::move(pipes));
 }
 
-SinkToStoragePtr StorageHDFS::write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr /*context*/)
+BlockOutputStreamPtr StorageHDFS::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, const Context & /*context*/)
 {
-    bool has_wildcards = uri.find(PartitionedSink::PARTITION_ID_WILDCARD) != String::npos;
-    const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
-    auto partition_by_ast = insert_query ? (insert_query->partition_by ? insert_query->partition_by : partition_by) : nullptr;
-    bool is_partitioned_implementation = partition_by_ast && has_wildcards;
-
-    if (is_partitioned_implementation)
-    {
-        return std::make_shared<PartitionedHDFSSink>(
-            partition_by_ast,
-            uri,
-            format_name,
-            metadata_snapshot->getSampleBlock(),
-            getContext(),
-            chooseCompressionMethod(uri, compression_method));
-    }
-    else
-    {
-        return std::make_shared<HDFSSink>(uri,
-            format_name,
-            metadata_snapshot->getSampleBlock(),
-            getContext(),
-            chooseCompressionMethod(uri, compression_method));
-    }
+    return std::make_shared<HDFSBlockOutputStream>(uri,
+        format_name,
+        metadata_snapshot->getSampleBlock(),
+        context,
+        chooseCompressionMethod(uri, compression_method));
 }
-
-void StorageHDFS::truncate(const ASTPtr & /* query */, const StorageMetadataPtr &, ContextPtr context_, TableExclusiveLockHolder &)
-{
-    const size_t begin_of_path = uri.find('/', uri.find("//") + 2);
-    const String path = uri.substr(begin_of_path);
-    const String url = uri.substr(0, begin_of_path);
-
-    HDFSBuilderWrapper builder = createHDFSBuilder(url + "/", context_->getGlobalContext()->getConfigRef());
-    HDFSFSPtr fs = createHDFSFS(builder.get());
-
-    int ret = hdfsDelete(fs.get(), path.data(), 0);
-    if (ret)
-        throw Exception(ErrorCodes::ACCESS_DENIED, "Unable to truncate hdfs table: {}", std::string(hdfsGetLastError()));
-}
-
 
 void registerStorageHDFS(StorageFactory & factory)
 {
@@ -415,30 +330,24 @@ void registerStorageHDFS(StorageFactory & factory)
             throw Exception(
                 "Storage HDFS requires 2 or 3 arguments: url, name of used format and optional compression method.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.getLocalContext());
+        engine_args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[0], args.local_context);
 
         String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
-        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.getLocalContext());
+        engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
 
         String format_name = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
 
         String compression_method;
         if (engine_args.size() == 3)
         {
-            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.getLocalContext());
+            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
             compression_method = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
         } else compression_method = "auto";
 
-        ASTPtr partition_by;
-        if (args.storage_def->partition_by)
-            partition_by = args.storage_def->partition_by->clone();
-
-        return StorageHDFS::create(
-            url, args.table_id, format_name, args.columns, args.constraints, args.comment, args.getContext(), compression_method, partition_by);
+        return StorageHDFS::create(url, args.table_id, format_name, args.columns, args.constraints, args.context, compression_method);
     },
     {
-        .supports_sort_order = true, // for partition by
         .source_access_type = AccessType::HDFS,
     });
 }

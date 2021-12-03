@@ -1,30 +1,25 @@
 #pragma once
-
-#include <Core/UUID.h>
-#include <Interpreters/Context_fwd.h>
-#include <Interpreters/StorageID.h>
-#include <Databases/TablesLoader.h>
-#include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-
-#include <boost/noncopyable.hpp>
+#include <Interpreters/StorageID.h>
+#include <Parsers/IAST_fwd.h>
+#include <Core/UUID.h>
 #include <Poco/Logger.h>
-
-#include <array>
-#include <condition_variable>
-#include <list>
-#include <map>
+#include <boost/noncopyable.hpp>
 #include <memory>
-#include <mutex>
+#include <map>
 #include <set>
-#include <shared_mutex>
 #include <unordered_map>
 #include <unordered_set>
+#include <mutex>
+#include <shared_mutex>
+#include <array>
+#include <list>
 
 
 namespace DB
 {
 
+class Context;
 class IDatabase;
 class Exception;
 class ColumnsDescription;
@@ -56,12 +51,7 @@ public:
     /// NOTE: using std::map here (and not std::unordered_map) to avoid iterator invalidation on insertion.
     using Map = std::map<String, Entry>;
 
-    DDLGuard(
-        Map & map_,
-        std::shared_mutex & db_mutex_,
-        std::unique_lock<std::mutex> guards_lock_,
-        const String & elem,
-        const String & database_name);
+    DDLGuard(Map & map_, std::shared_mutex & db_mutex_, std::unique_lock<std::mutex> guards_lock_, const String & elem, const String & database_name);
     ~DDLGuard();
 
     /// Unlocks table name, keeps holding read lock for database name
@@ -84,15 +74,15 @@ using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 /// Such table can be accessed from everywhere by its ID.
 /// Removes the table from database on destruction.
 /// TemporaryTableHolder object can be attached to a query or session Context, so table will be accessible through the context.
-struct TemporaryTableHolder : boost::noncopyable, WithContext
+struct TemporaryTableHolder : boost::noncopyable
 {
-    using Creator = std::function<StoragePtr (const StorageID &)>;
+    typedef std::function<StoragePtr(const StorageID &)> Creator;
 
-    TemporaryTableHolder(ContextPtr context, const Creator & creator, const ASTPtr & query = {});
+    TemporaryTableHolder(const Context & context, const Creator & creator, const ASTPtr & query = {});
 
     /// Creates temporary table with Engine=Memory
     TemporaryTableHolder(
-        ContextPtr context,
+        const Context & context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
         const ASTPtr & query = {},
@@ -109,6 +99,7 @@ struct TemporaryTableHolder : boost::noncopyable, WithContext
 
     operator bool () const { return id != UUIDHelpers::Nil; }
 
+    const Context & global_context;
     IDatabase * temporary_tables = nullptr;
     UUID id = UUIDHelpers::Nil;
 };
@@ -118,22 +109,17 @@ using TemporaryTablesMapping = std::map<String, std::shared_ptr<TemporaryTableHo
 
 class BackgroundSchedulePoolTaskHolder;
 
-/// For some reason Context is required to get Storage from Database object
-class DatabaseCatalog : boost::noncopyable, WithMutableContext
+class DatabaseCatalog : boost::noncopyable
 {
 public:
     static constexpr const char * TEMPORARY_DATABASE = "_temporary_and_external_tables";
     static constexpr const char * SYSTEM_DATABASE = "system";
-    static constexpr const char * INFORMATION_SCHEMA = "information_schema";
-    static constexpr const char * INFORMATION_SCHEMA_UPPERCASE = "INFORMATION_SCHEMA";
 
-    static DatabaseCatalog & init(ContextMutablePtr global_context_);
+    static DatabaseCatalog & init(Context & global_context_);
     static DatabaseCatalog & instance();
     static void shutdown();
 
-    void initializeAndLoadTemporaryDatabase();
     void loadDatabases();
-    void loadMarkedAsDroppedTables();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     DDLGuardPtr getDDLGuard(const String & database, const String & table);
@@ -148,8 +134,8 @@ public:
     DatabasePtr getSystemDatabase() const;
 
     void attachDatabase(const String & database_name, const DatabasePtr & database);
-    DatabasePtr detachDatabase(ContextPtr local_context, const String & database_name, bool drop = false, bool check_empty = true);
-    void updateDatabaseName(const String & old_name, const String & new_name, const Strings & tables_in_database);
+    DatabasePtr detachDatabase(const String & database_name, bool drop = false, bool check_empty = true);
+    void updateDatabaseName(const String & old_name, const String & new_name);
 
     /// database_name must be not empty
     DatabasePtr getDatabase(const String & database_name) const;
@@ -160,19 +146,19 @@ public:
     Databases getDatabases() const;
 
     /// Same as getDatabase(const String & database_name), but if database_name is empty, current database of local_context is used
-    DatabasePtr getDatabase(const String & database_name, ContextPtr local_context) const;
+    DatabasePtr getDatabase(const String & database_name, const Context & local_context) const;
 
     /// For all of the following methods database_name in table_id must be not empty (even for temporary tables).
-    void assertTableDoesntExist(const StorageID & table_id, ContextPtr context) const;
-    bool isTableExist(const StorageID & table_id, ContextPtr context) const;
+    void assertTableDoesntExist(const StorageID & table_id, const Context & context) const;
+    bool isTableExist(const StorageID & table_id, const Context & context) const;
     bool isDictionaryExist(const StorageID & table_id) const;
 
-    StoragePtr getTable(const StorageID & table_id, ContextPtr context) const;
-    StoragePtr tryGetTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
-    DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id, ContextPtr context) const;
+    StoragePtr getTable(const StorageID & table_id, const Context & context) const;
+    StoragePtr tryGetTable(const StorageID & table_id, const Context & context) const;
+    DatabaseAndTable getDatabaseAndTable(const StorageID & table_id, const Context & context) const;
+    DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id, const Context & context) const;
     DatabaseAndTable getTableImpl(const StorageID & table_id,
-                                  ContextPtr context,
+                                  const Context & context,
                                   std::optional<Exception> * exception = nullptr) const;
 
     void addDependency(const StorageID & from, const StorageID & where);
@@ -206,17 +192,10 @@ public:
     String getPathForDroppedMetadata(const StorageID & table_id) const;
     void enqueueDroppedTableCleanup(StorageID table_id, StoragePtr table, String dropped_metadata_path, bool ignore_delay = false);
 
+    /// Try convert qualified dictionary name to persistent UUID
+    String resolveDictionaryName(const String & name) const;
+
     void waitTableFinallyDropped(const UUID & uuid);
-
-    void addLoadingDependencies(const QualifiedTableName & table, TableNamesSet && dependencies);
-    void addLoadingDependencies(const DependenciesInfos & new_infos);
-    DependenciesInfo getLoadingDependenciesInfo(const StorageID & table_id) const;
-
-    TableNamesSet tryRemoveLoadingDependencies(const StorageID & table_id, bool check_dependencies, bool is_drop_database = false);
-    TableNamesSet tryRemoveLoadingDependenciesUnlocked(const QualifiedTableName & removing_table, bool check_dependencies, bool is_drop_database = false);
-    void checkTableCanBeRemovedOrRenamed(const StorageID & table_id) const;
-
-    void updateLoadingDependencies(const StorageID & table_id, TableNamesSet && new_dependencies);
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
@@ -224,7 +203,7 @@ private:
     // make emplace(global_context_) compile with private constructor ¯\_(ツ)_/¯.
     static std::unique_ptr<DatabaseCatalog> database_catalog;
 
-    explicit DatabaseCatalog(ContextMutablePtr global_context_);
+    DatabaseCatalog(Context & global_context_);
     void assertDatabaseExistsUnlocked(const String & database_name) const;
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const;
 
@@ -240,9 +219,9 @@ private:
     static constexpr UInt64 bits_for_first_level = 4;
     using UUIDToStorageMap = std::array<UUIDToStorageMapPart, 1ull << bits_for_first_level>;
 
-    static inline size_t getFirstLevelIdx(const UUID & uuid)
+    inline size_t getFirstLevelIdx(const UUID & uuid) const
     {
-        return uuid.toUnderType().items[0] >> (64 - bits_for_first_level);
+        return uuid.toUnderType().low >> (64 - bits_for_first_level);
     }
 
     struct TableMarkedAsDropped
@@ -250,18 +229,22 @@ private:
         StorageID table_id = StorageID::createEmpty();
         StoragePtr table;
         String metadata_path;
-        time_t drop_time{};
+        time_t drop_time;
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 
+    void loadMarkedAsDroppedTables();
     void dropTableDataTask();
     void dropTableFinally(const TableMarkedAsDropped & table);
 
     static constexpr size_t reschedule_time_ms = 100;
     static constexpr time_t drop_error_cooldown_sec = 5;
 
+private:
     using UUIDToDatabaseMap = std::unordered_map<UUID, DatabasePtr>;
 
+    /// For some reason Context is required to get Storage from Database object
+    Context & global_context;
     mutable std::mutex databases_mutex;
 
     ViewDependencies view_dependencies;
@@ -269,8 +252,6 @@ private:
     Databases databases;
     UUIDToDatabaseMap db_uuid_map;
     UUIDToStorageMap uuid_map;
-
-    DependenciesInfos loading_dependencies;
 
     Poco::Logger * log;
 

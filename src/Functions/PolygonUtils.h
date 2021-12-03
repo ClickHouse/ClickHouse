@@ -1,19 +1,19 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Core/Defines.h>
-#include <base/TypeLists.h>
+#include <Core/TypeListNumber.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
 #include <Common/SipHash.h>
-#include <base/range.h>
+#include <ext/range.h>
 
 /// Warning in boost::geometry during template strategy substitution.
 #pragma GCC diagnostic push
 
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
@@ -287,7 +287,7 @@ void PointInPolygonWithGrid<CoordinateType>::calcGridAttributes(
     const Point & max_corner = box.max_corner();
 
 #pragma GCC diagnostic push
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
 
@@ -331,7 +331,7 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
     for (size_t row = 0; row < grid_size; ++row)
     {
 #pragma GCC diagnostic push
-#if !defined(__clang__)
+#if !__clang__
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
         CoordinateType y_min = min_corner.y() + row * cell_height;
@@ -422,7 +422,7 @@ bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGr
     Point first = get_vector(outer[0], outer[1]);
     Point prev = first;
 
-    for (auto i : collections::range(1, outer.size() - 1))
+    for (auto i : ext::range(1, outer.size() - 1))
     {
         Point cur = get_vector(outer[i], outer[i + 1]);
         if (vec_product(prev, cur) < 0)
@@ -443,7 +443,7 @@ PointInPolygonWithGrid<CoordinateType>::findHalfPlanes(
     std::vector<HalfPlane> half_planes;
     const auto & outer = intersection.outer();
 
-    for (auto i : collections::range(0, outer.size() - 1))
+    for (auto i : ext::range(0, outer.size() - 1))
     {
         /// Want to detect is intersection edge was formed from box edge or from polygon edge.
         /// If section (x1, y1), (x2, y2) is on box edge, then either x1 = x2 = one of box_x or y1 = y2 = one of box_y
@@ -581,7 +581,7 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
     const auto & x_data = x.getData();
     const auto & y_data = y.getData();
 
-    for (auto i : collections::range(0, size))
+    for (auto i : ext::range(0, size))
         data[i] = static_cast<UInt8>(impl.contains(x_data[i], y_data[i]));
 
     return result;
@@ -604,7 +604,7 @@ struct CallPointInPolygon<Type, Types ...>
     template <typename PointInPolygonImpl>
     static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
     {
-        using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListIntAndFloat>;
+        using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNativeNumbers>::Type;
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&x))
             return Impl::template call<Type>(*column, y, impl);
         return CallPointInPolygon<Types ...>::call(x, y, impl);
@@ -630,7 +630,7 @@ struct CallPointInPolygon<>
 template <typename PointInPolygonImpl>
 NO_INLINE ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
 {
-    using Impl = TypeListChangeRoot<CallPointInPolygon, TypeListIntAndFloat>;
+    using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNativeNumbers>::Type;
     return Impl::call(x, y, impl);
 }
 
@@ -655,7 +655,7 @@ UInt128 sipHash128(Polygon && polygon)
         hash_ring(inner);
 
     UInt128 res;
-    hash.get128(res);
+    hash.get128(res.low, res.high);
     return res;
 }
 

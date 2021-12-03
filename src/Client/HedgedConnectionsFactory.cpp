@@ -7,8 +7,6 @@
 namespace ProfileEvents
 {
     extern const Event HedgedRequestsChangeReplica;
-    extern const Event DistributedConnectionFailTry;
-    extern const Event DistributedConnectionFailAtAll;
 }
 
 namespace DB
@@ -29,8 +27,8 @@ HedgedConnectionsFactory::HedgedConnectionsFactory(
     : pool(pool_), settings(settings_), timeouts(timeouts_), table_to_check(table_to_check_), log(&Poco::Logger::get("HedgedConnectionsFactory"))
 {
     shuffled_pools = pool->getShuffledPools(settings);
-    for (auto shuffled_pool : shuffled_pools)
-        replicas.emplace_back(ConnectionEstablisherAsync(shuffled_pool.pool, &timeouts, settings, log, table_to_check.get()));
+    for (size_t i = 0; i != shuffled_pools.size(); ++i)
+        replicas.emplace_back(ConnectionEstablisherAsync(shuffled_pools[i].pool, &timeouts, settings, log, table_to_check.get()));
 
     max_tries
         = (settings ? size_t{settings->connections_with_failover_max_tries} : size_t{DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES});
@@ -57,7 +55,7 @@ std::vector<Connection *> HedgedConnectionsFactory::getManyConnections(PoolMode 
 {
     size_t min_entries = (settings && settings->skip_unavailable_shards) ? 0 : 1;
 
-    size_t max_entries = 1;
+    size_t max_entries;
     switch (pool_mode)
     {
         case PoolMode::GET_ALL:
@@ -236,7 +234,6 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processEpollEvents(boo
         {
             int index = timeout_fd_to_replica_index[event_fd];
             replicas[index].change_replica_timeout.reset();
-            ++shuffled_pools[index].slowdown_count;
             ProfileEvents::increment(ProfileEvents::HedgedRequestsChangeReplica);
         }
         else
@@ -308,7 +305,6 @@ HedgedConnectionsFactory::State HedgedConnectionsFactory::processFinishedConnect
         ProfileEvents::increment(ProfileEvents::DistributedConnectionFailTry);
 
         shuffled_pool.error_count = std::min(pool->getMaxErrorCup(), shuffled_pool.error_count + 1);
-        shuffled_pool.slowdown_count = 0;
 
         if (shuffled_pool.error_count >= max_tries)
         {

@@ -1,4 +1,4 @@
-option (USE_INTERNAL_LZ4_LIBRARY "Use internal lz4 library" ON)
+option (USE_INTERNAL_LZ4_LIBRARY "Use internal lz4 library" ${NOT_UNBUNDLED})
 
 if (NOT USE_INTERNAL_LZ4_LIBRARY)
     find_library (LIBRARY_LZ4 lz4)
@@ -33,5 +33,5 @@ if (NOT EXTERNAL_LZ4_LIBRARY_FOUND)
     if (SANITIZE STREQUAL "undefined")
         target_compile_options (lz4 PRIVATE -fno-sanitize=undefined)
     endif ()
-    target_include_directories(lz4 PUBLIC "${LIBRARY_DIR}/lib")
+    target_include_directories(lz4 PUBLIC ${LIBRARY_DIR}/lib)
 endif ()

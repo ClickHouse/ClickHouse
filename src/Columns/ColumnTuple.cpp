@@ -3,15 +3,15 @@
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnCompressed.h>
 #include <Core/Field.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <DataStreams/ColumnGathererStream.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <base/sort.h>
-#include <base/map.h>
-#include <base/range.h>
+#include <common/sort.h>
+#include <ext/map.h>
+#include <ext/range.h>
 
 
 namespace DB
@@ -100,14 +100,14 @@ MutableColumnPtr ColumnTuple::cloneResized(size_t new_size) const
 
 Field ColumnTuple::operator[](size_t n) const
 {
-    return collections::map<Tuple>(columns, [n] (const auto & column) { return (*column)[n]; });
+    return ext::map<Tuple>(columns, [n] (const auto & column) { return (*column)[n]; });
 }
 
 void ColumnTuple::get(size_t n, Field & res) const
 {
     const size_t tuple_size = columns.size();
     Tuple tuple(tuple_size);
-    for (const auto i : collections::range(0, tuple_size))
+    for (const auto i : ext::range(0, tuple_size))
         columns[i]->get(n, tuple[i]);
 
     res = tuple;
@@ -180,14 +180,6 @@ const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
     return pos;
 }
 
-const char * ColumnTuple::skipSerializedInArena(const char * pos) const
-{
-    for (const auto & column : columns)
-        pos = column->skipSerializedInArena(pos);
-
-    return pos;
-}
-
 void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
 {
     for (const auto & column : columns)
@@ -230,12 +222,6 @@ ColumnPtr ColumnTuple::filter(const Filter & filt, ssize_t result_size_hint) con
         new_columns[i] = columns[i]->filter(filt, result_size_hint);
 
     return ColumnTuple::create(new_columns);
-}
-
-void ColumnTuple::expand(const Filter & mask, bool inverted)
-{
-    for (auto & column : columns)
-        column->expand(mask, inverted);
 }
 
 ColumnPtr ColumnTuple::permute(const Permutation & perm, size_t limit) const
@@ -473,7 +459,7 @@ void ColumnTuple::getExtremes(Field & min, Field & max) const
     Tuple min_tuple(tuple_size);
     Tuple max_tuple(tuple_size);
 
-    for (const auto i : collections::range(0, tuple_size))
+    for (const auto i : ext::range(0, tuple_size))
         columns[i]->getExtremes(min_tuple[i], max_tuple[i]);
 
     min = min_tuple;
@@ -494,7 +480,7 @@ bool ColumnTuple::structureEquals(const IColumn & rhs) const
         if (tuple_size != rhs_tuple->columns.size())
             return false;
 
-        for (const auto i : collections::range(0, tuple_size))
+        for (const auto i : ext::range(0, tuple_size))
             if (!columns[i]->structureEquals(*rhs_tuple->columns[i]))
                 return false;
 

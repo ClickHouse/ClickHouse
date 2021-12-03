@@ -1,5 +1,5 @@
 ---
-toc_priority: 8
+toc_priority: 5
 toc_title: Kafka
 ---
 
@@ -40,7 +40,7 @@ Required parameters:
 
 -   `kafka_broker_list` — A comma-separated list of brokers (for example, `localhost:9092`).
 -   `kafka_topic_list` — A list of Kafka topics.
--   `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you do not want messages to be duplicated in the cluster, use the same group name everywhere.
+-   `kafka_group_name` — A group of Kafka consumers. Reading margins are tracked for each group separately. If you don’t want messages to be duplicated in the cluster, use the same group name everywhere.
 -   `kafka_format` — Message format. Uses the same notation as the SQL `FORMAT` function, such as `JSONEachRow`. For more information, see the [Formats](../../../interfaces/formats.md) section.
 
 Optional parameters:
@@ -133,7 +133,8 @@ Example:
 
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
-To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings/#settings-max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/settings/settings/#stream-flush-interval-ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/server-configuration-parameters/settings.md) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
@@ -191,6 +192,6 @@ Example:
 **See Also**
 
 -   [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
--   [background_message_broker_schedule_pool_size](../../../operations/settings/settings.md#background_message_broker_schedule_pool_size)
+-   [background_schedule_pool_size](../../../operations/settings/settings.md#background_schedule_pool_size)
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/kafka/) <!--hide-->

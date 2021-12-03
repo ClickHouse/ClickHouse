@@ -23,24 +23,57 @@ $ sudo apt-get install git cmake python ninja-build
 
 Or cmake3 instead of cmake on older systems.
 
-### Install clang-13 (recommended) {#install-clang-13}
+### Install clang-11 (recommended) {#install-clang-11}
 
 On Ubuntu/Debian you can use the automatic installation script (check [official webpage](https://apt.llvm.org/))
 
-```bash
+```bash 
 sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 ```
 
 For other Linux distribution - check the availability of the [prebuild packages](https://releases.llvm.org/download.html) or build clang [from sources](https://clang.llvm.org/get_started.html).
 
-#### Use clang-13 for Builds
+#### Use clang-11 for Builds {#use-gcc-10-for-builds}
 
 ``` bash
-$ export CC=clang-13
-$ export CXX=clang++-13
+$ export CC=clang-11
+$ export CXX=clang++-11
 ```
 
-Gcc can also be used though it is discouraged.
+### Install GCC 10 {#install-gcc-10}
+
+We recommend building ClickHouse with clang-11, GCC-10 also supported, but it is not used for production builds.
+
+If you want to use GCC-10 there are several ways to install it.
+
+#### Install from Repository {#install-from-repository}
+
+On Ubuntu 19.10 or newer:
+
+    $ sudo apt-get update
+    $ sudo apt-get install gcc-10 g++-10
+
+#### Install from a PPA Package {#install-from-a-ppa-package}
+
+On older Ubuntu:
+
+``` bash
+$ sudo apt-get install software-properties-common
+$ sudo apt-add-repository ppa:ubuntu-toolchain-r/test
+$ sudo apt-get update
+$ sudo apt-get install gcc-10 g++-10
+```
+
+#### Install from Sources {#install-from-sources}
+
+See [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
+
+#### Use GCC 10 for Builds {#use-gcc-10-for-builds}
+
+``` bash
+$ export CC=gcc-10
+$ export CXX=g++-10
+```
 
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources}
 
@@ -73,9 +106,9 @@ The build requires the following components:
 
 -   Git (is used only to checkout the sources, it’s not needed for the build)
 -   CMake 3.10 or newer
--   Ninja
--   C++ compiler: clang-13 or newer
--   Linker: lld
+-   Ninja (recommended) or Make
+-   C++ compiler: gcc 10 or clang 8 or newer
+-   Linker: lld or gold (the classic GNU ld won’t work)
 -   Python (is only used inside LLVM build and it is optional)
 
 If all the components are installed, you may build in the same way as the steps above.
@@ -83,7 +116,7 @@ If all the components are installed, you may build in the same way as the steps 
 Example for Ubuntu Eoan:
 ``` bash
 sudo apt update
-sudo apt install git cmake ninja-build clang++ python
+sudo apt install git cmake ninja-build g++ python
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
@@ -92,7 +125,7 @@ ninja
 
 Example for OpenSUSE Tumbleweed:
 ``` bash
-sudo zypper install git cmake ninja clang-c++ python lld
+sudo zypper install git cmake ninja gcc-c++ python lld
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
@@ -102,7 +135,7 @@ ninja
 Example for Fedora Rawhide:
 ``` bash
 sudo yum update
-yum --nogpg install git cmake make clang-c++ python3
+yum --nogpg install git cmake make gcc-c++ python3
 git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 mkdir build && cd build
 cmake ../ClickHouse
@@ -112,11 +145,11 @@ make -j $(nproc)
 
 ## How to Build ClickHouse Debian Package {#how-to-build-clickhouse-debian-package}
 
-### Install Git {#install-git}
+### Install Git and Pbuilder {#install-git-and-pbuilder}
 
 ``` bash
 $ sudo apt-get update
-$ sudo apt-get install git python debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
+$ sudo apt-get install git python pbuilder debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
 ```
 
 ### Checkout ClickHouse Sources {#checkout-clickhouse-sources-1}
@@ -134,10 +167,10 @@ $ ./release
 
 ## Faster builds for development
 
-Normally all tools of the ClickHouse bundle, such as `clickhouse-server`, `clickhouse-client` etc., are linked into a single static executable, `clickhouse`. This executable must be re-linked on every change, which might be slow. One common way to improve build time is to use the 'split' build configuration, which builds a separate binary for every tool, and further splits the code into several shared libraries. To enable this tweak, pass the following flags to `cmake`:
+Normally all tools of the ClickHouse bundle, such as `clickhouse-server`, `clickhouse-client` etc., are linked into a single static executable, `clickhouse`. This executable must be re-linked on every change, which might be slow. Two common ways to improve linking time are to use `lld` linker, and use the 'split' build configuration, which builds a separate binary for every tool, and further splits the code into serveral shared libraries. To enable these tweaks, pass the following flags to `cmake`:
 
 ```
--DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
+-DCMAKE_C_FLAGS="-fuse-ld=lld" -DCMAKE_CXX_FLAGS="-fuse-ld=lld" -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
 ```
 
 ## You Don’t Have to Build ClickHouse {#you-dont-have-to-build-clickhouse}
@@ -155,10 +188,6 @@ Normally ClickHouse is statically linked into a single static `clickhouse` binar
 -DUSE_STATIC_LIBRARIES=0 -DSPLIT_SHARED_LIBRARIES=1 -DCLICKHOUSE_SPLIT_BINARY=1
 ```
 
-Note that the split build has several drawbacks:
-* There is no single `clickhouse` binary, and you have to run `clickhouse-server`, `clickhouse-client`, etc.
-* Risk of segfault if you run any of the programs while rebuilding the project.
-* You cannot run the integration tests since they only work a single complete binary.
-* You can't easily copy the binaries elsewhere. Instead of moving a single binary you'll need to copy all binaries and libraries.
+Note that in this configuration there is no single `clickhouse` binary, and you have to run `clickhouse-server`, `clickhouse-client` etc.
 
-[Original article](https://clickhouse.com/docs/en/development/build/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/development/build/) <!--hide-->

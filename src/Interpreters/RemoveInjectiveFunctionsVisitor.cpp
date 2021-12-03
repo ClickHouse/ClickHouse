@@ -12,12 +12,11 @@ namespace DB
 static bool isUniq(const ASTFunction & func)
 {
     return func.name == "uniq" || func.name == "uniqExact" || func.name == "uniqHLL12"
-        || func.name == "uniqCombined" || func.name == "uniqCombined64"
-        || func.name == "uniqTheta";
+        || func.name == "uniqCombined" || func.name == "uniqCombined64";
 }
 
 /// Remove injective functions of one argument: replace with a child
-static bool removeInjectiveFunction(ASTPtr & ast, ContextPtr context, const FunctionFactory & function_factory)
+static bool removeInjectiveFunction(ASTPtr & ast, const Context & context, const FunctionFactory & function_factory)
 {
     const ASTFunction * func = ast->as<ASTFunction>();
     if (!func)
@@ -47,7 +46,7 @@ void RemoveInjectiveFunctionsMatcher::visit(ASTFunction & func, ASTPtr &, const 
 
         for (auto & arg : func.arguments->children)
         {
-            while (removeInjectiveFunction(arg, data.getContext(), function_factory))
+            while (removeInjectiveFunction(arg, data.context, function_factory))
                 ;
         }
     }

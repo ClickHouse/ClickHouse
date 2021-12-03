@@ -1,9 +1,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterCheckQuery.h>
-#include <Access/Common/AccessFlags.h>
+#include <Access/AccessFlags.h>
 #include <Storages/IStorage.h>
 #include <Parsers/ASTCheckQuery.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnsNumber.h>
@@ -29,7 +29,8 @@ NamesAndTypes getBlockStructure()
 }
 
 
-InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, ContextPtr context_) : WithContext(context_), query_ptr(query_ptr_)
+InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, const Context & context_)
+    : query_ptr(query_ptr_), context(context_)
 {
 }
 
@@ -37,14 +38,14 @@ InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, ContextP
 BlockIO InterpreterCheckQuery::execute()
 {
     const auto & check = query_ptr->as<ASTCheckQuery &>();
-    auto table_id = getContext()->resolveStorageID(check, Context::ResolveOrdinary);
+    auto table_id = context.resolveStorageID(check, Context::ResolveOrdinary);
 
-    getContext()->checkAccess(AccessType::SHOW_TABLES, table_id);
-    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
-    auto check_results = table->checkData(query_ptr, getContext());
+    context.checkAccess(AccessType::SHOW_TABLES, table_id);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto check_results = table->checkData(query_ptr, context);
 
     Block block;
-    if (getContext()->getSettingsRef().check_query_single_value_result)
+    if (context.getSettingsRef().check_query_single_value_result)
     {
         bool result = std::all_of(check_results.begin(), check_results.end(), [] (const CheckResult & res) { return res.success; });
         auto column = ColumnUInt8::create();
@@ -72,7 +73,7 @@ BlockIO InterpreterCheckQuery::execute()
     }
 
     BlockIO res;
-    res.pipeline = QueryPipeline(std::make_shared<SourceFromSingleChunk>(std::move(block)));
+    res.in = std::make_shared<OneBlockInputStream>(block);
 
     return res;
 }

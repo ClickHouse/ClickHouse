@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/FieldVisitors.h>
 #include <Core/Field.h>
 #include <Parsers/IAST_fwd.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -43,13 +44,14 @@ struct WindowFrame
     // Offset might be both preceding and following, controlled by begin_preceding,
     // but the offset value must be positive.
     BoundaryType begin_type = BoundaryType::Unbounded;
-    Field begin_offset = 0;
+    // This should have been a Field but I'm getting some crazy linker errors.
+    int64_t begin_offset = 0;
     bool begin_preceding = true;
 
     // Here as well, Unbounded can only be UNBOUNDED FOLLOWING, and end_preceding
     // must be false.
     BoundaryType end_type = BoundaryType::Current;
-    Field end_offset = 0;
+    int64_t end_offset = 0;
     bool end_preceding = false;
 
 
@@ -72,6 +74,40 @@ struct WindowFrame
             && other.end_offset == end_offset
             && other.end_preceding == end_preceding
             ;
+    }
+
+    static std::string toString(FrameType type)
+    {
+        switch (type)
+        {
+            case FrameType::Rows:
+                return "ROWS";
+            case FrameType::Groups:
+                return "GROUPS";
+            case FrameType::Range:
+                return "RANGE";
+        }
+
+        // Somehow GCC 10 doesn't understand that the above switch is exhaustive.
+        assert(false);
+        return "<unknown frame>";
+    }
+
+    static std::string toString(BoundaryType type)
+    {
+        switch (type)
+        {
+            case BoundaryType::Unbounded:
+                return "UNBOUNDED";
+            case BoundaryType::Offset:
+                return "OFFSET";
+            case BoundaryType::Current:
+                return "CURRENT ROW";
+        }
+
+        // Somehow GCC 10 doesn't understand that the above switch is exhaustive.
+        assert(false);
+        return "<unknown frame boundary>";
     }
 };
 

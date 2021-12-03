@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/shared_ptr_helper.h>
+#include <ext/shared_ptr_helper.h>
 #include <optional>
 #include <Storages/IStorage.h>
 
@@ -23,9 +23,9 @@ class Context;
   *  In multithreaded case, if even_distributed is False, implementation with atomic is used,
   *     and result is always in [0 ... limit - 1] range.
   */
-class StorageSystemNumbers final : public shared_ptr_helper<StorageSystemNumbers>, public IStorage
+class StorageSystemNumbers final : public ext::shared_ptr_helper<StorageSystemNumbers>, public IStorage
 {
-    friend struct shared_ptr_helper<StorageSystemNumbers>;
+    friend struct ext::shared_ptr_helper<StorageSystemNumbers>;
 public:
     std::string getName() const override { return "SystemNumbers"; }
 
@@ -33,13 +33,12 @@ public:
         const Names & column_names,
         const StorageMetadataPtr & /*metadata_snapshot*/,
         SelectQueryInfo & query_info,
-        ContextPtr context,
+        const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
 
     bool hasEvenlyDistributedRead() const override { return true; }
-    bool isSystemStorage() const override { return true; }
 
 private:
     bool multithreaded;

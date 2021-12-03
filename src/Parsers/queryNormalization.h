@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 
 #include <Core/Defines.h>
 #include <Parsers/Lexer.h>
@@ -28,7 +28,7 @@ inline UInt64 ALWAYS_INLINE normalizedQueryHash(const char * begin, const char *
             continue;
 
         /// Literals.
-        if (token.type == TokenType::Number || token.type == TokenType::StringLiteral || token.type == TokenType::HereDoc)
+        if (token.type == TokenType::Number || token.type == TokenType::StringLiteral)
         {
             if (0 == num_literals_in_sequence)
                 hash.update("\x00", 1);
@@ -156,7 +156,7 @@ inline void ALWAYS_INLINE normalizeQueryToPODArray(const char * begin, const cha
         prev_insignificant = false;
 
         /// Literals.
-        if (token.type == TokenType::Number || token.type == TokenType::StringLiteral || token.type == TokenType::HereDoc)
+        if (token.type == TokenType::Number || token.type == TokenType::StringLiteral)
         {
             if (0 == num_literals_in_sequence)
                 res_data.push_back('?');

@@ -1,9 +1,0 @@
-#!/bin/bash
-#
-# Clean up all the _instances folders where
-# ClickHouse services store their data.
-#
-# Note: needs root privilege because Docker mounts
-# these folders into containers.
-#
-find . -type d -name _instances | sudo xargs rm -rf
