@@ -11,3 +11,8 @@ with generateUUIDv4() as uuid,
     identity(lower(hex(reverse(reinterpretAsString(uuid))))) as str,
     reinterpretAsUUID(reverse(unhex(str))) as uuid2
 select uuid = uuid2;
+
+with generateUUIDv4() as uuid,
+    hex(reverse(reinterpretAsString(uuid))) as str1,
+    hex(uuid) as str2
+select str1 = str2
