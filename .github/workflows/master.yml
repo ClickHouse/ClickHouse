@@ -1356,7 +1356,7 @@ jobs:
 ##############################################################################################
   ASTFuzzerTestAsan:
     needs: [BuilderDebAsan]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1384,7 +1384,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   ASTFuzzerTestTsan:
     needs: [BuilderDebTsan]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1412,7 +1412,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   ASTFuzzerTestUBSan:
     needs: [BuilderDebUBsan]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1440,7 +1440,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   ASTFuzzerTestMSan:
     needs: [BuilderDebMsan]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1468,7 +1468,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   ASTFuzzerTestDebug:
     needs: [BuilderDebDebug]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1499,7 +1499,7 @@ jobs:
 #############################################################################################
   UnitTestsAsan:
     needs: [BuilderDebAsan]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1527,7 +1527,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   UnitTestsReleaseClang:
     needs: [BuilderBinRelease]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1555,7 +1555,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   UnitTestsTsan:
     needs: [BuilderDebTsan]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1583,7 +1583,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   UnitTestsMsan:
     needs: [BuilderDebMsan]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1611,7 +1611,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   UnitTestsUBsan:
     needs: [BuilderDebUBsan]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
