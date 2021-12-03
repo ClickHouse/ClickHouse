@@ -104,7 +104,7 @@ def list_runners(access_token):
 def group_runners_by_tag(listed_runners):
     result = {}
 
-    RUNNER_TYPE_LABELS = ['style-checker', 'builder', 'func-tester', 'stress-tester']
+    RUNNER_TYPE_LABELS = ['style-checker', 'builder', 'func-tester', 'stress-tester', 'fuzzer-unit-tester']
     for runner in listed_runners:
         for tag in runner.tags:
             if tag in RUNNER_TYPE_LABELS:
