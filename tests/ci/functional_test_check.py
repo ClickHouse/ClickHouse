@@ -17,6 +17,8 @@ from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status, get_commit
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
+from tee_popen import TeePopen
 
 def get_additional_envs(check_name):
     if 'DatabaseReplicated' in check_name:
@@ -116,12 +118,18 @@ if __name__ == "__main__":
     check_name = sys.argv[1]
     kill_timeout = int(sys.argv[2])
     flaky_check = 'flaky' in check_name.lower()
+    gh = Github(get_best_robot_token())
+
+    pr_info = PRInfo(get_event(), need_changed_files=flaky_check)
+
+    rerun_helper = RerunHelper(gh, pr_info, check_name)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    gh = Github(get_best_robot_token())
-    pr_info = PRInfo(get_event(), need_changed_files=flaky_check)
     tests_to_run = []
     if flaky_check:
         tests_to_run = get_tests_to_run(pr_info)
@@ -129,7 +137,6 @@ if __name__ == "__main__":
             commit = get_commit(gh, pr_info.sha)
             commit.create_status(context=check_name, description='Not found changed stateless tests', state='success')
             sys.exit(0)
-
 
     image_name = get_image_name(check_name)
     docker_image = get_image_with_version(reports_path, image_name)
@@ -154,13 +161,12 @@ if __name__ == "__main__":
     run_command = get_run_command(packages_path, result_path, server_log_path, kill_timeout, additional_envs, docker_image, flaky_check, tests_to_run)
     logging.info("Going to run func tests: %s", run_command)
 
-    with open(run_log_path, 'w', encoding='utf-8') as log:
-        with subprocess.Popen(run_command, shell=True, stderr=log, stdout=log) as process:
-            retcode = process.wait()
-            if retcode == 0:
-                logging.info("Run successfully")
-            else:
-                logging.info("Run failed")
+    with TeePopen(run_command, run_log_path) as process:
+        retcode = process.wait()
+        if retcode == 0:
+            logging.info("Run successfully")
+        else:
+            logging.info("Run failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
