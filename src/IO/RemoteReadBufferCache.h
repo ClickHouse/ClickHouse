@@ -16,6 +16,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
 #include <IO/SeekableReadBuffer.h>
+#include <IO/RemoteFileMetaDataBase.h>
 #include <condition_variable>
 #include <Interpreters/Context.h>
 
@@ -31,51 +32,20 @@ enum class RemoteReadBufferCacheError : int8_t
     END_OF_FILE = 20,
 };
 
-struct RemoteFileMetadata
+class RemoteCacheController
 {
-    enum LocalStatus
+public:
+    enum LocalFileStatus
     {
         TO_DOWNLOAD = 0,
         DOWNLOADING = 1,
         DOWNLOADED  = 2,
     };
-    RemoteFileMetadata(): last_modification_timestamp(0l), file_size(0), status(TO_DOWNLOAD){}
-    RemoteFileMetadata(
-        const String & schema_,
-        const String & cluster_,
-        const String & path_,
-        UInt64 last_modification_timestamp_,
-        size_t file_size_)
-        : schema(schema_)
-        , cluster(cluster_)
-        , remote_path(path_)
-        , last_modification_timestamp(last_modification_timestamp_)
-        , file_size(file_size_)
-        , status(TO_DOWNLOAD)
-    {
-    }
 
-    bool load(const std::filesystem::path & local_path);
-    void save(const std::filesystem::path & local_path) const;
-    String toString() const;
-
-    String schema; // Hive, S2 etc.
-    String cluster;
-    String remote_path;
-    UInt64 last_modification_timestamp;
-    size_t file_size;
-    LocalStatus status;
-};
-
-class RemoteCacheController
-{
-public:
     RemoteCacheController(
-        ContextPtr context,
-        const RemoteFileMetadata & file_meta_data_,
+        RemoteFileMetaDataBasePtr file_meta_data_,
         const std::filesystem::path & local_path_,
-        size_t cache_bytes_before_flush_,
-        std::shared_ptr<ReadBuffer> read_buffer_);
+        size_t cache_bytes_before_flush_);
     ~RemoteCacheController();
 
     // recover from local disk
@@ -97,7 +67,7 @@ public:
     {
         std::lock_guard lock{mutex};
         //return opened_file_streams.empty() && remote_read_buffer == nullptr;
-        return opened_file_buffer_refs.empty() && remote_read_buffer == nullptr;
+        return opened_file_buffer_refs.empty() && file_status == DOWNLOADED;
     }
     void close();
 
@@ -111,9 +81,10 @@ public:
     inline size_t size() const { return current_offset; }
 
     inline const std::filesystem::path & getLocalPath() { return local_path; }
-    inline const String & getRemotePath() const { return file_meta_data.remote_path; }
+    inline String getRemotePath() const { return file_meta_data_ptr->getRemotePath(); }
 
-    inline UInt64 getLastModificationTimestamp() const { return file_meta_data.last_modification_timestamp; }
+    inline UInt64 getLastModificationTimestamp() const { return file_meta_data_ptr->getLastModificationTimestamp(); }
+    bool checkFileChanged(RemoteFileMetaDataBasePtr file_meta_data_);
     inline void markInvalid()
     {
         std::lock_guard lock(mutex);
@@ -124,29 +95,33 @@ public:
         std::lock_guard lock(mutex);
         return valid;
     }
-    const RemoteFileMetadata & getFileMetaData() { return file_meta_data; }
+    RemoteFileMetaDataBasePtr getFileMetaData() { return file_meta_data_ptr; }
+
+    void startBackgroundDownload(std::shared_ptr<ReadBuffer> input_readbuffer, BackgroundSchedulePool & thread_pool);
 
 private:
-    // flush file and meta info into disk
-    void flush(bool need_flush_meta_data_ = false);
+    // flush file and status information
+    void flush(bool need_flush_status = false);
+    bool loadInnerInformation(const std::filesystem::path & file_path);
 
     BackgroundSchedulePool::TaskHolder download_task_holder;
-    void backgroundDownload();
+    void backgroundDownload(std::shared_ptr<ReadBuffer> remote_read_buffer);
 
     std::mutex mutex;
     std::condition_variable more_data_signal;
 
     std::set<uintptr_t> opened_file_buffer_refs; // refer to a buffer address
 
-    // meta info
-    RemoteFileMetadata file_meta_data;
+    String meta_data_class;
+    LocalFileStatus file_status = TO_DOWNLOAD; // for tracking download process
+    RemoteFileMetaDataBasePtr file_meta_data_ptr;
     std::filesystem::path local_path;
 
     bool valid;
     size_t local_cache_bytes_read_before_flush;
     size_t current_offset;
 
-    std::shared_ptr<ReadBuffer> remote_read_buffer;
+    //std::shared_ptr<ReadBuffer> remote_read_buffer;
     std::unique_ptr<WriteBufferFromFileBase> data_file_writer;
 
     Poco::Logger * log = &Poco::Logger::get("RemoteCacheController");
@@ -162,13 +137,13 @@ class RemoteReadBuffer : public BufferWithOwnMemory<SeekableReadBufferWithSize>
 public:
     explicit RemoteReadBuffer(size_t buff_size);
     ~RemoteReadBuffer() override;
-    static std::unique_ptr<RemoteReadBuffer> create(ContextPtr contex, const RemoteFileMetadata & remote_file_meta, std::unique_ptr<ReadBuffer> read_buffer);
+    static std::unique_ptr<RemoteReadBuffer> create(ContextPtr contex, RemoteFileMetaDataBasePtr remote_file_meta_data, std::unique_ptr<ReadBuffer> read_buffer);
 
     bool nextImpl() override;
-    inline bool seekable() { return !file_buffer && file_cache_controller->getFileMetaData().file_size > 0; }
+    inline bool seekable() { return !file_buffer && file_cache_controller->getFileMetaData()->getFileSize() > 0; }
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
-    std::optional<size_t> getTotalSize() override { return file_cache_controller->getFileMetaData().file_size; }
+    std::optional<size_t> getTotalSize() override { return file_cache_controller->getFileMetaData()->getFileSize(); }
 
 private:
     std::shared_ptr<RemoteCacheController> file_cache_controller;
@@ -190,7 +165,7 @@ public:
     inline bool isInitialized() const { return initialized; }
 
     std::pair<RemoteCacheControllerPtr, RemoteReadBufferCacheError>
-    createReader(ContextPtr context, const RemoteFileMetadata & remote_file_meta, std::shared_ptr<ReadBuffer> & read_buffer);
+    createReader(ContextPtr context, RemoteFileMetaDataBasePtr remote_file_meta_data, std::shared_ptr<ReadBuffer> & read_buffer);
 
     void updateTotalSize(size_t size) { total_size += size; }
 
@@ -217,7 +192,7 @@ private:
     std::list<String> keys;
     std::map<String, CacheCell> caches;
 
-    String calculateLocalPath(const RemoteFileMetadata & meta) const;
+    String calculateLocalPath(RemoteFileMetaDataBasePtr meta) const;
 
     BackgroundSchedulePool::TaskHolder recover_task_holder;
     void recoverTask();
