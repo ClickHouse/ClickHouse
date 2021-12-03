@@ -355,6 +355,9 @@ void RangeHashedDictionary<dictionary_key_type>::calculateBytesAllocated()
 
     if constexpr (dictionary_key_type == DictionaryKeyType::Complex)
         bytes_allocated += complex_key_arena.size();
+
+    if (update_field_loaded_block)
+        bytes_allocated += update_field_loaded_block->allocatedBytes();
 }
 
 template <DictionaryKeyType dictionary_key_type>
