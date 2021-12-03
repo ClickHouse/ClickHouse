@@ -20,6 +20,7 @@
 #include <Compression/getCompressionCodecForFile.h>
 #include <Parsers/queryToString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 
 namespace CurrentMetrics
@@ -1034,6 +1035,13 @@ void IMergeTreeDataPart::loadColumns(bool require)
     else
     {
         loaded_columns.readText(*volume->getDisk()->readFile(path));
+
+        for (const auto & column : loaded_columns)
+        {
+            const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
+            if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
+                aggregate_function_data_type->setVersion(0, /* if_empty */true);
+        }
     }
 
     setColumns(loaded_columns);

@@ -17,6 +17,7 @@ from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_
 from stopwatch import Stopwatch
 from rerun_helper import RerunHelper
 from tee_popen import TeePopen
+from ccache_utils import get_ccache_if_not_exists, upload_ccache
 
 NAME = 'Fast test (actions)'
 
@@ -87,7 +88,12 @@ if __name__ == "__main__":
         os.makedirs(output_path)
 
     cache_path = os.path.join(caches_path, "fasttest")
+
+    logging.info("Will try to fetch cache for our build")
+    get_ccache_if_not_exists(cache_path, s3_helper, pr_info.number, temp_path)
+
     if not os.path.exists(cache_path):
+        logging.info("cache was not fetched, will create empty dir")
         os.makedirs(cache_path)
 
     repo_path = os.path.join(temp_path, "fasttest-repo")
@@ -137,6 +143,9 @@ if __name__ == "__main__":
         state = "failure"
     else:
         state, description, test_results, additional_logs = process_results(output_path)
+
+    logging.info("Will upload cache")
+    upload_ccache(cache_path, s3_helper, pr_info.number, temp_path)
 
     ch_helper = ClickHouseHelper()
     mark_flaky_tests(ch_helper, NAME, test_results)
