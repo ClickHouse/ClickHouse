@@ -3,11 +3,12 @@
         <disks>
             <blob_storage_disk>
                 <type>blob_storage</type>
-                <storage_account_url>http://azurite1:10000/</storage_account_url>
+                <storage_account_url>http://azurite1:10000/devstoreaccount1</storage_account_url>
                 <container_already_exists>false</container_already_exists>
                 <skip_access_check>true</skip_access_check>
                 <!-- default credentials for Azurite storage account -->
-                <connection_string>DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;</connection_string>
+                <account_name>devstoreaccount1</account_name>
+                <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
             </blob_storage_disk>
         </disks>
         <policies>
