@@ -92,7 +92,7 @@ struct BlobStorageEndpoint
 
 void validateStorageAccountUrl(const String & storage_account_url)
 {
-    const auto * storage_account_url_pattern_str = R"(http(()|s)://[a-z0-9-.:]+(()|/))";
+    const auto * storage_account_url_pattern_str = R"(http(()|s)://[a-z0-9-.:]+(()|/)[a-z0-9]*(()|/))";
     static const RE2 storage_account_url_pattern(storage_account_url_pattern_str);
 
     if (!re2::RE2::FullMatch(storage_account_url, storage_account_url_pattern))
