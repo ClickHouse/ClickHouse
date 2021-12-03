@@ -13,15 +13,15 @@ import csv
 
 
 MAX_RETRY = 3
-NUM_WORKERS = 5
-SLEEP_BETWEEN_RETRIES = 5
-PARALLEL_GROUP_SIZE = 100
+NUM_WORKERS = 12
+
+PARALLEL_GROUP_SIZE = 40
 CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
 CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-odbc-bridge"
 CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-library-bridge"
 
-TRIES_COUNT = 10
-MAX_TIME_SECONDS = 3600
+FLAKY_CHECK_TRIES_COUNTT = 10
+FLAKY_CHECK_MAX_TIME_SECONDS = 3600
 
 MAX_TIME_IN_SANDBOX = 20 * 60   # 20 minutes
 TASK_TIMEOUT = 8 * 60 * 60      # 8 hours
@@ -531,7 +531,7 @@ class ClickhouseIntegrationTestsRunner:
         logging.info("Starting check with retries")
         final_retry = 0
         logs = []
-        for i in range(TRIES_COUNT):
+        for i in range(FLAKY_CHECK_TRIES_COUNTT):
             final_retry += 1
             logging.info("Running tests for the %s time", i)
             counters, tests_times, log_paths = self.try_run_test_group(repo_path, "flaky", tests_to_run, 1, 1)
@@ -551,7 +551,7 @@ class ClickhouseIntegrationTestsRunner:
             logging.info("Try is OK, all tests passed, going to clear env")
             clear_ip_tables_and_restart_daemons()
             logging.info("And going to sleep for some time")
-            if time.time() - start > MAX_TIME_SECONDS:
+            if time.time() - start > FLAKY_CHECK_MAX_TIME_SECONDS:
                 logging.info("Timeout reached, going to finish flaky check")
                 break
             time.sleep(5)
