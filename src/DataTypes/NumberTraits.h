@@ -172,14 +172,14 @@ template <typename A, typename B>
 struct ResultOfIf
 {
     static constexpr bool has_float = std::is_floating_point_v<A> || std::is_floating_point_v<B>;
-    static constexpr bool has_integer = is_integer<A> || is_integer<B>;
+    static constexpr bool has_integer = is_integer_v<A> || is_integer_v<B>;
     static constexpr bool has_signed = is_signed_v<A> || is_signed_v<B>;
     static constexpr bool has_unsigned = !is_signed_v<A> || !is_signed_v<B>;
     static constexpr bool has_big_int = is_big_int_v<A> || is_big_int_v<B>;
 
     static constexpr size_t max_size_of_unsigned_integer = max(is_signed_v<A> ? 0 : sizeof(A), is_signed_v<B> ? 0 : sizeof(B));
     static constexpr size_t max_size_of_signed_integer = max(is_signed_v<A> ? sizeof(A) : 0, is_signed_v<B> ? sizeof(B) : 0);
-    static constexpr size_t max_size_of_integer = max(is_integer<A> ? sizeof(A) : 0, is_integer<B> ? sizeof(B) : 0);
+    static constexpr size_t max_size_of_integer = max(is_integer_v<A> ? sizeof(A) : 0, is_integer_v<B> ? sizeof(B) : 0);
     static constexpr size_t max_size_of_float = max(std::is_floating_point_v<A> ? sizeof(A) : 0, std::is_floating_point_v<B> ? sizeof(B) : 0);
 
     using ConstructedType = typename Construct<has_signed, has_float,
@@ -190,9 +190,9 @@ struct ResultOfIf
 
     using Type =
         std::conditional_t<std::is_same_v<A, B>, A,
-        std::conditional_t<is_decimal<A> && is_decimal<B>,
+        std::conditional_t<IsDecimalNumber<A> && IsDecimalNumber<B>,
             std::conditional_t<(sizeof(A) > sizeof(B)), A, B>,
-        std::conditional_t<!is_decimal<A> && !is_decimal<B>,
+        std::conditional_t<!IsDecimalNumber<A> && !IsDecimalNumber<B>,
             ConstructedType, Error>>>;
 };
 

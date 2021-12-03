@@ -1,5 +1,3 @@
--- Tags: long
-
 DROP TABLE IF EXISTS zstd_1_00;
 DROP TABLE IF EXISTS zstd_1_24;
 DROP TABLE IF EXISTS zstd_9_00;

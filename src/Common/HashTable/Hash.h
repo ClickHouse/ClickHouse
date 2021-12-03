@@ -2,9 +2,9 @@
 
 #include <city.h>
 #include <Core/Types.h>
-#include <base/types.h>
-#include <base/unaligned.h>
-#include <base/StringRef.h>
+#include <common/types.h>
+#include <common/unaligned.h>
+#include <common/StringRef.h>
 
 #include <type_traits>
 
@@ -46,6 +46,7 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 
 #if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
 #include <arm_acle.h>
+#include <arm_neon.h>
 #endif
 
 inline DB::UInt64 intHashCRC32(DB::UInt64 x)
@@ -76,7 +77,7 @@ template <typename T>
 inline typename std::enable_if<(sizeof(T) > sizeof(DB::UInt64)), DB::UInt64>::type
 intHashCRC32(const T & x, DB::UInt64 updated_value)
 {
-    const auto * begin = reinterpret_cast<const char *>(&x);
+    auto * begin = reinterpret_cast<const char *>(&x);
     for (size_t i = 0; i < sizeof(T); i += sizeof(UInt64))
     {
         updated_value = intHashCRC32(unalignedLoad<DB::UInt64>(begin), updated_value);
@@ -196,8 +197,12 @@ inline size_t DefaultHash64(std::enable_if_t<(sizeof(T) > sizeof(UInt64)), T> ke
     __builtin_unreachable();
 }
 
+
+template <typename T, typename Enable = void>
+struct DefaultHash;
+
 template <typename T>
-struct DefaultHash
+struct DefaultHash<T, std::enable_if_t<!DB::IsDecimalNumber<T>>>
 {
     size_t operator() (T key) const
     {
@@ -205,8 +210,8 @@ struct DefaultHash
     }
 };
 
-template <DB::is_decimal T>
-struct DefaultHash<T>
+template <typename T>
+struct DefaultHash<T, std::enable_if_t<DB::IsDecimalNumber<T>>>
 {
     size_t operator() (T key) const
     {

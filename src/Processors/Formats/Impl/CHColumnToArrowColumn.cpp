@@ -23,30 +23,6 @@
 #include <arrow/type.h>
 #include <arrow/util/decimal.h>
 
-#define FOR_INTERNAL_NUMERIC_TYPES(M) \
-        M(UInt8, arrow::UInt8Builder) \
-        M(Int8, arrow::Int8Builder) \
-        M(UInt16, arrow::UInt16Builder) \
-        M(Int16, arrow::Int16Builder) \
-        M(UInt32, arrow::UInt32Builder) \
-        M(Int32, arrow::Int32Builder) \
-        M(UInt64, arrow::UInt64Builder) \
-        M(Int64, arrow::Int64Builder) \
-        M(Float32, arrow::FloatBuilder) \
-        M(Float64, arrow::DoubleBuilder)
-
-#define FOR_ARROW_TYPES(M) \
-        M(UINT8, arrow::UInt8Type) \
-        M(INT8, arrow::Int8Type) \
-        M(UINT16, arrow::UInt16Type) \
-        M(INT16, arrow::Int16Type) \
-        M(UINT32, arrow::UInt32Type) \
-        M(INT32, arrow::Int32Type) \
-        M(UINT64, arrow::UInt64Type) \
-        M(INT64, arrow::Int64Type) \
-        M(FLOAT, arrow::FloatType) \
-        M(DOUBLE, arrow::DoubleType) \
-        M(BINARY, arrow::BinaryType)
 
 namespace DB
 {
@@ -70,9 +46,11 @@ namespace DB
         {"Float32", arrow::float32()},
         {"Float64", arrow::float64()},
 
-        {"Date", arrow::uint16()},      /// uint16 is used instead of date32, because Apache Arrow cannot correctly serialize Date32Array.
-        {"DateTime", arrow::uint32()},  /// uint32 is used instead of date64, because we don't need milliseconds.
-        {"Date32", arrow::date32()},
+        //{"Date", arrow::date64()},
+        //{"Date", arrow::date32()},
+        {"Date", arrow::uint16()}, // CHECK
+        //{"DateTime", arrow::date64()}, // BUG! saves as date32
+        {"DateTime", arrow::uint32()},
 
         {"String", arrow::binary()},
         {"FixedString", arrow::binary()},
@@ -287,16 +265,15 @@ namespace DB
         auto value_type = assert_cast<arrow::DictionaryType *>(array_builder->type().get())->value_type();
 
 #define DISPATCH(ARROW_TYPE_ID, ARROW_TYPE) \
-        if (arrow::Type::ARROW_TYPE_ID == value_type->id()) \
-        { \
-            fillArrowArrayWithLowCardinalityColumnDataImpl<ARROW_TYPE>(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, dictionary_values); \
-            return; \
-        }
+                if (arrow::Type::ARROW_TYPE_ID == value_type->id()) \
+                { \
+                    fillArrowArrayWithLowCardinalityColumnDataImpl<ARROW_TYPE>(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, dictionary_values); \
+                    return; \
+                }
 
         FOR_ARROW_TYPES(DISPATCH)
 #undef DISPATCH
 
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot fill arrow array with {} data.", column_type->getName());
     }
 
     template <typename ColumnType>
@@ -336,6 +313,7 @@ namespace DB
         size_t end)
     {
         const PaddedPODArray<UInt16> & internal_data = assert_cast<const ColumnVector<UInt16> &>(*write_column).getData();
+        //arrow::Date32Builder date_builder;
         arrow::UInt16Builder & builder = assert_cast<arrow::UInt16Builder &>(*array_builder);
         arrow::Status status;
 
@@ -344,6 +322,7 @@ namespace DB
             if (null_bytemap && (*null_bytemap)[value_i])
                 status = builder.AppendNull();
             else
+                /// Implicitly converts UInt16 to Int32
                 status = builder.Append(internal_data[value_i]);
             checkStatus(status, write_column->getName(), format_name);
         }
@@ -358,6 +337,7 @@ namespace DB
         size_t end)
     {
         const auto & internal_data = assert_cast<const ColumnVector<UInt32> &>(*write_column).getData();
+        //arrow::Date64Builder builder;
         arrow::UInt32Builder & builder = assert_cast<arrow::UInt32Builder &>(*array_builder);
         arrow::Status status;
 
@@ -366,30 +346,10 @@ namespace DB
             if (null_bytemap && (*null_bytemap)[value_i])
                 status = builder.AppendNull();
             else
+                /// Implicitly converts UInt16 to Int32
+                //status = date_builder.Append(static_cast<int64_t>(internal_data[value_i]) * 1000); // now ms. TODO check other units
                 status = builder.Append(internal_data[value_i]);
 
-            checkStatus(status, write_column->getName(), format_name);
-        }
-    }
-
-    static void fillArrowArrayWithDate32ColumnData(
-        ColumnPtr write_column,
-        const PaddedPODArray<UInt8> * null_bytemap,
-        const String & format_name,
-        arrow::ArrayBuilder* array_builder,
-        size_t start,
-        size_t end)
-    {
-        const PaddedPODArray<Int32> & internal_data = assert_cast<const ColumnVector<Int32> &>(*write_column).getData();
-        arrow::Date32Builder & builder = assert_cast<arrow::Date32Builder &>(*array_builder);
-        arrow::Status status;
-
-        for (size_t value_i = start; value_i < end; ++value_i)
-        {
-            if (null_bytemap && (*null_bytemap)[value_i])
-                status = builder.AppendNull();
-            else
-                status = builder.Append(internal_data[value_i]);
             checkStatus(status, write_column->getName(), format_name);
         }
     }
@@ -407,7 +367,7 @@ namespace DB
     {
         const String column_type_name = column_type->getFamilyName();
 
-        if (column_type->isNullable())
+        if ("Nullable" == column_type_name)
         {
             const ColumnNullable * column_nullable = assert_cast<const ColumnNullable *>(column.get());
             ColumnPtr nested_column = column_nullable->getNestedColumnPtr();
@@ -416,39 +376,35 @@ namespace DB
             const PaddedPODArray<UInt8> & bytemap = assert_cast<const ColumnVector<UInt8> &>(*null_column).getData();
             fillArrowArray(column_name, nested_column, nested_type, &bytemap, array_builder, format_name, start, end, dictionary_values);
         }
-        else if (isString(column_type))
+        else if ("String" == column_type_name)
         {
             fillArrowArrayWithStringColumnData<ColumnString>(column, null_bytemap, format_name, array_builder, start, end);
         }
-        else if (isFixedString(column_type))
+        else if ("FixedString" == column_type_name)
         {
             fillArrowArrayWithStringColumnData<ColumnFixedString>(column, null_bytemap, format_name, array_builder, start, end);
         }
-        else if (isDate(column_type))
+        else if ("Date" == column_type_name)
         {
             fillArrowArrayWithDateColumnData(column, null_bytemap, format_name, array_builder, start, end);
         }
-        else if (isDateTime(column_type))
+        else if ("DateTime" == column_type_name)
         {
             fillArrowArrayWithDateTimeColumnData(column, null_bytemap, format_name, array_builder, start, end);
         }
-        else if (isDate32(column_type))
-        {
-            fillArrowArrayWithDate32ColumnData(column, null_bytemap, format_name, array_builder, start, end);
-        }
-        else if (isArray(column_type))
+        else if ("Array" == column_type_name)
         {
             fillArrowArrayWithArrayColumnData<arrow::ListBuilder>(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, dictionary_values);
         }
-        else if (isTuple(column_type))
+        else if ("Tuple" == column_type_name)
         {
             fillArrowArrayWithTupleColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, dictionary_values);
         }
-        else if (column_type->getTypeId() == TypeIndex::LowCardinality)
+        else if ("LowCardinality" == column_type_name)
         {
             fillArrowArrayWithLowCardinalityColumnData(column_name, column, column_type, null_bytemap, array_builder, format_name, start, end, dictionary_values);
         }
-        else if (isMap(column_type))
+        else if ("Map" == column_type_name)
         {
             ColumnPtr column_array = assert_cast<const ColumnMap *>(column.get())->getNestedColumnPtr();
             DataTypePtr array_type = assert_cast<const DataTypeMap *>(column_type.get())->getNestedType();
@@ -481,10 +437,10 @@ namespace DB
                 throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot fill arrow array with decimal data with type {}", column_type_name};
         }
     #define DISPATCH(CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE) \
-        else if (#CPP_NUMERIC_TYPE == column_type_name) \
-        { \
-            fillArrowArrayWithNumericColumnData<CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE>(column, null_bytemap, format_name, array_builder, start, end); \
-        }
+                else if (#CPP_NUMERIC_TYPE == column_type_name) \
+                { \
+                    fillArrowArrayWithNumericColumnData<CPP_NUMERIC_TYPE, ARROW_BUILDER_TYPE>(column, null_bytemap, format_name, array_builder, start, end); \
+                }
 
         FOR_INTERNAL_NUMERIC_TYPES(DISPATCH)
     #undef DISPATCH
@@ -492,7 +448,7 @@ namespace DB
         {
             throw Exception
                 {
-                    fmt::format("Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type_name, column_name, format_name),
+                    fmt::format(R"(Internal type "{}" of a column "{}" is not supported for conversion into a {} data format.)", column_type_name, column_name, format_name),
                     ErrorCodes::UNKNOWN_TYPE
                 };
         }
@@ -546,15 +502,14 @@ namespace DB
         }
     }
 
-    static std::shared_ptr<arrow::DataType> getArrowType(
-        DataTypePtr column_type, ColumnPtr column, const std::string & column_name, const std::string & format_name, bool * out_is_column_nullable)
+    static std::shared_ptr<arrow::DataType> getArrowType(DataTypePtr column_type, ColumnPtr column, const std::string & column_name, const std::string & format_name, bool * is_column_nullable)
     {
         if (column_type->isNullable())
         {
             DataTypePtr nested_type = assert_cast<const DataTypeNullable *>(column_type.get())->getNestedType();
             ColumnPtr nested_column = assert_cast<const ColumnNullable *>(column.get())->getNestedColumnPtr();
-            auto arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, out_is_column_nullable);
-            *out_is_column_nullable = true;
+            auto arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, is_column_nullable);
+            *is_column_nullable = true;
             return arrow_type;
         }
 
@@ -587,7 +542,7 @@ namespace DB
         {
             auto nested_type = assert_cast<const DataTypeArray *>(column_type.get())->getNestedType();
             auto nested_column = assert_cast<const ColumnArray *>(column.get())->getDataPtr();
-            auto nested_arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, out_is_column_nullable);
+            auto nested_arrow_type = getArrowType(nested_type, nested_column, column_name, format_name, is_column_nullable);
             return arrow::list(nested_arrow_type);
         }
 
@@ -599,8 +554,8 @@ namespace DB
             for (size_t i = 0; i != nested_types.size(); ++i)
             {
                 String name = column_name + "." + std::to_string(i);
-                auto nested_arrow_type = getArrowType(nested_types[i], tuple_column->getColumnPtr(i), name, format_name, out_is_column_nullable);
-                nested_fields.push_back(std::make_shared<arrow::Field>(name, nested_arrow_type, *out_is_column_nullable));
+                auto nested_arrow_type = getArrowType(nested_types[i], tuple_column->getColumnPtr(i), name, format_name, is_column_nullable);
+                nested_fields.push_back(std::make_shared<arrow::Field>(name, nested_arrow_type, *is_column_nullable));
             }
             return arrow::struct_(std::move(nested_fields));
         }
@@ -613,7 +568,7 @@ namespace DB
             const auto & indexes_column = lc_column->getIndexesPtr();
             return arrow::dictionary(
                 getArrowTypeForLowCardinalityIndexes(indexes_column),
-                getArrowType(nested_type, nested_column, column_name, format_name, out_is_column_nullable));
+                getArrowType(nested_type, nested_column, column_name, format_name, is_column_nullable));
         }
 
         if (isMap(column_type))
@@ -624,8 +579,9 @@ namespace DB
 
             const auto & columns =  assert_cast<const ColumnMap *>(column.get())->getNestedData().getColumns();
             return arrow::map(
-                getArrowType(key_type, columns[0], column_name, format_name, out_is_column_nullable),
-                getArrowType(val_type, columns[1], column_name, format_name, out_is_column_nullable));
+                getArrowType(key_type, columns[0], column_name, format_name, is_column_nullable),
+                getArrowType(val_type, columns[1], column_name, format_name, is_column_nullable)
+            );
         }
 
         const std::string type_name = column_type->getFamilyName();
@@ -638,9 +594,8 @@ namespace DB
             return arrow_type_it->second;
         }
 
-        throw Exception(ErrorCodes::UNKNOWN_TYPE,
-            "The type '{}' of a column '{}' is not supported for conversion into {} data format.",
-            column_type->getName(), column_name, format_name);
+        throw Exception{fmt::format(R"(The type "{}" of a column "{}" is not supported for conversion into a {} data format.)", column_type->getName(), column_name, format_name),
+                             ErrorCodes::UNKNOWN_TYPE};
     }
 
     CHColumnToArrowColumn::CHColumnToArrowColumn(const Block & header, const std::string & format_name_, bool low_cardinality_as_dictionary_)
@@ -683,8 +638,7 @@ namespace DB
             arrow::Status status = MakeBuilder(pool, arrow_fields[column_i]->type(), &array_builder);
             checkStatus(status, column->getName(), format_name);
 
-            fillArrowArray(
-                header_column.name, column, header_column.type, nullptr, array_builder.get(), format_name, 0, column->size(), dictionary_values);
+            fillArrowArray(header_column.name, column, header_column.type, nullptr, array_builder.get(), format_name, 0, column->size(), dictionary_values);
 
             std::shared_ptr<arrow::Array> arrow_array;
             status = array_builder->Finish(&arrow_array);

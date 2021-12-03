@@ -1,6 +1,6 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Common/Exception.h>
@@ -157,24 +157,6 @@ public:
             set(field, child);
     }
 
-    template <typename T>
-    void reset(T * & field)
-    {
-        if (field == nullptr)
-            return;
-
-        const auto child = std::find_if(children.begin(), children.end(), [field](const auto & p)
-        {
-           return p.get() == field;
-        });
-
-        if (child == children.end())
-            throw Exception("AST subtree not found in children", ErrorCodes::LOGICAL_ERROR);
-
-        children.erase(child);
-        field = nullptr;
-    }
-
     /// Convert to a string.
 
     /// Format settings.
@@ -244,9 +226,6 @@ public:
     static std::string formatForErrorMessage(const AstArray & array);
 
     void cloneChildren();
-
-    // Return query_kind string representation of this AST query.
-    virtual const char * getQueryKindString() const { return ""; }
 
 public:
     /// For syntax highlighting.

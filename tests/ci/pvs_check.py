@@ -9,13 +9,12 @@ import logging
 import sys
 from github import Github
 from s3_helper import S3Helper
-from pr_info import PRInfo, get_event
+from pr_info import PRInfo
 from get_robot_token import get_best_robot_token, get_parameter_from_ssm
 from upload_result_helper import upload_results
 from commit_status_helper import get_commit
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
-from rerun_helper import RerunHelper
 
 NAME = 'PVS Studio (actions)'
 LICENCE_NAME = 'Free license: ClickHouse, Yandex'
@@ -45,15 +44,13 @@ if __name__ == "__main__":
     repo_path = os.path.join(os.getenv("REPO_COPY", os.path.abspath("../../")))
     temp_path = os.path.join(os.getenv("TEMP_PATH"))
 
-    pr_info = PRInfo(get_event())
+    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
+        event = json.load(event_file)
+    pr_info = PRInfo(event)
     # this check modify repository so copy it to the temp directory
     logging.info("Repo copy path %s", repo_path)
 
     gh = Github(get_best_robot_token())
-    rerun_helper = RerunHelper(gh, pr_info, NAME)
-    if rerun_helper.is_already_finished_by_status():
-        logging.info("Check is already finished according to github status, exiting")
-        sys.exit(0)
 
     images_path = os.path.join(temp_path, 'changed_images.json')
     docker_image = 'clickhouse/pvs-test'

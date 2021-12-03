@@ -10,7 +10,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromString.h>
-#include <base/defines.h>
+#include <common/defines.h>
 #include <set>
 
 namespace DB
@@ -118,8 +118,6 @@ namespace DB
         {
             return true;
         }
-
-        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     private:
         DataTypes argument_types;

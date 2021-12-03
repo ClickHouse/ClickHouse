@@ -377,6 +377,7 @@ void PrettyBlockOutputFormat::consume(Chunk chunk)
 void PrettyBlockOutputFormat::consumeTotals(Chunk chunk)
 {
     total_rows = 0;
+    writeSuffixIfNot();
     writeCString("\nTotals:\n", out);
     write(chunk, PortKind::Totals);
 }
@@ -384,6 +385,7 @@ void PrettyBlockOutputFormat::consumeTotals(Chunk chunk)
 void PrettyBlockOutputFormat::consumeExtremes(Chunk chunk)
 {
     total_rows = 0;
+    writeSuffixIfNot();
     writeCString("\nExtremes:\n", out);
     write(chunk, PortKind::Extremes);
 }
@@ -399,10 +401,15 @@ void PrettyBlockOutputFormat::writeSuffix()
     }
 }
 
-
-void registerOutputFormatPretty(FormatFactory & factory)
+void PrettyBlockOutputFormat::finalize()
 {
-    factory.registerOutputFormat("Pretty", [](
+    writeSuffixIfNot();
+}
+
+
+void registerOutputFormatProcessorPretty(FormatFactory & factory)
+{
+    factory.registerOutputFormatProcessor("Pretty", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,
@@ -411,9 +418,7 @@ void registerOutputFormatPretty(FormatFactory & factory)
         return std::make_shared<PrettyBlockOutputFormat>(buf, sample, format_settings);
     });
 
-    factory.markOutputFormatSupportsParallelFormatting("Pretty");
-
-    factory.registerOutputFormat("PrettyNoEscapes", [](
+    factory.registerOutputFormatProcessor("PrettyNoEscapes", [](
         WriteBuffer & buf,
         const Block & sample,
         const RowOutputFormatParams &,
@@ -423,8 +428,6 @@ void registerOutputFormatPretty(FormatFactory & factory)
         changed_settings.pretty.color = false;
         return std::make_shared<PrettyBlockOutputFormat>(buf, sample, changed_settings);
     });
-
-    factory.markOutputFormatSupportsParallelFormatting("PrettyNoEscapes");
 }
 
 }

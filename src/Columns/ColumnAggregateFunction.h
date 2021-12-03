@@ -82,8 +82,6 @@ private:
     /// Name of the type to distinguish different aggregation states.
     String type_string;
 
-    std::optional<size_t> version;
-
     ColumnAggregateFunction() = default;
 
     /// Create a new column that has another column as a source.
@@ -94,9 +92,10 @@ private:
     ///  but ownership of different elements cannot be mixed by different columns.
     void ensureOwnership();
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_ = std::nullopt);
+    ColumnAggregateFunction(const AggregateFunctionPtr & func_);
 
-    ColumnAggregateFunction(const AggregateFunctionPtr & func_, const ConstArenas & arenas_);
+    ColumnAggregateFunction(const AggregateFunctionPtr & func_,
+                            const ConstArenas & arenas_);
 
     ColumnAggregateFunction(const ColumnAggregateFunction & src_);
 
@@ -177,8 +176,6 @@ public:
     void popBack(size_t n) override;
 
     ColumnPtr filter(const Filter & filter, ssize_t result_size_hint) const override;
-
-    void expand(const Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 

@@ -1,6 +1,3 @@
--- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-fasttest
--- Tag no-fasttest: Not sure why fail even in sequential mode. Disabled for now to make some progress.
-
 SET allow_introspection_functions = 1;
 
 SET query_profiler_real_time_period_ns = 100000000;

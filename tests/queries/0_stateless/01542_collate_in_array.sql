@@ -1,5 +1,3 @@
--- Tags: no-fasttest
-
 DROP TABLE IF EXISTS collate_test1;
 DROP TABLE IF EXISTS collate_test2;
 DROP TABLE IF EXISTS collate_test3;
