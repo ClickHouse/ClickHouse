@@ -846,7 +846,6 @@ void StorageWindowView::threadFuncFireProc()
     std::unique_lock lock(fire_signal_mutex);
     UInt32 timestamp_now = std::time(nullptr);
 
-    LOG_TRACE(log, "Processing time. Now: {}. Next fire time: {}", timestamp_now, next_fire_signal);
     while (next_fire_signal <= timestamp_now)
     {
         try
@@ -879,7 +878,6 @@ void StorageWindowView::threadFuncFireEvent()
 
         while (!fire_signal.empty())
         {
-            LOG_TRACE(log, "Fire signals: {}", fire_signal.size());
             fire(fire_signal.front());
             fire_signal.pop_front();
         }
@@ -987,15 +985,21 @@ StorageWindowView::StorageWindowView(
     else
         window_column_name = std::regex_replace(window_id_name, std::regex("WINDOW_ID"), "HOP");
 
-    auto generate_inner_table_name = [](const String & table_name) { return ".inner." + table_name; };
+    auto generate_inner_table_name = [](const StorageID & storage_id)
+    {
+        if (storage_id.hasUUID())
+            return ".inner." + toString(storage_id.uuid);
+        return ".inner." + storage_id.table_name;
+    };
+
     if (attach_)
     {
-        inner_table_id = StorageID(table_id_.database_name, generate_inner_table_name(table_id_.table_name));
+        inner_table_id = StorageID(table_id_.database_name, generate_inner_table_name(table_id_));
     }
     else
     {
         auto inner_create_query
-            = getInnerTableCreateQuery(inner_query, query.storage, table_id_.database_name, generate_inner_table_name(table_id_.table_name));
+            = getInnerTableCreateQuery(inner_query, query.storage, table_id_.database_name, generate_inner_table_name(table_id_));
 
         auto create_context = Context::createCopy(context_);
         InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
