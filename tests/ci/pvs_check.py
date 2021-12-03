@@ -2,7 +2,6 @@
 
 # pylint: disable=line-too-long
 
-import subprocess
 import os
 import json
 import logging
