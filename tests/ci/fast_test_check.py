@@ -16,6 +16,7 @@ from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
 from rerun_helper import RerunHelper
+from tee_popen import TeePopen
 
 NAME = 'Fast test (actions)'
 
@@ -101,8 +102,8 @@ if __name__ == "__main__":
         os.makedirs(logs_path)
 
     run_log_path = os.path.join(logs_path, 'runlog.log')
-    with open(run_log_path, 'w') as log:
-        retcode = subprocess.Popen(run_cmd, shell=True, stderr=log, stdout=log).wait()
+    with TeePopen(run_cmd, run_log_path) as process:
+        retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
         else:
