@@ -230,30 +230,7 @@ StorageURLSink::StorageURLSink(
     const String & http_method)
     : SinkToStorage(sample_block)
 {
-    //
-    // get the content type first
-    //
-    // The code here may look a little wired.
-    // The getContentType() is prodived on IOutputFormat class which relies on a WriteBuffer object,
-    // and this WriteBuffer object here is WriterBufferFromHTTP itself which accepts the Content-Type header.
-    // So, this is cyclic dependency. 
-    // To decouple such dependency, we must be able to set header to 'WriteBufferFromHTTP' after we get the instance of output format by calling IOutputFormat::getContentType.
-    // But this is tricky because the 'WriteBufferFromHTTP' object may have been decorated by 'WriteBufferWithCompression' and is not acceesible due to private modifiers.
-    //
-    // So, here we first instantiate an OutputFormat object with a fake stream to get the Content-Type.
-    // This is not the best way but a more simpler way to understand.
-    //
-    std::string content_type;
-    {
-        WriteBufferFromOStream buffer(std::cout);
-        auto output = FormatFactory::instance().getOutputFormat(format, 
-                                                                buffer, 
-                                                                sample_block,
-                                                                context, 
-                                                                {} /* write callback */, 
-                                                                format_settings);
-        content_type = output->getContentType();
-    }
+    std::string content_type = FormatFactory::instance().getContentType(format, context, format_settings);
 
     write_buf = wrapWriteBufferWithCompressionMethod(
             std::make_unique<WriteBufferFromHTTP>(Poco::URI(uri), http_method, content_type, timeouts),
