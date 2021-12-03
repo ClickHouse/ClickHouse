@@ -5,14 +5,9 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 HiveFileMetaData::~HiveFileMetaData() = default;
 
-String HiveFileMetaData::toString()
+String HiveFileMetaData::toString() const
 {
     Poco::JSON::Object jobj;
     jobj.set("schema", schema);
@@ -40,12 +35,9 @@ bool HiveFileMetaData::fromString(const String &buf)
     return true;
 }
 
-bool HiveFileMetaData::equal(RemoteFileMetaDataBasePtr meta_data)
+String HiveFileMetaData::getVersion() const
 {
-    auto real_meta_data = std::dynamic_pointer_cast<HiveFileMetaData>(meta_data);
-    if (!real_meta_data)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid meta data class");
-    return last_modification_timestamp == real_meta_data->last_modification_timestamp;
+    return std::to_string(getLastModificationTimestamp());
 }
 
 REGISTTER_REMOTE_FILE_META_DATA_CLASS(HiveFileMetaData)

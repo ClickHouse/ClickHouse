@@ -24,22 +24,21 @@ public:
     {
     }
     virtual ~RemoteFileMetaDataBase();
-    virtual String getClassName() = 0; //class name
+    virtual String getClassName() const = 0; //class name
     // methods for basic information
-    inline String getSchema() { return schema; }
-    inline String getCluster() { return cluster; }
-    inline size_t getFileSize() { return file_size; }
-    inline String getRemotePath() { return remote_path; }
-    inline UInt64 getLastModificationTimestamp() { return last_modification_timestamp; }
-    // create a new object
-    virtual std::shared_ptr<RemoteFileMetaDataBase> clone() = 0;
+    inline String getSchema() const { return schema; }
+    inline String getCluster() const { return cluster; }
+    inline size_t getFileSize() const { return file_size; }
+    inline String getRemotePath() const { return remote_path; }
+    inline UInt64 getLastModificationTimestamp() const { return last_modification_timestamp; }
 
     // deserialize
     virtual bool fromString(const String &buf) = 0;
     // serialize
-    virtual String toString() = 0;
-    // to compare two meta datas for detecting file changes
-    virtual bool equal(std::shared_ptr<RemoteFileMetaDataBase> b) = 0;
+    virtual String toString() const = 0;
+
+    // used for comparing two file meta datas are the same or not.
+    virtual String getVersion() const = 0;
 protected:
     String schema;
     String cluster;
@@ -51,11 +50,11 @@ protected:
 using RemoteFileMetaDataBasePtr = std::shared_ptr<RemoteFileMetaDataBase>;
 
 /*
- * How to register a subclass into factory and use it ?
- * 1) define your own subclass derive from RemoteFileMetaDataBase. Notice! the getClassName() must be the same 
-      as your subclass name.
- * 2) in a .cpp file, call REGISTTER_REMOTE_FILE_META_DATA_CLASS(subclass). 
-   3) call RemoteFileMetaDataFactory::instance().create_class(subclass_name) where you want to make a new object
+ * How to register a subclass into the factory and use it ?
+ * 1) define your own subclass derive from RemoteFileMetaDataBase. Notice! the getClassName() must be the same
+ *    as your subclass name.
+ * 2) in a .cpp file, call REGISTTER_REMOTE_FILE_META_DATA_CLASS(subclass),
+ * 3) call RemoteFileMetaDataFactory::instance().create_class(subclass_name) where you want to make a new object
  */
 
 class RemoteFileMetaDataFactory : private boost::noncopyable
