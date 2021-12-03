@@ -130,12 +130,38 @@ BlobStorageEndpoint processBlobStorageEndpoint(const Poco::Util::AbstractConfigu
 }
 
 
-/// StorageSharedKeyCredential and ManagedIdentityCredential do not inherit from the same base class
-/// This is why it is necessary to have two different ways of invoking the client constructor
+template <class T>
+std::shared_ptr<T> getClientWithConnectionString(const String & connection_str, const String & container_name) = delete;
+
+
+template<>
+std::shared_ptr<Azure::Storage::Blobs::BlobServiceClient> getClientWithConnectionString(
+    const String & connection_str, const String & /*container_name*/)
+{
+    return std::make_shared<Azure::Storage::Blobs::BlobServiceClient>(
+        Azure::Storage::Blobs::BlobServiceClient::CreateFromConnectionString(connection_str));
+}
+
+
+template<>
+std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> getClientWithConnectionString(
+    const String & connection_str, const String & container_name)
+{
+    return std::make_shared<Azure::Storage::Blobs::BlobContainerClient>(
+        Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(connection_str, container_name));
+}
+
+
 template <class T>
 std::shared_ptr<T> getBlobStorageClientWithAuth(
-    const String & url, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+    const String & url, const String & container_name, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
+    if (config.has(config_prefix + ".connection_string")) {
+        String connection_str = config.getString(config_prefix + ".connection_string");
+        return getClientWithConnectionString<T>(connection_str, container_name);
+    }
+
+    // TODO: untested so far
     if (config.has(config_prefix + ".account_key") && config.has(config_prefix + ".account_name")) {
         auto storage_shared_key_credential = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(
             config.getString(config_prefix + ".account_name"),
@@ -154,14 +180,15 @@ std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> getBlobContainerClie
 {
     using namespace Azure::Storage::Blobs;
 
+    auto container_name = endpoint.container_name;
     auto final_url = endpoint.storage_account_url
         + (endpoint.storage_account_url.back() == '/' ? "" : "/")
-        + endpoint.container_name;
+        + container_name;
 
     if (endpoint.container_already_exists.value_or(false))
-        return getBlobStorageClientWithAuth<BlobContainerClient>(final_url, config, config_prefix);
+        return getBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
 
-    auto blob_service_client = getBlobStorageClientWithAuth<BlobServiceClient>(final_url, config, config_prefix);
+    auto blob_service_client = getBlobStorageClientWithAuth<BlobServiceClient>(final_url, container_name, config, config_prefix);
 
     if (!endpoint.container_already_exists.has_value())
     {
@@ -172,7 +199,7 @@ std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> getBlobContainerClie
         for (const auto & blob_container : blob_containers)
         {
             if (blob_container.Name == endpoint.container_name)
-                return getBlobStorageClientWithAuth<BlobContainerClient>(final_url, config, config_prefix);
+                return getBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
         }
     }
 
