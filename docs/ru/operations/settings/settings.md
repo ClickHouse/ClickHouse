@@ -3830,3 +3830,54 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 -   0 — большие файлы считываются только с копированием данных из ядра в пространство пользователей.
 
 Значение по умолчанию: `0`.
+
+## format_custom_escaping_rule {#format-custom-escaping-rule}
+
+Устанавливает правило экранирования данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Возможные значения:
+
+-   `'Escaped'` — как в формате [TSV](../../interfaces/formats.md#tabseparated).
+-   `'Quoted'` — как в формате [Values](../../interfaces/formats.md#data-format-values).
+-   `'CSV'` — как в формате [CSV](../../interfaces/formats.md#csv).
+-   `'JSON'` — как в формате [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+-   `'XML'` — как в формате [XML](../../interfaces/formats.md#xml).
+-   `'Raw'` — данные импортируются как есть, без экранирования, как в формате [TSVRaw](../../interfaces/formats.md#tabseparatedraw).
+
+Значение по умолчанию: `'Escaped'`.
+
+## format_custom_field_delimiter {#format-custom-field-delimiter}
+
+Задает символ, который интерпретируется как разделитель между полями данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `'\t'`.
+
+## format_custom_row_before_delimiter {#format-custom-row-before-delimiter}
+
+Задает символ, который интерпретируется как разделитель перед полем первого столбца данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `''`.
+
+## format_custom_row_after_delimiter {#format-custom-row-after-delimiter}
+
+Задает символ, который интерпретируется как разделитель после поля последнего столбца данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `'\n'`.
+
+## format_custom_row_between_delimiter {#format-custom-row-between-delimiter}
+
+Задает символ, который интерпретируется как разделитель между строками данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `''`.
+
+## format_custom_result_before_delimiter {#format-custom-result-before-delimiter}
+
+Задает символ, который интерпретируется как префикс перед результирующим набором данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `''`.
+
+## format_custom_result_after_delimiter {#format-custom-result-after-delimiter}
+
+Задает символ, который интерпретируется как суффикс после результирующего набора данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `''`.

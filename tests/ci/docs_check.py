@@ -2,17 +2,17 @@
 import logging
 import subprocess
 import os
-import json
 import sys
 from github import Github
 from s3_helper import S3Helper
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status, get_commit
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
 
 
 NAME = "Docs Check (actions)"
@@ -25,12 +25,15 @@ if __name__ == "__main__":
     temp_path = os.path.join(os.getenv("TEMP_PATH"))
     repo_path = os.path.join(os.getenv("REPO_COPY"))
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
-        event = json.load(event_file)
-
-    pr_info = PRInfo(event, need_changed_files=True)
+    pr_info = PRInfo(get_event(), need_changed_files=True)
 
     gh = Github(get_best_robot_token())
+
+    rerun_helper = RerunHelper(gh, pr_info, NAME)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
+
     if not pr_info.has_changes_in_documentation():
         logging.info ("No changes in documentation")
         commit = get_commit(gh, pr_info.sha)

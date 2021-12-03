@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import json
 import os
 import urllib
 
@@ -27,6 +28,12 @@ def get_pr_for_commit(sha, ref):
     except Exception as ex:
         print("Cannot fetch PR info from commit", ex)
     return None
+
+
+def get_event():
+    with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as ef:
+        return json.load(ef)
+
 
 class PRInfo:
     def __init__(self, github_event, need_orgs=False, need_changed_files=False):
@@ -134,7 +141,7 @@ class PRInfo:
             _, ext = os.path.splitext(f)
             path_in_docs = 'docs' in f
             path_in_website = 'website' in f
-            if (ext in DIFF_IN_DOCUMENTATION_EXT and path_in_docs and path_in_website) or 'docker/docs' in f:
+            if (ext in DIFF_IN_DOCUMENTATION_EXT and (path_in_docs or path_in_website)) or 'docker/docs' in f:
                 return True
         return False
 
