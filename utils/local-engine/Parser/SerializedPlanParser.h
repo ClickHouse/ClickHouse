@@ -12,6 +12,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include <arrow/ipc/writer.h>
+#include "CHColumnToSparkRow.h"
 
 namespace DB
 {
@@ -70,21 +71,35 @@ private:
     static void parse(DB::QueryPlan & query_plan, const io::substrait::ProjectRel& rel);
 };
 
+struct SparkBuffer
+{
+    uint8_t * address;
+    size_t size;
+};
 
 class LocalExecutor
 {
 public:
     void execute(QueryPlanPtr query_plan);
-    std::string next();
+    local_engine::SparkRowInfoPtr next();
     bool hasNext();
+    ~LocalExecutor()
+    {
+        if (this->spark_buffer)
+        {
+            this->ch_column_to_spark_row->freeMem(spark_buffer->address, spark_buffer->size);
+            this->spark_buffer.reset();
+        }
+    }
 
 private:
-    void writeChunkToArrowString(Chunk& chunk, std::string & arrow_chunk);
+    std::unique_ptr<local_engine::SparkRowInfo> writeBlockToSparkRow(DB::Block & block);
     QueryPipelinePtr query_pipeline;
     std::unique_ptr<PullingPipelineExecutor> executor;
     Block header;
-    std::unique_ptr<DB::CHColumnToArrowColumn> ch_column_to_arrow_column;
-    std::unique_ptr<Chunk> current_chunk;
+    std::unique_ptr<local_engine::CHColumnToSparkRow> ch_column_to_spark_row;
+    std::unique_ptr<Block> current_chunk;
+    std::unique_ptr<SparkBuffer> spark_buffer;
 };
 }
 

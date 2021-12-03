@@ -186,7 +186,11 @@ const std::vector<int64_t> & local_engine::SparkRowInfo::getLengths() const
 {
     return lengths_;
 }
-void local_engine::CHColumnToSparkRow::convertCHColumnToSparkRow(Block & block)
+int64_t SparkRowInfo::getTotalBytes() const
+{
+    return total_bytes_;
+}
+std::unique_ptr<SparkRowInfo> local_engine::CHColumnToSparkRow::convertCHColumnToSparkRow(Block & block)
 {
     std::unique_ptr<SparkRowInfo> spark_row_info = std::make_unique<SparkRowInfo>(block);
     // Calculated the offsets_  and total memory size based on lengths_
@@ -195,13 +199,18 @@ void local_engine::CHColumnToSparkRow::convertCHColumnToSparkRow(Block & block)
         spark_row_info->offsets_[i] = spark_row_info->offsets_[i - 1] + spark_row_info->lengths_[i - 1];
         total_memory_size += spark_row_info->lengths_[i];
     }
-    
-    spark_row_info->buffer_address_ = new uint8_t[total_memory_size];
+    spark_row_info->total_bytes_ = total_memory_size;
+    spark_row_info->buffer_address_ = reinterpret_cast<unsigned char *>(alloc(total_memory_size));
     for (auto i = 0; i < spark_row_info->num_cols_; i++) {
         auto array = block.getByPosition(i);
         int64_t field_offset = getFieldOffset(spark_row_info->nullBitsetWidthInBytes_, i);
         writeValue(spark_row_info->buffer_address_, field_offset, array, i, spark_row_info->num_rows_, spark_row_info->offsets_,
                    spark_row_info->buffer_cursor_);
     }
+    return spark_row_info;
+}
+void CHColumnToSparkRow::freeMem(uint8_t * address, size_t size)
+{
+    free(address, size);
 }
 }

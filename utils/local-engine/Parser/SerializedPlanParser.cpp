@@ -184,46 +184,35 @@ void dbms::LocalExecutor::execute(DB::QueryPlanPtr query_plan)
     this->query_pipeline = query_plan->buildQueryPipeline(optimization_settings, BuildQueryPipelineSettings());
     this->executor = std::make_unique<DB::PullingPipelineExecutor>(*query_pipeline);
     this->header = query_plan->getCurrentDataStream().header;
-    this->ch_column_to_arrow_column = std::make_unique<CHColumnToArrowColumn>(header, "Arrow", false);
+    this->ch_column_to_spark_row = std::make_unique<local_engine::CHColumnToSparkRow>();
 }
-void dbms::LocalExecutor::writeChunkToArrowString(DB::Chunk &chunk, std::string & arrow_chunk)
+std::unique_ptr<local_engine::SparkRowInfo> dbms::LocalExecutor::writeBlockToSparkRow(DB::Block &block)
 {
-    std::shared_ptr<arrow::Table> arrow_table;
-    ch_column_to_arrow_column->chChunkToArrowTable(arrow_table, chunk, chunk.getNumColumns());
-    DB::WriteBufferFromString buf(arrow_chunk);
-    auto out_stream = std::make_shared<ArrowBufferedOutputStream>(buf);
-    arrow::Result<std::shared_ptr<arrow::ipc::RecordBatchWriter>> writer_status;
-    writer_status = arrow::ipc::MakeFileWriter(out_stream.get(), arrow_table->schema());
-    if (!writer_status.ok())
-        throw std::runtime_error("Error while opening a table writer");
-    auto writer = *writer_status;
-    auto write_status = writer->WriteTable(*arrow_table, 1000000);
-    if (!write_status.ok())
-    {
-        throw std::runtime_error("Error while writing a table");
-    }
-    auto close_status = writer->Close();
-    if (!close_status.ok())
-    {
-        throw std::runtime_error("Error while close a table");
-    }
+    return this->ch_column_to_spark_row->convertCHColumnToSparkRow(block);
 }
 bool dbms::LocalExecutor::hasNext()
 {
     bool has_next;
-    if (!this->current_chunk || this->current_chunk->empty())
+    if (!this->current_chunk || this->current_chunk->rows() == 0)
     {
-        this->current_chunk = std::make_unique<DB::Chunk>();
+        this->current_chunk = std::make_unique<DB::Block>(this->header);
         has_next = this->executor->pull(*this->current_chunk);
     } else {
         has_next = true;
     }
     return has_next;
 }
-std::string dbms::LocalExecutor::next()
+local_engine::SparkRowInfoPtr dbms::LocalExecutor::next()
 {
-    std::string arrow_chunk;
-    writeChunkToArrowString(*this->current_chunk, arrow_chunk);
+    local_engine::SparkRowInfoPtr row_info = writeBlockToSparkRow(*this->current_chunk);
     this->current_chunk.reset();
-    return arrow_chunk;
+    if (this->spark_buffer)
+    {
+        this->ch_column_to_spark_row->freeMem(spark_buffer->address, spark_buffer->size);
+        this->spark_buffer.reset();
+    }
+    this->spark_buffer = std::make_unique<SparkBuffer>();
+    this->spark_buffer->address = row_info->getBufferAddress();
+    this->spark_buffer->size = row_info->getTotalBytes();
+    return row_info;
 }
