@@ -9,7 +9,7 @@ CREATE TABLE dst(count UInt64) Engine=MergeTree ORDER BY tuple();
 CREATE TABLE mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
 CREATE WINDOW VIEW wv TO dst AS SELECT count(a) AS count FROM mt GROUP BY TUMBLE(timestamp, INTERVAL '1' SECOND, 'US/Samoa') AS wid;
 
-INSERT INTO mt VALUES (1, now() + 1);
+INSERT INTO mt VALUES (1, now('US/Samoa') + 1);
 SELECT sleep(3);
 SELECT count from dst;
 
