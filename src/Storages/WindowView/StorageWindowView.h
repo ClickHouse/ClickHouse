@@ -150,6 +150,7 @@ public:
 private:
     Poco::Logger * log;
 
+    ASTPtr select_query;
     ASTPtr mergeable_query;
     ASTPtr final_query;
 

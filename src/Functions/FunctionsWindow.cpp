@@ -238,12 +238,18 @@ struct WindowImpl<TUMBLE_START>
 
     [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
-        const auto which_type = WhichDataType(arguments[0].type);
+        const auto & time_column = arguments[0];
+        const auto which_type = WhichDataType(time_column.type);
         ColumnPtr result_column;
-        if (which_type.isDateTime())
-            result_column= WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
+        if (arguments.size() == 1)
+        {
+            if (which_type.isUInt32())
+                return time_column.column;
+            else //isTuple
+                result_column = time_column.column;
+        }
         else
-            result_column = arguments[0].column;
+            result_column = WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
         return executeWindowBound(result_column, 0, function_name);
     }
 };
@@ -260,12 +266,18 @@ struct WindowImpl<TUMBLE_END>
 
     [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name)
     {
-        const auto which_type = WhichDataType(arguments[0].type);
+        const auto & time_column = arguments[0];
+        const auto which_type = WhichDataType(time_column.type);
         ColumnPtr result_column;
-        if (which_type.isDateTime())
-            result_column = WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
+        if (arguments.size() == 1)
+        {
+            if (which_type.isUInt32())
+                return time_column.column;
+            else //isTuple
+                result_column = time_column.column;
+        }
         else
-            result_column = arguments[0].column;
+            result_column = WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
         return executeWindowBound(result_column, 1, function_name);
     }
 };

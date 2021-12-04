@@ -89,22 +89,23 @@ namespace
                 {
                     data.is_tumble = t->name == "TUMBLE";
                     data.is_hop = t->name == "HOP";
+                    auto temp_node = t->clone();
+                    temp_node->setAlias("");
                     if (!data.window_function)
                     {
+                        data.serialized_window_function = serializeAST(*temp_node);
                         t->name = "WINDOW_ID";
                         data.window_id_name = t->getColumnName();
                         data.window_id_alias = t->alias;
                         data.window_function = t->clone();
                         data.window_function->setAlias("");
-                        data.serialized_window_function = serializeAST(*data.window_function);
                         data.timestamp_column_name = t->arguments->children[0]->getColumnName();
                     }
                     else
                     {
-                        auto temp_node = t->clone();
-                        temp_node->setAlias("");
                         if (serializeAST(*temp_node) != data.serialized_window_function)
                             throw Exception("WINDOW VIEW only support ONE WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
+                        t->name = "WINDOW_ID";
                     }
                 }
             }
@@ -146,7 +147,7 @@ namespace
 
         void visit(ASTFunction & node, ASTPtr & node_ptr)
         {
-            if (node.name == "WINDOW_ID")
+            if (node.name == "WINDOW_ID" || node.name == "TUMBLE" || node.name == "HOP")
             {
                 if (const auto * t = node.arguments->children[0]->as<ASTFunction>();
                     t && t->name == "now")
@@ -938,10 +939,12 @@ StorageWindowView::StorageWindowView(
             ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW,
             "UNION is not supported for {}", getName());
 
-    ASTSelectQuery & select_query = typeid_cast<ASTSelectQuery &>(*query.select->list_of_selects->children.at(0));
+    ASTSelectQuery & select_query_ = typeid_cast<ASTSelectQuery &>(*query.select->list_of_selects->children.at(0));
     String select_database_name = getContext()->getCurrentDatabase();
     String select_table_name;
-    extractDependentTable(getContext(), select_query, select_database_name, select_table_name);
+    extractDependentTable(getContext(), select_query_, select_database_name, select_table_name);
+
+    select_query = select_query_.clone();
 
     /// If the table is not specified - use the table `system.one`
     if (select_table_name.empty())
@@ -953,7 +956,7 @@ StorageWindowView::StorageWindowView(
     DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
 
     /// Extract all info from query; substitute Function_TUMPLE and Function_HOP with Function_WINDOW_ID.
-    auto inner_query = innerQueryParser(select_query);
+    auto inner_query = innerQueryParser(select_query_);
 
     // Parse mergeable query
     mergeable_query = inner_query->clone();
@@ -1344,7 +1347,7 @@ Block & StorageWindowView::getHeader() const
     if (!sample_block)
     {
         sample_block = InterpreterSelectQuery(
-            getFinalQuery(), window_view_context, getParentStorage(), nullptr,
+            select_query->clone(), window_view_context, getParentStorage(), nullptr,
             SelectQueryOptions(QueryProcessingStage::Complete)).getSampleBlock();
 
         for (size_t i = 0; i < sample_block.columns(); ++i)
