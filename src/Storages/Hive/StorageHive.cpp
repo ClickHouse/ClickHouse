@@ -599,7 +599,7 @@ Pipe StorageHive::read(
             format_name,
             compression_method,
             metadata_snapshot->getSampleBlock(),
-            getContext(),
+            context_,
             max_block_size,
             text_input_field_names));
     }

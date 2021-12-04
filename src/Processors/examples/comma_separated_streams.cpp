@@ -1,15 +1,12 @@
 #include <string>
-
 #include <iostream>
 #include <fstream>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
-
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-
-#include <Processors/Formats/Impl/CSVRowInputFormat.h>
+#include <Processors/Formats/Impl/HiveTextRowInputFormat.h>
 #include <Processors/Formats/Impl/CSVRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <QueryPipeline/QueryPipeline.h>
@@ -17,7 +14,7 @@
 
 using namespace DB;
 
-int main(int, char **)
+int main()
 try
 {
     Block sample;
@@ -83,7 +80,10 @@ try
     WriteBufferFromFile out_buf("test_out");
 
     FormatSettings format_settings;
-    format_settings.csv.input_field_names =
+    format_settings.with_names_use_header = true;
+    format_settings.skip_unknown_fields = true;
+    format_settings.csv.delimiter = '\x01';
+    format_settings.hive_text.input_field_names =
     {
         "d",
         "e",
@@ -96,11 +96,9 @@ try
         "i",
         "j",
     };
-    format_settings.csv.delimiter = '\x01';
-    format_settings.with_names_use_header = true;
 
     RowInputFormatParams in_params{DEFAULT_INSERT_BLOCK_SIZE};
-    InputFormatPtr input_format = std::make_shared<CSVRowInputFormat>(sample, in_buf, in_params, true, false, format_settings);
+    InputFormatPtr input_format = std::make_shared<HiveTextRowInputFormat>(sample, in_buf, in_params, format_settings);
     auto pipeline = QueryPipeline(std::move(input_format));
     auto reader = std::make_unique<PullingPipelineExecutor>(pipeline);
 
@@ -111,7 +109,6 @@ try
     {
         output_format->write(res);
     }
-    output_format->flush();
     return 0;
 }
 catch (...)
