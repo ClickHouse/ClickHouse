@@ -10,14 +10,19 @@ from collections import namedtuple
 import boto3
 
 def get_dead_runners_in_ec2(runners):
-    ids = {runner.name: runner for runner in runners if runner.offline == True and runner.busy == False}
+    ids = {runner.name: runner for runner in runners if runner.offline == True and runner.busy == False and runner.name.startswith('i-')}
     if not ids:
         return []
 
     client = boto3.client('ec2')
 
     print("Checking ids", list(ids.keys()))
-    instances_statuses = client.describe_instance_status(InstanceIds=list(ids.keys()))
+    try:
+        instances_statuses = client.describe_instance_status(InstanceIds=list(ids.keys()))
+    except Exception as ex:
+        print("Got exception checking ids:", ex)
+        instances_statuses = {'InstanceStatuses': []}
+
     found_instances = set([])
     print("Response", instances_statuses)
     for instance_status in instances_statuses['InstanceStatuses']:

@@ -8,6 +8,8 @@ import json
 import time
 from collections import namedtuple
 
+MAX_RUNNERS_TO_DELETE = 3
+
 def get_key_and_app_from_aws():
     import boto3
     secret_name = "clickhouse_github_secret_key"
@@ -194,7 +196,14 @@ def main(github_secret_key, github_app_id, event):
         to_delete_runners += delete_for_av
 
     print("Got instances to kill: ", ', '.join(instances_to_kill))
+
     print("Going to delete runners:", ', '.join([runner.name for runner in to_delete_runners]))
+
+    # Runner deletion is expensive operation
+    if len(to_delete_runners) > MAX_RUNNERS_TO_DELETE:
+        print("Limiting number of runners to delete to", MAX_RUNNERS_TO_DELETE)
+        to_delete_runners = to_delete_runners[:MAX_RUNNERS_TO_DELETE]
+
     for runner in to_delete_runners:
         if delete_runner(access_token, runner):
             print(f"Runner with name {runner.name} and id {runner.id} successfuly deleted from github")
