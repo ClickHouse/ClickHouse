@@ -15,6 +15,7 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Interpreters/Aggregator.h>
+#include <Common/LRUCache.h>
 #include <Common/MemoryTracker.h>
 #include <Common/CurrentThread.h>
 #include <Common/typeid_cast.h>
@@ -31,6 +32,99 @@
 
 namespace
 {
+/** Collects observed HashMap-s sizes to avoid redundant intermediate resizes.
+  */
+class HashTablesStatistics
+{
+public:
+    using Params = DB::Aggregator::Params::StatsCollectingParams;
+
+    std::optional<size_t> getSizeHint(const Params & params)
+    {
+        std::lock_guard lock(mutex);
+        const auto cache = getHashTableStatsCache(params, lock);
+        if (const auto hint = cache->get(params.key))
+        {
+            LOG_DEBUG(&Poco::Logger::get("Aggregator"), "An entry for key={} found in cache: size_hint={}", params.key, *hint);
+            return *hint;
+        }
+        return std::nullopt;
+    }
+
+    void update(size_t observed_size, const Params & params)
+    {
+        std::lock_guard lock(mutex);
+        const auto cache = getHashTableStatsCache(params, lock);
+        const auto hint = cache->get(params.key);
+        // We'll maintain the maximum among all the observed values until the next prediction turns out to be too wrong.
+        if (!hint || observed_size > *hint || observed_size < *hint / 2)
+        {
+            LOG_DEBUG(&Poco::Logger::get("Aggregator"), "Statictics updated for key={}: new size_hint={}", params.key, observed_size);
+            cache->set(params.key, std::make_shared<size_t>(observed_size));
+        }
+    }
+
+private:
+    using Cache = DB::LRUCache<UInt64, size_t>;
+    using CachePtr = std::shared_ptr<Cache>;
+
+    CachePtr getHashTableStatsCache(const Params & params, [[maybe_unused]] std::lock_guard<std::mutex> & cache_lock)
+    {
+        if (!hash_table_stats || hash_table_stats->maxSize() != params.max_entries_for_hash_table_stats)
+            hash_table_stats = std::make_shared<Cache>(params.max_entries_for_hash_table_stats);
+        return hash_table_stats;
+    }
+
+    std::mutex mutex;
+    CachePtr hash_table_stats;
+};
+
+HashTablesStatistics & getHashTablesStatistics()
+{
+    static HashTablesStatistics hash_tables_stats;
+    return hash_tables_stats;
+}
+
+bool worthConvertToTwoLevel(
+    size_t group_by_two_level_threshold, size_t result_size, size_t group_by_two_level_threshold_bytes, auto result_size_bytes)
+{
+    // params.group_by_two_level_threshold will be equal to 0 if we have only one thread to execute aggregation (refer to AggregatingStep::transformPipeline).
+    return (group_by_two_level_threshold && result_size >= group_by_two_level_threshold)
+        || (group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(group_by_two_level_threshold_bytes));
+}
+
+void initDataVariants(
+    DB::AggregatedDataVariants & result, DB::AggregatedDataVariants::Type method_chosen, const DB::Aggregator::Params & params)
+{
+    const auto & stats_collecting_params = params.stats_collecting_params;
+    if (stats_collecting_params.collect_hash_table_stats_during_aggregation)
+    {
+        if (auto hint = getHashTablesStatistics().getSizeHint(stats_collecting_params))
+        {
+            if (worthConvertToTwoLevel(
+                    params.group_by_two_level_threshold, *hint, /* group_by_two_level_threshold_bytes*/ 0, /* result_size_bytes*/ 0))
+            {
+                result.init(method_chosen);
+                if (result.isConvertibleToTwoLevel())
+                    result.convertToTwoLevel();
+            }
+            else
+            {
+                // The value of max_size_to_preallocate_for_aggregation may change between queries, so we check it right before returning it to the client.
+                auto adjusted = std::min(*hint, stats_collecting_params.max_size_to_preallocate_for_aggregation);
+                // Seems it's better to preallocate less than to preallocate too much in case when we are going to create several hash tables for each thread of aggregation.
+                if (params.group_by_two_level_threshold != 0 && params.max_threads > 1)
+                    adjusted /= params.max_threads;
+                LOG_DEBUG(
+                    &Poco::Logger::get("Aggregator"), "Going to preallocate {} elements for key={}", adjusted, stats_collecting_params.key);
+                result.init(method_chosen, adjusted);
+            }
+            return;
+        }
+    }
+    result.init(method_chosen);
+}
+
 // the std::is_constructible trait isn't suitable here because some classes have template constructors with semantics different from providing size hints.
 template <typename...>
 struct HasConstructorOfNumberOfElements : std::false_type
@@ -176,6 +270,31 @@ Aggregator::Params::StatsCollectingParams::StatsCollectingParams(
         hash.update(group_by->getTreeHash());
     key = hash.get64();
 }
+
+class Aggregator::StatisticsUpdater
+{
+public:
+    explicit StatisticsUpdater(const Params::StatsCollectingParams & params_) : params(params_), observed_size(0) { }
+
+    ~StatisticsUpdater()
+    {
+        try
+        {
+            if (params.collect_hash_table_stats_during_aggregation)
+                getHashTablesStatistics().update(observed_size.load(), params);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    void addToObservedHashTableSize(size_t size) { observed_size.fetch_add(size); }
+
+private:
+    Params::StatsCollectingParams params;
+    std::atomic<size_t> observed_size;
+};
 
 Block Aggregator::getHeader(bool final) const
 {
@@ -327,7 +446,7 @@ public:
 #endif
 
 Aggregator::Aggregator(const Params & params_)
-    : params(params_)
+    : params(params_), stats_updater(std::make_unique<StatisticsUpdater>(params.stats_collecting_params))
 {
     /// Use query-level memory tracker
     if (auto * memory_tracker_child = CurrentThread::getMemoryTracker())
@@ -383,6 +502,8 @@ Aggregator::Aggregator(const Params & params_)
 #endif
 
 }
+
+Aggregator::~Aggregator() = default;
 
 #if USE_EMBEDDED_COMPILER
 
@@ -1047,7 +1168,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     /// How to perform the aggregation?
     if (result.empty())
     {
-        result.init(method_chosen);
+        initDataVariants(result, method_chosen, params);
         result.keys_size = params.keys_size;
         result.key_sizes = key_sizes;
         LOG_TRACE(log, "Aggregation method: {}", result.getMethodName());
@@ -1127,9 +1248,8 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
     /// Here all the results in the sum are taken into account, from different threads.
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;
 
-    bool worth_convert_to_two_level
-        = (params.group_by_two_level_threshold && result_size >= params.group_by_two_level_threshold)
-        || (params.group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(params.group_by_two_level_threshold_bytes));
+    bool worth_convert_to_two_level = worthConvertToTwoLevel(
+        params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
 
     /** Converting to a two-level data structure.
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.
@@ -1410,6 +1530,10 @@ void Aggregator::convertToBlockImpl(
     {
         convertToBlockImplNotFinal(method, data, std::move(raw_key_columns), aggregate_columns);
     }
+
+    if (params.stats_collecting_params.collect_hash_table_stats_during_aggregation && final)
+        stats_updater->addToObservedHashTableSize(data.size());
+
     /// In order to release memory early.
     data.clearAndShrink();
 }
@@ -2477,9 +2601,8 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
     /// Here all the results in the sum are taken into account, from different threads.
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;
 
-    bool worth_convert_to_two_level
-        = (params.group_by_two_level_threshold && result_size >= params.group_by_two_level_threshold)
-        || (params.group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(params.group_by_two_level_threshold_bytes));
+    bool worth_convert_to_two_level = worthConvertToTwoLevel(
+        params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
 
     /** Converting to a two-level data structure.
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.

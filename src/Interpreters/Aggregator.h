@@ -1013,6 +1013,7 @@ public:
     };
 
     explicit Aggregator(const Params & params_);
+    ~Aggregator();
 
     using AggregateColumns = std::vector<ColumnRawPtrs>;
     using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
@@ -1133,6 +1134,10 @@ private:
 
     /// For external aggregation.
     mutable TemporaryFiles temporary_files;
+
+    // It's a RAII helper class to update stats at the end of query execution
+    class StatisticsUpdater;
+    std::unique_ptr<StatisticsUpdater> stats_updater;
 
 #if USE_EMBEDDED_COMPILER
     std::shared_ptr<CompiledAggregateFunctionsHolder> compiled_aggregate_functions_holder;
