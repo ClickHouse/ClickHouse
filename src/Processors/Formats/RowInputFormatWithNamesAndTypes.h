@@ -33,7 +33,6 @@ public:
     void resetParser() override;
 
 protected:
-   
     /// Read single field from input. Return false if there was no real value and we inserted default value.
     virtual bool readField(IColumn & column, const DataTypePtr & type, const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) = 0;
 
