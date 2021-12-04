@@ -91,6 +91,10 @@ namespace
                     data.is_hop = t->name == "HOP";
                     auto temp_node = t->clone();
                     temp_node->setAlias("");
+                    if (startsWith(t->arguments->children[0]->getColumnName(), "toDateTime"))
+                        throw Exception(
+                            "The first argument of window function should not be a constant value.",
+                            ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
                     if (!data.window_function)
                     {
                         data.serialized_window_function = serializeAST(*temp_node);
