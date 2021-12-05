@@ -7,8 +7,6 @@
 1. Настройте параметры в разделе [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log).
 2. Включите настройку [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views).
 
-
-
 Период сброса данных из буфера в памяти задается в параметре `flush_interval_milliseconds` в разделе настроек сервера [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log ). Для принудительного сброса используйте запрос [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs).
 
 ClickHouse не удаляет данные из таблицы автоматически. Подробнее смотрите раздел [Системные таблицы](../../operations/system-tables/index.md#system-tables-introduction).
@@ -26,7 +24,7 @@ ClickHouse не удаляет данные из таблицы автомати
 -   `view_uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — UUID представления.
 -   `view_type` ([Enum8](../../sql-reference/data-types/enum.md)) — тип представления. Возможные значения:
     -   `'Default' = 1` — [обычные представления](../../sql-reference/statements/create/view.md#normal). Не должно появляться в этом журнале.
-    -   `'Materialized' = 2` — [материализованные  представления](../../sql-reference/statements/create/view.md#materialized).
+    -   `'Materialized' = 2` — [материализованные представления](../../sql-reference/statements/create/view.md#materialized).
     -   `'Live' = 3` — [live представления](../../sql-reference/statements/create/view.md#live-view).
 -   `view_query` ([String](../../sql-reference/data-types/string.md)) — запрос, выполняемый представлением.
 -   `view_target` ([String](../../sql-reference/data-types/string.md)) — имя целевой таблицы представления.
