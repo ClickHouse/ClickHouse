@@ -93,7 +93,7 @@ public:
         }
     }
 
-    void finalize() override
+    void finalizeImpl() override
     {
         if (impl.isFinished())
             return;

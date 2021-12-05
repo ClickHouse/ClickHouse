@@ -275,7 +275,7 @@ If the part does not exist or isn’t array, an empty array will be returned.
 Example:
 
 ``` sql
-SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"']';
+SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') = ['-100', '200.0', '"hello"'];
 ```
 
 ## JSONExtractKeysAndValuesRaw {#json-extract-keys-and-values-raw}

@@ -46,7 +46,6 @@ inline DB::UInt64 intHash64(DB::UInt64 x)
 
 #if defined(__aarch64__) && defined(__ARM_FEATURE_CRC32)
 #include <arm_acle.h>
-#include <arm_neon.h>
 #endif
 
 inline DB::UInt64 intHashCRC32(DB::UInt64 x)

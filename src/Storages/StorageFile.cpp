@@ -5,9 +5,9 @@
 #include <Interpreters/evaluateConstantExpression.h>
 
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
 
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -644,12 +644,9 @@ public:
     void onFinish() override
     {
         writer->finalize();
+        writer->flush();
+        write_buf->finalize();
     }
-
-    // void flush() override
-    // {
-    //     writer->flush();
-    // }
 
 private:
     StorageMetadataPtr metadata_snapshot;

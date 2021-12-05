@@ -296,6 +296,21 @@ def test_partition_by(started_cluster):
     assert(result.strip() == "1\t2\t3")
 
 
+def test_seekable_formats(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+
+    table_function = f"hdfs('hdfs://hdfs1:9000/parquet', 'Parquet', 'a Int32, b String')"
+    node1.query(f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000)")
+
+    result = node1.query(f"SELECT count() FROM {table_function}")
+    assert(int(result) == 5000000)
+
+    table_function = f"hdfs('hdfs://hdfs1:9000/orc', 'ORC', 'a Int32, b String')"
+    node1.query(f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000)")
+    result = node1.query(f"SELECT count() FROM {table_function}")
+    assert(int(result) == 5000000)
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")

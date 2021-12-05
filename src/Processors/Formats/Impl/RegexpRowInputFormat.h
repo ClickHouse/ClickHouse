@@ -25,7 +25,7 @@ class ReadBuffer;
 
 class RegexpRowInputFormat : public IRowInputFormat
 {
-    using ColumnFormat = ParsedTemplateFormatString::ColumnFormat;
+    using EscapingRule = FormatSettings::EscapingRule;
 public:
     RegexpRowInputFormat(ReadBuffer & in_, const Block & header_, Params params_, const FormatSettings & format_settings_);
 
@@ -37,11 +37,10 @@ private:
 
     bool readField(size_t index, MutableColumns & columns);
     void readFieldsFromMatch(MutableColumns & columns, RowReadExtension & ext);
-    static ColumnFormat stringToFormat(const String & format);
 
     PeekableReadBuffer buf;
     const FormatSettings format_settings;
-    const ColumnFormat field_format;
+    const EscapingRule escaping_rule;
 
     const RE2 regexp;
     // The vector of fields extracted from line using regexp.

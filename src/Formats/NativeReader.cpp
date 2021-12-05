@@ -10,6 +10,7 @@
 
 #include <Formats/NativeReader.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 
 namespace DB
@@ -62,7 +63,7 @@ void NativeReader::resetParser()
     use_index = false;
 }
 
-void NativeReader::readData(const IDataType & type, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
+void NativeReader::readData(const IDataType & type, ColumnPtr & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint, size_t revision)
 {
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](ISerialization::SubstreamPath) -> ReadBuffer * { return &istr; };
@@ -71,6 +72,14 @@ void NativeReader::readData(const IDataType & type, ColumnPtr & column, ReadBuff
     settings.native_format = true;
 
     ISerialization::DeserializeBinaryBulkStatePtr state;
+
+    const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(&type);
+    if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
+    {
+        auto version = aggregate_function_data_type->getVersionFromRevision(revision);
+        aggregate_function_data_type->setVersion(version, /* if_empty */true);
+    }
+
     auto serialization = type.getDefaultSerialization();
 
     serialization->deserializeBinaryBulkStatePrefix(settings, state);
@@ -156,7 +165,7 @@ Block NativeReader::read()
 
         double avg_value_size_hint = avg_value_size_hints.empty() ? 0 : avg_value_size_hints[i];
         if (rows)    /// If no rows, nothing to read.
-            readData(*column.type, read_column, istr, rows, avg_value_size_hint);
+            readData(*column.type, read_column, istr, rows, avg_value_size_hint, server_revision);
 
         column.column = std::move(read_column);
 

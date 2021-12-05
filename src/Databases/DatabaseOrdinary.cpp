@@ -50,7 +50,7 @@ namespace
                 context,
                 force_restore);
 
-            database.attachTable(table_name, table, database.getTableDataPath(query));
+            database.attachTable(context, table_name, table, database.getTableDataPath(query));
         }
         catch (Exception & e)
         {
