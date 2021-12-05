@@ -73,10 +73,11 @@ ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & fu
 
 }
 
-void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_)
+void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_, size_t version_)
 {
     func = func_;
-    type_string = getTypeString(func);
+    version = version_;
+    type_string = getTypeString(func, version);
 }
 
 
