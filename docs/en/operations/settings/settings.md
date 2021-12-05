@@ -992,9 +992,16 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 Setting up query threads logging.
 
-Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
+Query threads log into `system.query_thread_log` table. This setting have effect only when [log_queries](#settings-log-queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
 
-Example:
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `1`.
+
+**Example**
 
 ``` text
 log_query_threads=1
