@@ -1,8 +1,5 @@
 #pragma once
 
-/// Author: Andrey Gulin, Yandex.
-/// This code is published to be tested for performance with ClickHouse.
-
 #include <atomic>
 #include <cassert>
 #include <cstdint>
@@ -15,6 +12,7 @@
 #endif
 
 typedef uint8_t ui8;
+typedef uint16_t ui16;
 typedef uint64_t ui64;
 typedef int64_t yint;
 
@@ -42,6 +40,7 @@ using std::min;
 #include <sys/mman.h>
 #include <sched.h>
 #include <unistd.h>
+#include <sys/utsname.h>
 
 #define PERTHREAD __thread
 #define NOINLINE __attribute__((noinline))
@@ -75,9 +74,18 @@ inline void Sleep(yint x)
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 #endif
 
+
 #undef PAGE_SIZE
 // platform specific actually
 #define PAGE_SIZE 4096
+#define HUGE_PAGE_SIZE (1ull << 21)
+
+
+static yint RoundSizeUp(yint sz, ui64 page)
+{
+    return (sz + page - 1) & ~(page - 1);
+}
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef _win_
@@ -104,22 +112,38 @@ static void OsFree(void *p, yint sz)
     (void)sz;
     VirtualFree(p, 0, MEM_RELEASE); // size not needed
 }
+static void OsInit()
+{
+}
 
 #else
+static std::atomic<ui64> ReserveAttempt;
+static yint HugePageAdvise;
 static void* OsReserve(yint sz)
 {
     char *res = 0;
-    for (ui64 rnd = 0x554721eb2148deadull;; rnd = rnd * 0x83e385b21a346273ull + 0x3491274383712345ull) {
-        char *ptr = (char*)(rnd & 0x0fffff000000); // high address bits are zero (48 bits for x64), low bits are zero for alignment
+    for(;;) {
+        ui64 x = ReserveAttempt.fetch_add(1);
+        ui64 rndVal = x * 0x83e385b21a346273ull + x * x * 0x554721eb2148deadull;
+        ui64 alignment = HUGE_PAGE_SIZE - 1;
+        char *ptr = (char*)((rndVal >> 17) & ~alignment); // high address bits are zero (48 bits for x64), low bits are zero for alignment
         res = (char*)mmap(ptr, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
         if (res == ptr) {
             break;
         }
+        if (res != MAP_FAILED) {
+            ui64 addr = (ui64)ptr;
+            if ((addr & alignment) == 0) {
+                // not required address, but result is aligned
+                break;
+            }
+            munmap(res, sz);
+        }
     }
     Y_ASSERT(res);
-#ifdef MADV_HUGEPAGE
-    madvise(res, sz, MADV_HUGEPAGE);
-#endif
+    if (HugePageAdvise != 0) {
+        madvise(res, sz, HugePageAdvise);
+    }
     return res;
 }
 static void OsCommit(void *p, yint sz)
@@ -135,35 +159,43 @@ static void OsReclaim(void *p, yint sz)
     if (res != p) {
         abort(); // MAP_FIXED failed
     }
-#ifdef MADV_HUGEPAGE
-    madvise(res, sz, MADV_HUGEPAGE);
-#endif
+    if (HugePageAdvise != 0) {
+        madvise(res, sz, HugePageAdvise);
+    }
 }
 static void* OsAlloc(yint *pSz)
 {
     yint &sz = *pSz;
     bool isHuge = false;
-    if (sz > 5 * 1000 * 1000) {
+    if (sz > (yint)(2 * HUGE_PAGE_SIZE)) {
         // huge alloc
-        const yint hugePageSize = 1ll << 21;
-        sz = (sz + hugePageSize - 1) & ~(hugePageSize - 1);
+        sz = RoundSizeUp(sz, HUGE_PAGE_SIZE);
         isHuge = true;
     } else {
         // regular alloc
-        sz = (sz + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+        sz = RoundSizeUp(sz, PAGE_SIZE);
     }
-    void *ptr = mmap(0, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
-    if (isHuge) {
-#ifdef MADV_HUGEPAGE
-        madvise(ptr, sz, MADV_HUGEPAGE);
-#endif
+    void *res = mmap(0, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (isHuge && HugePageAdvise != 0) {
+        madvise(res, sz, HugePageAdvise);
     }
-    Y_ASSERT(ptr);
-    return ptr;
+    return res;
 }
 static void OsFree(void *p, yint sz)
 {
     munmap(p, sz);
+}
+static void OsInit()
+{
+    HugePageAdvise = 0;
+#ifdef MADV_HUGEPAGE
+    HugePageAdvise = MADV_HUGEPAGE;
+    utsname uu;
+    uname(&uu);
+    if (strncmp(uu.sysname, "Linux", 6) == 0 && atoi(uu.release) <= 4) {
+        HugePageAdvise = 0; // on linux 4 and earlier THP may significantly slow down application
+    }
+#endif
 }
 #endif
 
@@ -181,7 +213,7 @@ static yint CalcLog2(yint val)
     }
     unsigned long xx;
     _BitScanReverse64(&xx, val - 1);
-    return xx + 1;
+    return xx + 1ll;
 }
 
 
@@ -240,7 +272,7 @@ NOINLINE static void* GAAlloc(yint szArg)
         ui64 oldPtr = ga.Ptr.load();
         if (oldPtr <= 1) {
             ui64 newPtr = (ui64)ptr;
-            if (ga.Ptr.compare_exchange_weak(oldPtr, newPtr)) {
+            if (ga.Ptr.compare_exchange_strong(oldPtr, newPtr)) {
                 ga.Size = sz;
                 return ptr;
             }
@@ -337,32 +369,52 @@ static bool BitMaskFind(ui64 mask, yint sz, unsigned long *index)
 
 
 //////////////////////////////////////////////////////////////////////////////////////////////
-// Large allocs, 2-128Mb
-
-const yint LARGE_BLOCK_SIZE_LN = 21;
+// Large allocs, 2 layer, group consists of 64 blocks, block consists of 64 chunks
+const yint LARGE_CHUNK_SIZE_LN = 17;
+const yint LARGE_CHUNK_SIZE = 1ll << LARGE_CHUNK_SIZE_LN;
+const yint LARGE_BLOCK_SIZE_LN = LARGE_CHUNK_SIZE_LN + 6;
 const yint LARGE_BLOCK_SIZE = 1ll << LARGE_BLOCK_SIZE_LN;
-const yint LARGE_BLOCK_COUNT = (1ull << (30 - LARGE_BLOCK_SIZE_LN)) * 640; // 640 gb ought to be enough for anybody
-const yint LARGE_GROUP_COUNT = LARGE_BLOCK_COUNT / 64;
-const yint HUGE_SIZE_LN = LARGE_BLOCK_SIZE_LN + 6;
+const yint LARGE_GROUP_SIZE_LN = LARGE_BLOCK_SIZE_LN + 6;
+const yint LARGE_GROUP_SIZE = 1ll << LARGE_GROUP_SIZE_LN;
+const yint LARGE_GROUP_COUNT = (1ull << (30 - LARGE_GROUP_SIZE_LN)) * 640; // 640 gb ought to be enough for anybody
+const yint LARGE_BLOCK_COUNT = LARGE_GROUP_COUNT * 64;
+const yint LARGE_CHUNK_COUNT = LARGE_BLOCK_COUNT * 64;
+const yint HUGE_SIZE_LN = LARGE_GROUP_SIZE_LN;
+
+const yint LARGE_MAX_CHUNK_ALLOC_LEN = 32;
+const yint LARGE_MIN_FREE_CHUNKS = 32;
 
 struct TLargeGroupInfo
 {
-    std::atomic<ui64> FreeMask;
+    std::atomic<ui64> FreeBlockMask;
     std::atomic<ui64> CommitedMask;
+    std::atomic<ui64> FreeBlockCounters;
+    ui64 Padding[5];
 };
+
+struct TLargeBlockInfo
+{
+    std::atomic<ui64> FreeChunkMask;
+};
+
 
 static char *LargeMemoryPtr;
 static TLargeGroupInfo *LargeGroupInfo;
-static ui8 *LargeAllocLen;
+static TLargeBlockInfo *LargeBlockInfo;
+static ui16 *LargeAllocChunkCount;
+static PERTHREAD yint PrevThreadAllocLargeBlockId;
+
 
 static void LargeInit()
 {
     Y_ASSERT(LargeMemoryPtr == 0); // call init once
-    LargeMemoryPtr = (char*)OsReserve(LARGE_BLOCK_COUNT * LARGE_BLOCK_SIZE);
+    LargeMemoryPtr = (char*)OsReserve(LARGE_GROUP_COUNT * LARGE_GROUP_SIZE);
     LargeGroupInfo = (TLargeGroupInfo*)OsAlloc(sizeof(TLargeGroupInfo) * LARGE_GROUP_COUNT);
-    LargeAllocLen = (ui8*)OsAlloc(sizeof(LargeAllocLen[0]) * LARGE_BLOCK_COUNT);
+    LargeBlockInfo = (TLargeBlockInfo*)OsAlloc(sizeof(TLargeBlockInfo) * LARGE_BLOCK_COUNT);
+    LargeAllocChunkCount = (ui16*)OsAlloc(sizeof(LargeAllocChunkCount[0]) * LARGE_CHUNK_COUNT);
     for (yint i = 0; i < LARGE_GROUP_COUNT; ++i) {
-        LargeGroupInfo[i].FreeMask = -1ll;
+        LargeGroupInfo[i].FreeBlockMask = -1ll;
+        LargeGroupInfo[i].FreeBlockCounters = 0x8080808080808080ull;
     }
 }
 
@@ -376,43 +428,163 @@ static ui64 MakeAllocMask(ui8 len)
 }
 
 
-NOINLINE static void* LargeAlloc(yint sz)
+static void LargeMemoryCommit(yint g, yint block, yint len)
 {
-    if (sz == 0) {
-        return 0;
+    TLargeGroupInfo &gg = LargeGroupInfo[g];
+    ui64 allocMask = MakeAllocMask(len) << block;
+    if ((gg.CommitedMask & allocMask) == 0) {
+        char *ptr = LargeMemoryPtr + (g * 64 + block) * LARGE_BLOCK_SIZE;
+        OsCommit(ptr, len * LARGE_BLOCK_SIZE);
+        gg.CommitedMask.fetch_add(allocMask);
+    } else if ((gg.CommitedMask & allocMask) != allocMask) {
+        for (yint z = block; z < block + len; ++z) {
+            ui64 bit = 1ull << z;
+            if ((gg.CommitedMask & bit) == 0) {
+                char *ptr = LargeMemoryPtr + (g * 64 + z) * LARGE_BLOCK_SIZE;
+                OsCommit(ptr, LARGE_BLOCK_SIZE);
+                gg.CommitedMask.fetch_add(bit);
+            }
+        }
     }
-    hu_check_init();
-    yint len = (sz + LARGE_BLOCK_SIZE - 1) / LARGE_BLOCK_SIZE;
+}
+
+
+// callback on changes in free chunk mask
+static void LargeFreeChunkMaskHasChanged(yint largeBlockId, ui64 oldMask, ui64 newMask)
+{
+    ui64 posOldMask = oldMask;
+    ui64 posNewMask = newMask;
+    yint oldFree = _mm_popcnt_u64(oldMask);
+    yint newFree = _mm_popcnt_u64(newMask);
+    ui64 fbDelta = 0;
+    for (yint lenLn = 0; lenLn < 6; ++lenLn) {
+        yint len = 1ull << lenLn;
+        yint oldOk = (posOldMask != 0) & (oldFree >= LARGE_MIN_FREE_CHUNKS + len);
+        yint newOk = (posNewMask != 0) & (newFree >= LARGE_MIN_FREE_CHUNKS + len);
+        fbDelta += (newOk - oldOk) << (lenLn * 8);
+        posOldMask = posOldMask & (posOldMask >> len);
+        posNewMask = posNewMask & (posNewMask >> len);
+    }
+    if (fbDelta != 0) {
+        TLargeGroupInfo &gg = LargeGroupInfo[largeBlockId / 64];
+        gg.FreeBlockCounters.fetch_add(fbDelta);
+    }
+}
+
+
+static void LargeAddFreeChunkMask(yint largeBlockId, ui64 freeMask)
+{
+    yint largeGroupId = largeBlockId >> 6;
+    TLargeBlockInfo &bmask = LargeBlockInfo[largeBlockId];
+    Y_ASSERT((bmask.FreeChunkMask & freeMask) == 0);
+    ui64 oldMask = bmask.FreeChunkMask.fetch_add(freeMask);
+    LargeFreeChunkMaskHasChanged(largeBlockId, oldMask, oldMask + freeMask);
+    ui64 fullMask = -1ll;
+    if (oldMask + freeMask == fullMask) {
+        if (bmask.FreeChunkMask.compare_exchange_strong(fullMask, 0)) {
+            ui64 blockMask = 1ull << (largeBlockId & 63);
+            TLargeGroupInfo &gg = LargeGroupInfo[largeGroupId];
+            Y_ASSERT((gg.FreeBlockMask & blockMask) == 0);
+            gg.FreeBlockMask.fetch_add(blockMask);
+            gg.FreeBlockCounters.fetch_add(-0x0101010101010101ll);
+        }
+    }
+}
+
+
+static bool LargeTryAllocChunks(yint largeBlockId, yint chunkCount, yint minAdditionalFreeChunks, char **res)
+{
+    yint len = chunkCount;
+    TLargeBlockInfo& bmask = LargeBlockInfo[largeBlockId];
+    ui64 freeMask = bmask.FreeChunkMask;
+    if (_mm_popcnt_u64(freeMask) < (minAdditionalFreeChunks + len)) {
+        return false;
+    }
+    unsigned long freeChunkPtr;
+    if (!BitMaskFind(freeMask, len, &freeChunkPtr)) {
+        return false;
+    }
+    ui64 allocMask = MakeAllocMask(len) << freeChunkPtr;
+    Y_ASSERT((freeMask & allocMask) == allocMask);
+    ui64 newMask = freeMask ^ allocMask;
+    ui64 expected = freeMask;
+    if (bmask.FreeChunkMask.compare_exchange_weak(expected, newMask)) {
+        yint largeChunkId = largeBlockId * 64 + freeChunkPtr;
+        LargeFreeChunkMaskHasChanged(largeBlockId, freeMask, newMask);
+        LargeAllocChunkCount[largeChunkId] = chunkCount;
+        *res = LargeMemoryPtr + largeChunkId * LARGE_CHUNK_SIZE;
+        return true;
+    }
+    return false;
+}
+
+
+static void* LargeAllocChunks(yint chunkCount)
+{
+    char* res;
+    if (LargeTryAllocChunks(PrevThreadAllocLargeBlockId, chunkCount, 0, &res)) {
+        return res;
+    }
+    // select new block
+    yint len = chunkCount;
+    yint lenLn = CalcLog2(len);
+    ui64 countersMask = 0x7full << (lenLn * 8);
     for (yint g = 0; g < LARGE_GROUP_COUNT; ++g) {
-        TLargeGroupInfo &gg = LargeGroupInfo[g];
-        ui64 freeMask = gg.FreeMask;
+        TLargeGroupInfo& gg = LargeGroupInfo[g];
+        if (gg.FreeBlockCounters & countersMask) {
+            // there is space for len blocks
+            for (yint b = 0; b < 64; ++b) {
+                yint largeBlockId = g * 64 + b;
+                if (LargeTryAllocChunks(largeBlockId, chunkCount, LARGE_MIN_FREE_CHUNKS, &res)) {
+                    PrevThreadAllocLargeBlockId = largeBlockId;
+                    return res;
+                }
+            }
+        }
+        if (gg.FreeBlockMask != 0) {
+            ui64 toSplit = gg.FreeBlockMask.exchange(0);
+            if (toSplit != 0) {
+                yint count = 0;
+                unsigned long freeBlockPtr;
+                while (_BitScanForward64(&freeBlockPtr, toSplit)) {
+                    LargeMemoryCommit(g, freeBlockPtr, 1);
+                    TLargeBlockInfo& bmask = LargeBlockInfo[g * 64 + freeBlockPtr];
+                    Y_ASSERT(bmask.FreeChunkMask == 0);
+                    bmask.FreeChunkMask = -1ll;
+                    ++count;
+                    toSplit ^= 1ull << freeBlockPtr;
+                }
+                gg.FreeBlockCounters.fetch_add(count * 0x0101010101010101ll);
+                --g;
+            }
+        }
+    }
+    abort(); // out of large memory
+}
+
+
+static void* LargeAllocBlocks(yint chunkCount)
+{
+    yint len = (chunkCount + 63) / 64;
+    for (yint g = 0; g < LARGE_GROUP_COUNT; ++g) {
+        TLargeGroupInfo& gg = LargeGroupInfo[g];
+        ui64 freeMask = gg.FreeBlockMask;
         if (_mm_popcnt_u64(freeMask) < len) {
             continue;
         }
-        unsigned long freePtr;
-        if (!BitMaskFind(freeMask, len, &freePtr)) {
+        unsigned long freeBlockPtr;
+        if (!BitMaskFind(freeMask, len, &freeBlockPtr)) {
             continue;
         }
         ui64 expectedMask = freeMask;
-        ui64 allocMask = MakeAllocMask(len) << freePtr;
+        ui64 allocMask = MakeAllocMask(len) << freeBlockPtr;
         Y_ASSERT((freeMask & allocMask) == allocMask);
-        if (gg.FreeMask.compare_exchange_weak(expectedMask, freeMask ^ allocMask)) {
-            yint largeBlockId = g * 64 + freePtr;
-            char *res = LargeMemoryPtr + largeBlockId * LARGE_BLOCK_SIZE;
-            LargeAllocLen[largeBlockId] = len;
-            if ((gg.CommitedMask & allocMask) == 0) {
-                OsCommit(res, len * LARGE_BLOCK_SIZE);
-                gg.CommitedMask.fetch_add(allocMask);
-            } else if ((gg.CommitedMask & allocMask) != allocMask) {
-                for (yint z = 0; z < len; ++z) {
-                    ui64 bit = 1ull << (freePtr + z);
-                    if ((gg.CommitedMask & bit) == 0) {
-                        char *ptr = LargeMemoryPtr + (g * 64 + z) * LARGE_BLOCK_SIZE;
-                        OsCommit(ptr, LARGE_BLOCK_SIZE);
-                        gg.CommitedMask.fetch_add(bit);
-                    }
-                }
-            }
+        if (gg.FreeBlockMask.compare_exchange_weak(expectedMask, freeMask ^ allocMask)) {
+            yint largeBlockId = g * 64 + freeBlockPtr;
+            yint largeChunkId = largeBlockId * 64;
+            LargeAllocChunkCount[largeChunkId] = chunkCount;
+            LargeMemoryCommit(g, freeBlockPtr, len);
+            char* res = LargeMemoryPtr + largeBlockId * LARGE_BLOCK_SIZE;
             return res;
         }
     }
@@ -420,21 +592,45 @@ NOINLINE static void* LargeAlloc(yint sz)
 }
 
 
+NOINLINE static void* LargeAlloc(yint sz)
+{
+    if (sz == 0) {
+        return 0;
+    }
+    hu_check_init();
+    yint chunkCount = (sz + LARGE_CHUNK_SIZE - 1) / LARGE_CHUNK_SIZE;
+    if (chunkCount > LARGE_MAX_CHUNK_ALLOC_LEN) {
+        return LargeAllocBlocks(chunkCount);
+    } else {
+        return LargeAllocChunks(chunkCount);
+    }
+}
+
+
 static void LargeFree(void *p)
 {
-    yint largeBlockId = ((char*)p - LargeMemoryPtr) / LARGE_BLOCK_SIZE;
-    yint len = LargeAllocLen[largeBlockId];
-    ui64 allocMask = MakeAllocMask(len) << (largeBlockId & 63);
-    TLargeGroupInfo &gg = LargeGroupInfo[largeBlockId / 64];
-    Y_ASSERT((gg.FreeMask & allocMask) == 0);
-    gg.FreeMask.fetch_add(allocMask);
+    yint largeChunkId = ((char*)p - LargeMemoryPtr) / LARGE_CHUNK_SIZE;
+    yint largeBlockId = largeChunkId >> 6;
+    yint largeGroupId = largeBlockId >> 6;
+    yint chunkCount = LargeAllocChunkCount[largeChunkId];
+    if (chunkCount > LARGE_MAX_CHUNK_ALLOC_LEN) {
+        yint len = (chunkCount + 63) / 64;
+        ui64 allocMask = MakeAllocMask(len) << (largeBlockId & 63);
+        TLargeGroupInfo &gg = LargeGroupInfo[largeGroupId];
+        Y_ASSERT((gg.FreeBlockMask & allocMask) == 0);
+        gg.FreeBlockMask.fetch_add(allocMask);
+    } else {
+        yint len = chunkCount;
+        ui64 allocMask = MakeAllocMask(len) << (largeChunkId & 63);
+        LargeAddFreeChunkMask(largeBlockId, allocMask);
+    }
 }
 
 
 static yint LargeGetSize(const void *p)
 {
-    yint largeBlockId = ((char*)p - LargeMemoryPtr) / LARGE_BLOCK_SIZE;
-    yint sz = LargeAllocLen[largeBlockId] * LARGE_BLOCK_SIZE;
+    yint largeChunkId = ((char*)p - LargeMemoryPtr) / LARGE_CHUNK_SIZE;
+    yint sz = LargeAllocChunkCount[largeChunkId] * LARGE_CHUNK_SIZE;
     return sz;
 }
 
@@ -447,13 +643,13 @@ static void LargeReclaim(yint keepSize, yint maxReclaim)
     yint goodForReclaim = 0;
     for (yint g = 0; g < LARGE_GROUP_COUNT; ++g) {
         TLargeGroupInfo &gg = LargeGroupInfo[g];
-        goodForReclaim += _mm_popcnt_u64(gg.FreeMask & gg.CommitedMask);
+        goodForReclaim += _mm_popcnt_u64(gg.FreeBlockMask & gg.CommitedMask);
     }
     yint reclaimBlocks = min(goodForReclaim - keepSize / LARGE_BLOCK_SIZE, maxReclaim / LARGE_BLOCK_SIZE);
     for (yint g = LARGE_GROUP_COUNT - 1; reclaimBlocks > 0 && g >= 0; --g) {
         TLargeGroupInfo &gg = LargeGroupInfo[g];
-        if (gg.FreeMask & gg.CommitedMask) {
-            ui64 freeMask = gg.FreeMask.exchange(0); // alloc to prevent races
+        if (gg.FreeBlockMask & gg.CommitedMask) {
+            ui64 freeMask = gg.FreeBlockMask.exchange(0); // alloc to prevent races
             ui64 mask = freeMask & gg.CommitedMask;
             reclaimBlocks -= _mm_popcnt_u64(mask);
             gg.CommitedMask &= ~mask;
@@ -463,7 +659,8 @@ static void LargeReclaim(yint keepSize, yint maxReclaim)
                 OsReclaim(ptr, LARGE_BLOCK_SIZE);
                 mask ^= 1ull << z;
             }
-            gg.FreeMask = freeMask;
+            Y_ASSERT((gg.FreeBlockMask & freeMask) == 0);
+            gg.FreeBlockMask.fetch_add(freeMask);
         }
     }
 }
@@ -490,7 +687,7 @@ static void LargeReclaim(yint keepSize, yint maxReclaim)
 const yint SEGMENT_SIZE_LN = 21;
 const yint SEGMENT_SIZE = 1ll << SEGMENT_SIZE_LN;
 const yint SEGMENT_COUNT = (1ull << (30 - SEGMENT_SIZE_LN)) * 640; // 640 gb ought to be enough for anybody
-const yint LARGE_SIZE_LN = SEGMENT_SIZE_LN - 1;
+const yint LARGE_SIZE_LN = SEGMENT_SIZE_LN - 3;
 const yint BLOCK_SIZE_LN = SEGMENT_SIZE_LN - 6;
 const yint BLOCK_SIZE = 1 << BLOCK_SIZE_LN;
 const yint NEED_2LAYER = BLOCK_SIZE_LN - 6;
@@ -510,7 +707,8 @@ const yint SEGMENT_GROUP_COUNT = SEGMENT_COUNT / 64;
 // count number of segments with sufficient number of free segments and contigous free space for medium allocations of different sizes
 // allows skipping SEGMENT_HIER_SIZE at once when searching for suitable segment
 const yint SEGMENT_HIER_SIZE = 32; // must be power of 2
-const yint SEGMENT_HIER_SIZE2 = 4096; // second layer for even larger skips
+const yint SEGMENT_HIER_SIZE2 = 512; // more layers for even larger skips
+const yint SEGMENT_HIER_SIZE3 = 8192;
 
 // trade locality for volume
 //const yint MIN_FREE_BLOCKS = 16;
@@ -523,7 +721,8 @@ struct TSegmentInfo
     std::atomic<ui64> GlobalFreeBlockMask;
     std::atomic<ui64> HierFreeCount;
     std::atomic<ui64> HierFreeCount2;
-    ui64 Padding[5];
+    std::atomic<ui64> HierFreeCount3;
+    ui64 Padding[4];
 };
 
 
@@ -609,6 +808,7 @@ static void SegmentInit()
     Y_ASSERT(SegmentMemoryPtr == 0); // call init once
 
     yint segInfoSize = sizeof(TSegmentInfo) * SEGMENT_COUNT;
+    segInfoSize = RoundSizeUp(segInfoSize, HUGE_PAGE_SIZE);
     SegmentInfo = (TSegmentInfo*)OsReserve(segInfoSize); // guaranteed huge page alignment
     OsCommit(SegmentInfo, segInfoSize);
     SegmentGroupInfo = (TSegmentGroupInfo*)OsAlloc(sizeof(TSegmentGroupInfo) * SEGMENT_GROUP_COUNT);
@@ -644,6 +844,7 @@ static void SegmentInit()
         SegmentInfo[i].GlobalFreeBlockMask = ALL_BLOCKS;
         SegmentInfo[i].HierFreeCount = SEGMENT_HIER_SIZE;
         SegmentInfo[i].HierFreeCount2 = SEGMENT_HIER_SIZE2 / SEGMENT_HIER_SIZE;
+        SegmentInfo[i].HierFreeCount3 = SEGMENT_HIER_SIZE3 / SEGMENT_HIER_SIZE2;
     }
 #ifdef _win_
     ThreadDestructionTracker = FlsAlloc(OnThreadDestruction);
@@ -748,6 +949,7 @@ static void FreeBlockMaskHasChanged(yint segmentId, ui64 oldMask, ui64 newMask)
 {
     yint hierStart = (segmentId & ~(SEGMENT_HIER_SIZE - 1));
     yint hierStart2 = (segmentId & ~(SEGMENT_HIER_SIZE2 - 1));
+    yint hierStart3 = (segmentId & ~(SEGMENT_HIER_SIZE3 - 1));
     yint oldFree = _mm_popcnt_u64(oldMask & ALL_2LAYER_BLOCKS);
     yint newFree = _mm_popcnt_u64(newMask & ALL_2LAYER_BLOCKS);
     ui64 posOldMask = oldMask & ALL_BLOCKS;
@@ -759,12 +961,22 @@ static void FreeBlockMaskHasChanged(yint segmentId, ui64 oldMask, ui64 newMask)
         yint delta = newOk - oldOk;
         if (delta != 0) {
             TSegmentInfo *hseg = &SegmentInfo[hierStart + lenLn];
-            TSegmentInfo *hseg2 = &SegmentInfo[hierStart2 + lenLn];
             yint oldHCount = hseg->HierFreeCount.fetch_add(delta);
+            yint delta2 = 0;
             if (oldHCount == 0) {
-                hseg2->HierFreeCount2.fetch_add(1);
+                delta2 = 1;
             } else if (oldHCount + delta == 0) {
-                hseg2->HierFreeCount2.fetch_add(-1);
+                delta2 = -1;
+            }
+            if (delta2 != 0) {
+                TSegmentInfo *hseg2 = &SegmentInfo[hierStart2 + lenLn];
+                TSegmentInfo *hseg3 = &SegmentInfo[hierStart3 + lenLn];
+                yint oldHCount2 = hseg2->HierFreeCount2.fetch_add(delta2);
+                if (oldHCount2 == 0) {
+                    hseg3->HierFreeCount2.fetch_add(1);
+                } else if (oldHCount2 + delta2 == 0) {
+                    hseg3->HierFreeCount2.fetch_add(-1);
+                }
             }
         }
         posOldMask = posOldMask & (posOldMask >> len);
@@ -848,6 +1060,54 @@ static void OnThreadDestruction(void*)
 }
 
 
+// try to switch to segment s
+static bool TryToSwitchSegment(ui64 allowMask, yint len, yint s)
+{
+    TSegmentInfo *segInfo = &SegmentInfo[s];
+    ui64 freeMask = segInfo->GlobalFreeBlockMask;
+    if (freeMask & SEGMENT_ACTIVE) {
+        return false;
+    }
+    yint freeBlockCount = _mm_popcnt_u64(freeMask & allowMask);
+    if (freeBlockCount < MIN_FREE_BLOCKS + len) {
+        return false;
+    }
+    unsigned long freePtr = 0;
+    if (len > 1 && !BitMaskFind(freeMask & allowMask, len, &freePtr)) {
+        return false;
+    }
+    ui64 expectedMask = freeMask;
+    if (SegmentInfo[s].GlobalFreeBlockMask.compare_exchange_weak(expectedMask, SEGMENT_ACTIVE)) {
+        FreeBlockMaskHasChanged(s, expectedMask, SEGMENT_ACTIVE);
+        char *segment = GetSegmentData(s);
+        TSegmentHeader *segHdr = (TSegmentHeader*)segment;
+        if (freeMask == ALL_BLOCKS) {
+            // new segment is allocated
+            MaxSegmentId = max(MaxSegmentId, s); // non atomic, true number of segments used might be higher then stored in MaxSegmentId
+            if (SegmentCommitLocked(segment)) {
+                segHdr->Init();
+            }
+        }
+        Y_ASSERT(segHdr->LocalFreeBlockMask == 0); // local free mask should be empty for nonactive segment
+        segHdr->LocalFreeBlockMask = freeMask | SEGMENT_ACTIVE;
+        // process postponed segment operations on switching to the new segment
+        ProcessRetestMaskLocked(segment);
+        if (pThreadSegment == 0) {
+            // call thread destruction callback for this thread
+#ifdef _win_
+            FlsSetValue(ThreadDestructionTracker, segment);
+#else
+            pthread_setspecific(ThreadDestructionTracker, (void*)-1);
+#endif
+        }
+        pThreadSegment = segment;
+        return true;
+    }
+    // failed to acquire, avoid this segment for awhile? or retry?
+    return false; // avoid
+}
+
+
 // no len consequitive blocks in the current segment, switch to the suitable segment
 static void SwitchSegment(ui64 allowMask, yint len)
 {
@@ -857,56 +1117,23 @@ static void SwitchSegment(ui64 allowMask, yint len)
         ReleaseSegmentOwnership(pThreadSegment);
     }
     yint lenLn = CalcLog2(len);
-    for (yint hierStart2 = 0; hierStart2 < SEGMENT_COUNT; hierStart2 += SEGMENT_HIER_SIZE2) {
-        if (SegmentInfo[hierStart2 + lenLn].HierFreeCount2 == 0) {
+    for (yint hierStart3 = 0; hierStart3 < SEGMENT_COUNT; hierStart3 += SEGMENT_HIER_SIZE3) {
+        if (SegmentInfo[hierStart3 + lenLn].HierFreeCount3 == 0) {
             continue;
         }
-        for (yint hierStart = hierStart2; hierStart < hierStart2 + SEGMENT_HIER_SIZE2; hierStart += SEGMENT_HIER_SIZE) {
-            if (SegmentInfo[hierStart + lenLn].HierFreeCount == 0) {
+        for (yint hierStart2 = hierStart3; hierStart2 < hierStart3 + SEGMENT_HIER_SIZE3; hierStart2 += SEGMENT_HIER_SIZE2) {
+            if (SegmentInfo[hierStart2 + lenLn].HierFreeCount2 == 0) {
                 continue;
             }
-            for (yint s = hierStart; s < hierStart + SEGMENT_HIER_SIZE; ++s) {
-                TSegmentInfo *segInfo = &SegmentInfo[s];
-                ui64 freeMask = segInfo->GlobalFreeBlockMask;
-                if (freeMask & SEGMENT_ACTIVE) {
+            for (yint hierStart = hierStart2; hierStart < hierStart2 + SEGMENT_HIER_SIZE2; hierStart += SEGMENT_HIER_SIZE) {
+                if (SegmentInfo[hierStart + lenLn].HierFreeCount == 0) {
                     continue;
                 }
-                yint freeBlockCount = _mm_popcnt_u64(freeMask & allowMask);
-                if (freeBlockCount < MIN_FREE_BLOCKS + len) {
-                    continue;
-                }
-                unsigned long freePtr = 0;
-                if (len > 1 && !BitMaskFind(freeMask & allowMask, len, &freePtr)) {
-                    continue;
-                }
-                ui64 expectedMask = freeMask;
-                if (SegmentInfo[s].GlobalFreeBlockMask.compare_exchange_weak(expectedMask, SEGMENT_ACTIVE)) {
-                    FreeBlockMaskHasChanged(s, expectedMask, SEGMENT_ACTIVE);
-                    char *segment = GetSegmentData(s);
-                    TSegmentHeader *segHdr = (TSegmentHeader*)segment;
-                    if (freeMask == ALL_BLOCKS) {
-                        // new segment is allocated
-                        MaxSegmentId = max(MaxSegmentId, s); // non atomic, true number of segments used might be higher then stored in MaxSegmentId
-                        if (SegmentCommitLocked(segment)) {
-                            segHdr->Init();
-                        }
+                for (yint s = hierStart; s < hierStart + SEGMENT_HIER_SIZE; ++s) {
+                    if (TryToSwitchSegment(allowMask, len, s)) {
+                        return;
                     }
-                    Y_ASSERT(segHdr->LocalFreeBlockMask == 0); // local free mask should be empty for nonactive segment
-                    segHdr->LocalFreeBlockMask = freeMask | SEGMENT_ACTIVE;
-                    // process postponed segment operations on switching to the new segment
-                    ProcessRetestMaskLocked(segment);
-                    if (pThreadSegment == 0) {
-                        // call thread destruction callback for this thread
-#ifdef _win_
-                        FlsSetValue(ThreadDestructionTracker, segment);
-#else
-                        pthread_setspecific(ThreadDestructionTracker, (void*)-1);
-#endif
-                    }
-                    pThreadSegment = segment;
-                    return;
                 }
-                // failed to acquire, avoid this segment for awhile? or retry?
             }
         }
     }
@@ -1164,7 +1391,7 @@ NOINLINE static void* SegmentSmallAlloc(yint pow2)
             Y_ASSERT(sCtx.ChunkOffset >= 0);
             Y_ASSERT(sCtx.LocalFreeAllocMask & (1ull << idx));
             sCtx.LocalFreeAllocMask ^= 1ull << idx; // expect btc opcode
-            yint offset = (idx << pow2);
+            yint offset = ((yint)idx << pow2);
             Y_ASSERT(offset < BLOCK_SIZE);
             return segment + sCtx.ChunkOffset + offset;
         } else {
@@ -1348,7 +1575,7 @@ NOINLINE static void* SegmentTinyAlloc(yint pow2)
             Y_ASSERT(sCtx.ChunkOffset >= 0);
             Y_ASSERT(sCtx.LocalFreeAllocMask & (1ull << idx));
             sCtx.LocalFreeAllocMask ^= 1ull << idx; // expect btc opcode
-            yint offset = (idx << pow2);
+            yint offset = ((yint)idx << pow2);
             Y_ASSERT(sCtx.ChunkOffset + offset < SEGMENT_SIZE);
             return segment + sCtx.ChunkOffset + offset;
         } else {
@@ -1442,6 +1669,7 @@ static THREAD_FUNC_RETURN ReclaimThread(void*)
 
 void RunHuReclaim()
 {
+    hu_check_init();
 #ifdef _win_
     CreateThread(0, 0, ReclaimThread, 0, 0, 0);
 #else
@@ -1458,6 +1686,7 @@ static void hu_init()
             break;
         }
         if (val == 0 && AllocatorIsInitialized.compare_exchange_weak(val, 2)) {
+            OsInit();
             BitMaskInit();
             GAInit();
             LargeInit();
@@ -1492,7 +1721,7 @@ static void* hu_alloc(yint sz)
                 Y_ASSERT(sCtx.ChunkOffset >= 0);
                 Y_ASSERT(sCtx.LocalFreeAllocMask & (1ull << idx));
                 sCtx.LocalFreeAllocMask ^= 1ull << idx; // expect btc opcode
-                yint offset = (idx << pow2);
+                yint offset = ((yint)idx << pow2);
                 Y_ASSERT(sCtx.ChunkOffset + offset < SEGMENT_SIZE);
                 return segment + sCtx.ChunkOffset + offset;
             }

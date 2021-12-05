@@ -1,8 +1,5 @@
 #include "hu_alloc.h"
 
-#include <string.h> // memset, memcpy
-
-
 #ifndef NDEBUG
 #define DBG_FILL_MEMORY
 #endif
@@ -30,7 +27,6 @@ inline void hu_free_aligned(void *p, size_t align) {
     (void)align;
     hu_free(p);
 }
-
 
 #ifdef _MSC_VER
 void DisableWarningHuGetSize()
@@ -102,7 +98,7 @@ void* memalign(size_t align, size_t size) { return hu_alloc_aligned(size, align)
 //void _aligned_free(void *p) { hu_free_aligned(p, 0); }
 
 // `aligned_alloc` is only available when __USE_ISOC11 is defined.
-#if __USE_ISOC11
+#if __USE_ISOC11 
 void* aligned_alloc(size_t align, size_t size)   { return hu_alloc_aligned(size, align); }
 #endif
 
