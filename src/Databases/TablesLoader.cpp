@@ -36,8 +36,19 @@ void mergeDependenciesGraphs(DependenciesInfos & main_dependencies_info, const D
             if (maybe_existing_info.dependencies.empty())
                 maybe_existing_info.dependencies = dependencies;
             else if (maybe_existing_info.dependencies != dependencies)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Have different dependencies for {}: {} and {}, it's a bug",
-                                table, fmt::join(maybe_existing_info.dependencies, ", "), fmt::join(dependencies, ", "));
+            {
+                /// Can happen on DatabaseReplicated recovery
+                LOG_WARNING(&Poco::Logger::get("TablesLoader"), "Replacing outdated dependencies ({}) of {} with: {}",
+                            fmt::join(maybe_existing_info.dependencies, ", "),
+                            table,
+                            fmt::join(dependencies, ", "));
+                for (const auto & old_dependency : maybe_existing_info.dependencies)
+                {
+                    [[maybe_unused]] bool removed = main_dependencies_info[old_dependency].dependent_database_objects.erase(table);
+                    assert(removed);
+                }
+                maybe_existing_info.dependencies = dependencies;
+            }
         }
     }
 }

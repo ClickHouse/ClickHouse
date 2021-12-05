@@ -18,9 +18,10 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Set.h>
 #include <Parsers/queryToString.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Storages/KeyDescription.h>
@@ -1316,8 +1317,9 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                     }
                     if (!key_expr_type_not_null->equals(*common_type))
                     {
-                        auto common_type_maybe_nullable
-                            = key_expr_type_is_nullable ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type)) : common_type;
+                        auto common_type_maybe_nullable = (key_expr_type_is_nullable && !common_type->isNullable())
+                            ? DataTypePtr(std::make_shared<DataTypeNullable>(common_type))
+                            : common_type;
                         ColumnsWithTypeAndName arguments{
                             {nullptr, key_expr_type, ""},
                             {DataTypeString().createColumnConst(1, common_type_maybe_nullable->getName()), common_type_maybe_nullable, ""}};
@@ -1325,7 +1327,7 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, ContextPtr context, 
                         auto func_cast = func_builder_cast->build(arguments);
 
                         /// If we know the given range only contains one value, then we treat all functions as positive monotonic.
-                        if (!func_cast || (!single_point && !func_cast->hasInformationAboutMonotonicity()))
+                        if (!single_point && !func_cast->hasInformationAboutMonotonicity())
                             return false;
                         chain.push_back(func_cast);
                     }

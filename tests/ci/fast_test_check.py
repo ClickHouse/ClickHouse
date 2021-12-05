@@ -3,15 +3,21 @@
 import logging
 import subprocess
 import os
-import json
 import csv
+import sys
+
 from github import Github
-from pr_info import PRInfo
+from pr_info import PRInfo, get_event
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from upload_result_helper import upload_results
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
+from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
+from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
+from tee_popen import TeePopen
+from ccache_utils import get_ccache_if_not_exists, upload_ccache
 
 NAME = 'Fast test (actions)'
 
@@ -51,18 +57,23 @@ def process_results(result_folder):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+
+    stopwatch = Stopwatch()
+
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
     caches_path = os.getenv("CACHES_PATH", temp_path)
 
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
-        event = json.load(event_file)
-
-    pr_info = PRInfo(event)
+    pr_info = PRInfo(get_event())
 
     gh = Github(get_best_robot_token())
+
+    rerun_helper = RerunHelper(gh, pr_info, NAME)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     docker_image = get_image_with_version(temp_path, 'clickhouse/fasttest')
 
@@ -77,7 +88,12 @@ if __name__ == "__main__":
         os.makedirs(output_path)
 
     cache_path = os.path.join(caches_path, "fasttest")
+
+    logging.info("Will try to fetch cache for our build")
+    get_ccache_if_not_exists(cache_path, s3_helper, pr_info.number, temp_path)
+
     if not os.path.exists(cache_path):
+        logging.info("cache was not fetched, will create empty dir")
         os.makedirs(cache_path)
 
     repo_path = os.path.join(temp_path, "fasttest-repo")
@@ -92,8 +108,8 @@ if __name__ == "__main__":
         os.makedirs(logs_path)
 
     run_log_path = os.path.join(logs_path, 'runlog.log')
-    with open(run_log_path, 'w') as log:
-        retcode = subprocess.Popen(run_cmd, shell=True, stderr=log, stdout=log).wait()
+    with TeePopen(run_cmd, run_log_path) as process:
+        retcode = process.wait()
         if retcode == 0:
             logging.info("Run successfully")
         else:
@@ -128,6 +144,22 @@ if __name__ == "__main__":
     else:
         state, description, test_results, additional_logs = process_results(output_path)
 
+    logging.info("Will upload cache")
+    upload_ccache(cache_path, s3_helper, pr_info.number, temp_path)
+
+    ch_helper = ClickHouseHelper()
+    mark_flaky_tests(ch_helper, NAME, test_results)
+
     report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [run_log_path] + additional_logs, NAME, True)
     print("::notice ::Report url: {}".format(report_url))
     post_commit_status(gh, pr_info.sha, NAME, description, state, report_url)
+
+    prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_results, state, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, NAME)
+    ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)
+
+    # Refuse other checks to run if fast test failed
+    if state != 'success':
+        if 'force-tests' in pr_info.labels:
+            print("'force-tests' enabled, will report success")
+        else:
+            sys.exit(1)

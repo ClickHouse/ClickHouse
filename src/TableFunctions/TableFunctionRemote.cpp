@@ -2,7 +2,7 @@
 
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/StorageDistributed.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTExpressionList.h>

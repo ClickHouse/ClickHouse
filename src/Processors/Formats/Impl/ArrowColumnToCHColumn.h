@@ -19,6 +19,8 @@ class Chunk;
 class ArrowColumnToCHColumn
 {
 public:
+    using NameToColumnPtr = std::unordered_map<std::string, std::shared_ptr<arrow::ChunkedArray>>;
+
     ArrowColumnToCHColumn(const Block & header_, const std::string & format_name_, bool import_nested_);
 
     /// Constructor that create header by arrow schema. It will be useful for inserting
@@ -26,6 +28,8 @@ public:
     ArrowColumnToCHColumn(const arrow::Schema & schema, const std::string & format_name, bool import_nested_);
 
     void arrowTableToCHChunk(Chunk & res, std::shared_ptr<arrow::Table> & table);
+
+    void arrowColumnsToCHChunk(Chunk & res, NameToColumnPtr & name_to_column_ptr);
 
 private:
     const Block header;

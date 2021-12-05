@@ -3,18 +3,19 @@
 import logging
 import subprocess
 import os
-import json
 import sys
 
 from github import Github
 
 from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
-from pr_info import PRInfo
-from ci_config import build_config_to_string
-from build_download_helper import get_build_config_for_check, get_build_urls
+from pr_info import PRInfo, get_event
+from build_download_helper import get_build_name_for_check, get_build_urls
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
+from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
+from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
 
 IMAGE_NAME = 'clickhouse/fuzzer'
 
@@ -31,6 +32,9 @@ def get_commit(gh, commit_sha):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+
+    stopwatch = Stopwatch()
+
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
     reports_path = os.getenv("REPORTS_PATH", "./reports")
@@ -40,20 +44,20 @@ if __name__ == "__main__":
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
-    with open(os.getenv('GITHUB_EVENT_PATH'), 'r', encoding='utf-8') as event_file:
-        event = json.load(event_file)
-
-    pr_info = PRInfo(event)
+    pr_info = PRInfo(get_event())
 
     gh = Github(get_best_robot_token())
 
+    rerun_helper = RerunHelper(gh, pr_info, check_name)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
+
     docker_image = get_image_with_version(temp_path, IMAGE_NAME)
 
-    build_config = get_build_config_for_check(check_name)
-    print(build_config)
-    build_config_str = build_config_to_string(build_config)
-    print(build_config_str)
-    urls = get_build_urls(build_config_str, reports_path)
+    build_name = get_build_name_for_check(check_name)
+    print(build_name)
+    urls = get_build_urls(build_name, reports_path)
     if not urls:
         raise Exception("No build URLs found")
 
@@ -124,6 +128,15 @@ if __name__ == "__main__":
     except:
         status = 'failure'
         description = 'Task failed: $?=' + str(retcode)
+
+    if 'fail' in status:
+        test_result = [(description, 'FAIL')]
+    else:
+        test_result = [(description, 'OK')]
+
+    ch_helper = ClickHouseHelper()
+
+    prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_result, status, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, check_name)
 
     logging.info("Result: '%s', '%s', '%s'", status, description, report_url)
     print(f"::notice ::Report url: {report_url}")

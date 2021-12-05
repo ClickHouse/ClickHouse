@@ -18,8 +18,8 @@ struct CachedFn
 {
 private:
     using Traits = FnTraits<decltype(Func)>;
-    using DecayedArgs = TLMap<std::decay_t, typename Traits::Args>;
-    using Key = TLChangeRoot<std::tuple, DecayedArgs>;
+    using DecayedArgs = TypeListMap<std::decay_t, typename Traits::Args>;
+    using Key = TypeListChangeRoot<std::tuple, DecayedArgs>;
     using Result = typename Traits::Ret;
 
     std::map<Key, Result> cache; // Can't use hashmap as tuples are unhashable by default

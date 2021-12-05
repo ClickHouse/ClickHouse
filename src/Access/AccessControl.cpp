@@ -229,6 +229,16 @@ void AccessControl::startPeriodicReloadingUsersConfigs()
     }
 }
 
+void AccessControl::stopPeriodicReloadingUsersConfigs()
+{
+    auto storages = getStoragesPtr();
+    for (const auto & storage : *storages)
+    {
+        if (auto users_config_storage = typeid_cast<std::shared_ptr<UsersConfigAccessStorage>>(storage))
+            users_config_storage->stopPeriodicReloading();
+    }
+}
+
 void AccessControl::addReplicatedStorage(
     const String & storage_name_,
     const String & zookeeper_path_,

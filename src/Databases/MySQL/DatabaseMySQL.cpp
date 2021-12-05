@@ -335,7 +335,7 @@ void DatabaseMySQL::cleanOutdatedTables()
     }
 }
 
-void DatabaseMySQL::attachTable(const String & table_name, const StoragePtr & storage, const String &)
+void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_name, const StoragePtr & storage, const String &)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -358,7 +358,7 @@ void DatabaseMySQL::attachTable(const String & table_name, const StoragePtr & st
         fs::remove(remove_flag);
 }
 
-StoragePtr DatabaseMySQL::detachTable(const String & table_name)
+StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & table_name)
 {
     std::lock_guard<std::mutex> lock{mutex};
 
@@ -455,7 +455,7 @@ DatabaseMySQL::~DatabaseMySQL()
     }
 }
 
-void DatabaseMySQL::createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query)
+void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query)
 {
     const auto & create = create_query->as<ASTCreateQuery>();
 
@@ -473,7 +473,7 @@ void DatabaseMySQL::createTable(ContextPtr, const String & table_name, const Sto
         throw Exception("The MySQL database engine can only execute attach statements of type attach table database_name.table_name",
             ErrorCodes::UNEXPECTED_AST_STRUCTURE);
 
-    attachTable(table_name, storage, {});
+    attachTable(local_context, table_name, storage, {});
 }
 
 }
