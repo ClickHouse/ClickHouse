@@ -49,7 +49,7 @@
 
                     <!-- Internal port and hostname -->
                     <hostname>localhost</hostname>
-                    <port>44444</port>
+                    <port>9234</port>
                 </server>
 
                 <!-- Add more servers here -->

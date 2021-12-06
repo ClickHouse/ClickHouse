@@ -1,6 +1,5 @@
 #include <Storages/StorageMaterializedView.h>
 
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 

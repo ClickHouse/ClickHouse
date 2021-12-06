@@ -1,4 +1,3 @@
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 
 #include <Parsers/CommonParsers.h>

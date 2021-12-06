@@ -1,15 +1,11 @@
 #include <amqpcpp.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -21,17 +17,13 @@
 #include <Storages/ExternalDataSourceConfiguration.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
-#include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
-#include <Common/config_version.h>
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
-#include <Common/typeid_cast.h>
 #include <base/logger_useful.h>
 
 namespace DB
@@ -53,6 +45,7 @@ namespace ErrorCodes
     extern const int CANNOT_DECLARE_RABBITMQ_EXCHANGE;
     extern const int CANNOT_REMOVE_RABBITMQ_EXCHANGE;
     extern const int CANNOT_CREATE_RABBITMQ_QUEUE_BINDING;
+    extern const int QUERY_NOT_ALLOWED;
 }
 
 namespace ExchangeType
@@ -653,11 +646,16 @@ Pipe StorageRabbitMQ::read(
     if (num_created_consumers == 0)
         return {};
 
+    if (!local_context->getSettingsRef().stream_like_engine_allow_direct_select)
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
+
+    if (mv_attached)
+        throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageRabbitMQ with attached materialized views");
+
     std::lock_guard lock(loop_mutex);
 
     auto sample_block = metadata_snapshot->getSampleBlockForColumns(column_names, getVirtuals(), getStorageID());
     auto modified_context = addSettings(local_context);
-    auto block_size = getMaxBlockSize();
 
     if (!connection->isConnected())
     {
@@ -675,7 +673,7 @@ Pipe StorageRabbitMQ::read(
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto rabbit_source = std::make_shared<RabbitMQSource>(
-                *this, metadata_snapshot, modified_context, column_names, block_size);
+                *this, metadata_snapshot, modified_context, column_names, 1, rabbitmq_settings->rabbitmq_commit_on_select);
 
         auto converting_dag = ActionsDAG::makeConvertingActions(
             rabbit_source->getPort().getHeader().getColumnsWithTypeAndName(),
@@ -946,6 +944,8 @@ void StorageRabbitMQ::streamingToViewsFunc()
                 initializeBuffers();
                 auto start_time = std::chrono::steady_clock::now();
 
+                mv_attached.store(true);
+
                 // Keep streaming as long as there are attached views and streaming is not cancelled
                 while (!shutdown_called && num_created_consumers > 0)
                 {
@@ -983,6 +983,8 @@ void StorageRabbitMQ::streamingToViewsFunc()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
     }
+
+    mv_attached.store(false);
 
     /// If there is no running select, stop the loop which was
     /// activated by previous select.
