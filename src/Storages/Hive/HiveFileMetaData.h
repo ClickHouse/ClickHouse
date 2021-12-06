@@ -14,7 +14,7 @@ public:
         RemoteFileMetaDataBase(schema_, cluster_, remote_path_, file_size_, last_modification_timestamp_){}
     ~HiveFileMetaData() override;
 
-    String getClassName() const override { return "HiveFileMetaData"; }
+    String getName() const override { return "HiveFileMetaData"; }
 
     String toString() const override;
     bool fromString(const String &buf) override;

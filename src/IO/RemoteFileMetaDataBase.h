@@ -24,7 +24,7 @@ public:
     {
     }
     virtual ~RemoteFileMetaDataBase();
-    virtual String getClassName() const = 0; //class name
+    virtual String getName() const = 0; //class name
     // methods for basic information
     inline String getSchema() const { return schema; }
     inline String getCluster() const { return cluster; }

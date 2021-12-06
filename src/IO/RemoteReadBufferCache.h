@@ -142,7 +142,6 @@ public:
     static std::unique_ptr<ReadBuffer> create(ContextPtr contex, RemoteFileMetaDataBasePtr remote_file_meta_data, std::unique_ptr<ReadBuffer> read_buffer);
 
     bool nextImpl() override;
-    inline bool seekable() { return file_buffer && remote_file_size > 0; }
     off_t seek(off_t off, int whence) override;
     off_t getPosition() override;
     std::optional<size_t> getTotalSize() override { return remote_file_size; }
