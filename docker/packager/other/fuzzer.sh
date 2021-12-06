@@ -31,10 +31,6 @@ do
     mv "$FUZZER_PATH" /output/fuzzers
 done
 
-ninja clickhouse-local
-LOCAL_PATH=$(find ./programs -name clickhouse)
-strip --strip-unneeded "$LOCAL_PATH"
-mv "$LOCAL_PATH" /output/fuzzers
 
 tar -zcvf /output/fuzzers.tar.gz /output/fuzzers
 rm -rf /output/fuzzers

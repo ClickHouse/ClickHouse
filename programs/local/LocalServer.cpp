@@ -710,7 +710,9 @@ void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & o
 {
 #if defined(FUZZING_MODE)
     std::cout <<
-        "usage: clickhouse --query <query with getFuzzerData function> [--query-file <file with query>]\n"
+        "usage: clickhouse <clickhouse-local arguments> -- <libfuzzer arguments>\n"
+        "Note: It is important not to use only one letter keys with single dash for \n"
+        "for clickhouse-local arguments. It may work incorrectly.\n"
 
         "ClickHouse is build with coverage guided fuzzer (libfuzzer) inside it.\n"
         "You have to provide a query which contains getFuzzerData function.\n"
@@ -820,10 +822,6 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
 
 #if defined(FUZZING_MODE)
 
-// #include <Functions/getFuzzerData.h>
-
-// #endif
-
 std::optional<DB::LocalServer> fuzz_app;
 
 extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
@@ -831,8 +829,11 @@ extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
     int & argc = *pargc;
     char ** argv = *pargv;
 
-    // position of delimiter "--" that separates arguments
-    // of clickhouse-local and fuzzer
+    /// As a user you can add flags to clickhouse binary in fuzzing mode as follows
+    /// clickhouse <set of clickhouse-local spefic flag> -- <set of libfuzzer flags>
+
+    /// Calculate the position of delimiter "--" that separates arguments
+    /// of clickhouse-local and libfuzzer
     int pos_delim = argc;
     for (int i = 0; i < argc; ++i)
     {
@@ -843,35 +844,26 @@ extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
         }
     }
 
+    /// Initialize clickhouse-local app
     fuzz_app.emplace();
     fuzz_app->init(pos_delim, argv);
-    for (int i = pos_delim + 1; i < argc; ++i)
-        std::swap(argv[i], argv[i - pos_delim]);
-    argc -= pos_delim;
-    if (argc == 0)  // no delimiter provided
-        ++argc;
+
+    /// We will leave clickhouse-local specific arguments as is, because libfuzzer will ignore
+    /// all keys starting with --
     return 0;
 }
 
 
-
-
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
+try
 {
-    try
-    {
-        // inappropriate symbol for fuzzing at the end
-        if (size)
-            --size;
-        auto cur_str = String(reinterpret_cast<const char *>(data), size);
-
-        DB::FunctionGetFuzzerData::update(cur_str);
-        fuzz_app->run();
-        return 0;
-    }
-    catch (...)
-    {
-        return 1;
-    }
+    auto input = String(reinterpret_cast<const char *>(data), size);
+    DB::FunctionGetFuzzerData::update(input);
+    fuzz_app->run();
+    return 0;
+}
+catch (...)
+{
+    return 1;
 }
 #endif
