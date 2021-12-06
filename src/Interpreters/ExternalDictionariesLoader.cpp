@@ -98,12 +98,12 @@ QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase
     /// If dictionary was not qualified with database name, try to resolve dictionary as xml dictionary.
     if (qualified_name->database.empty() && !has(qualified_name->table))
     {
-        auto current_database_name = query_context->getCurrentDatabase();
+        std::string current_database_name = query_context->getCurrentDatabase();
         std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
 
         /// If after qualify dictionary_name with default_database_name we find it, add default_database to qualified name.
         if (has(resolved_name))
-            qualified_name->database = query_context->getCurrentDatabase();
+            qualified_name->database = std::move(current_database_name);
     }
 
     return *qualified_name;
