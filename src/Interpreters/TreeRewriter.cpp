@@ -468,6 +468,9 @@ void removeUnneededColumnsFromSelectClause(const ASTSelectQuery * select_query, 
             /// It is not easy to analyze untuple here, because types were not calculated yes.
             if (func && func->name == "untuple")
                 new_elements.push_back(elem);
+
+            if (func && AggregateFunctionFactory::instance().isAggregateFunctionName(func->name) && !select_query->groupBy())
+                new_elements.push_back(elem);
         }
     }
 
