@@ -1,6 +1,7 @@
 #include <Interpreters/Access/InterpreterShowPrivilegesQuery.h>
 #include <Interpreters/executeQuery.h>
 
+
 namespace DB
 {
 InterpreterShowPrivilegesQuery::InterpreterShowPrivilegesQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
