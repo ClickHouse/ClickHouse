@@ -49,7 +49,7 @@ struct AvgFraction
     Float64 NO_SANITIZE_UNDEFINED divideIfAnyDecimal(UInt32 num_scale, UInt32 denom_scale [[maybe_unused]]) const
     {
         if (denominator == static_cast<Denominator>(0))
-            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot calculate average of 0 numbers or all number have 0 weight");
+            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot calculate average value. No numbers provided or sum of all weights is equal to 0");
 
         if constexpr (is_decimal<Numerator> && is_decimal<Denominator>)
         {
