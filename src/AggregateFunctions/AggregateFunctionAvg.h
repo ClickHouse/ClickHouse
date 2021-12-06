@@ -20,6 +20,12 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_DIVISION;
+}
+
 struct Settings;
 
 template <typename T> constexpr bool DecimalOrExtendedInt =
@@ -42,6 +48,9 @@ struct AvgFraction
     /// Invoked only is either Numerator or Denominator are Decimal.
     Float64 NO_SANITIZE_UNDEFINED divideIfAnyDecimal(UInt32 num_scale, UInt32 denom_scale [[maybe_unused]]) const
     {
+        if (denominator == static_cast<Denominator>(0))
+            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot calculate average of 0 numbers or all number have 0 weight");
+
         if constexpr (is_decimal<Numerator> && is_decimal<Denominator>)
         {
             // According to the docs, num(S1) / denom(S2) would have scale S1
