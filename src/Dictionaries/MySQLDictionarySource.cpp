@@ -11,8 +11,8 @@
 #include "registerDictionaries.h"
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <Processors/Pipe.h>
-#include <Processors/QueryPipeline.h>
+#include <QueryPipeline/Pipe.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
 
 

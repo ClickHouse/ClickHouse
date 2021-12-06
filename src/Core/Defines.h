@@ -33,6 +33,8 @@
 
 #define DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC 5
 #define DEFAULT_PERIODIC_LIVE_VIEW_REFRESH_SEC 60
+#define DEFAULT_WINDOW_VIEW_CLEAN_INTERVAL_SEC 5
+#define DEFAULT_WINDOW_VIEW_HEARTBEAT_INTERVAL_SEC 15
 #define SHOW_CHARS_ON_SYNTAX_ERROR ptrdiff_t(160)
 #define DBMS_CONNECTION_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 3
 /// each period reduces the error counter by 2 times
@@ -44,7 +46,7 @@
 /// The boundary on which the blocks for asynchronous file operations should be aligned.
 #define DEFAULT_AIO_FILE_BLOCK_SIZE 4096
 
-#define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
+#define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 180
 #define DEFAULT_HTTP_READ_BUFFER_CONNECTION_TIMEOUT 1
 /// Maximum number of http-connections between two endpoints
 /// the number is unmotivated
@@ -64,3 +66,18 @@
 
 /// Max depth of hierarchical dictionary
 #define DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH 1000
+
+/// Query profiler cannot work with sanitizers.
+/// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)
+/// And they do unwinding frequently (on every malloc/free, thread/mutex operations, etc).
+/// They change %rbp during unwinding and it confuses libunwind if signal comes during sanitizer unwinding
+///  and query profiler decide to unwind stack with libunwind at this moment.
+///
+/// Symptoms: you'll get silent Segmentation Fault - without sanitizer message and without usual ClickHouse diagnostics.
+///
+/// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
+#if !defined(SANITIZER)
+#define QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS 1000000000
+#else
+#define QUERY_PROFILER_DEFAULT_SAMPLE_RATE_NS 0
+#endif

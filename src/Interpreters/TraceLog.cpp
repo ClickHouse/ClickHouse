@@ -19,6 +19,7 @@ const TraceDataType::Values TraceLogElement::trace_values =
     {"CPU", static_cast<UInt8>(TraceType::CPU)},
     {"Memory", static_cast<UInt8>(TraceType::Memory)},
     {"MemorySample", static_cast<UInt8>(TraceType::MemorySample)},
+    {"MemoryPeak", static_cast<UInt8>(TraceType::MemoryPeak)},
 };
 
 NamesAndTypesList TraceLogElement::getNamesAndTypes()

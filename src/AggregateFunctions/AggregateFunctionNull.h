@@ -10,9 +10,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -139,16 +137,16 @@ public:
         nested_function->merge(nestedPlace(place), nestedPlace(rhs), arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         bool flag = getFlag(place);
         if constexpr (serialize_flag)
             writeBinary(flag, buf);
         if (flag)
-            nested_function->serialize(nestedPlace(place), buf);
+            nested_function->serialize(nestedPlace(place), buf, version);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         bool flag = 1;
         if constexpr (serialize_flag)
@@ -156,7 +154,7 @@ public:
         if (flag)
         {
             setFlag(place);
-            nested_function->deserialize(nestedPlace(place), buf, arena);
+            nested_function->deserialize(nestedPlace(place), buf, version, arena);
         }
     }
 

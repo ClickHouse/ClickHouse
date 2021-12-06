@@ -1,14 +1,12 @@
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
-#include <DataStreams/IBlockOutputStream.h>
 
 #include <Interpreters/Set.h>
 #include <Interpreters/IJoin.h>
 #include <Storages/IStorage.h>
 
 #include <iomanip>
-#include <DataStreams/materializeBlock.h>
 
 
 namespace DB

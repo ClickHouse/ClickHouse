@@ -328,3 +328,31 @@ Possible values:
 Default value: `true`.
 
 By default, the ClickHouse server checks at table creation the data type of a column for sampling or sampling expression. If you already have tables with incorrect sampling expression and do not want the server to raise an exception during startup, set `check_sample_column_is_correct` to `false`.
+
+## min_bytes_to_rebalance_partition_over_jbod {#min-bytes-to-rebalance-partition-over-jbod}
+
+Sets minimal amount of bytes to enable balancing when distributing new big parts over volume disks [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures).
+
+Possible values:
+
+-   Positive integer.
+-   0 — Balancing is disabled.
+
+Default value: `0`.
+
+**Usage**
+
+The value of the `min_bytes_to_rebalance_partition_over_jbod` setting should be less than the value of the [max_bytes_to_merge_at_max_space_in_pool](../../operations/settings/merge-tree-settings.md#max-bytes-to-merge-at-max-space-in-pool) setting. Otherwise, ClickHouse throws an exception.
+
+## detach_not_byte_identical_parts {#detach_not_byte_identical_parts}
+
+Enables or disables detaching a data part on a replica after a merge or a mutation, if it is not byte-identical to data parts on other replicas. If disabled, the data part is removed. Activate this setting if you want to analyze such parts later.
+
+The setting is applicable to `MergeTree` tables with enabled [data replication](../../engines/table-engines/mergetree-family/replication.md).
+
+Possible values:
+
+-   0 — Parts are removed.
+-   1 — Parts are detached.
+
+Default value: `0`.

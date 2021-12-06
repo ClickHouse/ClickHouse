@@ -71,6 +71,8 @@ public:
     /// Check part by name
     CheckResult checkPart(const String & part_name);
 
+    void cancelRemovedPartsCheck(const MergeTreePartInfo & drop_range_info);
+
 private:
     void run();
 

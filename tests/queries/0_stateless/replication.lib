@@ -40,6 +40,17 @@ function check_replication_consistency()
     table_name_prefix=$1
     check_query_part=$2
 
+    # Wait for all queries to finish (query may still be running if thread is killed by timeout)
+    num_tries=0
+    while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query LIKE '%$table_name_prefix%'") -ne 1 ]]; do
+        sleep 0.5;
+        num_tries=$((num_tries-1))
+        if [ $num_tries -eq 100 ]; then
+            $CLICKHOUSE_CLIENT -q "SELECT count() FROM system.processes WHERE current_database=currentDatabase() AND query LIKE '%$table_name_prefix%' FORMAT Vertical"
+            break
+        fi
+    done
+
     # Do not check anything if all replicas are readonly,
     # because is this case all replicas are probably lost (it may happen and it's not a bug)
     res=$($CLICKHOUSE_CLIENT -q "SELECT count() - sum(is_readonly) FROM system.replicas WHERE database=currentDatabase() AND table LIKE '$table_name_prefix%'")

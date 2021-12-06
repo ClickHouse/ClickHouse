@@ -10,7 +10,7 @@
 namespace DB
 {
 class ASTRolesOrUsersSet;
-class AccessControlManager;
+class AccessControl;
 
 
 /// Represents a set of users/roles like
@@ -31,18 +31,18 @@ struct RolesOrUsersSet
     RolesOrUsersSet(const UUID & id);
     RolesOrUsersSet(const std::vector<UUID> & ids_);
 
-    /// The constructor from AST requires the AccessControlManager if `ast.id_mode == false`.
+    /// The constructor from AST requires the AccessControl if `ast.id_mode == false`.
     RolesOrUsersSet(const ASTRolesOrUsersSet & ast);
     RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const std::optional<UUID> & current_user_id);
-    RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControlManager & manager);
-    RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControlManager & manager, const std::optional<UUID> & current_user_id);
+    RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControl & access_control);
+    RolesOrUsersSet(const ASTRolesOrUsersSet & ast, const AccessControl & access_control, const std::optional<UUID> & current_user_id);
 
     std::shared_ptr<ASTRolesOrUsersSet> toAST() const;
-    std::shared_ptr<ASTRolesOrUsersSet> toASTWithNames(const AccessControlManager & manager) const;
+    std::shared_ptr<ASTRolesOrUsersSet> toASTWithNames(const AccessControl & access_control) const;
 
     String toString() const;
-    String toStringWithNames(const AccessControlManager & manager) const;
-    Strings toStringsWithNames(const AccessControlManager & manager) const;
+    String toStringWithNames(const AccessControl & access_control) const;
+    Strings toStringsWithNames(const AccessControl & access_control) const;
 
     bool empty() const;
     void clear();
@@ -57,7 +57,7 @@ struct RolesOrUsersSet
     std::vector<UUID> getMatchingIDs() const;
 
     /// Returns a list of matching users and roles.
-    std::vector<UUID> getMatchingIDs(const AccessControlManager & manager) const;
+    std::vector<UUID> getMatchingIDs(const AccessControl & access_control) const;
 
     friend bool operator ==(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs);
     friend bool operator !=(const RolesOrUsersSet & lhs, const RolesOrUsersSet & rhs) { return !(lhs == rhs); }
@@ -67,7 +67,7 @@ struct RolesOrUsersSet
     boost::container::flat_set<UUID> except_ids;
 
 private:
-    void init(const ASTRolesOrUsersSet & ast, const AccessControlManager * manager = nullptr, const std::optional<UUID> & current_user_id = {});
+    void init(const ASTRolesOrUsersSet & ast, const AccessControl * access_control = nullptr, const std::optional<UUID> & current_user_id = {});
 };
 
 }

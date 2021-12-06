@@ -1,0 +1,15 @@
+SELECT i AS i
+FROM index_append_test_test
+PREWHERE a = 0
+WHERE (a = 0) AND indexHint((i + 40) > 0)
+SELECT i AS i
+FROM index_append_test_test
+PREWHERE a < 0
+SELECT i AS i
+FROM index_append_test_test
+PREWHERE a >= 0
+WHERE (a >= 0) AND indexHint((i + 40) > 0)
+SELECT i AS i
+FROM index_append_test_test
+PREWHERE (2 * b) < 100
+WHERE ((2 * b) < 100) AND indexHint(i < 100)

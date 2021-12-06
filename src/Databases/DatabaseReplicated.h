@@ -4,8 +4,7 @@
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <DataStreams/BlockIO.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Context.h>
 
 
@@ -47,8 +46,12 @@ public:
     /// then it will be executed on all replicas.
     BlockIO tryEnqueueReplicatedDDL(const ASTPtr & query, ContextPtr query_context);
 
-    void stopReplication();
+    bool hasReplicationThread() const override { return true; }
 
+    void stopReplication() override;
+
+    String getShardName() const { return shard_name; }
+    String getReplicaName() const { return replica_name; }
     String getFullReplicaName() const;
     static std::pair<String, String> parseFullReplicaName(const String & name);
 
@@ -95,6 +98,7 @@ private:
 
     std::atomic_bool is_readonly = true;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
+    UInt32 max_log_ptr_at_creation = 0;
 
     mutable ClusterPtr cluster;
 };

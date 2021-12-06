@@ -28,7 +28,6 @@ public:
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
         ExpressionActionsSettings actions_settings,
-        bool check_columns_,
         const MergeTreeReaderSettings & reader_settings,
         const Names & virt_column_names = {},
         size_t part_index_in_query_ = 0,
@@ -66,7 +65,6 @@ protected:
     /// It reduces amount of read data for queries with small LIMIT.
     bool has_limit_below_one_block = false;
 
-    bool check_columns;
     size_t total_rows = 0;
 };
 
