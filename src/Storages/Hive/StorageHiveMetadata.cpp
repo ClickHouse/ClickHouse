@@ -1,13 +1,13 @@
-#include <Storages/Hive/HiveFileMetaData.h>
+#include <Storages/Hive/StorageHiveMetadata.h>
 #include <Common/Exception.h>
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Parser.h>
 
 namespace DB
 {
-HiveFileMetaData::~HiveFileMetaData() = default;
+StorageHiveMetadata::~StorageHiveMetadata() = default;
 
-String HiveFileMetaData::toString() const
+String StorageHiveMetadata::toString() const
 {
     Poco::JSON::Object jobj;
     jobj.set("schema", schema);
@@ -21,7 +21,7 @@ String HiveFileMetaData::toString() const
 
 }
 
-bool HiveFileMetaData::fromString(const String &buf)
+bool StorageHiveMetadata::fromString(const String &buf)
 {
     std::stringstream istream; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     istream << buf;
@@ -35,11 +35,11 @@ bool HiveFileMetaData::fromString(const String &buf)
     return true;
 }
 
-String HiveFileMetaData::getVersion() const
+String StorageHiveMetadata::getVersion() const
 {
     return std::to_string(getLastModificationTimestamp());
 }
 
-REGISTTER_REMOTE_FILE_META_DATA_CLASS(HiveFileMetaData)
+REGISTTER_REMOTE_FILE_META_DATA_CLASS(StorageHiveMetadata)
 
 }

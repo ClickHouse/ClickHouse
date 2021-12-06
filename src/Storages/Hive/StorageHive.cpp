@@ -38,7 +38,7 @@
 #include <Storages/Hive/HiveFile.h>
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/Hive/HiveCommon.h>
-#include <Storages/Hive/HiveFileMetaData.h>
+#include <Storages/Hive/StorageHiveMetadata.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/StorageFactory.h>
 
@@ -171,7 +171,7 @@ public:
                 std::unique_ptr<ReadBuffer> remote_read_buf;
                 if (RemoteReadBufferCache::instance().isInitialized() && getContext()->getSettingsRef().use_local_cache_for_remote_fs)
                     remote_read_buf = RemoteReadBuffer::create(getContext(),
-                        std::make_shared<HiveFileMetaData>("Hive", getNameNodeCluster(hdfs_namenode_url), uri_with_path, curr_file->getSize(), curr_file->getLastModTs()),
+                        std::make_shared<StorageHiveMetadata>("Hive", getNameNodeCluster(hdfs_namenode_url), uri_with_path, curr_file->getSize(), curr_file->getLastModTs()),
                         std::move(raw_read_buf));
                 else
                     remote_read_buf = std::move(raw_read_buf);
