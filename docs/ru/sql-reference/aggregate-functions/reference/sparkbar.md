@@ -18,7 +18,8 @@ sparkbar(width[, min_x, max_x])(x, y)
 
 **Параметры**
 
--   `width` — Количество отрезков. Тип: [Integer](../../../sql-reference/data-types/int-uint.md).
+-   `width` — Количество столбцов гистограммы. Тип: [Integer](../../../sql-reference/data-types/int-uint.md).
+
 -   `min_x` — Начало интервала. Необязательный параметр.
 -   `max_x` — Конец интервала. Необязательный параметр.
 
