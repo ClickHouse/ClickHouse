@@ -3962,6 +3962,7 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
         else
         {
             part->renameTo(fs::path("detached") / part_name, true);
+            part->is_temp = false;
         }
     }
     catch (const Exception & e)
