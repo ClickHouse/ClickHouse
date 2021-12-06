@@ -76,7 +76,7 @@ def call_with_retry(query, timeout=30, retry_count=5):
             break
 
 def make_query_command(query):
-    return f"""clickhouse client -q "{query}" --max_untracked_memory=1Gi --memory_profiler_step=1Gi"""
+    return f"""clickhouse client -q "{query}" --max_untracked_memory=1Gi --memory_profiler_step=1Gi --max_memory_usage_for_user=0"""
 
 
 def prepare_for_hung_check(drop_databases):
@@ -211,6 +211,7 @@ if __name__ == "__main__":
             # Aggregator code.
             # But right now it should work, since neither hung check, nor 00001_select_1 has GROUP BY.
             "--client-option", "max_untracked_memory=1Gi",
+            "--client-option", "max_memory_usage_for_user=0",
             "--client-option", "memory_profiler_step=1Gi",
             "--hung-check",
             "00001_select_1"
