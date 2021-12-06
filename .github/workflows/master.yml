@@ -41,30 +41,6 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  PVSCheck:
-    needs: DockerHubPush
-    if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
-    runs-on: [self-hosted, func-tester]
-    steps:
-      - name: Check out repository code
-        uses: actions/checkout@v2
-        with:
-          submodules: 'recursive'
-      - name: PVS Check
-        env:
-          TEMP_PATH: ${{runner.temp}}/pvs_check
-          REPO_COPY: ${{runner.temp}}/pvs_check/ClickHouse
-        run: |
-          sudo rm -fr $TEMP_PATH
-          mkdir -p $TEMP_PATH
-          cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 pvs_check.py
-      - name: Cleanup
-        if: always()
-        run: |
-          docker kill $(docker ps -q) ||:
-          docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
   CompatibilityCheck:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, style-checker]
@@ -1380,7 +1356,7 @@ jobs:
 ##############################################################################################
   ASTFuzzerTestAsan:
     needs: [BuilderDebAsan]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1408,7 +1384,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   ASTFuzzerTestTsan:
     needs: [BuilderDebTsan]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1436,7 +1412,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   ASTFuzzerTestUBSan:
     needs: [BuilderDebUBsan]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1464,7 +1440,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   ASTFuzzerTestMSan:
     needs: [BuilderDebMsan]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1492,7 +1468,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   ASTFuzzerTestDebug:
     needs: [BuilderDebDebug]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1523,7 +1499,7 @@ jobs:
 #############################################################################################
   UnitTestsAsan:
     needs: [BuilderDebAsan]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1551,7 +1527,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   UnitTestsReleaseClang:
     needs: [BuilderBinRelease]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1579,7 +1555,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   UnitTestsTsan:
     needs: [BuilderDebTsan]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1607,7 +1583,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   UnitTestsMsan:
     needs: [BuilderDebMsan]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1635,7 +1611,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   UnitTestsUBsan:
     needs: [BuilderDebUBsan]
-    runs-on: [self-hosted, func-tester]
+    runs-on: [self-hosted, fuzzer-unit-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
@@ -1699,7 +1675,6 @@ jobs:
       - UnitTestsUBsan
       - UnitTestsReleaseClang
       - SplitBuildSmokeTest
-      - PVSCheck
     runs-on: [self-hosted, style-checker]
     steps:
       - name: Check out repository code
