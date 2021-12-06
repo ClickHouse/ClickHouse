@@ -161,7 +161,6 @@ std::shared_ptr<T> getBlobStorageClientWithAuth(
         return getClientWithConnectionString<T>(connection_str, container_name);
     }
 
-    // TODO: untested so far
     if (config.has(config_prefix + ".account_key") && config.has(config_prefix + ".account_name")) {
         auto storage_shared_key_credential = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(
             config.getString(config_prefix + ".account_name"),
@@ -188,7 +187,7 @@ std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> getBlobContainerClie
     if (endpoint.container_already_exists.value_or(false))
         return getBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
 
-    auto blob_service_client = getBlobStorageClientWithAuth<BlobServiceClient>(final_url, container_name, config, config_prefix);
+    auto blob_service_client = getBlobStorageClientWithAuth<BlobServiceClient>(endpoint.storage_account_url, container_name, config, config_prefix);
 
     if (!endpoint.container_already_exists.has_value())
     {
