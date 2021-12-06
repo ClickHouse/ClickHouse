@@ -20,6 +20,7 @@
 #include <Compression/getCompressionCodecForFile.h>
 #include <Parsers/queryToString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 
 namespace CurrentMetrics
@@ -439,9 +440,13 @@ void IMergeTreeDataPart::removeIfNeeded()
                 if (file_name.empty())
                     throw Exception("relative_path " + relative_path + " of part " + name + " is invalid or not set", ErrorCodes::LOGICAL_ERROR);
 
-                if (!startsWith(file_name, "tmp"))
+                if (!startsWith(file_name, "tmp") && !endsWith(file_name, ".tmp_proj"))
                 {
-                    LOG_ERROR(storage.log, "~DataPart() should remove part {} but its name doesn't start with tmp. Too suspicious, keeping the part.", path);
+                    LOG_ERROR(
+                        storage.log,
+                        "~DataPart() should remove part {} but its name doesn't start with \"tmp\" or end with \".tmp_proj\". Too "
+                        "suspicious, keeping the part.",
+                        path);
                     return;
                 }
             }
@@ -584,7 +589,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
     loadIndexGranularity();
-    calculateColumnsSizesOnDisk();
+    calculateColumnsAndSecondaryIndicesSizesOnDisk();
     loadIndex();     /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
     loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
     loadPartitionAndMinMaxIndex();
@@ -1030,6 +1035,13 @@ void IMergeTreeDataPart::loadColumns(bool require)
     else
     {
         loaded_columns.readText(*volume->getDisk()->readFile(path));
+
+        for (const auto & column : loaded_columns)
+        {
+            const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
+            if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
+                aggregate_function_data_type->setVersion(0, /* if_empty */true);
+        }
     }
 
     setColumns(loaded_columns);
@@ -1279,7 +1291,7 @@ void IMergeTreeDataPart::projectionRemove(const String & parent_to, bool keep_sh
      }
  }
 
-String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix) const
+String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached) const
 {
     String res;
 
@@ -1288,11 +1300,20 @@ String IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix) const
         * This is done only in the case of `to_detached`, because it is assumed that in this case the exact name does not matter.
         * No more than 10 attempts are made so that there are not too many junk directories left.
         */
+
+    auto full_relative_path = fs::path(storage.relative_data_path);
+    if (detached)
+        full_relative_path /= "detached";
+    if (detached && parent_part)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot detach projection");
+    else if (parent_part)
+        full_relative_path /= parent_part->relative_path;
+
     for (int try_no = 0; try_no < 10; try_no++)
     {
         res = (prefix.empty() ? "" : prefix + "_") + name + (try_no ? "_try" + DB::toString(try_no) : "");
 
-        if (!volume->getDisk()->exists(fs::path(getFullRelativePath()) / res))
+        if (!volume->getDisk()->exists(full_relative_path / res))
             return res;
 
         LOG_WARNING(storage.log, "Directory {} (to detach to) already exists. Will detach to directory with '_tryN' suffix.", res);
@@ -1308,7 +1329,7 @@ String IMergeTreeDataPart::getRelativePathForDetachedPart(const String & prefix)
     assert(prefix.empty() || std::find(DetachedPartInfo::DETACH_REASONS.begin(),
                                        DetachedPartInfo::DETACH_REASONS.end(),
                                        prefix) != DetachedPartInfo::DETACH_REASONS.end());
-    return "detached/" + getRelativePathForPrefix(prefix);
+    return "detached/" + getRelativePathForPrefix(prefix, /* detached */ true);
 }
 
 void IMergeTreeDataPart::renameToDetached(const String & prefix) const
@@ -1420,6 +1441,11 @@ void IMergeTreeDataPart::checkConsistency(bool /* require_part_metadata */) cons
     throw Exception("Method 'checkConsistency' is not implemented for part with type " + getType().toString(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
+void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk()
+{
+    calculateColumnsSizesOnDisk();
+    calculateSecondaryIndicesSizesOnDisk();
+}
 
 void IMergeTreeDataPart::calculateColumnsSizesOnDisk()
 {
@@ -1429,11 +1455,55 @@ void IMergeTreeDataPart::calculateColumnsSizesOnDisk()
     calculateEachColumnSizes(columns_sizes, total_columns_size);
 }
 
+void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk()
+{
+    if (checksums.empty())
+        throw Exception("Cannot calculate secondary indexes sizes when columns or checksums are not initialized", ErrorCodes::LOGICAL_ERROR);
+
+    auto secondary_indices_descriptions = storage.getInMemoryMetadataPtr()->secondary_indices;
+
+    for (auto & index_description : secondary_indices_descriptions)
+    {
+        ColumnSize index_size;
+
+        auto index_ptr = MergeTreeIndexFactory::instance().get(index_description);
+        auto index_name = index_ptr->getFileName();
+        auto index_name_escaped = escapeForFileName(index_name);
+
+        auto index_file_name = index_name_escaped + index_ptr->getSerializedFileExtension();
+        auto index_marks_file_name = index_name_escaped + index_granularity_info.marks_file_extension;
+
+        /// If part does not contain index
+        auto bin_checksum = checksums.files.find(index_file_name);
+        if (bin_checksum != checksums.files.end())
+        {
+            index_size.data_compressed = bin_checksum->second.file_size;
+            index_size.data_uncompressed = bin_checksum->second.uncompressed_size;
+        }
+
+        auto mrk_checksum = checksums.files.find(index_marks_file_name);
+        if (mrk_checksum != checksums.files.end())
+            index_size.marks = mrk_checksum->second.file_size;
+
+        total_secondary_indices_size.add(index_size);
+        secondary_index_sizes[index_description.name] = index_size;
+    }
+}
+
 ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name, const IDataType & /* type */) const
 {
     /// For some types of parts columns_size maybe not calculated
     auto it = columns_sizes.find(column_name);
     if (it != columns_sizes.end())
+        return it->second;
+
+    return ColumnSize{};
+}
+
+IndexSize IMergeTreeDataPart::getSecondaryIndexSize(const String & secondary_index_name) const
+{
+    auto it = secondary_index_sizes.find(secondary_index_name);
+    if (it != secondary_index_sizes.end())
         return it->second;
 
     return ColumnSize{};

@@ -1,6 +1,5 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <string_view>
 #include <unordered_map>
 #include <base/types.h>
@@ -134,5 +133,3 @@ private:
 };
 
 }
-
-#endif /* NOT Arcadia_build */

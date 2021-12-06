@@ -2,7 +2,7 @@
 
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
-#include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
+#include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 
 
 namespace DB
@@ -10,47 +10,44 @@ namespace DB
 
 /** A stream to input data in tsv format.
   */
-class TabSeparatedRowInputFormat : public RowInputFormatWithDiagnosticInfo
+class TabSeparatedRowInputFormat : public RowInputFormatWithNamesAndTypes
 {
 public:
     /** with_names - the first line is the header with the names of the columns
       * with_types - on the next line header with type names
       */
     TabSeparatedRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
-                               bool with_names_, bool with_types_, const FormatSettings & format_settings_);
+                               bool with_names_, bool with_types_, bool is_raw, const FormatSettings & format_settings_);
 
     String getName() const override { return "TabSeparatedRowInputFormat"; }
 
-    bool readRow(MutableColumns & columns, RowReadExtension &) override;
-    void readPrefix() override;
+private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
-    void resetParser() override;
+    bool readField(IColumn & column, const DataTypePtr & type,
+                   const SerializationPtr & serialization, bool is_last_file_column, const String & column_name) override;
 
-protected:
-    bool with_names;
-    bool with_types;
-    const FormatSettings format_settings;
+    void skipField(size_t /*file_column*/) override { skipField(); }
+    void skipField();
+    void skipHeaderRow();
+    void skipNames() override { skipHeaderRow(); }
+    void skipTypes() override { skipHeaderRow(); }
+    void skipFieldDelimiter() override;
+    void skipRowEndDelimiter() override;
 
-    virtual bool readField(IColumn & column, const DataTypePtr & type,
-        const SerializationPtr & serialization, bool is_last_file_column);
+    std::vector<String> readHeaderRow();
+    std::vector<String> readNames() override { return readHeaderRow(); }
+    std::vector<String> readTypes() override { return readHeaderRow(); }
+    String readFieldIntoString();
 
-private:
-    DataTypes data_types;
+    void checkNullValueForNonNullable(DataTypePtr type) override;
 
-    using IndexesMap = std::unordered_map<String, size_t>;
-    IndexesMap column_indexes_by_names;
-
-    std::vector<size_t> columns_to_fill_with_default_values;
-
-    void addInputColumn(const String & column_name);
-    void setupAllColumnsByTableSchema();
-    void fillUnreadColumnsWithDefaults(MutableColumns & columns, RowReadExtension & row_read_extension);
-
-    bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
-    void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
+    bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
+    bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) override;
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override { return *pos != '\n' && *pos != '\t'; }
+
+    bool is_raw;
 };
 
 }

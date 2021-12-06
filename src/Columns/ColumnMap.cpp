@@ -1,7 +1,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/IColumnImpl.h>
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <base/map.h>
@@ -263,7 +263,7 @@ void ColumnMap::getExtremes(Field & min, Field & max) const
 
 void ColumnMap::forEachSubcolumn(ColumnCallback callback)
 {
-    nested->forEachSubcolumn(callback);
+    callback(nested);
 }
 
 bool ColumnMap::structureEquals(const IColumn & rhs) const

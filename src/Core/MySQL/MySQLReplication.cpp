@@ -105,12 +105,16 @@ namespace MySQLReplication
         if (query.starts_with("BEGIN") || query.starts_with("COMMIT"))
         {
             typ = QUERY_EVENT_MULTI_TXN_FLAG;
+            if (!query.starts_with("COMMIT"))
+                transaction_complete = false;
         }
         else if (query.starts_with("XA"))
         {
             if (query.starts_with("XA ROLLBACK"))
                 throw ReplicationError("ParseQueryEvent: Unsupported query event:" + query, ErrorCodes::LOGICAL_ERROR);
             typ = QUERY_EVENT_XA;
+            if (!query.starts_with("XA COMMIT"))
+                transaction_complete = false;
         }
         else if (query.starts_with("SAVEPOINT"))
         {
@@ -497,6 +501,9 @@ namespace MySQLReplication
                             UInt32 mask = 0;
                             DecimalType res(0);
 
+                            if (payload.eof())
+                                throw Exception("Attempt to read after EOF.", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
+
                             if ((*payload.position() & 0x80) == 0)
                                 mask = UInt32(-1);
 
@@ -711,9 +718,26 @@ namespace MySQLReplication
     {
         switch (event->header.type)
         {
-            case FORMAT_DESCRIPTION_EVENT:
-            case QUERY_EVENT:
+            case FORMAT_DESCRIPTION_EVENT: {
+                binlog_pos = event->header.log_pos;
+                break;
+            }
+            case QUERY_EVENT: {
+                auto query = std::static_pointer_cast<QueryEvent>(event);
+                if (query->transaction_complete && pending_gtid)
+                {
+                    gtid_sets.update(*pending_gtid);
+                    pending_gtid.reset();
+                }
+                binlog_pos = event->header.log_pos;
+                break;
+            }
             case XID_EVENT: {
+                if (pending_gtid)
+                {
+                    gtid_sets.update(*pending_gtid);
+                    pending_gtid.reset();
+                }
                 binlog_pos = event->header.log_pos;
                 break;
             }
@@ -724,9 +748,11 @@ namespace MySQLReplication
                 break;
             }
             case GTID_EVENT: {
+                if (pending_gtid)
+                    gtid_sets.update(*pending_gtid);
                 auto gtid_event = std::static_pointer_cast<GTIDEvent>(event);
                 binlog_pos = event->header.log_pos;
-                gtid_sets.update(gtid_event->gtid);
+                pending_gtid = gtid_event->gtid;
                 break;
             }
             default:
@@ -792,6 +818,7 @@ namespace MySQLReplication
             {
                 event = std::make_shared<QueryEvent>(std::move(event_header));
                 event->parseEvent(event_payload);
+                position.update(event);
 
                 auto query = std::static_pointer_cast<QueryEvent>(event);
                 switch (query->typ)
@@ -803,7 +830,7 @@ namespace MySQLReplication
                         break;
                     }
                     default:
-                        position.update(event);
+                        break;
                 }
                 break;
             }

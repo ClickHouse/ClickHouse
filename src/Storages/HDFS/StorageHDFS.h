@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_HDFS
 
@@ -38,6 +36,8 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
+    bool supportsPartitionBy() const override { return true; }
+
 protected:
     StorageHDFS(
         const String & uri_,
@@ -47,12 +47,14 @@ protected:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
-        const String & compression_method_);
+        const String & compression_method_,
+        ASTPtr partition_by = nullptr);
 
 private:
     const String uri;
     String format_name;
     String compression_method;
+    ASTPtr partition_by;
 
     Poco::Logger * log = &Poco::Logger::get("StorageHDFS");
 };

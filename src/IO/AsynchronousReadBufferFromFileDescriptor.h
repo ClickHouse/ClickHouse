@@ -40,6 +40,7 @@ public:
         : ReadBufferFromFileBase(buf_size, existing_memory, alignment),
         reader(std::move(reader_)), priority(priority_), required_alignment(alignment), fd(fd_)
     {
+        prefetch_buffer.alignment = alignment;
     }
 
     ~AsynchronousReadBufferFromFileDescriptor() override;

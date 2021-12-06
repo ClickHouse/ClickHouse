@@ -40,11 +40,27 @@ SerializationLowCardinality::SerializationLowCardinality(const DataTypePtr & dic
 {
 }
 
-void SerializationLowCardinality::enumerateStreams(const StreamCallback & callback, SubstreamPath & path) const
+void SerializationLowCardinality::enumerateStreams(
+    SubstreamPath & path,
+    const StreamCallback & callback,
+    DataTypePtr type,
+    ColumnPtr column) const
 {
+    const auto * column_lc = column ? &getColumnLowCardinality(*column) : nullptr;
+
+    SubstreamData data;
+    data.type = type ? dictionary_type : nullptr;
+    data.column = column_lc ? column_lc->getDictionary().getNestedColumn() : nullptr;
+    data.serialization = dict_inner_serialization;
+
     path.push_back(Substream::DictionaryKeys);
-    dict_inner_serialization->enumerateStreams(callback, path);
+    path.back().data = data;
+
+    dict_inner_serialization->enumerateStreams(path, callback, data.type, data.column);
+
     path.back() = Substream::DictionaryIndexes;
+    path.back().data = {type, column, getPtr(), nullptr};
+
     callback(path);
     path.pop_back();
 }
@@ -802,6 +818,7 @@ void SerializationLowCardinality::serializeTextJSON(const IColumn & column, size
 {
     serializeImpl(column, row_num, &ISerialization::serializeTextJSON, ostr, settings);
 }
+
 void SerializationLowCardinality::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeImpl(column, &ISerialization::deserializeTextJSON, istr, settings);
@@ -810,6 +827,16 @@ void SerializationLowCardinality::deserializeTextJSON(IColumn & column, ReadBuff
 void SerializationLowCardinality::serializeTextXML(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     serializeImpl(column, row_num, &ISerialization::serializeTextXML, ostr, settings);
+}
+
+void SerializationLowCardinality::deserializeTextRaw(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+{
+    deserializeImpl(column, &ISerialization::deserializeTextRaw, istr, settings);
+}
+
+void SerializationLowCardinality::serializeTextRaw(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
+{
+    serializeImpl(column, row_num, &ISerialization::serializeTextRaw, ostr, settings);
 }
 
 template <typename... Params, typename... Args>

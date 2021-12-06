@@ -13,7 +13,7 @@
 #include <base/unaligned.h>
 #include <base/sort.h>
 
-#include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
 
 #include <Common/Exception.h>
 #include <Common/Arena.h>

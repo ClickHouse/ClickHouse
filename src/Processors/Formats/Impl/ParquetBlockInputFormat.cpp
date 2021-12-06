@@ -15,6 +15,7 @@
 
 #include <base/logger_useful.h>
 
+
 namespace DB
 {
 
@@ -92,7 +93,7 @@ static size_t countIndicesForType(std::shared_ptr<arrow::DataType> type)
 
 void ParquetBlockInputFormat::prepareReader()
 {
-    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in), arrow::default_memory_pool(), &file_reader));
+    THROW_ARROW_NOT_OK(parquet::arrow::OpenFile(asArrowFile(*in, format_settings), arrow::default_memory_pool(), &file_reader));
     row_group_total = file_reader->num_row_groups();
     row_group_current = 0;
 
@@ -122,9 +123,9 @@ void ParquetBlockInputFormat::prepareReader()
     }
 }
 
-void registerInputFormatProcessorParquet(FormatFactory &factory)
+void registerInputFormatParquet(FormatFactory &factory)
 {
-    factory.registerInputFormatProcessor(
+    factory.registerInputFormat(
             "Parquet",
             [](ReadBuffer &buf,
                 const Block &sample,
@@ -143,7 +144,7 @@ void registerInputFormatProcessorParquet(FormatFactory &factory)
 namespace DB
 {
 class FormatFactory;
-void registerInputFormatProcessorParquet(FormatFactory &)
+void registerInputFormatParquet(FormatFactory &)
 {
 }
 }

@@ -22,16 +22,13 @@ public:
 
     String getName() const override { return "PrettyBlockOutputFormat"; }
 
+protected:
     void consume(Chunk) override;
     void consumeTotals(Chunk) override;
     void consumeExtremes(Chunk) override;
 
-    void finalize() override;
-
-protected:
     size_t total_rows = 0;
     size_t terminal_width = 0;
-    bool suffix_written = false;
 
     size_t row_number_width = 7; // "10000. "
 
@@ -41,16 +38,9 @@ protected:
     using WidthsPerColumn = std::vector<Widths>;
 
     virtual void write(const Chunk & chunk, PortKind port_kind);
-    virtual void writeSuffix();
+    void writeSuffix() override;
 
-
-    virtual void writeSuffixIfNot()
-    {
-        if (!suffix_written)
-            writeSuffix();
-
-        suffix_written = true;
-    }
+    void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
 
     void calculateWidths(
         const Block & header, const Chunk & chunk,

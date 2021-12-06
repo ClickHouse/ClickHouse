@@ -13,7 +13,10 @@ endif ()
 if ((ARCH_ARM AND NOT ARCH_AARCH64) OR ARCH_I386)
     message (FATAL_ERROR "32bit platforms are not supported")
 endif ()
-
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(ppc64le.*|PPC64LE.*)")
     set (ARCH_PPC64LE 1)
 endif ()
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "riscv64")
+    set (ARCH_RISCV64 1)
+endif ()
+

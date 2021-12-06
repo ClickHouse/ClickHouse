@@ -21,7 +21,7 @@ def check_query(clickhouse_node, query, result_set, retry_count=10, interval_sec
             if result_set == lastest_result:
                 return
 
-            logging.debug(f"latest_result{lastest_result}")
+            logging.debug(f"latest_result {lastest_result}")
             time.sleep(interval_seconds)
         except Exception as e:
             logging.debug(f"check_query retry {i+1} exception {e}")
@@ -223,6 +223,33 @@ def drop_table_with_materialized_mysql_database(clickhouse_node, mysql_node, ser
 
     clickhouse_node.query("DROP DATABASE test_database_drop")
     mysql_node.query("DROP DATABASE test_database_drop")
+
+
+def create_table_like_with_materialize_mysql_database(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS create_like")
+    mysql_node.query("DROP DATABASE IF EXISTS create_like2")
+    clickhouse_node.query("DROP DATABASE IF EXISTS create_like")
+
+    mysql_node.query("CREATE DATABASE create_like")
+    mysql_node.query("CREATE DATABASE create_like2")
+    mysql_node.query("CREATE TABLE create_like.t1 (id INT NOT NULL PRIMARY KEY)")
+    mysql_node.query("CREATE TABLE create_like2.t1 LIKE create_like.t1")
+
+    clickhouse_node.query(
+        f"CREATE DATABASE create_like ENGINE = MaterializeMySQL('{service_name}:3306', 'create_like', 'root', 'clickhouse')")
+    mysql_node.query("CREATE TABLE create_like.t2 LIKE create_like.t1")
+    check_query(clickhouse_node, "SHOW TABLES FROM create_like", "t1\nt2\n")
+
+    mysql_node.query("USE create_like")
+    mysql_node.query("CREATE TABLE t3 LIKE create_like2.t1")
+    mysql_node.query("CREATE TABLE t4 LIKE t1")
+
+    check_query(clickhouse_node, "SHOW TABLES FROM create_like", "t1\nt2\nt4\n")
+    check_query(clickhouse_node, "SHOW DATABASES LIKE 'create_like%'", "create_like\n")
+
+    clickhouse_node.query("DROP DATABASE create_like")
+    mysql_node.query("DROP DATABASE create_like")
+    mysql_node.query("DROP DATABASE create_like2")
 
 
 def create_table_with_materialized_mysql_database(clickhouse_node, mysql_node, service_name):
@@ -980,3 +1007,49 @@ def mysql_settings_test(clickhouse_node, mysql_node, service_name):
     clickhouse_node.query("DROP DATABASE test_database")
     mysql_node.query("DROP DATABASE test_database")
 
+def materialized_mysql_large_transaction(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS largetransaction")
+    clickhouse_node.query("DROP DATABASE IF EXISTS largetransaction")
+    mysql_node.query("CREATE DATABASE largetransaction")
+
+    mysql_node.query("CREATE TABLE largetransaction.test_table ("
+                     "`key` INT NOT NULL PRIMARY KEY AUTO_INCREMENT, "
+                     "`value` INT NOT NULL) ENGINE = InnoDB;")
+    num_rows = 200000
+    rows_per_insert = 5000
+    values = ",".join(["(1)" for _ in range(rows_per_insert)])
+    for i in range(num_rows//rows_per_insert):
+        mysql_node.query(f"INSERT INTO largetransaction.test_table (`value`) VALUES {values};")
+
+
+    clickhouse_node.query("CREATE DATABASE largetransaction ENGINE = MaterializedMySQL('{}:3306', 'largetransaction', 'root', 'clickhouse')".format(service_name))
+    check_query(clickhouse_node, "SELECT COUNT() FROM largetransaction.test_table", f"{num_rows}\n")
+
+    mysql_node.query("UPDATE largetransaction.test_table SET value = 2;")
+
+    # Attempt to restart clickhouse after it has started processing
+    # the transaction, but before it has completed it.
+    while int(clickhouse_node.query("SELECT COUNT() FROM largetransaction.test_table WHERE value = 2")) == 0:
+        time.sleep(0.2)
+    clickhouse_node.restart_clickhouse()
+
+    check_query(clickhouse_node, "SELECT COUNT() FROM largetransaction.test_table WHERE value = 2", f"{num_rows}\n")
+
+    clickhouse_node.query("DROP DATABASE largetransaction")
+    mysql_node.query("DROP DATABASE largetransaction")
+
+def table_table(clickhouse_node, mysql_node, service_name):
+    mysql_node.query("DROP DATABASE IF EXISTS table_test")
+    clickhouse_node.query("DROP DATABASE IF EXISTS table_test")
+    mysql_node.query("CREATE DATABASE table_test")
+
+    # Test that the table name 'table' work as expected
+    mysql_node.query("CREATE TABLE table_test.table (id INT UNSIGNED PRIMARY KEY)")
+    mysql_node.query("INSERT INTO table_test.table VALUES (0),(1),(2),(3),(4)")
+
+    clickhouse_node.query("CREATE DATABASE table_test ENGINE=MaterializeMySQL('{}:3306', 'table_test', 'root', 'clickhouse')".format(service_name))
+
+    check_query(clickhouse_node, "SELECT COUNT(*) FROM table_test.table", "5\n")
+
+    mysql_node.query("DROP DATABASE table_test")
+    clickhouse_node.query("DROP DATABASE table_test")
