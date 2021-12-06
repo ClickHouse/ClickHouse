@@ -1,6 +1,7 @@
 #include "OvercommitTracker.h"
 
 #include <chrono>
+#include <mutex>
 #include <Interpreters/ProcessList.h>
 
 using namespace std::chrono_literals;
@@ -13,6 +14,7 @@ OvercommitTracker::OvercommitTracker()
 
 void OvercommitTracker::setMaxWaitTime(UInt64 wait_time)
 {
+    std::unique_lock<std::mutex> lk(overcommit_m);
     max_wait_time = wait_time * 1us;
 }
 
