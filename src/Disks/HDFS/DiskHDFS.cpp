@@ -174,7 +174,7 @@ void registerDiskHDFS(DiskFactory & factory)
 
         return std::make_shared<DiskHDFS>(
             name, uri,
-            getSettings(config, config_prefix, context_.getSettingsRef()),
+            getSettings(config, config_prefix, context_->getSettingsRef()),
             metadata_disk, config);
     };
 
