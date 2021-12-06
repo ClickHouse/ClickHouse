@@ -914,7 +914,7 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 Управляет логированием информации о потоках выполнения запросов.
 
-Информация о потоках выполнения запросов сохраняется в системной таблице `system.query_thread_log`. Работает только в том случае, если включена настройка [log_queries](#settings-log-queries). Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log).
+Информация о потоках выполнения запросов сохраняется в системной таблице [system.query_thread_log](../../operations/system-tables/query_thread_log.md). Работает только в том случае, если включена настройка [log_queries](#settings-log-queries). Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log).
 
 Возможные значения:
 
