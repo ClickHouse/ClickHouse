@@ -94,7 +94,7 @@ protected:
     ExecutionSpeedLimits limits;
     OverflowMode overflow_mode;
 
-    QueryPriorities::Handle priority_handle;
+    QueryPriorities::Handle priority_handle = nullptr;
 
     std::atomic<bool> is_killed { false };
 
