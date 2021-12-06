@@ -1,4 +1,4 @@
-#include <IO/RemoteFileMetaDataBase.h>
+#include <IO/IRemoteFileMetadata.h>
 #include <Common/Exception.h>
 namespace DB
 {
@@ -7,15 +7,15 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-RemoteFileMetaDataBase::~RemoteFileMetaDataBase() {}
+IRemoteFileMetadata::~IRemoteFileMetadata() {}
 
-RemoteFileMetaDataFactory & RemoteFileMetaDataFactory::instance()
+RemoteFileMetadataFactory & RemoteFileMetadataFactory::instance()
 {
-    static RemoteFileMetaDataFactory g_factory;
+    static RemoteFileMetadataFactory g_factory;
     return g_factory;
 }
 
-RemoteFileMetaDataBasePtr RemoteFileMetaDataFactory::createClass(const String & class_name)
+IRemoteFileMetadataPtr RemoteFileMetadataFactory::createClass(const String & class_name)
 {
     auto it = class_creators.find(class_name);
     if (it == class_creators.end())
@@ -23,7 +23,7 @@ RemoteFileMetaDataBasePtr RemoteFileMetaDataFactory::createClass(const String & 
     return (it->second)();
 }
 
-void RemoteFileMetaDataFactory::registerClass(const String & class_name, ClassCreator creator)
+void RemoteFileMetadataFactory::registerClass(const String & class_name, ClassCreator creator)
 {
     auto it = class_creators.find(class_name);
     if (it != class_creators.end())
