@@ -28,13 +28,20 @@ namespace ErrorCodes
 }
 
 
-static String getTypeString(const AggregateFunctionPtr & func)
+static String getTypeString(const AggregateFunctionPtr & func, std::optional<size_t> version = std::nullopt)
 {
     WriteBufferFromOwnString stream;
-    stream << "AggregateFunction(" << func->getName();
+
+    stream << "AggregateFunction(";
+
+    /// If aggregate function does not support versioning its version is 0 and is not printed.
+    if (version && *version)
+        stream << *version << ", ";
+
+    stream << func->getName();
+
     const auto & parameters = func->getParameters();
     const auto & argument_types = func->getArgumentTypes();
-
     if (!parameters.empty())
     {
         stream << '(';
@@ -56,7 +63,7 @@ static String getTypeString(const AggregateFunctionPtr & func)
 
 
 ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & func_, std::optional<size_t> version_)
-    : func(func_), type_string(getTypeString(func)), version(version_)
+    : func(func_), type_string(getTypeString(func, version_)), version(version_)
 {
 }
 
@@ -66,10 +73,11 @@ ColumnAggregateFunction::ColumnAggregateFunction(const AggregateFunctionPtr & fu
 
 }
 
-void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_)
+void ColumnAggregateFunction::set(const AggregateFunctionPtr & func_, size_t version_)
 {
     func = func_;
-    type_string = getTypeString(func);
+    version = version_;
+    type_string = getTypeString(func, version);
 }
 
 
@@ -403,7 +411,7 @@ void ColumnAggregateFunction::protect()
 
 MutableColumnPtr ColumnAggregateFunction::cloneEmpty() const
 {
-    return create(func);
+    return create(func, version);
 }
 
 Field ColumnAggregateFunction::operator[](size_t n) const
