@@ -312,7 +312,7 @@ String FormatFactory::getContentType(
         throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output (with processors)", name);
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
-    
+
     Block empty_block;
     RowOutputFormatParams empty_params;
     WriteBufferFromOwnString empty_buffer;
