@@ -15,7 +15,7 @@ TEST(TestSelect, ReadRel)
         .column("sepal_width", "FP64")
         .column("petal_length", "FP64")
         .column("petal_width", "FP64")
-        .column("type", "I64")
+        .column("type", "I64").column("type_string", "String")
         .build();
     dbms::SerializedPlanBuilder plan_builder;
     auto plan = plan_builder.files(  TEST_DATA(/data/iris.parquet), std::move(schema)).build();
