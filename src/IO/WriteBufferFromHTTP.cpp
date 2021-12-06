@@ -7,8 +7,8 @@ namespace DB
 {
 
 WriteBufferFromHTTP::WriteBufferFromHTTP(
-    const Poco::URI & uri, 
-    const std::string & method, 
+    const Poco::URI & uri,
+    const std::string & method,
     const std::string & content_type,
     const ConnectionTimeouts & timeouts,
     size_t buffer_size_)
