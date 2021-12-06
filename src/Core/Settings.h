@@ -641,9 +641,6 @@ class IColumn;
 // End of FORMAT_FACTORY_SETTINGS
 // Please add settings non-related to formats into the COMMON_SETTINGS above.
 
-
-
-
 #define LIST_OF_SETTINGS(M)    \
     COMMON_SETTINGS(M)         \
     OBSOLETE_SETTINGS(M)       \
