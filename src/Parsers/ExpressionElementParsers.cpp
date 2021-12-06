@@ -18,7 +18,6 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryParameter.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTTLElement.h>
@@ -1524,6 +1523,23 @@ bool ParserNull::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 }
 
+
+bool ParserBool::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    if (ParserKeyword("true").parse(pos, node, expected))
+    {
+        node = std::make_shared<ASTLiteral>(true);
+        return true;
+    }
+    else if (ParserKeyword("false").parse(pos, node, expected))
+    {
+        node = std::make_shared<ASTLiteral>(false);
+        return true;
+    }
+    else
+        return false;
+}
+
 static bool parseNumber(char * buffer, size_t size, bool negative, int base, Field & res)
 {
     errno = 0;    /// Functions strto* don't clear errno.
@@ -1755,12 +1771,16 @@ bool ParserLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ParserNull null_p;
     ParserNumber num_p;
+    ParserBool bool_p;
     ParserStringLiteral str_p;
 
     if (null_p.parse(pos, node, expected))
         return true;
 
     if (num_p.parse(pos, node, expected))
+        return true;
+
+    if (bool_p.parse(pos, node, expected))
         return true;
 
     if (str_p.parse(pos, node, expected))

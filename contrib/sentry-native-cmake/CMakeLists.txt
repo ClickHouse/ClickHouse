@@ -28,10 +28,15 @@ set (SRCS
     ${SRC_DIR}/src/sentry_unix_pageallocator.c
     ${SRC_DIR}/src/path/sentry_path_unix.c
     ${SRC_DIR}/src/symbolizer/sentry_symbolizer_unix.c
-    ${SRC_DIR}/src/modulefinder/sentry_modulefinder_linux.c
     ${SRC_DIR}/src/transports/sentry_transport_curl.c
     ${SRC_DIR}/src/backends/sentry_backend_none.c
 )
+
+if(APPLE)
+    list(APPEND SRCS ${SRC_DIR}/src/modulefinder/sentry_modulefinder_apple.c)
+else()
+    list(APPEND SRCS ${SRC_DIR}/src/modulefinder/sentry_modulefinder_linux.c)
+endif()
 
 add_library(sentry ${SRCS})
 add_library(sentry::sentry ALIAS sentry)
