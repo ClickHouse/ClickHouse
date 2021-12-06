@@ -41,6 +41,10 @@
 #include <base/argsToConfig.h>
 #include <filesystem>
 
+#if defined(FUZZING_MODE)
+    #include <Functions/getFuzzerData.h>
+#endif
+
 namespace fs = std::filesystem;
 
 
@@ -404,18 +408,28 @@ try
     ThreadStatus thread_status;
     setupSignalHandler();
 
-#ifdef FUZZING_MODE
-    static bool first_time = true;
-    if (first_time)
-    {
-#endif
     std::cout << std::fixed << std::setprecision(3);
     std::cerr << std::fixed << std::setprecision(3);
 
+#if defined(FUZZING_MODE)
+    static bool first_time = true;
+    if (first_time)
+    {
+
+    if (queries_files.empty() && !config().has("query"))
+    {
+        std::cerr << "\033[31m" << "ClickHouse compiled in fuzzing mode." << "\033[0m" << std::endl;
+        std::cerr << "\033[31m" << "You have to provide a query with --query or --queries-file option." << "\033[0m" << std::endl;
+        std::cerr << "\033[31m" << "The query have to use function getFuzzerData() inside." << "\033[0m" << std::endl;
+        exit(1);
+    }
+
+    is_interactive = false;
+#else
     is_interactive = stdin_is_a_tty
         && (config().hasOption("interactive")
             || (!config().has("query") && !config().has("table-structure") && queries_files.empty()));
-
+#endif
     if (!is_interactive)
     {
         /// We will terminate process on error
@@ -446,6 +460,7 @@ try
 
 #ifdef FUZZING_MODE
     first_time = false;
+    }
 #endif
 
     if (is_interactive && !delayed_interactive)
@@ -664,7 +679,7 @@ void LocalServer::processConfig()
 }
 
 
-static std::string getHelpHeader()
+[[ maybe_unused ]] static std::string getHelpHeader()
 {
     return
         "usage: clickhouse-local [initial table definition] [--query <query>]\n"
@@ -680,7 +695,7 @@ static std::string getHelpHeader()
 }
 
 
-static std::string getHelpFooter()
+[[ maybe_unused ]] static std::string getHelpFooter()
 {
     return
         "Example printing memory used by each Unix user:\n"
@@ -691,11 +706,21 @@ static std::string getHelpFooter()
 }
 
 
-void LocalServer::printHelpMessage(const OptionsDescription & options_description)
+void LocalServer::printHelpMessage([[maybe_unused]] const OptionsDescription & options_description)
 {
+#if defined(FUZZING_MODE)
+    std::cout <<
+        "usage: clickhouse --query <query with getFuzzerData function> [--query-file <file with query>]\n"
+
+        "ClickHouse is build with coverage guided fuzzer (libfuzzer) inside it.\n"
+        "You have to provide a query which contains getFuzzerData function.\n"
+        "This will take the data from fuzzing engine, pass it to getFuzzerData function and execute a query.\n"
+        "Each time the data will be different, and it will last until some segfault or sanitizer assertion is found. \n";
+#else
     std::cout << getHelpHeader() << "\n";
     std::cout << options_description.main_description.value() << "\n";
     std::cout << getHelpFooter() << "\n";
+#endif
 }
 
 
@@ -793,8 +818,11 @@ int mainEntryClickHouseLocal(int argc, char ** argv)
     }
 }
 
-#ifdef FUZZING_MODE
-#include <Functions/getFuzzerData.cpp>
+#if defined(FUZZING_MODE)
+
+// #include <Functions/getFuzzerData.h>
+
+// #endif
 
 std::optional<DB::LocalServer> fuzz_app;
 
@@ -825,6 +853,9 @@ extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
     return 0;
 }
 
+
+
+
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
 {
     try
@@ -833,19 +864,14 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         if (size)
             --size;
         auto cur_str = String(reinterpret_cast<const char *>(data), size);
-        // to clearly see the beginning and the end
-        std::cerr << '>' << cur_str << '<' << std::endl;
+
         DB::FunctionGetFuzzerData::update(cur_str);
         fuzz_app->run();
+        return 0;
     }
     catch (...)
     {
-        std::cerr << "Why here?!?!?!?!?!?!?!?!?!?!?!?!?!?!?!?!?!?!?!?!" << std::endl;
-        std::cerr << DB::getCurrentExceptionMessage(true) << std::endl;
-        return 0;
-        //auto code = DB::getCurrentExceptionCode();
-        //return code ? code : 1;
+        return 1;
     }
-    return 0;
 }
 #endif
