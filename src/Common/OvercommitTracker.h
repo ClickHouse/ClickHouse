@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/logger_useful.h>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
 #include <cassert>
@@ -93,6 +94,7 @@ protected:
 
 private:
     DB::ProcessListForUser * user_process_list;
+    Poco::Logger * logger = &Poco::Logger::get("UserOvercommitTracker");
 };
 
 struct GlobalOvercommitTracker : OvercommitTracker
@@ -108,6 +110,7 @@ protected:
 
 private:
     DB::ProcessList * process_list;
+    Poco::Logger * logger = &Poco::Logger::get("GlobalOvercommitTracker");
 };
 
 struct BlockQueryIfMemoryLimit
