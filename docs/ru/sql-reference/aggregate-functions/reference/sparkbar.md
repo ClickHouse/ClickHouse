@@ -5,34 +5,34 @@ toc_title: sparkbar
 
 # sparkbar {#sparkbar}
 
-The function plots a frequency histogram for values `x` and the repetition rate of these `y` values over the interval `[min_x, max_x]`.
+Функция строит гистограмму частот по заданным значениям `x` и частоте повторения этих значений `y` на интервале `[min_x, max_x]`. 
 
-If no interval is specified, then the minimum `x` is used as the interval start, and the maximum `x` — as the interval end. 
+Если интервал для постоения не указан, то в качестве начального значения будет использовано минимальное `x`, а в качестве конечного — максимальное `x`.
 
-**Syntax**
+**Синтаксис**
 
 ``` sql
 sparkbar(width[, min_x, max_x])(x, y)
 ```
 
-**Parameters**
+**Параметры**
 
--   `width` — The number of segments. Type: [Integer](../../../sql-reference/data-types/int-uint.md).
--   `min_x` — The interval start. Optional parameter.
--   `max_x` — The interval end. Optional parameter.
+-   `width` — Количество отрезков. Тип: [Integer](../../../sql-reference/data-types/int-uint.md).
+-   `min_x` — Начало интервала. Необязательный параметр.
+-   `max_x` — Конец интервала. Необязательный параметр.
 
-**Arguments**
+**Аргументы**
 
--   `x` — The field with values.
--   `y` — The field with the frequency of values.
+-   `x` — Поле со значениями.
+-   `y` — Поле с частотой значений.
 
-**Returned value**
+**Возвращаемые значения**
 
--   The frequency histogram.
+-   Гистограмма частот.
 
-**Example**
+**Пример**
 
-Query:
+Запрос:
 
 ``` sql
 CREATE TABLE spark_bar_data (`cnt` UInt64,`event_date` Date) ENGINE = MergeTree ORDER BY event_date SETTINGS index_granularity = 8192;
@@ -44,7 +44,7 @@ SELECT sparkbar(9)(event_date,cnt) FROM spark_bar_data;
 SELECT sparkbar(9,toDate('2020-01-01'),toDate('2020-01-10'))(event_date,cnt) FROM spark_bar_data;
 ```
 
-Result:
+Результат:
 
 ``` text
 
