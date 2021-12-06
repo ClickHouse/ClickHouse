@@ -88,9 +88,10 @@ namespace
 
 using MainFunc = int (*)(int, char**);
 
+#if !defined(FUZZING_MODE)
 
 /// Add an item here to register new application
-[[maybe_unused]]std::pair<const char *, MainFunc> clickhouse_applications[] =
+std::pair<const char *, MainFunc> clickhouse_applications[] =
 {
 #if ENABLE_CLICKHOUSE_LOCAL
     {"local", mainEntryClickHouseLocal},
@@ -141,7 +142,6 @@ using MainFunc = int (*)(int, char**);
     {"hash-binary", mainEntryClickHouseHashBinary},
 };
 
-#ifndef FUZZING_MODE
 int printHelp(int, char **)
 {
     std::cerr << "Use one of the following commands:" << std::endl;
@@ -149,9 +149,7 @@ int printHelp(int, char **)
         std::cerr << "clickhouse " << application.first << " [args] " << std::endl;
     return -1;
 }
-#endif
 
-#ifndef FUZZING_MODE
 bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
 {
     /// Use app if the first arg 'app' is passed (the arg should be quietly removed)
@@ -350,7 +348,7 @@ bool inside_main = false;
 bool inside_main = true;
 #endif
 
-#ifndef FUZZING_MODE
+#if !defined(FUZZING_MODE)
 int main(int argc_, char ** argv_)
 {
     inside_main = true;
