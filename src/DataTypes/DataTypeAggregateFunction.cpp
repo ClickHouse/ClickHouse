@@ -85,7 +85,7 @@ String DataTypeAggregateFunction::getNameImpl(bool with_version) const
 
 MutableColumnPtr DataTypeAggregateFunction::createColumn() const
 {
-    return ColumnAggregateFunction::create(function, version);
+    return ColumnAggregateFunction::create(function, getVersion());
 }
 
 
