@@ -4,8 +4,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT -q 'SELECT number FROM numbers(1000000) GROUP BY number SETTINGS max_memory_usage_for_user = 1' 2>&1 | grep -F -q "MEMORY_LIMIT_EXCEEDED" && echo 'OK' || echo 'FAIL'
-$CLICKHOUSE_CLIENT -q 'SELECT number FROM numbers(1000000) GROUP BY number SETTINGS max_guaranteed_memory_usage_for_user = 1' 2>&1 | grep -F -q "MEMORY_LIMIT_EXCEEDED" && echo 'FAIL' || echo 'OK'
+$CLICKHOUSE_CLIENT -q 'SELECT number FROM numbers(10000000) GROUP BY number SETTINGS max_memory_usage_for_user = 1' 2>&1 | grep -F -q "MEMORY_LIMIT_EXCEEDED" && echo 'OK' || echo 'FAIL'
+$CLICKHOUSE_CLIENT -q 'SELECT number FROM numbers(10000000) GROUP BY number SETTINGS max_guaranteed_memory_usage_for_user = 1' 2>&1 | grep -F -q "MEMORY_LIMIT_EXCEEDED" && echo 'FAIL' || echo 'OK'
 
 $CLICKHOUSE_CLIENT -q 'CREATE USER IF NOT EXISTS u1 IDENTIFIED WITH no_password'
 $CLICKHOUSE_CLIENT -q 'GRANT ALL ON *.* TO u1'
