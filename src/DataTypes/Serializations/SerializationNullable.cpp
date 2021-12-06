@@ -332,12 +332,65 @@ template<typename ReturnType>
 ReturnType SerializationNullable::deserializeTextQuotedImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings,
                                                    const SerializationPtr & nested)
 {
-    return safeDeserialize<ReturnType>(column, *nested,
-        [&istr]
+    if (istr.eof() || (*istr.position() != 'N' && *istr.position() != 'n'))
+    {
+        /// This is not null, surely.
+        return safeDeserialize<ReturnType>(column, *nested,
+            [] { return false; },
+            [&nested, &istr, &settings] (IColumn & nested_column) { nested->deserializeTextQuoted(nested_column, istr, settings); });
+    }
+
+    /// Check if we have enough data in buffer to check if it's a null.
+    if (istr.available() >= 4)
+    {
+        auto check_for_null = [&istr]()
         {
-            return checkStringByFirstCharacterAndAssertTheRestCaseInsensitive("NULL", istr);
-        },
-        [&nested, &istr, &settings] (IColumn & nested_column) { nested->deserializeTextQuoted(nested_column, istr, settings); });
+            auto * pos = istr.position();
+            if (checkStringCaseInsensitive("NULL", istr))
+                return true;
+            istr.position() = pos;
+            return false;
+        };
+        auto deserialize_nested = [&nested, &settings, &istr] (IColumn & nested_column)
+        {
+            nested->deserializeTextQuoted(nested_column, istr, settings);
+        };
+        return safeDeserialize<ReturnType>(column, *nested, check_for_null, deserialize_nested);
+    }
+
+    /// We don't have enough data in buffer to check if it's a NULL
+    /// and we cannot check it just by one symbol (otherwise we won't be able
+    /// to differentiate for example NULL and NaN for float)
+    /// Use PeekableReadBuffer to make a checkpoint before checking
+    /// null and rollback if the check was failed.
+    PeekableReadBuffer buf(istr, true);
+    auto check_for_null = [&buf]()
+    {
+        buf.setCheckpoint();
+        SCOPE_EXIT(buf.dropCheckpoint());
+        if (checkStringCaseInsensitive("NULL", buf))
+            return true;
+
+        buf.rollbackToCheckpoint();
+        return false;
+    };
+
+    auto deserialize_nested = [&nested, &settings, &buf] (IColumn & nested_column)
+    {
+        nested->deserializeTextQuoted(nested_column, buf, settings);
+        /// Check that we don't have any unread data in PeekableReadBuffer own memory.
+        if (likely(!buf.hasUnreadData()))
+            return;
+
+        /// We have some unread data in PeekableReadBuffer own memory.
+        /// It can happen only if there is an unquoted string instead of a number.
+        throw DB::ParsingException(
+            ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Error while parsing Nullable: got an unquoted string {} instead of a number",
+            String(buf.position(), std::min(10ul, buf.available())));
+    };
+
+    return safeDeserialize<ReturnType>(column, *nested, check_for_null, deserialize_nested);
 }
 
 
