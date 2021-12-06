@@ -1,14 +1,10 @@
 package io.kyligence.jni.engine;
 
 
-import org.apache.arrow.vector.ipc.ArrowFileReader;
-import org.apache.arrow.vector.ipc.SeekableReadChannel;
-import org.apache.arrow.vector.ipc.message.ArrowRecordBatch;
 import org.apache.commons.io.IOUtils;
 import org.apache.spark.sql.catalyst.expressions.UnsafeRow;
 import org.junit.Assert;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
