@@ -43,7 +43,7 @@ struct HexImpl
     static constexpr size_t word_size = 2;
 
     template <typename T>
-    static void executeOneUInt(T x, char *& out, bool auto_close = true)
+    static void executeOneUInt(T x, char *& out, bool skip_leading_zero = true, bool auto_close = true)
     {
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
@@ -51,7 +51,7 @@ struct HexImpl
             UInt8 byte = x >> offset;
 
             /// Skip leading zeros
-            if (byte == 0 && !was_nonzero && offset) //-V560
+            if (byte == 0 && !was_nonzero && offset && skip_leading_zero) //-V560
                 continue;
 
             was_nonzero = true;
@@ -134,7 +134,7 @@ struct BinImpl
     static constexpr size_t word_size = 8;
 
     template <typename T>
-    static void executeOneUInt(T x, char *& out, bool auto_close = true)
+    static void executeOneUInt(T x, char *& out, bool skip_leading_zero = true, bool auto_close = true)
     {
         bool was_nonzero = false;
         for (int offset = (sizeof(T) - 1) * 8; offset >= 0; offset -= 8)
@@ -142,7 +142,7 @@ struct BinImpl
             UInt8 byte = x >> offset;
 
             /// Skip leading zeros
-            if (byte == 0 && !was_nonzero && offset) //-V560
+            if (byte == 0 && !was_nonzero && offset && skip_leading_zero) //-V560
                 continue;
 
             was_nonzero = true;
@@ -520,8 +520,8 @@ public:
                 char * end = begin;
 
                 // index 1 stores the higher 64 bit
-                Impl::executeOneUInt(uuid[i].toUnderType().items[1], end, false);
-                Impl::executeOneUInt(uuid[i].toUnderType().items[0], end, true);
+                Impl::executeOneUInt(uuid[i].toUnderType().items[1], end, false, false);
+                Impl::executeOneUInt(uuid[i].toUnderType().items[0], end, false, true);
 
                 pos += end - begin;
                 out_offsets[i] = pos;
