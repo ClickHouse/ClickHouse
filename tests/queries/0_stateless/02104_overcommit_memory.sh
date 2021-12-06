@@ -20,7 +20,7 @@ function overcommited()
 function expect_execution()
 {
     while true; do
-        $CLICKHOUSE_CLIENT -u u1 -q 'SELECT number FROM numbers(130000) GROUP BY number SETTINGS max_memory_usage_for_user=5000000,max_guaranteed_memory_usage=2,memory_usage_overcommit_max_wait_microseconds=500' >/dev/null 2>/dev/null 2>&1 | grep -F -q "MEMORY_LIMIT_EXCEEDED" && echo "bla\n"
+        $CLICKHOUSE_CLIENT -u u1 -q 'SELECT number FROM numbers(130000) GROUP BY number SETTINGS max_memory_usage_for_user=5000000,max_guaranteed_memory_usage=2,memory_usage_overcommit_max_wait_microseconds=500' >/dev/null 2>/dev/null
     done
 }
 
