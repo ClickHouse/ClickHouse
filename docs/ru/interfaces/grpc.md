@@ -81,7 +81,7 @@ ClickHouse поддерживает интерфейс [gRPC](https://grpc.io/).
 
 В примере создается таблица, и в нее загружаются данные из CSV файла. Затем выводится содержимое таблицы.
 
-``` text
+``` bash
 ./clickhouse-grpc-client.py -q "CREATE TABLE grpc_example_table (id UInt32, text String) ENGINE = MergeTree() ORDER BY id;"
 echo "0,Input data for" > a.txt ; echo "1,gRPC protocol example" >> a.txt
 cat a.txt | ./clickhouse-grpc-client.py -q "INSERT INTO grpc_example_table FORMAT CSV"
