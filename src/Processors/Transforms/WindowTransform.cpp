@@ -203,7 +203,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
     auto input_columns = input_header.getColumns();
     for (auto & column : input_columns)
     {
-        column = std::move(column)->convertToFullColumnIfConst();
+        column = recursiveRemoveLowCardinality(std::move(column)->convertToFullColumnIfConst());
     }
     input_header.setColumns(std::move(input_columns));
 
