@@ -7,7 +7,7 @@ toc_title: sparkbar
 
 The function plots a frequency histogram for values `x` and the repetition rate of these `y` values over the interval `[min_x, max_x]`.
 
-If no interval is specified, then the minimum `x` will be used as the interval start, and the maximum `x` will use as the interval end. 
+If no interval is specified, then the minimum `x` is used as the interval start, and the maximum `x` — as the interval end. 
 
 **Syntax**
 
