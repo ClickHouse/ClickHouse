@@ -1,5 +1,6 @@
 #include "OvercommitTracker.h"
 
+#include <base/logger_useful.h>
 #include <chrono>
 #include <Interpreters/ProcessList.h>
 
@@ -22,12 +23,14 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker)
 
     pickQueryToExclude();
     assert(cancelation_state == QueryCancelationState::RUNNING);
-    if (picked_tracker == tracker || picked_tracker == nullptr)
+
+    if (picked_tracker == nullptr)
     {
-        ++waiting_to_stop;
+        cancelation_state = QueryCancelationState::NONE;
         return true;
     }
-
+    if (picked_tracker == tracker)
+        return true;
     return cv.wait_for(lk, max_wait_time, [this]()
     {
         return cancelation_state == QueryCancelationState::NONE;
@@ -37,15 +40,13 @@ bool OvercommitTracker::needToStopQuery(MemoryTracker * tracker)
 void OvercommitTracker::unsubscribe(MemoryTracker * tracker)
 {
     std::unique_lock<std::mutex> lk(overcommit_m);
-    if (picked_tracker == tracker || picked_tracker == nullptr)
+    if (picked_tracker == tracker)
     {
-        --waiting_to_stop;
-        if (waiting_to_stop == 0)
-        {
-            picked_tracker = nullptr;
-            cancelation_state = QueryCancelationState::NONE;
-            cv.notify_all();
-        }
+        LOG_DEBUG(&Poco::Logger::get("OvercommitTracker"), "Picked query stopped");
+
+        picked_tracker = nullptr;
+        cancelation_state = QueryCancelationState::NONE;
+        cv.notify_all();
     }
 }
 
@@ -58,16 +59,26 @@ void UserOvercommitTracker::pickQueryToExcludeImpl()
     MemoryTracker * current_tracker = nullptr;
     OvercommitRatio current_ratio{0, 0};
     // At this moment query list must be read only
-    for (auto const & query : user_process_list->queries)
+    auto & queries = user_process_list->queries;
+    LOG_DEBUG(&Poco::Logger::get("OvercommitTracker"),
+        "Trying to choose query to stop from {} queries", queries.size());
+    for (auto const & query : queries)
     {
+        if (query.second->isKilled())
+            continue;
         auto * memory_tracker = query.second->getMemoryTracker();
         auto ratio = memory_tracker->getOvercommitRatio();
-        if (current_ratio < ratio)
+        LOG_DEBUG(&Poco::Logger::get("OvercommitTracker"),
+            "Query has ratio {}/{}", ratio.committed, ratio.soft_limit);
+        if (ratio.soft_limit != 0 && current_ratio < ratio)
         {
             current_tracker = memory_tracker;
             current_ratio   = ratio;
         }
     }
+    LOG_DEBUG(&Poco::Logger::get("OvercommitTracker"),
+        "Selected to stop query with overcommit ratio {}/{}",
+        current_ratio.committed, current_ratio.soft_limit);
     picked_tracker = current_tracker;
 }
 

@@ -101,17 +101,6 @@ MemoryTracker::MemoryTracker(MemoryTracker * parent_, VariableContext level_) : 
 
 MemoryTracker::~MemoryTracker()
 {
-    if (level == VariableContext::Process)
-    {
-        auto * loaded_next = getParent();
-        while (loaded_next != nullptr)
-        {
-            if (auto * next_overcommit_tracker = loaded_next->overcommit_tracker)
-                next_overcommit_tracker->unsubscribe(this);
-            loaded_next = loaded_next->getParent();
-        }
-    }
-
     if ((level == VariableContext::Process || level == VariableContext::User) && peak)
     {
         try
@@ -141,7 +130,7 @@ void MemoryTracker::logMemoryUsage(Int64 current) const
 }
 
 
-void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
+void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded, MemoryTracker * query_tracker)
 {
     if (size < 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
@@ -150,7 +139,8 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
     {
         /// Since the BlockerInThread should respect the level, we should go to the next parent.
         if (auto * loaded_next = parent.load(std::memory_order_relaxed))
-            loaded_next->allocImpl(size, throw_if_memory_exceeded);
+            loaded_next->allocImpl(size, throw_if_memory_exceeded,
+                level == VariableContext::Process ? this : query_tracker);
         return;
     }
 
@@ -233,8 +223,8 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
     if (unlikely(current_hard_limit && will_be > current_hard_limit) && memoryTrackerCanThrow(level, false) && throw_if_memory_exceeded)
     {
         bool need_to_throw = true;
-        if (overcommit_tracker)
-            need_to_throw = overcommit_tracker->needToStopQuery(this);
+        if (!!overcommit_tracker && !!query_tracker)
+            need_to_throw = overcommit_tracker->needToStopQuery(query_tracker);
 
         if (need_to_throw)
         {
@@ -278,7 +268,8 @@ void MemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
     }
 
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
-        loaded_next->allocImpl(size, throw_if_memory_exceeded);
+        loaded_next->allocImpl(size, throw_if_memory_exceeded,
+            level == VariableContext::Process ? this : query_tracker);
 }
 
 void MemoryTracker::alloc(Int64 size)

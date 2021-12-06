@@ -7,6 +7,7 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
+#include "Common/tests/gtest_global_context.h"
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
@@ -249,9 +250,6 @@ ProcessListEntry::~ProcessListEntry()
 
     const QueryStatus * process_list_element_ptr = &*it;
 
-    /// This removes the memory_tracker of one request.
-    parent.processes.erase(it);
-
     auto user_process_list_it = parent.user_to_queries.find(user);
     if (user_process_list_it == parent.user_to_queries.end())
     {
@@ -272,6 +270,9 @@ ProcessListEntry::~ProcessListEntry()
             found = true;
         }
     }
+
+    /// This removes the memory_tracker of one request.
+    parent.processes.erase(it);
 
     if (!found)
     {
@@ -303,6 +304,12 @@ QueryStatus::QueryStatus(
 QueryStatus::~QueryStatus()
 {
     assert(executors.empty());
+
+    auto * memory_tracker = getMemoryTracker();
+    if (user_process_list)
+        user_process_list->user_overcommit_tracker.unsubscribe(memory_tracker);
+    if (auto context = getContext())
+        context->getGlobalOvercommitTracker()->unsubscribe(memory_tracker);
 }
 
 CancellationCode QueryStatus::cancelQuery(bool)
