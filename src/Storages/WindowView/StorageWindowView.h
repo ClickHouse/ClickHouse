@@ -209,7 +209,7 @@ private:
 
     String function_now_timezone;
 
-    ASTPtr innerQueryParser(ASTSelectQuery & inner_query);
+    ASTPtr innerQueryParser(const ASTSelectQuery & query);
     void eventTimeParser(const ASTCreateQuery & query);
 
     std::shared_ptr<ASTCreateQuery> getInnerTableCreateQuery(
