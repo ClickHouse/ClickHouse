@@ -15,13 +15,16 @@ If no interval is specified, then the minimum `x` is used as the interval start,
 sparkbar(width, min_x, max_x)(x, y)
 ```
 
+**Parameters**
+
+-   `width` — The number of segments. Type: [Integer](../../../sql-reference/data-types/int-uint.md).
+-   `min_x` — The interval start. Optional parameter.
+-   `max_x` — The interval end. Optional parameter.
+
 **Arguments**
 
--   `width` — The number of segments. Must be [Integer](../../../sql-reference/data-types/int-uint.md).
--   `min_x` — The interval start. Optional value.
--   `max_x` — The interval end. Optional value.
--   `x` — The range of values.
--   `y` — The frequency of values.
+-   `x` — The field with values.
+-   `y` — The field with the frequency of values.
 
 **Returned value**
 
