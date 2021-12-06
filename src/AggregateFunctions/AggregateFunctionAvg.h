@@ -48,42 +48,19 @@ struct AvgFraction
     /// Invoked only is either Numerator or Denominator are Decimal.
     Float64 NO_SANITIZE_UNDEFINED divideIfAnyDecimal(UInt32 num_scale, UInt32 denom_scale [[maybe_unused]]) const
     {
-        if (denominator == static_cast<Denominator>(0))
-            throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot calculate average value. No numbers provided or sum of all weights is equal to 0");
-
-        if constexpr (is_decimal<Numerator> && is_decimal<Denominator>)
-        {
-            // According to the docs, num(S1) / denom(S2) would have scale S1
-
-            if constexpr (std::is_same_v<Numerator, Decimal256> && std::is_same_v<Denominator, Decimal128>)
-                ///Special case as Decimal256 / Decimal128 = compile error (as Decimal128 is not parametrized by a wide
-                ///int), but an __int128 instead
-                return DecimalUtils::convertTo<Float64>(
-                    numerator / (denominator.template convertTo<Decimal256>()), num_scale);
-            else
-                return DecimalUtils::convertTo<Float64>(numerator / denominator, num_scale);
-        }
-
-        /// Numerator is always casted to Float64 to divide correctly if the denominator is not Float64.
-        Float64 num_converted;
-
+        Float64 numerator_float;
         if constexpr (is_decimal<Numerator>)
-            num_converted = DecimalUtils::convertTo<Float64>(numerator, num_scale);
+            numerator_float = DecimalUtils::convertTo<Float64>(numerator, num_scale);
         else
-            num_converted = static_cast<Float64>(numerator); /// all other types, including extended integral.
+            numerator_float = numerator;
 
-        std::conditional_t<DecimalOrExtendedInt<Denominator>,
-            Float64, Denominator> denom_converted;
-
+        Float64 denominator_float;
         if constexpr (is_decimal<Denominator>)
-            denom_converted = DecimalUtils::convertTo<Float64>(denominator, denom_scale);
-        else if constexpr (DecimalOrExtendedInt<Denominator>)
-            /// no way to divide Float64 and extended integral type without an explicit cast.
-            denom_converted = static_cast<Float64>(denominator);
+            denominator_float = DecimalUtils::convertTo<Float64>(denominator, denom_scale);
         else
-            denom_converted = denominator; /// can divide on float, no cast required.
+            denominator_float = denominator;
 
-        return num_converted / denom_converted;
+        return numerator_float / denominator_float;
     }
 
     Float64 NO_SANITIZE_UNDEFINED divide() const
