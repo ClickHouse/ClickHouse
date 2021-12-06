@@ -4,6 +4,9 @@ import requests
 import argparse
 import json
 
+from threading import Thread
+from queue import Queue
+
 
 def get_org_team_members(token: str, org: str, team_slug: str) -> tuple:
     headers = {
@@ -19,14 +22,42 @@ def get_org_team_members(token: str, org: str, team_slug: str) -> tuple:
 
 
 def get_members_keys(members: tuple) -> str:
-    keys = ""
+    class Worker(Thread):
+        def __init__(self, request_queue):
+            Thread.__init__(self)
+            self.queue = request_queue
+            self.results = []
+
+        def run(self):
+            while True:
+                m = self.queue.get()
+                if m == "":
+                    break
+                response = requests.get(f"https://github.com/{m}.keys")
+                self.results.append(f"# {m}\n{response.text}")
+                self.queue.task_done()
+
+    q = Queue()
+    workers = []
     for m in members:
-        response = requests.get(
-            f"https://github.com/{m}.keys",
-        )
-        response.raise_for_status()
-        keys += f"# {m}\n{response.text}"
-    return keys
+        q.put(m)
+        # Create workers and add to the queue
+        worker = Worker(q)
+        worker.start()
+        workers.append(worker)
+
+    # Workers keep working till they receive an empty string
+    for _ in workers:
+        q.put("")
+
+    # Join workers to wait till they finished
+    for worker in workers:
+        worker.join()
+
+    responses = []
+    for worker in workers:
+        responses.extend(worker.results)
+    return "".join(responses)
 
 
 def get_token_from_aws() -> str:
@@ -51,7 +82,14 @@ def main(token: str, org: str, team_slug: str) -> str:
 
 def handler(event, context):
     token = get_token_from_aws()
-    return main(token, "ClickHouse", "core")
+    result = {
+        "statusCode": 200,
+        "headers": {
+            "Content-Type": "text/html",
+        },
+        "body": main(token, "ClickHouse", "core"),
+    }
+    return result
 
 
 if __name__ == "__main__":
