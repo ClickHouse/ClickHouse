@@ -26,6 +26,12 @@ namespace
 #if defined(OS_LINUX)
     thread_local size_t write_trace_iteration = 0;
 #endif
+    /// Even after timer_delete() the signal can be delivered,
+    /// since it does not do anything with pending signals.
+    ///
+    /// And so to overcome this flag is exists,
+    /// to ignore delivered signals after timer_delete().
+    thread_local bool signal_handler_disarmed = true;
 
     void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
     {
@@ -117,10 +123,8 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
     if (sigaddset(&sa.sa_mask, pause_signal))
         throwFromErrno("Failed to add signal to mask for query profiler", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
 
-    struct sigaction local_previous_handler;
-    if (sigaction(pause_signal, &sa, &local_previous_handler))
+    if (sigaction(pause_signal, &sa, nullptr))
         throwFromErrno("Failed to setup signal handler for query profiler", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
-    previous_handler.emplace(local_previous_handler);
 
     try
     {
@@ -160,6 +164,8 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
         struct itimerspec timer_spec = {.it_interval = interval, .it_value = offset};
         if (timer_settime(*timer_id, 0, &timer_spec, nullptr))
             throwFromErrno("Failed to set thread timer period", ErrorCodes::CANNOT_SET_TIMER_PERIOD);
+
+        signal_handler_disarmed = false;
     }
     catch (...)
     {
@@ -179,11 +185,14 @@ template <typename ProfilerImpl>
 void QueryProfilerBase<ProfilerImpl>::tryCleanup()
 {
 #if USE_UNWIND
-    if (timer_id.has_value() && timer_delete(*timer_id))
-        LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
+    if (timer_id.has_value())
+    {
+        if (timer_delete(*timer_id))
+            LOG_ERROR(log, "Failed to delete query profiler timer {}", errnoToString(ErrorCodes::CANNOT_DELETE_TIMER));
+        timer_id.reset();
+    }
 
-    if (previous_handler.has_value() && sigaction(pause_signal, &*previous_handler, nullptr))
-        LOG_ERROR(log, "Failed to restore signal handler after query profiler {}", errnoToString(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER));
+    signal_handler_disarmed = true;
 #endif
 }
 
@@ -196,6 +205,9 @@ QueryProfilerReal::QueryProfilerReal(const UInt64 thread_id, const UInt32 period
 
 void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
 {
+    if (signal_handler_disarmed)
+        return;
+
     DENY_ALLOCATIONS_IN_SCOPE;
     writeTraceInfo(TraceType::Real, sig, info, context);
 }
@@ -206,6 +218,9 @@ QueryProfilerCPU::QueryProfilerCPU(const UInt64 thread_id, const UInt32 period)
 
 void QueryProfilerCPU::signalHandler(int sig, siginfo_t * info, void * context)
 {
+    if (signal_handler_disarmed)
+        return;
+
     DENY_ALLOCATIONS_IN_SCOPE;
     writeTraceInfo(TraceType::CPU, sig, info, context);
 }
