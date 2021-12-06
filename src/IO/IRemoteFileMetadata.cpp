@@ -5,6 +5,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 IRemoteFileMetadata::~IRemoteFileMetadata() {}
@@ -15,11 +16,11 @@ RemoteFileMetadataFactory & RemoteFileMetadataFactory::instance()
     return g_factory;
 }
 
-IRemoteFileMetadataPtr RemoteFileMetadataFactory::createClass(const String & class_name)
+IRemoteFileMetadataPtr RemoteFileMetadataFactory::get(const String & class_name)
 {
     auto it = class_creators.find(class_name);
     if (it == class_creators.end())
-        return nullptr;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found metadata class:{}", class_name);
     return (it->second)();
 }
 

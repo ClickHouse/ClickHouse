@@ -27,7 +27,7 @@ public:
     inline UInt64 getLastModificationTimestamp() const { return last_modification_timestamp; }
 
     // deserialize
-    virtual bool fromString(const String &buf) = 0;
+    virtual bool fromString(const String & buf) = 0;
     // serialize
     virtual String toString() const = 0;
 
@@ -43,7 +43,7 @@ using IRemoteFileMetadataPtr = std::shared_ptr<IRemoteFileMetadata>;
 
 /*
  * How to register a subclass into the factory and use it ?
- * 1) define your own subclass derive from IRemoteFileMetadata. Notice! the getClassName() must be the same
+ * 1) define your own subclass derive from IRemoteFileMetadata. Notice! the getName() must be the same
  *    as your subclass name.
  * 2) in a .cpp file, call REGISTTER_REMOTE_FILE_META_DATA_CLASS(subclass),
  * 3) call RemoteFileMetadataFactory::instance().createClass(subclass_name) where you want to make a new object
@@ -56,7 +56,7 @@ public:
     ~RemoteFileMetadataFactory() = default;
 
     static RemoteFileMetadataFactory & instance();
-    IRemoteFileMetadataPtr createClass(const String & class_name);
+    IRemoteFileMetadataPtr get(const String & class_name);
     void registerClass(const String &class_name, ClassCreator creator);
 protected:
     RemoteFileMetadataFactory() = default;

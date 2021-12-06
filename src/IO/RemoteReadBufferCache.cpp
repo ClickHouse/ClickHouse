@@ -57,7 +57,7 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
         return nullptr;
     }
 
-    cache_controller->file_metadata_ptr = RemoteFileMetadataFactory::instance().createClass(cache_controller->metadata_class);
+    cache_controller->file_metadata_ptr = RemoteFileMetadataFactory::instance().get(cache_controller->metadata_class);
     if (!cache_controller->file_metadata_ptr)
     {
         // do not load this invalid cached file and clear it. the clear action is in
