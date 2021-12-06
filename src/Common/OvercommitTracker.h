@@ -18,7 +18,9 @@ struct OvercommitRatio
     friend bool operator<(OvercommitRatio const& lhs, OvercommitRatio const& rhs) noexcept
     {
         // (a / b < c / d) <=> (a * d < c * b)
-        return (lhs.committed  * rhs.soft_limit) < (rhs.committed * lhs.soft_limit);
+        return (lhs.committed * rhs.soft_limit) < (rhs.committed * lhs.soft_limit)
+            || (lhs.soft_limit == 0 && rhs.soft_limit > 0)
+            || (lhs.committed == 0 && rhs.committed == 0 && lhs.soft_limit > rhs.soft_limit);
     }
 
     Int64 committed;
@@ -61,10 +63,6 @@ protected:
     QueryCancelationState cancelation_state;
 
 private:
-
-    // Number of queries are being canceled at the moment. Overcommit tracker
-    // must be in RUNNING state until this counter is not equal to 0.
-    UInt64 waiting_to_stop = 0;
 
     void pickQueryToExclude()
     {
