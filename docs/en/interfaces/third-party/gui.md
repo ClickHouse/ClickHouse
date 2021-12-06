@@ -222,7 +222,7 @@ SeekTable is [free](https://www.seektable.com/help/cloud-pricing) for personal/i
 
 ### TABLUM.IO {#tablum_io}
 
-[TABLUM.IO](https://tablum.io/) — an online query and analytics tool for ETL and visualization. It allows connecting to Clickhouse, query data via a versatile SQL console as well as to load data from static files and 3rd party services. TABLUM.IO can visualize data results as charts and tables.
+[TABLUM.IO](https://tablum.io/) — an online query and analytics tool for ETL and visualization. It allows connecting to ClickHouse, query data via a versatile SQL console as well as to load data from static files and 3rd party services. TABLUM.IO can visualize data results as charts and tables.
 
 Features:
 - ETL: data loading from popular databases, local and remote files, API invocations.
