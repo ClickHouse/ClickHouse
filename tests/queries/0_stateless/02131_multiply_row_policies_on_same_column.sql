@@ -10,8 +10,11 @@ SELECT count() FROM 02131_multiply_row_policies_on_same_column;
 
 
 CREATE ROW POLICY 02131_filter_1 ON 02131_multiply_row_policies_on_same_column USING x=1 TO ALL;
+SELECT count() FROM 02131_multiply_row_policies_on_same_column;
 CREATE ROW POLICY 02131_filter_2 ON 02131_multiply_row_policies_on_same_column USING x=2 TO ALL;
+SELECT count() FROM 02131_multiply_row_policies_on_same_column;
 CREATE ROW POLICY 02131_filter_3 ON 02131_multiply_row_policies_on_same_column USING x=3 TO ALL;
+SELECT count() FROM 02131_multiply_row_policies_on_same_column;
 SELECT count() FROM 02131_multiply_row_policies_on_same_column;
 
 
@@ -39,7 +42,7 @@ CREATE ROW POLICY 02131_filter_2_1 ON 02131_multiply_row_policies_on_same_column
 SELECT count() FROM 02131_multiply_row_policies_on_same_column_1;
 CREATE ROW POLICY 02131_filter_3_1 ON 02131_multiply_row_policies_on_same_column_1 USING x>3 AS RESTRICTIVE TO ALL;
 SELECT count() FROM 02131_multiply_row_policies_on_same_column_1;
-
+SELECT count() FROM 02131_multiply_row_policies_on_same_column_1;
 
 DROP TABLE 02131_multiply_row_policies_on_same_column_1;
 DROP ROW POLICY 02131_filter_1_1 ON 02131_multiply_row_policies_on_same_column_1;
