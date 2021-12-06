@@ -393,46 +393,31 @@ def test_query_inserts():
 
 
 def test_consumption_of_show_tables():
-    assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t0\\t1000\\t0\\t.*\\t\\\\N.*",
-        instance.query("SHOW QUOTA"))
     assert instance.query("SHOW TABLES") == "test_table\n"
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t0\\t.*\\t\\\\N.*",
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t1\\t\\\\N.*",
         instance.query("SHOW QUOTA"))
 
 def test_consumption_of_show_databases():
-    assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t0\\t1000\\t0\\t.*\\t\\\\N.*",
-        instance.query("SHOW QUOTA"))
     assert instance.query("SHOW DATABASES") == "INFORMATION_SCHEMA\ndefault\ninformation_schema\nsystem\n"
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t0\\t.*\\t\\\\N.*",
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N\\t1\\t\\\\N.*",
         instance.query("SHOW QUOTA"))
 
 def test_consumption_of_show_clusters():
-    assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t0\\t1000\\t0\\t.*\\t\\\\N.*",
-        instance.query("SHOW QUOTA"))
     assert len(instance.query("SHOW CLUSTERS")) > 0
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t0\\t.*\\t\\\\N.*",
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N.*",
         instance.query("SHOW QUOTA"))
 
 def test_consumption_of_show_processlist():
-    assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t0\\t1000\\t0\\t.*\\t\\\\N.*",
-        instance.query("SHOW QUOTA"))
     instance.query("SHOW PROCESSLIST")
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t0\\t.*\\t\\\\N.*",
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N.*",
         instance.query("SHOW QUOTA"))
 
 def test_consumption_of_show_privileges():
-    assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t0\\t1000\\t0\\t.*\\t\\\\N.*",
-        instance.query("SHOW QUOTA"))
     assert len(instance.query("SHOW PRIVILEGES")) > 0
     assert re.match(
-        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t0\\t.*\\t\\\\N.*",
+        "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N.*",
         instance.query("SHOW QUOTA"))

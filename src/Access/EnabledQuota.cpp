@@ -67,7 +67,13 @@ struct EnabledQuota::Impl
             {
                 /// We reset counters only if the interval's end has been calculated before.
                 /// If it hasn't we just calculate the interval's end for the first time and don't reset counters yet.
-                need_reset_counters = (end_of_interval.load().count() != 0);
+                if (!interval.end_of_interval.load().count())
+                {
+                    /// We need to calculate end of the interval if it hasn't been calculated before.
+                    bool dummy;
+                    getEndOfInterval(interval, current_time, dummy);
+                }
+                need_reset_counters = true;
                 break;
             }
             end = std::chrono::system_clock::time_point{end_loaded};
