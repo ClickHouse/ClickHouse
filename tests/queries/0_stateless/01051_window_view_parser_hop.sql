@@ -1,5 +1,3 @@
--- Tags: disabled
-
 SET allow_experimental_window_view = 1;
 
 DROP TABLE IF EXISTS mt;
@@ -29,3 +27,7 @@ CREATE WINDOW VIEW wv AS SELECT count(a), HOP_START(wid) AS w_start FROM mt WHER
 SELECT '---ORDER_BY---';
 DROP TABLE IF EXISTS wv NO DELAY;
 CREATE WINDOW VIEW wv AS SELECT count(a), HOP_START(wid) AS w_start FROM mt WHERE a != 1 GROUP BY HOP(timestamp, INTERVAL '3' SECOND, INTERVAL '5' SECOND) AS wid ORDER BY w_start;
+
+SELECT '---With now---';
+DROP TABLE IF EXISTS wv NO DELAY;
+CREATE WINDOW VIEW wv AS SELECT count(a), HOP_START(wid) AS w_start, HOP_END(HOP(now(), INTERVAL '1' SECOND, INTERVAL '3' SECOND)) as w_end FROM mt GROUP BY HOP(now(), INTERVAL '1' SECOND, INTERVAL '3' SECOND) AS wid;

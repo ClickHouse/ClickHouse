@@ -1,5 +1,3 @@
--- Tags: disabled
-
 SET allow_experimental_window_view = 1;
 
 DROP TABLE IF EXISTS mt;
