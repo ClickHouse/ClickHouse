@@ -5,6 +5,7 @@ import org.apache.arrow.vector.ipc.ArrowFileReader;
 import org.apache.arrow.vector.ipc.SeekableReadChannel;
 import org.apache.arrow.vector.ipc.message.ArrowRecordBatch;
 import org.apache.commons.io.IOUtils;
+import org.apache.spark.sql.catalyst.expressions.UnsafeRow;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Ignore;
@@ -34,5 +35,6 @@ public class LocalEngineTest {
         SparkRowInfo data = localEngine.next();
         Assert.assertTrue(data.memoryAddress > 0);
         Assert.assertEquals(150, data.offsets.length);
+        UnsafeRow row  = new UnsafeRow(5);
     }
 }
