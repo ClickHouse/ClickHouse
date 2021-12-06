@@ -21,11 +21,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ILLEGAL_DIVISION;
-}
-
 struct Settings;
 
 template <typename T> constexpr bool DecimalOrExtendedInt =
