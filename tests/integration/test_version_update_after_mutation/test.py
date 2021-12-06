@@ -84,6 +84,7 @@ def test_upgrade_while_mutation(start_cluster):
     node3.query("SYSTEM STOP MERGES mt1")
     node3.query("ALTER TABLE mt1 DELETE WHERE id % 2 == 0")
 
+    node3.query("DETACH TABLE mt")  # stop being leader
     node3.restart_with_latest_version(signal=9)
 
     # checks for readonly
