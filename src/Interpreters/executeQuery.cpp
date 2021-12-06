@@ -600,7 +600,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         auto interpreter = InterpreterFactory::get(ast, context, SelectQueryOptions(stage).setInternal(internal));
 
         std::shared_ptr<const EnabledQuota> quota;
-        if (!interpreter->ignoreQuota() && !context->getSettingsRef().is_reinterpreted_execution)
+        if (!interpreter->ignoreQuota())
         {
             quota = context->getQuota();
             if (quota)
