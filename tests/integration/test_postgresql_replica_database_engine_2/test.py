@@ -180,12 +180,16 @@ def check_tables_are_synchronized(table_name, order_by='key', postgres_database=
     else:
         result = instance.query('select * from {}.`{}.{}` order by {};'.format(materialized_database, schema_name, table_name, order_by))
 
+    try_num = 0
     while result != expected:
         time.sleep(0.5)
         if len(schema_name) == 0:
             result = instance.query('select * from {}.{} order by {};'.format(materialized_database, table_name, order_by))
         else:
             result = instance.query('select * from {}.`{}.{}` order by {};'.format(materialized_database, schema_name, table_name, order_by))
+        try_num += 1
+        if try_num > 30:
+            break
 
     assert(result == expected)
 
@@ -212,6 +216,7 @@ def test_add_new_table_to_replication(started_cluster):
                              port=started_cluster.postgres_port,
                              database=True)
     cursor = conn.cursor()
+    cursor.execute('DROP TABLE IF EXISTS test_table')
     NUM_TABLES = 5
 
     for i in range(NUM_TABLES):
@@ -293,6 +298,7 @@ def test_remove_table_from_replication(started_cluster):
                              port=started_cluster.postgres_port,
                              database=True)
     cursor = conn.cursor()
+    cursor.execute('DROP TABLE IF EXISTS test_table')
     NUM_TABLES = 5
 
     for i in range(NUM_TABLES):
@@ -352,8 +358,9 @@ def test_predefined_connection_configuration(started_cluster):
     cursor = conn.cursor()
     cursor.execute(f'DROP TABLE IF EXISTS test_table')
     cursor.execute(f'CREATE TABLE test_table (key integer PRIMARY KEY, value integer)')
+    cursor.execute(f'INSERT INTO test_table SELECT 1, 2')
 
-    instance.query("CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1)")
+    instance.query("CREATE DATABASE test_database ENGINE = MaterializedPostgreSQL(postgres1) SETTINGS materialized_postgresql_tables_list='test_table'")
     check_tables_are_synchronized("test_table");
     drop_materialized_db()
     cursor.execute('DROP TABLE IF EXISTS test_table')

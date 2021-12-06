@@ -18,6 +18,8 @@ from docker_pull_helper import get_images_with_versions
 from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, mark_flaky_tests, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
+from tee_popen import TeePopen
 
 
 DOWNLOAD_RETRIES_COUNT = 5
@@ -113,6 +115,11 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token())
 
+    rerun_helper = RerunHelper(gh, pr_info, check_name)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
+
     images = get_images_with_versions(temp_path, IMAGES)
     images_with_versions = {i.name: i.version for i in images}
     result_path = os.path.join(temp_path, "output_dir")
@@ -140,13 +147,12 @@ if __name__ == "__main__":
     runner_path = os.path.join(repo_path, "tests/integration", "ci-runner.py")
     run_command = f"sudo -E {runner_path} | tee {output_path_log}"
 
-    with open(output_path_log, 'w', encoding='utf-8') as log:
-        with subprocess.Popen(run_command, shell=True, stderr=log, stdout=log, env=my_env) as process:
-            retcode = process.wait()
-            if retcode == 0:
-                logging.info("Run tests successfully")
-            else:
-                logging.info("Some tests failed")
+    with TeePopen(run_command, output_path_log, my_env) as process:
+        retcode = process.wait()
+        if retcode == 0:
+            logging.info("Run tests successfully")
+        else:
+            logging.info("Some tests failed")
 
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
