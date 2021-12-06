@@ -424,9 +424,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
 
 void IMergeTreeDataPart::removeIfNeeded()
 {
-    if (state != State::DeleteOnDestroy)
-        return;
-    if (!is_temp)
+    if (!is_temp && state != State::DeleteOnDestroy)
         return;
 
     try
