@@ -36,5 +36,8 @@ public class LocalEngineTest {
         Assert.assertTrue(data.memoryAddress > 0);
         Assert.assertEquals(150, data.offsets.length);
         UnsafeRow row  = new UnsafeRow(5);
+        row.pointTo(null, data.memoryAddress + data.offsets[5], (int) data.lengths[5]);
+        Assert.assertEquals(5.4, row.getDouble(2), 0.00001);
+        Assert.assertEquals(0, row.getInt(4));
     }
 }
