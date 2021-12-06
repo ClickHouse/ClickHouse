@@ -15,7 +15,7 @@ RemoteFileMetaDataFactory & RemoteFileMetaDataFactory::instance()
     return g_factory;
 }
 
-RemoteFileMetaDataBasePtr RemoteFileMetaDataFactory::create_class(const String & class_name)
+RemoteFileMetaDataBasePtr RemoteFileMetaDataFactory::createClass(const String & class_name)
 {
     auto it = class_creators.find(class_name);
     if (it == class_creators.end())
@@ -23,7 +23,7 @@ RemoteFileMetaDataBasePtr RemoteFileMetaDataFactory::create_class(const String &
     return (it->second)();
 }
 
-void RemoteFileMetaDataFactory::register_class(const String & class_name, ClassCreator creator)
+void RemoteFileMetaDataFactory::registerClass(const String & class_name, ClassCreator creator)
 {
     auto it = class_creators.find(class_name);
     if (it != class_creators.end())

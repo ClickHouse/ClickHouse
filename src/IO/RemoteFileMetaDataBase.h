@@ -54,7 +54,7 @@ using RemoteFileMetaDataBasePtr = std::shared_ptr<RemoteFileMetaDataBase>;
  * 1) define your own subclass derive from RemoteFileMetaDataBase. Notice! the getClassName() must be the same
  *    as your subclass name.
  * 2) in a .cpp file, call REGISTTER_REMOTE_FILE_META_DATA_CLASS(subclass),
- * 3) call RemoteFileMetaDataFactory::instance().create_class(subclass_name) where you want to make a new object
+ * 3) call RemoteFileMetaDataFactory::instance().createClass(subclass_name) where you want to make a new object
  */
 
 class RemoteFileMetaDataFactory : private boost::noncopyable
@@ -64,8 +64,8 @@ public:
     ~RemoteFileMetaDataFactory() = default;
 
     static RemoteFileMetaDataFactory & instance();
-    RemoteFileMetaDataBasePtr create_class(const String & class_name);
-    void register_class(const String &class_name, ClassCreator creator);
+    RemoteFileMetaDataBasePtr createClass(const String & class_name);
+    void registerClass(const String &class_name, ClassCreator creator);
 protected:
     RemoteFileMetaDataFactory() = default;
 
@@ -79,7 +79,7 @@ private:
     public:\
         FileMetaDataFactory##meta_data_class(){\
             auto creator = []() -> RemoteFileMetaDataBasePtr { return std::make_shared<meta_data_class>(); };\
-            RemoteFileMetaDataFactory::instance().register_class(#meta_data_class, creator);\
+            RemoteFileMetaDataFactory::instance().registerClass(#meta_data_class, creator);\
         }\
     };\
     static FileMetaDataFactory##meta_data_class g_file_meta_data_factory_instance##meta_data_class;
