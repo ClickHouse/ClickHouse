@@ -642,6 +642,7 @@ if (ThreadFuzzer::instance().isEffective())
     global_context->setRemoteHostFilter(config());
 
     std::string path_str = getCanonicalPath(config().getString("path", DBMS_DEFAULT_PATH));
+
     fs::path path = path_str;
     std::string default_database = config().getString("default_database", "default");
 
@@ -750,19 +751,19 @@ if (ThreadFuzzer::instance().isEffective())
     /// encoding frequencies
     {
         const std::string & encode_frequency_path = config().getString("encoding_frequencies_path", path);
-        FrequencyHolder::getInstance().parseEncodingFrequencies(path.string() + encode_frequency_path);
+        FrequencyHolder::getInstance().parseEncodingFrequencies(path / encode_frequency_path);
     }
 
     /// programming languages frequencies
     {
         const std::string & programming_frequency_path = config().getString("programming_lang_frequencies_path", path);
-        FrequencyHolder::getInstance().parseProgrammingFrequency(path.string() + programming_frequency_path);
+        FrequencyHolder::getInstance().parseProgrammingFrequency(path / programming_frequency_path);
     }
 
     /// emotional dictionary
     {
         const std::string & emotional_dict_path = config().getString("emotional_dict_path", path);
-        FrequencyHolder::getInstance().parseEmotionalDict(path.string() + emotional_dict_path);
+        FrequencyHolder::getInstance().parseEmotionalDict(path / emotional_dict_path);
     }
 
     {
