@@ -16,12 +16,14 @@ ZooKeeper is one of the first well-known open-source coordination systems. It's 
 
 By default, ClickHouse Keeper provides the same guarantees as ZooKeeper (linearizable writes, non-linearizable reads). It has a compatible client-server protocol, so any standard ZooKeeper client can be used to interact with ClickHouse Keeper. Snapshots and logs have an incompatible format with ZooKeeper, but `clickhouse-keeper-converter` tool allows to convert ZooKeeper data to ClickHouse Keeper snapshot. Interserver protocol in ClickHouse Keeper is also incompatible with ZooKeeper so mixed ZooKeeper / ClickHouse Keeper cluster is impossible.
 
+ClickHouse Keeper supports Access Control List the same way as [ZooKeeper](https://zookeeper.apache.org/doc/r3.1.2/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) does. ClickHouse Keeper supports the same set of permissions and has the identical built-in schemes: `world`, `auth`, `digest`, `host` and `ip`. Digest authentication scheme uses pair username:password. Password is encoded in Base64.
+
 ## Configuration
 
 ClickHouse Keeper can be used as a standalone replacement for ZooKeeper or as an internal part of the ClickHouse server, but in both cases configuration is almost the same `.xml` file. The main ClickHouse Keeper configuration tag is `<keeper_server>`. Keeper configuration has the following parameters:
 
 -    `tcp_port` — Port for a client to connect (default for ZooKeeper is `2181`).
--    `tcp_port_secure` — Secure port for a client to connect.
+-    `tcp_port_secure` — Secure port for an SSL connection between client and keeper-server.
 -    `server_id` — Unique server id, each participant of the ClickHouse Keeper cluster must have a unique number (1, 2, 3, and so on).
 -    `log_storage_path` — Path to coordination logs, better to store logs on the non-busy device (same for ZooKeeper).
 -    `snapshot_storage_path` — Path to coordination snapshots.
@@ -50,7 +52,11 @@ Internal coordination settings are located in `<keeper_server>.<coordination_set
 -    `shutdown_timeout` — Wait to finish internal connections and shutdown (ms) (default: 5000).
 -    `startup_timeout` — If the server doesn't connect to other quorum participants in the specified timeout it will terminate (ms) (default: 30000).
 
-Quorum configuration is located in `<keeper_server>.<raft_configuration>` section and contain servers description. The only parameter for the whole quorum is `secure`, which enables encrypted connection for communication between quorum participants. The main parameters for each `<server>` are:
+Quorum configuration is located in `<keeper_server>.<raft_configuration>` section and contain servers description.
+
+The only parameter for the whole quorum is `secure`, which enables encrypted connection for communication between quorum participants. The parameter can be set `true` if SSL connection is required for internal communication between nodes, or left unspecified otherwise.
+
+The main parameters for each `<server>` are:
 
 -    `id` — Server identifier in a quorum.
 -    `hostname` — Hostname where this server is placed.
@@ -117,3 +123,6 @@ clickhouse-keeper-converter --zookeeper-logs-dir /var/lib/zookeeper/version-2 --
 4. Copy snapshot to ClickHouse server nodes with a configured `keeper` or start ClickHouse Keeper instead of ZooKeeper. The snapshot must persist on all nodes, otherwise, empty nodes can be faster and one of them can become a leader.
 
 [Original article](https://clickhouse.com/docs/en/operations/clickhouse-keeper/) <!--hide-->
+
+
+
