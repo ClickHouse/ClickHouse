@@ -47,7 +47,7 @@ def cluster():
 def create_table(node, table_name, **additional_settings):
     settings = {
         "storage_policy": "blob_storage_policy",
-        "old_parts_lifetime": 1, # TODO: setting to 0 causes errors
+        "old_parts_lifetime": 1,
         "index_granularity": 512
     }
     settings.update(additional_settings)
@@ -121,18 +121,16 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical):
 
     node.query(f"SYSTEM START MERGES {TABLE_NAME}")
 
-    # TODO: crashes at "Failed to read metadata file. (UNKNOWN_FORMAT)"
     # Wait for merges and old parts deletion
     for attempt in range(0, 10):
         parts_count = node.query(f"SELECT COUNT(*) FROM system.parts WHERE table = '{TABLE_NAME}' FORMAT Values")
-        print("parts_count: ", parts_count)
         if parts_count == "(1)":
             break
 
         if attempt == 9:
             assert parts_count == "(1)"
 
-        time.sleep(10)
+        time.sleep(1)
 
     assert node.query(f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
     assert node.query(f"SELECT count(distinct(id)) FROM {TABLE_NAME} FORMAT Values") == "(8192)"
