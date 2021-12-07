@@ -7,26 +7,7 @@ import os
 
 import pytest
 from helpers.cluster import ClickHouseCluster, get_instances_dir
-
-
-# By default the exceptions that was throwed in threads will be ignored
-# (they will not mark the test as failed, only printed to stderr).
-#
-# Wrap thrading.Thread and re-throw exception on join()
-class SafeThread(threading.Thread):
-    def __init__(self, target):
-        super().__init__()
-        self.target = target
-        self.exception = None
-    def run(self):
-        try:
-            self.target()
-        except Exception as e: # pylint: disable=broad-except
-            self.exception = e
-    def join(self, timeout=None):
-        super().join(timeout)
-        if self.exception:
-            raise self.exception
+from helpers.utility import generate_values, replace_config, SafeThread
 
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -37,28 +18,7 @@ TABLE_NAME = "blob_storage_table"
 BLOB_STORAGE_DISK = "blob_storage_disk"
 LOCAL_DISK = "hdd"
 
-
-# TODO: these tests resemble S3 tests a lot, utility functions and tests themselves could be abstracted
-
-def random_string(length):
-    letters = string.ascii_letters
-    return ''.join(random.choice(letters) for i in range(length))
-
-
-def generate_values(date_str, count, sign=1):
-    data = [[date_str, sign * (i + 1), random_string(10)] for i in range(count)]
-    data.sort(key=lambda tup: tup[1])
-    return ",".join(["('{}',{},'{}')".format(x, y, z) for x, y, z in data])
-
-
-def replace_config(old, new):
-    config = open(CONFIG_PATH, 'r')
-    config_lines = config.readlines()
-    config.close()
-    config_lines = [line.replace(old, new) for line in config_lines]
-    config = open(CONFIG_PATH, 'w')
-    config.writelines(config_lines)
-    config.close()
+# TODO: these tests resemble S3 tests a lot, maybe they can be abstracted
 
 
 @pytest.fixture(scope="module")
@@ -320,8 +280,10 @@ def test_apply_new_settings(cluster):
     node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-03', 4096)}")
 
     # Force multi-part upload mode.
-    replace_config("<max_single_part_upload_size>33554432</max_single_part_upload_size>",
-                   "<max_single_part_upload_size>4096</max_single_part_upload_size>")
+    replace_config(
+        CONFIG_PATH,
+        "<max_single_part_upload_size>33554432</max_single_part_upload_size>",
+        "<max_single_part_upload_size>4096</max_single_part_upload_size>")
 
     node.query("SYSTEM RELOAD CONFIG")
     node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-04', 4096, -1)}")
@@ -334,7 +296,7 @@ def test_restart_during_load(cluster):
     create_table(node, TABLE_NAME)
 
     # Force multi-part upload mode.
-    replace_config("<container_already_exists>false</container_already_exists>", "")
+    replace_config(CONFIG_PATH, "<container_already_exists>false</container_already_exists>", "")
 
     node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-04', 4096)}")
     node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-05', 4096, -1)}")
