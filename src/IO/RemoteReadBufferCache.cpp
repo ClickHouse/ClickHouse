@@ -378,7 +378,6 @@ void RemoteReadBufferCache::recoverCachedFilesMetadata(
 
 void RemoteReadBufferCache::recoverTask()
 {
-    std::lock_guard lock(mutex);
     recoverCachedFilesMetadata(root_dir, 1, 2);
     initialized = true;
     LOG_INFO(log, "Recovered from directory:{}", root_dir);
@@ -388,6 +387,11 @@ void RemoteReadBufferCache::initOnce(
     ContextPtr context,
     const String & root_dir_, size_t limit_size_, size_t bytes_read_before_flush_)
 {
+    std::lock_guard lock(mutex);
+    if (isInitialized())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot initialize RemoteReadBufferCache twice");
+    }
     LOG_INFO(
         log, "Initializing local cache for remote data sources. Local cache root path: {}, cache size limit: {}", root_dir_, limit_size_);
     root_dir = root_dir_;
