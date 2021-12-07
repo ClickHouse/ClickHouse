@@ -192,10 +192,10 @@ public:
 
     /// For apply materialize() function for every output.
     /// Also add aliases so the result names remain unchanged.
-    void addMaterializingOutputActions(bool remove_low_cardinality = false);
+    void addMaterializingOutputActions();
 
     /// Apply materialize() function to node. Result node has the same name.
-    const Node & materializeNode(const Node & node, bool remove_low_cardinality = false);
+    const Node & materializeNode(const Node & node);
 
     enum class MatchColumnsMode
     {
