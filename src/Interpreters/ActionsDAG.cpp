@@ -983,38 +983,19 @@ void ActionsDAG::assertDeterministic() const
                 "Expression must be deterministic but it contains non-deterministic part `{}`", node.result_name);
 }
 
-void ActionsDAG::addMaterializingOutputActions(bool remove_low_cardinality)
+void ActionsDAG::addMaterializingOutputActions()
 {
     for (auto & node : index)
-        node = &materializeNode(*node, remove_low_cardinality);
+        node = &materializeNode(*node);
 }
 
-const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node, bool remove_low_cardinality)
+const ActionsDAG::Node & ActionsDAG::materializeNode(const Node & node)
 {
     FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(
                             std::make_shared<FunctionMaterialize>());
 
     const auto & name = node.result_name;
     const auto * func = &addFunction(func_builder_materialize, {&node}, {});
-    if (remove_low_cardinality)
-    {
-        auto res_type = recursiveRemoveLowCardinality(func->result_type);
-        if (res_type.get() != func->result_type.get())
-        {
-            ColumnWithTypeAndName column;
-            column.name = res_type->getName();
-            column.column = DataTypeString().createColumnConst(0, column.name);
-            column.type = std::make_shared<DataTypeString>();
-
-            const auto * right_arg = &addColumn(std::move(column));
-            const auto * left_arg = func;
-
-            FunctionOverloadResolverPtr func_builder_cast = CastInternalOverloadResolver<CastType::nonAccurate>::createImpl();
-
-            NodeRawConstPtrs children = { left_arg, right_arg };
-            func = &addFunction(func_builder_cast, std::move(children), {});
-        }
-    }
     return addAlias(*func, name);
 }
 
