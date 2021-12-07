@@ -5,7 +5,7 @@
 #include <IO/MySQLBinlogEventReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
-#include <base/DateLUT.h>
+#include <common/DateLUT.h>
 #include <Common/FieldVisitorToString.h>
 #include <Core/MySQL/PacketsGeneric.h>
 #include <Core/MySQL/PacketsProtocolText.h>
@@ -500,9 +500,6 @@ namespace MySQLReplication
 
                             UInt32 mask = 0;
                             DecimalType res(0);
-
-                            if (payload.eof())
-                                throw Exception("Attempt to read after EOF.", ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 
                             if ((*payload.position() & 0x80) == 0)
                                 mask = UInt32(-1);

@@ -38,12 +38,6 @@
 
 -   `marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – размер файла с засечками.
 
--   `secondary_indices_compressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – общий размер сжатых данных для вторичных индексов в куске данных. Вспомогательные файлы (например, файлы с засечками) не включены.
-
--   `secondary_indices_uncompressed_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – общий размер несжатых данных для вторичных индексов в куске данных. Вспомогательные файлы (например, файлы с засечками) не включены.
-
-- `secondary_indices_marks_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md)) – размер файла с засечками для вторичных индексов.
-
 -   `modification_time` ([DateTime](../../sql-reference/data-types/datetime.md)) – время модификации директории с куском данных. Обычно соответствует времени создания куска.
 
 -   `remove_time` ([DateTime](../../sql-reference/data-types/datetime.md)) – время, когда кусок стал неактивным.
@@ -125,9 +119,6 @@ rows:                                  6
 bytes_on_disk:                         310
 data_compressed_bytes:                 157
 data_uncompressed_bytes:               91
-secondary_indices_compressed_bytes:    58
-secondary_indices_uncompressed_bytes:  6
-secondary_indices_marks_bytes:         48
 marks_bytes:                           144
 modification_time:                     2020-06-18 13:01:49
 remove_time:                           0000-00-00 00:00:00

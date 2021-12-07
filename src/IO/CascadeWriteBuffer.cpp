@@ -28,8 +28,6 @@ CascadeWriteBuffer::CascadeWriteBuffer(WriteBufferPtrs && prepared_sources_, Wri
 
 void CascadeWriteBuffer::nextImpl()
 {
-    if (!curr_buffer)
-        return;
     try
     {
         curr_buffer->position() = position();

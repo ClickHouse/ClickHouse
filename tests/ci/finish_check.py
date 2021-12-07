@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 import logging
+import json
 import os
 from github import Github
-from pr_info import PRInfo, get_event
+from pr_info import PRInfo
 from get_robot_token import get_best_robot_token
 from commit_status_helper import get_commit
 
@@ -25,8 +26,10 @@ def filter_statuses(statuses):
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+    with open(os.getenv('GITHUB_EVENT_PATH'), 'r') as event_file:
+        event = json.load(event_file)
 
-    pr_info = PRInfo(get_event(), need_orgs=True)
+    pr_info = PRInfo(event, need_orgs=True)
     gh = Github(get_best_robot_token())
     commit = get_commit(gh, pr_info.sha)
 

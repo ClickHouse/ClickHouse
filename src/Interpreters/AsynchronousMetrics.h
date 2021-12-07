@@ -41,6 +41,9 @@ using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMet
 class AsynchronousMetrics : WithContext
 {
 public:
+    /// The default value of update_period_seconds is for ClickHouse-over-YT
+    /// in Arcadia -- it uses its own server implementation that also uses these
+    /// metrics.
     AsynchronousMetrics(
         ContextPtr global_context_,
         int update_period_seconds,
@@ -54,6 +57,18 @@ public:
 
     /// Returns copy of all values.
     AsynchronousMetricValues getValues() const;
+
+#if defined(ARCADIA_BUILD)
+    /// This constructor needs only to provide backward compatibility with some other projects (hello, Arcadia).
+    /// Never use this in the ClickHouse codebase.
+    AsynchronousMetrics(
+        ContextPtr global_context_,
+        int update_period_seconds = 60)
+        : WithContext(global_context_)
+        , update_period(update_period_seconds)
+    {
+    }
+#endif
 
 private:
     const std::chrono::seconds update_period;

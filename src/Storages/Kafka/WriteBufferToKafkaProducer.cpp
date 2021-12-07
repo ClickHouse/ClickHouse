@@ -53,13 +53,14 @@ WriteBufferToKafkaProducer::~WriteBufferToKafkaProducer()
 
 void WriteBufferToKafkaProducer::countRow(const Columns & columns, size_t current_row)
 {
+
     if (++rows % max_rows == 0)
     {
         const std::string & last_chunk = chunks.back();
         size_t last_chunk_size = offset();
 
         // if last character of last chunk is delimiter - we don't need it
-        if (last_chunk_size && delim && last_chunk[last_chunk_size - 1] == delim)
+        if (delim && last_chunk[last_chunk_size - 1] == delim)
             --last_chunk_size;
 
         std::string payload;

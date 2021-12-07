@@ -18,15 +18,14 @@ class JSONAsStringRowInputFormat : public IRowInputFormat
 public:
     JSONAsStringRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_);
 
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     String getName() const override { return "JSONAsStringRowInputFormat"; }
     void resetParser() override;
-
-private:
-    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 
     void readPrefix() override;
     void readSuffix() override;
 
+private:
     void readJSONObject(IColumn & column);
 
     PeekableReadBuffer buf;

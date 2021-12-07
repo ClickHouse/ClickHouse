@@ -12,16 +12,12 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
-#include <QueryPipeline/Pipe.h>
-#include <Processors/ISimpleTransform.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Formats/IOutputFormat.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <Processors/Pipe.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Storages/StorageFactory.h>
-
-#include <boost/algorithm/string/split.hpp>
 
 
 namespace DB
@@ -62,7 +58,7 @@ StorageExecutable::StorageExecutable(
     const std::vector<String> & arguments_,
     const String & format_,
     const std::vector<ASTPtr> & input_queries_,
-    const ExecutableSettings & settings_,
+    const ExecutablePoolSettings & pool_settings_,
     const ColumnsDescription & columns,
     const ConstraintsDescription & constraints)
     : IStorage(table_id_)
@@ -70,9 +66,9 @@ StorageExecutable::StorageExecutable(
     , arguments(arguments_)
     , format(format_)
     , input_queries(input_queries_)
-    , settings(settings_)
+    , pool_settings(pool_settings_)
     /// If pool size == 0 then there is no size restrictions. Poco max size of semaphore is integer type.
-    , process_pool(std::make_shared<ProcessPool>(settings.pool_size == 0 ? std::numeric_limits<int>::max() : settings.pool_size))
+    , process_pool(std::make_shared<ProcessPool>(pool_settings.pool_size == 0 ? std::numeric_limits<int>::max() : pool_settings.pool_size))
     , log(&Poco::Logger::get("StorageExecutablePool"))
 {
     StorageInMemoryMetadata storage_metadata;
@@ -80,29 +76,6 @@ StorageExecutable::StorageExecutable(
     storage_metadata.setConstraints(constraints);
     setInMemoryMetadata(storage_metadata);
 }
-
-class SendingChunkHeaderTransform final : public ISimpleTransform
-{
-public:
-    SendingChunkHeaderTransform(const Block & header, WriteBuffer & buffer_)
-        : ISimpleTransform(header, header, false)
-        , buffer(buffer_)
-    {
-    }
-
-    String getName() const override { return "SendingChunkHeaderTransform"; }
-
-protected:
-
-    void transform(Chunk & chunk) override
-    {
-        writeText(chunk.getNumRows(), buffer);
-        writeChar('\n', buffer);
-    }
-
-private:
-    WriteBuffer & buffer;
-};
 
 Pipe StorageExecutable::read(
     const Names & /*column_names*/,
@@ -128,13 +101,14 @@ Pipe StorageExecutable::read(
             script_name,
             user_scripts_path);
 
-    std::vector<QueryPipelineBuilder> inputs;
+    std::vector<BlockInputStreamPtr> inputs;
     inputs.reserve(input_queries.size());
 
     for (auto & input_query : input_queries)
     {
         InterpreterSelectWithUnionQuery interpreter(input_query, context, {});
-        inputs.emplace_back(interpreter.buildQueryPipeline());
+        auto input = interpreter.execute().getInputStream();
+        inputs.emplace_back(std::move(input));
     }
 
     ShellCommand::Config config(script_path);
@@ -149,15 +123,15 @@ Pipe StorageExecutable::read(
     {
         bool result = process_pool->tryBorrowObject(process, [&config, this]()
         {
-            config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy{ true /*terminate_in_destructor*/, settings.command_termination_timeout };
+            config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy{ true /*terminate_in_destructor*/, pool_settings.command_termination_timeout };
             auto shell_command = ShellCommand::executeDirect(config);
             return shell_command;
-        }, settings.max_command_execution_time * 10000);
+        }, pool_settings.max_command_execution_time * 10000);
 
         if (!result)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
                 "Could not get process from pool, max command execution timeout exceeded {} seconds",
-                settings.max_command_execution_time);
+                pool_settings.max_command_execution_time);
     }
     else
     {
@@ -169,6 +143,7 @@ Pipe StorageExecutable::read(
 
     for (size_t i = 0; i < inputs.size(); ++i)
     {
+        BlockInputStreamPtr input_stream = inputs[i];
         WriteBufferFromFile * write_buffer = nullptr;
 
         if (i == 0)
@@ -185,23 +160,19 @@ Pipe StorageExecutable::read(
             write_buffer = &it->second;
         }
 
-        inputs[i].resize(1);
-        if (settings.send_chunk_header)
+        ShellCommandSource::SendDataTask task = [input_stream, write_buffer, context, is_executable_pool, this]()
         {
-            auto transform = std::make_shared<SendingChunkHeaderTransform>(inputs[i].getHeader(), *write_buffer);
-            inputs[i].addTransform(std::move(transform));
-        }
+            auto output_stream = context->getOutputStream(format, *write_buffer, input_stream->getHeader().cloneEmpty());
+            input_stream->readPrefix();
+            output_stream->writePrefix();
 
-        auto pipeline = std::make_shared<QueryPipeline>(QueryPipelineBuilder::getPipeline(std::move(inputs[i])));
+            while (auto block = input_stream->read())
+                output_stream->write(block);
 
-        auto out = context->getOutputFormat(format, *write_buffer, materializeBlock(pipeline->getHeader()));
-        out->setAutoFlush();
-        pipeline->complete(std::move(out));
+            input_stream->readSuffix();
+            output_stream->writeSuffix();
 
-        ShellCommandSource::SendDataTask task = [pipeline, write_buffer, is_executable_pool]()
-        {
-            CompletedPipelineExecutor executor(*pipeline);
-            executor.execute();
+            output_stream->flush();
 
             if (!is_executable_pool)
                 write_buffer->close();
@@ -221,7 +192,7 @@ Pipe StorageExecutable::read(
         configuration.read_number_of_rows_from_process_output = true;
     }
 
-    Pipe pipe(std::make_unique<ShellCommandSource>(context, format, std::move(sample_block), std::move(process), std::move(tasks), configuration, process_pool));
+    Pipe pipe(std::make_unique<ShellCommandSource>(context, format, std::move(sample_block), std::move(process), log, std::move(tasks), configuration, process_pool));
     return pipe;
 }
 
@@ -270,7 +241,7 @@ void registerStorageExecutable(StorageFactory & factory)
             if (max_execution_time_seconds != 0 && max_command_execution_time > max_execution_time_seconds)
                 max_command_execution_time = max_execution_time_seconds;
 
-            ExecutableSettings pool_settings;
+            ExecutablePoolSettings pool_settings;
             pool_settings.max_command_execution_time = max_command_execution_time;
             if (args.storage_def->settings)
                 pool_settings.loadFromQuery(*args.storage_def);

@@ -15,8 +15,6 @@ ClickHouse поддерживает следующий синтаксис:
 
 `LIMIT BY` не связана с секцией `LIMIT`. Их можно использовать в одном запросе.
 
-Если вы хотите использовать в секции `LIMIT BY` номера столбцов вместо названий, включите настройку [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments).	
-
 ## Примеры
 
 Образец таблицы:

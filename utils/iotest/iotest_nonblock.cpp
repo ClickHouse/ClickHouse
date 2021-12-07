@@ -136,13 +136,8 @@ int mainImpl(int argc, char ** argv)
 
     for (size_t i = 0; i < descriptors; ++i)
     {
-#if defined(OS_DARWIN)
         if (fsync(fds[i]))
             throwFromErrno("Cannot fsync", ErrorCodes::CANNOT_FSYNC);
-#else
-        if (fdatasync(fds[i]))
-            throwFromErrno("Cannot fdatasync", ErrorCodes::CANNOT_FSYNC);
-#endif
     }
 
     watch.stop();

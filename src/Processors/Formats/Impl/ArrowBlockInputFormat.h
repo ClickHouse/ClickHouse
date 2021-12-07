@@ -1,5 +1,7 @@
 #pragma once
-#include "config_formats.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
 
 #if USE_ARROW
 
@@ -24,9 +26,10 @@ public:
 
     String getName() const override { return "ArrowBlockInputFormat"; }
 
-private:
+protected:
     Chunk generate() override;
 
+private:
     // Whether to use ArrowStream format
     bool stream;
     // This field is only used for ArrowStream format

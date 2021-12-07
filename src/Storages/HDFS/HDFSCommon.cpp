@@ -8,7 +8,7 @@
 #include <Common/Exception.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB

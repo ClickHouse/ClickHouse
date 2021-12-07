@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/randomSeed.h>
-#include <boost/algorithm/string/replace.hpp>
 
 
 namespace ProfileEvents
@@ -179,8 +178,6 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
 
             storage.queue.load(zookeeper);
 
-            storage.queue.createLogEntriesToFetchBrokenParts();
-
             /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
             /// because cleanup_thread doesn't delete log_pointer of active replicas.
             storage.queue.pullLogsToQueue(zookeeper, {}, ReplicatedMergeTreeQueue::LOAD);
@@ -209,7 +206,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         storage.partial_shutdown_event.reset();
 
         /// Start queue processing
-        storage.background_operations_assignee.start();
+        storage.background_executor.start();
 
         storage.queue_updating_task->activateAndSchedule();
         storage.mutations_updating_task->activateAndSchedule();
@@ -394,7 +391,7 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
         auto fetch_lock = storage.fetcher.blocker.cancel();
         auto merge_lock = storage.merger_mutator.merges_blocker.cancel();
         auto move_lock = storage.parts_mover.moves_blocker.cancel();
-        storage.background_operations_assignee.finish();
+        storage.background_executor.finish();
     }
 
     LOG_TRACE(log, "Threads finished");
