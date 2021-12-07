@@ -205,26 +205,31 @@ def get_stacktraces_from_gdb(server_pid):
 
 # collect server stacktraces from system.stack_trace table
 # it does not work in Sandbox
-def get_stacktraces_from_clickhouse(client, replicated_database=False):
+def get_stacktraces_from_clickhouse(args):
+    settings_str = ' '.join([
+        get_additional_client_options(args),
+        '--allow_introspection_functions=1',
+        '--skip_unavailable_shards=1',
+    ])
     replicated_msg = \
-        "{} --allow_introspection_functions=1 --skip_unavailable_shards=1 --query \
+        "{} {} --query \
         \"SELECT materialize((hostName(), tcpPort())) as host, thread_id, \
         arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), \
         arrayMap(x -> addressToLine(x), trace), \
         arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace \
         FROM clusterAllReplicas('test_cluster_database_replicated', 'system.stack_trace') \
-        ORDER BY host, thread_id FORMAT Vertical\"".format(client)
+        ORDER BY host, thread_id FORMAT Vertical\"".format(args.client, settings_str)
 
     msg = \
-        "{} --allow_introspection_functions=1 --query \
+        "{} {} --query \
         \"SELECT arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), \
         arrayMap(x -> addressToLine(x), trace), \
         arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace \
-        FROM system.stack_trace FORMAT Vertical\"".format(client)
+        FROM system.stack_trace FORMAT Vertical\"".format(args.client, settings_str)
 
     try:
         return subprocess.check_output(
-            replicated_msg if replicated_database else msg,
+            replicated_msg if args.replicated_database else msg,
             shell=True, stderr=subprocess.STDOUT).decode('utf-8')
     except Exception as e:
         print(f"Error occurred while receiving stack traces from client: {e}")
@@ -250,8 +255,7 @@ def print_stacktraces() -> None:
     if bt is None:
         print("\nCollecting stacktraces from system.stacktraces table:")
 
-        bt = get_stacktraces_from_clickhouse(
-            args.client, args.replicated_database)
+        bt = get_stacktraces_from_clickhouse(args)
 
     if bt is not None:
         print(bt)
