@@ -68,6 +68,9 @@ private:
         const String zk_root;
         NodesInfo nodes_info;
 
+        /// Track last update time
+        Stopwatch watch;
+
         NodeInfo current_node;
 
         explicit ClusterInfo(const String & name_, const String & zk_root_, UInt16 port, bool secure, size_t shard_id)
@@ -91,7 +94,6 @@ private:
     ClusterPtr makeCluster(const ClusterInfo & cluster_info);
 
     bool needUpdate(const Strings & node_uuids, const NodesInfo & nodes);
-    bool updateCluster(const String & cluster_name);
     bool updateCluster(ClusterInfo & cluster_info);
 
     bool runMainThread();
