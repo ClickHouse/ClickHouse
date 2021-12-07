@@ -37,6 +37,7 @@ def test_mutate_and_upgrade(start_cluster):
     node2.query("SYSTEM SYNC REPLICA mt", timeout=15)
 
     node2.query("DETACH TABLE mt")  # stop being leader
+    node1.query("DETACH TABLE mt")  # stop being leader
     node1.restart_with_latest_version(signal=9)
     node2.restart_with_latest_version(signal=9)
 
@@ -84,7 +85,7 @@ def test_upgrade_while_mutation(start_cluster):
     node3.query("SYSTEM STOP MERGES mt1")
     node3.query("ALTER TABLE mt1 DELETE WHERE id % 2 == 0")
 
-    node3.query("DETACH TABLE mt")  # stop being leader
+    node3.query("DETACH TABLE mt1")  # stop being leader
     node3.restart_with_latest_version(signal=9)
 
     # checks for readonly
