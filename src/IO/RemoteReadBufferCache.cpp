@@ -399,13 +399,9 @@ void RemoteReadBufferCache::initOnce(
     lru_caches = std::make_unique<CacheType>(limit_size_);
 
     /// create if root_dir not exists
-    if (!fs::exists(fs::path(root_dir) / ""))
+    if (!fs::exists(fs::path(root_dir)))
     {
-        std::error_code ec;
-        bool success = fs::create_directories(fs::path(root_dir) / "", ec);
-        if (!success)
-            throw Exception(
-                ErrorCodes::CANNOT_CREATE_DIRECTORY, "Failed to create directories, error code:{} reason:{}", ec.value(), ec.message());
+        fs::create_directories(fs::path(root_dir));
     }
 
     recover_task_holder = context->getSchedulePool().createTask("recover local cache metadata for remote files", [this]{ recoverTask(); });

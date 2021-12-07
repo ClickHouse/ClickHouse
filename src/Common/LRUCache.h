@@ -25,7 +25,6 @@ struct TrivialWeightFunction
 enum class LRUCacheEvictStatus
 {
     CAN_EVITCT, // a key can be evicted
-    TERMINATE_EVICT, // stop the evicting process
     SKIP_EVICT, // skip current value and keep iterating
 };
 
@@ -357,13 +356,13 @@ private:
         return true;
     }
 
-    bool removeOverflow(size_t more_size = 0)
+    bool removeOverflow(size_t required_size_to_remove = 0)
     {
         size_t current_weight_lost = 0;
         size_t queue_size = cells.size();
         auto key_it = queue.begin();
 
-        while ((current_size > max_size || (max_elements_size != 0 && queue_size > max_elements_size))
+        while ((current_size + required_size_to_remove > max_size || (max_elements_size != 0 && queue_size > max_elements_size))
                 && (queue_size > 1)
                 && (key_it != queue.end()))
         {
@@ -378,32 +377,28 @@ private:
 
             const auto & cell = it->second;
             auto evict_status = evict_policy.canRelease(*cell.value);// in default, it is CAN_EVITCT
-            if (evict_status == LRUCacheEvictStatus::CAN_EVITCT)
+            switch (evict_status)
             {
-                // always call release() before erasing an element
-                // in default, it's an empty action
-                evict_policy.release(*cell.value);
+                case LRUCacheEvictStatus::CAN_EVITCT:
+                    {
+                        // always call release() before erasing an element
+                        // in default, it's an empty action
+                        evict_policy.release(*cell.value);
 
-                current_size -= cell.size;
-                current_weight_lost += cell.size;
+                        current_size -= cell.size;
+                        current_weight_lost += cell.size;
 
-                cells.erase(it);
-                queue.pop_front();
-                --queue_size;
+                        cells.erase(it);
+                        queue.pop_front();
+                        --queue_size;
+                    }
+                    break;
+                case LRUCacheEvictStatus::SKIP_EVICT:
+                    {
+                        key_it++;
+                    }
+                    break;
             }
-            else if (evict_status == LRUCacheEvictStatus::SKIP_EVICT)
-            {
-                // skip this element and try to evict the remaining ones.
-                key_it++;
-                continue;
-            }
-            else if (evict_status == LRUCacheEvictStatus::TERMINATE_EVICT)
-            {
-                // maybe we want to stop this iteration once we meet the first unreleasable element
-                break;
-            }
-            LOG_ERROR(&Poco::Logger::get("LRUCache"), "This condition branch should not be reached.");
-            abort();
         }
 
         onRemoveOverflowWeightLoss(current_weight_lost);
@@ -413,7 +408,7 @@ private:
             LOG_ERROR(&Poco::Logger::get("LRUCache"), "LRUCache became inconsistent. There must be a bug in it.");
             abort();
         }
-        return !(current_size + more_size > max_size || (max_elements_size != 0 && queue_size > max_elements_size));
+        return !(current_size + required_size_to_remove > max_size || (max_elements_size != 0 && queue_size > max_elements_size));
     }
 
     /// Override this method if you want to track how much weight was lost in removeOverflow method.
