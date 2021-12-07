@@ -1,5 +1,3 @@
--- Tags: disabled
-
 SET allow_experimental_window_view = 1;
 
 DROP TABLE IF EXISTS mt;
@@ -19,7 +17,7 @@ INSERT INTO mt VALUES (1, '1990/01/01 12:00:10');
 INSERT INTO mt VALUES (1, '1990/01/01 12:00:11');
 INSERT INTO mt VALUES (1, '1990/01/01 12:00:30');
 
-SELECT sleep(1);
+SELECT sleep(3);
 SELECT * from dst order by w_end;
 
 DROP TABLE wv;
