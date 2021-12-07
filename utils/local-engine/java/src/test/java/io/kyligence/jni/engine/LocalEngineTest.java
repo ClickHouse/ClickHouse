@@ -18,7 +18,7 @@ public class LocalEngineTest {
     @Before
     public void setup() {
         System.out.println("start load");
-        System.load("/home/kyligence/Documents/code/ClickHouse/cmake-build-debug/utils/local-engine/liblocal_engine_jnid.so");
+        System.load("/home/kyligence/Documents/code/ClickHouse/cmake-build-release/utils/local-engine/liblocal_engine_jni.so");
         System.out.println("load success");
     }
 

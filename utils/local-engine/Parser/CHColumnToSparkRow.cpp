@@ -5,7 +5,7 @@
 #include <Core/Types.h>
 #include <DataTypes/DataTypesDecimal.h>
 
-#define WRITE_VECTOR_COLUMN(TYPE, PRIME_TYPE) \
+#define WRITE_VECTOR_COLUMN(TYPE, PRIME_TYPE, GETTER) \
     const auto * type_col = checkAndGetColumn<ColumnVector<TYPE>>(*col.column); \
     for (auto i = 0; i < num_rows; i++) \
     { \
@@ -16,9 +16,8 @@
         } \
         else \
         { \
-            Field value; \
-            type_col->get(i, value); \
-            memcpy(buffer_address + offsets[i] + field_offset, &value.get<TYPE>(), sizeof(PRIME_TYPE)); \
+            auto * pointer = reinterpret_cast<PRIME_TYPE *>(buffer_address + offsets[i] + field_offset); \
+            pointer[0] = type_col->GETTER(i);\
         } \
     }
 
@@ -106,35 +105,35 @@ void writeValue(
     WhichDataType which(nested_col->getDataType());
     if (which.isUInt8())
     {
-        WRITE_VECTOR_COLUMN(UInt8, uint8_t)
+        WRITE_VECTOR_COLUMN(UInt8, uint8_t, get64)
     }
     else if (which.isInt8())
     {
-        WRITE_VECTOR_COLUMN(Int8, int8_t)
+        WRITE_VECTOR_COLUMN(Int8, int8_t, get64)
     }
     else if (which.isInt16())
     {
-        WRITE_VECTOR_COLUMN(Int16, int16_t)
+        WRITE_VECTOR_COLUMN(Int16, int16_t, get64)
     }
     else if (which.isInt32())
     {
-        WRITE_VECTOR_COLUMN(Int32, int32_t)
+        WRITE_VECTOR_COLUMN(Int32, int32_t, get64)
     }
     else if (which.isInt64())
     {
-        WRITE_VECTOR_COLUMN(Int64, int64_t)
+        WRITE_VECTOR_COLUMN(Int64, int64_t, get64)
     }
     else if (which.isFloat32())
     {
-        WRITE_VECTOR_COLUMN(Float32, float_t)
+        WRITE_VECTOR_COLUMN(Float32, float_t, getFloat32)
     }
     else if (which.isFloat64())
     {
-        WRITE_VECTOR_COLUMN(Float64, double_t)
+        WRITE_VECTOR_COLUMN(Float64, double_t, getFloat64)
     }
     else if (which.isDate())
     {
-        WRITE_VECTOR_COLUMN(UInt16, uint16_t)
+        WRITE_VECTOR_COLUMN(UInt16, uint16_t, get64)
     }
     else if (which.isString())
     {

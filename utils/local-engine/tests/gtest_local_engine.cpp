@@ -54,17 +54,17 @@ TEST(TestSelect, PerformanceTest)
                       .column("l_extendedprice", "FP64")
                       .column("l_discount", "FP64")
                       .column("l_tax", "FP64")
-                      .column("l_returnflag", "String")
-                      .column("l_linestatus", "String")
+//                      .column("l_returnflag", "String")
+//                      .column("l_linestatus", "String")
                       .column("l_shipdate_new", "FP64")
                       .column("l_commitdate_new", "FP64")
                       .column("l_receiptdate_new", "FP64")
-                      .column("l_shipinstruct", "String")
-                      .column("l_shipmode", "String")
-                      .column("l_comment", "String")
+//                      .column("l_shipinstruct", "String")
+//                      .column("l_shipmode", "String")
+//                      .column("l_comment", "String")
                       .build();
     dbms::SerializedPlanBuilder plan_builder;
-    auto plan = plan_builder.files("/home/kyligence/Documents/intel-gazelle-test.snappy.parquet", std::move(schema)).build();
+    auto plan = plan_builder.files("/home/kyligence/Documents/intel_without_string.parquet", std::move(schema)).build();
 
     ASSERT_TRUE(plan->relations(0).has_read());
     ASSERT_EQ(plan->relations_size(), 1);
