@@ -75,6 +75,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::TypeEnum
     ProfileEvents::dumpToMapColumn
     ProfileEvents::LOCAL_NAME
+    ProfileEvents::CountersIncrement
 
     CurrentMetrics::add
     CurrentMetrics::sub
