@@ -26,40 +26,11 @@ class IRowOutputFormat : public IOutputFormat
 public:
     using Params = RowOutputFormatParams;
 
-private:
-    bool prefix_written = false;
-    bool suffix_written = false;
-
 protected:
-    DataTypes types;
-    Serializations serializations;
-    Params params;
-
-    bool first_row = true;
-
+    IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_);
     void consume(Chunk chunk) override;
     void consumeTotals(Chunk chunk) override;
     void consumeExtremes(Chunk chunk) override;
-    void finalize() override;
-
-    void writePrefixIfNot()
-    {
-        if (!prefix_written)
-            writePrefix();
-
-        prefix_written = true;
-    }
-
-    void writeSuffixIfNot()
-    {
-        if (!suffix_written)
-            writeSuffix();
-
-        suffix_written = true;
-    }
-
-public:
-    IRowOutputFormat(const Block & header, WriteBuffer & out_, const Params & params_);
 
     /** Write a row.
       * Default implementation calls methods to write single values and delimiters
@@ -78,14 +49,19 @@ public:
     virtual void writeRowStartDelimiter() {}    /// delimiter before each row
     virtual void writeRowEndDelimiter() {}      /// delimiter after each row
     virtual void writeRowBetweenDelimiter() {}  /// delimiter between rows
-    virtual void writePrefix() {}               /// delimiter before resultset
-    virtual void writeSuffix() {}               /// delimiter after resultset
+    virtual void writePrefix() override {}      /// delimiter before resultset
+    virtual void writeSuffix() override {}      /// delimiter after resultset
     virtual void writeBeforeTotals() {}
     virtual void writeAfterTotals() {}
     virtual void writeBeforeExtremes() {}
     virtual void writeAfterExtremes() {}
-    virtual void writeLastSuffix() {}  /// Write something after resultset, totals end extremes.
+    virtual void finalizeImpl() override {}  /// Write something after resultset, totals end extremes.
 
+    DataTypes types;
+    Serializations serializations;
+    Params params;
+
+    bool first_row = true;
 };
 
 }

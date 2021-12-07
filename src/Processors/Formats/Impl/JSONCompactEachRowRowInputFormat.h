@@ -31,10 +31,10 @@ public:
 
     String getName() const override { return "JSONCompactEachRowRowInputFormat"; }
 
+private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
-private:
     bool parseRowStartWithDiagnosticInfo(WriteBuffer & out) override;
     bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
     bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) override;

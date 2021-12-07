@@ -17,7 +17,7 @@ Third run creates PR from backport branch (with merged previous PR) to release b
 try:
     from clickhouse.utils.github.query import Query as RemoteRepo
 except:
-    from query import Query as RemoteRepo
+    from .query import Query as RemoteRepo
 
 import argparse
 from enum import Enum

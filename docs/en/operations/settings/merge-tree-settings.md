@@ -343,3 +343,16 @@ Default value: `0`.
 **Usage**
 
 The value of the `min_bytes_to_rebalance_partition_over_jbod` setting should be less than the value of the [max_bytes_to_merge_at_max_space_in_pool](../../operations/settings/merge-tree-settings.md#max-bytes-to-merge-at-max-space-in-pool) setting. Otherwise, ClickHouse throws an exception.
+
+## detach_not_byte_identical_parts {#detach_not_byte_identical_parts}
+
+Enables or disables detaching a data part on a replica after a merge or a mutation, if it is not byte-identical to data parts on other replicas. If disabled, the data part is removed. Activate this setting if you want to analyze such parts later.
+
+The setting is applicable to `MergeTree` tables with enabled [data replication](../../engines/table-engines/mergetree-family/replication.md).
+
+Possible values:
+
+-   0 — Parts are removed.
+-   1 — Parts are detached.
+
+Default value: `0`.

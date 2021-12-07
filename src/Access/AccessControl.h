@@ -71,6 +71,7 @@ public:
 
     void reloadUsersConfigs();
     void startPeriodicReloadingUsersConfigs();
+    void stopPeriodicReloadingUsersConfigs();
 
     /// Loads access entities from the directory on the local disk.
     /// Use that directory to keep created users/roles/etc.
@@ -132,6 +133,8 @@ public:
     std::shared_ptr<const EnabledRowPolicies> getEnabledRowPolicies(
         const UUID & user_id,
         const boost::container::flat_set<UUID> & enabled_roles) const;
+
+    std::shared_ptr<const EnabledRowPolicies> tryGetDefaultRowPolicies(const UUID & user_id) const;
 
     std::shared_ptr<const EnabledQuota> getEnabledQuota(
         const UUID & user_id,

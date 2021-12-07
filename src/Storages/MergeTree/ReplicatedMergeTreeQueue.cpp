@@ -10,11 +10,6 @@
 #include <Common/CurrentMetrics.h>
 
 
-namespace CurrentMetrics
-{
-    extern const Metric BackgroundPoolTask;
-}
-
 namespace DB
 {
 
@@ -842,33 +837,14 @@ void ReplicatedMergeTreeQueue::updateMutations(zkutil::ZooKeeperPtr zookeeper, C
                     LOG_TRACE(log, "Adding mutation {} for partition {} for all block numbers less than {}", entry->znode_name, partition_id, block_num);
                 }
 
-                /// Initialize `mutation.parts_to_do`. First we need to mutate all parts in `current_parts`.
-                Strings current_parts_to_mutate = getPartNamesToMutate(*entry, current_parts, drop_ranges);
-                for (const String & current_part_to_mutate : current_parts_to_mutate)
+                /// Initialize `mutation.parts_to_do`.
+                /// We need to mutate all parts in `current_parts` and all parts that will appear after queue entries execution.
+                /// So, we need to mutate all parts in virtual_parts (with the corresponding block numbers).
+                Strings virtual_parts_to_mutate = getPartNamesToMutate(*entry, virtual_parts, drop_ranges);
+                for (const String & current_part_to_mutate : virtual_parts_to_mutate)
                 {
                     assert(MergeTreePartInfo::fromPartName(current_part_to_mutate, format_version).level < MergeTreePartInfo::MAX_LEVEL);
                     mutation.parts_to_do.add(current_part_to_mutate);
-                }
-
-                /// And next we would need to mutate all parts with getDataVersion() greater than
-                /// mutation block number that would appear as a result of executing the queue.
-                for (const auto & queue_entry : queue)
-                {
-                    for (const String & produced_part_name : queue_entry->getVirtualPartNames(format_version))
-                    {
-                        auto part_info = MergeTreePartInfo::fromPartName(produced_part_name, format_version);
-
-                        /// Oddly enough, getVirtualPartNames() may return _virtual_ part name.
-                        /// Such parts do not exist and will never appear, so we should not add virtual parts to parts_to_do list.
-                        /// Fortunately, it's easy to distinguish virtual parts from normal parts by part level.
-                        /// See StorageReplicatedMergeTree::getFakePartCoveringAllPartsInPartition(...)
-                        if (part_info.isFakeDropRangePart())
-                            continue;
-
-                        auto it = entry->block_numbers.find(part_info.partition_id);
-                        if (it != entry->block_numbers.end() && it->second > part_info.getDataVersion())
-                            mutation.parts_to_do.add(produced_part_name);
-                    }
                 }
 
                 if (mutation.parts_to_do.size() == 0)

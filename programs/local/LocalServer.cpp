@@ -36,6 +36,7 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
+#include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
 #include <filesystem>
@@ -396,14 +397,6 @@ void LocalServer::connect()
 }
 
 
-void LocalServer::prepareForInteractive()
-{
-    clearTerminal();
-    showClientVersion();
-    std::cerr << std::endl;
-}
-
-
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
@@ -436,11 +429,18 @@ try
 
     processConfig();
     applyCmdSettings(global_context);
+
+    if (is_interactive)
+    {
+        clearTerminal();
+        showClientVersion();
+        std::cerr << std::endl;
+    }
+
     connect();
 
     if (is_interactive && !delayed_interactive)
     {
-        prepareForInteractive();
         runInteractive();
     }
     else
@@ -448,10 +448,7 @@ try
         runNonInteractive();
 
         if (delayed_interactive)
-        {
-            prepareForInteractive();
             runInteractive();
-        }
     }
 
     cleanup();
@@ -626,7 +623,7 @@ void LocalServer::processConfig()
         fs::create_directories(fs::path(path) / "metadata/");
 
         loadMetadataSystem(global_context);
-        attachSystemTablesLocal(*createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
         loadMetadata(global_context);
@@ -637,7 +634,7 @@ void LocalServer::processConfig()
     }
     else if (!config().has("no-system-tables"))
     {
-        attachSystemTablesLocal(*createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
+        attachSystemTablesLocal(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::SYSTEM_DATABASE));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *createMemoryDatabaseIfNotExists(global_context, DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
     }

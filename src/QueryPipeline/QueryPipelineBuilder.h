@@ -1,11 +1,11 @@
 #pragma once
 
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -18,6 +18,9 @@ struct AggregatingTransformParams;
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 
 class QueryPlan;
+
+class PipelineExecutor;
+using PipelineExecutorPtr = std::shared_ptr<PipelineExecutor>;
 
 struct SubqueryForSet;
 using SubqueriesForSets = std::unordered_map<String, SubqueryForSet>;
@@ -122,7 +125,7 @@ public:
     const Block & getHeader() const { return pipe.getHeader(); }
 
     void addTableLock(TableLockHolder lock) { pipe.addTableLock(std::move(lock)); }
-    void addInterpreterContext(std::shared_ptr<const Context> context) { pipe.addInterpreterContext(std::move(context)); }
+    void addInterpreterContext(ContextPtr context) { pipe.addInterpreterContext(std::move(context)); }
     void addStorageHolder(StoragePtr storage) { pipe.addStorageHolder(std::move(storage)); }
     void addQueryPlan(std::unique_ptr<QueryPlan> plan);
     void setLimits(const StreamLocalLimits & limits) { pipe.setLimits(limits); }
