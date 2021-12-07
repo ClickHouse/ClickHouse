@@ -36,4 +36,18 @@ std::shared_ptr<DiskCacheWrapper> wrapWithCache(
     return std::make_shared<DiskCacheWrapper>(disk, cache_disk, cache_file_predicate);
 }
 
+
+std::pair<String, DiskPtr> prepareForLocalMetadata(
+    const String & name,
+    const Poco::Util::AbstractConfiguration & config,
+    const String & config_prefix,
+    ContextPtr context)
+{
+    /// where the metadata files are stored locally
+    auto metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
+    fs::create_directories(metadata_path);
+    auto metadata_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, 0);
+    return std::make_pair(metadata_path, metadata_disk);
+}
+
 }

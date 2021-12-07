@@ -177,9 +177,7 @@ void registerDiskS3(DiskFactory & factory)
         if (uri.key.back() != '/')
             throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::BAD_ARGUMENTS);
 
-        String metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
-        fs::create_directories(metadata_path);
-        auto metadata_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, 0);
+        auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
         std::shared_ptr<IDisk> s3disk = std::make_shared<DiskS3>(
             name,
@@ -200,9 +198,7 @@ void registerDiskS3(DiskFactory & factory)
 
         s3disk->startup();
 
-        bool cache_enabled = config.getBool(config_prefix + ".cache_enabled", true);
-
-        if (cache_enabled)
+        if (config.getBool(config_prefix + ".cache_enabled", true))
         {
             String cache_path = config.getString(config_prefix + ".cache_path", context->getPath() + "disks/" + name + "/cache/");
             s3disk = wrapWithCache(s3disk, "s3-cache", cache_path, metadata_path);
