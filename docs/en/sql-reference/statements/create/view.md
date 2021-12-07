@@ -251,22 +251,22 @@ Most common uses of live view tables include:
     Enable usage of window views and `WATCH` query using [allow_experimental_window_view](../../../operations/settings/settings.md#allow-experimental-window-view) setting. Input the command `set allow_experimental_window_view = 1`.
 
 ``` sql
-CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [ENGINE = engine] [WATERMARK = strategy] [ALLOWED_LATENESS = interval_function] AS SELECT ... GROUP BY window_function
+CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [ENGINE = engine] [WATERMARK = strategy] [ALLOWED_LATENESS = interval_function] AS SELECT ... GROUP BY window_view_function
 ```
 
 Window view can aggregate data by time window and output the results when the window is ready to fire. It stores the partial aggregation results in an inner(or specified) table and can push the processing result to a specified table or push notifications using the WATCH query.
 
 Creating a window view is similar to creating `MATERIALIZED VIEW`. Window view needs an inner storage engine to store intermediate data. The inner storage will use `AggregatingMergeTree` as the default engine.
 
-### Window Functions {#window-view-windowfunctions}
+### Window View Functions {#window-view-windowviewfunctions}
 
-[WindowFunctions](../../functions/window-functions.md) are used to indicate the lower and upper window bound of records. The window view needs to be used with a window function.
+[Window view functions](../../functions/window-view-functions.md) are used to indicate the lower and upper window bound of records. The window view needs to be used with a window view function.
 
 ### TIME ATTRIBUTES {#window-view-timeattributes}
 
 Window view supports **processing time** and **event time** process.
 
-**Processing time** allows window view to produce results based on the local machine's time and is used by default. It is the most straightforward notion of time but does not provide determinism. The processing time attribute can be defined by setting the `time_attr` of the window function to a table column or using the function `now()`. The following query creates a window view with processing time.
+**Processing time** allows window view to produce results based on the local machine's time and is used by default. It is the most straightforward notion of time but does not provide determinism. The processing time attribute can be defined by setting the `time_attr` of the window view function to a table column or using the function `now()`. The following query creates a window view with processing time.
 
 ``` sql
 CREATE WINDOW VIEW wv AS SELECT count(number), tumbleStart(w_id) as w_start from date GROUP BY tumble(now(), INTERVAL '5' SECOND) as w_id
