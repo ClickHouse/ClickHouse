@@ -912,11 +912,18 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 ## log_query_threads {#settings-log-query-threads}
 
-Установка логирования информации о потоках выполнения запроса.
+Управляет логированием информации о потоках выполнения запросов.
 
-Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log).
+Информация о потоках выполнения запросов сохраняется в системной таблице [system.query_thread_log](../../operations/system-tables/query_thread_log.md). Работает только в том случае, если включена настройка [log_queries](#settings-log-queries). Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log).
 
-Пример:
+Возможные значения:
+
+-   0 — отключено.
+-   1 — включено.
+
+Значение по умолчанию: `1`.
+
+**Пример**
 
 ``` text
 log_query_threads=1
