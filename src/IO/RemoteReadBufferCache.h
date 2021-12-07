@@ -7,7 +7,7 @@
 #include <filesystem>
 #include <Core/BackgroundSchedulePool.h>
 #include <Poco/Logger.h>
-#include <Common/UnreleasableLRUCache.h>
+#include <Common/LRUCache.h>
 #include <Common/ThreadPool.h>
 #include <IO/ReadBuffer.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -162,11 +162,11 @@ struct RemoteFileCacheWeightFunction
 
 struct RemoteFileCacheEvictPolicy
 {
-    CacheEvictStatus canRelease(RemoteCacheController & cache) const
+    LRUCacheEvictStatus canRelease(RemoteCacheController & cache) const
     {
         if (cache.closable())
-            return CacheEvictStatus::CAN_EVITCT;
-        return CacheEvictStatus::SKIP_EVICT;
+            return LRUCacheEvictStatus::CAN_EVITCT;
+        return LRUCacheEvictStatus::SKIP_EVICT;
     }
     void release(RemoteCacheController & cache)
     {
@@ -177,7 +177,7 @@ struct RemoteFileCacheEvictPolicy
 class RemoteReadBufferCache
 {
 public:
-    using CacheType = UnreleasableLRUCache<String, RemoteCacheController, std::hash<String>,
+    using CacheType = LRUCache<String, RemoteCacheController, std::hash<String>,
           RemoteFileCacheWeightFunction, RemoteFileCacheEvictPolicy>;
     ~RemoteReadBufferCache();
     // global instance
