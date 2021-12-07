@@ -28,8 +28,8 @@ function user_test()
 {
     for _ in {1..10};
     do
-        timeout 3 bash -c overcommited &
-        timeout 3 bash -c expect_execution &
+        timeout 10 bash -c overcommited &
+        timeout 10 bash -c expect_execution &
     done;
 
     wait
