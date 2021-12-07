@@ -18,6 +18,6 @@ if (NOT OS_FREEBSD)
 
     message (STATUS "Using oneTBB=${USE_ONETBB}: ${ONETBB_INCLUDE_DIR} : ${ONETBB_LIBRARY}")
 else()
-    set (USE_oneTBB 0)
+    set (USE_ONETBB 0)
     message (STATUS "Using internal oneTBB library on FreeBSD and Darwin is not supported")
 endif()
