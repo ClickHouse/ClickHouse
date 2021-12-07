@@ -689,7 +689,6 @@ public:
 
     void set(BufferBase::Position ptr, size_t size, size_t offset) override
     {
-        use_external_buffer = true;
         external_buffer_ptr = ptr;
         external_buffer_size = size;
         external_buffer_offset = offset;
@@ -753,7 +752,6 @@ public:
 
     void set(BufferBase::Position ptr, size_t size) override
     {
-        use_external_buffer = true;
         external_buffer_ptr = ptr;
         external_buffer_size = size;
         external_buffer_offset = 0;
@@ -886,7 +884,7 @@ private:
         while (!from)
         {
             size_t max_size = end_offset ? end_offset - current_offset : 0;
-            if (use_external_buffer && (!max_size || max_size > external_buffer_size))
+            if (external_buffer_ptr && (!max_size || max_size > external_buffer_size))
                 max_size = external_buffer_size;
             DiskCachePolicy::CachePart part(current_offset, max_size);
             if (retries > 0)
@@ -907,12 +905,12 @@ private:
             if (part.type == DiskCachePolicy::CachePart::CachePartType::CACHED)
             {
                 String cache_path = cache_base_path + "_" + std::to_string(part.offset);
-                LOG_TRACE(log, "ensureFrom try to read from cache: {}", cache_path);
+                LOG_TRACE(log, "ensureFrom try to read key {} from cache {}+{}", cache_path, part.offset, part.size);
                 cache_policy->read(cache_key, part.offset, part.size);
                 try
                 {
                     size_t required_size = part.size;
-                    if (part.offset + part.size > current_offset + max_size)
+                    if (max_size && (part.offset + part.size > current_offset + max_size))
                         required_size = current_offset + max_size - part.offset;
                     auto from_seekable = cache_disk->readFile(cache_path, ReadSettings(), required_size);
                     if (current_offset > part.offset)
@@ -958,6 +956,10 @@ private:
                         part.offset, s3from.expected_size) };
                     current_offset = part.offset + s3from.expected_size;
                 }
+                else
+                {
+                    throw Exception("Can't download remote file" + , ErrorCodes::LOCAL_CACHE_ERROR);
+                }
             }
 
             if (part.type == DiskCachePolicy::CachePart::CachePartType::ABSENT_NO_CACHE)
@@ -970,14 +972,18 @@ private:
                     from = std::move(s3from.stream);
                     current_offset = part.offset + s3from.expected_size;
                 }
+                else
+                {
+                    throw Exception("Can't download remote file" + , ErrorCodes::LOCAL_CACHE_ERROR);
+                }
             }
 
-            if (use_external_buffer)
+            if (external_buffer_ptr)
             {
                 LOG_TRACE(log, "Set size {}, offset {}", external_buffer_size, external_buffer_offset);
                 from->set(external_buffer_ptr, external_buffer_size, external_buffer_offset);
-                LOG_TRACE(log, "Change offset from {} to {}", external_buffer_offset, external_buffer_offset + part.size);
-                external_buffer_offset += part.size;
+                LOG_TRACE(log, "Change offset from {} to {}", external_buffer_offset, external_buffer_offset + std::min(part.size, external_buffer_size));
+                external_buffer_offset += std::min(part.size, external_buffer_size);
             }
 
             current_type = part.type;
@@ -1000,7 +1006,6 @@ private:
 
     DiskCachePolicy::CachePart::CachePartType current_type = DiskCachePolicy::CachePart::CachePartType::EMPTY;
 
-    bool use_external_buffer = false;
     BufferBase::Position external_buffer_ptr = nullptr;
     size_t external_buffer_size = 0;
     size_t external_buffer_offset = 0;
