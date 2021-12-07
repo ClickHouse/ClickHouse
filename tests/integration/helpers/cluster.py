@@ -1405,6 +1405,7 @@ class ClickHouseCluster:
             try:
                 blob_service_client = BlobServiceClient.from_connection_string(connection_string)
                 logging.debug(blob_service_client.get_account_information())
+                self.blob_service_client = blob_service_client
                 return
             except Exception as ex:
                 logging.debug("Can't connect to Azurite: %s", str(ex))

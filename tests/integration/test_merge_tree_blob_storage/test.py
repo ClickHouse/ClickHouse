@@ -17,6 +17,7 @@ NODE_NAME = "node"
 TABLE_NAME = "blob_storage_table"
 BLOB_STORAGE_DISK = "blob_storage_disk"
 LOCAL_DISK = "hdd"
+CONTAINER_NAME = "cont"
 
 # TODO: these tests resemble S3 tests a lot, maybe they can be abstracted
 
@@ -71,6 +72,11 @@ def test_simple_insert_select(cluster):
     create_table(node, TABLE_NAME)
     node.query(f"INSERT INTO {TABLE_NAME} VALUES ('2021-11-13', 3, 'hello')")
     assert node.query(f"SELECT dt, id, data FROM {TABLE_NAME} FORMAT Values") == "('2021-11-13',3,'hello')"
+    blob_container_client = cluster.blob_service_client.get_container_client(CONTAINER_NAME)
+    blob_count = 0
+    for _ in blob_container_client.list_blobs():
+        blob_count = blob_count + 1
+    assert blob_count >= 12 # 1 format file + 2 skip index files + 9 regular MergeTree files + leftovers from other tests
 
 
 def test_inserts_selects(cluster):
