@@ -10,7 +10,12 @@
                 <!-- default credentials for Azurite storage account -->
                 <account_name>devstoreaccount1</account_name>
                 <account_key>Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==</account_key>
+                <max_single_part_upload_size>33554432</max_single_part_upload_size>
             </blob_storage_disk>
+            <hdd>
+                <type>local</type>
+                <path>/</path>
+            </hdd>
         </disks>
         <policies>
             <blob_storage_policy>
@@ -18,6 +23,9 @@
                     <main>
                         <disk>blob_storage_disk</disk>
                     </main>
+                    <external>
+                        <disk>hdd</disk>
+                    </external>
                 </volumes>
             </blob_storage_policy>
         </policies>
