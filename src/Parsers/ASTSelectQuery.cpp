@@ -130,13 +130,14 @@ void ASTSelectQuery::formatImpl(const FormatSettings & s, FormatState & state, F
 
     if (group_by_with_grouping_sets)
     {
-        bool tmp_need_parens = frame.need_parens;
-        frame.need_parens = true;
+        frame.surround_each_list_element_with_parens = true;
         s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << (s.one_line ? "" : "    ") << "GROUPING SETS" << (s.hilite ? hilite_none : "");
+        s.ostr << " (";
         s.one_line
         ? groupBy()->formatImpl(s, state, frame)
         : groupBy()->as<ASTExpressionList &>().formatImplMultiline(s, state, frame);
-        frame.need_parens = tmp_need_parens;
+        s.ostr << ")";
+        frame.surround_each_list_element_with_parens = false;
     }
 
     if (group_by_with_totals)
