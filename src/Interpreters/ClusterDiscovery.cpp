@@ -297,17 +297,6 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
     return true;
 }
 
-bool ClusterDiscovery::updateCluster(const String & cluster_name)
-{
-    auto cluster_info = clusters_info.find(cluster_name);
-    if (cluster_info == clusters_info.end())
-    {
-        LOG_ERROR(log, "Unknown cluster '{}'", cluster_name);
-        return false;
-    }
-    return updateCluster(cluster_info->second);
-}
-
 void ClusterDiscovery::registerInZk(zkutil::ZooKeeperPtr & zk, ClusterInfo & info)
 {
     LOG_DEBUG(log, "Registering current node {} in cluster {}", current_node_name, info.name);
@@ -368,16 +357,32 @@ bool ClusterDiscovery::runMainThread()
 
     using namespace std::chrono_literals;
 
+    constexpr auto force_update_interval = 2min;
+
     while (!stop_flag)
     {
         auto & clusters = clusters_to_update->wait(stop_flag, 5s);
         for (auto & [cluster_name, need_update] : clusters)
         {
-            if (!need_update.exchange(false))
-                continue;
-
-            if (updateCluster(cluster_name))
+            auto cluster_info_it = clusters_info.find(cluster_name);
+            if (cluster_info_it == clusters_info.end())
             {
+                LOG_ERROR(log, "Unknown cluster '{}'", cluster_name);
+                continue;
+            }
+            auto & cluster_info = cluster_info_it->second;
+
+            if (!need_update.exchange(false))
+            {
+                /// force updating periodically
+                bool force_update = cluster_info.watch.elapsedSeconds() > std::chrono::seconds(force_update_interval).count();
+                if (!force_update)
+                    continue;
+            }
+
+            if (updateCluster(cluster_info))
+            {
+                cluster_info.watch.restart();
                 LOG_DEBUG(log, "Cluster '{}' updated successfully", cluster_name);
             }
             else
