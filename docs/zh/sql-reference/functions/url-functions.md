@@ -115,4 +115,4 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 
 删除URL中名称为’name’的参数。改函数假设参数名称以及参数值经过URL相同的编码。
 
-[来源文章](https://clickhouse.com/docs/en/query_language/functions/url_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/url_functions/) <!--hide-->

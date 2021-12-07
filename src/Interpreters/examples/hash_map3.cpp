@@ -10,12 +10,12 @@
 
 #include <utility>
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/Exception.h>
 
 #include <IO/ReadHelpers.h>
 
-#include <base/StringRef.h>
+#include <common/StringRef.h>
 
 #include <Common/HashTable/HashMap.h>
 

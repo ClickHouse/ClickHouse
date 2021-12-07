@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <dictionary>
         <name>test_http</name>
         <source>
@@ -51,4 +51,4 @@
             </attribute>
         </structure>
     </dictionary>
-</clickhouse>
+</yandex>

@@ -1,15 +1,13 @@
 #pragma once
 
 #include <Access/AccessRights.h>
-#include <Access/Common/RowPolicyDefs.h>
+#include <Access/RowPolicy.h>
 #include <Interpreters/ClientInfo.h>
 #include <Core/UUID.h>
-#include <base/scope_guard.h>
-#include <base/shared_ptr_helper.h>
+#include <common/scope_guard.h>
+#include <common/shared_ptr_helper.h>
 #include <boost/container/flat_set.hpp>
 #include <mutex>
-#include <optional>
-#include <unordered_map>
 
 
 namespace Poco { class Logger; }
@@ -27,7 +25,7 @@ struct QuotaUsage;
 struct Settings;
 struct SettingsProfilesInfo;
 class SettingsChanges;
-class AccessControl;
+class AccessControlManager;
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
 
@@ -82,7 +80,7 @@ public:
 
     /// Returns the row policy filter for a specified table.
     /// The function returns nullptr if there is no filter to apply.
-    ASTPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type, const ASTPtr & combine_with_expr = nullptr) const;
+    ASTPtr getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType index, const ASTPtr & extra_condition = nullptr) const;
 
     /// Returns the quota to track resource consumption.
     std::shared_ptr<const EnabledQuota> getQuota() const;
@@ -157,9 +155,9 @@ public:
     static std::shared_ptr<const ContextAccess> getFullAccess();
 
 private:
-    friend class AccessControl;
+    friend class AccessControlManager;
     ContextAccess() {}
-    ContextAccess(const AccessControl & access_control_, const Params & params_);
+    ContextAccess(const AccessControlManager & manager_, const Params & params_);
 
     void setUser(const UserPtr & user_) const;
     void setRolesInfo(const std::shared_ptr<const EnabledRolesInfo> & roles_info_) const;
@@ -205,7 +203,7 @@ private:
     template <bool throw_if_denied, typename Container, typename GetNameFunction>
     bool checkAdminOptionImplHelper(const Container & role_ids, const GetNameFunction & get_name_function) const;
 
-    const AccessControl * access_control = nullptr;
+    const AccessControlManager * manager = nullptr;
     const Params params;
     bool is_full_access = false;
     mutable Poco::Logger * trace_log = nullptr;

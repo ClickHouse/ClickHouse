@@ -11,37 +11,53 @@
 #include <IO/ReadBufferFromString.h>
 #include <DataTypes/IDataType.h>
 #include <Interpreters/IExternalLoadable.h>
-#include <base/EnumReflection.h>
-#include <Core/TypeId.h>
 
 #if defined(__GNUC__)
     /// GCC mistakenly warns about the names in enum class.
     #pragma GCC diagnostic ignored "-Wshadow"
 #endif
 
+
+#define FOR_ATTRIBUTE_TYPES(M) \
+    M(UInt8) \
+    M(UInt16) \
+    M(UInt32) \
+    M(UInt64) \
+    M(UInt128) \
+    M(UInt256) \
+    M(Int8) \
+    M(Int16) \
+    M(Int32) \
+    M(Int64) \
+    M(Int128) \
+    M(Int256) \
+    M(Float32) \
+    M(Float64) \
+    M(Decimal32) \
+    M(Decimal64) \
+    M(Decimal128) \
+    M(Decimal256) \
+    M(UUID) \
+    M(String) \
+    M(Array) \
+
+
 namespace DB
 {
-using TypeIndexUnderlying = magic_enum::underlying_type_t<TypeIndex>;
 
-// We need to be able to map TypeIndex -> AttributeUnderlyingType and AttributeUnderlyingType -> real type
-// The first can be done by defining AttributeUnderlyingType enum values to TypeIndex values and then performing
-// a enum_cast.
-// The second can be achieved by using ReverseTypeId
-#define map_item(__T) __T = static_cast<TypeIndexUnderlying>(TypeIndex::__T)
-
-enum class AttributeUnderlyingType : TypeIndexUnderlying
+enum class AttributeUnderlyingType
 {
-    map_item(Int8), map_item(Int16), map_item(Int32), map_item(Int64), map_item(Int128), map_item(Int256),
-    map_item(UInt8), map_item(UInt16), map_item(UInt32), map_item(UInt64), map_item(UInt128), map_item(UInt256),
-    map_item(Float32), map_item(Float64),
-    map_item(Decimal32), map_item(Decimal64), map_item(Decimal128), map_item(Decimal256),
-
-    map_item(UUID), map_item(String), map_item(Array)
+#define M(TYPE) TYPE,
+    FOR_ATTRIBUTE_TYPES(M)
+#undef M
 };
 
-#undef map_item
 
-/// Min and max lifetimes for a dictionary or its entry
+AttributeUnderlyingType getAttributeUnderlyingType(const std::string & type);
+
+std::string toString(AttributeUnderlyingType type);
+
+/// Min and max lifetimes for a dictionary or it's entry
 using DictionaryLifetime = ExternalLoadableLifetime;
 
 /** Holds the description of a single dictionary attribute:
@@ -69,23 +85,24 @@ struct DictionaryAttribute final
     const bool is_nullable;
 };
 
-template <AttributeUnderlyingType type>
+template <typename Type>
 struct DictionaryAttributeType
 {
-    /// Converts @c type to it underlying type e.g. AttributeUnderlyingType::UInt8 -> UInt8
-    using AttributeType = ReverseTypeId<
-        static_cast<TypeIndex>(
-            static_cast<TypeIndexUnderlying>(type))>;
+    using AttributeType = Type;
 };
 
 template <typename F>
-constexpr void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && func)
+void callOnDictionaryAttributeType(AttributeUnderlyingType type, F && func)
 {
-    static_for<AttributeUnderlyingType>([type, func = std::forward<F>(func)](auto other)
+    switch (type)
     {
-        if (type == other)
-            func(DictionaryAttributeType<other>{});
-    });
+#define M(TYPE) \
+        case AttributeUnderlyingType::TYPE: \
+            func(DictionaryAttributeType<TYPE>()); \
+            break;
+    FOR_ATTRIBUTE_TYPES(M)
+#undef M
+    }
 };
 
 struct DictionarySpecialAttribute final
