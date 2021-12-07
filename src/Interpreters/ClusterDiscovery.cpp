@@ -323,18 +323,28 @@ void ClusterDiscovery::start()
 
     main_thread = ThreadFromGlobalPool([this]
     {
-        try
+        bool finish = false;
+        while (!finish)
         {
-            runMainThread();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log, "Caught exception in cluster discovery runMainThread");
+            try
+            {
+                finish = runMainThread();
+            }
+            catch (...)
+            {
+                /*
+                 * it can be zk error (will take new session) or other retriable error,
+                 * should not stop discovery forever
+                 */
+                tryLogCurrentException(log, "Caught exception in cluster discovery runMainThread");
+            }
         }
     });
 }
 
-void ClusterDiscovery::runMainThread()
+
+/// Returns `true` on gracefull shutdown (no restart required)
+bool ClusterDiscovery::runMainThread()
 {
     setThreadName("ClusterDiscover");
     LOG_DEBUG(log, "Worker thread started");
@@ -362,6 +372,7 @@ void ClusterDiscovery::runMainThread()
         }
     }
     LOG_DEBUG(log, "Worker thread stopped");
+    return stop_flag;
 }
 
 void ClusterDiscovery::shutdown()
