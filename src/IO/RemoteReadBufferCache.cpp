@@ -63,7 +63,7 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
         // do not load this invalid cached file and clear it. the clear action is in
         // RemoteReadBufferCache::recoverCachedFilesMetadata(), because deleting directories during iteration will
         // cause unexpected behaviors
-        LOG_ERROR(log, "Cannot create the meta data class : {}. The cached file is invalid and will be remove. path:{}",
+        LOG_ERROR(log, "Cannot create the metadata class : {}. The cached file is invalid and will be remove. path:{}",
                 cache_controller->metadata_class,
                 local_path_.string());
         return nullptr;
@@ -72,7 +72,7 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
     if (!cache_controller->file_metadata_ptr->fromString(std::string((std::istreambuf_iterator<char>(metadata_file)),
                     std::istreambuf_iterator<char>())))
     {
-        LOG_ERROR(log, "Cannot load the meta data. The cached file is invalid and will be remove. path:{}",
+        LOG_ERROR(log, "Cannot load the metadata. The cached file is invalid and will be remove. path:{}",
                 local_path_.string());
         return nullptr;
     }
@@ -177,7 +177,7 @@ void RemoteCacheController::backgroundDownload(ReadBufferPtr remote_read_buffer)
     lock.unlock();
     more_data_signal.notify_all();
     RemoteReadBufferCache::instance().updateTotalSize(file_metadata_ptr->getFileSize());
-    LOG_TRACE(log, "Finish download into local path: {}, file meta data:{} ", local_path.string(), file_metadata_ptr->toString());
+    LOG_TRACE(log, "Finish download into local path: {}, file metadata:{} ", local_path.string(), file_metadata_ptr->toString());
 }
 
 void RemoteCacheController::flush(bool need_flush_status)
@@ -404,7 +404,7 @@ void RemoteReadBufferCache::initOnce(
                 ErrorCodes::CANNOT_CREATE_DIRECTORY, "Failed to create directories, error code:{} reason:{}", ec.value(), ec.message());
     }
 
-    recover_task_holder = context->getSchedulePool().createTask("recover local cache meta data for remote files", [this]{ recoverTask(); });
+    recover_task_holder = context->getSchedulePool().createTask("recover local cache metadata for remote files", [this]{ recoverTask(); });
     recover_task_holder->activateAndSchedule();
 }
 
