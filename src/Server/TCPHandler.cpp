@@ -79,7 +79,6 @@ namespace ErrorCodes
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNKNOWN_PROTOCOL;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 TCPHandler::TCPHandler(IServer & server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, std::string server_display_name_)

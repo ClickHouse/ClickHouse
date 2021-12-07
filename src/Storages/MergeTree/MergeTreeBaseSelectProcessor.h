@@ -60,7 +60,7 @@ protected:
 
     Chunk generate() final;
 
-    /// Creates new this->task and return a flag whether it was successfull or not
+    /// Creates new this->task and return a flag whether it was successful or not
     virtual bool getNewTaskImpl() = 0;
     /// Creates new readers for a task it is needed. These methods are separate, because
     /// in case of parallel reading from replicas the whole task could be denied by a coodinator
@@ -138,7 +138,7 @@ private:
     bool getNewTaskParallelReading();
 
     /// After PK analysis the range of marks could be extremely big
-    /// We divide this range to a set smaller consequtive ranges
+    /// We divide this range to a set smaller consecutive ranges
     /// Then, depending on the type of reading (concurrent, in order or in reverse order)
     /// we can calculate a consistent hash function with the number of buckets equal to
     /// the number of replicas involved. And after that we can throw away some ranges with
@@ -150,7 +150,7 @@ private:
     /// - Coordinator allows to read from a big merged part, but this part is present only on one replica.
     ///   And that replica calculates consistent hash and throws away some ranges
     /// - Coordinator denies other replicas to read from another parts (source parts for that big one)
-    /// At the end, the result of the query is wrong, bacause we didn't read all the data.
+    /// At the end, the result of the query is wrong, because we didn't read all the data.
     /// So, we have to remember parts and mark ranges with hash different then current replica number.
     /// An we have to ask the coordinator about its permission to read from that "delayed" parts.
     /// It won't work with reading in order or reading in reverse order, because we can possibly seek back.
