@@ -45,8 +45,8 @@ void KeeperDispatcher::requestThread()
     {
         KeeperStorage::RequestForSession request;
 
-        auto coordination_settings = configuration_and_settings->coordination_settings;
-        uint64_t max_wait = coordination_settings->operation_timeout_ms.totalMilliseconds();
+        //auto coordination_settings = configuration_and_settings->coordination_settings;
+        //uint64_t max_wait = coordination_settings->operation_timeout_ms.totalMilliseconds();
         uint64_t max_batch_size = coordination_settings->max_requests_batch_size;
 
         /// The code below do a very simple thing: batch all write (quorum) requests into vector until
@@ -634,7 +634,7 @@ Keeper4LWInfo KeeperDispatcher::getKeeper4LWInfo() const
     result.is_observer = server->isObserver();
     result.has_leader = hasLeader();
     {
-        std::lock_guard lock(push_request_mutex);
+        //std::lock_guard lock(push_request_mutex);
         result.outstanding_requests_count = requests_queue->size();
     }
     {
