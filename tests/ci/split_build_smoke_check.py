@@ -3,6 +3,7 @@
 import os
 import logging
 import subprocess
+import sys
 
 from github import Github
 
@@ -15,6 +16,7 @@ from docker_pull_helper import get_image_with_version
 from commit_status_helper import post_commit_status
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
 
 
 DOCKER_IMAGE = "clickhouse/split-build-smoke-test"
@@ -65,6 +67,11 @@ if __name__ == "__main__":
     pr_info = PRInfo(get_event())
 
     gh = Github(get_best_robot_token())
+
+    rerun_helper = RerunHelper(gh, pr_info, CHECK_NAME)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     for root, _, files in os.walk(reports_path):
         for f in files:
