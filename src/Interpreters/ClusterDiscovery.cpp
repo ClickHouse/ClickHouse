@@ -2,6 +2,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -63,20 +64,35 @@ public:
         cv.notify_one();
     }
 
-    void unset(const T & key) { setFlag(key, false); }
-
-    void wait(std::chrono::milliseconds timeout)
+    /// `need_update` expected to be value from `flags` corresponding to some key
+    void set(std::atomic_bool & need_update)
     {
-        std::unique_lock<std::mutex> lk(mu);
-        cv.wait_for(lk, timeout);
+        any_need_update = true;
+        need_update = true;
+        cv.notify_one();
     }
 
-    const std::unordered_map<T, std::atomic_bool> & get() { return flags; }
+    /// waits unit at least one flag is set
+    /// caller should handle all set flags (or set it again manually)
+    std::unordered_map<T, std::atomic_bool> & wait(std::atomic_bool & finished, std::chrono::milliseconds timeout)
+    {
+        std::unique_lock<std::mutex> lk(mu);
+        cv.wait_for(lk, timeout, [this, &finished]() -> bool { return any_need_update || finished; });
+
+        /// all set flags expected to be handled by caller
+        any_need_update = false;
+        return flags;
+    }
+
+    std::unique_lock<std::mutex> getLock() { return std::unique_lock<std::mutex>(mu); }
+
+    void notify() { cv.notify_one(); }
 
 private:
-
     void setFlag(const T & key, bool value)
     {
+        any_need_update = any_need_update || value;
+
         auto it = flags.find(key);
         if (it == flags.end())
             throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Unknown value '{}'", key);
@@ -86,7 +102,9 @@ private:
     std::condition_variable cv;
     std::mutex mu;
 
+    /// flag indicates that update is required
     std::unordered_map<T, std::atomic_bool> flags;
+    std::atomic_bool any_need_update = true;
 };
 
 ClusterDiscovery::ClusterDiscovery(
@@ -342,8 +360,7 @@ void ClusterDiscovery::start()
     });
 }
 
-
-/// Returns `true` on gracefull shutdown (no restart required)
+/// Returns `true` on graceful shutdown (no restart required)
 bool ClusterDiscovery::runMainThread()
 {
     setThreadName("ClusterDiscover");
@@ -353,21 +370,20 @@ bool ClusterDiscovery::runMainThread()
 
     while (!stop_flag)
     {
-        /// if some cluster update was ended with error on previous iteration, we will retry after timeout
-        clusters_to_update->wait(5s);
-        for (const auto & [cluster_name, need_update] : clusters_to_update->get())
+        auto & clusters = clusters_to_update->wait(stop_flag, 5s);
+        for (auto & [cluster_name, need_update] : clusters)
         {
-            if (!need_update)
+            if (!need_update.exchange(false))
                 continue;
 
             if (updateCluster(cluster_name))
             {
-                clusters_to_update->unset(cluster_name);
                 LOG_DEBUG(log, "Cluster '{}' updated successfully", cluster_name);
             }
             else
             {
-                LOG_DEBUG(log, "Cluster '{}' are not updated, will retry", cluster_name);
+                clusters_to_update->set(need_update);
+                LOG_WARNING(log, "Cluster '{}' wasn't updated, will retry", cluster_name);
             }
         }
     }
@@ -379,7 +395,13 @@ void ClusterDiscovery::shutdown()
 {
     LOG_DEBUG(log, "Shutting down");
 
-    stop_flag.exchange(true);
+    /// need lock and notify because `clusters_to_update` uses `stop_flag` in stop condition
+    {
+        auto lk = clusters_to_update->getLock();
+        stop_flag = true;
+    }
+    clusters_to_update->notify();
+
     if (main_thread.joinable())
         main_thread.join();
 }
