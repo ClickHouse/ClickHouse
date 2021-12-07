@@ -13,7 +13,7 @@ $CLICKHOUSE_CLIENT -q "select x, y from many_mutations order by x"
 
 job()
 {
-   for i in {1..1000}
+   for _ in {1..1000}
    do
       $CLICKHOUSE_CLIENT -q "alter table many_mutations update y = y + 1 where 1"
    done
