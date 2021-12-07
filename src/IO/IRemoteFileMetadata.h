@@ -66,13 +66,13 @@ private:
 };
 
 // this should be used in a .cpp file. All the subclasses will finish the registeration before the main()
-#define REGISTTER_REMOTE_FILE_META_DATA_CLASS(meta_data_class) \
-    class FileMetadataFactory##meta_data_class{\
+#define REGISTTER_REMOTE_FILE_META_DATA_CLASS(metadata_class) \
+    class FileMetadataFactory##metadata_class{\
     public:\
-        FileMetadataFactory##meta_data_class(){\
-            auto creator = []() -> IRemoteFileMetadataPtr { return std::make_shared<meta_data_class>(); };\
-            RemoteFileMetadataFactory::instance().registerClass(#meta_data_class, creator);\
+        FileMetadataFactory##metadata_class(){\
+            auto creator = []() -> IRemoteFileMetadataPtr { return std::make_shared<metadata_class>(); };\
+            RemoteFileMetadataFactory::instance().registerClass(#metadata_class, creator);\
         }\
     };\
-    static FileMetadataFactory##meta_data_class g_file_meta_data_factory_instance##meta_data_class;
+    static FileMetadataFactory##metadata_class g_file_metadata_factory_instance##metadata_class;
 }
