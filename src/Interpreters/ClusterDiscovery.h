@@ -94,7 +94,7 @@ private:
     bool updateCluster(const String & cluster_name);
     bool updateCluster(ClusterInfo & cluster_info);
 
-    void runMainThread();
+    bool runMainThread();
     void shutdown();
 
     /// cluster name -> cluster info (zk root, set of nodes)
