@@ -9,7 +9,7 @@ Testing 00009_uniq_distributed.sql ----> Ok! ✅
 Testing 00010_quantiles_segfault.sql ----> Ok! ✅
 Testing 00011_sorting.sql ----> Ok! ✅
 Testing 00012_sorting_distributed.sql ----> Ok! ✅
-Testing 00013_sorting_of_nested.sql ----> Ok! ✅
+Skipping 00013_sorting_of_nested.sql 
 Testing 00014_filtering_arrays.sql ----> Ok! ✅
 Testing 00015_totals_and_no_aggregate_functions.sql ----> Ok! ✅
 Testing 00016_any_if_distributed_cond_always_false.sql ----> Ok! ✅

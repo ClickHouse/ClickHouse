@@ -7,6 +7,10 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
     const size_t thread_,
@@ -48,6 +52,14 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
         /// Actually we will ask MergeTreeReadPool to provide us heavier tasks to read
         /// because the most part of each task will be postponed
         /// (due to using consistent hash for better cache affinity)
+        const size_t amount_of_read_bytes_per_one_request = 1024 * 1024 * 1024; // 1GiB
+        /// In case of reading from compact parts (for which we can't estimate the average size of marks)
+        /// we will use this value
+        const size_t empirical_size_of_mark = 1024 * 1024 * 10; // 10 MiB
+
+        if (extension->colums_to_read.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A set of column to read is empty. It is a bug");
+
         size_t sum_average_marks_size = 0;
         auto column_sizes = storage.getColumnSizes();
         for (const auto & name : extension->colums_to_read)
@@ -64,9 +76,9 @@ MergeTreeThreadSelectProcessor::MergeTreeThreadSelectProcessor(
         }
 
         if (sum_average_marks_size == 0)
-            sum_average_marks_size = 8UL * 1024 * 1024 * 10; // 10Mib
+            sum_average_marks_size = empirical_size_of_mark * extension->colums_to_read.size();
 
-        min_marks_to_read = extension->count_participating_replicas * (/*1Gb*/ 8UL * 1024 * 1024 * 1024) / sum_average_marks_size;
+        min_marks_to_read = extension->count_participating_replicas * amount_of_read_bytes_per_one_request / sum_average_marks_size;
     }
     else
     {
