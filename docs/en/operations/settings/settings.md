@@ -1712,7 +1712,7 @@ When `insert_quorum_parallel` is disabled, all replicas in the quorum are consis
 ClickHouse generates an exception:
 
 -   If the number of available replicas at the time of the query is less than the `insert_quorum`.
--   When `insert_quorum_parallel` is disabled and an attempt to write data is made when the previous block has not yet been inserted in `insert_quorum` of replicas. This situation may occur if the user tries to perform an `INSERT` before the previous one with `insert_quorum` is completed.
+-   When `insert_quorum_parallel` is disabled and an attempt to write data is made when the previous block has not yet been inserted in `insert_quorum` of replicas. This situation may occur if the user tries to perform another `INSERT` query to the same table before the previous one with `insert_quorum` is completed.
 
 See also:
 
@@ -1734,7 +1734,7 @@ See also:
 
 ## insert_quorum_parallel {#settings-insert_quorum_parallel}
 
-Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional queries will be rejected.
+Enables or disables parallelism for quorum `INSERT` queries. If enabled, additional `INSERT` queries can be sent while previous queries have not yet finished. If disabled, additional writes to the same table will be rejected.
 
 Possible values:
 
