@@ -21,7 +21,7 @@ INSERT INTO mt VALUES (1, '1990/01/01 12:00:07');
 INSERT INTO mt VALUES (1, '1990/01/01 12:00:10');
 INSERT INTO mt VALUES (1, '1990/01/01 12:00:11');
 
-SELECT sleep(1);
+SELECT sleep(3);
 SELECT * from dst order by w_end, count;
 
 DROP TABLE wv;
