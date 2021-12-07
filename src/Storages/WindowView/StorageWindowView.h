@@ -150,7 +150,11 @@ public:
 private:
     Poco::Logger * log;
 
+    /// Stored query, e.g. SELECT * FROM * GROUP BY TUMBLE(now(), *)
+    ASTPtr select_query;
+    /// Used to generate the mergeable state of select_query, e.g. SELECT * FROM * GROUP BY WINDOW_ID(____timestamp, *)
     ASTPtr mergeable_query;
+    /// Used to fetch the mergeable state and generate the final result. e.g. SELECT * FROM * GROUP BY TUMBLE(____timestamp, *)
     ASTPtr final_query;
 
     ContextMutablePtr window_view_context;
@@ -206,7 +210,9 @@ private:
     BackgroundSchedulePool::TaskHolder clean_cache_task;
     BackgroundSchedulePool::TaskHolder fire_task;
 
-    ASTPtr innerQueryParser(ASTSelectQuery & inner_query);
+    String function_now_timezone;
+
+    ASTPtr innerQueryParser(const ASTSelectQuery & query);
     void eventTimeParser(const ASTCreateQuery & query);
 
     std::shared_ptr<ASTCreateQuery> getInnerTableCreateQuery(

@@ -1421,11 +1421,8 @@ void ClientBase::runInteractive()
     LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
 
-    /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
-    ///  disabled, so that we are able to paste and execute multiline queries in a whole
-    ///  instead of erroring out, while be less intrusive.
-    if (config().has("multiquery") && !config().has("multiline"))
-        lr.enableBracketedPaste();
+    /// Enable bracketed-paste-mode so that we are able to paste multiline queries as a whole.
+    lr.enableBracketedPaste();
 
     do
     {

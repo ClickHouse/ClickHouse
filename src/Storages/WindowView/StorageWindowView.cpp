@@ -89,22 +89,27 @@ namespace
                 {
                     data.is_tumble = t->name == "TUMBLE";
                     data.is_hop = t->name == "HOP";
+                    auto temp_node = t->clone();
+                    temp_node->setAlias("");
+                    if (startsWith(t->arguments->children[0]->getColumnName(), "toDateTime"))
+                        throw Exception(
+                            "The first argument of window function should not be a constant value.",
+                            ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
                     if (!data.window_function)
                     {
+                        data.serialized_window_function = serializeAST(*temp_node);
                         t->name = "WINDOW_ID";
                         data.window_id_name = t->getColumnName();
                         data.window_id_alias = t->alias;
                         data.window_function = t->clone();
                         data.window_function->setAlias("");
-                        data.serialized_window_function = serializeAST(*data.window_function);
                         data.timestamp_column_name = t->arguments->children[0]->getColumnName();
                     }
                     else
                     {
-                        auto temp_node = t->clone();
-                        temp_node->setAlias("");
                         if (serializeAST(*temp_node) != data.serialized_window_function)
                             throw Exception("WINDOW VIEW only support ONE WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
+                        t->name = "WINDOW_ID";
                     }
                 }
             }
@@ -142,14 +147,25 @@ namespace
 
         bool is_time_column_func_now = false;
         String window_id_name;
+        String now_timezone;
 
         void visit(ASTFunction & node, ASTPtr & node_ptr)
         {
-            if (node.name == "WINDOW_ID")
+            if (node.name == "WINDOW_ID" || node.name == "TUMBLE" || node.name == "HOP")
             {
                 if (const auto * t = node.arguments->children[0]->as<ASTFunction>();
                     t && t->name == "now")
                 {
+                    if (!t->children.empty())
+                    {
+                        const auto & children = t->children[0]->as<ASTExpressionList>()->children;
+                        if (!children.empty())
+                        {
+                            const auto * timezone_ast = children[0]->as<ASTLiteral>();
+                            if (timezone_ast)
+                                now_timezone = timezone_ast->value.safeGet<String>();
+                        }
+                    }
                     is_time_column_func_now = true;
                     node_ptr->children[0]->children[0] = std::make_shared<ASTIdentifier>("____timestamp");
                     window_id_name = node.getColumnName();
@@ -291,10 +307,12 @@ namespace
     }
 }
 
-static void extractDependentTable(ContextPtr context, ASTSelectQuery & query, String & select_database_name, String & select_table_name)
+static void extractDependentTable(ContextPtr context, ASTPtr & query, String & select_database_name, String & select_table_name)
 {
-    auto db_and_table = getDatabaseAndTable(query, 0);
-    ASTPtr subquery = extractTableExpression(query, 0);
+    ASTSelectQuery & select_query = typeid_cast<ASTSelectQuery &>(*query);
+
+    auto db_and_table = getDatabaseAndTable(select_query, 0);
+    ASTPtr subquery = extractTableExpression(select_query, 0);
 
     if (!db_and_table && !subquery)
         return;
@@ -307,7 +325,7 @@ static void extractDependentTable(ContextPtr context, ASTSelectQuery & query, St
         {
             db_and_table->database = select_database_name;
             AddDefaultDatabaseVisitor visitor(context, select_database_name);
-            visitor.visit(query);
+            visitor.visit(select_query);
         }
         else
             select_database_name = db_and_table->database;
@@ -319,7 +337,7 @@ static void extractDependentTable(ContextPtr context, ASTSelectQuery & query, St
 
         auto & inner_select_query = ast_select->list_of_selects->children.at(0);
 
-        extractDependentTable(context, inner_select_query->as<ASTSelectQuery &>(), select_database_name, select_table_name);
+        extractDependentTable(context, inner_select_query, select_database_name, select_table_name);
     }
     else
         throw Exception(
@@ -609,7 +627,10 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
                 auto node = ast->clone();
                 /// now() -> ____timestamp
                 if (is_time_column_func_now)
+                {
                     time_now_visitor.visit(node);
+                    function_now_timezone = time_now_data.now_timezone;
+                }
                 /// TUMBLE/HOP -> WINDOW_ID
                 func_window_visitor.visit(node);
                 to_identifier_visitor.visit(node);
@@ -640,7 +661,10 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::getInnerTableCreateQuery(
 
         ASTPtr order_by_ptr = order_by;
         if (is_time_column_func_now)
+        {
             time_now_visitor.visit(order_by_ptr);
+            function_now_timezone = time_now_data.now_timezone;
+        }
         to_identifier_visitor.visit(order_by_ptr);
 
         for (auto & child : order_by->arguments->children)
@@ -829,7 +853,6 @@ void StorageWindowView::threadFuncFireProc()
     std::unique_lock lock(fire_signal_mutex);
     UInt32 timestamp_now = std::time(nullptr);
 
-    LOG_TRACE(log, "Processing time. Now: {}. Next fire time: {}", timestamp_now, next_fire_signal);
     while (next_fire_signal <= timestamp_now)
     {
         try
@@ -862,7 +885,6 @@ void StorageWindowView::threadFuncFireEvent()
 
         while (!fire_signal.empty())
         {
-            LOG_TRACE(log, "Fire signals: {}", fire_signal.size());
             fire(fire_signal.front());
             fire_signal.pop_front();
         }
@@ -923,10 +945,11 @@ StorageWindowView::StorageWindowView(
             ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW,
             "UNION is not supported for {}", getName());
 
-    ASTSelectQuery & select_query = typeid_cast<ASTSelectQuery &>(*query.select->list_of_selects->children.at(0));
+    select_query = query.select->list_of_selects->children.at(0)->clone();
     String select_database_name = getContext()->getCurrentDatabase();
     String select_table_name;
-    extractDependentTable(getContext(), select_query, select_database_name, select_table_name);
+    auto select_query_tmp = select_query->clone();
+    extractDependentTable(getContext(), select_query_tmp, select_database_name, select_table_name);
 
     /// If the table is not specified - use the table `system.one`
     if (select_table_name.empty())
@@ -938,7 +961,7 @@ StorageWindowView::StorageWindowView(
     DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
 
     /// Extract all info from query; substitute Function_TUMPLE and Function_HOP with Function_WINDOW_ID.
-    auto inner_query = innerQueryParser(select_query);
+    auto inner_query = innerQueryParser(select_query->as<ASTSelectQuery &>());
 
     // Parse mergeable query
     mergeable_query = inner_query->clone();
@@ -970,15 +993,21 @@ StorageWindowView::StorageWindowView(
     else
         window_column_name = std::regex_replace(window_id_name, std::regex("WINDOW_ID"), "HOP");
 
-    auto generate_inner_table_name = [](const String & table_name) { return ".inner." + table_name; };
+    auto generate_inner_table_name = [](const StorageID & storage_id)
+    {
+        if (storage_id.hasUUID())
+            return ".inner." + toString(storage_id.uuid);
+        return ".inner." + storage_id.table_name;
+    };
+
     if (attach_)
     {
-        inner_table_id = StorageID(table_id_.database_name, generate_inner_table_name(table_id_.table_name));
+        inner_table_id = StorageID(table_id_.database_name, generate_inner_table_name(table_id_));
     }
     else
     {
         auto inner_create_query
-            = getInnerTableCreateQuery(inner_query, query.storage, table_id_.database_name, generate_inner_table_name(table_id_.table_name));
+            = getInnerTableCreateQuery(inner_query, query.storage, table_id_.database_name, generate_inner_table_name(table_id_));
 
         auto create_context = Context::createCopy(context_);
         InterpreterCreateQuery create_interpreter(inner_create_query, create_context);
@@ -1001,7 +1030,7 @@ StorageWindowView::StorageWindowView(
 }
 
 
-ASTPtr StorageWindowView::innerQueryParser(ASTSelectQuery & query)
+ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
 {
     if (!query.groupBy())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "GROUP BY query is required for {}", getName());
@@ -1165,7 +1194,11 @@ void StorageWindowView::writeIntoWindowView(
         {
             ColumnWithTypeAndName column;
             column.name = "____timestamp";
-            column.type = std::make_shared<DataTypeDateTime>();
+            const auto & timezone = window_view.function_now_timezone;
+            if (timezone.empty())
+                column.type = std::make_shared<DataTypeDateTime>();
+            else
+                column.type = std::make_shared<DataTypeDateTime>(timezone);
             column.column = column.type->createColumnConst(0, Field(std::time(nullptr)));
 
             auto adding_column_dag = ActionsDAG::makeAddingColumnActions(std::move(column));
@@ -1319,7 +1352,7 @@ Block & StorageWindowView::getHeader() const
     if (!sample_block)
     {
         sample_block = InterpreterSelectQuery(
-            getFinalQuery(), window_view_context, getParentStorage(), nullptr,
+            select_query->clone(), window_view_context, getParentStorage(), nullptr,
             SelectQueryOptions(QueryProcessingStage::Complete)).getSampleBlock();
 
         for (size_t i = 0; i < sample_block.columns(); ++i)
