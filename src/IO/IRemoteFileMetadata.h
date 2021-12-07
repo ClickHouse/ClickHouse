@@ -56,8 +56,8 @@ public:
     ~RemoteFileMetadataFactory() = default;
 
     static RemoteFileMetadataFactory & instance();
-    IRemoteFileMetadataPtr get(const String & class_name);
-    void registerClass(const String &class_name, ClassCreator creator);
+    IRemoteFileMetadataPtr get(const String & name);
+    void registerClass(const String &name, ClassCreator creator);
 protected:
     RemoteFileMetadataFactory() = default;
 
