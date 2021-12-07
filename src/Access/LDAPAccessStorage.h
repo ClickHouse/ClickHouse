@@ -42,8 +42,8 @@ public: // IAccessStorage implementations.
     virtual String getStorageParamsJSON() const override;
 
 private: // IAccessStorage implementations.
-    virtual std::optional<UUID> findImpl(EntityType type, const String & name) const override;
-    virtual std::vector<UUID> findAllImpl(EntityType type) const override;
+    virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
+    virtual std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     virtual bool existsImpl(const UUID & id) const override;
     virtual AccessEntityPtr readImpl(const UUID & id) const override;
     virtual String readNameImpl(const UUID & id) const override;
@@ -52,9 +52,9 @@ private: // IAccessStorage implementations.
     virtual void removeImpl(const UUID & id) override;
     virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
     virtual scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    virtual scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
+    virtual scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
     virtual bool hasSubscriptionImpl(const UUID & id) const override;
-    virtual bool hasSubscriptionImpl(EntityType type) const override;
+    virtual bool hasSubscriptionImpl(AccessEntityType type) const override;
     virtual UUID loginImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const override;
     virtual UUID getIDOfLoggedUserImpl(const String & user_name) const override;
 

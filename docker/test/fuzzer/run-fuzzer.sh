@@ -77,7 +77,7 @@ function configure
 
 function watchdog
 {
-    sleep 3600
+    sleep 1800
 
     echo "Fuzzing run has timed out"
     for _ in {1..10}

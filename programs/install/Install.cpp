@@ -492,8 +492,9 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                 /// Override the default paths.
 
                 /// Data paths.
+                const std::string data_file = config_d / "data-paths.xml";
+                if (!fs::exists(data_file))
                 {
-                    std::string data_file = config_d / "data-paths.xml";
                     WriteBufferFromFile out(data_file);
                     out << "<clickhouse>\n"
                     "    <path>" << data_path.string() << "</path>\n"
@@ -503,12 +504,14 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</clickhouse>\n";
                     out.sync();
                     out.finalize();
+                    fs::permissions(data_file, fs::perms::owner_read, fs::perm_options::replace);
                     fmt::print("Data path configuration override is saved to file {}.\n", data_file);
                 }
 
                 /// Logger.
+                const std::string logger_file = config_d / "logger.xml";
+                if (!fs::exists(logger_file))
                 {
-                    std::string logger_file = config_d / "logger.xml";
                     WriteBufferFromFile out(logger_file);
                     out << "<clickhouse>\n"
                     "    <logger>\n"
@@ -518,12 +521,14 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</clickhouse>\n";
                     out.sync();
                     out.finalize();
+                    fs::permissions(logger_file, fs::perms::owner_read, fs::perm_options::replace);
                     fmt::print("Log path configuration override is saved to file {}.\n", logger_file);
                 }
 
                 /// User directories.
+                const std::string user_directories_file = config_d / "user-directories.xml";
+                if (!fs::exists(user_directories_file))
                 {
-                    std::string user_directories_file = config_d / "user-directories.xml";
                     WriteBufferFromFile out(user_directories_file);
                     out << "<clickhouse>\n"
                     "    <user_directories>\n"
@@ -534,12 +539,14 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</clickhouse>\n";
                     out.sync();
                     out.finalize();
+                    fs::permissions(user_directories_file, fs::perms::owner_read, fs::perm_options::replace);
                     fmt::print("User directory path configuration override is saved to file {}.\n", user_directories_file);
                 }
 
                 /// OpenSSL.
+                const std::string openssl_file = config_d / "openssl.xml";
+                if (!fs::exists(openssl_file))
                 {
-                    std::string openssl_file = config_d / "openssl.xml";
                     WriteBufferFromFile out(openssl_file);
                     out << "<clickhouse>\n"
                     "    <openSSL>\n"
@@ -552,6 +559,7 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
                     "</clickhouse>\n";
                     out.sync();
                     out.finalize();
+                    fs::permissions(openssl_file, fs::perms::owner_read, fs::perm_options::replace);
                     fmt::print("OpenSSL path configuration override is saved to file {}.\n", openssl_file);
                 }
             }
@@ -761,12 +769,13 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
 #if defined(__linux__)
         fmt::print("Setting capabilities for clickhouse binary. This is optional.\n");
         std::string command = fmt::format("command -v setcap >/dev/null"
-            " && echo > {0} && chmod a+x {0} && {0} && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {0} && {0} && rm {0}"
-            " && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {1}"
+            " && command -v capsh >/dev/null"
+            " && capsh --has-p=cap_net_admin,cap_ipc_lock,cap_sys_nice+ep >/dev/null 2>&1"
+            " && setcap 'cap_net_admin,cap_ipc_lock,cap_sys_nice+ep' {0}"
             " || echo \"Cannot set 'net_admin' or 'ipc_lock' or 'sys_nice' capability for clickhouse binary."
                 " This is optional. Taskstats accounting will be disabled."
                 " To enable taskstats accounting you may add the required capability later manually.\"",
-            "/tmp/test_setcap.sh", fs::canonical(main_bin_path).string());
+            fs::canonical(main_bin_path).string());
         executeScript(command);
 #endif
 

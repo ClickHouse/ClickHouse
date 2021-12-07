@@ -412,14 +412,14 @@ String LDAPAccessStorage::getStorageParamsJSON() const
 }
 
 
-std::optional<UUID> LDAPAccessStorage::findImpl(EntityType type, const String & name) const
+std::optional<UUID> LDAPAccessStorage::findImpl(AccessEntityType type, const String & name) const
 {
     std::scoped_lock lock(mutex);
     return memory_storage.find(type, name);
 }
 
 
-std::vector<UUID> LDAPAccessStorage::findAllImpl(EntityType type) const
+std::vector<UUID> LDAPAccessStorage::findAllImpl(AccessEntityType type) const
 {
     std::scoped_lock lock(mutex);
     return memory_storage.findAll(type);
@@ -482,7 +482,7 @@ scope_guard LDAPAccessStorage::subscribeForChangesImpl(const UUID & id, const On
 }
 
 
-scope_guard LDAPAccessStorage::subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const
+scope_guard LDAPAccessStorage::subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const
 {
     std::scoped_lock lock(mutex);
     return memory_storage.subscribeForChanges(type, handler);
@@ -496,7 +496,7 @@ bool LDAPAccessStorage::hasSubscriptionImpl(const UUID & id) const
 }
 
 
-bool LDAPAccessStorage::hasSubscriptionImpl(EntityType type) const
+bool LDAPAccessStorage::hasSubscriptionImpl(AccessEntityType type) const
 {
     std::scoped_lock lock(mutex);
     return memory_storage.hasSubscription(type);

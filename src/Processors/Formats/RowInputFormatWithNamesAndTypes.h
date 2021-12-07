@@ -44,16 +44,22 @@ protected:
     virtual void skipTypes() = 0;
 
     /// Skip delimiters, if any.
+    virtual void skipPrefixBeforeHeader() {}
     virtual void skipRowStartDelimiter() {}
     virtual void skipFieldDelimiter() {}
     virtual void skipRowEndDelimiter() {}
+    virtual void skipRowBetweenDelimiter() {}
 
+    /// Check suffix.
+    virtual bool checkForSuffix() { return in->eof(); }
 
     /// Methods for parsing with diagnostic info.
     virtual void checkNullValueForNonNullable(DataTypePtr) {}
     virtual bool parseRowStartWithDiagnosticInfo(WriteBuffer &) { return true; }
     virtual bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer &) { return true; }
     virtual bool parseRowEndWithDiagnosticInfo(WriteBuffer &) { return true;}
+    virtual bool parseRowBetweenDelimiterWithDiagnosticInfo(WriteBuffer &) { return true;}
+    virtual bool tryParseSuffixWithDiagnosticInfo(WriteBuffer &) { return true; }
     bool isGarbageAfterField(size_t, ReadBuffer::Position) override {return false; }
 
     /// Read row with names and return the list of them.
@@ -63,6 +69,7 @@ protected:
 
     const FormatSettings format_settings;
     DataTypes data_types;
+    bool end_of_stream = false;
 
 private:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;

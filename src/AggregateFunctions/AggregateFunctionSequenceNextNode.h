@@ -283,7 +283,7 @@ public:
         data(place).sorted = true;
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         /// Temporarily do a const_cast to sort the values. It helps to reduce the computational burden on the initiator node.
         this->data(const_cast<AggregateDataPtr>(place)).sort();
@@ -316,7 +316,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         readBinary(data(place).sorted, buf);
 
