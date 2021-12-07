@@ -10,6 +10,7 @@ NamesAndTypesList StorageSystemGraphite::getNamesAndTypes()
 {
     return {
         {"config_name",     std::make_shared<DataTypeString>()},
+        {"rule_type",       std::make_shared<DataTypeString>()},
         {"regexp",          std::make_shared<DataTypeString>()},
         {"function",        std::make_shared<DataTypeString>()},
         {"age",             std::make_shared<DataTypeUInt64>()},
@@ -85,6 +86,7 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr co
             bool is_default = pattern.regexp == nullptr;
             String regexp;
             String function;
+            const String & rule_type = ruleTypeStr(pattern.rule_type);
 
             if (is_default)
             {
@@ -107,6 +109,7 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr co
                 {
                     size_t i = 0;
                     res_columns[i++]->insert(config.first);
+                    res_columns[i++]->insert(rule_type);
                     res_columns[i++]->insert(regexp);
                     res_columns[i++]->insert(function);
                     res_columns[i++]->insert(retention.age);
@@ -121,6 +124,7 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr co
             {
                 size_t i = 0;
                 res_columns[i++]->insert(config.first);
+                res_columns[i++]->insert(rule_type);
                 res_columns[i++]->insert(regexp);
                 res_columns[i++]->insert(function);
                 res_columns[i++]->insertDefault();
