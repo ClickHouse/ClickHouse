@@ -84,7 +84,6 @@ void GlobalOvercommitTracker::pickQueryToExcludeImpl()
 {
     MemoryTracker * current_tracker = nullptr;
     OvercommitRatio current_ratio{0, 0};
-    LOG_DEBUG(logger, "Trying to choose query to stop from {} queries", process_list->size());
     process_list->processEachQueryStatus([&](DB::QueryStatus const & query)
     {
         if (query.isKilled())
