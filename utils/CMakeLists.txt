@@ -32,6 +32,7 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (wal-dump)
     add_subdirectory (check-mysql-binlog)
     add_subdirectory (keeper-bench)
+    add_subdirectory (graphite-rollup)
 
     if (USE_NURAFT)
         add_subdirectory (keeper-data-dumper)
