@@ -49,7 +49,9 @@ class S3Helper():
             else:
                 logging.info("No content type provied for %s", file_path)
         else:
-            if s3_path.endswith("txt") or s3_path.endswith("log") or s3_path.endswith("err") or s3_path.endswith("out"):
+            is_log = s3_path.endswith("log") or ".log." in s3_path
+            is_text = s3_path.endswith("txt") or is_log or s3_path.endswith("err") or s3_path.endswith("out")
+            if not s3_path.endswith('.gz') and (is_text or is_log):
                 logging.info("Going to compress file log file %s to %s", file_path, file_path + ".gz")
                 compress_file_fast(file_path, file_path + ".gz")
                 file_path += ".gz"
@@ -103,3 +105,12 @@ class S3Helper():
 
     def upload_test_folder_to_s3(self, folder_path, s3_folder_path):
         return self._upload_folder_to_s3(folder_path, s3_folder_path, 'clickhouse-test-reports', True, True)
+
+    def list_prefix(self, s3_prefix_path, bucket='clickhouse-builds'):
+        objects = self.client.list_objects_v2(Bucket=bucket, Prefix=s3_prefix_path)
+        result = []
+        if 'Contents' in objects:
+            for obj in objects['Contents']:
+                result.append(obj['Key'])
+
+        return result

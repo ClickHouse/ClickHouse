@@ -29,24 +29,22 @@ public:
 
     String getName() const override { return "TabSeparatedRowOutputFormat"; }
 
+    /// https://www.iana.org/assignments/media-types/text/tab-separated-values
+    String getContentType() const override { return "text/tab-separated-values; charset=UTF-8"; }
+
+protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override;
     void writeRowEndDelimiter() override;
     void writeBeforeTotals() override;
     void writeBeforeExtremes() override;
 
-    void doWritePrefix() override;
-
-    /// https://www.iana.org/assignments/media-types/text/tab-separated-values
-    String getContentType() const override { return "text/tab-separated-values; charset=UTF-8"; }
-
-private:
+    void writePrefix() override;
     void writeLine(const std::vector<String> & values);
+
     bool with_names;
     bool with_types;
     bool is_raw;
-
-protected:
     const FormatSettings format_settings;
 };
 

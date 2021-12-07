@@ -30,6 +30,7 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/VarInt.h>
 
 #include <DataTypes/DataTypeDateTime.h>
@@ -47,6 +48,7 @@ struct Memory;
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_DATE;
+    extern const int CANNOT_PARSE_BOOL;
     extern const int CANNOT_PARSE_DATETIME;
     extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_READ_ARRAY_FROM_TEXT;
@@ -182,6 +184,15 @@ inline void assertChar(char symbol, ReadBuffer & buf)
     }
 }
 
+inline bool checkCharCaseInsensitive(char c, ReadBuffer & buf)
+{
+    char a;
+    if (!buf.peek(a) || !equalsCaseInsensitive(a, c))
+        return false;
+    buf.ignore();
+    return true;
+}
+
 inline void assertString(const String & s, ReadBuffer & buf)
 {
     assertString(s.c_str(), buf);
@@ -230,20 +241,45 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
     x = tmp != '0';
 }
 
-inline void readBoolTextWord(bool & x, ReadBuffer & buf)
+inline void readBoolTextWord(bool & x, ReadBuffer & buf, bool support_upper_case = false)
 {
     if (buf.eof())
         throwReadAfterEOF();
 
-    if (*buf.position() == 't')
+    switch (*buf.position())
     {
-        assertString("true", buf);
-        x = true;
-    }
-    else
-    {
-        assertString("false", buf);
-        x = false;
+        case 't':
+            assertString("true", buf);
+            x = true;
+            break;
+        case 'f':
+            assertString("false", buf);
+            x = false;
+            break;
+        case 'T':
+        {
+            if (support_upper_case)
+            {
+                assertString("TRUE", buf);
+                x = true;
+                break;
+            }
+            else
+                [[fallthrough]];
+        }
+        case 'F':
+        {
+            if (support_upper_case)
+            {
+                assertString("FALSE", buf);
+                x = false;
+                break;
+            }
+            else
+                [[fallthrough]];
+        }
+        default:
+            throw ParsingException("Unexpected Bool value", ErrorCodes::CANNOT_PARSE_BOOL);
     }
 }
 
@@ -1324,6 +1360,9 @@ void saveUpToPosition(ReadBuffer & in, Memory<Allocator<false>> & memory, char *
   */
 bool loadAtPosition(ReadBuffer & in, Memory<Allocator<false>> & memory, char * & current);
 
+/// Skip data until start of the next row or eof (the end of row is determined by two delimiters:
+/// row_after_delimiter and row_between_delimiter).
+void skipToNextRowOrEof(PeekableReadBuffer & buf, const String & row_after_delimiter, const String & row_between_delimiter, bool skip_spaces);
 
 struct PcgDeserializer
 {
@@ -1344,5 +1383,7 @@ struct PcgDeserializer
         rng.state_ = state;
     }
 };
+
+void readQuotedFieldIntoString(String & s, ReadBuffer & buf);
 
 }

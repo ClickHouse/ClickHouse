@@ -13,30 +13,21 @@
 #if defined(__linux__)
     #include <sys/prctl.h>
 #endif
-#include <fcntl.h>
 #include <errno.h>
 #include <string.h>
 #include <signal.h>
-#include <cxxabi.h>
 #include <unistd.h>
 
 #include <typeinfo>
 #include <iostream>
 #include <fstream>
-#include <sstream>
 #include <memory>
 #include <base/scope_guard.h>
 
-#include <Poco/Observer.h>
-#include <Poco/AutoPtr.h>
-#include <Poco/PatternFormatter.h>
 #include <Poco/Message.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Exception.h>
 #include <Poco/ErrorHandler.h>
-#include <Poco/Condition.h>
-#include <Poco/SyslogChannel.h>
-#include <Poco/DirectoryIterator.h>
 
 #include <base/logger_useful.h>
 #include <base/ErrorHandlers.h>
@@ -56,12 +47,14 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/MemorySanitizer.h>
 #include <Common/SymbolIndex.h>
 #include <Common/getExecutablePath.h>
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/Elf.h>
 #include <filesystem>
+
+#include <loggers/OwnFormattingChannel.h>
+#include <loggers/OwnPatternFormatter.h>
 
 #include <Common/config_version.h>
 
@@ -111,7 +104,7 @@ static void writeSignalIDtoSignalPipe(int sig)
     errno = saved_errno;
 }
 
-/** Signal handler for HUP / USR1 */
+/** Signal handler for HUP */
 static void closeLogsSignalHandler(int sig, siginfo_t *, void *)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
@@ -168,7 +161,7 @@ __attribute__((__weak__)) void collectCrashLog(
 
 
 /** The thread that read info about signal or std::terminate from pipe.
-  * On HUP / USR1, close log files (for new files to be opened later).
+  * On HUP, close log files (for new files to be opened later).
   * On information about std::terminate, write it to log.
   * On other signals, write info to log.
   */
@@ -208,7 +201,7 @@ public:
                 LOG_INFO(log, "Stop SignalListener thread");
                 break;
             }
-            else if (sig == SIGHUP || sig == SIGUSR1)
+            else if (sig == SIGHUP)
             {
                 LOG_DEBUG(log, "Received signal to close logs.");
                 BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
@@ -675,6 +668,34 @@ void BaseDaemon::initialize(Application & self)
     if ((!log_path.empty() && is_daemon) || config().has("logger.stderr"))
     {
         std::string stderr_path = config().getString("logger.stderr", log_path + "/stderr.log");
+
+        /// Check that stderr is writable before freopen(),
+        /// since freopen() will make stderr invalid on error,
+        /// and logging to stderr will be broken,
+        /// so the following code (that is used in every program) will not write anything:
+        ///
+        ///     int main(int argc, char ** argv)
+        ///     {
+        ///         try
+        ///         {
+        ///             DB::SomeApp app;
+        ///             return app.run(argc, argv);
+        ///         }
+        ///         catch (...)
+        ///         {
+        ///             std::cerr << DB::getCurrentExceptionMessage(true) << "\n";
+        ///             return 1;
+        ///         }
+        ///     }
+        if (access(stderr_path.c_str(), W_OK))
+        {
+            int fd;
+            if ((fd = creat(stderr_path.c_str(), 0600)) == -1 && errno != EEXIST)
+                throw Poco::OpenFileException("File " + stderr_path + " (logger.stderr) is not writable");
+            if (fd != -1)
+                ::close(fd);
+        }
+
         if (!freopen(stderr_path.c_str(), "a+", stderr))
             throw Poco::OpenFileException("Cannot attach stderr to " + stderr_path);
 
@@ -811,7 +832,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
 
     addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP, SIGTRAP}, signalHandler, &handled_signals);
-    addSignalHandler({SIGHUP, SIGUSR1}, closeLogsSignalHandler, &handled_signals);
+    addSignalHandler({SIGHUP}, closeLogsSignalHandler, &handled_signals);
     addSignalHandler({SIGINT, SIGQUIT, SIGTERM}, terminateRequestedSignalHandler, &handled_signals);
 
 #if defined(SANITIZER)
@@ -973,11 +994,19 @@ void BaseDaemon::setupWatchdog()
             memcpy(argv0, new_process_name, std::min(strlen(new_process_name), original_process_name.size()));
         }
 
+        /// If streaming compression of logs is used then we write watchdog logs to cerr
+        if (config().getRawString("logger.stream_compress", "false") == "true")
+        {
+            Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
+            Poco::AutoPtr<DB::OwnFormattingChannel> log = new DB::OwnFormattingChannel(pf, new Poco::ConsoleChannel(std::cerr));
+            logger().setChannel(log);
+        }
+
         logger().information(fmt::format("Will watch for the process with pid {}", pid));
 
         /// Forward signals to the child process.
         addSignalHandler(
-            {SIGHUP, SIGUSR1, SIGINT, SIGQUIT, SIGTERM},
+            {SIGHUP, SIGINT, SIGQUIT, SIGTERM},
             [](int sig, siginfo_t *, void *)
             {
                 /// Forward all signals except INT as it can be send by terminal to the process group when user press Ctrl+C,

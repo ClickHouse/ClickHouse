@@ -11,12 +11,8 @@ PostgreSQLOutputFormat::PostgreSQLOutputFormat(WriteBuffer & out_, const Block &
 {
 }
 
-void PostgreSQLOutputFormat::doWritePrefix()
+void PostgreSQLOutputFormat::writePrefix()
 {
-    if (initialized)
-        return;
-
-    initialized = true;
     const auto & header = getPort(PortKind::Main).getHeader();
     auto data_types = header.getDataTypes();
 
@@ -37,8 +33,6 @@ void PostgreSQLOutputFormat::doWritePrefix()
 
 void PostgreSQLOutputFormat::consume(Chunk chunk)
 {
-    doWritePrefix();
-
     for (size_t i = 0; i != chunk.getNumRows(); ++i)
     {
         const Columns & columns = chunk.getColumns();
@@ -60,8 +54,6 @@ void PostgreSQLOutputFormat::consume(Chunk chunk)
         message_transport.send(PostgreSQLProtocol::Messaging::DataRow(row));
     }
 }
-
-void PostgreSQLOutputFormat::finalize() {}
 
 void PostgreSQLOutputFormat::flush()
 {

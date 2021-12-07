@@ -1,6 +1,6 @@
 # included only if ENABLE_TESTS=1
 
-option (USE_INTERNAL_GTEST_LIBRARY "Set to FALSE to use system Google Test instead of bundled" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_GTEST_LIBRARY "Set to FALSE to use system Google Test instead of bundled" ON)
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/googletest/googletest/CMakeLists.txt")
    if (USE_INTERNAL_GTEST_LIBRARY)

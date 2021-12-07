@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-unbundled, no-fasttest
+# Tags: long, no-fasttest
 
 set -e
 

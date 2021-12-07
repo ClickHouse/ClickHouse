@@ -75,6 +75,11 @@ void RowInputFormatWithNamesAndTypes::addInputColumn(const String & column_name,
 
 void RowInputFormatWithNamesAndTypes::readPrefix()
 {
+    /// This is a bit of abstraction leakage, but we need it in parallel parsing:
+    /// we check if this InputFormat is working with the "real" beginning of the data.
+    if (getCurrentUnitNumber() != 0)
+        return;
+
     if (with_names || with_types || data_types.at(0)->textCanContainOnlyValidUTF8())
     {
         /// We assume that column name or type cannot contain BOM, so, if format has header,
@@ -82,9 +87,12 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
         skipBOMIfExists(*in);
     }
 
+    /// Skip prefix before names and types.
+    skipPrefixBeforeHeader();
+
     /// This is a bit of abstraction leakage, but we need it in parallel parsing:
     /// we check if this InputFormat is working with the "real" beginning of the data.
-    if (with_names && getCurrentUnitNumber() == 0)
+    if (with_names)
     {
         if (format_settings.with_names_use_header)
         {
@@ -108,8 +116,10 @@ void RowInputFormatWithNamesAndTypes::readPrefix()
     else if (!column_mapping->is_set)
         setupAllColumnsByTableSchema();
 
-    if (with_types && getCurrentUnitNumber() == 0)
+    if (with_types)
     {
+        /// Skip delimiter between names and types.
+        skipRowBetweenDelimiter();
         if (format_settings.with_types_use_header)
         {
             auto types = readTypes();
@@ -148,10 +158,20 @@ void RowInputFormatWithNamesAndTypes::insertDefaultsForNotSeenColumns(MutableCol
 
 bool RowInputFormatWithNamesAndTypes::readRow(MutableColumns & columns, RowReadExtension & ext)
 {
-    if (in->eof())
+    if (unlikely(end_of_stream))
         return false;
 
+    if (unlikely(checkForSuffix()))
+    {
+        end_of_stream = true;
+        return false;
+    }
+
     updateDiagnosticInfo();
+
+    if (likely(row_num != 1 || (getCurrentUnitNumber() == 0 && (with_names || with_types))))
+        skipRowBetweenDelimiter();
+
     skipRowStartDelimiter();
 
     ext.read_columns.resize(data_types.size());
@@ -190,6 +210,7 @@ void RowInputFormatWithNamesAndTypes::resetParser()
     column_mapping->column_indexes_for_input_fields.clear();
     column_mapping->not_presented_columns.clear();
     column_mapping->names_of_columns.clear();
+    end_of_stream = false;
 }
 
 void RowInputFormatWithNamesAndTypes::tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
@@ -214,6 +235,12 @@ bool RowInputFormatWithNamesAndTypes::parseRowAndPrintDiagnosticInfo(MutableColu
         out << "<End of stream>\n";
         return false;
     }
+
+    if (!tryParseSuffixWithDiagnosticInfo(out))
+        return false;
+
+    if (likely(row_num != 1) && !parseRowBetweenDelimiterWithDiagnosticInfo(out))
+        return false;
 
     if (!parseRowStartWithDiagnosticInfo(out))
         return false;

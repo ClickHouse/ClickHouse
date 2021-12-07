@@ -17,6 +17,8 @@ void SerializationDate32::serializeText(const IColumn & column, size_t row_num, 
 void SerializationDate32::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     deserializeTextEscaped(column, istr, settings);
+    if (!istr.eof())
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, "Date32");
 }
 
 void SerializationDate32::deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const

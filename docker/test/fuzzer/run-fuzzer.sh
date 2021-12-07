@@ -77,7 +77,7 @@ function configure
 
 function watchdog
 {
-    sleep 3600
+    sleep 1800
 
     echo "Fuzzing run has timed out"
     for _ in {1..10}
@@ -256,6 +256,12 @@ continue
         task_exit_code=0
         echo "success" > status.txt
         echo "OK" > description.txt
+    elif [ "$fuzzer_exit_code" == "137" ]
+    then
+        # Killed.
+        task_exit_code=$fuzzer_exit_code
+        echo "failure" > status.txt
+        echo "Killed" > description.txt
     else
         # The server was alive, but the fuzzer returned some error. This might
         # be some client-side error detected by fuzzing, or a problem in the

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import requests
+import time
 
 
 class Query:
@@ -365,10 +366,14 @@ class Query:
         from requests.adapters import HTTPAdapter
         from urllib3.util.retry import Retry
 
+        # sleep a little, because we querying github too often
+        print("Request, is mutation", is_mutation)
+        time.sleep(0.5)
+
         def requests_retry_session(
-            retries=3,
-            backoff_factor=0.3,
-            status_forcelist=(500, 502, 504),
+            retries=5,
+            backoff_factor=0.5,
+            status_forcelist=(403, 500, 502, 504),
             session=None,
         ):
             session = session or requests.Session()

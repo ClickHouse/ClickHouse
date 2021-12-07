@@ -1,11 +1,12 @@
 #pragma once
 
 #include <Core/Defines.h>
-#include <QueryPipeline/BlockIO.h>
 #include <IO/Progress.h>
 #include <Interpreters/CancellationCode.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/QueryPriorities.h>
+#include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/ExecutionSpeedLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Poco/Condition.h>
 #include <Common/CurrentMetrics.h>
@@ -25,11 +26,6 @@
 #include <unordered_map>
 #include <vector>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric Query;
-}
 
 namespace DB
 {
@@ -95,9 +91,12 @@ protected:
     /// Progress of output stream
     Progress progress_out;
 
-    QueryPriorities::Handle priority_handle;
+    /// Used to externally check for the query time limits
+    /// They are saved in the constructor to limit the overhead of each call to checkTimeLimit()
+    ExecutionSpeedLimits limits;
+    OverflowMode overflow_mode;
 
-    CurrentMetrics::Increment num_queries_increment{CurrentMetrics::Query};
+    QueryPriorities::Handle priority_handle;
 
     std::atomic<bool> is_killed { false };
 
@@ -183,6 +182,11 @@ public:
 
     /// Removes a pipeline to the QueryStatus
     void removePipelineExecutor(PipelineExecutor * e);
+
+    /// Checks the query time limits (cancelled or timeout)
+    bool checkTimeLimit();
+    /// Same as checkTimeLimit but it never throws
+    [[nodiscard]] bool checkTimeLimitSoft();
 };
 
 

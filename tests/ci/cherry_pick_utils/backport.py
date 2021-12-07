@@ -5,9 +5,9 @@ try:
     from clickhouse.utils.github.query import Query as RemoteRepo
     from clickhouse.utils.github.local import Repository as LocalRepo
 except:
-    from cherrypick import CherryPick
-    from query import Query as RemoteRepo
-    from local import Repository as LocalRepo
+    from .cherrypick import CherryPick
+    from .query import Query as RemoteRepo
+    from .local import Repository as LocalRepo
 
 import argparse
 import logging
