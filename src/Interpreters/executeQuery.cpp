@@ -255,7 +255,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
 {
     /// Exception before the query execution.
     if (auto quota = context->getQuota())
-        quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
+        quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
 
     const Settings & settings = context->getSettingsRef();
 
@@ -319,7 +319,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
         span.parent_span_id = context->getClientInfo().client_trace_context.span_id;
         span.operation_name = "query";
         span.start_time_us = current_time_us;
-        span.finish_time_us = current_time_us;
+        span.finish_time_us = time_in_microseconds(std::chrono::system_clock::now());
 
         /// Keep values synchronized to type enum in QueryLogElement::createBlock.
         span.attribute_names.push_back("clickhouse.query_status");
@@ -330,6 +330,12 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
 
         span.attribute_names.push_back("clickhouse.query_id");
         span.attribute_values.push_back(elem.client_info.current_query_id);
+
+        span.attribute_names.push_back("clickhouse.exception");
+        span.attribute_values.push_back(elem.exception);
+
+        span.attribute_names.push_back("clickhouse.exception_code");
+        span.attribute_values.push_back(elem.exception_code);
 
         if (!context->query_trace_context.tracestate.empty())
         {
@@ -625,14 +631,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
                 {
-                    quota->used(Quota::QUERY_SELECTS, 1);
+                    quota->used(QuotaType::QUERY_SELECTS, 1);
                 }
                 else if (ast->as<ASTInsertQuery>())
                 {
-                    quota->used(Quota::QUERY_INSERTS, 1);
+                    quota->used(QuotaType::QUERY_INSERTS, 1);
                 }
-                quota->used(Quota::QUERIES, 1);
-                quota->checkExceeded(Quota::ERRORS);
+                quota->used(QuotaType::QUERIES, 1);
+                quota->checkExceeded(QuotaType::ERRORS);
             }
         }
 
@@ -888,7 +894,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                     txn->onException();
 
                 if (quota)
-                    quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
+                    quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
 
                 elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
 

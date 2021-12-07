@@ -93,6 +93,7 @@ public:
     operator bool() const { return !empty(); }
 
     void addColumn(ColumnPtr column);
+    void addColumn(size_t position, ColumnPtr column);
     void erase(size_t position);
 
     UInt64 bytes() const;

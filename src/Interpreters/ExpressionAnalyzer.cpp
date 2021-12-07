@@ -100,6 +100,21 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
 {
     auto columns = select_query->select()->children;
 
+    const auto * group_by_expr_with_alias = dynamic_cast<const ASTWithAlias *>(argument.get());
+    if (group_by_expr_with_alias && !group_by_expr_with_alias->alias.empty())
+    {
+        for (const auto & column : columns)
+        {
+            const auto * col_with_alias = dynamic_cast<const ASTWithAlias *>(column.get());
+            if (col_with_alias)
+            {
+                const auto & alias = col_with_alias->alias;
+                if (!alias.empty() && alias == group_by_expr_with_alias->alias)
+                    return false;
+            }
+        }
+    }
+
     /// In case of expression/function (order by 1+2 and 2*x1, greatest(1, 2)) replace
     /// positions only if all literals are numbers, otherwise it is not positional.
     bool positional = true;
@@ -157,10 +172,9 @@ bool checkPositionalArguments(ASTPtr & argument, const ASTSelectQuery * select_q
             else if (pos > columns.size() || !pos)
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "Positional argument out of bounds: {} (exprected in range [1, {}]",
+                     "Positional argument out of bounds: {} (exprected in range [1, {}]",
                                 pos, columns.size());
             }
-            /// Do not throw if pos < 0, because of TreeOptimizer::appendUnusedColumn()
         }
         else
             positional = false;

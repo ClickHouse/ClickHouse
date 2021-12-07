@@ -158,6 +158,9 @@ public:
     /// This is true for most storages that store data on disk.
     virtual bool prefersLargeBlocks() const { return true; }
 
+    /// Returns true if the storage is for system, which cannot be target of SHOW CREATE TABLE.
+    virtual bool isSystemStorage() const { return false; }
+
 
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.

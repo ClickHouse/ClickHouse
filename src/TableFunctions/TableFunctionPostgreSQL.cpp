@@ -6,13 +6,10 @@
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/Exception.h>
-#include <Common/parseAddress.h>
 #include "registerTableFunctions.h"
-#include <Common/quoteString.h>
 #include <Common/parseRemoteDescription.h>
 
 

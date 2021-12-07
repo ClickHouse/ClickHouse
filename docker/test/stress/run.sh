@@ -55,9 +55,41 @@ function configure()
     echo "<clickhouse><asynchronous_metrics_update_period_s>1</asynchronous_metrics_update_period_s></clickhouse>" \
         > /etc/clickhouse-server/config.d/asynchronous_metrics_update_period_s.xml
 
+    local total_mem
+    total_mem=$(awk '/MemTotal/ { print $(NF-1) }' /proc/meminfo) # KiB
+    total_mem=$(( total_mem*1024 )) # bytes
     # Set maximum memory usage as half of total memory (less chance of OOM).
-    echo "<clickhouse><max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio></clickhouse>" \
-        > /etc/clickhouse-server/config.d/max_server_memory_usage_to_ram_ratio.xml
+    #
+    # But not via max_server_memory_usage but via max_memory_usage_for_user,
+    # so that we can override this setting and execute service queries, like:
+    # - hung check
+    # - show/drop database
+    # - ...
+    #
+    # So max_memory_usage_for_user will be a soft limit, and
+    # max_server_memory_usage will be hard limit, and queries that should be
+    # executed regardless memory limits will use max_memory_usage_for_user=0,
+    # instead of relying on max_untracked_memory
+    local max_server_mem
+    max_server_mem=$((total_mem*75/100)) # 75%
+    echo "Setting max_server_memory_usage=$max_server_mem"
+    cat > /etc/clickhouse-server/config.d/max_server_memory_usage.xml <<EOL
+<clickhouse>
+    <max_server_memory_usage>${max_server_mem}</max_server_memory_usage>
+</clickhouse>
+EOL
+    local max_users_mem
+    max_users_mem=$((total_mem*50/100)) # 50%
+    echo "Setting max_memory_usage_for_user=$max_users_mem"
+    cat > /etc/clickhouse-server/users.d/max_memory_usage_for_user.xml <<EOL
+<clickhouse>
+    <profiles>
+        <default>
+            <max_memory_usage_for_user>${max_users_mem}</max_memory_usage_for_user>
+        </default>
+    </profiles>
+</clickhouse>
+EOL
 }
 
 function stop()
@@ -151,8 +183,8 @@ zgrep -Fa " <Fatal> " /var/log/clickhouse-server/clickhouse-server.log*
 # Grep logs for sanitizer asserts, crashes and other critical errors
 
 # Sanitizer asserts
-zgrep -Fa "==================" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
-zgrep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
+grep -Fa "==================" /var/log/clickhouse-server/stderr.log | grep -v "in query:" >> /test_output/tmp
+grep -Fa "WARNING" /var/log/clickhouse-server/stderr.log >> /test_output/tmp
 zgrep -Fav "ASan doesn't fully support makecontext/swapcontext functions" /test_output/tmp > /dev/null \
     && echo -e 'Sanitizer assert (in stderr.log)\tFAIL' >> /test_output/test_results.tsv \
     || echo -e 'No sanitizer asserts\tOK' >> /test_output/test_results.tsv
@@ -185,6 +217,8 @@ zgrep -Fa "########################################" /test_output/* > /dev/null 
 for log_file in /var/log/clickhouse-server/clickhouse-server.log*
 do
     pigz < "${log_file}" > /test_output/"$(basename ${log_file})".gz
+    # FIXME: remove once only github actions will be left
+    rm "${log_file}"
 done
 
 tar -chf /test_output/coordination.tar /var/lib/clickhouse/coordination ||:
