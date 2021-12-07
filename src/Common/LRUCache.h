@@ -37,7 +37,7 @@ struct TrivialLRUCacheEvitPolicy
         return LRUCacheEvictStatus::CAN_EVITCT;
     }
 
-    inline void release(T & )
+    inline void release(T &)
     {
     }
 };
@@ -317,9 +317,9 @@ private:
 
         if (inserted)
         {
-            auto weight = mapped ? weight_function(*mapped) : 0;
+            auto value_weight = mapped ? weight_function(*mapped) : 0;
             // move removeOverflow() ahead here. In default, the final result is the same as the old implementation
-            if (!removeOverflow(weight))
+            if (!removeOverflow(value_weight))
             {
                 // cannot find enough space to put in the new value
                 cells.erase(it);
@@ -352,8 +352,8 @@ private:
         cell.value = mapped;
         cell.size = cell.value ? weight_function(*cell.value) : 0;
         current_size += cell.size;
-
         removeOverflow();
+
         return true;
     }
 
@@ -363,9 +363,9 @@ private:
         size_t queue_size = cells.size();
         auto key_it = queue.begin();
 
-        while ((current_size > max_size || (max_elements_size != 0 && queue_size > max_elements_size)) 
+        while ((current_size > max_size || (max_elements_size != 0 && queue_size > max_elements_size))
                 && (queue_size > 1)
-                && key_it != queue.end())
+                && (key_it != queue.end()))
         {
             const Key & key = *key_it;
 
@@ -379,7 +379,7 @@ private:
             const auto & cell = it->second;
             auto evict_status = evict_policy.canRelease(*cell.value);// in default, it is CAN_EVITCT
             if (evict_status == LRUCacheEvictStatus::CAN_EVITCT)
-            { 
+            {
                 // always call release() before erasing an element
                 // in default, it's an empty action
                 evict_policy.release(*cell.value);
