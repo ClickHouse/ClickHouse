@@ -231,7 +231,7 @@ void RemoteCacheController::deallocFile(std::unique_ptr<ReadBufferFromFileBase> 
 {
     if (!file_buffer)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Try to release a null file buffer for ", local_path.string());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Try to release a null file buffer for {}", local_path.string());
     }
     auto buffer_ref = reinterpret_cast<uintptr_t>(file_buffer.get());
     std::lock_guard lock{mutex};
