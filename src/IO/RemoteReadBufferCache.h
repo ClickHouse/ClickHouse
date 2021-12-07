@@ -20,6 +20,7 @@
 #include <IO/IRemoteFileMetadata.h>
 #include <condition_variable>
 #include <Interpreters/Context.h>
+#include <boost/core/noncopyable.hpp>
 
 
 namespace DB
@@ -174,7 +175,7 @@ struct RemoteFileCacheEvictPolicy
     }
 };
 
-class RemoteReadBufferCache
+class RemoteReadBufferCache : private boost::noncopyable
 {
 public:
     using CacheType = LRUCache<String, RemoteCacheController, std::hash<String>,
