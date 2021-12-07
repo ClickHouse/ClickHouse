@@ -188,7 +188,7 @@ bool ClusterDiscovery::needUpdate(const Strings & node_uuids, const NodesInfo & 
             return fmt::format("{} node{} [{}{}]", sz, sz != 1 ? "s" : "", fmt::join(diff, ", "), need_crop ? ",..." : "");
         };
 
-        LOG_TRACE(log, "Cluster update: added {}, removed {}",
+        LOG_DEBUG(log, "Cluster update: added {}, removed {}",
             format_cluster_update(new_names, old_names),
             format_cluster_update(old_names, new_names));
     }
@@ -233,7 +233,7 @@ ClusterPtr ClusterDiscovery::makeCluster(const ClusterInfo & cluster_info)
 /// Returns true on success (or no update required).
 bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
 {
-    LOG_TRACE(log, "Updating cluster '{}'", cluster_info.name);
+    LOG_DEBUG(log, "Updating cluster '{}'", cluster_info.name);
 
     auto zk = context->getZooKeeper();
 
@@ -251,7 +251,7 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
 
     if (!needUpdate(node_uuids, nodes_info))
     {
-        LOG_TRACE(log, "No update required for cluster '{}'", cluster_info.name);
+        LOG_DEBUG(log, "No update required for cluster '{}'", cluster_info.name);
         return true;
     }
 
@@ -267,12 +267,12 @@ bool ClusterDiscovery::updateCluster(ClusterInfo & cluster_info)
 
     if (current_version != start_version)
     {
-        LOG_TRACE(log, "Cluster '{}' configuration changed during update", cluster_info.name);
+        LOG_DEBUG(log, "Cluster '{}' configuration changed during update", cluster_info.name);
         nodes_info.clear();
         return false;
     }
 
-    LOG_TRACE(log, "Updating system.clusters record for '{}' with {} nodes", cluster_info.name, cluster_info.nodes_info.size());
+    LOG_DEBUG(log, "Updating system.clusters record for '{}' with {} nodes", cluster_info.name, cluster_info.nodes_info.size());
 
     auto cluster = makeCluster(cluster_info);
     context->setCluster(cluster_info.name, cluster);
@@ -308,7 +308,7 @@ void ClusterDiscovery::start()
         LOG_DEBUG(log, "No defined clusters for discovery");
         return;
     }
-    LOG_TRACE(log, "Starting working thread");
+    LOG_DEBUG(log, "Starting working thread");
 
     auto zk = context->getZooKeeper();
     for (auto & [_, info] : clusters_info)
@@ -377,7 +377,7 @@ bool ClusterDiscovery::runMainThread()
 
 void ClusterDiscovery::shutdown()
 {
-    LOG_TRACE(log, "Shutting down");
+    LOG_DEBUG(log, "Shutting down");
 
     stop_flag.exchange(true);
     if (main_thread.joinable())
