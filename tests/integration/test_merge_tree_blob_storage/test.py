@@ -248,44 +248,45 @@ def test_table_manipulations(cluster):
     assert node.query(f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values") == "(0)"
 
 
+@pytest.mark.long_run
 def test_move_replace_partition_to_another_table(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
 
     table_clone_name = TABLE_NAME + "_clone"
 
-    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-03', 4096)}")
-    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-04', 4096)}")
-    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-05', 4096, -1)}")
-    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-06', 4096, -1)}")
+    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-03', 256)}")
+    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-04', 256)}")
+    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-05', 256, -1)}")
+    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-06', 256, -1)}")
     assert node.query(f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
-    assert node.query(f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values") == "(16384)"
+    assert node.query(f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values") == "(1024)"
 
     create_table(node, table_clone_name)
 
     node.query(f"ALTER TABLE {TABLE_NAME} MOVE PARTITION '2020-01-03' TO TABLE {table_clone_name}")
     node.query(f"ALTER TABLE {TABLE_NAME} MOVE PARTITION '2020-01-05' TO TABLE {table_clone_name}")
     assert node.query(f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
-    assert node.query(f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values") == "(8192)"
+    assert node.query(f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values") == "(512)"
     assert node.query(f"SELECT sum(id) FROM {table_clone_name} FORMAT Values") == "(0)"
-    assert node.query(f"SELECT count(*) FROM {table_clone_name} FORMAT Values") == "(8192)"
+    assert node.query(f"SELECT count(*) FROM {table_clone_name} FORMAT Values") == "(512)"
 
     # Add new partitions to source table, but with different values and replace them from copied table.
-    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-03', 4096, -1)}")
-    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-05', 4096)}")
+    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-03', 256, -1)}")
+    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-05', 256)}")
     assert node.query(f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
-    assert node.query(f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values") == "(16384)"
+    assert node.query(f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values") == "(1024)"
 
     node.query(f"ALTER TABLE {TABLE_NAME} REPLACE PARTITION '2020-01-03' FROM {table_clone_name}")
     node.query(f"ALTER TABLE {TABLE_NAME} REPLACE PARTITION '2020-01-05' FROM {table_clone_name}")
     assert node.query(f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
-    assert node.query(f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values") == "(16384)"
+    assert node.query(f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values") == "(1024)"
     assert node.query(f"SELECT sum(id) FROM {table_clone_name} FORMAT Values") == "(0)"
-    assert node.query(f"SELECT count(*) FROM {table_clone_name} FORMAT Values") == "(8192)"
+    assert node.query(f"SELECT count(*) FROM {table_clone_name} FORMAT Values") == "(512)"
 
     node.query(f"DROP TABLE {table_clone_name} NO DELAY")
     assert node.query(f"SELECT sum(id) FROM {TABLE_NAME} FORMAT Values") == "(0)"
-    assert node.query(f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values") == "(16384)"
+    assert node.query(f"SELECT count(*) FROM {TABLE_NAME} FORMAT Values") == "(1024)"
 
     node.query(f"ALTER TABLE {TABLE_NAME} FREEZE")
 
@@ -335,8 +336,8 @@ def test_restart_during_load(cluster):
     # Force multi-part upload mode.
     replace_config("<container_already_exists>false</container_already_exists>", "")
 
-    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-04', 1024 * 1024)}")
-    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-05', 1024 * 1024, -1)}")
+    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-04', 4096)}")
+    node.query(f"INSERT INTO {TABLE_NAME} VALUES {generate_values('2020-01-05', 4096, -1)}")
 
 
     def read():
