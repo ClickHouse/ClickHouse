@@ -385,9 +385,20 @@ bool ClusterDiscovery::NodeInfo::parse(const String & data, NodeInfo & result)
         Poco::JSON::Parser parser;
         auto json = parser.parse(data).extract<Poco::JSON::Object::Ptr>();
 
-        result.address = json->getValue<std::string>("address");
-        result.secure = json->optValue<bool>("secure", false);
-        result.shard_id = json->optValue<size_t>("shard_id", 0);
+        size_t ver = json->optValue<size_t>("version", data_ver);
+        if (ver == data_ver)
+        {
+            result.address = json->getValue<std::string>("address");
+            result.secure = json->optValue<bool>("secure", false);
+            result.shard_id = json->optValue<size_t>("shard_id", 0);
+        }
+        else
+        {
+            LOG_ERROR(
+                &Poco::Logger::get("ClusterDiscovery"),
+                "Unsupported version '{}' of data in zk node '{}'",
+                ver, data.size() < 1024 ? data : "[data too long]");
+        }
     }
     catch (Poco::Exception & e)
     {
@@ -403,6 +414,7 @@ bool ClusterDiscovery::NodeInfo::parse(const String & data, NodeInfo & result)
 String ClusterDiscovery::NodeInfo::serialize() const
 {
     Poco::JSON::Object json;
+    json.set("version", data_ver);
     json.set("address", address);
     json.set("shard_id", shard_id);
 

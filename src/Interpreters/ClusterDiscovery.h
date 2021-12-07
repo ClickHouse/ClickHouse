@@ -38,6 +38,9 @@ public:
 private:
     struct NodeInfo
     {
+        /// versioning for format of data stored in zk
+        static constexpr size_t data_ver = 1;
+
         /// host:port
         String address;
         /// is secure tcp port user
