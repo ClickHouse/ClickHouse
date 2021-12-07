@@ -2,15 +2,17 @@
 
 #include <Core/Block.h>
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_MYSQL
-#    include <base/LocalDateTime.h>
+#    include <common/LocalDateTime.h>
 #    include <mysqlxx/PoolWithFailover.h>
 #    include "DictionaryStructure.h"
 #    include "ExternalQueryBuilder.h"
 #    include "IDictionarySource.h"
-#    include <Processors/Sources/MySQLSource.h>
+#    include <Formats/MySQLBlockInputStream.h>
 
 namespace Poco
 {
@@ -33,7 +35,6 @@ public:
     {
         const std::string db;
         const std::string table;
-        const std::string query;
         const std::string where;
         const std::string invalidate_query;
         const std::string update_field;
@@ -52,13 +53,13 @@ public:
     MySQLDictionarySource(const MySQLDictionarySource & other);
     MySQLDictionarySource & operator=(const MySQLDictionarySource &) = delete;
 
-    Pipe loadAll() override;
+    BlockInputStreamPtr loadAll() override;
 
-    Pipe loadUpdatedAll() override;
+    BlockInputStreamPtr loadUpdatedAll() override;
 
-    Pipe loadIds(const std::vector<UInt64> & ids) override;
+    BlockInputStreamPtr loadIds(const std::vector<UInt64> & ids) override;
 
-    Pipe loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
+    BlockInputStreamPtr loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows) override;
 
     bool isModified() const override;
 
@@ -71,7 +72,7 @@ public:
     std::string toString() const override;
 
 private:
-    Pipe loadFromQuery(const String & query);
+    BlockInputStreamPtr loadFromQuery(const String & query);
 
     std::string getUpdateFieldAndDate();
 

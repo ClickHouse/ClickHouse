@@ -25,8 +25,8 @@ SUSPICIOUS_PATTERNS = [
 MAX_RETRY = 5
 
 WorkflowDescription = namedtuple('WorkflowDescription',
-                                 ['name', 'action', 'run_id', 'event', 'workflow_id',
-                                  'fork_owner_login', 'fork_branch'])
+                                 ['name', 'action', 'run_id', 'event', 'sender_login',
+                                  'workflow_id', 'fork_owner_login', 'fork_branch', 'sender_orgs'])
 
 TRUSTED_WORKFLOW_IDS = {
     14586616, # Cancel workflows, always trusted
@@ -118,7 +118,7 @@ def get_key_and_app_from_aws():
     return data['clickhouse-app-key'], int(data['clickhouse-app-id'])
 
 
-def is_trusted_contributor(pr_user_login, pr_user_orgs):
+def is_trusted_sender(pr_user_login, pr_user_orgs):
     if pr_user_login in TRUSTED_CONTRIBUTORS:
         print(f"User '{pr_user_login}' is trusted")
         return True
@@ -174,26 +174,27 @@ def _get_pull_requests_from(owner, branch):
 
 def get_workflow_description_from_event(event):
     action = event['action']
+    sender_login = event['sender']['login']
     run_id = event['workflow_run']['id']
     event_type = event['workflow_run']['event']
     fork_owner = event['workflow_run']['head_repository']['owner']['login']
     fork_branch = event['workflow_run']['head_branch']
+    orgs_data = _exec_get_with_retry(event['sender']['organizations_url'])
+    sender_orgs = [org['id'] for org in orgs_data]
     name = event['workflow_run']['name']
     workflow_id = event['workflow_run']['workflow_id']
     return WorkflowDescription(
         name=name,
         action=action,
+        sender_login=sender_login,
         run_id=run_id,
         event=event_type,
         fork_owner_login=fork_owner,
         fork_branch=fork_branch,
+        sender_orgs=sender_orgs,
         workflow_id=workflow_id,
     )
 
-def get_pr_author_and_orgs(pull_request):
-    author = pull_request['user']['login']
-    orgs = _exec_get_with_retry(pull_request['user']['organizations_url'])
-    return author, [org['id'] for org in orgs]
 
 def get_changed_files_for_pull_request(pull_request):
     number = pull_request['number']
@@ -270,8 +271,12 @@ def main(event):
         approve_run(workflow_description.run_id, token)
         return
 
-    pull_requests = _get_pull_requests_from(workflow_description.fork_owner_login, workflow_description.fork_branch)
+    if is_trusted_sender(workflow_description.sender_login, workflow_description.sender_orgs):
+        print("Sender is trusted, approving run")
+        approve_run(workflow_description.run_id, token)
+        return
 
+    pull_requests = _get_pull_requests_from(workflow_description.fork_owner_login, workflow_description.fork_branch)
     print("Got pull requests for workflow", len(pull_requests))
     if len(pull_requests) > 1:
         raise Exception("Received more than one PR for workflow run")
@@ -281,12 +286,6 @@ def main(event):
 
     pull_request = pull_requests[0]
     print("Pull request for workflow number", pull_request['number'])
-
-    author, author_orgs =  get_pr_author_and_orgs(pull_request)
-    if is_trusted_contributor(author, author_orgs):
-        print("Contributor is trusted, approving run")
-        approve_run(workflow_description.run_id, token)
-        return
 
     changed_files = get_changed_files_for_pull_request(pull_request)
     print(f"Totally have {len(changed_files)} changed files in PR:", changed_files)

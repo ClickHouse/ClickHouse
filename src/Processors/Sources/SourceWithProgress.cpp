@@ -47,14 +47,9 @@ void SourceWithProgress::setProcessListElement(QueryStatus * elem)
     }
 }
 
-bool SourceWithProgress::checkTimeLimit() const
-{
-    return limits.speed_limits.checkTimeLimit(total_stopwatch, limits.timeout_overflow_mode);
-}
-
 void SourceWithProgress::work()
 {
-    if (!checkTimeLimit())
+    if (!limits.speed_limits.checkTimeLimit(total_stopwatch.elapsed(), limits.timeout_overflow_mode))
     {
         cancel();
     }
@@ -69,7 +64,8 @@ void SourceWithProgress::work()
     }
 }
 
-/// TODO: Most of this must be done in PipelineExecutor outside.
+/// Aggregated copy-paste from IBlockInputStream::progressImpl.
+/// Most of this must be done in PipelineExecutor outside. Now it's done for compatibility with IBlockInputStream.
 void SourceWithProgress::progress(const Progress & value)
 {
     was_progress_called = true;
@@ -134,16 +130,18 @@ void SourceWithProgress::progress(const Progress & value)
 
         if (last_profile_events_update_time + profile_events_update_period_microseconds < total_elapsed_microseconds)
         {
-            /// TODO: Should be done in PipelineExecutor.
+            /// Should be done in PipelineExecutor.
+            /// It is here for compatibility with IBlockInputsStream.
             CurrentThread::updatePerformanceCounters();
             last_profile_events_update_time = total_elapsed_microseconds;
         }
 
-        /// TODO: Should be done in PipelineExecutor.
+        /// Should be done in PipelineExecutor.
+        /// It is here for compatibility with IBlockInputsStream.
         limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
         if (quota && limits.mode == LimitsMode::LIMITS_TOTAL)
-            quota->used({QuotaType::READ_ROWS, value.read_rows}, {QuotaType::READ_BYTES, value.read_bytes});
+            quota->used({Quota::READ_ROWS, value.read_rows}, {Quota::READ_BYTES, value.read_bytes});
     }
 
     ProfileEvents::increment(ProfileEvents::SelectedRows, value.read_rows);

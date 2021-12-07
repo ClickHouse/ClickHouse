@@ -1,9 +1,10 @@
 #pragma once
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_MYSQL
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 #include <mysqlxx/Pool.h>
 
 
@@ -29,8 +30,14 @@ private:
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
+    String remote_database_name;
+    String remote_table_name;
+    String user_name;
+    String password;
+    bool replace_query = false;
+    String on_duplicate_clause;
+
     mutable std::optional<mysqlxx::PoolWithFailover> pool;
-    std::optional<StorageMySQLConfiguration> configuration;
 };
 
 }
