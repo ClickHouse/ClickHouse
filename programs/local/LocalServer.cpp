@@ -830,7 +830,7 @@ extern "C" int LLVMFuzzerInitialize(int * pargc, char *** pargv)
     char ** argv = *pargv;
 
     /// As a user you can add flags to clickhouse binary in fuzzing mode as follows
-    /// clickhouse <set of clickhouse-local spefic flag> -- <set of libfuzzer flags>
+    /// clickhouse <set of clickhouse-local specific flag> -- <set of libfuzzer flags>
 
     /// Calculate the position of delimiter "--" that separates arguments
     /// of clickhouse-local and libfuzzer
