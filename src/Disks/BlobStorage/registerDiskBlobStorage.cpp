@@ -6,15 +6,11 @@
 
 #if USE_AZURE_BLOB_STORAGE
 
-#include <optional>
-
-#include <re2/re2.h>
-#include <azure/identity/managed_identity_credential.hpp>
-
-#include <Disks/BlobStorage/DiskBlobStorage.h>
 #include <Disks/DiskRestartProxy.h>
 #include <Disks/DiskCacheWrapper.h>
 #include <Disks/RemoteDisksCommon.h>
+#include <Disks/BlobStorage/DiskBlobStorage.h>
+#include <Disks/BlobStorage/BlobStorageAuth.h>
 
 
 namespace DB
@@ -82,131 +78,6 @@ std::unique_ptr<DiskBlobStorageSettings> getSettings(const Poco::Util::AbstractC
 }
 
 
-struct BlobStorageEndpoint
-{
-    const String storage_account_url;
-    const String container_name;
-    const std::optional<bool> container_already_exists;
-};
-
-
-void validateStorageAccountUrl(const String & storage_account_url)
-{
-    const auto * storage_account_url_pattern_str = R"(http(()|s)://[a-z0-9-.:]+(()|/)[a-z0-9]*(()|/))";
-    static const RE2 storage_account_url_pattern(storage_account_url_pattern_str);
-
-    if (!re2::RE2::FullMatch(storage_account_url, storage_account_url_pattern))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Blob Storage URL is not valid, should follow the format: {}, got: {}", storage_account_url_pattern_str, storage_account_url);
-}
-
-
-void validateContainerName(const String & container_name)
-{
-    auto len = container_name.length();
-    if (len < 3 || len > 64)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Blob Storage container name is not valid, should have length between 3 and 64, but has length: {}", len);
-
-    const auto * container_name_pattern_str = R"([a-z][a-z0-9-]+)";
-    static const RE2 container_name_pattern(container_name_pattern_str);
-
-    if (!re2::RE2::FullMatch(container_name, container_name_pattern))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Blob Storage container name is not valid, should follow the format: {}, got: {}", container_name_pattern_str, container_name);
-}
-
-
-BlobStorageEndpoint processBlobStorageEndpoint(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-{
-    String storage_account_url = config.getString(config_prefix + ".storage_account_url");
-    validateStorageAccountUrl(storage_account_url);
-    String container_name = config.getString(config_prefix + ".container_name", "default-container");
-    validateContainerName(container_name);
-    std::optional<bool> container_already_exists {};
-    if (config.has(config_prefix + ".container_already_exists"))
-        container_already_exists = {config.getBool(config_prefix + ".container_already_exists")};
-    return {storage_account_url, container_name, container_already_exists};
-}
-
-
-template <class T>
-std::shared_ptr<T> getClientWithConnectionString(const String & connection_str, const String & container_name) = delete;
-
-
-template<>
-std::shared_ptr<Azure::Storage::Blobs::BlobServiceClient> getClientWithConnectionString(
-    const String & connection_str, const String & /*container_name*/)
-{
-    return std::make_shared<Azure::Storage::Blobs::BlobServiceClient>(
-        Azure::Storage::Blobs::BlobServiceClient::CreateFromConnectionString(connection_str));
-}
-
-
-template<>
-std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> getClientWithConnectionString(
-    const String & connection_str, const String & container_name)
-{
-    return std::make_shared<Azure::Storage::Blobs::BlobContainerClient>(
-        Azure::Storage::Blobs::BlobContainerClient::CreateFromConnectionString(connection_str, container_name));
-}
-
-
-template <class T>
-std::shared_ptr<T> getBlobStorageClientWithAuth(
-    const String & url, const String & container_name, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-{
-    if (config.has(config_prefix + ".connection_string")) {
-        String connection_str = config.getString(config_prefix + ".connection_string");
-        return getClientWithConnectionString<T>(connection_str, container_name);
-    }
-
-    if (config.has(config_prefix + ".account_key") && config.has(config_prefix + ".account_name")) {
-        auto storage_shared_key_credential = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(
-            config.getString(config_prefix + ".account_name"),
-            config.getString(config_prefix + ".account_key")
-        );
-        return std::make_shared<T>(url, storage_shared_key_credential);
-    }
-
-    auto managed_identity_credential = std::make_shared<Azure::Identity::ManagedIdentityCredential>();
-    return std::make_shared<T>(url, managed_identity_credential);
-}
-
-
-std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> getBlobContainerClient(
-    const BlobStorageEndpoint & endpoint, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
-{
-    using namespace Azure::Storage::Blobs;
-
-    auto container_name = endpoint.container_name;
-    auto final_url = endpoint.storage_account_url
-        + (endpoint.storage_account_url.back() == '/' ? "" : "/")
-        + container_name;
-
-    if (endpoint.container_already_exists.value_or(false))
-        return getBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
-
-    auto blob_service_client = getBlobStorageClientWithAuth<BlobServiceClient>(endpoint.storage_account_url, container_name, config, config_prefix);
-
-    if (!endpoint.container_already_exists.has_value())
-    {
-        ListBlobContainersOptions blob_containers_list_options;
-        blob_containers_list_options.Prefix = endpoint.container_name;
-        blob_containers_list_options.PageSizeHint = 1;
-        auto blob_containers = blob_service_client->ListBlobContainers().BlobContainers;
-        for (const auto & blob_container : blob_containers)
-        {
-            if (blob_container.Name == endpoint.container_name)
-                return getBlobStorageClientWithAuth<BlobContainerClient>(final_url, container_name, config, config_prefix);
-        }
-    }
-
-    return std::make_shared<BlobContainerClient>(
-        blob_service_client->CreateBlobContainer(endpoint.container_name).Value);
-}
-
-
 void registerDiskBlobStorage(DiskFactory & factory)
 {
     auto creator = [](
@@ -216,18 +87,12 @@ void registerDiskBlobStorage(DiskFactory & factory)
         ContextPtr context,
         const DisksMap & /*map*/)
     {
-        auto endpoint_details = processBlobStorageEndpoint(config, config_prefix);
-        auto blob_container_client = getBlobContainerClient(endpoint_details, config, config_prefix);
-
-        /// where the metadata files are stored locally
-        auto metadata_path = config.getString(config_prefix + ".metadata_path", context->getPath() + "disks/" + name + "/");
-        fs::create_directories(metadata_path);
-        auto metadata_disk = std::make_shared<DiskLocal>(name + "-metadata", metadata_path, 0);
+        auto [metadata_path, metadata_disk] = prepareForLocalMetadata(name, config, config_prefix, context);
 
         std::shared_ptr<IDisk> blob_storage_disk = std::make_shared<DiskBlobStorage>(
             name,
             metadata_disk,
-            blob_container_client,
+            getBlobContainerClient(config, config_prefix),
             getSettings(config, config_prefix, context),
             getSettings
         );
@@ -239,6 +104,8 @@ void registerDiskBlobStorage(DiskFactory & factory)
             checkReadWithOffset(*blob_storage_disk);
             checkRemoveAccess(*blob_storage_disk);
         }
+
+        blob_storage_disk->startup();
 
         if (config.getBool(config_prefix + ".cache_enabled", true))
         {
