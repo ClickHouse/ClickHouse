@@ -12,6 +12,7 @@
 #include <Formats/NativeReader.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 
 
 namespace DB
@@ -142,6 +143,13 @@ Block NativeReader::read()
         String type_name;
         readBinary(type_name, istr);
         column.type = data_type_factory.get(type_name);
+
+        const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
+        if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
+        {
+            auto version = aggregate_function_data_type->getVersionFromRevision(server_revision);
+            aggregate_function_data_type->setVersion(version, /*if_empty=*/ true);
+        }
 
         SerializationPtr serialization;
         if (server_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
