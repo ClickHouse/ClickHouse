@@ -22,18 +22,12 @@ struct TrivialWeightFunction
     }
 };
 
-enum class LRUCacheEvictStatus
-{
-    CAN_EVITCT, // a key can be evicted
-    SKIP_EVICT, // skip current value and keep iterating
-};
-
 template <typename T>
 struct TrivialLRUCacheEvitPolicy
 {
-    inline LRUCacheEvictStatus canRelease(const T &) const
+    inline bool canRelease(const T &) const
     {
-        return LRUCacheEvictStatus::CAN_EVITCT;
+        return true;
     }
 
     inline void release(T &)
@@ -337,10 +331,10 @@ private:
         }
         else
         {
-            if (evict_policy.canRelease(*cell.value) != LRUCacheEvictStatus::CAN_EVITCT)
+            if (!evict_policy.canRelease(*cell.value))
             {
                 // the old value is refered by someone, cannot release now
-                // in default policy, it is always CAN_EVITCT.
+                // in default policy, it is always true.
                 return false;
             }
             evict_policy.release(*cell.value); // release the old value. this action is empty in default policy.
@@ -351,7 +345,6 @@ private:
         cell.value = mapped;
         cell.size = cell.value ? weight_function(*cell.value) : 0;
         current_size += cell.size;
-        removeOverflow();
 
         return true;
     }
@@ -376,28 +369,23 @@ private:
             }
 
             const auto & cell = it->second;
-            auto evict_status = evict_policy.canRelease(*cell.value);// in default, it is CAN_EVITCT
-            switch (evict_status)
+            auto can_evict = evict_policy.canRelease(*cell.value);// in default, it is true
+            if (can_evict)
             {
-                case LRUCacheEvictStatus::CAN_EVITCT:
-                    {
-                        // always call release() before erasing an element
-                        // in default, it's an empty action
-                        evict_policy.release(*cell.value);
+                // always call release() before erasing an element
+                // in default, it's an empty action
+                evict_policy.release(*cell.value);
 
-                        current_size -= cell.size;
-                        current_weight_lost += cell.size;
+                current_size -= cell.size;
+                current_weight_lost += cell.size;
 
-                        cells.erase(it);
-                        queue.pop_front();
-                        --queue_size;
-                    }
-                    break;
-                case LRUCacheEvictStatus::SKIP_EVICT:
-                    {
-                        key_it++;
-                    }
-                    break;
+                cells.erase(it);
+                queue.pop_front();
+                --queue_size;
+            }
+            else
+            {
+                key_it++;
             }
         }
 
