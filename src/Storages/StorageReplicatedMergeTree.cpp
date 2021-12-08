@@ -32,6 +32,7 @@
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
+#include <Storages/MergeTree/LeaderElection.h>
 
 
 #include <Databases/IDatabase.h>
@@ -39,6 +40,7 @@
 
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
@@ -3338,7 +3340,7 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
     /// It's quite dangerous, so clone covered parts to detached.
     auto broken_part_info = MergeTreePartInfo::fromPartName(part_name, format_version);
 
-    auto partition_range = getDataPartsPartitionRange(broken_part_info.partition_id);
+    auto partition_range = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, broken_part_info.partition_id);
     for (const auto & part : partition_range)
     {
         if (!broken_part_info.contains(part->info))
@@ -3399,53 +3401,29 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 }
 
 
-void StorageReplicatedMergeTree::enterLeaderElection()
+void StorageReplicatedMergeTree::startBeingLeader()
 {
-    auto callback = [this]()
+    if (!getSettings()->replicated_can_become_leader)
     {
-        LOG_INFO(log, "Became leader");
-
-        is_leader = true;
-        merge_selecting_task->activateAndSchedule();
-    };
-
-    try
-    {
-        leader_election = std::make_shared<zkutil::LeaderElection>(
-            getContext()->getSchedulePool(),
-            fs::path(zookeeper_path) / "leader_election",
-            *current_zookeeper,    /// current_zookeeper lives for the lifetime of leader_election,
-                                   ///  since before changing `current_zookeeper`, `leader_election` object is destroyed in `partialShutdown` method.
-            callback,
-            replica_name);
+        LOG_INFO(log, "Will not enter leader election because replicated_can_become_leader=0");
+        return;
     }
-    catch (...)
-    {
-        leader_election = nullptr;
-        throw;
-    }
+
+    zkutil::checkNoOldLeaders(log, *current_zookeeper, fs::path(zookeeper_path) / "leader_election");
+
+    LOG_INFO(log, "Became leader");
+    is_leader = true;
+    merge_selecting_task->activateAndSchedule();
 }
 
-void StorageReplicatedMergeTree::exitLeaderElection()
+void StorageReplicatedMergeTree::stopBeingLeader()
 {
-    if (!leader_election)
+    if (!is_leader)
         return;
 
-    /// Shut down the leader election thread to avoid suddenly becoming the leader again after
-    /// we have stopped the merge_selecting_thread, but before we have deleted the leader_election object.
-    leader_election->shutdown();
-
-    if (is_leader)
-    {
-        LOG_INFO(log, "Stopped being leader");
-
-        is_leader = false;
-        merge_selecting_task->deactivate();
-    }
-
-    /// Delete the node in ZK only after we have stopped the merge_selecting_thread - so that only one
-    /// replica assigns merges at any given time.
-    leader_election = nullptr;
+    LOG_INFO(log, "Stopped being leader");
+    is_leader = false;
+    merge_selecting_task->deactivate();
 }
 
 ConnectionTimeouts StorageReplicatedMergeTree::getFetchPartHTTPTimeouts(ContextPtr local_context)
@@ -4108,10 +4086,12 @@ void StorageReplicatedMergeTree::startup()
         assert(prev_ptr == nullptr);
         getContext()->getInterserverIOHandler().addEndpoint(data_parts_exchange_ptr->getId(replica_path), data_parts_exchange_ptr);
 
+        startBeingLeader();
+
         /// In this thread replica will be activated.
         restarting_thread.start();
 
-        /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attempt to do it
+        /// Wait while restarting_thread finishing initialization
         startup_event.wait();
 
         startBackgroundMovesIfNeeded();
@@ -4144,6 +4124,7 @@ void StorageReplicatedMergeTree::shutdown()
     fetcher.blocker.cancelForever();
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
+    stopBeingLeader();
 
     restarting_thread.shutdown();
     background_operations_assignee.finish();
@@ -5026,7 +5007,7 @@ PartitionCommandsResultInfo StorageReplicatedMergeTree::attachPartition(
 
         output.writeExistingPart(loaded_parts[i]);
 
-        renamed_parts.old_and_new_names[i].first.clear();
+        renamed_parts.old_and_new_names[i].old_name.clear();
 
         LOG_DEBUG(log, "Attached part {} as {}", old_name, loaded_parts[i]->name);
 
@@ -7380,13 +7361,23 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     {
         auto lock = lockParts();
         auto parts_in_partition = getDataPartsPartitionRange(new_part_info.partition_id);
-        if (parts_in_partition.empty())
+        if (!parts_in_partition.empty())
         {
-            LOG_WARNING(log, "Empty part {} is not created instead of lost part because there are no parts in partition {} (it's empty), resolve this manually using DROP PARTITION.", lost_part_name, new_part_info.partition_id);
+            new_data_part->partition = (*parts_in_partition.begin())->partition;
+        }
+        else if (auto parsed_partition = MergeTreePartition::tryParseValueFromID(
+                     new_part_info.partition_id,
+                     metadata_snapshot->getPartitionKey().sample_block))
+        {
+            new_data_part->partition = MergeTreePartition(*parsed_partition);
+        }
+        else
+        {
+            LOG_WARNING(log, "Empty part {} is not created instead of lost part because there are no parts in partition {} (it's empty), "
+                             "resolve this manually using DROP/DETACH PARTITION.", lost_part_name, new_part_info.partition_id);
             return false;
         }
 
-        new_data_part->partition = (*parts_in_partition.begin())->partition;
     }
 
     new_data_part->minmax_idx = std::move(minmax_idx);

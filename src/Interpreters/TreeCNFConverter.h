@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTLiteral.h>
-#include <vector>
 #include <set>
 #include <unordered_map>
+#include <vector>
+#include <IO/Operators.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
@@ -148,16 +149,16 @@ public:
     static constexpr size_t DEFAULT_MAX_GROWTH_MULTIPLIER = 20;
     static constexpr size_t MAX_ATOMS_WITHOUT_CHECK = 200;
 
-    /// @max_growth_multipler means that it's allowed to grow size of formula only
+    /// @max_growth_multiplier means that it's allowed to grow size of formula only
     /// in that amount of times. It's needed to avoid exponential explosion of formula.
     /// CNF of boolean formula with N clauses can have 2^N clauses.
     /// If amount of atomic formulas will be exceeded nullopt will be returned.
     /// 0 - means unlimited.
     static std::optional<CNFQuery> tryConvertToCNF(
-        const ASTPtr & query, size_t max_growth_multipler = DEFAULT_MAX_GROWTH_MULTIPLIER);
+        const ASTPtr & query, size_t max_growth_multiplier = DEFAULT_MAX_GROWTH_MULTIPLIER);
 
     static CNFQuery toCNF(
-        const ASTPtr & query, size_t max_growth_multipler = DEFAULT_MAX_GROWTH_MULTIPLIER);
+        const ASTPtr & query, size_t max_growth_multiplier = DEFAULT_MAX_GROWTH_MULTIPLIER);
 
     static ASTPtr fromCNF(const CNFQuery & cnf);
 };

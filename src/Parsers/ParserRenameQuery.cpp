@@ -1,4 +1,4 @@
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTRenameQuery.h>
 
 #include <Parsers/CommonParsers.h>

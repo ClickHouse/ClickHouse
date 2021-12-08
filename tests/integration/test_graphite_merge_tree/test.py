@@ -6,6 +6,7 @@ import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
+from helpers.test_tools import csv_compare
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
@@ -234,18 +235,19 @@ SELECT * FROM test.graphite;
 
 def test_system_graphite_retentions(graphite_table):
     expected = '''
-graphite_rollup	\\\\.count$	sum	0	0	1	0	['test']	['graphite']
-graphite_rollup	\\\\.max$	max	0	0	2	0	['test']	['graphite']
-graphite_rollup	^five_min\\\\.		31536000	14400	3	0	['test']	['graphite']
-graphite_rollup	^five_min\\\\.		5184000	3600	3	0	['test']	['graphite']
-graphite_rollup	^five_min\\\\.		0	300	3	0	['test']	['graphite']
-graphite_rollup	^one_min	avg	31536000	600	4	0	['test']	['graphite']
-graphite_rollup	^one_min	avg	7776000	300	4	0	['test']	['graphite']
-graphite_rollup	^one_min	avg	0	60	4	0	['test']	['graphite']
+graphite_rollup	all	\\\\.count$	sum	0	0	1	0	['test']	['graphite']
+graphite_rollup	all	\\\\.max$	max	0	0	2	0	['test']	['graphite']
+graphite_rollup	all	^five_min\\\\.		31536000	14400	3	0	['test']	['graphite']
+graphite_rollup	all	^five_min\\\\.		5184000	3600	3	0	['test']	['graphite']
+graphite_rollup	all	^five_min\\\\.		0	300	3	0	['test']	['graphite']
+graphite_rollup	all	^one_min	avg	31536000	600	4	0	['test']	['graphite']
+graphite_rollup	all	^one_min	avg	7776000	300	4	0	['test']	['graphite']
+graphite_rollup	all	^one_min	avg	0	60	4	0	['test']	['graphite']
     '''
     result = q('SELECT * from system.graphite_retentions')
 
-    assert TSV(result) == TSV(expected)
+    mismatch = csv_compare(result, expected)
+    assert len(mismatch) == 0, f"got\n{result}\nwant\n{expected}\ndiff\n{mismatch}\n"
 
     q('''
 DROP TABLE IF EXISTS test.graphite2;
