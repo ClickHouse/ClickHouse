@@ -569,7 +569,10 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 stages.emplace_back(context);
 
             const auto & column = columns_desc.get(command.column_name);
-            stages.back().column_to_updated.emplace(column.name, column.default_desc.expression->clone());
+            auto materialized_column = makeASTFunction(
+                "_CAST", column.default_desc.expression->clone(), std::make_shared<ASTLiteral>(column.type->getName()));
+
+            stages.back().column_to_updated.emplace(column.name, materialized_column);
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
