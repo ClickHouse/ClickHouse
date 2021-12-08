@@ -6,7 +6,6 @@
 #include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
-//#include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
 {
@@ -41,12 +40,6 @@ static Block addWindowFunctionResultColumns(const Block & block,
 
         result.insert(column_with_type);
     }
-
-    // for (auto & col : result)
-    // {
-    //     col.column = recursiveRemoveLowCardinality(col.column);
-    //     col.type = recursiveRemoveLowCardinality(col.type);
-    // }
 
     return result;
 }
