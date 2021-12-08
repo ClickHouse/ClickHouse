@@ -45,14 +45,16 @@ include("${AZURE_DIR}/cmake-modules/AzureTransportAdapters.cmake")
 
 add_library(azure_sdk ${AZURE_SDK_UNIFIED_SRC})
 
-target_compile_options(azure_sdk PUBLIC
-    -Wno-deprecated-copy-dtor
-    -Wno-extra-semi
-    -Wno-suggest-destructor-override
-    -Wno-inconsistent-missing-destructor-override
-    -Wno-error=unknown-warning-option
-    -Wno-reserved-identifier
-)
+if (COMPILER_CLANG)
+    target_compile_options(azure_sdk PUBLIC
+        -Wno-deprecated-copy-dtor
+        -Wno-extra-semi
+        -Wno-suggest-destructor-override
+        -Wno-inconsistent-missing-destructor-override
+        -Wno-error=unknown-warning-option
+        -Wno-reserved-identifier
+    )
+endif()
 
 # Originally, on Windows azure-core is built with bcrypt and crypt32 by default
 if (OPENSSL_FOUND)
