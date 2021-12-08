@@ -1349,15 +1349,14 @@ void ClientBase::runInteractive()
     /// Initialize DateLUT here to avoid counting time spent here as query execution time.
     const auto local_tz = DateLUT::instance().getTimeZone();
 
-    std::optional<Suggest> suggest;
-    suggest.emplace();
+    Suggest suggest(config().getInt("suggest_interval_ms"));
     if (load_suggestions)
     {
         /// Load suggestion data from the server.
         if (global_context->getApplicationType() == Context::ApplicationType::CLIENT)
-            suggest->load<Connection>(global_context, connection_parameters, config().getInt("suggestion_limit"));
+            suggest.schedule<Connection>(global_context, connection_parameters, config().getInt("suggestion_limit"));
         else if (global_context->getApplicationType() == Context::ApplicationType::LOCAL)
-            suggest->load<LocalConnection>(global_context, connection_parameters, config().getInt("suggestion_limit"));
+            suggest.schedule<LocalConnection>(global_context, connection_parameters, config().getInt("suggestion_limit"));
     }
 
     if (home_path.empty())
@@ -1413,7 +1412,7 @@ void ClientBase::runInteractive()
     if (config().getBool("highlight", true))
         highlight_callback = highlight;
 
-    ReplxxLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters, highlight_callback);
+    ReplxxLineReader lr(suggest, history_file, config().has("multiline"), query_extenders, query_delimiters, highlight_callback);
 #else
     LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
@@ -1709,6 +1708,7 @@ void ClientBase::init(int argc, char ** argv)
         ("profile-events-delay-ms", po::value<UInt64>()->default_value(profile_events.delay_ms), "Delay between printing `ProfileEvents` packets (-1 - print only totals, 0 - print every single packet)")
 
         ("interactive", "Process queries-file or --query query and start interactive mode")
+        ("suggest-interval-ms", po::value<UInt64>()->default_value(3000), "Reload suggestions interval")
         ("pager", po::value<std::string>(), "Pipe all output into this command (less or similar)")
     ;
 
@@ -1773,6 +1773,7 @@ void ClientBase::init(int argc, char ** argv)
         config().setBool("disable_suggestion", true);
     if (options.count("suggestion_limit"))
         config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
+    config().setInt("suggest_interval_ms", options["suggest-interval-ms"].as<UInt64>());
     if (options.count("highlight"))
         config().setBool("highlight", options["highlight"].as<bool>());
     if (options.count("history_file"))

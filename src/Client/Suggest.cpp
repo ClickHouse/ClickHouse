@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
+#include <Common/setThreadName.h>
 #include <Common/Macros.h>
 #include "Core/Protocol.h"
 #include <IO/Operators.h>
@@ -26,23 +27,34 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
 }
 
-Suggest::Suggest()
+Suggest::Suggest(UInt64 reload_interval_ms_)
+    : reload_interval_ms(reload_interval_ms_)
+    , default_words{
+        "CREATE",       "DATABASE", "IF",     "NOT",       "EXISTS",   "TEMPORARY",   "TABLE",    "ON",          "CLUSTER", "DEFAULT",
+        "MATERIALIZED", "ALIAS",    "ENGINE", "AS",        "VIEW",     "POPULATE",    "SETTINGS", "ATTACH",      "DETACH",  "DROP",
+        "RENAME",       "TO",       "ALTER",  "ADD",       "MODIFY",   "CLEAR",       "COLUMN",   "AFTER",       "COPY",    "PROJECT",
+        "PRIMARY",      "KEY",      "CHECK",  "PARTITION", "PART",     "FREEZE",      "FETCH",    "FROM",        "SHOW",    "INTO",
+        "OUTFILE",      "FORMAT",   "TABLES", "DATABASES", "LIKE",     "PROCESSLIST", "CASE",     "WHEN",        "THEN",    "ELSE",
+        "END",          "DESCRIBE", "DESC",   "USE",       "SET",      "OPTIMIZE",    "FINAL",    "DEDUPLICATE", "INSERT",  "VALUES",
+        "SELECT",       "DISTINCT", "SAMPLE", "ARRAY",     "JOIN",     "GLOBAL",      "LOCAL",    "ANY",         "ALL",     "INNER",
+        "LEFT",         "RIGHT",    "FULL",   "OUTER",     "CROSS",    "USING",       "PREWHERE", "WHERE",       "GROUP",   "BY",
+        "WITH",         "TOTALS",   "HAVING", "ORDER",     "COLLATE",  "LIMIT",       "UNION",    "AND",         "OR",      "ASC",
+        "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",    "TEST",        "BETWEEN",  "TRUNCATE",    "USER",    "ROLE",
+        "PROFILE",      "QUOTA",    "POLICY", "ROW",       "GRANT",    "REVOKE",      "OPTION",   "ADMIN",       "EXCEPT",  "REPLACE",
+        "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "RANDOMIZED",
+        "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE",
+    }
+    , current_words(default_words)
 {
-    /// Keywords may be not up to date with ClickHouse parser.
-    words = {"CREATE",       "DATABASE", "IF",     "NOT",       "EXISTS",   "TEMPORARY",   "TABLE",    "ON",          "CLUSTER", "DEFAULT",
-             "MATERIALIZED", "ALIAS",    "ENGINE", "AS",        "VIEW",     "POPULATE",    "SETTINGS", "ATTACH",      "DETACH",  "DROP",
-             "RENAME",       "TO",       "ALTER",  "ADD",       "MODIFY",   "CLEAR",       "COLUMN",   "AFTER",       "COPY",    "PROJECT",
-             "PRIMARY",      "KEY",      "CHECK",  "PARTITION", "PART",     "FREEZE",      "FETCH",    "FROM",        "SHOW",    "INTO",
-             "OUTFILE",      "FORMAT",   "TABLES", "DATABASES", "LIKE",     "PROCESSLIST", "CASE",     "WHEN",        "THEN",    "ELSE",
-             "END",          "DESCRIBE", "DESC",   "USE",       "SET",      "OPTIMIZE",    "FINAL",    "DEDUPLICATE", "INSERT",  "VALUES",
-             "SELECT",       "DISTINCT", "SAMPLE", "ARRAY",     "JOIN",     "GLOBAL",      "LOCAL",    "ANY",         "ALL",     "INNER",
-             "LEFT",         "RIGHT",    "FULL",   "OUTER",     "CROSS",    "USING",       "PREWHERE", "WHERE",       "GROUP",   "BY",
-             "WITH",         "TOTALS",   "HAVING", "ORDER",     "COLLATE",  "LIMIT",       "UNION",    "AND",         "OR",      "ASC",
-             "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",    "TEST",        "BETWEEN",  "TRUNCATE",    "USER",    "ROLE",
-             "PROFILE",      "QUOTA",    "POLICY", "ROW",       "GRANT",    "REVOKE",      "OPTION",   "ADMIN",       "EXCEPT",  "REPLACE",
-             "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "RANDOMIZED",
-             "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP",      "ILIKE"};
 }
+Suggest::~Suggest()
+{
+    exited = true;
+    exit_cv.notify_one();
+    if (loading_thread.joinable())
+        loading_thread.join();
+}
+
 
 static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggestion)
 {
@@ -97,46 +109,69 @@ static String getLoadSuggestionQuery(Int32 suggestion_limit, bool basic_suggesti
 }
 
 template <typename ConnectionType>
+void Suggest::schedule(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit)
+{
+    loading_thread = std::thread([context = Context::createCopy(context), connection_parameters, suggestion_limit, this]
+    {
+        setThreadName("SuggestLoader");
+
+        while (true)
+        {
+            load<ConnectionType>(context, connection_parameters, suggestion_limit);
+
+            std::unique_lock lock(exit_mutex);
+            if (exit_cv.wait_for(lock, std::chrono::milliseconds(reload_interval_ms), [this]() { return exited == true; }))
+            {
+                break;
+            }
+        }
+    });
+}
+
+template <typename ConnectionType>
 void Suggest::load(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit)
 {
-    loading_thread = std::thread([context=Context::createCopy(context), connection_parameters, suggestion_limit, this]
+    for (size_t retry = 0; retry < 10; ++retry)
     {
-        for (size_t retry = 0; retry < 10; ++retry)
+        try
         {
-            try
-            {
-                auto connection = ConnectionType::createConnection(connection_parameters, context);
-                fetch(*connection, connection_parameters.timeouts, getLoadSuggestionQuery(suggestion_limit, std::is_same_v<ConnectionType, LocalConnection>));
-            }
-            catch (const Exception & e)
-            {
-                if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
-                    continue;
+            auto connection = ConnectionType::createConnection(connection_parameters, context);
+            fetch(*connection, connection_parameters.timeouts, getLoadSuggestionQuery(suggestion_limit, std::is_same_v<ConnectionType, LocalConnection>));
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
+                continue;
 
-                std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
-            }
-            catch (...)
-            {
-                std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
-            }
-
-            break;
+            std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
+        }
+        catch (...)
+        {
+            std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
         }
 
-        /// Note that keyword suggestions are available even if we cannot load data from server.
+        break;
+    }
 
-        std::sort(words.begin(), words.end());
-        words_no_case = words;
-        std::sort(words_no_case.begin(), words_no_case.end(), [](const std::string & str1, const std::string & str2)
+    /// Note that keyword suggestions are available even if we cannot load data from server.
+
+    std::sort(current_words.begin(), current_words.end());
+    auto current_words_no_case = current_words;
+    std::sort(current_words_no_case.begin(), current_words_no_case.end(), [](const std::string & str1, const std::string & str2)
+    {
+        return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char char1, const char char2)
         {
-            return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char char1, const char char2)
-            {
-                return std::tolower(char1) < std::tolower(char2);
-            });
+            return std::tolower(char1) < std::tolower(char2);
         });
-
-        ready = true;
     });
+
+    {
+        std::lock_guard lock(mutex);
+        words = current_words;
+        words_no_case = current_words_no_case;
+    }
+
+    current_words = default_words;
 }
 
 void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & timeouts, const std::string & query)
@@ -191,12 +226,12 @@ void Suggest::fillWordsFromBlock(const Block & block)
 
     size_t rows = block.rows();
     for (size_t i = 0; i < rows; ++i)
-        words.emplace_back(column.getDataAt(i).toString());
+        current_words.emplace_back(column.getDataAt(i).toString());
 }
 
 template
-void Suggest::load<Connection>(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit);
-
+void Suggest::schedule<Connection>(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit);
 template
-void Suggest::load<LocalConnection>(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit);
+void Suggest::schedule<LocalConnection>(ContextPtr context, const ConnectionParameters & connection_parameters, Int32 suggestion_limit);
+
 }

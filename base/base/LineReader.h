@@ -2,9 +2,14 @@
 
 #include <base/types.h>
 
-#include <atomic>
+#include <mutex>
 #include <vector>
 #include <optional>
+
+namespace DB
+{
+class Suggest;
+}
 
 class LineReader
 {
@@ -14,12 +19,16 @@ public:
         using Words = std::vector<std::string>;
         using WordsRange = std::pair<Words::const_iterator, Words::const_iterator>;
 
+        /// Get iterators for the matched range of words if any.
+        Words getCompletions(const String & prefix, size_t prefix_length);
+
+    private:
+        friend class DB::Suggest;
+
         Words words;
         Words words_no_case;
-        std::atomic<bool> ready{false};
 
-        /// Get iterators for the matched range of words if any.
-        std::optional<WordsRange> getCompletions(const String & prefix, size_t prefix_length) const;
+        std::mutex mutex;
     };
 
     using Patterns = std::vector<const char *>;

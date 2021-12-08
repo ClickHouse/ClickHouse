@@ -36,10 +36,9 @@ bool hasInputData()
 
 }
 
-std::optional<LineReader::Suggest::WordsRange> LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length) const
+LineReader::Suggest::Words LineReader::Suggest::getCompletions(const String & prefix, size_t prefix_length)
 {
-    if (!ready)
-        return std::nullopt;
+    std::lock_guard lock(mutex);
 
     std::string_view last_word;
 
@@ -51,18 +50,20 @@ std::optional<LineReader::Suggest::WordsRange> LineReader::Suggest::getCompletio
 
     /// last_word can be empty.
 
+    std::pair<Words::const_iterator, Words::const_iterator> range;
     /// Only perform case sensitive completion when the prefix string contains any uppercase characters
     if (std::none_of(prefix.begin(), prefix.end(), [&](auto c) { return c >= 'A' && c <= 'Z'; }))
-        return std::equal_range(
+        range = std::equal_range(
             words_no_case.begin(), words_no_case.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
             {
                 return strncasecmp(s.data(), prefix_searched.data(), prefix_length) < 0;
             });
     else
-        return std::equal_range(words.begin(), words.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
+        range = std::equal_range(words.begin(), words.end(), last_word, [prefix_length](std::string_view s, std::string_view prefix_searched)
         {
             return strncmp(s.data(), prefix_searched.data(), prefix_length) < 0;
         });
+    return Words(range.first, range.second);
 }
 
 LineReader::LineReader(const String & history_file_path_, bool multiline_, Patterns extenders_, Patterns delimiters_)
