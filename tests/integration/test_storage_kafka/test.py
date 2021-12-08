@@ -43,7 +43,8 @@ from . import social_pb2
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
-                                main_configs=['configs/kafka.xml'],
+                                main_configs=['configs/kafka.xml', 'configs/named_collection.xml'],
+                                user_configs=['configs/users.xml'],
                                 with_kafka=True,
                                 with_zookeeper=True, # For Replicated Table
                                 macros={"kafka_broker":"kafka1",
@@ -236,7 +237,8 @@ kafka_topic_old	old
 
     instance.query('''
         CREATE TABLE test.kafka (key UInt64, value UInt64)
-            ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_old}', '{kafka_group_name_old}', '{kafka_format_json_each_row}', '\\n');
+            ENGINE = Kafka('{kafka_broker}:19092', '{kafka_topic_old}', '{kafka_group_name_old}', '{kafka_format_json_each_row}', '\\n')
+            SETTINGS kafka_commit_on_select = 1;
         ''')
 
     # Don't insert malformed messages since old settings syntax
@@ -268,6 +270,7 @@ def test_kafka_settings_new_syntax(kafka_cluster):
                      kafka_group_name = '{kafka_group_name_new}',
                      kafka_format = '{kafka_format_json_each_row}',
                      kafka_row_delimiter = '\\n',
+                     kafka_commit_on_select = 1,
                      kafka_client_id = '{kafka_client_id} test 1234',
                      kafka_skip_broken_messages = 1;
         ''')
@@ -313,6 +316,7 @@ def test_kafka_json_as_string(kafka_cluster):
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'kafka_json_as_string',
                      kafka_group_name = 'kafka_json_as_string',
+                     kafka_commit_on_select = 1,
                      kafka_format = 'JSONAsString',
                      kafka_flush_interval_ms=1000;
         ''')
@@ -802,6 +806,7 @@ def test_kafka_issue4116(kafka_cluster):
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'issue4116',
                      kafka_group_name = 'issue4116',
+                     kafka_commit_on_select = 1,
                      kafka_format = 'CSV',
                      kafka_row_delimiter = '\\n',
                      format_csv_delimiter = '|';
@@ -875,6 +880,7 @@ def test_kafka_consumer_hang(kafka_cluster):
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = '{topic_name}',
+                     kafka_commit_on_select = 1,
                      kafka_group_name = '{topic_name}',
                      kafka_format = 'JSONEachRow',
                      kafka_num_consumers = 8;
@@ -900,12 +906,14 @@ def test_kafka_consumer_hang2(kafka_cluster):
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'consumer_hang2',
                      kafka_group_name = 'consumer_hang2',
+                     kafka_commit_on_select = 1,
                      kafka_format = 'JSONEachRow';
 
         CREATE TABLE test.kafka2 (key UInt64, value UInt64)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'consumer_hang2',
+                     kafka_commit_on_select = 1,
                      kafka_group_name = 'consumer_hang2',
                      kafka_format = 'JSONEachRow';
         ''')
@@ -944,6 +952,7 @@ def test_kafka_csv_with_delimiter(kafka_cluster):
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'csv',
+                     kafka_commit_on_select = 1,
                      kafka_group_name = 'csv',
                      kafka_format = 'CSV';
         ''')
@@ -968,6 +977,7 @@ def test_kafka_tsv_with_delimiter(kafka_cluster):
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'tsv',
+                     kafka_commit_on_select = 1,
                      kafka_group_name = 'tsv',
                      kafka_format = 'TSV';
         ''')
@@ -991,6 +1001,7 @@ def test_kafka_select_empty(kafka_cluster):
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = '{topic_name}',
+                     kafka_commit_on_select = 1,
                      kafka_group_name = '{topic_name}',
                      kafka_format = 'TSV',
                      kafka_row_delimiter = '\\n';
@@ -1017,6 +1028,7 @@ def test_kafka_json_without_delimiter(kafka_cluster):
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'json',
                      kafka_group_name = 'json',
+                     kafka_commit_on_select = 1,
                      kafka_format = 'JSONEachRow';
         ''')
 
@@ -1041,6 +1053,7 @@ def test_kafka_protobuf(kafka_cluster):
                      kafka_topic_list = 'pb',
                      kafka_group_name = 'pb',
                      kafka_format = 'Protobuf',
+                     kafka_commit_on_select = 1,
                      kafka_schema = 'kafka.proto:KeyValuePair';
         ''')
 
@@ -1069,6 +1082,7 @@ SETTINGS
     kafka_topic_list = 'string_field_on_first_position_in_protobuf',
     kafka_group_name = 'string_field_on_first_position_in_protobuf',
     kafka_format = 'Protobuf',
+    kafka_commit_on_select = 1,
     kafka_schema = 'social:User';
         ''')
 
@@ -1135,6 +1149,7 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
                      kafka_topic_list = 'pb_no_delimiter',
                      kafka_group_name = 'pb_no_delimiter',
                      kafka_format = 'ProtobufSingle',
+                     kafka_commit_on_select = 1,
                      kafka_schema = 'kafka.proto:KeyValuePair';
         ''')
 
@@ -1157,6 +1172,7 @@ def test_kafka_protobuf_no_delimiter(kafka_cluster):
                     kafka_topic_list = 'pb_no_delimiter',
                     kafka_group_name = 'pb_no_delimiter',
                     kafka_format = 'ProtobufSingle',
+                    kafka_commit_on_select = 1,
                     kafka_schema = 'kafka.proto:KeyValuePair';
     ''')
 
@@ -1487,6 +1503,7 @@ def test_kafka_virtual_columns(kafka_cluster):
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'virt1',
                      kafka_group_name = 'virt1',
+                     kafka_commit_on_select = 1,
                      kafka_format = 'JSONEachRow';
         ''')
 
@@ -1558,6 +1575,7 @@ def test_kafka_insert(kafka_cluster):
                      kafka_topic_list = 'insert1',
                      kafka_group_name = 'insert1',
                      kafka_format = 'TSV',
+                     kafka_commit_on_select = 1,
                      kafka_row_delimiter = '\\n';
     ''')
 
@@ -1855,6 +1873,7 @@ def test_kafka_insert_avro(kafka_cluster):
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'avro1',
                      kafka_group_name = 'avro1',
+                     kafka_commit_on_select = 1,
                      kafka_format = 'Avro';
     ''')
 
@@ -2283,6 +2302,7 @@ def test_exception_from_destructor(kafka_cluster):
             SETTINGS kafka_broker_list = 'kafka1:19092',
                      kafka_topic_list = 'xyz',
                      kafka_group_name = '',
+                     kafka_commit_on_select = 1,
                      kafka_format = 'JSONEachRow';
     ''')
     instance.query_and_get_error('''
@@ -2581,6 +2601,7 @@ def test_kafka_unavailable(kafka_cluster):
                     kafka_topic_list = 'test_bad_reschedule',
                     kafka_group_name = 'test_bad_reschedule',
                     kafka_format = 'JSONEachRow',
+                    kafka_commit_on_select = 1,
                     kafka_max_block_size = 1000;
 
         CREATE MATERIALIZED VIEW test.destination_unavailable Engine=Log AS
@@ -2650,6 +2671,7 @@ def test_kafka_csv_with_thread_per_consumer(kafka_cluster):
                      kafka_format = 'CSV',
                      kafka_row_delimiter = '\\n',
                      kafka_num_consumers = 4,
+                     kafka_commit_on_select = 1,
                      kafka_thread_per_consumer = 1;
         ''')
 
@@ -3173,6 +3195,28 @@ def test_kafka_consumer_failover(kafka_cluster):
     producer.flush()
     prev_count = wait_for_new_data('test.destination', prev_count)
     kafka_delete_topic(admin_client, topic_name)
+
+
+def test_kafka_predefined_configuration(kafka_cluster):
+    admin_client = KafkaAdminClient(bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port))
+    topic_name = 'conf'
+    kafka_create_topic(admin_client, topic_name)
+
+    messages = []
+    for i in range(50):
+        messages.append('{i}, {i}'.format(i=i))
+    kafka_produce(kafka_cluster, topic_name, messages)
+
+    instance.query(f'''
+        CREATE TABLE test.kafka (key UInt64, value UInt64) ENGINE = Kafka(kafka1, kafka_format='CSV');
+        ''')
+
+    result = ''
+    while True:
+        result += instance.query('SELECT * FROM test.kafka', ignore_error=True)
+        if kafka_check_result(result):
+            break
+    kafka_check_result(result, True)
 
 
 if __name__ == '__main__':

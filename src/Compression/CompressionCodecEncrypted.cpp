@@ -7,11 +7,9 @@
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Poco/Logger.h>
 #include <base/logger_useful.h>
-#include <Common/ErrorCodes.h>
 
 // This depends on BoringSSL-specific API, notably <openssl/aead.h>.
 #if USE_SSL && USE_INTERNAL_SSL_LIBRARY
-#include <Parsers/ASTLiteral.h>
 #include <openssl/digest.h>
 #include <openssl/err.h>
 #include <boost/algorithm/hex.hpp>

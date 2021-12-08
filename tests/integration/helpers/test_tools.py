@@ -100,3 +100,19 @@ def exec_query_with_retry(instance, query, retry_count=40, sleep_time=0.5, silen
             time.sleep(sleep_time)
     else:
         raise exception
+
+def csv_compare(result, expected):
+    csv_result = TSV(result)
+    csv_expected = TSV(expected)
+    mismatch = []
+    max_len = len(csv_result) if len(csv_result) > len(csv_expected) else len(csv_expected)
+    for i in range(max_len):
+        if i >= len(csv_result):
+            mismatch.append("-[%d]=%s" % (i, csv_expected.lines[i]))
+        elif i >= len(csv_expected):
+            mismatch.append("+[%d]=%s" % (i, csv_result.lines[i]))
+        elif csv_expected.lines[i] != csv_result.lines[i]:
+            mismatch.append("-[%d]=%s" % (i, csv_expected.lines[i]))
+            mismatch.append("+[%d]=%s" % (i, csv_result.lines[i]))
+
+    return "\n".join(mismatch)

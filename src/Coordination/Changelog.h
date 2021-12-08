@@ -11,7 +11,7 @@
 namespace DB
 {
 
-using Checksum = UInt64;
+using Checksum = uint64_t;
 
 using LogEntryPtr = nuraft::ptr<nuraft::log_entry>;
 using LogEntries = std::vector<LogEntryPtr>;
