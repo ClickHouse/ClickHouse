@@ -67,6 +67,7 @@ def test_create_table(cluster):
 def test_simple_insert_select(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
+
     values = "('2021-11-13',3,'hello')"
     node.query(f"INSERT INTO {TABLE_NAME} VALUES {values}")
     assert node.query(f"SELECT dt, id, data FROM {TABLE_NAME} FORMAT Values") == values
