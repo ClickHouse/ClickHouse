@@ -1,6 +1,6 @@
 #include <IO/ReadBufferFromIStream.h>
 #include <Common/Exception.h>
-#include <base/logger_useful.h>
+
 
 namespace DB
 {
@@ -13,10 +13,7 @@ namespace ErrorCodes
 bool ReadBufferFromIStream::nextImpl()
 {
     istr.read(internal_buffer.begin(), internal_buffer.size());
-
     size_t gcount = istr.gcount();
-
-    LOG_TRACE(&Poco::Logger::get("ReadBufferFromIStream"), "Read {}", gcount);
 
     if (!gcount)
     {
