@@ -4,6 +4,7 @@
 #include <Common/Arena.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <base/arithmeticOverflow.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -203,7 +204,7 @@ WindowTransform::WindowTransform(const Block & input_header_,
     auto input_columns = input_header.getColumns();
     for (auto & column : input_columns)
     {
-        column = recursiveRemoveLowCardinality(std::move(column)->convertToFullColumnIfConst());
+        column = std::move(column)->convertToFullColumnIfConst();
     }
     input_header.setColumns(std::move(input_columns));
 
@@ -1006,6 +1007,12 @@ static void assertSameColumns(const Columns & left_all,
         assert(left_column);
         assert(right_column);
 
+        if (const auto * left_lc = typeid_cast<const ColumnLowCardinality *>(left_column))
+            left_column = &left_lc->getDictionary();
+
+        if (const auto * right_lc = typeid_cast<const ColumnLowCardinality *>(right_column))
+            right_column = &right_lc->getDictionary();
+
         assert(typeid(*left_column).hash_code()
             == typeid(*right_column).hash_code());
 
@@ -1061,6 +1068,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         // so we have to materialize them too.
         // Just materialize everything.
         auto columns = chunk.detachColumns();
+        block.original_input_columns = columns;
         for (auto & column : columns)
             column = recursiveRemoveLowCardinality(std::move(column)->convertToFullColumnIfConst());
         block.input_columns = std::move(columns);
@@ -1305,7 +1313,7 @@ IProcessor::Status WindowTransform::prepare()
             // Output the ready block.
             const auto i = next_output_block_number - first_block_number;
             auto & block = blocks[i];
-            auto columns = block.input_columns;
+            auto columns = block.original_input_columns;
             for (auto & res : block.output_columns)
             {
                 columns.push_back(ColumnPtr(std::move(res)));
