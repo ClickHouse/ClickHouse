@@ -249,7 +249,7 @@ void ReadFromRemote::initializePipeline(QueryPipelineBuilder & pipeline, const B
     Pipes pipes;
 
     const auto & settings = context->getSettingsRef();
-    const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && !settings.parallel_reading_from_replicas;
+    const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && !settings.allow_experimental_parallel_reading_from_replicas;
 
     /// We have to create a pipe for each replica
     /// FIXME: The second condition is only for tests to work, because hedged connections enabled by default.

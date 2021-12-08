@@ -69,6 +69,8 @@ protected:
 
     size_t estimateMaxBatchSizeForHugeRanges();
 
+    virtual bool canUseConsistentHashingForParallelReading() { return false; }
+
     /// Closes readers and unlock part locks
     virtual void finish() = 0;
 

@@ -133,7 +133,7 @@ void MultiplexedConnections::sendQuery(
             modified_settings.group_by_two_level_threshold_bytes = 0;
         }
 
-        if (settings.parallel_reading_from_replicas)
+        if (settings.allow_experimental_parallel_reading_from_replicas)
         {
             client_info.collaborate_with_initiator = true;
             client_info.count_participating_replicas = replica_info.all_replicas_count;
@@ -141,7 +141,7 @@ void MultiplexedConnections::sendQuery(
         }
     }
 
-    const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && !settings.parallel_reading_from_replicas;
+    const bool enable_sample_offset_parallel_processing = settings.max_parallel_replicas > 1 && !settings.allow_experimental_parallel_reading_from_replicas;
 
     size_t num_replicas = replica_states.size();
     if (num_replicas > 1)

@@ -604,7 +604,7 @@ MergeTreeBaseSelectProcessor::Status MergeTreeBaseSelectProcessor::performReques
 
     /// Constistent hashing won't work with reading in order, because at the end of the execution
     /// we could possibly seek back
-    if (!delayed && getName() == "MergeTreeThread")
+    if (!delayed && canUseConsistentHashingForParallelReading())
     {
         const auto hash = request.getConsistentHash(extension->count_participating_replicas);
         if (hash != extension->number_of_current_replica)
