@@ -1,8 +1,5 @@
 import logging
-import random
-import string
 import time
-import threading
 import os
 
 import pytest
@@ -70,13 +67,11 @@ def test_create_table(cluster):
 def test_simple_insert_select(cluster):
     node = cluster.instances[NODE_NAME]
     create_table(node, TABLE_NAME)
-    node.query(f"INSERT INTO {TABLE_NAME} VALUES ('2021-11-13', 3, 'hello')")
-    assert node.query(f"SELECT dt, id, data FROM {TABLE_NAME} FORMAT Values") == "('2021-11-13',3,'hello')"
+    values = "('2021-11-13',3,'hello')"
+    node.query(f"INSERT INTO {TABLE_NAME} VALUES {values}")
+    assert node.query(f"SELECT dt, id, data FROM {TABLE_NAME} FORMAT Values") == values
     blob_container_client = cluster.blob_service_client.get_container_client(CONTAINER_NAME)
-    blob_count = 0
-    for _ in blob_container_client.list_blobs():
-        blob_count = blob_count + 1
-    assert blob_count >= 12 # 1 format file + 2 skip index files + 9 regular MergeTree files + leftovers from other tests
+    assert len(list(blob_container_client.list_blobs())) >= 12 # 1 format file + 2 skip index files + 9 regular MergeTree files + leftovers from other tests
 
 
 def test_inserts_selects(cluster):
@@ -333,3 +328,21 @@ def test_restart_during_load(cluster):
 
     for thread in threads:
         thread.join()
+
+
+def test_read_after_cache_is_wiped(cluster):
+    node = cluster.instances[NODE_NAME]
+    create_table(node, TABLE_NAME)
+
+    node.query("SYSTEM FLUSH LOGS")
+    node.query("TRUNCATE TABLE system.query_log")
+
+    values = "('2021-11-13',3,'hello'),('2021-11-14',4,'heyo')"
+
+    node.query(f"INSERT INTO {TABLE_NAME} VALUES {values}")
+
+    # Wipe cache
+    cluster.exec_in_container(cluster.get_container_id(NODE_NAME), ["rm", "-rf", "/var/lib/clickhouse/disks/blob_storage/cache/"])
+
+    # After cache is populated again, only .bin files should be accessed from Blob Storage.
+    assert node.query(f"SELECT * FROM {TABLE_NAME} order by id FORMAT Values") == values
