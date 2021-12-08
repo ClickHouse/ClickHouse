@@ -396,7 +396,7 @@ public:
     /// File that contains information about kinds of serialization of columns
     /// and information that helps to choose kind of serialization later during merging
     /// (number of rows, number of rows with default values, etc).
-    static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.txt";
+    static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.json";
 
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
     /// calculated. Part without calculated TTL may exist if TTL was added after

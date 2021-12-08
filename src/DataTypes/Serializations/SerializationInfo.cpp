@@ -188,7 +188,7 @@ void SerializationInfoByName::readJSON(ReadBuffer & in)
     Poco::JSON::Parser parser;
     auto object = parser.parse(json_str).extract<Poco::JSON::Object::Ptr>();
 
-    if (object->has(KEY_VERSION))
+    if (!object->has(KEY_VERSION))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed version of serialization infos");
 
     if (object->getValue<size_t>(KEY_VERSION) > SERIALIZATION_INFO_VERSION)
