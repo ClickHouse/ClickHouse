@@ -76,6 +76,8 @@ namespace
         writeBinary(node.stat.pzxid, out);
 
         writeBinary(node.seq_num, out);
+
+        writeBinary(node.size_bytes, out);
     }
 
     void readNode(KeeperStorage::Node & node, ReadBuffer & in, SnapshotVersion version, ACLMap & acl_map)
@@ -124,6 +126,7 @@ namespace
         readBinary(node.stat.numChildren, in);
         readBinary(node.stat.pzxid, in);
         readBinary(node.seq_num, in);
+        readBinary(node.size_bytes, in);
     }
 
     void serializeSnapshotMetadata(const SnapshotMetadataPtr & snapshot_meta, WriteBuffer & out)
