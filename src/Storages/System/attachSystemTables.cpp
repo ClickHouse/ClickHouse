@@ -68,6 +68,7 @@
 #include <Storages/System/StorageSystemUserDirectories.h>
 #include <Storages/System/StorageSystemPrivileges.h>
 #include <Storages/System/StorageSystemAsynchronousInserts.h>
+#include <Storages/System/StorageSystemMergeTreeMetaCache.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -129,6 +130,7 @@ void attachSystemTablesLocal(ContextPtr context, IDatabase & system_database)
 #endif
 #if USE_ROCKSDB
     attach<StorageSystemRocksDB>(context, system_database, "rocksdb");
+    attach<StorageSystemMergeTreeMetaCache>(context, system_database, "merge_tree_meta_cache");
 #endif
 }
 

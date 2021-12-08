@@ -166,6 +166,17 @@ IMergeTreeDataPart::Checksum MergeTreeDataPartInMemory::calculateBlockChecksum()
     return checksum;
 }
 
+// No mark files for part in memory
+void MergeTreeDataPartInMemory::appendFilesOfIndexGranularity(Strings& /* files */) const
+{
+}
+
+// No mark files for part in memory
+Strings MergeTreeDataPartInMemory::getIndexGranularityFiles() const
+{
+    return {};
+}
+
 DataPartInMemoryPtr asInMemoryPart(const MergeTreeDataPartPtr & part)
 {
     return std::dynamic_pointer_cast<const MergeTreeDataPartInMemory>(part);

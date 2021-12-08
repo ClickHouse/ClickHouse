@@ -15,6 +15,8 @@
 #include <Common/isLocalAddress.h>
 #include <base/types.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
+#include <rocksdb/db.h>
+#include <rocksdb/table.h>
 
 #include "config_core.h"
 
@@ -28,7 +30,6 @@
 
 namespace Poco::Net { class IPAddress; }
 namespace zkutil { class ZooKeeper; }
-
 
 namespace DB
 {
@@ -177,6 +178,27 @@ struct SharedContextHolder
 private:
     std::unique_ptr<ContextSharedPart> shared;
 };
+
+class MergeTreeMetaCache
+{
+public:
+    using Status = rocksdb::Status;
+
+    explicit MergeTreeMetaCache(rocksdb::DB * rocksdb_) : rocksdb{rocksdb_} { }
+    MergeTreeMetaCache(const MergeTreeMetaCache &) = delete;
+    MergeTreeMetaCache & operator=(const MergeTreeMetaCache &) = delete;
+
+    Status put(const String & key, const String & value);
+    Status del(const String & key);
+    Status get(const String & key, String & value);
+    void getByPrefix(const String & prefix, Strings & keys, Strings & values);
+
+    void shutdown();
+private:
+    std::unique_ptr<rocksdb::DB> rocksdb;
+    Poco::Logger * log = &Poco::Logger::get("MergeTreeMetaCache");
+};
+using MergeTreeMetaCachePtr = std::shared_ptr<MergeTreeMetaCache>;
 
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
@@ -677,6 +699,9 @@ public:
 
     UInt32 getZooKeeperSessionUptime() const;
 
+    MergeTreeMetaCachePtr getMergeTreeMetaCache() const;
+
+
 #if USE_NURAFT
     std::shared_ptr<KeeperDispatcher> & getKeeperDispatcher() const;
 #endif
@@ -762,6 +787,8 @@ public:
 
     /// Call after initialization before using trace collector.
     void initializeTraceCollector();
+
+    void initializeMergeTreeMetaCache(const String & dir, size_t size);
 
     bool hasTraceCollector() const;
 

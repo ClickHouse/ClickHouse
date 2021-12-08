@@ -14,6 +14,7 @@
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <Storages/MergeTree/PartMetaCache.h>
 
 #include <shared_mutex>
 
@@ -44,6 +45,23 @@ class UncompressedCache;
 class IMergeTreeDataPart : public std::enable_shared_from_this<IMergeTreeDataPart>
 {
 public:
+    enum ModifyCacheType
+    {
+        PUT, // override set
+        DROP, // remove keys
+    };
+    
+    static String modifyCacheTypeToString(ModifyCacheType type)
+    {
+        switch (type)
+        {
+            case PUT:
+                return "PUT";
+            case DROP:
+                return "DROP";
+        }
+    }
+
     static constexpr auto DATA_FILE_EXTENSION = ".bin";
 
     using Checksums = MergeTreeDataPartChecksums;
@@ -59,6 +77,7 @@ public:
     using IndexSizeByName = std::unordered_map<std::string, ColumnSize>;
 
     using Type = MergeTreeDataPartType;
+    using uint128 = PartMetaCache::uint128;
 
 
     IMergeTreeDataPart(
@@ -138,6 +157,8 @@ public:
     /// Throws an exception if part is not stored in on-disk format.
     void assertOnDisk() const;
 
+    void assertMetaCacheDropped(bool include_projection = false) const;
+
     void remove() const;
 
     void projectionRemove(const String & parent_to, bool keep_shared_data = false) const;
@@ -145,6 +166,8 @@ public:
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
     /// Load checksums from checksums.txt if exists. Load index if required.
     void loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency);
+    void appendFilesOfColumnsChecksumsIndexes(Strings & files, bool include_projection = false) const;
+    size_t fileNumberOfColumnsChecksumsIndexes() const;
 
     String getMarksFileExtension() const { return index_granularity_info.marks_file_extension; }
 
@@ -239,7 +262,7 @@ public:
     using TTLInfo = MergeTreeDataPartTTLInfo;
     using TTLInfos = MergeTreeDataPartTTLInfos;
 
-    TTLInfos ttl_infos;
+    mutable TTLInfos ttl_infos;
 
     /// Current state of the part. If the part is in working set already, it should be accessed via data_parts mutex
     void setState(State new_state) const;
@@ -296,12 +319,13 @@ public:
         {
         }
 
-        void load(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path);
-        void store(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
+        void load(const MergeTreeData & data, const PartMetaCachePtr & meta_cache, const DiskPtr & disk, const String & part_path);
+        void store(const MergeTreeData & data, const DiskPtr & disk, const String & part_path, Checksums & checksums) const;
         void store(const Names & column_names, const DataTypes & data_types, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
+        static void appendFiles(const MergeTreeData & data, Strings & files);
     };
 
     using MinMaxIndexPtr = std::shared_ptr<MinMaxIndex>;
@@ -351,6 +375,8 @@ public:
     /// storage and pass it to this method.
     virtual bool hasColumnFiles(const NameAndTypePair & /* column */) const { return false; }
 
+    virtual Strings getIndexGranularityFiles() const = 0;
+
     /// Returns true if this part shall participate in merges according to
     /// settings of given storage policy.
     bool shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const;
@@ -362,6 +388,8 @@ public:
     void calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
     String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
+
+    virtual void checkMetaCache(Strings & files, std::vector<uint128> & cache_checksums, std::vector<uint128> & disk_checksums) const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
@@ -434,6 +462,8 @@ protected:
 
     std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
+    mutable PartMetaCachePtr meta_cache;
+
     void removeIfNeeded();
 
     virtual void checkConsistency(bool require_part_metadata) const;
@@ -457,24 +487,38 @@ private:
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();
 
+    void appendFilesOfUUID(Strings & files) const;
+
     /// Reads columns names and types from columns.txt
     void loadColumns(bool require);
+
+    void appendFilesOfColumns(Strings & files) const;
 
     /// If checksums.txt exists, reads file's checksums (and sizes) from it
     void loadChecksums(bool require);
 
+    void appendFilesOfChecksums(Strings & files) const;
+
     /// Loads marks index granularity into memory
     virtual void loadIndexGranularity();
 
+    virtual void appendFilesOfIndexGranularity(Strings & files) const;
+
     /// Loads index file.
     void loadIndex();
+
+    void appendFilesofIndex(Strings & files) const;
 
     /// Load rows count for this part from disk (for the newer storage format version).
     /// For the older format version calculates rows count from the size of a column with a fixed size.
     void loadRowsCount();
 
+    void appendFilesOfRowsCount(Strings & files) const;
+
     /// Loads ttl infos in json format from file ttl.txt. If file doesn't exists assigns ttl infos with all zeros
     void loadTTLInfos();
+
+    void appendFilesOfTTLInfos(Strings & files) const;
 
     void loadPartitionAndMinMaxIndex();
 
@@ -482,14 +526,22 @@ private:
 
     void calculateSecondaryIndicesSizesOnDisk();
 
+    void appendFilesOfPartitionAndMinMaxIndex(Strings & files) const;
+
     /// Load default compression codec from file default_compression_codec.txt
     /// if it not exists tries to deduce codec from compressed column without
     /// any specifial compression.
     void loadDefaultCompressionCodec();
 
+    void appendFilesOfDefaultCompressionCodec(Strings & files) const;
+
+    void modifyAllMetaCaches(ModifyCacheType type, bool include_projection = false) const;
+
     /// Found column without specific compression and return codec
     /// for this column with default parameters.
     CompressionCodecPtr detectDefaultCompressionCodec() const;
+
+    IMergeTreeDataPart::uint128 getActualChecksumByFile(const String & file_path) const;
 
     mutable State state{State::Temporary};
 };
