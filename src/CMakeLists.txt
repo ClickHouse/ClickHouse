@@ -344,6 +344,9 @@ endif()
 
 if (USE_NURAFT)
     dbms_target_link_libraries(PUBLIC ${NURAFT_LIBRARY})
+endif()
+
+if (USE_ONETBB)
     dbms_target_include_directories(SYSTEM BEFORE PRIVATE ${ONETBB_INCLUDE_DIR})
     dbms_target_link_libraries(PUBLIC ${ONETBB_LIBRARY})
 endif()
