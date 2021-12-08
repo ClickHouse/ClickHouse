@@ -46,13 +46,13 @@ struct AvgFraction
     Float64 NO_SANITIZE_UNDEFINED divideIfAnyDecimal(UInt32 num_scale, UInt32 denom_scale [[maybe_unused]]) const
     {
         Float64 numerator_float;
-        if constexpr (is_decimal<Numerator>)
+        if constexpr (IsDecimalNumber<Numerator>)
             numerator_float = DecimalUtils::convertTo<Float64>(numerator, num_scale);
         else
             numerator_float = numerator;
 
         Float64 denominator_float;
-        if constexpr (is_decimal<Denominator>)
+        if constexpr (IsDecimalNumber<Denominator>)
             denominator_float = DecimalUtils::convertTo<Float64>(denominator, denom_scale);
         else
             denominator_float = denominator;
