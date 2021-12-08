@@ -9,7 +9,7 @@ target_link_libraries(
 )
 target_include_directories(
     graphite-rollup-bench
-    PRIVATE
+    SYSTEM PRIVATE
     ${ClickHouse_SOURCE_DIR}/src ${CMAKE_BINARY_DIR}/src
     ${ClickHouse_SOURCE_DIR}/base ${ClickHouse_SOURCE_DIR}/base/pcg-random
     ${CMAKE_BINARY_DIR}/src/Core/include
