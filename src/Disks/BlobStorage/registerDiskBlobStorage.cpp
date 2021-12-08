@@ -18,10 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
     extern const int PATH_ACCESS_DENIED;
-    extern const int FILE_DOESNT_EXIST;
-    extern const int FILE_ALREADY_EXISTS;
 }
 
 constexpr char test_file[] = "test.txt";

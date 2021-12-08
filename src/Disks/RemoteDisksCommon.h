@@ -1,3 +1,5 @@
+#pragma once
+
 #include <random>
 #include <utility>
 #include <Core/Types.h>
