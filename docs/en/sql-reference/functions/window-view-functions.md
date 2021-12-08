@@ -5,11 +5,11 @@ toc_title: Window View
 
 # Window View Functions {#window-view-functions}
 
-Window functions indicate the lower and upper window bound of records in WindowView. The functions for working with WindowView are listed below.
+Window view functions return the inclusive lower and exclusive upper bound of the corresponding window. The functions for working with WindowView are listed below:
 
 ## tumble {#window-view-functions-tumble}
 
-A tumbling time window assigns records to non-overlapping, continuous windows with a fixed duration (interval). 
+A tumbling time window assigns records to non-overlapping, continuous windows with a fixed duration (`interval`). 
 
 ``` sql
 tumble(time_attr, interval [, timezone])
@@ -22,7 +22,7 @@ tumble(time_attr, interval [, timezone])
 
 **Returned values**
 
--  The lower and upper bound of the tumble window.
+- The inclusive lower and exclusive upper bound of the corresponding tumbling window.
 
 Type: `Tuple(DateTime, DateTime)`
 
@@ -59,9 +59,7 @@ hop(time_attr, hop_interval, window_interval [, timezone])
 
 **Returned values**
 
--  The lower and upper bound of the hop window. Since hop windows are
-   overlapped, the function only returns the bound of the **first** window when
-   hop function is used **without** `WINDOW VIEW`.
+- The inclusive lower and exclusive upper bound of the corresponding hopping window. Since one record can be assigned to multiple hop windows, the function only returns the bound of the **first** window when hop function is used **without** `WINDOW VIEW`.
 
 Type: `Tuple(DateTime, DateTime)`
 
@@ -83,7 +81,7 @@ Result:
 
 ## tumbleStart {#window-view-functions-tumblestart}
 
-Indicate the lower bound of a tumble function.
+Returns the inclusive lower bound of the corresponding tumbling window.
 
 ``` sql
 tumbleStart(time_attr, interval [, timezone]);
@@ -91,7 +89,7 @@ tumbleStart(time_attr, interval [, timezone]);
 
 ## tumbleEnd {#window-view-functions-tumbleend}
 
-Indicate the upper bound of a tumble function.
+Returns the exclusive upper bound of the corresponding tumbling window.
 
 ``` sql
 tumbleEnd(time_attr, interval [, timezone]);
@@ -99,7 +97,7 @@ tumbleEnd(time_attr, interval [, timezone]);
 
 ## hopStart {#window-view-functions-hopstart}
 
-Indicate the lower bound of a hop function.
+Returns the inclusive lower bound of the corresponding hopping window.
 
 ``` sql
 hopStart(time_attr, hop_interval, window_interval [, timezone]);
@@ -107,7 +105,7 @@ hopStart(time_attr, hop_interval, window_interval [, timezone]);
 
 ## hopEnd {#window-view-functions-hopend}
 
-Indicate the upper bound of a hop function.
+Returns the exclusive upper bound of the corresponding hopping window.
 
 ``` sql
 hopEnd(time_attr, hop_interval, window_interval [, timezone]);
