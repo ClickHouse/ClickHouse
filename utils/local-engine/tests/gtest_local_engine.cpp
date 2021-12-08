@@ -29,14 +29,14 @@ TEST(TestSelect, ReadRel)
 
     ASSERT_TRUE(plan->relations(0).has_read());
     ASSERT_EQ(plan->relations_size(), 1);
-    auto query_plan = dbms::SerializedPlanParser::parse(std::move(plan));
     std::cout << "start execute" <<std::endl;
     dbms::LocalExecutor local_executor;
+    auto query_plan = dbms::SerializedPlanParser::parse(std::move(plan));
     local_executor.execute(std::move(query_plan));
     ASSERT_TRUE(local_executor.hasNext());
-    while(local_executor.hasNext())
+    while (local_executor.hasNext())
     {
-        std::cout << "fetch batch" <<std::endl;
+        std::cout << "fetch batch" << std::endl;
         local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
         ASSERT_GT(spark_row_info->getNumRows(), 0);
     }
@@ -44,43 +44,49 @@ TEST(TestSelect, ReadRel)
 
 TEST(TestSelect, PerformanceTest)
 {
-    dbms::SerializedSchemaBuilder schema_builder;
-    auto schema = schema_builder
-                      .column("l_orderkey", "I64")
-                      .column("l_partkey", "I64")
-                      .column("l_suppkey", "I64")
-                      .column("l_linenumber", "I32")
-                      .column("l_quantity", "FP64")
-                      .column("l_extendedprice", "FP64")
-                      .column("l_discount", "FP64")
-                      .column("l_tax", "FP64")
-//                      .column("l_returnflag", "String")
-//                      .column("l_linestatus", "String")
-                      .column("l_shipdate_new", "FP64")
-                      .column("l_commitdate_new", "FP64")
-                      .column("l_receiptdate_new", "FP64")
-//                      .column("l_shipinstruct", "String")
-//                      .column("l_shipmode", "String")
-//                      .column("l_comment", "String")
-                      .build();
-    dbms::SerializedPlanBuilder plan_builder;
-    auto plan = plan_builder.files("/home/kyligence/Documents/intel_without_string.parquet", std::move(schema)).build();
 
-    ASSERT_TRUE(plan->relations(0).has_read());
-    ASSERT_EQ(plan->relations_size(), 1);
-    auto query_plan = dbms::SerializedPlanParser::parse(std::move(plan));
-    std::cout << "start execute" <<std::endl;
-    dbms::LocalExecutor local_executor;
     Stopwatch stopwatch;
     stopwatch.start();
-    local_executor.execute(std::move(query_plan));
-    ASSERT_TRUE(local_executor.hasNext());
-    while(local_executor.hasNext())
+    for (int i=0; i < 10; i++)
     {
+        dbms::SerializedSchemaBuilder schema_builder;
+        auto schema = schema_builder
+                          .column("l_orderkey", "I64")
+                          .column("l_partkey", "I64")
+                          .column("l_suppkey", "I64")
+                          .column("l_linenumber", "I32")
+                          .column("l_quantity", "FP64")
+                          .column("l_extendedprice", "FP64")
+                          .column("l_discount", "FP64")
+                          .column("l_tax", "FP64")
+                          //                      .column("l_returnflag", "String")
+                          //                      .column("l_linestatus", "String")
+                          .column("l_shipdate_new", "FP64")
+                          .column("l_commitdate_new", "FP64")
+                          .column("l_receiptdate_new", "FP64")
+                          //                      .column("l_shipinstruct", "String")
+                          //                      .column("l_shipmode", "String")
+                          //                      .column("l_comment", "String")
+                          .build();
+        dbms::SerializedPlanBuilder plan_builder;
+        auto plan = plan_builder.files("/home/kyligence/Documents/intel-gazelle-test.snappy.parquet", std::move(schema)).build();
 
-        local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
-        ASSERT_GT(spark_row_info->getNumRows(), 0);
-        std::cout << "fetch batch" << spark_row_info->getNumRows() << " rows" << "" << "" <<std::endl;
+        ASSERT_TRUE(plan->relations(0).has_read());
+        ASSERT_EQ(plan->relations_size(), 1);
+        auto query_plan = dbms::SerializedPlanParser::parse(std::move(plan));
+        std::cout << "start execute" << std::endl;
+        dbms::LocalExecutor local_executor;
+
+        local_executor.execute(std::move(query_plan));
+        ASSERT_TRUE(local_executor.hasNext());
+        while (local_executor.hasNext())
+        {
+            local_engine::SparkRowInfoPtr spark_row_info = local_executor.next();
+            ASSERT_GT(spark_row_info->getNumRows(), 0);
+            std::cout << "fetch batch" << spark_row_info->getNumRows() << " rows"
+                      << ""
+                      << "" << std::endl;
+        }
     }
     auto duration = stopwatch.elapsedMilliseconds();
     std::cout <<"duration:" << duration << std::endl;
