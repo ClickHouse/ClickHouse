@@ -958,7 +958,7 @@ private:
                 }
                 else
                 {
-                    throw Exception("Can't download remote file" + , ErrorCodes::LOCAL_CACHE_ERROR);
+                    throw Exception("Can't download remote file", ErrorCodes::LOCAL_CACHE_ERROR);
                 }
             }
 
@@ -974,7 +974,7 @@ private:
                 }
                 else
                 {
-                    throw Exception("Can't download remote file" + , ErrorCodes::LOCAL_CACHE_ERROR);
+                    throw Exception("Can't download remote file", ErrorCodes::LOCAL_CACHE_ERROR);
                 }
             }
 
