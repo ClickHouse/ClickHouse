@@ -32,6 +32,7 @@
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
+#include <Storages/MergeTree/LeaderElection.h>
 
 
 #include <Databases/IDatabase.h>
@@ -3404,53 +3405,29 @@ void StorageReplicatedMergeTree::removePartAndEnqueueFetch(const String & part_n
 }
 
 
-void StorageReplicatedMergeTree::enterLeaderElection()
+void StorageReplicatedMergeTree::startBeingLeader()
 {
-    auto callback = [this]()
+    if (!getSettings()->replicated_can_become_leader)
     {
-        LOG_INFO(log, "Became leader");
-
-        is_leader = true;
-        merge_selecting_task->activateAndSchedule();
-    };
-
-    try
-    {
-        leader_election = std::make_shared<zkutil::LeaderElection>(
-            getContext()->getSchedulePool(),
-            fs::path(zookeeper_path) / "leader_election",
-            *current_zookeeper,    /// current_zookeeper lives for the lifetime of leader_election,
-                                   ///  since before changing `current_zookeeper`, `leader_election` object is destroyed in `partialShutdown` method.
-            callback,
-            replica_name);
+        LOG_INFO(log, "Will not enter leader election because replicated_can_become_leader=0");
+        return;
     }
-    catch (...)
-    {
-        leader_election = nullptr;
-        throw;
-    }
+
+    zkutil::checkNoOldLeaders(log, *current_zookeeper, fs::path(zookeeper_path) / "leader_election");
+
+    LOG_INFO(log, "Became leader");
+    is_leader = true;
+    merge_selecting_task->activateAndSchedule();
 }
 
-void StorageReplicatedMergeTree::exitLeaderElection()
+void StorageReplicatedMergeTree::stopBeingLeader()
 {
-    if (!leader_election)
+    if (!is_leader)
         return;
 
-    /// Shut down the leader election thread to avoid suddenly becoming the leader again after
-    /// we have stopped the merge_selecting_thread, but before we have deleted the leader_election object.
-    leader_election->shutdown();
-
-    if (is_leader)
-    {
-        LOG_INFO(log, "Stopped being leader");
-
-        is_leader = false;
-        merge_selecting_task->deactivate();
-    }
-
-    /// Delete the node in ZK only after we have stopped the merge_selecting_thread - so that only one
-    /// replica assigns merges at any given time.
-    leader_election = nullptr;
+    LOG_INFO(log, "Stopped being leader");
+    is_leader = false;
+    merge_selecting_task->deactivate();
 }
 
 ConnectionTimeouts StorageReplicatedMergeTree::getFetchPartHTTPTimeouts(ContextPtr local_context)
@@ -4113,10 +4090,12 @@ void StorageReplicatedMergeTree::startup()
         assert(prev_ptr == nullptr);
         getContext()->getInterserverIOHandler().addEndpoint(data_parts_exchange_ptr->getId(replica_path), data_parts_exchange_ptr);
 
+        startBeingLeader();
+
         /// In this thread replica will be activated.
         restarting_thread.start();
 
-        /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attempt to do it
+        /// Wait while restarting_thread finishing initialization
         startup_event.wait();
 
         startBackgroundMovesIfNeeded();
@@ -4149,6 +4128,7 @@ void StorageReplicatedMergeTree::shutdown()
     fetcher.blocker.cancelForever();
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
+    stopBeingLeader();
 
     restarting_thread.shutdown();
     background_operations_assignee.finish();
