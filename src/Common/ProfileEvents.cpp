@@ -274,6 +274,14 @@
     M(ThreadPoolReaderPageCacheMissElapsedMicroseconds, "Time spent reading data inside the asynchronous job in ThreadPoolReader - when read was not done from page cache.") \
     \
     M(AsynchronousReadWaitMicroseconds, "Time spent in waiting for asynchronous reads.") \
+    \
+    M(RocksdbGet, "Number of rocksdb reads(used for file meta cache)") \
+    M(RocksdbPut, "Number of rocksdb puts(used for file meta cache)") \
+    M(RocksdbDelete, "Number of rocksdb deletes(used for file meta cache)") \
+    M(RocksdbSeek, "Number of rocksdb seeks(used for file meta cache)") \
+    M(MergeTreeMetaCacheHit, "Number of times the read of meta file was done from MergeTree meta cache") \
+    M(MergeTreeMetaCacheMiss, "Number of times the read of meta file was not done from MergeTree meta cache") \
+    \
 
 
 namespace ProfileEvents

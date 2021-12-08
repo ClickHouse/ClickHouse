@@ -747,6 +747,15 @@ if (ThreadFuzzer::instance().isEffective())
 
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         fs::create_directories(path / "metadata_dropped/");
+
+        fs::create_directories(path / "rocksdb/");
+    }
+
+
+    /// initialize meta file cache
+    {
+        size_t size = config().getUInt64("meta_file_cache_size", 256 << 20);
+        global_context->initializeMergeTreeMetaCache(path_str + "/" + "rocksdb", size);
     }
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))

@@ -91,6 +91,7 @@ void MergeTreeDataPartCompact::calculateEachColumnSizes(ColumnSizeByName & /*eac
         total_size.marks += mrk_checksum->second.file_size;
 }
 
+// load marks from meta cache
 void MergeTreeDataPartCompact::loadIndexGranularity()
 {
     String full_path = getFullRelativePath();
@@ -190,6 +191,18 @@ bool MergeTreeDataPartCompact::isStoredOnRemoteDisk() const
 MergeTreeDataPartCompact::~MergeTreeDataPartCompact()
 {
     removeIfNeeded();
+}
+
+// Do not cache mark file, because cache other meta files is enough to speed up loading.
+void MergeTreeDataPartCompact::appendFilesOfIndexGranularity(Strings& /* files */) const
+{
+}
+
+// find all connected file and do modification
+Strings MergeTreeDataPartCompact::getIndexGranularityFiles() const
+{
+    auto marks_file = index_granularity_info.getMarksFilePath("data");
+    return {marks_file};
 }
 
 }

@@ -78,6 +78,7 @@
     M(SyncDrainedConnections, "Number of connections drained synchronously.") \
     M(ActiveSyncDrainedConnections, "Number of active connections drained synchronously.") \
     M(AsynchronousReadWait, "Number of threads waiting for asynchronous read.") \
+    M(ServerStartupSeconds, "Server start seconds") \
 
 namespace CurrentMetrics
 {

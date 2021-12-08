@@ -94,6 +94,11 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event ContextLock;
+    extern const Event CompiledCacheSizeBytes;
+    extern const Event RocksdbPut;
+    extern const Event RocksdbGet;
+    extern const Event RocksdbDelete;
+    extern const Event RocksdbSeek;
 }
 
 namespace CurrentMetrics
@@ -126,6 +131,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
     extern const int UNKNOWN_READ_METHOD;
+    extern const int SYSTEM_ERROR;
 }
 
 
@@ -272,6 +278,9 @@ struct ContextSharedPart
 
     Context::ConfigReloadCallback config_reload_callback;
 
+    /// MergeTree metadata cache stored in rocksdb.
+    MergeTreeMetaCachePtr merge_tree_meta_cache;
+
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>()), macros(std::make_unique<Macros>())
     {
@@ -382,6 +391,13 @@ struct ContextSharedPart
             trace_collector.reset();
             /// Stop zookeeper connection
             zookeeper.reset();
+
+            /// Shutdown meta file cache 
+            if (merge_tree_meta_cache)
+            {
+                merge_tree_meta_cache->shutdown();
+                merge_tree_meta_cache.reset();
+            }
         }
 
         /// Can be removed w/o context lock
@@ -424,6 +440,57 @@ SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextSharedPart> shar
     : shared(std::move(shared_context)) {}
 
 void SharedContextHolder::reset() { shared.reset(); }
+
+MergeTreeMetaCache::Status MergeTreeMetaCache::put(const String & key, const String & value)
+{
+    auto options = rocksdb::WriteOptions();
+    auto status = rocksdb->Put(options, key, value);
+    ProfileEvents::increment(ProfileEvents::RocksdbPut);
+    return status;
+}
+
+MergeTreeMetaCache::Status MergeTreeMetaCache::del(const String & key)
+{
+    auto options = rocksdb::WriteOptions();
+    auto status = rocksdb->Delete(options, key);
+    ProfileEvents::increment(ProfileEvents::RocksdbDelete);
+    LOG_TRACE(log, "Delete key:{} from MergeTreeMetaCache status:{}", key, status.ToString());
+    return status;
+}
+
+MergeTreeMetaCache::Status MergeTreeMetaCache::get(const String & key, String & value)
+{
+    auto status = rocksdb->Get(rocksdb::ReadOptions(), key, &value);
+    ProfileEvents::increment(ProfileEvents::RocksdbGet);
+    LOG_TRACE(log, "Get key:{} from MergeTreeMetaCache status:{}", key, status.ToString());
+    return status;
+}
+
+void MergeTreeMetaCache::getByPrefix(const String & prefix, Strings & keys, Strings & values)
+{
+    auto * it = rocksdb->NewIterator(rocksdb::ReadOptions());
+    rocksdb::Slice target(prefix);
+    for (it->Seek(target); it->Valid(); it->Next())
+    {
+        const auto key = it->key();
+        if (!key.starts_with(target))
+            break;
+
+        const auto value = it->value();
+        keys.emplace_back(key.data(), key.size());
+        values.emplace_back(value.data(), value.size());
+    }
+    LOG_TRACE(log, "Seek with prefix:{} from MergeTreeMetaCache items:{}", prefix, keys.size());
+    ProfileEvents::increment(ProfileEvents::RocksdbSeek);
+}
+
+void MergeTreeMetaCache::shutdown()
+{
+    if (rocksdb)
+    {
+        rocksdb->Close();
+    }
+}
 
 ContextMutablePtr Context::createGlobal(ContextSharedPart * shared)
 {
@@ -2005,6 +2072,11 @@ zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
     return zookeeper->second;
 }
 
+MergeTreeMetaCachePtr Context::getMergeTreeMetaCache() const
+{
+    return shared->merge_tree_meta_cache;
+}
+
 void Context::resetZooKeeper() const
 {
     std::lock_guard lock(shared->zookeeper_mutex);
@@ -2235,6 +2307,26 @@ void Context::initializeSystemLogs()
 void Context::initializeTraceCollector()
 {
     shared->initializeTraceCollector(getTraceLog());
+}
+
+void Context::initializeMergeTreeMetaCache(const String & dir, size_t size)
+{
+    rocksdb::Options options;
+    rocksdb::BlockBasedTableOptions table_options;
+    rocksdb::DB * db;
+
+    options.create_if_missing = true;
+    options.statistics = rocksdb::CreateDBStatistics();
+    auto cache = rocksdb::NewLRUCache(size);
+    table_options.block_cache = cache;
+    options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
+    rocksdb::Status status = rocksdb::DB::Open(options, dir, &db);
+    if (status != rocksdb::Status::OK())
+    {
+        String message = "Fail to open rocksdb path at: " + dir + " status:" + status.ToString();
+        throw Exception(message, ErrorCodes::SYSTEM_ERROR);
+    }
+    shared->merge_tree_meta_cache = std::make_shared<MergeTreeMetaCache>(db);
 }
 
 bool Context::hasTraceCollector() const

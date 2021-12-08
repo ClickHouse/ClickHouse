@@ -72,6 +72,10 @@ private:
 
     /// Compact parts doesn't support per column size, only total size
     void calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
+
+    void appendFilesOfIndexGranularity(Strings& files) const override;
+
+    Strings getIndexGranularityFiles() const override;
 };
 
 }

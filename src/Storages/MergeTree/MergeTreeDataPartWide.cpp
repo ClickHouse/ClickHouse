@@ -107,7 +107,6 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     String full_path = getFullRelativePath();
     index_granularity_info.changeGranularityIfRequired(volume->getDisk(), full_path);
 
-
     if (columns.empty())
         throw Exception("No columns in part " + name, ErrorCodes::NO_FILE_IN_DATA_PART);
 
@@ -266,6 +265,20 @@ void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_col
         }
 #endif
     }
+}
+
+// Do not cache mark files of part, because cache other meta files is enough to speed up loading.
+void MergeTreeDataPartWide::appendFilesOfIndexGranularity(Strings& /* files */) const
+{
+}
+
+Strings MergeTreeDataPartWide::getIndexGranularityFiles() const
+{
+    if (columns.empty())
+        return {};
+
+    auto marks_file = getFileNameForColumn(columns.front());
+    return {marks_file};
 }
 
 }

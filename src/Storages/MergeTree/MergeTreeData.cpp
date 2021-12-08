@@ -1330,6 +1330,14 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     LOG_DEBUG(log, "Loaded data parts ({} items)", data_parts_indexes.size());
 }
 
+size_t MergeTreeData::fileNumberOfDataParts(const DataPartStates & states) const
+{
+    size_t result = 0;
+    auto parts = getDataParts(states);
+    for (const auto & part : parts)
+        result += part->fileNumberOfColumnsChecksumsIndexes();
+    return result;
+}
 
 /// Is the part directory old.
 /// True if its modification time and the modification time of all files inside it is less then threshold.

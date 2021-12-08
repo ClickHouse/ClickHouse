@@ -1291,4 +1291,7 @@
         </tables>
     </rocksdb>
     -->
+
+    <!--LRU cache size of meta file cache in rocksdb -->
+    <meta_file_cache_size>268435456</meta_file_cache_size>
 </clickhouse>
