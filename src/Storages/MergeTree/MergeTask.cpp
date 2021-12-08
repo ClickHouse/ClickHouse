@@ -167,7 +167,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare()
 
     SerializationInfo::Settings info_settings =
     {
-        .ratio_for_sparse = global_ctx->data->getSettings()->ratio_of_defaults_for_sparse_serialization,
+        .ratio_of_defaults_for_sparse = global_ctx->data->getSettings()->ratio_of_defaults_for_sparse_serialization,
         .choose_kind = true,
     };
 

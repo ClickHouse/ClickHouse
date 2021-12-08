@@ -393,6 +393,9 @@ public:
 
     static inline constexpr auto UUID_FILE_NAME = "uuid.txt";
 
+    /// File that contains information about kinds of serialization of columns
+    /// and information that helps to choose kind of serialization later during merging
+    /// (number of rows, number of rows with default values, etc).
     static inline constexpr auto SERIALIZATION_FILE_NAME = "serialization.txt";
 
     /// Checks that all TTLs (table min/max, column ttls, so on) for part
@@ -447,9 +450,8 @@ private:
     /// In compact parts order of columns is necessary
     NameToNumber column_name_to_position;
 
+    /// Map from name of column to its serialization info.
     SerializationInfoByName serialization_infos;
-
-    SerializationByName serializations;
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

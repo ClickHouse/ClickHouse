@@ -1073,14 +1073,14 @@ void IMergeTreeDataPart::loadColumns(bool require)
 
     SerializationInfo::Settings settings =
     {
-        .ratio_for_sparse = storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
+        .ratio_of_defaults_for_sparse = storage.getSettings()->ratio_of_defaults_for_sparse_serialization,
         .choose_kind = false,
     };
 
     SerializationInfoByName infos(loaded_columns, settings);
     path = getFullRelativePath() + SERIALIZATION_FILE_NAME;
     if (volume->getDisk()->exists(path))
-        infos.readText(*volume->getDisk()->readFile(path));
+        infos.readJSON(*volume->getDisk()->readFile(path));
 
     setColumns(loaded_columns, infos);
 }

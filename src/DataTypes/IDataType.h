@@ -107,7 +107,7 @@ public:
     SerializationPtr getDefaultSerialization() const;
     SerializationPtr getSparseSerialization() const;
 
-    /// Chooses serialziation according to serialization kind.
+    /// Chooses serialization according to serialization kind.
     SerializationPtr getSerialization(ISerialization::Kind kind) const;
 
     /// Chooses serialization according to collected information about content of column.
