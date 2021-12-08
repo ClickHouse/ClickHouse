@@ -12,6 +12,11 @@ using namespace Azure::Storage::Blobs;
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 struct BlobStorageEndpoint
 {
     const String storage_account_url;
@@ -84,12 +89,14 @@ template <class T>
 std::shared_ptr<T> getBlobStorageClientWithAuth(
     const String & url, const String & container_name, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    if (config.has(config_prefix + ".connection_string")) {
+    if (config.has(config_prefix + ".connection_string"))
+    {
         String connection_str = config.getString(config_prefix + ".connection_string");
         return getClientWithConnectionString<T>(connection_str, container_name);
     }
 
-    if (config.has(config_prefix + ".account_key") && config.has(config_prefix + ".account_name")) {
+    if (config.has(config_prefix + ".account_key") && config.has(config_prefix + ".account_name"))
+    {
         auto storage_shared_key_credential = std::make_shared<Azure::Storage::StorageSharedKeyCredential>(
             config.getString(config_prefix + ".account_name"),
             config.getString(config_prefix + ".account_key")
