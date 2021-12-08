@@ -750,9 +750,13 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## max_thread_pool_size {#max-thread-pool-size}
 
-The maximum number of threads in the Global Thread pool.
+ClickHouse uses threads from the Global Thread pool to process queries. If there is no idle thread to process a query then a new thread is created and added to the pool. `max_thread_pool_size` limits the maximum number of threads in the pool.
 
-Default value: 10000.
+Possible values: 
+
+-   Positive integer.
+
+Default value: `10000`.
 
 **Example**
 
@@ -762,9 +766,13 @@ Default value: 10000.
 
 ## max_thread_pool_free_size {#max-thread-pool-free-size}
 
-The number of threads that are always held in the Global Thread pool.
+If the number of **idle** threads in the Global Thread pool is greater than `max_thread_pool_free_size` then ClickHouse releases resources occupied by some threads and the pool size is decreased. Threads can be created again if necessary.
 
-Default value: 1000.
+Possible values: 
+
+-   Positive integer.
+
+Default value: `1000`.
 
 **Example**
 
@@ -774,9 +782,13 @@ Default value: 1000.
 
 ## thread_pool_queue_size {#thread-pool-queue-size}
 
-The limit to the number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to the `max_thread_pool_size`.
+The maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to `max_thread_pool_size`.
 
-Default value: 10000.
+Possible values: 
+
+-   Positive integer.
+
+Default value: `10000`.
 
 **Example**
 
@@ -1507,3 +1519,4 @@ Possible values:
 -   Positive integer.
 
 Default value: `10000`.
+
