@@ -2,7 +2,6 @@
 
 # pylint: disable=line-too-long
 
-import subprocess
 import os
 import json
 import logging
@@ -15,6 +14,8 @@ from upload_result_helper import upload_results
 from commit_status_helper import get_commit
 from clickhouse_helper import ClickHouseHelper, prepare_tests_results_for_clickhouse
 from stopwatch import Stopwatch
+from rerun_helper import RerunHelper
+from tee_popen import TeePopen
 
 NAME = 'PVS Studio (actions)'
 LICENCE_NAME = 'Free license: ClickHouse, Yandex'
@@ -49,6 +50,10 @@ if __name__ == "__main__":
     logging.info("Repo copy path %s", repo_path)
 
     gh = Github(get_best_robot_token())
+    rerun_helper = RerunHelper(gh, pr_info, NAME)
+    if rerun_helper.is_already_finished_by_status():
+        logging.info("Check is already finished according to github status, exiting")
+        sys.exit(0)
 
     images_path = os.path.join(temp_path, 'changed_images.json')
     docker_image = 'clickhouse/pvs-test'
@@ -68,9 +73,16 @@ if __name__ == "__main__":
     cmd = f"docker run -u $(id -u ${{USER}}):$(id -g ${{USER}}) --volume={repo_path}:/repo_folder --volume={temp_path}:/test_output -e LICENCE_NAME='{LICENCE_NAME}' -e LICENCE_KEY='{licence_key}' {docker_image}"
     commit = get_commit(gh, pr_info.sha)
 
-    try:
-        subprocess.check_output(cmd, shell=True)
-    except:
+    run_log_path = os.path.join(temp_path, 'run_log.log')
+
+    with TeePopen(cmd, run_log_path) as process:
+        retcode = process.wait()
+        if retcode != 0:
+            logging.info("Run failed")
+        else:
+            logging.info("Run Ok")
+
+    if retcode != 0:
         commit.create_status(context=NAME, description='PVS report failed to build', state='failure', target_url=f"https://github.com/ClickHouse/ClickHouse/actions/runs/{os.getenv('GITHUB_RUN_ID')}")
         sys.exit(1)
 
