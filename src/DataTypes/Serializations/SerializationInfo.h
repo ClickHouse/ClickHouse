@@ -13,7 +13,7 @@ class WriteBuffer;
 class NamesAndTypesList;
 class Block;
 
-constexpr auto SERIALIZATION_INFO_VERSION = 1;
+constexpr auto SERIALIZATION_INFO_VERSION = 0;
 
 /** Contains information about kind of serialization of column and its subcolumns.
  *  Also contains information about content of columns,
@@ -38,10 +38,10 @@ public:
 
     struct Settings
     {
-        const double ratio_for_sparse = 1.0;
+        const double ratio_of_defaults_for_sparse = 1.0;
         const bool choose_kind = false;
 
-        bool isAlwaysDefault() const { return ratio_for_sparse >= 1.0; }
+        bool isAlwaysDefault() const { return ratio_of_defaults_for_sparse >= 1.0; }
     };
 
     SerializationInfo(ISerialization::Kind kind_, const Settings & settings_);
@@ -89,8 +89,8 @@ public:
     void add(const Block & block);
     void add(const SerializationInfoByName & other);
 
-    void writeText(WriteBuffer & out) const;
-    void readText(ReadBuffer & in);
+    void writeJSON(WriteBuffer & out) const;
+    void readJSON(ReadBuffer & in);
 };
 
 }

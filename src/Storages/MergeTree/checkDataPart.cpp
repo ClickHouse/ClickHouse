@@ -104,7 +104,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     if (disk->exists(serialization_path))
     {
         auto serialization_file = disk->readFile(serialization_path);
-        serialization_infos.readText(*serialization_file);
+        serialization_infos.readJSON(*serialization_file);
     }
 
     auto get_serialization = [&serialization_infos](const auto & column)
