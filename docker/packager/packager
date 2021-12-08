@@ -90,6 +90,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     elif is_cross_arm:
         cc = compiler[:-len(ARM_SUFFIX)]
         cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake")
+        result.append("DEB_ARCH_FLAG=-aarm64")
     elif is_cross_freebsd:
         cc = compiler[:-len(FREEBSD_SUFFIX)]
         cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/freebsd/toolchain-x86_64.cmake")
@@ -98,6 +99,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
         cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-ppc64le.cmake")
     else:
         cc = compiler
+        result.append("DEB_ARCH_FLAG=-aamd64")
 
     cxx = cc.replace('gcc', 'g++').replace('clang', 'clang++')
 

@@ -33,6 +33,16 @@ CI_CONFIG = {
             "tidy": "disable",
             "with_coverage": False,
         },
+        "package_aarch64": {
+            "compiler": "clang-13-aarch64",
+            "build_type": "",
+            "sanitizer": "",
+            "package_type": "deb",
+            "bundled": "bundled",
+            "splitted": "unsplitted",
+            "tidy": "disable",
+            "with_coverage": False,
+        },
         "package_asan": {
             "compiler": "clang-13",
             "build_type": "",
@@ -168,6 +178,7 @@ CI_CONFIG = {
         "ClickHouse build check (actions)": [
             "package_release",
             "performance",
+            "package_aarch64",
             "package_asan",
             "package_ubsan",
             "package_tsan",
