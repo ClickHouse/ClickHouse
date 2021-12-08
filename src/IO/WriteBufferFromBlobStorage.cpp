@@ -33,7 +33,7 @@ void WriteBufferFromBlobStorage::nextImpl()
     if (!offset())
         return;
 
-    auto * pos = working_buffer.begin();
+    auto * buffer_begin = working_buffer.begin();
     auto len = offset();
     auto block_blob_client = blob_container_client->GetBlockBlobClient(blob_path);
 
@@ -45,7 +45,7 @@ void WriteBufferFromBlobStorage::nextImpl()
         auto block_id = getRandomName(64);
         block_ids.push_back(block_id);
 
-        Azure::Core::IO::MemoryBodyStream tmp_buffer(reinterpret_cast<uint8_t *>(pos + read), part_len);
+        Azure::Core::IO::MemoryBodyStream tmp_buffer(reinterpret_cast<uint8_t *>(buffer_begin + read), part_len);
         block_blob_client.StageBlock(block_id, tmp_buffer);
 
         read += part_len;
