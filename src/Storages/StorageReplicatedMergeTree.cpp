@@ -4086,13 +4086,14 @@ void StorageReplicatedMergeTree::startup()
         assert(prev_ptr == nullptr);
         getContext()->getInterserverIOHandler().addEndpoint(data_parts_exchange_ptr->getId(replica_path), data_parts_exchange_ptr);
 
-        startBeingLeader();
-
         /// In this thread replica will be activated.
         restarting_thread.start();
 
         /// Wait while restarting_thread finishing initialization
         startup_event.wait();
+
+        /// Restarting thread has initialized replication queue, replica can become leader now
+        startBeingLeader();
 
         startBackgroundMovesIfNeeded();
 
