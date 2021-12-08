@@ -163,11 +163,9 @@ struct RemoteFileCacheWeightFunction
 
 struct RemoteFileCacheEvictPolicy
 {
-    LRUCacheEvictStatus canRelease(RemoteCacheController & cache) const
+    bool canRelease(RemoteCacheController & cache) const
     {
-        if (cache.closable())
-            return LRUCacheEvictStatus::CAN_EVITCT;
-        return LRUCacheEvictStatus::SKIP_EVICT;
+        return cache.closable();
     }
     void release(RemoteCacheController & cache)
     {

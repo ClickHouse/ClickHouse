@@ -66,7 +66,7 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
         LOG_ERROR(log, "Cannot create the metadata class : {}. The cached file is invalid and will be remove. path:{}",
                 cache_controller->metadata_class,
                 local_path_.string());
-        return nullptr;
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid metadata class:{}", cache_controller->metadata_class);
     }
     std::ifstream metadata_file(local_path_ / "metadata.txt");
     if (!cache_controller->file_metadata_ptr->fromString(std::string((std::istreambuf_iterator<char>(metadata_file)),
@@ -74,7 +74,7 @@ std::shared_ptr<RemoteCacheController> RemoteCacheController::recover(const std:
     {
         LOG_ERROR(log, "Cannot load the metadata. The cached file is invalid and will be remove. path:{}",
                 local_path_.string());
-        return nullptr;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid metadata file({}) for meta class {}", local_path_.string(), cache_controller->metadata_class);
     }
 
     cache_controller->current_offset = fs::file_size(local_path_ / "data.bin");
@@ -215,7 +215,6 @@ void RemoteCacheController::close()
 std::unique_ptr<ReadBufferFromFileBase> RemoteCacheController::allocFile()
 {
     ReadSettings settings;
-    settings.local_fs_prefetch = false;
     settings.local_fs_method = LocalFSReadMethod::read;
     auto file_buffer = createReadBufferFromFileBase((local_path / "data.bin").string(), settings);
 
