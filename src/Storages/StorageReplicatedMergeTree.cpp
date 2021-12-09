@@ -1190,8 +1190,13 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
     /// Which parts should be taken from other replicas.
     Strings parts_to_fetch;
 
+    /// Missing parts which should be cleared from zookeeper. It's likely because we clean old parts during shutdown.
+    Strings parts_to_remove_from_zk;
+
     for (const String & missing_name : expected_parts)
-        if (!getActiveContainingPart(missing_name))
+        if (getActiveContainingPart(missing_name))
+            parts_to_remove_from_zk.push_back(missing_name);
+        else
             parts_to_fetch.push_back(missing_name);
 
     /** To check the adequacy, for the parts that are in the FS, but not in ZK, we will only consider not the most recent parts.
@@ -1259,6 +1264,8 @@ void StorageReplicatedMergeTree::checkParts(bool skip_sanity_checks)
                     unexpected_parts.size(), unexpected_parts_rows, unexpected_parts_nonnew, unexpected_parts_nonnew_rows,
                     parts_to_fetch.size(), parts_to_fetch_blocks);
     }
+
+    tryRemovePartsFromZooKeeperWithRetries(parts_to_remove_from_zk);
 
     /// Add to the queue jobs to pick up the missing parts from other replicas and remove from ZK the information that we have them.
     queue.setBrokenPartsToEnqueueFetchesOnLoading(std::move(parts_to_fetch));
