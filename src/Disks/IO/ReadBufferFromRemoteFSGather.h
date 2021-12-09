@@ -132,7 +132,7 @@ private:
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client;
     size_t max_single_read_retries;
     size_t max_single_download_retries;
-    ReadSettings settings; // NOTE: used only for remote_fs_buffer_size
+    ReadSettings settings;
     bool threadpool_read;
 };
 #endif

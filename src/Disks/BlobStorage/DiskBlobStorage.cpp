@@ -52,7 +52,7 @@ DiskBlobStorage::DiskBlobStorage(
     std::shared_ptr<Azure::Storage::Blobs::BlobContainerClient> blob_container_client_,
     SettingsPtr settings_,
     GetDiskSettings settings_getter_) :
-    IDiskRemote(name_, "" /* TODO: shall we provide a config for this path? */, metadata_disk_, "DiskBlobStorage", settings_->thread_pool_size),
+    IDiskRemote(name_, "", metadata_disk_, "DiskBlobStorage", settings_->thread_pool_size),
     blob_container_client(blob_container_client_),
     current_settings(std::move(settings_)),
     settings_getter(settings_getter_) {}
@@ -132,7 +132,6 @@ bool DiskBlobStorage::checkUniqueId(const String & id) const
     blobs_list_options.Prefix = id;
     blobs_list_options.PageSizeHint = 1;
 
-    // TODO: does it return at most 5k blobs? Do we ever need the continuation token?
     auto blobs_list_response = blob_container_client->ListBlobs(blobs_list_options);
     auto blobs_list = blobs_list_response.Blobs;
 
@@ -175,7 +174,7 @@ RemoteFSPathKeeperPtr DiskBlobStorage::createFSPathKeeper() const
     return std::make_shared<BlobStoragePathKeeper>();
 }
 
-// NOTE: applyNewSettings - direct copy-paste from DiskS3
+
 void DiskBlobStorage::applyNewSettings(const Poco::Util::AbstractConfiguration & config, ContextPtr context, const String &, const DisksMap &)
 {
     auto new_settings = settings_getter(config, "storage_configuration.disks." + name, context);

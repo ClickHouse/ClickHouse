@@ -16,8 +16,6 @@ BLOB_STORAGE_DISK = "blob_storage_disk"
 LOCAL_DISK = "hdd"
 CONTAINER_NAME = "cont"
 
-# TODO: these tests resemble S3 tests a lot, maybe they can be abstracted
-
 
 @pytest.fixture(scope="module")
 def cluster():
