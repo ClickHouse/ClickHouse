@@ -1623,7 +1623,7 @@ jobs:
         env:
           TEMP_PATH: ${{runner.temp}}/unit_tests_ubsan
           REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Unit tests (msan, actions)'
+          CHECK_NAME: 'Unit tests (ubsan, actions)'
           REPO_COPY: ${{runner.temp}}/unit_tests_ubsan/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH
