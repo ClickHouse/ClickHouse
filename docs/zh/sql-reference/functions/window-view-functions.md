@@ -53,7 +53,7 @@ hop(time_attr, hop_interval, window_interval [, timezone])
 **参数**
 
 - `time_attr` - [DateTime](../../sql-reference/data-types/datetime.md)类型的时间数据。
-- `hop_interval` - Hop interval in [Interval](../../sql-reference/data-types/special-data-types/interval.md)类型的滑动间隔，需要大于0。
+- `hop_interval` - [Interval](../../sql-reference/data-types/special-data-types/interval.md)类型的滑动间隔，需要大于0。
 - `window_interval` - [Interval](../../sql-reference/data-types/special-data-types/interval.md)类型的窗口大小，需要大于0。
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone) 类型的时区(可选参数)。
 
