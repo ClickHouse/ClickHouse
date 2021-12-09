@@ -166,15 +166,14 @@ void PocoHTTPClient::makeRequestInternal(
         for (unsigned int attempt = 0; attempt <= s3_max_redirects; ++attempt)
         {
             Poco::URI target_uri(uri);
-
-            /// Reverse proxy can replace host header with resolved ip address instead of host name.
-            /// This can lead to request signature difference on S3 side.
-            auto session = makeHTTPSession(target_uri, timeouts, false);
-
+            HTTPSessionPtr session;
             auto request_configuration = per_request_configuration(request);
 
             if (!request_configuration.proxyHost.empty())
             {
+                /// Reverse proxy can replace host header with resolved ip address instead of host name.
+                /// This can lead to request signature difference on S3 side.
+                session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ false);
                 bool use_tunnel = request_configuration.proxyScheme == Aws::Http::Scheme::HTTP && target_uri.getScheme() == "https";
 
                 session->setProxy(
@@ -184,6 +183,11 @@ void PocoHTTPClient::makeRequestInternal(
                     use_tunnel
                 );
             }
+            else
+            {
+                session = makeHTTPSession(target_uri, timeouts, /* resolve_host = */ true);
+            }
+
 
             Poco::Net::HTTPRequest poco_request(Poco::Net::HTTPRequest::HTTP_1_1);
 

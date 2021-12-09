@@ -1,6 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ISourceStep.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {

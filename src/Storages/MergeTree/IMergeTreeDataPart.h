@@ -97,11 +97,13 @@ public:
 
     virtual bool isStoredOnDisk() const = 0;
 
+    virtual bool isStoredOnRemoteDisk() const = 0;
+
     virtual bool supportsVerticalMerge() const { return false; }
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
-    ColumnSize getColumnSize(const String & column_name, const IDataType & /* type */) const;
+    ColumnSize getColumnSize(const String & column_name) const;
 
     /// NOTE: Returns zeros if secondary indexes are not found in checksums.
     /// Otherwise return information about secondary index size on disk.
@@ -184,6 +186,7 @@ public:
 
     /// A directory path (relative to storage's path) where part data is actually stored
     /// Examples: 'detached/tmp_fetch_<name>', 'tmp_<name>', '<name>'
+    /// NOTE: Cannot have trailing slash.
     mutable String relative_path;
     MergeTreeIndexGranularityInfo index_granularity_info;
 
@@ -354,7 +357,7 @@ public:
     /// Calculate column and secondary indices sizes on disk.
     void calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
-    String getRelativePathForPrefix(const String & prefix) const;
+    String getRelativePathForPrefix(const String & prefix, bool detached = false) const;
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 

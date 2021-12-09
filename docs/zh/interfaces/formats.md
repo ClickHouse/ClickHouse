@@ -685,7 +685,7 @@ CREATE TABLE IF NOT EXISTS example_table
 -   如果`input_format_defaults_for_omitted_fields = 1`, 那么`x`的默认值为`0`，但`a`的默认值为`x * 2`。
 
 !!! note "注意"
-当使用`insert_sample_with_metadata = 1`插入数据时，与使用`insert_sample_with_metadata = 0`相比，ClickHouse消耗更多的计算资源。
+当使用`input_format_defaults_for_omitted_fields = 1`插入数据时，与使用`input_format_defaults_for_omitted_fields = 0`相比，ClickHouse消耗更多的计算资源。
 
 ### Selecting Data {#selecting-data}
 

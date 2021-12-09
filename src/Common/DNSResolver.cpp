@@ -15,7 +15,7 @@
 
 namespace ProfileEvents
 {
-    extern Event DNSError;
+    extern const Event DNSError;
 }
 
 namespace std
@@ -114,11 +114,7 @@ static DNSResolver::IPAddresses resolveIPAddressImpl(const std::string & host)
 
     try
     {
-#if defined(ARCADIA_BUILD)
-        addresses = Poco::Net::DNS::hostByName(host, &Poco::Net::DNS::DEFAULT_DNS_TIMEOUT, flags).addresses();
-#else
         addresses = Poco::Net::DNS::hostByName(host, flags).addresses();
-#endif
     }
     catch (const Poco::Net::DNSException & e)
     {

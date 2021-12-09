@@ -4,8 +4,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <DataStreams/ShellCommandSource.h>
-#include <DataStreams/formatBlock.h>
+#include <Processors/Sources/ShellCommandSource.h>
+#include <Formats/formatBlock.h>
 
 
 namespace DB

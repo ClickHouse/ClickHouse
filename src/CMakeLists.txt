@@ -28,7 +28,8 @@ configure_file (Common/config_version.h.in ${CONFIG_VERSION})
 configure_file (Core/config_core.h.in "${CMAKE_CURRENT_BINARY_DIR}/Core/include/config_core.h")
 
 if (USE_DEBUG_HELPERS)
-    set (INCLUDE_DEBUG_HELPERS "-I\"${ClickHouse_SOURCE_DIR}/base\" -include \"${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h\"")
+    get_target_property(MAGIC_ENUM_INCLUDE_DIR magic_enum INTERFACE_INCLUDE_DIRECTORIES)
+    set (INCLUDE_DEBUG_HELPERS "-I\"${ClickHouse_SOURCE_DIR}/base\" -I\"${MAGIC_ENUM_INCLUDE_DIR}\" -include \"${ClickHouse_SOURCE_DIR}/src/Core/iostream_debug_helpers.h\"")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
 endif ()
 
@@ -49,7 +50,7 @@ add_subdirectory (Backups)
 add_subdirectory (Columns)
 add_subdirectory (Common)
 add_subdirectory (Core)
-add_subdirectory (DataStreams)
+add_subdirectory (QueryPipeline)
 add_subdirectory (DataTypes)
 add_subdirectory (Dictionaries)
 add_subdirectory (Disks)
@@ -77,6 +78,7 @@ add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 list (REMOVE_ITEM clickhouse_common_io_sources Common/malloc.cpp Common/new_delete.cpp)
 
+add_headers_and_sources(dbms Disks/IO)
 if (USE_SQLITE)
     add_headers_and_sources(dbms Databases/SQLite)
 endif()
@@ -107,6 +109,10 @@ endif()
 if (USE_HDFS)
     add_headers_and_sources(dbms Storages/HDFS)
     add_headers_and_sources(dbms Disks/HDFS)
+endif()
+
+if(USE_FILELOG)
+    add_headers_and_sources(dbms Storages/FileLog)
 endif()
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})
@@ -161,6 +167,7 @@ endif()
 
 target_link_libraries (clickhouse_common_io PRIVATE jemalloc)
 
+add_subdirectory(Access/Common)
 add_subdirectory(Common/ZooKeeper)
 add_subdirectory(Common/Config)
 
@@ -185,13 +192,14 @@ add_object_library(clickhouse_backups Backups)
 add_object_library(clickhouse_core Core)
 add_object_library(clickhouse_core_mysql Core/MySQL)
 add_object_library(clickhouse_compression Compression)
-add_object_library(clickhouse_datastreams DataStreams)
+add_object_library(clickhouse_querypipeline QueryPipeline)
 add_object_library(clickhouse_datatypes DataTypes)
 add_object_library(clickhouse_datatypes_serializations DataTypes/Serializations)
 add_object_library(clickhouse_databases Databases)
 add_object_library(clickhouse_databases_mysql Databases/MySQL)
 add_object_library(clickhouse_disks Disks)
 add_object_library(clickhouse_interpreters Interpreters)
+add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
 add_object_library(clickhouse_interpreters_jit Interpreters/JIT)
@@ -201,6 +209,7 @@ add_object_library(clickhouse_storages_mysql Storages/MySQL)
 add_object_library(clickhouse_storages_distributed Storages/Distributed)
 add_object_library(clickhouse_storages_mergetree Storages/MergeTree)
 add_object_library(clickhouse_storages_liveview Storages/LiveView)
+add_object_library(clickhouse_storages_windowview Storages/WindowView)
 add_object_library(clickhouse_client Client)
 add_object_library(clickhouse_bridge Bridge)
 add_object_library(clickhouse_server Server)
@@ -214,6 +223,7 @@ add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_sources Processors/Sources)
 add_object_library(clickhouse_processors_sinks Processors/Sinks)
 add_object_library(clickhouse_processors_merges Processors/Merges)
+add_object_library(clickhouse_processors_ttl Processors/TTL)
 add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 add_object_library(clickhouse_processors_queryplan Processors/QueryPlan)
 add_object_library(clickhouse_processors_queryplan_optimizations Processors/QueryPlan/Optimizations)
@@ -284,6 +294,14 @@ target_link_libraries (clickhouse_common_io
             dragonbox_to_chars
 )
 
+# Use X86 AVX2/AVX512 instructions to accelerate filter operations
+set_source_files_properties(
+        Columns/ColumnFixedString.cpp
+        Columns/ColumnsCommon.cpp
+        Columns/ColumnVector.cpp
+        Columns/ColumnDecimal.cpp
+        PROPERTIES COMPILE_FLAGS "${X86_INTRINSICS_FLAGS}")
+
 if(RE2_LIBRARY)
     target_link_libraries(clickhouse_common_io PUBLIC ${RE2_LIBRARY})
 endif()
@@ -350,13 +368,10 @@ dbms_target_link_libraries (
         clickhouse_common_io
 )
 
-if (NOT_UNBUNDLED)
-    dbms_target_link_libraries (
-        PUBLIC
-            boost::circular_buffer
-            boost::heap
-    )
-endif()
+dbms_target_link_libraries (
+    PUBLIC
+        boost::circular_buffer
+        boost::heap)
 
 target_include_directories(clickhouse_common_io PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include") # uses some includes from core
 dbms_target_include_directories(PUBLIC "${CMAKE_CURRENT_BINARY_DIR}/Core/include")
@@ -502,6 +517,8 @@ if (USE_BZIP2)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BZIP2_INCLUDE_DIR})
 endif()
 
+dbms_target_link_libraries(PUBLIC consistent-hashing)
+
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
 if (ENABLE_TESTS AND USE_GTEST)
@@ -534,11 +551,6 @@ if (ENABLE_TESTS AND USE_GTEST)
         dbms
         clickhouse_common_zookeeper
         string_utils)
-
-    # For __udivmodti4 referenced in Core/tests/gtest_DecimalFunctions.cpp
-    if (OS_DARWIN AND COMPILER_GCC)
-        target_link_libraries(unit_tests_dbms PRIVATE gcc)
-    endif ()
 
     add_check(unit_tests_dbms)
 endif ()

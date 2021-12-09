@@ -35,9 +35,7 @@
 #include <base/scope_guard.h>
 #include <Server/HTTP/HTTPResponse.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #include <Poco/Base64Decoder.h>
 #include <Poco/Base64Encoder.h>
@@ -495,10 +493,7 @@ void HTTPHandler::processQuery(
     }
 
     // Parse the OpenTelemetry traceparent header.
-    // Disable in Arcadia -- it interferes with the
-    // test_clickhouse.TestTracing.test_tracing_via_http_proxy[traceparent] test.
     ClientInfo client_info = session->getClientInfo();
-#if !defined(ARCADIA_BUILD)
     if (request.has("traceparent"))
     {
         std::string opentelemetry_traceparent = request.get("traceparent");
@@ -512,7 +507,6 @@ void HTTPHandler::processQuery(
         }
         client_info.client_trace_context.tracestate = request.get("tracestate", "");
     }
-#endif
 
     auto context = session->makeQueryContext(std::move(client_info));
 
@@ -934,6 +928,15 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         SCOPE_EXIT({
             request_credentials.reset(); // ...so that the next requests on the connection have to always start afresh in case of exceptions.
         });
+
+        /// Check if exception was thrown in used_output.finalize().
+        /// In this case used_output can be in invalid state and we
+        /// cannot write in it anymore. So, just log this exception.
+        if (used_output.isFinalized())
+        {
+            tryLogCurrentException(log, "Cannot flush data to client");
+            return;
+        }
 
         tryLogCurrentException(log);
 

@@ -3,10 +3,10 @@
 #include <memory>
 
 #include <Core/QueryProcessingStage.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/ReadInOrderOptimizer.h>
@@ -52,13 +52,6 @@ public:
         const SelectQueryOptions &,
         const Names & required_result_column_names_ = Names{});
 
-    /// Read data not from the table specified in the query, but from the prepared source `input`.
-    InterpreterSelectQuery(
-        const ASTPtr & query_ptr_,
-        ContextPtr context_,
-        const BlockInputStreamPtr & input_,
-        const SelectQueryOptions & = {});
-
     /// Read data not from the table specified in the query, but from the prepared pipe `input`.
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -73,6 +66,13 @@ public:
         const StoragePtr & storage_,
         const StorageMetadataPtr & metadata_snapshot_ = nullptr,
         const SelectQueryOptions & = {});
+
+    /// Read data not from the table specified in the query, but from the specified `storage_`.
+    InterpreterSelectQuery(
+        const ASTPtr & query_ptr_,
+        ContextPtr context_,
+        const SelectQueryOptions &,
+        PreparedSets prepared_sets_);
 
     ~InterpreterSelectQuery() override;
 
@@ -91,7 +91,7 @@ public:
 
     const SelectQueryInfo & getQueryInfo() const { return query_info; }
 
-    const SelectQueryExpressionAnalyzer * getQueryAnalyzer() const { return query_analyzer.get(); }
+    SelectQueryExpressionAnalyzer * getQueryAnalyzer() const { return query_analyzer.get(); }
 
     const ExpressionAnalysisResult & getAnalysisResult() const { return analysis_result; }
 
@@ -108,12 +108,12 @@ private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
         ContextPtr context_,
-        const BlockInputStreamPtr & input_,
         std::optional<Pipe> input_pipe,
         const StoragePtr & storage_,
         const SelectQueryOptions &,
         const Names & required_result_column_names = {},
-        const StorageMetadataPtr & metadata_snapshot_ = nullptr);
+        const StorageMetadataPtr & metadata_snapshot_ = nullptr,
+        PreparedSets prepared_sets_ = {});
 
     ASTSelectQuery & getSelectQuery() { return query_ptr->as<ASTSelectQuery &>(); }
 
@@ -122,7 +122,7 @@ private:
 
     Block getSampleBlockImpl();
 
-    void executeImpl(QueryPlan & query_plan, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe);
+    void executeImpl(QueryPlan & query_plan, std::optional<Pipe> prepared_pipe);
 
     /// Different stages of query execution.
 
@@ -198,11 +198,13 @@ private:
     TableLockHolder table_lock;
 
     /// Used when we read from prepared input, not table or subquery.
-    BlockInputStreamPtr input;
     std::optional<Pipe> input_pipe;
 
     Poco::Logger * log;
     StorageMetadataPtr metadata_snapshot;
+
+    /// Reuse already built sets for multiple passes of analysis, possibly across interpreters.
+    PreparedSets prepared_sets;
 };
 
 }
