@@ -249,6 +249,7 @@ std::unique_ptr<SparkRowInfo> local_engine::CHColumnToSparkRow::convertCHColumnT
     }
     spark_row_info->total_bytes_ = total_memory_size;
     spark_row_info->buffer_address_ = reinterpret_cast<unsigned char *>(alloc(total_memory_size));
+    memset(spark_row_info->buffer_address_, 0, sizeof(int8_t) * spark_row_info->total_bytes_);
     for (auto i = 0; i < spark_row_info->num_cols_; i++)
     {
         auto array = block.getByPosition(i);
