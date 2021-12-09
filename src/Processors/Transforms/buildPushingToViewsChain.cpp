@@ -27,8 +27,6 @@
 
 namespace ProfileEvents
 {
-    extern const Event InsertedBytes;
-    extern const Event InsertedRows;
     extern const Event SelectedBytes;
     extern const Event SelectedRows;
 }

@@ -24,14 +24,6 @@
 #   include <sys/resource.h>
 #endif
 
-namespace ProfileEvents
-{
-    extern const Event InsertedRows;
-    extern const Event InsertedBytes;
-    extern const Event SelectedRows;
-    extern const Event SelectedBytes;
-}
-
 
 /// Implement some methods of ThreadStatus and CurrentThread here to avoid extra linking dependencies in clickhouse_common_io
 /// TODO It doesn't make sense.
