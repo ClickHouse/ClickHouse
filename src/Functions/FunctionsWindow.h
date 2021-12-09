@@ -9,25 +9,25 @@ namespace DB
 
 /** Window functions:
   *
-  * TUMBLE(time_attr, interval [, timezone])
+  * tumble(time_attr, interval [, timezone])
   *
-  * TUMBLE_START(window_id)
+  * tumbleStart(window_id)
   *
-  * TUMBLE_START(time_attr, interval [, timezone])
+  * tumbleStart(time_attr, interval [, timezone])
   *
-  * TUMBLE_END(window_id)
+  * tumbleEnd(window_id)
   *
-  * TUMBLE_END(time_attr, interval [, timezone])
+  * tumbleEnd(time_attr, interval [, timezone])
   *
-  * HOP(time_attr, hop_interval, window_interval [, timezone])
+  * hop(time_attr, hop_interval, window_interval [, timezone])
   *
-  * HOP_START(window_id)
+  * hopStart(window_id)
   *
-  * HOP_START(time_attr, hop_interval, window_interval [, timezone])
+  * hopStart(time_attr, hop_interval, window_interval [, timezone])
   *
-  * HOP_END(window_id)
+  * hopEnd(window_id)
   *
-  * HOP_END(time_attr, hop_interval, window_interval [, timezone])
+  * hopEnd(time_attr, hop_interval, window_interval [, timezone])
   *
   */
 enum WindowFunctionName

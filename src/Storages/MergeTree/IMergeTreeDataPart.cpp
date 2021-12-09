@@ -546,7 +546,7 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const StorageM
         if (!hasColumnFiles(column))
             continue;
 
-        const auto size = getColumnSize(column_name, *column_type).data_compressed;
+        const auto size = getColumnSize(column_name).data_compressed;
         if (size < minimum_size)
         {
             minimum_size = size;
@@ -747,7 +747,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
     for (const auto & part_column : columns)
     {
         /// It was compressed with default codec and it's not empty
-        auto column_size = getColumnSize(part_column.name, *part_column.type);
+        auto column_size = getColumnSize(part_column.name);
         if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
         {
             auto serialization = IDataType::getSerialization(part_column,
@@ -885,7 +885,7 @@ void IMergeTreeDataPart::loadRowsCount()
             /// Most trivial types
             if (column.type->isValueRepresentedByNumber() && !column.type->haveSubtypes())
             {
-                auto size = getColumnSize(column.name, *column.type);
+                auto size = getColumnSize(column.name);
 
                 if (size.data_uncompressed == 0)
                     continue;
@@ -933,7 +933,7 @@ void IMergeTreeDataPart::loadRowsCount()
             if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
                 continue;
 
-            size_t column_size = getColumnSize(column.name, *column.type).data_uncompressed;
+            size_t column_size = getColumnSize(column.name).data_uncompressed;
             if (!column_size)
                 continue;
 
@@ -1490,7 +1490,7 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk()
     }
 }
 
-ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name, const IDataType & /* type */) const
+ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name) const
 {
     /// For some types of parts columns_size maybe not calculated
     auto it = columns_sizes.find(column_name);
