@@ -4089,6 +4089,9 @@ void StorageReplicatedMergeTree::startup()
         /// Wait while restarting_thread initializes LeaderElection (and so on) or makes first attempt to do it
         startup_event.wait();
 
+        /// Restarting thread has initialized replication queue, replica can become leader now
+        startBeingLeader();
+
         startBackgroundMovesIfNeeded();
 
         part_moves_between_shards_orchestrator.start();
