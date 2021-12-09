@@ -110,6 +110,9 @@ set(libprotobuf_files
 )
 
 add_library(libprotobuf ${libprotobuf_lite_files} ${libprotobuf_files})
+if (ENABLE_FUZZING)
+    target_compile_options(libprotobuf PRIVATE "-fsanitize-recover=all")
+endif()
 target_link_libraries(libprotobuf pthread)
 target_link_libraries(libprotobuf ${ZLIB_LIBRARIES})
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
