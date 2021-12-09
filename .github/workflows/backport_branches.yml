@@ -331,7 +331,7 @@ jobs:
 ############################# INTEGRATION TESTS #############################################
 #############################################################################################
   IntegrationTestsRelease:
-    needs: [BuilderDebRelease, FunctionalStatelessTestRelease]
+    needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
