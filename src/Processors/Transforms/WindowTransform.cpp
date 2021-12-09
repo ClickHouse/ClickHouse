@@ -1008,10 +1008,10 @@ static void assertSameColumns(const Columns & left_all,
         assert(right_column);
 
         if (const auto * left_lc = typeid_cast<const ColumnLowCardinality *>(left_column))
-            left_column = &left_lc->getDictionary();
+            left_column = left_lc->getDictionary().getNestedColumn().get();
 
         if (const auto * right_lc = typeid_cast<const ColumnLowCardinality *>(right_column))
-            right_column = &right_lc->getDictionary();
+            right_column = right_lc->getDictionary().getNestedColumn().get();
 
         assert(typeid(*left_column).hash_code()
             == typeid(*right_column).hash_code());
