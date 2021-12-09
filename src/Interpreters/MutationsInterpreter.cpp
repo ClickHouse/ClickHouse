@@ -569,6 +569,12 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                 stages.emplace_back(context);
 
             const auto & column = columns_desc.get(command.column_name);
+
+            if (!column.default_desc.expression)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot materialize column `{}` because it doesn't have default expression", column.name);
+
             stages.back().column_to_updated.emplace(column.name, column.default_desc.expression->clone());
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
