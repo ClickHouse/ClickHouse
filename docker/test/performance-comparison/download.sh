@@ -33,7 +33,7 @@ function download
 {
     # Historically there were various paths for the performance test package.
     # Test all of them.
-    declare -a urls_to_try=("https://s3.amazonaws.com/clickhouse-builds/$left_pr/$left_sha/clickhouse_build_check_(actions)/performance/performance.tgz"
+    declare -a urls_to_try=("https://s3.amazonaws.com/clickhouse-builds/$left_pr/$left_sha/performance/performance.tgz"
                             "https://clickhouse-builds.s3.yandex.net/$left_pr/$left_sha/clickhouse_build_check/performance/performance.tgz"
                            )
 

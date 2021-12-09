@@ -6,9 +6,9 @@ export CHPC_CHECK_START_TIMESTAMP
 
 S3_URL=${S3_URL:="https://clickhouse-builds.s3.yandex.net"}
 
-COMMON_BUILD_PREFIX=clickhouse_build_check
+COMMON_BUILD_PREFIX="/clickhouse_build_check"
 if [[ $S3_URL == *"s3.amazonaws.com"* ]]; then
-    COMMON_BUILD_PREFIX="clickhouse_build_check_(actions)"
+    COMMON_BUILD_PREFIX=""
 fi
 
 # Use the packaged repository to find the revision we will compare to.
@@ -50,7 +50,7 @@ function find_reference_sha
         # Historically there were various path for the performance test package,
         # test all of them.
         unset found
-        declare -a urls_to_try=("https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/clickhouse_build_check_(actions)/performance/performance.tgz"
+        declare -a urls_to_try=("https://s3.amazonaws.com/clickhouse-builds/0/$REF_SHA/performance/performance.tgz"
                                 "https://clickhouse-builds.s3.yandex.net/0/$REF_SHA/clickhouse_build_check/performance/performance.tgz"
                                )
         for path in "${urls_to_try[@]}"
@@ -76,9 +76,9 @@ chmod 777 workspace output
 cd workspace
 
 # Download the package for the version we are going to test.
-if curl --fail --head "$S3_URL/$PR_TO_TEST/$SHA_TO_TEST/$COMMON_BUILD_PREFIX/performance/performance.tgz"
+if curl --fail --head "$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/performance/performance.tgz"
 then
-    right_path="$S3_URL/$PR_TO_TEST/$SHA_TO_TEST/$COMMON_BUILD_PREFIX/performance/performance.tgz"
+    right_path="$S3_URL/$PR_TO_TEST/$SHA_TO_TEST$COMMON_BUILD_PREFIX/performance/performance.tgz"
 fi
 
 mkdir right
