@@ -1,6 +1,6 @@
 #include <Interpreters/InterpreterExplainQuery.h>
 
-#include <DataStreams/BlockIO.h>
+#include <QueryPipeline/BlockIO.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -12,12 +12,13 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
-#include <Processors/printPipeline.h>
+#include <QueryPipeline/printPipeline.h>
 
 #include <Common/JSONBuilder.h>
 

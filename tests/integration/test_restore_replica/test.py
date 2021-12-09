@@ -4,7 +4,6 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.cluster import ClickHouseKiller
 from helpers.test_tools import assert_eq_with_retry
-from helpers.network import PartitionManager
 
 def fill_nodes(nodes):
     for node in nodes:

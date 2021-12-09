@@ -71,9 +71,9 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## encryption {#server-settings-encryption}
 
-Настраивает комманду для получения ключа используемого [кодеками шифрования](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Ключ (или несколько ключей) должны быть записаны в переменные окружения или установлены в конфигурационном файле .
+Настраивает команду для получения ключа, используемого [кодеками шифрования](../../sql-reference/statements/create/table.md#create-query-encryption-codecs). Ключ (или несколько ключей) должен быть записан в переменные окружения или установлен в конфигурационном файле.
 
-Ключи могут быть представлены в шестнадцатеричной или строковой форме. Их длинна должна быть равна 16.
+Ключи могут быть представлены в шестнадцатеричной или строковой форме. Их длина должна быть равна 16 байтам.
 
 **Пример**
 
@@ -131,7 +131,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <nonce>0123456789101</nonce>
+        <nonce>012345678910</nonce>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
@@ -146,7 +146,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 </encryption_codecs>
 ```
 
-Все вышеперечисленное можно применить также для алгоритма `aes_256_gcm_siv` (но ключ должен быть длинной 32 байта).
+Всё вышеперечисленное также применимо для алгоритма `aes_256_gcm_siv` (но ключ должен быть длиной 32 байта).
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
@@ -368,6 +368,16 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 </http_server_default_response>
 ```
 
+## hsts_max_age  {#hsts-max-age}
+  
+Срок действия HSTS в секундах. Значение по умолчанию `0` (HSTS выключен). Для включения HSTS задайте положительное число. Срок действия HSTS будет равен введенному числу.  
+  
+**Пример**  
+
+```xml
+<hsts_max_age>600000</hsts_max_age>
+```
+
 ## include_from {#server_configuration_parameters-include_from}
 
 Путь к файлу с подстановками.
@@ -465,6 +475,26 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 ``` xml
 <listen_host>::1</listen_host>
 <listen_host>127.0.0.1</listen_host>
+```
+
+## listen_backlog {#server_configuration_parameters-listen_backlog}
+
+Бэклог (размер очереди соединений, ожидающих принятия) прослушивающего сокета.
+
+Значение по умолчанию: `4096` (как в linux [5.4+](https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=19f92a030ca6d772ab44b22ee6a01378a8cb32d4)).
+
+Обычно это значение незачем менять по следующим причинам:
+-  значение по умолчанию достаточно велико,
+-  для принятия соединения клиента у сервера есть отдельный поток.
+
+Так что даже если у вас `TcpExtListenOverflows` (из `nstat`) ненулевой и растет для сервера ClickHouse, это не повод увеличивать значение по умолчанию, поскольку:
+-  обычно если 4096 недостаточно, это говорит о внутренних проблемах ClickHouse с масштабированием, так что лучше сообщить о проблеме,
+-  и это не значит, что сервер сможет принять еще больше подключений в дальнейшем (а если и сможет, клиенты, вероятно, уже отсоединятся).
+
+Примеры:
+
+``` xml
+<listen_backlog>4096</listen_backlog>
 ```
 
 ## logger {#server_configuration_parameters-logger}
@@ -611,7 +641,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ## max_concurrent_queries {#max-concurrent-queries}
 
-Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`. Запросы также могут быть ограничены настройками: [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
+Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`. Запросы также могут быть ограничены настройками: [max_concurrent_queries_for_user](#max-concurrent-queries-for-user), [max_concurrent_queries_for_all_users](#max-concurrent-queries-for-all-users), [min_marks_to_honor_max_concurrent_queries](#min-marks-to-honor-max-concurrent-queries).
 
 !!! info "Примечание"
 	Параметры этих настроек могут быть изменены во время выполнения запросов и вступят в силу немедленно. Запросы, которые уже запущены, выполнятся без изменений.
@@ -625,6 +655,21 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 ``` xml
 <max_concurrent_queries>100</max_concurrent_queries>
+```
+
+## max_concurrent_queries_for_user {#max-concurrent-queries-for-user}
+
+Определяет максимальное количество одновременно обрабатываемых запросов, связанных с таблицей семейства `MergeTree`, для пользователя.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — выключена.
+
+**Пример**
+
+``` xml
+<max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
 ```
 
 ## max_concurrent_queries_for_all_users {#max-concurrent-queries-for-all-users}
@@ -739,14 +784,14 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 Чтобы вручную включить сбор истории метрик в таблице [`system.metric_log`](../../operations/system-tables/metric_log.md), создайте `/etc/clickhouse-server/config.d/metric_log.xml` следующего содержания:
 
 ``` xml
-<yandex>
+<clickhouse>
     <metric_log>
         <database>system</database>
         <table>metric_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
     </metric_log>
-</yandex>
+</clickhouse>
 ```
 
 **Выключение**
@@ -754,9 +799,9 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 Чтобы отключить настройку `metric_log` , создайте файл `/etc/clickhouse-server/config.d/disable_metric_log.xml` следующего содержания:
 
 ``` xml
-<yandex>
+<clickhouse>
 <metric_log remove="1" />
-</yandex>
+</clickhouse>
 ```
 
 ## replicated\_merge\_tree {#server_configuration_parameters-replicated_merge_tree}
@@ -954,14 +999,14 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 Настройки логирования информации о зависимых представлениях (materialized, live и т.п.) в запросах принятых с настройкой [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views).
 
-Запросы сохраняются в таблицу system.query_views_log. Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+Запросы логируются в таблице [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
 При настройке логирования используются следующие параметры:
 
 -   `database` – имя базы данных.
--   `table` – имя таблицы куда будут записываться использованные представления.
--   `partition_by` — устанавливает [произвольный ключ партиционирования](../../engines/table-engines/mergetree-family/custom-partitioning-key.md). Нельзя использовать если используется `engine`
--   `engine` - устанавливает [настройки MergeTree Engine](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) для системной таблицы. Нельзя использовать если используется `partition_by`.
+-   `table` – имя системной таблицы, где будут логироваться запросы.
+-   `partition_by` — устанавливает [произвольный ключ партиционирования](../../engines/table-engines/mergetree-family/custom-partitioning-key.md). Нельзя использовать, если задан параметр `engine`.
+-   `engine` — устанавливает [настройки MergeTree Engine](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) для системной таблицы. Нельзя использовать, если задан параметр `partition_by`.
 -   `flush_interval_milliseconds` — период сброса данных из буфера в памяти в таблицу.
 
 Если таблица не существует, то ClickHouse создаст её. Если структура журнала запросов изменилась при обновлении сервера ClickHouse, то таблица со старой структурой переименовывается, а новая таблица создается автоматически.
@@ -992,7 +1037,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 **Пример**
 ```xml
-<yandex>
+<clickhouse>
     <text_log>
         <level>notice</level>
         <database>system</database>
@@ -1001,7 +1046,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
         <!-- <partition_by>event_date</partition_by> -->
         <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
     </text_log>
-</yandex>
+</clickhouse>
 ```
 
 
@@ -1387,3 +1432,54 @@ ClickHouse использует ZooKeeper для хранения метадан
         </roles>
 </ldap>
 ```
+
+## total_memory_profiler_step {#total-memory-profiler-step}
+
+Задает размер памяти (в байтах) для трассировки стека на каждом шаге выделения максимума памяти. Данные хранятся в системной таблице [system.trace_log](../../operations/system-tables/trace_log.md) с `query_id`, равным пустой строке.
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `4194304`.
+
+## total_memory_tracker_sample_probability {#total-memory-tracker-sample-probability}
+
+Позволяет собирать случайные выделения и освобождения памяти и записывать их в системную таблицу [system.trace_log](../../operations/system-tables/trace_log.md) с `trace_type`, равным `MemorySample`, с указанной вероятностью. Вероятность касается каждого выделения или освобождения памяти, независимо от размера выделения. Обратите внимание, что выборка происходит только тогда, когда объем неотслеживаемой памяти превышает лимит неотслеживаемой памяти (значение по умолчанию: `4` MiB). Значение настройки может быть уменьшено, если значение настройки [total_memory_profiler_step](#total-memory-profiler-step) уменьшено. Вы можете установить значение настройки `total_memory_profiler_step`, равным `1`, для особой детализованной выборки.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — запись случайных выделений и освобождений памяти в системную таблицу `system.trace_log` отключена.
+
+Значение по умолчанию: `0`.
+
+## mmap_cache_size {#mmap-cache-size}
+
+Задает размер кеша (в байтах) для сопоставленных файлов. Эта настройка позволяет избежать частых открытых/[mmap/munmap](https://en.wikipedia.org/wiki/Mmap)/закрытых вызовов (очень дорогостоящие из-за последующих ошибок страниц) и повторного использования сопоставления из нескольких потоков и запросов. Значение настройки — это количество сопоставленных областей (обычно равно количеству сопоставленных файлов). Объем данных в сопоставленных файлах можно отслеживать в системных таблицах [system.metrics](../../operations/system-tables/metrics.md), [system.metric_log](../../operations/system-tables/metric_log.md) по метрикам `MMappedFiles` и `MMappedFileBytes`, в таблицах [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md), [system.asynchronous_metrics_log](../../operations/system-tables/asynchronous_metric_log.md) по метрике `MMapCacheCells`, а также в [system.events](../../operations/system-tables/events.md), [system.processes](../../operations/system-tables/processes.md), [system.query_log](../../operations/system-tables/query_log.md), [system.query_thread_log](../../operations/system-tables/query_thread_log.md), [system.query_views_log](../../operations/system-tables/query_views_log.md) по событиям `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses`. Обратите внимание, что объем данных в сопоставленных файлах не потребляет память напрямую и не учитывается в запросе или использовании памяти сервера, поскольку эта память может быть удалена аналогично кешу страниц ОС. Кеш удаляется (т.е. файлы закрываются) автоматически при удалении старых кусков в таблицах семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md), также его можно удалить вручную с помощью запроса `SYSTEM DROP MMAP CACHE`.
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `1000`.
+
+## compiled_expression_cache_size {#compiled-expression-cache-size}
+
+Задает размер кеша (в байтах) для [скомпилированных выражений](../../operations/caches.md).
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `134217728`.
+
+## compiled_expression_cache_elements_size {#compiled_expression_cache_elements_size}
+
+Задает размер кеша (в элементах) для [скомпилированных выражений](../../operations/caches.md).
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `10000`.

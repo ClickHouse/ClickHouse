@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include "config_core.h"
-#endif
 
 #if USE_LIBPQXX
 
@@ -57,8 +55,8 @@ public:
     void createTable(ContextPtr, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query) override;
     void dropTable(ContextPtr, const String & table_name, bool no_delay) override;
 
-    void attachTable(const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
-    StoragePtr detachTable(const String & table_name) override;
+    void attachTable(ContextPtr context, const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
+    StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
     void drop(ContextPtr /*context*/) override;
     void shutdown() override;
@@ -79,7 +77,7 @@ private:
 
     String getTableNameForLogs(const String & table_name) const;
 
-    String formatTableName(const String & table_name) const;
+    String formatTableName(const String & table_name, bool quoted = true) const;
 
     bool checkPostgresTable(const String & table_name) const;
 

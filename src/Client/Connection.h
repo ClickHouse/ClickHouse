@@ -4,9 +4,7 @@
 
 #include <Poco/Net/StreamSocket.h>
 
-#if !defined(ARCADIA_BUILD)
-#   include <Common/config.h>
-#endif
+#include <Common/config.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
@@ -17,6 +15,8 @@
 #include <Interpreters/Context_fwd.h>
 
 #include <Compression/ICompressionCodec.h>
+
+#include <Storages/MergeTree/RequestResponse.h>
 
 #include <atomic>
 #include <optional>
@@ -59,6 +59,8 @@ public:
         Poco::Timespan sync_request_timeout_ = Poco::Timespan(DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, 0));
 
     ~Connection() override;
+
+    IServerConnection::Type getConnectionType() const override { return IServerConnection::Type::SERVER; }
 
     static ServerConnectionPtr createConnection(const ConnectionParameters & parameters, ContextPtr context);
 
@@ -103,6 +105,8 @@ public:
     void sendCancel() override;
 
     void sendData(const Block & block, const String & name/* = "" */, bool scalar/* = false */) override;
+
+    void sendMergeTreeReadTaskResponse(const PartitionReadResponse & response) override;
 
     void sendExternalTablesData(ExternalTablesData & data) override;
 
@@ -255,7 +259,8 @@ private:
     std::vector<String> receiveMultistringMessage(UInt64 msg_type) const;
     std::unique_ptr<Exception> receiveException() const;
     Progress receiveProgress() const;
-    BlockStreamProfileInfo receiveProfileInfo() const;
+    PartitionReadRequest receivePartitionReadRequest() const;
+    ProfileInfo receiveProfileInfo() const;
 
     void initInputBuffers();
     void initBlockInput();

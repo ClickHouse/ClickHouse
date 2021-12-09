@@ -9,6 +9,7 @@
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Core/Names.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
@@ -536,12 +537,12 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     AutoPtr<Poco::XML::Element> name_element(xml_document->createElement("name"));
     current_dictionary->appendChild(name_element);
-    AutoPtr<Text> name(xml_document->createTextNode(query.table));
+    AutoPtr<Text> name(xml_document->createTextNode(query.getTable()));
     name_element->appendChild(name);
 
     AutoPtr<Poco::XML::Element> database_element(xml_document->createElement("database"));
     current_dictionary->appendChild(database_element);
-    AutoPtr<Text> database(xml_document->createTextNode(!database_.empty() ? database_ : query.database));
+    AutoPtr<Text> database(xml_document->createTextNode(!database_.empty() ? database_ : query.getDatabase()));
     database_element->appendChild(database);
 
     if (query.uuid != UUIDHelpers::Nil)
@@ -572,6 +573,15 @@ getDictionaryConfigurationFromAST(const ASTCreateQuery & query, ContextPtr conte
 
     if (query.dictionary->range)
         buildRangeConfiguration(xml_document, structure_element, query.dictionary->range, all_attr_names_and_types);
+
+    if (query.comment)
+    {
+        AutoPtr<Element> comment_element(xml_document->createElement("comment"));
+        current_dictionary->appendChild(comment_element);
+        AutoPtr<Text> comment_value(xml_document->createTextNode(query.comment->as<ASTLiteral>()->value.safeGet<String>()));
+
+        comment_element->appendChild(comment_value);
+    }
 
     conf->load(xml_document);
     return conf;

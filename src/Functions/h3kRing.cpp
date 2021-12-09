@@ -1,6 +1,4 @@
-#if !defined(ARCADIA_BUILD)
-#    include "config_functions.h"
-#endif
+#include "config_functions.h"
 
 #if USE_H3
 
@@ -75,7 +73,7 @@ public:
 
         std::vector<H3Index> hindex_vec;
 
-        for (const auto row : collections::range(0, input_rows_count))
+        for (size_t row = 0; row < input_rows_count; row++)
         {
             const H3Index origin_hindex = col_hindex->getUInt(row);
             const int k = col_k->getInt(row);

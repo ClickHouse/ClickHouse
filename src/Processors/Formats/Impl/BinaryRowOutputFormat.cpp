@@ -4,6 +4,7 @@
 #include <DataTypes/IDataType.h>
 #include <Processors/Formats/Impl/BinaryRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Formats/registerWithNamesAndTypes.h>
 
 
 namespace DB
@@ -47,25 +48,22 @@ void BinaryRowOutputFormat::writeField(const IColumn & column, const ISerializat
 }
 
 
-void registerOutputFormatProcessorRowBinary(FormatFactory & factory)
+void registerOutputFormatRowBinary(FormatFactory & factory)
 {
-    factory.registerOutputFormatProcessor("RowBinary", [](
-        WriteBuffer & buf,
-        const Block & sample,
-        const RowOutputFormatParams & params,
-        const FormatSettings &)
+    auto register_func = [&](const String & format_name, bool with_names, bool with_types)
     {
-        return std::make_shared<BinaryRowOutputFormat>(buf, sample, false, false, params);
-    });
+        factory.registerOutputFormat(format_name, [with_names, with_types](
+            WriteBuffer & buf,
+            const Block & sample,
+            const RowOutputFormatParams & params,
+            const FormatSettings &)
+        {
+            return std::make_shared<BinaryRowOutputFormat>(buf, sample, with_names, with_types, params);
+        });
+        factory.markOutputFormatSupportsParallelFormatting(format_name);
+    };
 
-    factory.registerOutputFormatProcessor("RowBinaryWithNamesAndTypes", [](
-        WriteBuffer & buf,
-        const Block & sample,
-        const RowOutputFormatParams & params,
-        const FormatSettings &)
-    {
-        return std::make_shared<BinaryRowOutputFormat>(buf, sample, true, true, params);
-    });
+    registerWithNamesAndTypes("RowBinary", register_func);
 }
 
 }

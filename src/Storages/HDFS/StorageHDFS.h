@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
 #include <Common/config.h>
-#endif
 
 #if USE_HDFS
 
@@ -38,7 +36,16 @@ public:
 
     NamesAndTypesList getVirtuals() const override;
 
+    bool supportsPartitionBy() const override { return true; }
+
+    /// Check if the format is column-oriented.
+    /// Is is useful because column oriented formats could effectively skip unknown columns
+    /// So we can create a header of only required columns in read method and ask
+    /// format to read only them. Note: this hack cannot be done with ordinary formats like TSV.
+    bool isColumnOriented() const;
+
 protected:
+    friend class HDFSSource;
     StorageHDFS(
         const String & uri_,
         const StorageID & table_id_,
@@ -47,12 +54,14 @@ protected:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
-        const String & compression_method_);
+        const String & compression_method_,
+        ASTPtr partition_by = nullptr);
 
 private:
     const String uri;
     String format_name;
     String compression_method;
+    ASTPtr partition_by;
 
     Poco::Logger * log = &Poco::Logger::get("StorageHDFS");
 };

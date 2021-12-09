@@ -10,13 +10,6 @@ namespace DB
   */
 class WriteBufferFromFileDescriptor : public WriteBufferFromFileBase
 {
-protected:
-    int fd;
-
-    /// If file has name contains filename, otherwise contains string "(fd=...)"
-    std::string file_name;
-
-    void nextImpl() override;
 public:
     WriteBufferFromFileDescriptor(
         int fd_ = -1,
@@ -51,6 +44,16 @@ public:
     std::string getFileName() const override;
 
     off_t size() const;
+
+protected:
+    void nextImpl() override;
+
+    int fd;
+
+    /// If file has name contains filename, otherwise contains string "(fd=...)"
+    std::string file_name;
+
+    void finalizeImpl() override;
 };
 
 }

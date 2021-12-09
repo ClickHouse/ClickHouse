@@ -1,8 +1,10 @@
 #include "Internals.h"
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/extractKeyExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/extractKeyExpressionList.h>
 
 namespace DB
 {
@@ -57,14 +59,6 @@ std::shared_ptr<ASTStorage> createASTStorageDistributed(
 }
 
 
-BlockInputStreamPtr squashStreamIntoOneBlock(const BlockInputStreamPtr & stream)
-{
-    return std::make_shared<SquashingBlockInputStream>(
-            stream,
-            std::numeric_limits<size_t>::max(),
-            std::numeric_limits<size_t>::max());
-}
-
 Block getBlockWithAllStreamData(QueryPipeline pipeline)
 {
     QueryPipelineBuilder builder;
@@ -81,7 +75,6 @@ Block getBlockWithAllStreamData(QueryPipeline pipeline)
 
     return block;
 }
-
 
 bool isExtendedDefinitionStorage(const ASTPtr & storage_ast)
 {

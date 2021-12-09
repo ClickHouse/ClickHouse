@@ -23,7 +23,7 @@ chmod a+x ./hardware.sh
 ./hardware.sh
 ```
 
-3. Copy the output and send it to clickhouse-feedback@yandex-team.com
+3. Copy the output and send it to feedback@clickhouse.com
 
 All the results are published here: https://clickhouse.com/benchmark/hardware/
 

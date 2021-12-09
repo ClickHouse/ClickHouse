@@ -55,6 +55,10 @@ struct MergeInfo
 struct FutureMergedMutatedPart;
 using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
 
+struct MergeListElement;
+using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
+
+
 /**
  * Since merge is executed with multiple threads, this class
  * switches the parent MemoryTracker to account all the memory used.
@@ -62,12 +66,15 @@ using FutureMergedMutatedPartPtr = std::shared_ptr<FutureMergedMutatedPart>;
 class MemoryTrackerThreadSwitcher : boost::noncopyable
 {
 public:
-    explicit MemoryTrackerThreadSwitcher(MemoryTracker * memory_tracker_ptr, UInt64 untracked_memory_limit);
+    explicit MemoryTrackerThreadSwitcher(MergeListEntry & merge_list_entry_);
     ~MemoryTrackerThreadSwitcher();
 private:
+    MergeListEntry & merge_list_entry;
     MemoryTracker * background_thread_memory_tracker;
     MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
     UInt64 prev_untracked_memory_limit;
+    UInt64 prev_untracked_memory;
+    String prev_query_id;
 };
 
 using MemoryTrackerThreadSwitcherPtr = std::unique_ptr<MemoryTrackerThreadSwitcher>;
@@ -105,7 +112,12 @@ struct MergeListElement : boost::noncopyable
     std::atomic<UInt64> columns_written{};
 
     MemoryTracker memory_tracker{VariableContext::Process};
+    /// Used to adjust ThreadStatus::untracked_memory_limit
     UInt64 max_untracked_memory;
+    /// Used to avoid losing any allocation context
+    UInt64 untracked_memory = 0;
+    /// Used for identifying mutations/merges in trace_log
+    std::string query_id;
 
     UInt64 thread_id;
     MergeType merge_type;
@@ -125,8 +137,6 @@ struct MergeListElement : boost::noncopyable
 
     ~MergeListElement();
 };
-
-using MergeListEntry = BackgroundProcessListEntry<MergeListElement, MergeInfo>;
 
 /** Maintains a list of currently running merges.
   * For implementation of system.merges table.

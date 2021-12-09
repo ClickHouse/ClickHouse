@@ -33,7 +33,10 @@ private:
     UncompressedCache::MappedPtr owned_cell;
 
     void initInput();
+
     bool nextImpl() override;
+
+    void prefetch() override;
 
     /// Passed into file_in.
     ReadBufferFromFileBase::ProfileCallback profile_callback;
@@ -54,6 +57,18 @@ public:
     {
         profile_callback = profile_callback_;
         clock_type = clock_type_;
+    }
+
+    void setReadUntilPosition(size_t position) override
+    {
+        if (file_in)
+            file_in->setReadUntilPosition(position);
+    }
+
+    void setReadUntilEnd() override
+    {
+        if (file_in)
+            file_in->setReadUntilEnd();
     }
 };
 

@@ -41,7 +41,7 @@ std::unique_ptr<ReadBuffer> BackupEntryFromImmutableFile::getReadBuffer() const
     if (disk)
         return disk->readFile(file_path);
     else
-        return createReadBufferFromFileBase(file_path, {}, 0);
+        return createReadBufferFromFileBase(file_path, /* settings= */ {});
 }
 
 }

@@ -14,7 +14,7 @@
 **Пример**
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <ldap_servers>
         <!- Typical LDAP server. -->
@@ -45,7 +45,7 @@
             <enable_tls>no</enable_tls>
         </my_ad_server>
     </ldap_servers>
-</yandex>
+</clickhouse>
 ```
 
 Обратите внимание, что можно определить несколько LDAP серверов внутри секции `ldap_servers`, используя различные имена.
@@ -90,7 +90,7 @@
 **Пример**
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <users>
         <!- ... -->
@@ -101,7 +101,7 @@
             </ldap>
         </my_user>
     </users>
-</yandex>
+</clickhouse>
 ```
 
 Обратите внимание, что пользователь `my_user` ссылается на `my_ldap_server`. Этот LDAP сервер должен быть настроен в основном файле `config.xml`, как это было описано ранее.
@@ -125,7 +125,7 @@ CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
 В `config.xml`.
 
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <user_directories>
         <!- Typical LDAP server. -->
@@ -156,7 +156,7 @@ CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
             </role_mapping>
         </ldap>
     </user_directories>
-</yandex>
+</clickhouse>
 ```
 
 Обратите внимание, что `my_ldap_server`, указанный в секции `ldap` внутри секции `user_directories`, должен быть настроен в файле `config.xml`, как это было описано ранее. (см. [Определение LDAP сервера](#ldap-server-definition)).

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-parallel
+
 # shellcheck disable=SC2016,SC2028
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -50,6 +52,30 @@ format_template_rows_between_delimiter = ','";
 
 $CLICKHOUSE_CLIENT --query="SELECT * FROM template2 ORDER BY n FORMAT CSV";
 
+echo "==== check raw ===="
+
+echo -ne '{prefix} \n${data}\n $$ suffix $$\n' > "$CURDIR"/00938_template_input_format_resultset.tmp
+echo -ne 'n:\t${n:Escaped}, s1:\t${0:Raw}\t, s2:\t${1:Quoted}, s3:\t${s3:JSON}, s4:\t${3:CSV}, d:\t${d:Escaped}\t' > "$CURDIR"/00938_template_input_format_row.tmp
+
+
+$CLICKHOUSE_CLIENT --query="TRUNCATE TABLE template1";
+
+echo "{prefix}"' '"
+n:	123, s1:	qwe,rty	, s2:	'as\"df\\'gh', s3:	\"\", s4:	\"zx
+cv	bn m\", d:	2016-01-01	;
+n:	456, s1:	as\"df\\'gh	, s2:	'', s3:	\"zx\\ncv\\tbn m\", s4:	\"qwe,rty\", d:	2016-01-02	;
+n:	9876543210, s1:		, s2:	'zx\\ncv\\tbn m', s3:	\"qwe,rty\", s4:	\"as\"\"df'gh\", d:	2016-01-03	;
+n:	789, s1:	zx\cv\bn m	, s2:	'qwe,rty', s3:	\"as\\\"df'gh\", s4:	\"\", d:	2016-01-04"$'\t'"
+ $ suffix $" | $CLICKHOUSE_CLIENT --query="INSERT INTO template1 FORMAT Template SETTINGS \
+format_template_resultset = '$CURDIR/00938_template_input_format_resultset.tmp', \
+format_template_row = '$CURDIR/00938_template_input_format_row.tmp', \
+format_template_rows_between_delimiter = ';\n'";
+
+$CLICKHOUSE_CLIENT --query="SELECT * FROM template1 ORDER BY n FORMAT CSV";
+
+
+
 $CLICKHOUSE_CLIENT --query="DROP TABLE template1";
 $CLICKHOUSE_CLIENT --query="DROP TABLE template2";
 rm "$CURDIR"/00938_template_input_format_resultset.tmp "$CURDIR"/00938_template_input_format_row.tmp
+
