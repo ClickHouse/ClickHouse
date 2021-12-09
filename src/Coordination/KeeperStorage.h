@@ -37,7 +37,8 @@ public:
         ChildrenSet children{};
         uint64_t size_bytes; // save size to avoid caculate every time
 
-        Node() {
+        Node() 
+        {
             size_bytes = sizeof(size_bytes);
             size_bytes += data.size();
             size_bytes += sizeof(acl_id);
@@ -46,7 +47,8 @@ public:
             size_bytes += sizeof(seq_num);
         }
         /// Object memory size
-        uint64_t sizeInBytes() const {
+        uint64_t sizeInBytes() const 
+        {
             return size_bytes;
         }
     };
