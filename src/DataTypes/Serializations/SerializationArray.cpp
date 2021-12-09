@@ -450,13 +450,16 @@ void SerializationArray::serializeText(const IColumn & column, size_t row_num, W
 }
 
 
-void SerializationArray::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
+void SerializationArray::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
     deserializeTextImpl(column, istr,
         [&](IColumn & nested_column)
         {
             nested->deserializeTextQuoted(nested_column, istr, settings);
         }, false);
+
+    if (whole && !istr.eof())
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, "Array");
 }
 
 void SerializationArray::serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

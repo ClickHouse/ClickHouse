@@ -10,6 +10,8 @@
 #include <Disks/IO/WriteIndirectBufferFromRemoteFS.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 
+#include <boost/algorithm/string/predicate.hpp>
+
 #include <base/logger_useful.h>
 #include <base/FnTraits.h>
 
@@ -95,7 +97,7 @@ std::unique_ptr<WriteBufferFromFileBase> DiskHDFS::writeFile(const String & path
 
     /// Single O_WRONLY in libhdfs adds O_TRUNC
     auto hdfs_buffer = std::make_unique<WriteBufferFromHDFS>(hdfs_path,
-                                                             config, buf_size,
+                                                             config, settings->replication, buf_size,
                                                              mode == WriteMode::Rewrite ? O_WRONLY :  O_WRONLY | O_APPEND);
 
     return std::make_unique<WriteIndirectBufferFromRemoteFS<WriteBufferFromHDFS>>(std::move(hdfs_buffer),
@@ -140,12 +142,13 @@ bool DiskHDFS::checkUniqueId(const String & hdfs_uri) const
 
 namespace
 {
-std::unique_ptr<DiskHDFSSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+std::unique_ptr<DiskHDFSSettings> getSettings(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const Settings & settings)
 {
     return std::make_unique<DiskHDFSSettings>(
         config.getUInt64(config_prefix + ".min_bytes_for_seek", 1024 * 1024),
         config.getInt(config_prefix + ".thread_pool_size", 16),
-        config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000));
+        config.getInt(config_prefix + ".objects_chunk_size_to_delete", 1000),
+        settings.hdfs_replication);
 }
 }
 
@@ -171,7 +174,7 @@ void registerDiskHDFS(DiskFactory & factory)
 
         return std::make_shared<DiskHDFS>(
             name, uri,
-            getSettings(config, config_prefix),
+            getSettings(config, config_prefix, context_->getSettingsRef()),
             metadata_disk, config);
     };
 

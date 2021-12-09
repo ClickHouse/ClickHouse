@@ -128,10 +128,7 @@ private:
     void initBlockOutputStream(const Block & block, ASTPtr parsed_query);
     void initLogsOutputStream();
 
-    inline String prompt() const
-    {
-        return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
-    }
+    String prompt() const;
 
     void resetOutput();
     void outputQueryInfo(bool echo_query_);

@@ -61,6 +61,7 @@ void registerFunctionValidateNestedArraySizes(FunctionFactory & factory);
 void registerFunctionsSnowflake(FunctionFactory & factory);
 void registerFunctionTid(FunctionFactory & factory);
 void registerFunctionLogTrace(FunctionFactory & factory);
+void registerFunctionsWindow(FunctionFactory &);
 
 #if USE_CLD2
 void registerFunctionLanguageDetectUTF8(FunctionFactory &);
@@ -128,6 +129,7 @@ void registerFunctions()
     registerFunctionsStringHash(factory);
     registerFunctionValidateNestedArraySizes(factory);
     registerFunctionsSnowflake(factory);
+    registerFunctionsWindow(factory);
 
 #if USE_CLD2
     registerFunctionLanguageDetectUTF8(factory);

@@ -66,13 +66,27 @@ def _get_version_from_line(line):
     _, ver_with_bracket = line.strip().split(' ')
     return ver_with_bracket[:-1]
 
+def get_tweak_from_git_describe(repo_path):
+    # something like v21.12.1.8816-testing-358-g81942b8128
+    # or v21.11.4.14-stable-31-gd6aab025e0
+    output = subprocess.check_output(f"cd {repo_path} && git describe --long", shell=True).decode('utf-8')
+    commits_number = int(output.split('-')[-2])
+    # for testing releases we have to also add fourth number of
+    # the previous tag
+    if 'testing' in output:
+        previous_version = output.split('-')[0]
+        previous_version_commits = int(previous_version.split('.')[3])
+        commits_number += previous_version_commits
+
+    return commits_number
+
 
 def get_version_from_repo(repo_path):
     path_to_file = os.path.join(repo_path, FILE_WITH_VERSION_PATH)
     major = 0
     minor = 0
     patch = 0
-    tweak = 0
+    tweak = get_tweak_from_git_describe(repo_path)
     version_revision = 0
     with open(path_to_file, 'r') as ver_file:
         for line in ver_file:
