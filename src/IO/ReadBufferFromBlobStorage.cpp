@@ -30,13 +30,12 @@ ReadBufferFromBlobStorage::ReadBufferFromBlobStorage(
     size_t tmp_buffer_size_,
     bool use_external_buffer_,
     size_t read_until_position_)
-    // TODO: shall this notation be used in all constructors?
     : SeekableReadBuffer(nullptr, 0)
     , blob_container_client(blob_container_client_)
     , path(path_)
     , max_single_read_retries(max_single_read_retries_)
     , max_single_download_retries(max_single_download_retries_)
-    , tmp_buffer_size(tmp_buffer_size_) // NOTE: field used only here in the constructor
+    , tmp_buffer_size(tmp_buffer_size_)
     , use_external_buffer(use_external_buffer_)
     , read_until_position(read_until_position_)
 {
@@ -73,7 +72,7 @@ bool ReadBufferFromBlobStorage::nextImpl()
     size_t bytes_read = 0;
 
     size_t sleep_time_with_backoff_milliseconds = 100;
-    for (size_t i = 0; i < max_single_read_retries; ++i) // TODO: are retries necessary with Azure reliable streams?
+    for (size_t i = 0; i < max_single_read_retries; ++i)
     {
         try
         {

@@ -70,7 +70,6 @@ std::unique_ptr<DiskBlobStorageSettings> getSettings(const Poco::Util::AbstractC
         config.getInt(config_prefix + ".max_single_read_retries", 3),
         config.getInt(config_prefix + ".max_single_download_retries", 3),
         config.getInt(config_prefix + ".thread_pool_size", 16)
-        // TODO: maybe use context for global settings from Settings.h
     );
 }
 
