@@ -89,6 +89,8 @@ jobs:
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Performance Comparison (actions)'
           REPO_COPY: ${{runner.temp}}/performance_comparison/ClickHouse
+          RAMDRIVE_PATH: ${{runner.temp}}/performance_comparison/ramdrive
+          RAMDRIVE_SIZE: '120G'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH

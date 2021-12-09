@@ -13,11 +13,9 @@ from github import Github
 
 from pr_info import PRInfo
 from s3_helper import S3Helper
-from ci_config import build_config_to_string
 from get_robot_token import get_best_robot_token
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import get_commit, post_commit_status
-from build_download_helper import get_build_config_for_check, get_build_urls
 
 IMAGE_NAME = 'clickhouse/performance-comparison'
 
@@ -27,10 +25,27 @@ def get_run_command(workspace, result_path, pr_to_test, sha_to_test, additional_
         f"-e PR_TO_TEST={pr_to_test} -e SHA_TO_TEST={sha_to_test} {additional_env} " \
         f"{image}"
 
+class RamDrive:
+    def __init__(self, path, size):
+        self.path = path
+        self.size = size
+
+    def __enter__(self):
+        if not os.path.exists(self.path):
+            os.makedirs(self.path)
+
+        subprocess.check_call(f"sudo mount -t tmpfs -o rw,size={self.size} tmpfs {self.path}", shell=True)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        subprocess.check_call(f"sudo unmount {self.path}", shell=True)
+        subprocess.check_call(f"sudo rm -fr {self.path}", shell=True)
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
+    ramdrive_path = os.getenv("RAMDRIVE_PATH", os.path.join(temp_path, "ramdrive"))
+    ramdrive_size = os.getenv("RAMDRIVE_SIZE", '120G')
     reports_path = os.getenv("REPORTS_PATH", "./reports")
 
     check_name = sys.argv[1]
@@ -44,21 +59,6 @@ if __name__ == "__main__":
     gh = Github(get_best_robot_token())
     pr_info = PRInfo(event)
     commit = get_commit(gh, pr_info.sha)
-
-    build_config = get_build_config_for_check(check_name)
-    print(build_config)
-    build_config_str = build_config_to_string(build_config)
-    print(build_config_str)
-    urls = get_build_urls(build_config_str, reports_path)
-    if not urls:
-        raise Exception("No build URLs found")
-
-    for url in urls:
-        if url.endswith('/performance.tgz'):
-            build_url = url
-            break
-    else:
-        raise Exception("Cannot binary clickhouse among build results")
 
     docker_env = ''
 
@@ -75,84 +75,82 @@ if __name__ == "__main__":
 
     docker_image = get_image_with_version(reports_path, IMAGE_NAME)
 
-    result_path = os.path.join(temp_path, 'result_path')
-    if not os.path.exists(result_path):
-        os.makedirs(result_path)
+    with RamDrive(ramdrive_path, ramdrive_size):
+        result_path = ramdrive_path
+        run_command = get_run_command(result_path, result_path, pr_info.number, pr_info.sha, docker_env, docker_image)
+        logging.info("Going to run command %s", run_command)
+        run_log_path = os.path.join(temp_path, "runlog.log")
+        with open(run_log_path, 'w', encoding='utf-8') as log:
+            with subprocess.Popen(run_command, shell=True, stderr=log, stdout=log) as process:
+                retcode = process.wait()
+                if retcode == 0:
+                    logging.info("Run successfully")
+                else:
+                    logging.info("Run failed")
 
-    run_command = get_run_command(result_path, result_path, pr_info.number, pr_info.sha, docker_env, docker_image)
-    logging.info("Going to run command %s", run_command)
-    run_log_path = os.path.join(temp_path, "runlog.log")
-    with open(run_log_path, 'w', encoding='utf-8') as log:
-        with subprocess.Popen(run_command, shell=True, stderr=log, stdout=log) as process:
-            retcode = process.wait()
-            if retcode == 0:
-                logging.info("Run successfully")
-            else:
-                logging.info("Run failed")
+        subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
-    subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
+        s3_prefix = f'{pr_info.number}/{pr_info.sha}/performance_comparison/'
+        paths = {
+            'compare.log': 'compare.log',
+            'output.7z': 'output.7z',
+            'report.html': 'report.html',
+            'all-queries.html': 'all-queries.html',
+            'queries.rep': 'queries.rep',
+            'all-query-metrics.tsv': 'report/all-query-metrics.tsv',
+        }
 
-    s3_prefix = f'{pr_info.number}/{pr_info.sha}/performance_comparison/'
-    paths = {
-        'compare.log': 'compare.log',
-        'output.7z': 'output.7z',
-        'report.html': 'report.html',
-        'all-queries.html': 'all-queries.html',
-        'queries.rep': 'queries.rep',
-        'all-query-metrics.tsv': 'report/all-query-metrics.tsv',
-    }
+        s3_helper = S3Helper('https://s3.amazonaws.com')
+        for file in paths:
+            try:
+                paths[file] = s3_helper.upload_test_report_to_s3(
+                    os.path.join(result_path, paths[file]),
+                    s3_prefix + file)
+            except Exception:
+                paths[file] = ''
+                traceback.print_exc()
 
-    s3_helper = S3Helper('https://s3.amazonaws.com')
-    for file in paths:
+        # Upload all images and flamegraphs to S3
         try:
-            paths[file] = s3_helper.upload_test_report_to_s3(
-                os.path.join(result_path, paths[file]),
-                s3_prefix + file)
+            s3_helper.upload_test_folder_to_s3(
+                os.path.join(result_path, 'images'),
+                s3_prefix + 'images'
+            )
         except Exception:
-            paths[file] = ''
             traceback.print_exc()
 
-    # Upload all images and flamegraphs to S3
-    try:
-        s3_helper.upload_test_folder_to_s3(
-            os.path.join(result_path, 'images'),
-            s3_prefix + 'images'
-        )
-    except Exception:
-        traceback.print_exc()
+        # Try to fetch status from the report.
+        status = ''
+        message = ''
+        try:
+            report_text = open(os.path.join(result_path, 'report.html'), 'r').read()
+            status_match = re.search('<!--[ ]*status:(.*)-->', report_text)
+            message_match = re.search('<!--[ ]*message:(.*)-->', report_text)
+            if status_match:
+                status = status_match.group(1).strip()
+            if message_match:
+                message = message_match.group(1).strip()
+        except Exception:
+            traceback.print_exc()
+            status = 'failure'
+            message = 'Failed to parse the report.'
 
-    # Try to fetch status from the report.
-    status = ''
-    message = ''
-    try:
-        report_text = open(os.path.join(result_path, 'report.html'), 'r').read()
-        status_match = re.search('<!--[ ]*status:(.*)-->', report_text)
-        message_match = re.search('<!--[ ]*message:(.*)-->', report_text)
-        if status_match:
-            status = status_match.group(1).strip()
-        if message_match:
-            message = message_match.group(1).strip()
-    except Exception:
-        traceback.print_exc()
-        status = 'failure'
-        message = 'Failed to parse the report.'
+        if not status:
+            status = 'failure'
+            message = 'No status in report.'
+        elif not message:
+            status = 'failure'
+            message = 'No message in report.'
 
-    if not status:
-        status = 'failure'
-        message = 'No status in report.'
-    elif not message:
-        status = 'failure'
-        message = 'No message in report.'
+        report_url = task_url
 
-    report_url = task_url
+        if paths['compare.log']:
+            report_url = paths['compare.log']
 
-    if paths['compare.log']:
-        report_url = paths['compare.log']
+        if paths['output.7z']:
+            report_url = paths['output.7z']
 
-    if paths['output.7z']:
-        report_url = paths['output.7z']
+        if paths['report.html']:
+            report_url = paths['report.html']
 
-    if paths['report.html']:
-        report_url = paths['report.html']
-
-    post_commit_status(gh, pr_info.sha, check_name, message, status, report_url)
+        post_commit_status(gh, pr_info.sha, check_name, message, status, report_url)
