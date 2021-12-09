@@ -1498,7 +1498,7 @@ jobs:
 ############################# INTEGRATION TESTS #############################################
 #############################################################################################
   IntegrationTestsAsan:
-    needs: [BuilderDebAsan, FunctionalStatelessTestAsan]
+    needs: [BuilderDebAsan]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
@@ -1526,7 +1526,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   IntegrationTestsTsan:
-    needs: [BuilderDebTsan, FunctionalStatelessTestTsan]
+    needs: [BuilderDebTsan]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
@@ -1554,7 +1554,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   IntegrationTestsRelease:
-    needs: [BuilderDebRelease, FunctionalStatelessTestRelease]
+    needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
