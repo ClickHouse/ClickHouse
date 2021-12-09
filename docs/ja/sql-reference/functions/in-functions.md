@@ -23,4 +23,4 @@ For columns with the types T1, T2, …, it returns a Tuple(T1, T2, …) type tup
 ‘N’ 1から始まる列インデックスです。 Nは定数でなければなりません。 ‘N’ 定数でなければなりません。 ‘N’ 組のサイズより大きくない厳密なpostive整数でなければなりません。
 関数を実行するコストはありません。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/in_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/in_functions/) <!--hide-->

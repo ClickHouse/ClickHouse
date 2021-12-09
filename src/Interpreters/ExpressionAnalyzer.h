@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/FilterDescription.h>
-#include <DataStreams/IBlockStream_fwd.h>
 #include <Interpreters/AggregateDescription.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/SubqueryForSet.h>
@@ -90,8 +89,9 @@ private:
     {
         const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
+        const UInt64 distributed_group_by_no_merge;
 
-        ExtractedSettings(const Settings & settings_);
+        explicit ExtractedSettings(const Settings & settings_);
     };
 
 public:
@@ -187,12 +187,15 @@ protected:
       *  or after all the actions that are normally performed before aggregation.
       * Set has_aggregation = true if there is GROUP BY or at least one aggregate function.
       */
-    void analyzeAggregation();
-    bool makeAggregateDescriptions(ActionsDAGPtr & actions);
+    void analyzeAggregation(ActionsDAGPtr & temp_actions);
+    void makeAggregateDescriptions(ActionsDAGPtr & actions, AggregateDescriptions & descriptions);
 
     const ASTSelectQuery * getSelectQuery() const;
 
     bool isRemoteStorage() const { return syntax->is_remote_storage; }
+
+    NamesAndTypesList getColumnsAfterArrayJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
+    NamesAndTypesList analyzeJoin(ActionsDAGPtr & actions, const NamesAndTypesList & src_columns);
 };
 
 class SelectQueryExpressionAnalyzer;
@@ -225,6 +228,8 @@ struct ExpressionAnalysisResult
     ActionsDAGPtr before_where;
     ActionsDAGPtr before_aggregation;
     ActionsDAGPtr before_having;
+    String having_column_name;
+    bool remove_having_filter = false;
     ActionsDAGPtr before_window;
     ActionsDAGPtr before_order_by;
     ActionsDAGPtr before_limit_by;
@@ -270,7 +275,12 @@ struct ExpressionAnalysisResult
 
     void removeExtraColumns() const;
     void checkActions() const;
-    void finalize(const ExpressionActionsChain & chain, size_t where_step_num, const ASTSelectQuery & query);
+    void finalize(
+        const ExpressionActionsChain & chain,
+        ssize_t & prewhere_step_num,
+        ssize_t & where_step_num,
+        ssize_t & having_step_num,
+        const ASTSelectQuery & query);
 };
 
 /// SelectQuery specific ExpressionAnalyzer part.
@@ -326,18 +336,19 @@ public:
     /// Deletes all columns except mentioned by SELECT, arranges the remaining columns and renames them to aliases.
     ActionsDAGPtr appendProjectResult(ExpressionActionsChain & chain) const;
 
+    /// Create Set-s that we make from IN section to use index on them.
+    void makeSetsForIndex(const ASTPtr & node);
+
 private:
     StorageMetadataPtr metadata_snapshot;
     /// If non-empty, ignore all expressions not from this list.
     NameSet required_result_columns;
     SelectQueryOptions query_options;
 
-    /// Create Set-s that we make from IN section to use index on them.
-    void makeSetsForIndex(const ASTPtr & node);
-
     JoinPtr makeTableJoin(
         const ASTTablesInSelectQueryElement & join_element,
-        const ColumnsWithTypeAndName & left_sample_columns);
+        const ColumnsWithTypeAndName & left_columns,
+        ActionsDAGPtr & left_convert_actions);
 
     const ASTSelectQuery * getAggregatingQuery() const;
 
@@ -358,7 +369,8 @@ private:
     /// Before aggregation:
     ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsDAGPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
-    JoinPtr appendJoin(ExpressionActionsChain & chain);
+    JoinPtr appendJoin(ExpressionActionsChain & chain, ActionsDAGPtr & converting_join_columns);
+
     /// remove_filter is set in ExpressionActionsChain::finalize();
     /// Columns in `additional_required_columns` will not be removed (they can be used for e.g. sampling or FINAL modifier).
     ActionsDAGPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types, const Names & additional_required_columns);

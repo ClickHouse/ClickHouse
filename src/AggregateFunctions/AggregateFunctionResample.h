@@ -4,7 +4,7 @@
 #include <Columns/ColumnArray.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Common/assert_cast.h>
-#include <common/arithmeticOverflow.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB
@@ -134,11 +134,7 @@ public:
             nested_function->destroy(place + i * size_of_data);
     }
 
-    void add(
-        AggregateDataPtr place,
-        const IColumn ** columns,
-        size_t row_num,
-        Arena * arena) const override
+    void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
         Key key;
 
@@ -155,30 +151,22 @@ public:
         nested_function->add(place + pos * size_of_data, columns, row_num, arena);
     }
 
-    void merge(
-        AggregateDataPtr place,
-        ConstAggregateDataPtr rhs,
-        Arena * arena) const override
+    void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         for (size_t i = 0; i < total; ++i)
             nested_function->merge(place + i * size_of_data, rhs + i * size_of_data, arena);
     }
 
-    void serialize(
-        ConstAggregateDataPtr place,
-        WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         for (size_t i = 0; i < total; ++i)
-            nested_function->serialize(place + i * size_of_data, buf);
+            nested_function->serialize(place + i * size_of_data, buf, version);
     }
 
-    void deserialize(
-        AggregateDataPtr place,
-        ReadBuffer & buf,
-        Arena * arena) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         for (size_t i = 0; i < total; ++i)
-            nested_function->deserialize(place + i * size_of_data, buf, arena);
+            nested_function->deserialize(place + i * size_of_data, buf, version, arena);
     }
 
     DataTypePtr getReturnType() const override
@@ -186,10 +174,7 @@ public:
         return std::make_shared<DataTypeArray>(nested_function->getReturnType());
     }
 
-    void insertResultInto(
-        AggregateDataPtr place,
-        IColumn & to,
-        Arena * arena) const override
+    void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override
     {
         auto & col = assert_cast<ColumnArray &>(to);
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());

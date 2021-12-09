@@ -1,7 +1,5 @@
 DROP TABLE IF EXISTS 01802_empsalary;
 
-SET allow_experimental_window_functions=1;
-
 CREATE TABLE 01802_empsalary
 (
     `depname` LowCardinality(String),

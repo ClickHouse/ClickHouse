@@ -1,4 +1,5 @@
 #include "StorageMongoDB.h"
+#include "StorageMongoDBSocketFactory.h"
 
 #include <Poco/MongoDB/Connection.h>
 #include <Poco/MongoDB/Cursor.h>
@@ -8,13 +9,11 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
-#include <DataStreams/IBlockOutputStream.h>
 #include <Common/parseAddress.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTLiteral.h>
-#include <Processors/Sources/SourceFromInputStream.h>
-#include <Processors/Pipe.h>
-#include <DataStreams/MongoDBBlockInputStream.h>
+#include <QueryPipeline/Pipe.h>
+#include <Processors/Transforms/MongoDBSource.h>
 
 namespace DB
 {
@@ -23,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int MONGODB_CANNOT_AUTHENTICATE;
+    extern const int BAD_ARGUMENTS;
 }
 
 StorageMongoDB::StorageMongoDB(
@@ -33,6 +33,7 @@ StorageMongoDB::StorageMongoDB(
     const std::string & collection_name_,
     const std::string & username_,
     const std::string & password_,
+    const std::string & options_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment)
@@ -43,6 +44,8 @@ StorageMongoDB::StorageMongoDB(
     , collection_name(collection_name_)
     , username(username_)
     , password(password_)
+    , options(options_)
+    , uri("mongodb://" + host_ + ":" + std::to_string(port_) + "/" + database_name_ + "?" + options_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -56,7 +59,10 @@ void StorageMongoDB::connectIfNotConnected()
 {
     std::lock_guard lock{connection_mutex};
     if (!connection)
-        connection = std::make_shared<Poco::MongoDB::Connection>(host, port);
+    {
+        StorageMongoDBSocketFactory factory;
+        connection = std::make_shared<Poco::MongoDB::Connection>(uri, factory);
+    }
 
     if (!authenticated)
     {
@@ -92,40 +98,75 @@ Pipe StorageMongoDB::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return Pipe(std::make_shared<SourceFromInputStream>(
-            std::make_shared<MongoDBBlockInputStream>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size, true)));
+    return Pipe(std::make_shared<MongoDBSource>(connection, createCursor(database_name, collection_name, sample_block), sample_block, max_block_size, true));
 }
+
+
+StorageMongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextPtr context)
+{
+    StorageMongoDBConfiguration configuration;
+    if (auto named_collection = getExternalDataSourceConfiguration(engine_args, context))
+    {
+        auto [common_configuration, storage_specific_args] = named_collection.value();
+        configuration.set(common_configuration);
+
+        for (const auto & [arg_name, arg_value] : storage_specific_args)
+        {
+            if (arg_name == "collection")
+                configuration.collection = arg_value->as<ASTLiteral>()->value.safeGet<String>();
+            else if (arg_name == "options")
+                configuration.options = arg_value->as<ASTLiteral>()->value.safeGet<String>();
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Unexpected key-value argument."
+                        "Got: {}, but expected one of:"
+                        "host, port, username, password, database, table, options.", arg_name);
+        }
+    }
+    else
+    {
+        if (engine_args.size() < 5 || engine_args.size() > 6)
+            throw Exception(
+                "Storage MongoDB requires from 5 to 6 parameters: MongoDB('host:port', database, collection, 'user', 'password' [, 'options']).",
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
+
+        /// 27017 is the default MongoDB port.
+        auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 27017);
+
+        configuration.host = parsed_host_port.first;
+        configuration.port = parsed_host_port.second;
+        configuration.database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
+        configuration.collection = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
+        configuration.username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
+        configuration.password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
+
+        if (engine_args.size() >= 6)
+            configuration.options = engine_args[5]->as<ASTLiteral &>().value.safeGet<String>();
+
+    }
+
+    return configuration;
+}
+
 
 void registerStorageMongoDB(StorageFactory & factory)
 {
     factory.registerStorage("MongoDB", [](const StorageFactory::Arguments & args)
     {
-        ASTs & engine_args = args.engine_args;
-
-        if (engine_args.size() != 5)
-            throw Exception(
-                "Storage MongoDB requires 5 parameters: MongoDB('host:port', database, collection, 'user', 'password').",
-                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
-
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.getLocalContext());
-
-        /// 27017 is the default MongoDB port.
-        auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 27017);
-
-        const String & remote_database = engine_args[1]->as<ASTLiteral &>().value.safeGet<String>();
-        const String & collection = engine_args[2]->as<ASTLiteral &>().value.safeGet<String>();
-        const String & username = engine_args[3]->as<ASTLiteral &>().value.safeGet<String>();
-        const String & password = engine_args[4]->as<ASTLiteral &>().value.safeGet<String>();
+        auto configuration = StorageMongoDB::getConfiguration(args.engine_args, args.getLocalContext());
 
         return StorageMongoDB::create(
             args.table_id,
-            parsed_host_port.first,
-            parsed_host_port.second,
-            remote_database,
-            collection,
-            username,
-            password,
+            configuration.host,
+            configuration.port,
+            configuration.database,
+            configuration.collection,
+            configuration.username,
+            configuration.password,
+            configuration.options,
             args.columns,
             args.constraints,
             args.comment);

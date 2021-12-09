@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 
 #include <boost/intrusive/trivial_value_traits.hpp>
 #include <boost/intrusive/list.hpp>

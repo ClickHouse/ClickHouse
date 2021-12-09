@@ -10,7 +10,7 @@ When data sampling is enabled, the query is not performed on all the data, but o
 
 Approximated query processing can be useful in the following cases:
 
--   When you have strict timing requirements (like \<100ms) but you can’t justify the cost of additional hardware resources to meet them.
+-   When you have strict latency requirements (like below 100ms) but you can’t justify the cost of additional hardware resources to meet them.
 -   When your raw data is not accurate, so approximation does not noticeably degrade the quality.
 -   Business requirements target approximate results (for cost-effectiveness, or to market exact results to premium users).
 

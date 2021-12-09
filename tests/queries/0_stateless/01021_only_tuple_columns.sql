@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 CREATE TABLE test
 (
     `x` Tuple(UInt64, UInt64)

@@ -1,7 +1,7 @@
 (defproject jepsen.keeper "0.1.0-SNAPSHOT"
   :injections [(.. System (setProperty "zookeeper.request.timeout" "10000"))]
   :description "A jepsen tests for ClickHouse Keeper"
-  :url "https://clickhouse.tech/"
+  :url "https://clickhouse.com/"
   :license {:name "EPL-2.0"
             :url "https://www.eclipse.org/legal/epl-2.0/"}
   :main jepsen.clickhouse-keeper.main

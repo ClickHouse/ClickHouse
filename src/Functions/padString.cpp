@@ -5,7 +5,7 @@
 #include <Functions/GatherUtils/Algorithms.h>
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Sources.h>
-#include <common/bit_cast.h>
+#include <base/bit_cast.h>
 
 namespace DB
 {
@@ -151,6 +151,8 @@ namespace
 
         bool isVariadic() const override { return true; }
         size_t getNumberOfArguments() const override { return 0; }
+
+        bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
         bool useDefaultImplementationForConstants() const override { return false; }
 

@@ -72,4 +72,4 @@ Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should n
 
 **注:** 该 `default` 配置文件具有特殊的处理：所有定义的约束 `default` 配置文件成为默认约束，因此它们限制所有用户，直到为这些用户显式复盖它们。
 
-[原始文章](https://clickhouse.tech/docs/en/operations/settings/constraints_on_settings/) <!--hide-->
+[原始文章](https://clickhouse.com/docs/en/operations/settings/constraints_on_settings/) <!--hide-->

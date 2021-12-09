@@ -1,0 +1,25 @@
+1
+SELECT `t1.a`
+FROM t_tuple_element
+a
+SELECT `t1.s`
+FROM t_tuple_element
+1
+SELECT `t1.a`
+FROM t_tuple_element
+2
+SELECT `t2.1`
+FROM t_tuple_element
+2
+SELECT `t2.1`
+FROM t_tuple_element
+1	2
+WITH (1, 2) AS t
+SELECT
+    t.1,
+    t.2
+1	2
+WITH CAST(\'(1, 2)\', \'Tuple(a UInt32, b UInt32)\') AS t
+SELECT
+    t.1,
+    tupleElement(t, \'b\')

@@ -1,8 +1,6 @@
 #pragma once
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_EMBEDDED_COMPILER
 
@@ -54,6 +52,7 @@ struct AggregateFunctionWithOffset
 
 using JITCreateAggregateStatesFunction = void (*)(AggregateDataPtr);
 using JITAddIntoAggregateStatesFunction = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr *);
+using JITAddIntoAggregateStatesFunctionSinglePlace = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr);
 using JITMergeAggregateStatesFunction = void (*)(AggregateDataPtr, AggregateDataPtr);
 using JITInsertAggregateStatesIntoColumnsFunction = void (*)(ColumnDataRowsSize, ColumnData *, AggregateDataPtr *);
 
@@ -61,6 +60,8 @@ struct CompiledAggregateFunctions
 {
     JITCreateAggregateStatesFunction create_aggregate_states_function;
     JITAddIntoAggregateStatesFunction add_into_aggregate_states_function;
+    JITAddIntoAggregateStatesFunctionSinglePlace add_into_aggregate_states_function_single_place;
+
     JITMergeAggregateStatesFunction merge_aggregate_states_function;
     JITInsertAggregateStatesIntoColumnsFunction insert_aggregates_into_columns_function;
 
@@ -75,10 +76,11 @@ struct CompiledAggregateFunctions
   *
   * JITCreateAggregateStatesFunction will initialize aggregate data ptr with initial aggregate states values.
   * JITAddIntoAggregateStatesFunction will update aggregate states for aggregate functions with specified ColumnData.
+  * JITAddIntoAggregateStatesFunctionSinglePlace will update single aggregate state for aggregate functions with specified ColumnData.
   * JITMergeAggregateStatesFunction will merge aggregate states for aggregate functions.
   * JITInsertAggregateStatesIntoColumnsFunction will insert aggregate states for aggregate functions into result columns.
   */
-CompiledAggregateFunctions compileAggregateFunctons(CHJIT & jit, const std::vector<AggregateFunctionWithOffset> & functions, std::string functions_dump_name);
+CompiledAggregateFunctions compileAggregateFunctions(CHJIT & jit, const std::vector<AggregateFunctionWithOffset> & functions, std::string functions_dump_name);
 
 }
 

@@ -1,0 +1,6 @@
+{"'SLEEP #1 CHECK'":"SLEEP #1 CHECK","calls":"1","microseconds":"1000"}
+{"'SLEEP #2 CHECK'":"SLEEP #2 CHECK","calls":"1","microseconds":"1000"}
+{"'SLEEP #3 CHECK'":"SLEEP #3 CHECK","calls":"1","microseconds":"1000"}
+{"'SLEEP #4 CHECK'":"SLEEP #4 CHECK","calls":"2","microseconds":"2000"}
+{"'SLEEP #5 CHECK'":"SLEEP #5 CHECK","calls":"0","microseconds":"0"}
+{"'SLEEP #6 CHECK'":"SLEEP #6 CHECK","calls":"10","microseconds":"10000"}

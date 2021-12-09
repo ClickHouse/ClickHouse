@@ -1,6 +1,9 @@
+-- Tags: shard, no-parallel
+
 set allow_nondeterministic_optimize_skip_unused_shards=1;
 set optimize_skip_unused_shards=1;
 set force_optimize_skip_unused_shards=2;
+set check_table_dependencies=0;
 
 drop database if exists db_01527_ranges;
 drop table if exists dist_01527;

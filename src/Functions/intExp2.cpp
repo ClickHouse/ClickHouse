@@ -19,6 +19,7 @@ struct IntExp2Impl
 {
     using ResultType = UInt64;
     static constexpr const bool allow_fixed_string = false;
+    static const constexpr bool allow_string_integer = false;
 
     static inline ResultType apply([[maybe_unused]] A a)
     {
@@ -57,7 +58,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp2>
         if (left_float < 0 || right_float > 63)
             return {};
 
-        return { true };
+        return { .is_monotonic = true };
     }
 };
 

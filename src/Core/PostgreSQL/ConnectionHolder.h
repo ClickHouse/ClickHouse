@@ -1,8 +1,12 @@
 #pragma once
 
-#include <pqxx/pqxx> // Y_IGNORE
+#include "config_core.h"
+
+#if USE_LIBPQXX
+
+#include <pqxx/pqxx>
 #include <Core/Types.h>
-#include <common/BorrowedObjectPool.h>
+#include <base/BorrowedObjectPool.h>
 
 
 namespace postgres
@@ -35,3 +39,5 @@ private:
 
 using ConnectionHolderPtr = std::unique_ptr<ConnectionHolder>;
 }
+
+#endif

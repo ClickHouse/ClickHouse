@@ -16,4 +16,4 @@ toc_title: "\u306F\u3058\u3081\u306B"
 
 設定を勉強する前に、 [設定ファイル](../configuration-files.md#configuration_files) セクションと置換の使用に注意してください( `incl` と `optional` 属性）。
 
-[元の記事](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/operations/server_configuration_parameters/) <!--hide-->

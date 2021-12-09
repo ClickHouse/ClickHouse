@@ -6,7 +6,6 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Field.h>
 #include <Core/NamesAndTypes.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteBufferFromOStream.h>
@@ -25,12 +24,6 @@ template <>
 std::ostream & operator<< <Field>(std::ostream & stream, const Field & what)
 {
     stream << applyVisitor(FieldVisitorDump(), what);
-    return stream;
-}
-
-std::ostream & operator<<(std::ostream & stream, const IBlockInputStream & what)
-{
-    stream << "IBlockInputStream(name = " << what.getName() << ")";
     return stream;
 }
 

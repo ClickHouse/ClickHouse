@@ -82,3 +82,76 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
 Returns the least common multiple of the numbers.
 An exception is thrown when dividing by zero or when dividing a minimal negative number by minus one.
 
+## max2 {#max2}
+
+Compares two values and returns the maximum. The returned value is converted to [Float64](../../sql-reference/data-types/float.md).
+
+**Syntax**
+
+```sql
+max2(value1, value2)
+```
+
+**Arguments**
+
+-   `value1` — First value. [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+-   `value2` — Second value. [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+
+**Returned value**
+
+-   The maximum of two values.
+
+Type: [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT max2(-1, 2);
+```
+
+Result:
+
+```text
+┌─max2(-1, 2)─┐
+│           2 │
+└─────────────┘
+```
+
+## min2 {#min2}
+
+Compares two values and returns the minimum. The returned value is converted to [Float64](../../sql-reference/data-types/float.md).
+
+**Syntax**
+
+```sql
+max2(value1, value2)
+```
+
+**Arguments**
+
+-   `value1` — First value. [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+-   `value2` — Second value. [Int/UInt](../../sql-reference/data-types/int-uint.md) or [Float](../../sql-reference/data-types/float.md).
+
+**Returned value**
+
+-   The minimum of two values.
+
+Type: [Float](../../sql-reference/data-types/float.md).
+
+**Example**
+
+Query:
+
+```sql
+SELECT min2(-1, 2);
+```
+
+Result:
+
+```text
+┌─min2(-1, 2)─┐
+│          -1 │
+└─────────────┘
+```

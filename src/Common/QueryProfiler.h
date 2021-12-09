@@ -1,12 +1,11 @@
 #pragma once
 
-#include <common/types.h>
+#include <optional>
+#include <base/types.h>
 #include <signal.h>
 #include <time.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 
 namespace Poco
@@ -26,7 +25,7 @@ namespace DB
   *  3. write collected stack trace to trace_pipe for TraceCollector
   *
   * Destructor tries to unset timer and restore previous signal handler.
-  * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCpu.
+  * Note that signal handler implementation is defined by template parameter. See QueryProfilerReal and QueryProfilerCPU.
   */
 template <typename ProfilerImpl>
 class QueryProfilerBase
@@ -42,14 +41,11 @@ private:
 
 #if USE_UNWIND
     /// Timer id from timer_create(2)
-    timer_t timer_id = nullptr;
+    std::optional<timer_t> timer_id;
 #endif
 
     /// Pause signal to interrupt threads to get traces
     int pause_signal;
-
-    /// Previous signal handler to restore after query profiler exits
-    struct sigaction * previous_handler = nullptr;
 };
 
 /// Query profiler with timer based on real clock
@@ -62,10 +58,10 @@ public:
 };
 
 /// Query profiler with timer based on CPU clock
-class QueryProfilerCpu : public QueryProfilerBase<QueryProfilerCpu>
+class QueryProfilerCPU : public QueryProfilerBase<QueryProfilerCPU>
 {
 public:
-    QueryProfilerCpu(const UInt64 thread_id, const UInt32 period);
+    QueryProfilerCPU(const UInt64 thread_id, const UInt32 period);
 
     static void signalHandler(int sig, siginfo_t * info, void * context);
 };

@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPipeline.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
@@ -43,7 +44,7 @@ CreatingSetStep::CreatingSetStep(
 {
 }
 
-void CreatingSetStep::transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &)
+void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addCreatingSetsTransform(getOutputStream().header, std::move(subquery_for_set), network_transfer_limits, getContext());
 }
@@ -84,7 +85,7 @@ CreatingSetsStep::CreatingSetsStep(DataStreams input_streams_)
                             input_streams[i].header.dumpStructure());
 }
 
-QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines, const BuildQueryPipelineSettings &)
+QueryPipelineBuilderPtr CreatingSetsStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.empty())
         throw Exception("CreatingSetsStep cannot be created with no inputs", ErrorCodes::LOGICAL_ERROR);
@@ -95,11 +96,11 @@ QueryPipelinePtr CreatingSetsStep::updatePipeline(QueryPipelines pipelines, cons
 
     pipelines.erase(pipelines.begin());
 
-    QueryPipeline delayed_pipeline;
+    QueryPipelineBuilder delayed_pipeline;
     if (pipelines.size() > 1)
     {
         QueryPipelineProcessorsCollector collector(delayed_pipeline, this);
-        delayed_pipeline = QueryPipeline::unitePipelines(std::move(pipelines));
+        delayed_pipeline = QueryPipelineBuilder::unitePipelines(std::move(pipelines));
         processors = collector.detachProcessors();
     }
     else

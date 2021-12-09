@@ -25,7 +25,6 @@ namespace DB
 class WriteBufferFromFile : public WriteBufferFromFileDescriptor
 {
 protected:
-    std::string file_name;
     CurrentMetrics::Increment metric_increment{CurrentMetrics::OpenFileForWrite};
 
 public:
@@ -54,6 +53,9 @@ public:
     {
         return file_name;
     }
+
+private:
+    void finalizeImpl() override;
 };
 
 }

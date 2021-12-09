@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 ----- Group of very similar simple tests ------
 DROP TABLE IF EXISTS zero_rows_per_granule;
 

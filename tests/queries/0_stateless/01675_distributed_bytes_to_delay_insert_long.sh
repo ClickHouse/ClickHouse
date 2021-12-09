@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: long, distributed
 
 # NOTE: $SECONDS accuracy is second, so we need some delta, hence -1 in time conditions.
 

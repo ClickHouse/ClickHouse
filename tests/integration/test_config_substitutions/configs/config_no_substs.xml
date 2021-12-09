@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
   <profiles>
     <default>
         <max_query_size>33333</max_query_size>
@@ -11,4 +11,4 @@
           <quota>default</quota>
       </default>
   </users>
-</yandex>
+</clickhouse>

@@ -57,9 +57,13 @@ public:
       */
     static ColumnPtr wrap(ColumnPtr column)
     {
+        /// The order of evaluation of function arguments is unspecified
+        /// and could cause interacting with object in moved-from state
+        const auto size = column->size();
+        const auto bytes = column->allocatedBytes();
         return ColumnCompressed::create(
-            column->size(),
-            column->allocatedBytes(),
+            size,
+            bytes,
             [column = std::move(column)]{ return column; });
     }
 
@@ -90,6 +94,7 @@ public:
     void updateWeakHash32(WeakHash32 &) const override { throwMustBeDecompressed(); }
     void updateHashFast(SipHash &) const override { throwMustBeDecompressed(); }
     ColumnPtr filter(const Filter &, ssize_t) const override { throwMustBeDecompressed(); }
+    void expand(const Filter &, bool) override { throwMustBeDecompressed(); }
     ColumnPtr permute(const Permutation &, size_t) const override { throwMustBeDecompressed(); }
     ColumnPtr index(const IColumn &, size_t) const override { throwMustBeDecompressed(); }
     int compareAt(size_t, size_t, const IColumn &, int) const override { throwMustBeDecompressed(); }
@@ -123,4 +128,3 @@ private:
 };
 
 }
-

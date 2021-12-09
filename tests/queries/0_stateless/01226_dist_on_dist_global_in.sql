@@ -1,3 +1,5 @@
+-- Tags: global
+
 SELECT 'GLOBAL IN';
 select * from remote('localhost', system.one) where dummy global in (0);
 select * from remote('localhost', system.one) where dummy global in system.one;
