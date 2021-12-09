@@ -4,6 +4,7 @@
 #include <memory>
 #include <mutex>
 #include <vector>
+#include <string_view>
 #include <string.h>
 #include <base/types.h>
 #include <base/scope_guard.h>
@@ -23,13 +24,14 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/copyData.h>
-#include <DataStreams/NativeReader.h>
-#include <DataStreams/NativeWriter.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Session.h>
+#include <Interpreters/ProfileEventsExt.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/StorageS3Cluster.h>
@@ -52,9 +54,10 @@
 #include "Core/Protocol.h"
 #include "TCPHandler.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config_version.h>
-#endif
+#include <Common/config_version.h>
+
+using namespace std::literals;
+
 
 namespace CurrentMetrics
 {
@@ -246,7 +249,7 @@ void TCPHandler::runImpl()
                     sendLogs();
                 });
             }
-            if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS)
+            if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
             {
                 state.profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
                 CurrentThread::attachInternalProfileEventsQueue(state.profile_queue);
@@ -307,8 +310,23 @@ void TCPHandler::runImpl()
             query_context->setReadTaskCallback([this]() -> String
             {
                 std::lock_guard lock(task_callback_mutex);
+
+                if (state.is_cancelled)
+                    return {};
+
                 sendReadTaskRequestAssumeLocked();
                 return receiveReadTaskResponseAssumeLocked();
+            });
+
+            query_context->setMergeTreeReadTaskCallback([this](PartitionReadRequest request) -> std::optional<PartitionReadResponse>
+            {
+                std::lock_guard lock(task_callback_mutex);
+
+                if (state.is_cancelled)
+                    return std::nullopt;
+
+                sendMergeTreeReadTaskRequstAssumeLocked(std::move(request));
+                return receivePartitionMergeTreeReadTaskResponseAssumeLocked();
             });
 
             /// Processing Query
@@ -349,6 +367,13 @@ void TCPHandler::runImpl()
                     executor.setCancelCallback(callback, interactive_delay / 1000);
                 }
                 executor.execute();
+
+                /// Send final progress
+                ///
+                /// NOTE: we cannot send Progress for regular INSERT (w/ VALUES)
+                /// w/o breaking protocol compatibility, but it can be done
+                /// by increasing revision.
+                sendProgress();
             }
 
             state.io.onFinish();
@@ -586,8 +611,13 @@ void TCPHandler::processInsertQuery()
 {
     size_t num_threads = state.io.pipeline.getNumThreads();
 
-    auto send_table_columns = [&]()
+    auto run_executor = [&](auto & executor)
     {
+        /// Made above the rest of the lines,
+        /// so that in case of `writePrefix` function throws an exception,
+        /// client receive exception before sending data.
+        executor.start();
+
         /// Send ColumnsDescription for insertion table
         if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
         {
@@ -601,17 +631,6 @@ void TCPHandler::processInsertQuery()
                 }
             }
         }
-    };
-
-    if (num_threads > 1)
-    {
-        PushingAsyncPipelineExecutor executor(state.io.pipeline);
-        /** Made above the rest of the lines, so that in case of `writePrefix` function throws an exception,
-        *  client receive exception before sending data.
-        */
-        executor.start();
-
-        send_table_columns();
 
         /// Send block to the client - table structure.
         sendData(executor.getHeader());
@@ -622,22 +641,17 @@ void TCPHandler::processInsertQuery()
             executor.push(std::move(state.block_for_insert));
 
         executor.finish();
+    };
+
+    if (num_threads > 1)
+    {
+        PushingAsyncPipelineExecutor executor(state.io.pipeline);
+        run_executor(executor);
     }
     else
     {
         PushingPipelineExecutor executor(state.io.pipeline);
-        executor.start();
-
-        send_table_columns();
-
-        sendData(executor.getHeader());
-
-        sendLogs();
-
-        while (readDataNext())
-            executor.push(std::move(state.block_for_insert));
-
-        executor.finish();
+        run_executor(executor);
     }
 }
 
@@ -664,10 +678,13 @@ void TCPHandler::processOrdinaryQueryWithProcessors()
         Block block;
         while (executor.pull(block, interactive_delay / 1000))
         {
-            std::lock_guard lock(task_callback_mutex);
+            std::unique_lock lock(task_callback_mutex);
 
             if (isQueryCancelled())
             {
+                /// Several callback like callback for parallel reading could be called from inside the pipeline
+                /// and we have to unlock the mutex from our side to prevent deadlock.
+                lock.unlock();
                 /// A packet was received requesting to stop execution of the request.
                 executor.cancel();
                 break;
@@ -787,7 +804,16 @@ void TCPHandler::sendReadTaskRequestAssumeLocked()
     out->next();
 }
 
-void TCPHandler::sendProfileInfo(const BlockStreamProfileInfo & info)
+
+void TCPHandler::sendMergeTreeReadTaskRequstAssumeLocked(PartitionReadRequest request)
+{
+    writeVarUInt(Protocol::Server::MergeTreeReadTaskRequest, *out);
+    request.serialize(*out);
+    out->next();
+}
+
+
+void TCPHandler::sendProfileInfo(const ProfileInfo & info)
 {
     writeVarUInt(Protocol::Server::ProfileInfo, *out);
     info.write(*out);
@@ -831,19 +857,13 @@ namespace
 {
     using namespace ProfileEvents;
 
-    enum ProfileEventTypes : int8_t
-    {
-        INCREMENT = 1,
-        GAUGE     = 2,
-    };
-
     constexpr size_t NAME_COLUMN_INDEX  = 4;
     constexpr size_t VALUE_COLUMN_INDEX = 5;
 
     struct ProfileEventsSnapshot
     {
         UInt64 thread_id;
-        ProfileEvents::Counters counters;
+        ProfileEvents::CountersIncrement counters;
         Int64 memory_usage;
         time_t current_time;
     };
@@ -861,7 +881,7 @@ namespace
         auto & value_column = columns[VALUE_COLUMN_INDEX];
         for (ProfileEvents::Event event = 0; event < ProfileEvents::Counters::num_counters; ++event)
         {
-            UInt64 value = snapshot.counters[event].load(std::memory_order_relaxed);
+            Int64 value = snapshot.counters[event];
 
             if (value == 0)
                 continue;
@@ -879,7 +899,7 @@ namespace
             columns[i++]->insertData(host_name.data(), host_name.size());
             columns[i++]->insert(UInt64(snapshot.current_time));
             columns[i++]->insert(UInt64{snapshot.thread_id});
-            columns[i++]->insert(ProfileEventTypes::INCREMENT);
+            columns[i++]->insert(ProfileEvents::Type::INCREMENT);
         }
     }
 
@@ -893,7 +913,7 @@ namespace
             columns[i++]->insertData(host_name.data(), host_name.size());
             columns[i++]->insert(UInt64(snapshot.current_time));
             columns[i++]->insert(UInt64{snapshot.thread_id});
-            columns[i++]->insert(ProfileEventTypes::GAUGE);
+            columns[i++]->insert(ProfileEvents::Type::GAUGE);
 
             columns[i++]->insertData(MemoryTracker::USAGE_EVENT_NAME, strlen(MemoryTracker::USAGE_EVENT_NAME));
             columns[i++]->insert(snapshot.memory_usage);
@@ -904,23 +924,16 @@ namespace
 
 void TCPHandler::sendProfileEvents()
 {
-    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS)
+    if (client_tcp_protocol_version < DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
         return;
-
-    auto profile_event_type = std::make_shared<DataTypeEnum8>(
-        DataTypeEnum8::Values
-        {
-            { "increment", static_cast<Int8>(INCREMENT)},
-            { "gauge",     static_cast<Int8>(GAUGE)},
-        });
 
     NamesAndTypesList column_names_and_types = {
         { "host_name",    std::make_shared<DataTypeString>()   },
         { "current_time", std::make_shared<DataTypeDateTime>() },
         { "thread_id",    std::make_shared<DataTypeUInt64>()   },
-        { "type",         profile_event_type                   },
+        { "type",         ProfileEvents::TypeEnum              },
         { "name",         std::make_shared<DataTypeString>()   },
-        { "value",        std::make_shared<DataTypeUInt64>()   },
+        { "value",        std::make_shared<DataTypeInt64>()   },
     };
 
     ColumnsWithTypeAndName temp_columns;
@@ -933,6 +946,7 @@ void TCPHandler::sendProfileEvents()
     auto thread_group = CurrentThread::getGroup();
     auto const current_thread_id = CurrentThread::get().thread_id;
     std::vector<ProfileEventsSnapshot> snapshots;
+    ThreadIdToCountersSnapshot new_snapshots;
     ProfileEventsSnapshot group_snapshot;
     {
         std::lock_guard guard(thread_group->mutex);
@@ -945,19 +959,32 @@ void TCPHandler::sendProfileEvents()
             auto current_time = time(nullptr);
             auto counters = thread->performance_counters.getPartiallyAtomicSnapshot();
             auto memory_usage = thread->memory_tracker.get();
+            auto previous_snapshot = last_sent_snapshots.find(thread_id);
+            auto increment =
+                previous_snapshot != last_sent_snapshots.end()
+                ? CountersIncrement(counters, previous_snapshot->second)
+                : CountersIncrement(counters);
             snapshots.push_back(ProfileEventsSnapshot{
                 thread_id,
-                std::move(counters),
+                std::move(increment),
                 memory_usage,
                 current_time
             });
+            new_snapshots[thread_id] = std::move(counters);
         }
 
         group_snapshot.thread_id    = 0;
         group_snapshot.current_time = time(nullptr);
         group_snapshot.memory_usage = thread_group->memory_tracker.get();
-        group_snapshot.counters     = thread_group->performance_counters.getPartiallyAtomicSnapshot();
+        auto group_counters         = thread_group->performance_counters.getPartiallyAtomicSnapshot();
+        auto prev_group_snapshot    = last_sent_snapshots.find(0);
+        group_snapshot.counters     =
+            prev_group_snapshot != last_sent_snapshots.end()
+            ? CountersIncrement(group_counters, prev_group_snapshot->second)
+            : CountersIncrement(group_counters);
+        new_snapshots[0]            = std::move(group_counters);
     }
+    last_sent_snapshots = std::move(new_snapshots);
 
     for (auto & snapshot : snapshots)
     {
@@ -1138,6 +1165,11 @@ void TCPHandler::receiveHello()
     client_info.client_version_patch = client_version_patch;
     client_info.client_tcp_protocol_version = client_tcp_protocol_version;
 
+    client_info.connection_client_version_major = client_version_major;
+    client_info.connection_client_version_minor = client_version_minor;
+    client_info.connection_client_version_patch = client_version_patch;
+    client_info.connection_tcp_protocol_version = client_tcp_protocol_version;
+
     is_interserver_mode = (user == USER_INTERSERVER_MARKER);
     if (is_interserver_mode)
     {
@@ -1288,6 +1320,35 @@ String TCPHandler::receiveReadTaskResponseAssumeLocked()
         throw Exception("Protocol version for distributed processing mismatched", ErrorCodes::UNKNOWN_PROTOCOL);
     String response;
     readStringBinary(response, *in);
+    return response;
+}
+
+
+std::optional<PartitionReadResponse> TCPHandler::receivePartitionMergeTreeReadTaskResponseAssumeLocked()
+{
+    UInt64 packet_type = 0;
+    readVarUInt(packet_type, *in);
+    if (packet_type != Protocol::Client::MergeTreeReadTaskResponse)
+    {
+        if (packet_type == Protocol::Client::Cancel)
+        {
+            state.is_cancelled = true;
+            /// For testing connection collector.
+            if (sleep_in_receive_cancel.totalMilliseconds())
+            {
+                std::chrono::milliseconds ms(sleep_in_receive_cancel.totalMilliseconds());
+                std::this_thread::sleep_for(ms);
+            }
+            return std::nullopt;
+        }
+        else
+        {
+            throw Exception(fmt::format("Received {} packet after requesting read task",
+                    Protocol::Client::toString(packet_type)), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+        }
+    }
+    PartitionReadResponse response;
+    response.deserialize(*in);
     return response;
 }
 
@@ -1692,7 +1753,7 @@ bool TCPHandler::isQueryCancelled()
                 return true;
 
             default:
-                throw NetException("Unknown packet from client", ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
+                throw NetException("Unknown packet from client " + toString(packet_type), ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT);
         }
     }
 
@@ -1853,7 +1914,7 @@ void TCPHandler::run()
     catch (Poco::Exception & e)
     {
         /// Timeout - not an error.
-        if (!strcmp(e.what(), "Timeout"))
+        if (e.what() == "Timeout"sv)
         {
             LOG_DEBUG(log, "Poco::Exception. Code: {}, e.code() = {}, e.displayText() = {}, e.what() = {}", ErrorCodes::POCO_EXCEPTION, e.code(), e.displayText(), e.what());
         }

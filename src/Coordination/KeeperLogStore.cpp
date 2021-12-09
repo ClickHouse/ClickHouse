@@ -112,4 +112,10 @@ void KeeperLogStore::end_of_append_batch(uint64_t /*start_index*/, uint64_t /*co
     changelog.flush();
 }
 
+nuraft::ptr<nuraft::log_entry> KeeperLogStore::getLatestConfigChange() const
+{
+    std::lock_guard lock(changelog_lock);
+    return changelog.getLatestConfigChange();
+}
+
 }

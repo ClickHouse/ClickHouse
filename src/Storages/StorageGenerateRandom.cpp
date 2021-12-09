@@ -3,7 +3,7 @@
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/StorageFactory.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTLiteral.h>
 
 #include <DataTypes/DataTypeTuple.h>

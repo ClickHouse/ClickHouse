@@ -129,6 +129,20 @@ Features:
 -   Support monitor (processor, connection, query)
 -   Support migrate data
 
+### Bytebase {#bytebase}
+
+[Bytebase](https://bytebase.com) is a web-based, open source schema change and version control tool for teams. It supports various databases including ClickHouse.
+
+Features:
+
+-   Schema review between developers and DBAs.
+-   Database-as-Code, version control the schema in VCS such GitLab and trigger the deployment upon code commit.
+-   Streamlined deployment with per-environment policy.
+-   Full migration history.
+-   Schema drift detection.
+-   Backup and restore.
+-   RBAC.
+
 ## Commercial {#commercial}
 
 ### DataGrip {#datagrip}

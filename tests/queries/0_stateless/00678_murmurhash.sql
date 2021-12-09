@@ -34,4 +34,3 @@ SELECT gccMurmurHash(1);
 
 SELECT hex(murmurHash3_128('foo'));
 SELECT hex(murmurHash3_128('\x01'));
-

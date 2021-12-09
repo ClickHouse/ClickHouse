@@ -16,11 +16,11 @@ namespace DB
 
 struct ThreadEventData
 {
-    UInt64 time() const noexcept { return user_ms + system_ms; }
+    Int64 time() const noexcept { return user_ms + system_ms; }
 
-    UInt64 user_ms      = 0;
-    UInt64 system_ms    = 0;
-    UInt64 memory_usage = 0;
+    Int64 user_ms      = 0;
+    Int64 system_ms    = 0;
+    Int64 memory_usage = 0;
 };
 
 using ThreadIdToTimeMap = std::unordered_map<UInt64, ThreadEventData>;
@@ -58,7 +58,9 @@ public:
 
     void addThreadIdToList(String const & host, UInt64 thread_id);
 
-    void updateThreadEventData(HostToThreadTimesMap & new_thread_data);
+    void updateThreadEventData(HostToThreadTimesMap & new_thread_data, UInt64 elapsed_time);
+
+    bool print_hardware_utilization = false;
 
 private:
 
@@ -66,7 +68,13 @@ private:
 
     UInt64 getApproximateCoresNumber() const;
 
-    UInt64 getMemoryUsage() const;
+    struct MemoryUsage
+    {
+        UInt64 total = 0;
+        UInt64 max   = 0;
+    };
+
+    MemoryUsage getMemoryUsage() const;
 
     /// This flag controls whether to show the progress bar. We start showing it after
     /// the query has been executing for 0.5 seconds, and is still less than half complete.
