@@ -3,7 +3,7 @@ toc_priority: 68
 toc_title: Window View
 ---
 
-# Window View 函数{#window-view-han-shu}
+# Window View 函数 {#window-view-han-shu}
 
 Window view函数用于获取窗口的起始(包含边界)和结束时间(不包含边界)。系统支持的window view函数如下：
 
