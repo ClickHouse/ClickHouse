@@ -16,6 +16,7 @@ from s3_helper import S3Helper
 from get_robot_token import get_best_robot_token
 from docker_pull_helper import get_image_with_version
 from commit_status_helper import get_commit, post_commit_status
+from tee_popen import TeePopen
 
 IMAGE_NAME = 'clickhouse/performance-comparison'
 
@@ -37,8 +38,7 @@ class RamDrive:
         subprocess.check_call(f"sudo mount -t tmpfs -o rw,size={self.size} tmpfs {self.path}", shell=True)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        subprocess.check_call(f"sudo unmount {self.path}", shell=True)
-        subprocess.check_call(f"sudo rm -fr {self.path}", shell=True)
+        subprocess.check_call(f"sudo umount {self.path}", shell=True)
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -80,31 +80,30 @@ if __name__ == "__main__":
         run_command = get_run_command(result_path, result_path, pr_info.number, pr_info.sha, docker_env, docker_image)
         logging.info("Going to run command %s", run_command)
         run_log_path = os.path.join(temp_path, "runlog.log")
-        with open(run_log_path, 'w', encoding='utf-8') as log:
-            with subprocess.Popen(run_command, shell=True, stderr=log, stdout=log) as process:
-                retcode = process.wait()
-                if retcode == 0:
-                    logging.info("Run successfully")
-                else:
-                    logging.info("Run failed")
+        with TeePopen(run_command, run_log_path) as process:
+            retcode = process.wait()
+            if retcode == 0:
+                logging.info("Run successfully")
+            else:
+                logging.info("Run failed")
 
         subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
-        s3_prefix = f'{pr_info.number}/{pr_info.sha}/performance_comparison/'
         paths = {
-            'compare.log': 'compare.log',
-            'output.7z': 'output.7z',
-            'report.html': 'report.html',
-            'all-queries.html': 'all-queries.html',
-            'queries.rep': 'queries.rep',
-            'all-query-metrics.tsv': 'report/all-query-metrics.tsv',
+            'compare.log': os.path.join(result_path, 'compare.log'),
+            'output.7z': os.path.join(result_path, 'output.7z'),
+            'report.html': os.path.join(result_path, 'report.html'),
+            'all-queries.html': os.path.join(result_path, 'all-queries.html'),
+            'queries.rep': os.path.join(result_path, 'queries.rep'),
+            'all-query-metrics.tsv': os.path.join(result_path, 'report/all-query-metrics.tsv'),
+            'runlog.log': run_log_path,
         }
 
+        s3_prefix = f'{pr_info.number}/{pr_info.sha}/performance_comparison/'
         s3_helper = S3Helper('https://s3.amazonaws.com')
         for file in paths:
             try:
-                paths[file] = s3_helper.upload_test_report_to_s3(
-                    os.path.join(result_path, paths[file]),
+                paths[file] = s3_helper.upload_test_report_to_s3(paths[file],
                     s3_prefix + file)
             except Exception:
                 paths[file] = ''
@@ -144,6 +143,9 @@ if __name__ == "__main__":
 
         report_url = task_url
 
+        if paths['runlog.log']:
+            report_url = paths['runlog.log']
+
         if paths['compare.log']:
             report_url = paths['compare.log']
 
@@ -152,5 +154,6 @@ if __name__ == "__main__":
 
         if paths['report.html']:
             report_url = paths['report.html']
+
 
         post_commit_status(gh, pr_info.sha, check_name, message, status, report_url)
