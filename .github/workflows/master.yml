@@ -1268,7 +1268,7 @@ jobs:
 ############################# INTEGRATION TESTS #############################################
 #############################################################################################
   IntegrationTestsAsan:
-    needs: [BuilderDebAsan, FunctionalStatelessTestAsan]
+    needs: [BuilderDebAsan]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
@@ -1296,7 +1296,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   IntegrationTestsTsan:
-    needs: [BuilderDebTsan, FunctionalStatelessTestTsan]
+    needs: [BuilderDebTsan]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
@@ -1324,7 +1324,7 @@ jobs:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
   IntegrationTestsRelease:
-    needs: [BuilderDebRelease, FunctionalStatelessTestRelease]
+    needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
       - name: Download json reports
@@ -1623,7 +1623,7 @@ jobs:
         env:
           TEMP_PATH: ${{runner.temp}}/unit_tests_ubsan
           REPORTS_PATH: ${{runner.temp}}/reports_dir
-          CHECK_NAME: 'Unit tests (msan, actions)'
+          CHECK_NAME: 'Unit tests (ubsan, actions)'
           REPO_COPY: ${{runner.temp}}/unit_tests_ubsan/ClickHouse
         run: |
           sudo rm -fr $TEMP_PATH

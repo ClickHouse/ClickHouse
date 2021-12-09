@@ -807,26 +807,6 @@ ClickHouse может парсить только базовый формат `Y
 
 Значение по умолчанию: 2013265920.
 
-## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
-
-Задает интервал в секундах для удаления старых временных каталогов на сервере ClickHouse.
-
-Возможные значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: `60` секунд.
-
-## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
-
-Задает интервал в секундах для удаления старых кусков данных, журналов предзаписи (WAL) и мутаций на сервере ClickHouse .
-
-Возможные значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: `1` секунда.
-
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
 Минимальный объём данных, необходимый для прямого (небуферизованного) чтения/записи (direct I/O) на диск.
@@ -912,11 +892,18 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 ## log_query_threads {#settings-log-query-threads}
 
-Установка логирования информации о потоках выполнения запроса.
+Управляет логированием информации о потоках выполнения запросов.
 
-Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log).
+Информация о потоках выполнения запросов сохраняется в системной таблице [system.query_thread_log](../../operations/system-tables/query_thread_log.md). Работает только в том случае, если включена настройка [log_queries](#settings-log-queries). Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log).
 
-Пример:
+Возможные значения:
+
+-   0 — отключено.
+-   1 — включено.
+
+Значение по умолчанию: `1`.
+
+**Пример**
 
 ``` text
 log_query_threads=1

@@ -231,8 +231,8 @@ bool isStorageTouchedByMutations(
     PullingPipelineExecutor executor(io.pipeline);
 
     Block block;
-    while (!block.rows())
-        executor.pull(block);
+    while (executor.pull(block)) {}
+
     if (!block.rows())
         return false;
     else if (block.rows() != 1)
@@ -575,7 +575,10 @@ ASTPtr MutationsInterpreter::prepare(bool dry_run)
                     ErrorCodes::BAD_ARGUMENTS,
                     "Cannot materialize column `{}` because it doesn't have default expression", column.name);
 
-            stages.back().column_to_updated.emplace(column.name, column.default_desc.expression->clone());
+            auto materialized_column = makeASTFunction(
+                "_CAST", column.default_desc.expression->clone(), std::make_shared<ASTLiteral>(column.type->getName()));
+
+            stages.back().column_to_updated.emplace(column.name, materialized_column);
         }
         else if (command.type == MutationCommand::MATERIALIZE_INDEX)
         {
