@@ -1164,6 +1164,9 @@ void IMergeTreeDataPart::remove() const
       * And a race condition can happen that will lead to "File not found" error here.
       */
 
+    /// NOTE We rename part to delete_tmp_<relative_path> instead of delete_tmp_<name> to avoid race condition
+    /// when we try to remove two parts with the same name, but different relative paths,
+    /// for example all_1_2_1 (in Deleting state) and tmp_merge_all_1_2_1 (in Temporary state).
     fs::path from = fs::path(storage.relative_data_path) / relative_path;
     fs::path to = fs::path(storage.relative_data_path) / ("delete_tmp_" + relative_path);
     // TODO directory delete_tmp_<name> is never removed if server crashes before returning from this function

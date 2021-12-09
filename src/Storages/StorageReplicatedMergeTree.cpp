@@ -2272,6 +2272,8 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
         };
 
         part = get_part();
+        // The fetched part is valuable and should not be cleaned like a temp part.
+        part->is_temp = false;
         part->renameTo("detached/" + entry.new_part_name, true);
         LOG_INFO(log, "Cloned part {} to detached directory", part->name);
     }
@@ -3961,8 +3963,9 @@ bool StorageReplicatedMergeTree::fetchPart(const String & part_name, const Stora
         }
         else
         {
-            part->renameTo(fs::path("detached") / part_name, true);
+            // The fetched part is valuable and should not be cleaned like a temp part.
             part->is_temp = false;
+            part->renameTo(fs::path("detached") / part_name, true);
         }
     }
     catch (const Exception & e)
