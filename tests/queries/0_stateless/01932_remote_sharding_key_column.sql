@@ -1,3 +1,5 @@
+-- Tags: shard
+
 -- regression test for the following query:
 --
 --     select * from remote('127.1', system.one, dummy)

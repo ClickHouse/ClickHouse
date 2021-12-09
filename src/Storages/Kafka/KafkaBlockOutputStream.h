@@ -6,13 +6,16 @@
 namespace DB
 {
 
+class IOutputFormat;
+using IOutputFormatPtr = std::shared_ptr<IOutputFormat>;
+
 class KafkaSink : public SinkToStorage
 {
 public:
     explicit KafkaSink(
         StorageKafka & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
-        const std::shared_ptr<const Context> & context_);
+        const ContextPtr & context_);
 
     void consume(Chunk chunk) override;
     void onStart() override;
@@ -24,9 +27,9 @@ public:
 private:
     StorageKafka & storage;
     StorageMetadataPtr metadata_snapshot;
-    const std::shared_ptr<const Context> context;
+    const ContextPtr context;
     ProducerBufferPtr buffer;
-    BlockOutputStreamPtr child;
+    IOutputFormatPtr format;
 };
 
 }

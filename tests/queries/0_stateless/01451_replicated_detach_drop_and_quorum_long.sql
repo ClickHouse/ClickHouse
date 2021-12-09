@@ -1,3 +1,5 @@
+-- Tags: long, replica, no-replicated-database
+
 SET replication_alter_partitions_sync = 2;
 
 

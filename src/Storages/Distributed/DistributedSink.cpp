@@ -1,9 +1,12 @@
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/Distributed/DirectoryMonitor.h>
+#include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
 #include <Disks/StoragePolicy.h>
 
-#include <Parsers/formatAST.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTInsertQuery.h>
 #include <Parsers/queryToString.h>
 
 #include <IO/WriteBufferFromFile.h>
@@ -11,31 +14,25 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ConnectionTimeoutsContext.h>
-#include <DataStreams/NativeBlockOutputStream.h>
-#include <DataStreams/RemoteBlockOutputStream.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
-#include <DataStreams/OneBlockInputStream.h>
+#include <Formats/NativeWriter.h>
+#include <Processors/Sinks/RemoteSink.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
-#include <common/logger_useful.h>
-#include <common/range.h>
-#include <common/scope_guard.h>
+#include <base/logger_useful.h>
+#include <base/range.h>
+#include <base/scope_guard.h>
 
-#include <future>
-#include <condition_variable>
-#include <mutex>
 #include <filesystem>
 
 
@@ -70,19 +67,37 @@ static Block adoptBlock(const Block & header, const Block & block, Poco::Logger 
         "Structure does not match (remote: {}, local: {}), implicit conversion will be done.",
         header.dumpStructure(), block.dumpStructure());
 
-    ConvertingBlockInputStream convert(
-        std::make_shared<OneBlockInputStream>(block),
-        header,
-        ConvertingBlockInputStream::MatchColumnsMode::Name);
-    return convert.read();
+    auto converting_dag = ActionsDAG::makeConvertingActions(
+        block.cloneEmpty().getColumnsWithTypeAndName(),
+        header.getColumnsWithTypeAndName(),
+        ActionsDAG::MatchColumnsMode::Name);
+
+    auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
+    Block converted = block;
+    converting_actions->execute(converted);
+
+    return converted;
 }
 
 
-static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, size_t repeats, Poco::Logger * log)
+static void writeBlockConvert(PushingPipelineExecutor & executor, const Block & block, size_t repeats, Poco::Logger * log)
 {
-    Block adopted_block = adoptBlock(out->getHeader(), block, log);
+    Block adopted_block = adoptBlock(executor.getHeader(), block, log);
     for (size_t i = 0; i < repeats; ++i)
-        out->write(adopted_block);
+        executor.push(adopted_block);
+}
+
+
+static ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Names & column_names)
+{
+    auto query = std::make_shared<ASTInsertQuery>();
+    query->table_id = StorageID(database, table);
+    auto columns = std::make_shared<ASTExpressionList>();
+    query->columns = columns;
+    query->children.push_back(columns);
+    for (const auto & column_name : column_names)
+        columns->children.push_back(std::make_shared<ASTIdentifier>(column_name));
+    return query;
 }
 
 
@@ -90,22 +105,23 @@ DistributedSink::DistributedSink(
     ContextPtr context_,
     StorageDistributed & storage_,
     const StorageMetadataPtr & metadata_snapshot_,
-    const ASTPtr & query_ast_,
     const ClusterPtr & cluster_,
     bool insert_sync_,
     UInt64 insert_timeout_,
-    StorageID main_table_)
+    StorageID main_table_,
+    const Names & columns_to_send_)
     : SinkToStorage(metadata_snapshot_->getSampleBlock())
     , context(Context::createCopy(context_))
     , storage(storage_)
     , metadata_snapshot(metadata_snapshot_)
-    , query_ast(query_ast_)
-    , query_string(queryToString(query_ast_))
+    , query_ast(createInsertToRemoteTableQuery(main_table_.database_name, main_table_.table_name, columns_to_send_))
+    , query_string(queryToString(query_ast))
     , cluster(cluster_)
     , insert_sync(insert_sync_)
     , allow_materialized(context->getSettingsRef().insert_allow_materialized_columns)
     , insert_timeout(insert_timeout_)
     , main_table(main_table_)
+    , columns_to_send(columns_to_send_.begin(), columns_to_send_.end())
     , log(&Poco::Logger::get("DistributedBlockOutputStream"))
 {
     const auto & settings = context->getSettingsRef();
@@ -124,28 +140,26 @@ void DistributedSink::consume(Chunk chunk)
         is_first_chunk = false;
     }
 
-    auto ordinary_block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
-
-    if (!allow_materialized)
-    {
-        /* They are added by the AddingDefaultBlockOutputStream, and we will get
-         * different number of columns eventually */
-        for (const auto & col : metadata_snapshot->getColumns().getMaterialized())
-        {
-            if (ordinary_block.has(col.name))
-            {
-                ordinary_block.erase(col.name);
-                LOG_DEBUG(log, "{}: column {} will be removed, because it is MATERIALIZED",
-                    storage.getStorageID().getNameForLogs(), col.name);
-            }
-        }
-    }
+    auto ordinary_block = getHeader().cloneWithColumns(chunk.detachColumns());
 
     if (insert_sync)
         writeSync(ordinary_block);
     else
         writeAsync(ordinary_block);
 }
+
+
+Block DistributedSink::removeSuperfluousColumns(Block block) const
+{
+    for (size_t i = block.columns(); i;)
+    {
+        --i;
+        if (!columns_to_send.contains(block.getByPosition(i).name))
+            block.erase(i);
+    }
+    return block;
+}
+
 
 void DistributedSink::writeAsync(const Block & block)
 {
@@ -322,7 +336,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
 
         if (!job.is_local_job || !settings.prefer_localhost_replica)
         {
-            if (!job.stream)
+            if (!job.executor)
             {
                 auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(settings);
                 if (shard_info.hasInternalReplication())
@@ -354,19 +368,20 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 if (throttler)
                     job.connection_entry->setThrottler(throttler);
 
-                job.stream = std::make_shared<RemoteBlockOutputStream>(
-                    *job.connection_entry, timeouts, query_string, settings, context->getClientInfo());
-                job.stream->writePrefix();
+                job.pipeline = QueryPipeline(std::make_shared<RemoteSink>(
+                    *job.connection_entry, timeouts, query_string, settings, context->getClientInfo()));
+                job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
+                job.executor->start();
             }
 
             CurrentMetrics::Increment metric_increment{CurrentMetrics::DistributedSend};
 
-            Block adopted_shard_block = adoptBlock(job.stream->getHeader(), shard_block, log);
-            job.stream->write(adopted_shard_block);
+            Block adopted_shard_block = adoptBlock(job.executor->getHeader(), shard_block, log);
+            job.executor->push(adopted_shard_block);
         }
         else // local
         {
-            if (!job.stream)
+            if (!job.executor)
             {
                 /// Forward user settings
                 job.local_context = Context::createCopy(context);
@@ -382,11 +397,12 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                 InterpreterInsertQuery interp(copy_query_ast, job.local_context, allow_materialized);
                 auto block_io = interp.execute();
 
-                job.stream = block_io.out;
-                job.stream->writePrefix();
+                job.pipeline = std::move(block_io.pipeline);
+                job.executor = std::make_unique<PushingPipelineExecutor>(job.pipeline);
+                job.executor->start();
             }
 
-            writeBlockConvert(job.stream, shard_block, shard_info.getLocalNodeCount(), log);
+            writeBlockConvert(*job.executor, shard_block, shard_info.getLocalNodeCount(), log);
         }
 
         job.blocks_written += 1;
@@ -399,6 +415,8 @@ void DistributedSink::writeSync(const Block & block)
 {
     const Settings & settings = context->getSettingsRef();
     const auto & shards_info = cluster->getShardsInfo();
+    Block block_to_send = removeSuperfluousColumns(block);
+
     size_t start = 0;
     size_t end = shards_info.size();
 
@@ -411,7 +429,7 @@ void DistributedSink::writeSync(const Block & block)
     if (!pool)
     {
         /// Deferred initialization. Only for sync insertion.
-        initWritingJobs(block, start, end);
+        initWritingJobs(block_to_send, start, end);
 
         size_t jobs_count = random_shard_insert ? 1 : (remote_jobs_count + local_jobs_count);
         size_t max_threads = std::min<size_t>(settings.max_distributed_connections, jobs_count);
@@ -456,7 +474,7 @@ void DistributedSink::writeSync(const Block & block)
         finished_jobs_count = 0;
         for (size_t shard_index : collections::range(start, end))
             for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
-                pool->scheduleOrThrowOnError(runWritingJob(job, block, num_shards));
+                pool->scheduleOrThrowOnError(runWritingJob(job, block_to_send, num_shards));
     }
     catch (...)
     {
@@ -498,11 +516,11 @@ void DistributedSink::onFinish()
             {
                 for (JobReplica & job : shard_jobs.replicas_jobs)
                 {
-                    if (job.stream)
+                    if (job.executor)
                     {
                         pool->scheduleOrThrowOnError([&job]()
                         {
-                            job.stream->writeSuffix();
+                            job.executor->finish();
                         });
                     }
                 }
@@ -581,12 +599,13 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 {
     const auto & shard_info = cluster->getShardsInfo()[shard_id];
     const auto & settings = context->getSettingsRef();
+    Block block_to_send = removeSuperfluousColumns(block);
 
     if (shard_info.hasInternalReplication())
     {
         if (shard_info.isLocal() && settings.prefer_localhost_replica)
             /// Prefer insert into current instance directly
-            writeToLocal(block, shard_info.getLocalNodeCount());
+            writeToLocal(block_to_send, shard_info.getLocalNodeCount());
         else
         {
             const auto & path = shard_info.insertPathForInternalReplication(
@@ -594,13 +613,13 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
                 settings.use_compact_format_in_distributed_parts_names);
             if (path.empty())
                 throw Exception("Directory name for async inserts is empty", ErrorCodes::LOGICAL_ERROR);
-            writeToShard(block, {path});
+            writeToShard(block_to_send, {path});
         }
     }
     else
     {
         if (shard_info.isLocal() && settings.prefer_localhost_replica)
-            writeToLocal(block, shard_info.getLocalNodeCount());
+            writeToLocal(block_to_send, shard_info.getLocalNodeCount());
 
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
@@ -608,7 +627,7 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
                 dir_names.push_back(address.toFullString(settings.use_compact_format_in_distributed_parts_names));
 
         if (!dir_names.empty())
-            writeToShard(block, dir_names);
+            writeToShard(block_to_send, dir_names);
     }
 }
 
@@ -618,10 +637,11 @@ void DistributedSink::writeToLocal(const Block & block, size_t repeats)
     InterpreterInsertQuery interp(query_ast, context, allow_materialized);
 
     auto block_io = interp.execute();
+    PushingPipelineExecutor executor(block_io.pipeline);
 
-    block_io.out->writePrefix();
-    writeBlockConvert(block_io.out, block, repeats, log);
-    block_io.out->writeSuffix();
+    executor.start();
+    writeBlockConvert(executor, block, repeats, log);
+    executor.finish();
 }
 
 
@@ -682,7 +702,7 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
 
             WriteBufferFromFile out{first_file_tmp_path};
             CompressedWriteBuffer compress{out, compression_codec};
-            NativeBlockOutputStream stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+            NativeWriter stream{compress, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
 
             /// Prepare the header.
             /// See also readDistributedHeader() in DirectoryMonitor (for reading side)
@@ -700,7 +720,7 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             /// Write block header separately in the batch header.
             /// It is required for checking does conversion is required or not.
             {
-                NativeBlockOutputStream header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
+                NativeWriter header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, block.cloneEmpty()};
                 header_stream.write(block.cloneEmpty());
             }
 
@@ -714,10 +734,9 @@ void DistributedSink::writeToShard(const Block & block, const std::vector<std::s
             writeStringBinary(header, out);
             writePODBinary(CityHash_v1_0_2::CityHash128(header.data, header.size), out);
 
-            stream.writePrefix();
             stream.write(block);
-            stream.writeSuffix();
 
+            compress.finalize();
             out.finalize();
             if (fsync)
                 out.sync();

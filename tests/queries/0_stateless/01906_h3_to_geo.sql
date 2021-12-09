@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 DROP TABLE IF EXISTS h3_indexes;
 
 CREATE TABLE h3_indexes (h3_index UInt64) ENGINE = Memory;

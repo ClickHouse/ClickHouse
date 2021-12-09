@@ -2,7 +2,7 @@
 #include <Common/getMultipleKeysFromConfig.h>
 
 #include <unordered_set>
-#include <common/StringRef.h>
+#include <base/StringRef.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
 

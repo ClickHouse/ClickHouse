@@ -51,6 +51,7 @@ StorageSystemReplicas::StorageSystemReplicas(const StorageID & table_id_)
         { "absolute_delay",                       std::make_shared<DataTypeUInt64>()   },
         { "total_replicas",                       std::make_shared<DataTypeUInt8>()    },
         { "active_replicas",                      std::make_shared<DataTypeUInt8>()    },
+        { "last_queue_update_exception",          std::make_shared<DataTypeString>()   },
         { "zookeeper_exception",                  std::make_shared<DataTypeString>()   },
         { "replica_is_active",                    std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt8>()) }
     }));
@@ -186,6 +187,7 @@ Pipe StorageSystemReplicas::read(
         res_columns[col_num++]->insert(status.absolute_delay);
         res_columns[col_num++]->insert(status.total_replicas);
         res_columns[col_num++]->insert(status.active_replicas);
+        res_columns[col_num++]->insert(status.last_queue_update_exception);
         res_columns[col_num++]->insert(status.zookeeper_exception);
 
         Map replica_is_active_values;

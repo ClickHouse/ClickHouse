@@ -14,18 +14,6 @@ void FieldVisitorHash::operator() (const Null &) const
     hash.update(type);
 }
 
-void FieldVisitorHash::operator() (const NegativeInfinity &) const
-{
-    UInt8 type = Field::Types::NegativeInfinity;
-    hash.update(type);
-}
-
-void FieldVisitorHash::operator() (const PositiveInfinity &) const
-{
-    UInt8 type = Field::Types::PositiveInfinity;
-    hash.update(type);
-}
-
 void FieldVisitorHash::operator() (const UInt64 & x) const
 {
     UInt8 type = Field::Types::UInt64;

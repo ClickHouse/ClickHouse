@@ -3,29 +3,34 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/Context.h>
 #include <Core/Defines.h>
-#include <common/types.h>
+#include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Disks/Executor.h>
 #include <Disks/DiskType.h>
+#include <IO/ReadSettings.h>
 
 #include <memory>
 #include <mutex>
 #include <utility>
 #include <boost/noncopyable.hpp>
-#include "Poco/Util/AbstractConfiguration.h"
 #include <Poco/Timestamp.h>
 #include <filesystem>
 
+
 namespace fs = std::filesystem;
 
-namespace CurrentMetrics
+namespace Poco
 {
-extern const Metric DiskSpaceReservedForMerge;
+    namespace Util
+    {
+        class AbstractConfiguration;
+    }
 }
 
 namespace DB
 {
+
 class IDiskDirectoryIterator;
 using DiskDirectoryIteratorPtr = std::unique_ptr<IDiskDirectoryIterator>;
 
@@ -155,11 +160,8 @@ public:
     /// Open the file for read and return ReadBufferFromFileBase object.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        size_t estimated_size = 0,
-        size_t direct_io_threshold = 0,
-        size_t mmap_threshold = 0,
-        MMappedFileCache * mmap_cache = nullptr) const = 0;
+        const ReadSettings & settings = ReadSettings{},
+        std::optional<size_t> size = {}) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile(
@@ -210,11 +212,16 @@ public:
     virtual void truncateFile(const String & path, size_t size);
 
     /// Return disk type - "local", "s3", etc.
-    virtual DiskType::Type getType() const = 0;
+    virtual DiskType getType() const = 0;
+
+    /// Involves network interaction.
+    virtual bool isRemote() const = 0;
 
     /// Whether this disk support zero-copy replication.
     /// Overrode in remote fs disks.
     virtual bool supportZeroCopyReplication() const = 0;
+
+    virtual bool isReadOnly() const { return false; }
 
     /// Invoked when Global Context is shutdown.
     virtual void shutdown() {}
@@ -238,7 +245,7 @@ public:
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
 
     /// Applies new settings for disk in runtime.
-    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) { }
+    virtual void applyNewSettings(const Poco::Util::AbstractConfiguration &, ContextPtr, const String &, const DisksMap &) {}
 
 protected:
     friend class DiskDecorator;

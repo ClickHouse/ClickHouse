@@ -1,3 +1,6 @@
+-- Tags: no-parallel
+-- Tag no-parallel: creates database
+
 drop database if exists db_01530_atomic sync;
 
 create database db_01530_atomic Engine=Atomic;

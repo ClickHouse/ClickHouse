@@ -16,7 +16,6 @@ namespace ErrorCodes
 
 struct ArrayCompactImpl
 {
-    static bool useDefaultImplementationForConstants() { return true; }
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
     static bool needOneArray() { return false; }
@@ -29,7 +28,7 @@ struct ArrayCompactImpl
     template <typename T>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
     {
-        using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
+        using ColVecType = ColumnVectorOrDecimal<T>;
 
         const ColVecType * src_values_column = checkAndGetColumn<ColVecType>(mapped.get());
 
@@ -40,7 +39,7 @@ struct ArrayCompactImpl
         const typename ColVecType::Container & src_values = src_values_column->getData();
 
         typename ColVecType::MutablePtr res_values_column;
-        if constexpr (IsDecimalNumber<T>)
+        if constexpr (is_decimal<T>)
             res_values_column = ColVecType::create(src_values.size(), src_values.getScale());
         else
             res_values_column = ColVecType::create(src_values.size());
@@ -129,6 +128,7 @@ struct ArrayCompactImpl
     {
         ColumnPtr res;
 
+        mapped = mapped->convertToFullColumnIfConst();
         if (!(executeType< UInt8 >(mapped, array, res) ||
             executeType< UInt16>(mapped, array, res) ||
             executeType< UInt32>(mapped, array, res) ||

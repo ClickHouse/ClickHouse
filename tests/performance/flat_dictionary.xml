@@ -61,15 +61,15 @@
     </query>
 
     <query>
-        SELECT * FROM simple_key_flat_dictionary
+        WITH rand64() % toUInt64({elements_count}) as key
+        SELECT dictHas('default.simple_key_flat_dictionary', key)
+        FROM system.numbers
+        LIMIT {elements_count}
         FORMAT Null;
     </query>
 
     <query>
-        WITH rand64() % toUInt64(75000000) as key
-        SELECT dictHas('default.simple_key_flat_dictionary', key)
-        FROM system.numbers
-        LIMIT 75000000
+        SELECT * FROM simple_key_flat_dictionary
         FORMAT Null;
     </query>
 

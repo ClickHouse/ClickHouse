@@ -1,3 +1,5 @@
+-- Tags: no-parallel, no-fasttest
+
 DROP TABLE IF EXISTS rollup;
 CREATE TABLE rollup(a String, b Int32, s Int32) ENGINE = Memory;
 

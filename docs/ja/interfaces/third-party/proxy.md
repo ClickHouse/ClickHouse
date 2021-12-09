@@ -43,4 +43,4 @@ Goで実装。
 
 Goで実装。
 
-[元の記事](https://clickhouse.tech/docs/en/interfaces/third-party/proxy/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/interfaces/third-party/proxy/) <!--hide-->

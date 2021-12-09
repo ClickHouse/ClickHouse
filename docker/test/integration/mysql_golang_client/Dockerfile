@@ -1,7 +1,7 @@
-# docker build -t yandex/clickhouse-mysql-golang-client .
+# docker build -t clickhouse/mysql-golang-client .
 # MySQL golang client docker container
 
-FROM golang:1.12.2
+FROM golang:1.13
 
 RUN go get "github.com/go-sql-driver/mysql"
 

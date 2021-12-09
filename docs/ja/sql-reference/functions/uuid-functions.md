@@ -119,4 +119,4 @@ SELECT
 
 -   [dictGetUUID](ext-dict-functions.md#ext_dict_functions-other)
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/uuid_function/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/uuid_function/) <!--hide-->

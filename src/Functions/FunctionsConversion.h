@@ -301,7 +301,7 @@ struct ToDateTimeImpl
         return time_zone.fromDayNum(DayNum(d));
     }
 
-    static inline UInt32 execute(Int32 d, const DateLUTImpl & time_zone)
+    static inline Int64 execute(Int32 d, const DateLUTImpl & time_zone)
     {
         return time_zone.fromDayNum(ExtendedDayNum(d));
     }
@@ -369,6 +369,9 @@ struct ToDateTransform8Or16Signed
         return from;
     }
 };
+
+template <typename Name> struct ConvertImpl<DataTypeDateTime64, DataTypeDate32, Name, ConvertDefaultBehaviorTag>
+        : DateTimeTransformImpl<DataTypeDateTime64, DataTypeDate32, TransformDateTime64<ToDate32Impl>> {};
 
 /// Implementation of toDate32 function.
 
@@ -632,6 +635,12 @@ struct ToDateTime64Transform
         return execute(dt, time_zone);
     }
 
+    inline DateTime64::NativeType execute(Int32 d, const DateLUTImpl & time_zone) const
+    {
+        const auto dt = ToDateTimeImpl::execute(d, time_zone);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
+    }
+
     inline DateTime64::NativeType execute(UInt32 dt, const DateLUTImpl & /*time_zone*/) const
     {
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
@@ -642,6 +651,8 @@ struct ToDateTime64Transform
   */
 template <typename Name> struct ConvertImpl<DataTypeDate, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeDate, DataTypeDateTime64, ToDateTime64Transform> {};
+template <typename Name> struct ConvertImpl<DataTypeDate32, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag>
+    : DateTimeTransformImpl<DataTypeDate32, DataTypeDateTime64, ToDateTime64Transform> {};
 template <typename Name> struct ConvertImpl<DataTypeDateTime, DataTypeDateTime64, Name, ConvertDefaultBehaviorTag>
     : DateTimeTransformImpl<DataTypeDateTime, DataTypeDateTime64, ToDateTime64Transform> {};
 
@@ -733,7 +744,7 @@ struct FormatImpl<DataTypeDecimal<FieldType>>
     template <typename ReturnType = void>
     static ReturnType execute(const FieldType x, WriteBuffer & wb, const DataTypeDecimal<FieldType> * type, const DateLUTImpl *)
     {
-        writeText(x, type->getScale(), wb);
+        writeText(x, type->getScale(), wb, false);
         return ReturnType(true);
     }
 };
@@ -764,7 +775,7 @@ template <typename FromDataType, typename Name>
 struct ConvertImpl<FromDataType, std::enable_if_t<!std::is_same_v<FromDataType, DataTypeString>, DataTypeString>, Name, ConvertDefaultBehaviorTag>
 {
     using FromFieldType = typename FromDataType::FieldType;
-    using ColVecType = std::conditional_t<IsDecimalNumber<FromFieldType>, ColumnDecimal<FromFieldType>, ColumnVector<FromFieldType>>;
+    using ColVecType = ColumnVectorOrDecimal<FromFieldType>;
 
     static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/)
     {
@@ -1454,6 +1465,10 @@ public:
     static constexpr bool to_string_or_fixed_string = std::is_same_v<ToDataType, DataTypeFixedString> ||
                                                       std::is_same_v<ToDataType, DataTypeString>;
 
+    static constexpr bool to_date_or_datetime = std::is_same_v<ToDataType, DataTypeDate> ||
+                                                std::is_same_v<ToDataType, DataTypeDate32> ||
+                                                std::is_same_v<ToDataType, DataTypeDateTime>;
+
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionConvert>(); }
     static FunctionPtr create() { return std::make_shared<FunctionConvert>(); }
 
@@ -1465,6 +1480,11 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return std::is_same_v<Name, NameToString>; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & arguments) const override
+    {
+        /// TODO: We can make more optimizations here.
+        return !(to_date_or_datetime && isNumber(*arguments[0].type));
+    }
 
     using DefaultReturnTypeGetter = std::function<DataTypePtr(const ColumnsWithTypeAndName &)>;
     static DataTypePtr getReturnTypeDefaultImplementationForNulls(const ColumnsWithTypeAndName & arguments, const DefaultReturnTypeGetter & getter)
@@ -1501,12 +1521,12 @@ public:
 
         if constexpr (to_decimal)
         {
-            mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
+            mandatory_args.push_back({"scale", &isNativeInteger<IDataType>, &isColumnConst, "const Integer"});
         }
 
         if (!to_decimal && isDateTime64<Name, ToDataType>(arguments))
         {
-            mandatory_args.push_back({"scale", &isNativeInteger, &isColumnConst, "const Integer"});
+            mandatory_args.push_back({"scale", &isNativeInteger<IDataType>, &isColumnConst, "const Integer"});
         }
 
         // toString(DateTime or DateTime64, [timezone: String])
@@ -1522,7 +1542,7 @@ public:
             // toDateTime64(value, scale : Integer[, timezone: String])
             || std::is_same_v<ToDataType, DataTypeDateTime64>)
         {
-            optional_args.push_back({"timezone", &isString, &isColumnConst, "const String"});
+            optional_args.push_back({"timezone", &isString<IDataType>, &isColumnConst, "const String"});
         }
 
         validateFunctionArgumentTypes(*this, arguments, mandatory_args, optional_args);
@@ -1690,9 +1710,9 @@ private:
                 using RightT = typename RightDataType::FieldType;
 
                 static constexpr bool bad_left =
-                    IsDecimalNumber<LeftT> || std::is_floating_point_v<LeftT> || is_big_int_v<LeftT> || is_signed_v<LeftT>;
+                    is_decimal<LeftT> || std::is_floating_point_v<LeftT> || is_big_int_v<LeftT> || is_signed_v<LeftT>;
                 static constexpr bool bad_right =
-                    IsDecimalNumber<RightT> || std::is_floating_point_v<RightT> || is_big_int_v<RightT> || is_signed_v<RightT>;
+                    is_decimal<RightT> || std::is_floating_point_v<RightT> || is_big_int_v<RightT> || is_signed_v<RightT>;
 
                 /// Disallow int vs UUID conversion (but support int vs UInt128 conversion)
                 if constexpr ((bad_left && std::is_same_v<RightDataType, DataTypeUUID>) ||
@@ -1789,6 +1809,7 @@ public:
     }
 
     bool isVariadic() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
@@ -1801,11 +1822,11 @@ public:
         if (isDateTime64<Name, ToDataType>(arguments))
         {
             validateFunctionArgumentTypes(*this, arguments,
-                FunctionArgumentDescriptors{{"string", isStringOrFixedString, nullptr, "String or FixedString"}},
+                FunctionArgumentDescriptors{{"string", &isStringOrFixedString<IDataType>, nullptr, "String or FixedString"}},
                 // optional
                 FunctionArgumentDescriptors{
-                    {"precision", isUInt8, isColumnConst, "const UInt8"},
-                    {"timezone", isStringOrFixedString, isColumnConst, "const String or FixedString"},
+                    {"precision", &isUInt8<IDataType>, isColumnConst, "const UInt8"},
+                    {"timezone", &isStringOrFixedString<IDataType>, isColumnConst, "const String or FixedString"},
                 });
 
             UInt64 scale = to_datetime64 ? DataTypeDateTime64::default_scale : 0;
@@ -1944,7 +1965,7 @@ struct PositiveMonotonicity
     static bool has() { return true; }
     static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
-        return { true };
+        return { .is_monotonic = true };
     }
 };
 
@@ -1953,7 +1974,7 @@ struct UnknownMonotonicity
     static bool has() { return false; }
     static IFunction::Monotonicity get(const IDataType &, const Field &, const Field &)
     {
-        return { false };
+        return { };
     }
 };
 
@@ -1979,13 +2000,13 @@ struct ToNumberMonotonicity
         /// (Enum has separate case, because it is different data type)
         if (checkAndGetDataType<DataTypeNumber<T>>(&type) ||
             checkAndGetDataType<DataTypeEnum<T>>(&type))
-            return { true, true, true };
+            return { .is_monotonic = true, .is_always_monotonic = true };
 
         /// Float cases.
 
         /// When converting to Float, the conversion is always monotonic.
-        if (std::is_floating_point_v<T>)
-            return {true, true, true};
+        if constexpr (std::is_floating_point_v<T>)
+            return { .is_monotonic = true, .is_always_monotonic = true };
 
         /// If converting from Float, for monotonicity, arguments must fit in range of result type.
         if (WhichDataType(type).isFloat())
@@ -2000,7 +2021,7 @@ struct ToNumberMonotonicity
                 && left_float <= static_cast<Float64>(std::numeric_limits<T>::max())
                 && right_float >= static_cast<Float64>(std::numeric_limits<T>::min())
                 && right_float <= static_cast<Float64>(std::numeric_limits<T>::max()))
-                return { true };
+                return { .is_monotonic = true };
 
             return {};
         }
@@ -2025,10 +2046,10 @@ struct ToNumberMonotonicity
         if (size_of_from == size_of_to)
         {
             if (from_is_unsigned == to_is_unsigned)
-                return {true, true, true};
+                return { .is_monotonic = true, .is_always_monotonic = true };
 
             if (left_in_first_half == right_in_first_half)
-                return {true};
+                return { .is_monotonic = true };
 
             return {};
         }
@@ -2037,14 +2058,14 @@ struct ToNumberMonotonicity
         if (size_of_from < size_of_to)
         {
             if (from_is_unsigned == to_is_unsigned)
-                return {true, true, true};
+                return { .is_monotonic = true, .is_always_monotonic = true };
 
             if (!to_is_unsigned)
-                return {true, true, true};
+                return { .is_monotonic = true, .is_always_monotonic = true };
 
             /// signed -> unsigned. If arguments from the same half, then function is monotonic.
             if (left_in_first_half == right_in_first_half)
-                return {true};
+                return { .is_monotonic = true };
 
             return {};
         }
@@ -2061,10 +2082,14 @@ struct ToNumberMonotonicity
                 return {};
 
             if (to_is_unsigned)
-                return {true};
+                return { .is_monotonic = true };
             else
+            {
                 // If To is signed, it's possible that the signedness is different after conversion. So we check it explicitly.
-                return {(T(left.get<UInt64>()) >= 0) == (T(right.get<UInt64>()) >= 0)};
+                const bool is_monotonic = (T(left.get<UInt64>()) >= 0) == (T(right.get<UInt64>()) >= 0);
+
+                return { .is_monotonic = is_monotonic };
+            }
         }
 
         __builtin_unreachable();
@@ -2079,7 +2104,7 @@ struct ToDateMonotonicity
     {
         auto which = WhichDataType(type);
         if (which.isDateOrDate32() || which.isDateTime() || which.isDateTime64() || which.isInt8() || which.isInt16() || which.isUInt8() || which.isUInt16())
-            return {true, true, true};
+            return { .is_monotonic = true, .is_always_monotonic = true };
         else if (
             (which.isUInt() && ((left.isNull() || left.get<UInt64>() < 0xFFFF) && (right.isNull() || right.get<UInt64>() >= 0xFFFF)))
             || (which.isInt() && ((left.isNull() || left.get<Int64>() < 0xFFFF) && (right.isNull() || right.get<Int64>() >= 0xFFFF)))
@@ -2087,7 +2112,7 @@ struct ToDateMonotonicity
             || !type.isValueRepresentedByNumber())
             return {};
         else
-            return {true, true, true};
+            return { .is_monotonic = true, .is_always_monotonic = true };
     }
 };
 
@@ -2098,7 +2123,7 @@ struct ToDateTimeMonotonicity
     static IFunction::Monotonicity get(const IDataType & type, const Field &, const Field &)
     {
         if (type.isValueRepresentedByNumber())
-            return {true, true, true};
+            return { .is_monotonic = true, .is_always_monotonic = true };
         else
             return {};
     }
@@ -2113,7 +2138,7 @@ struct ToStringMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
-        IFunction::Monotonicity positive(true, true);
+        IFunction::Monotonicity positive{ .is_monotonic = true };
         IFunction::Monotonicity not_monotonic;
 
         const auto * type_ptr = &type;
@@ -2412,7 +2437,8 @@ private:
     std::optional<Diagnostic> diagnostic;
 };
 
-struct NameCast { static constexpr auto name = "CAST"; };
+struct CastName { static constexpr auto name = "CAST"; };
+struct CastInternalName { static constexpr auto name = "_CAST"; };
 
 enum class CastType
 {
@@ -2421,17 +2447,26 @@ enum class CastType
     accurateOrNull
 };
 
-class FunctionCast final : public IFunctionBase
+class FunctionCastBase : public IFunctionBase
+{
+public:
+    using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
+    using Diagnostic = ExecutableFunctionCast::Diagnostic;
+};
+
+template <typename FunctionName>
+class FunctionCast final : public FunctionCastBase
 {
 public:
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
-    using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
-    using Diagnostic = ExecutableFunctionCast::Diagnostic;
 
-    FunctionCast(const char * name_, MonotonicityForRange && monotonicity_for_range_
-        , const DataTypes & argument_types_, const DataTypePtr & return_type_
-        , std::optional<Diagnostic> diagnostic_, CastType cast_type_)
-        : name(name_), monotonicity_for_range(std::move(monotonicity_for_range_))
+    FunctionCast(const char * cast_name_
+            , MonotonicityForRange && monotonicity_for_range_
+            , const DataTypes & argument_types_
+            , const DataTypePtr & return_type_
+            , std::optional<Diagnostic> diagnostic_
+            , CastType cast_type_)
+        : cast_name(cast_name_), monotonicity_for_range(std::move(monotonicity_for_range_))
         , argument_types(argument_types_), return_type(return_type_), diagnostic(std::move(diagnostic_))
         , cast_type(cast_type_)
     {
@@ -2445,7 +2480,7 @@ public:
         try
         {
             return std::make_unique<ExecutableFunctionCast>(
-                    prepareUnpackDictionaries(getArgumentTypes()[0], getResultType()), name, diagnostic);
+                    prepareUnpackDictionaries(getArgumentTypes()[0], getResultType()), cast_name, diagnostic);
         }
         catch (Exception & e)
         {
@@ -2456,10 +2491,11 @@ public:
         }
     }
 
-    String getName() const override { return name; }
+    String getName() const override { return cast_name; }
 
     bool isDeterministic() const override { return true; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     bool hasInformationAboutMonotonicity() const override
     {
@@ -2473,7 +2509,7 @@ public:
 
 private:
 
-    const char * name;
+    const char * cast_name;
     MonotonicityForRange monotonicity_for_range;
 
     DataTypes argument_types;
@@ -2515,7 +2551,7 @@ private:
         {
             /// In case when converting to Nullable type, we apply different parsing rule,
             /// that will not throw an exception but return NULL in case of malformed input.
-            FunctionPtr function = FunctionConvertFromString<ToDataType, NameCast, ConvertFromStringExceptionMode::Null>::create();
+            FunctionPtr function = FunctionConvertFromString<ToDataType, FunctionName, ConvertFromStringExceptionMode::Null>::create();
             return createFunctionAdaptor(function, from_type);
         }
         else if (!can_apply_accurate_cast)
@@ -2539,12 +2575,12 @@ private:
                 {
                     if (wrapper_cast_type == CastType::accurate)
                     {
-                        result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
                             arguments, result_type, input_rows_count, AccurateConvertStrategyAdditions());
                     }
                     else
                     {
-                        result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
                             arguments, result_type, input_rows_count, AccurateOrNullConvertStrategyAdditions());
                     }
 
@@ -2559,13 +2595,14 @@ private:
             {
                 if (wrapper_cast_type == CastType::accurateOrNull)
                 {
-                    auto nullable_column_wrapper = FunctionCast::createToNullableColumnWrapper();
+                    auto nullable_column_wrapper = FunctionCast<FunctionName>::createToNullableColumnWrapper();
                     return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
                 }
                 else
                 {
-                    throw Exception{"Conversion from " + std::string(getTypeName(from_type_index)) + " to " + to_type->getName() + " is not supported",
-                        ErrorCodes::CANNOT_CONVERT_TYPE};
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
+                        "Conversion from {} to {} is not supported",
+                        from_type_index, to_type->getName());
                 }
             }
 
@@ -2631,7 +2668,7 @@ private:
                     {
                         AccurateConvertStrategyAdditions additions;
                         additions.scale = scale;
-                        result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
                             arguments, result_type, input_rows_count, additions);
 
                         return true;
@@ -2640,7 +2677,7 @@ private:
                     {
                         AccurateOrNullConvertStrategyAdditions additions;
                         additions.scale = scale;
-                        result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(
                             arguments, result_type, input_rows_count, additions);
 
                         return true;
@@ -2653,14 +2690,14 @@ private:
                         /// Consistent with CAST(Nullable(String) AS Nullable(Numbers))
                         /// In case when converting to Nullable type, we apply different parsing rule,
                         /// that will not throw an exception but return NULL in case of malformed input.
-                        result_column = ConvertImpl<LeftDataType, RightDataType, NameCast, ConvertReturnNullOnErrorTag>::execute(
+                        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName, ConvertReturnNullOnErrorTag>::execute(
                             arguments, result_type, input_rows_count, scale);
 
                         return true;
                     }
                 }
 
-                result_column = ConvertImpl<LeftDataType, RightDataType, NameCast>::execute(arguments, result_type, input_rows_count, scale);
+                result_column = ConvertImpl<LeftDataType, RightDataType, FunctionName>::execute(arguments, result_type, input_rows_count, scale);
 
                 return true;
             });
@@ -2670,12 +2707,13 @@ private:
             {
                 if (wrapper_cast_type == CastType::accurateOrNull)
                 {
-                    auto nullable_column_wrapper = FunctionCast::createToNullableColumnWrapper();
+                    auto nullable_column_wrapper = FunctionCast<FunctionName>::createToNullableColumnWrapper();
                     return nullable_column_wrapper(arguments, result_type, column_nullable, input_rows_count);
                 }
                 else
-                    throw Exception{"Conversion from " + std::string(getTypeName(type_index)) + " to " + to_type->getName() + " is not supported",
-                        ErrorCodes::CANNOT_CONVERT_TYPE};
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
+                        "Conversion from {} to {} is not supported",
+                        type_index, to_type->getName());
             }
 
             return result_column;
@@ -2990,7 +3028,7 @@ private:
     template <typename ColumnStringType, typename EnumType>
     WrapperType createStringToEnumWrapper() const
     {
-        const char * function_name = name;
+        const char * function_name = cast_name;
         return [function_name] (
             ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, const ColumnNullable * nullable_col, size_t /*input_rows_count*/)
         {
@@ -3324,7 +3362,7 @@ private:
 class MonotonicityHelper
 {
 public:
-    using MonotonicityForRange = FunctionCast::MonotonicityForRange;
+    using MonotonicityForRange = FunctionCastBase::MonotonicityForRange;
 
     template <typename DataType>
     static auto monotonicityForType(const DataType * const)
@@ -3380,91 +3418,6 @@ public:
         /// other types like Null, FixedString, Array and Tuple have no monotonicity defined
         return {};
     }
-};
-
-template<CastType cast_type>
-class CastOverloadResolver : public IFunctionOverloadResolver
-{
-public:
-    using MonotonicityForRange = FunctionCast::MonotonicityForRange;
-    using Diagnostic = FunctionCast::Diagnostic;
-
-    static constexpr auto accurate_cast_name = "accurateCast";
-    static constexpr auto accurate_cast_or_null_name = "accurateCastOrNull";
-    static constexpr auto cast_name = "CAST";
-
-    static constexpr auto name = cast_type == CastType::accurate
-        ? accurate_cast_name
-        : (cast_type == CastType::accurateOrNull ? accurate_cast_or_null_name : cast_name);
-
-    static FunctionOverloadResolverPtr create(ContextPtr context)
-    {
-        return createImpl(context->getSettingsRef().cast_keep_nullable);
-    }
-
-    static FunctionOverloadResolverPtr createImpl(bool keep_nullable, std::optional<Diagnostic> diagnostic = {})
-    {
-        return std::make_unique<CastOverloadResolver>(keep_nullable, std::move(diagnostic));
-    }
-
-
-    explicit CastOverloadResolver(bool keep_nullable_, std::optional<Diagnostic> diagnostic_ = {})
-        : keep_nullable(keep_nullable_), diagnostic(std::move(diagnostic_))
-    {}
-
-    String getName() const override { return name; }
-
-    size_t getNumberOfArguments() const override { return 2; }
-
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
-
-protected:
-
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
-    {
-        DataTypes data_types(arguments.size());
-
-        for (size_t i = 0; i < arguments.size(); ++i)
-            data_types[i] = arguments[i].type;
-
-        auto monotonicity = MonotonicityHelper::getMonotonicityInformation(arguments.front().type, return_type.get());
-        return std::make_unique<FunctionCast>(name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
-    }
-
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        const auto & column = arguments.back().column;
-        if (!column)
-            throw Exception("Second argument to " + getName() + " must be a constant string describing type."
-                " Instead there is non-constant column of type " + arguments.back().type->getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        const auto * type_col = checkAndGetColumnConst<ColumnString>(column.get());
-        if (!type_col)
-            throw Exception("Second argument to " + getName() + " must be a constant string describing type."
-                " Instead there is a column with the following structure: " + column->dumpStructure(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        DataTypePtr type = DataTypeFactory::instance().get(type_col->getValue<String>());
-
-        if constexpr (cast_type == CastType::accurateOrNull)
-        {
-            return makeNullable(type);
-        }
-        else
-        {
-            if (keep_nullable && arguments.front().type->isNullable())
-                return makeNullable(type);
-            return type;
-        }
-    }
-
-    bool useDefaultImplementationForNulls() const override { return false; }
-    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
-
-private:
-    bool keep_nullable;
-    std::optional<Diagnostic> diagnostic;
 };
 
 }

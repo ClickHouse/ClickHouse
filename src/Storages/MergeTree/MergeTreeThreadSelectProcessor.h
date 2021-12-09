@@ -11,7 +11,7 @@ class MergeTreeReadPool;
 /** Used in conjunction with MergeTreeReadPool, asking it for more work to do and performing whatever reads it is asked
   * to perform.
   */
-class MergeTreeThreadSelectProcessor : public MergeTreeBaseSelectProcessor
+class MergeTreeThreadSelectProcessor final : public MergeTreeBaseSelectProcessor
 {
 public:
     MergeTreeThreadSelectProcessor(
@@ -27,8 +27,8 @@ public:
         const PrewhereInfoPtr & prewhere_info_,
         ExpressionActionsSettings actions_settings,
         const MergeTreeReaderSettings & reader_settings_,
-
-        const Names & virt_column_names_);
+        const Names & virt_column_names_,
+        std::optional<ParallelReadingExtension> extension_);
 
     String getName() const override { return "MergeTreeThread"; }
 
@@ -36,7 +36,13 @@ public:
 
 protected:
     /// Requests read task from MergeTreeReadPool and signals whether it got one
-    bool getNewTask() override;
+    bool getNewTaskImpl() override;
+
+    void finalizeNewTask() override;
+
+    void finish() override;
+
+    bool canUseConsistentHashingForParallelReading() override { return true; }
 
 private:
     /// "thread" index (there are N threads and each thread is assigned index in interval [0..N-1])

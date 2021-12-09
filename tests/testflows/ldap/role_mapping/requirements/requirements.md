@@ -306,7 +306,7 @@ with the actual user name during each authentication attempt.
 For example, 
 
 ```xml
-<yandex>
+<clickhouse>
     <ldap_servers>
         <my_ldap_server>
             <!-- ... -->
@@ -314,7 +314,7 @@ For example,
             <!-- ... -->
         </my_ldap_server>
     </ldap_servers>
-</yandex>
+</clickhouse>
 ```
 
 ##### RQ.SRS-014.LDAP.RoleMapping.Configuration.Server.BindDN.ConflictWith.AuthDN
@@ -397,7 +397,7 @@ of the `config.xml`.
 For example,
 
 ```xml
-<yandex>
+<clickhouse>
     <user_directories>
         <ldap>
             <!-- ... -->
@@ -410,7 +410,7 @@ For example,
             </role_mapping>
         </ldap>
     </user_directories>
-</yandex>
+</clickhouse>
 ```
 
 #### Special Characters Escaping
@@ -550,20 +550,20 @@ the `<user directories><ldap><role_mapping>` section of the `config.xml`.
 
 ## References
 
-* **Access Control and Account Management**: https://clickhouse.tech/docs/en/operations/access-rights/
+* **Access Control and Account Management**: https://clickhouse.com/docs/en/operations/access-rights/
 * **LDAP**: https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol
-* **ClickHouse:** https://clickhouse.tech
+* **ClickHouse:** https://clickhouse.com
 * **GitHub Repository**: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/role_mapping/requirements/requirements.md
 * **Revision History**: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/ldap/role_mapping/requirements/requirements.md 
 * **Git:** https://git-scm.com/
 
-[RBAC]: https://clickhouse.tech/docs/en/operations/access-rights/
+[RBAC]: https://clickhouse.com/docs/en/operations/access-rights/
 [SRS]: #srs
-[Access Control and Account Management]: https://clickhouse.tech/docs/en/operations/access-rights/
+[Access Control and Account Management]: https://clickhouse.com/docs/en/operations/access-rights/
 [SRS-009 ClickHouse LDAP External User Directory]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/external_user_directory/requirements/requirements.md
 [SRS-007 ClickHouse Authentication of Users via LDAP]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/authentication/requirements/requirements.md
 [LDAP]: https://en.wikipedia.org/wiki/Lightweight_Directory_Access_Protocol
-[ClickHouse]: https://clickhouse.tech
+[ClickHouse]: https://clickhouse.com
 [GitHub Repository]: https://github.com/ClickHouse/ClickHouse/blob/master/tests/testflows/ldap/role_mapping/requirements/requirements.md
 [Revision History]: https://github.com/ClickHouse/ClickHouse/commits/master/tests/testflows/ldap/role_mapping/requirements/requirements.md
 [Git]: https://git-scm.com/

@@ -1,3 +1,6 @@
+-- Tags: long, zookeeper, no-replicated-database
+-- Tag no-replicated-database: Fails due to additional replicas or shards
+
 DROP TABLE IF EXISTS partitioned_table;
 
 CREATE TABLE partitioned_table (

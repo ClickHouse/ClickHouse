@@ -17,11 +17,17 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 `-a` – The `negate (a)` function.
 
+For tuple negation: [tupleNegate](../../sql-reference/functions/tuple-functions.md#tuplenegate).
+
 ## Multiplication and Division Operators {#multiplication-and-division-operators}
 
 `a * b` – The `multiply (a, b)` function.
 
+For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar profuct: [dotProduct](../../sql-reference/functions/tuple-functions.md#dotproduct).
+
 `a / b` – The `divide(a, b)` function.
+
+For dividing tuple by number: [tupleDivideByNumber](../../sql-reference/functions/tuple-functions.md#tupledividebynumber).
 
 `a % b` – The `modulo(a, b)` function.
 
@@ -29,7 +35,11 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 `a + b` – The `plus(a, b)` function.
 
+For tuple addiction: [tuplePlus](../../sql-reference/functions/tuple-functions.md#tupleplus).
+
 `a - b` – The `minus(a, b)` function.
+
+For tuple subtraction: [tupleMinus](../../sql-reference/functions/tuple-functions.md#tupleminus).
 
 ## Comparison Operators {#comparison-operators}
 
@@ -61,7 +71,7 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 
 ## Operators for Working with Data Sets {#operators-for-working-with-data-sets}
 
-*See [IN operators](../../sql-reference/operators/in.md).*
+See [IN operators](../../sql-reference/operators/in.md) and [EXISTS](../../sql-reference/operators/exists.md) operator.
 
 `a IN ...` – The `in(a, b)` function.
 
@@ -70,6 +80,53 @@ ClickHouse transforms operators to their corresponding functions at the query pa
 `a GLOBAL IN ...` – The `globalIn(a, b)` function.
 
 `a GLOBAL NOT IN ...` – The `globalNotIn(a, b)` function.
+
+`a = ANY (subquery)` – The `in(a, subquery)` function.  
+
+`a != ANY (subquery)` – The same as `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`.
+
+`a = ALL (subquery)` – The same as `a IN (SELECT singleValueOrNull(*) FROM subquery)`.
+
+`a != ALL (subquery)` – The `notIn(a, subquery)` function. 
+
+
+**Examples**
+
+Query with ALL:
+
+``` sql
+SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
+```
+
+Result:
+
+``` text
+┌─a─┐
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
+Query with ANY:
+
+``` sql
+SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
+```
+
+Result:
+
+``` text
+┌─a─┐
+│ 4 │
+│ 5 │
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
 
 ## Operators for Working with Dates and Times {#operators-datetime}
 

@@ -54,9 +54,6 @@ private:
     template <typename Comparator>
     void getPermutationImpl(size_t limit, Permutation & res, Comparator cmp) const;
 
-    template <typename Comparator>
-    void updatePermutationImpl(size_t limit, Permutation & res, EqualRanges & equal_ranges, Comparator cmp) const;
-
 public:
     const char * getFamilyName() const override { return "String"; }
     TypeIndex getDataType() const override { return TypeIndex::String; }
@@ -211,6 +208,8 @@ public:
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
+
+    void expand(const Filter & mask, bool inverted) override;
 
     ColumnPtr permute(const Permutation & perm, size_t limit) const override;
 

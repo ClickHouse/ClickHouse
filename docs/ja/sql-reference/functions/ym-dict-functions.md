@@ -152,4 +152,4 @@ Accepts a UInt32 number – the region ID from the Yandex geobase. A string with
 
 `ua` と `uk` もうクです。
 
-[元の記事](https://clickhouse.tech/docs/en/query_language/functions/ym_dict_functions/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/query_language/functions/ym_dict_functions/) <!--hide-->

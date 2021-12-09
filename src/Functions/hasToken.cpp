@@ -14,7 +14,7 @@ struct NameHasToken
     static constexpr auto name = "hasToken";
 };
 
-using FunctionHasToken = FunctionsStringSearch<HasTokenImpl<VolnitskyCaseSensitiveToken, false>, NameHasToken>;
+using FunctionHasToken = FunctionsStringSearch<HasTokenImpl<NameHasToken, VolnitskyCaseSensitiveToken, false>>;
 
 }
 

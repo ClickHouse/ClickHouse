@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
-#include <DataStreams/materializeBlock.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/WriteHelpers.h>
@@ -80,9 +79,13 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
 
     Block scalar;
     if (data.getContext()->hasQueryContext() && data.getContext()->getQueryContext()->hasScalar(scalar_query_hash_str))
+    {
         scalar = data.getContext()->getQueryContext()->getScalar(scalar_query_hash_str);
+    }
     else if (data.scalars.count(scalar_query_hash_str))
+    {
         scalar = data.scalars[scalar_query_hash_str];
+    }
     else
     {
         auto subquery_context = Context::createCopy(data.getContext());
@@ -149,7 +152,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
                 throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
 
             Block tmp_block;
-            while (tmp_block.rows() == 0 && executor.pull(tmp_block));
+            while (tmp_block.rows() == 0 && executor.pull(tmp_block))
+                ;
 
             if (tmp_block.rows() != 0)
                 throw Exception("Scalar subquery returned more than one row", ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY);
@@ -173,10 +177,10 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         }
         else
         {
-            ColumnWithTypeAndName ctn;
-            ctn.type = std::make_shared<DataTypeTuple>(block.getDataTypes());
-            ctn.column = ColumnTuple::create(block.getColumns());
-            scalar.insert(ctn);
+            scalar.insert({
+                ColumnTuple::create(block.getColumns()),
+                std::make_shared<DataTypeTuple>(block.getDataTypes()),
+                "tuple"});
         }
     }
 

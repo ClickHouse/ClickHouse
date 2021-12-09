@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 
-<yandex>
+<clickhouse>
     <http_handlers>
         <rule>
             <methods>GET</methods>
@@ -22,4 +22,4 @@
             </handler>
         </rule>
     </http_handlers>
-</yandex>
+</clickhouse>

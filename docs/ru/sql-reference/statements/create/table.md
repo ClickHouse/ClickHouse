@@ -183,7 +183,7 @@ CREATE TABLE codec_example
     dt Date CODEC(ZSTD),
     ts DateTime CODEC(LZ4HC),
     float_value Float32 CODEC(NONE),
-    double_value Float64 CODEC(LZ4HC(9))
+    double_value Float64 CODEC(LZ4HC(9)),
     value Float32 CODEC(Delta, ZSTD)
 )
 ENGINE = <Engine>
@@ -200,8 +200,6 @@ ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
 ```
 
 Кодеки можно последовательно комбинировать, например, `CODEC(Delta, Default)`.
-
-Чтобы выбрать наиболее подходящую для вашего проекта комбинацию кодеков, необходимо провести сравнительные тесты, подобные тем, что описаны в статье Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse). Для столбцов типа `ALIAS` кодеки не применяются.
 
 !!! warning "Предупреждение"
     Нельзя распаковать базу данных ClickHouse с помощью сторонних утилит наподобие `lz4`. Необходимо использовать специальную утилиту [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor).
@@ -247,6 +245,7 @@ CREATE TABLE codec_example
 )
 ENGINE = MergeTree()
 ```
+
 ## Временные таблицы {#temporary-tables}
 
 ClickHouse поддерживает временные таблицы со следующими характеристиками:

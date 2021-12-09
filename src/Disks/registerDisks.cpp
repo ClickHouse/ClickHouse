@@ -2,9 +2,7 @@
 
 #include "DiskFactory.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 namespace DB
 {
@@ -23,6 +21,8 @@ void registerDiskEncrypted(DiskFactory & factory);
 #if USE_HDFS
 void registerDiskHDFS(DiskFactory & factory);
 #endif
+
+void registerDiskWebServer(DiskFactory & factory);
 
 
 void registerDisks()
@@ -43,6 +43,8 @@ void registerDisks()
 #if USE_HDFS
     registerDiskHDFS(factory);
 #endif
+
+    registerDiskWebServer(factory);
 }
 
 }

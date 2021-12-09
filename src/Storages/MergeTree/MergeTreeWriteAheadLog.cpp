@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
 #include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <IO/MemoryReadWriteBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -31,6 +32,7 @@ MergeTreeWriteAheadLog::MergeTreeWriteAheadLog(
     , name(name_)
     , path(storage.getRelativeDataPath() + name_)
     , pool(storage.getContext()->getSchedulePool())
+    , log(&Poco::Logger::get(storage.getLogName() + " (WriteAheadLog)"))
 {
     init();
     sync_task = pool.createTask("MergeTreeWriteAheadLog::sync", [this]
@@ -55,7 +57,7 @@ void MergeTreeWriteAheadLog::init()
 
     /// Small hack: in NativeBlockOutputStream header is used only in `getHeader` method.
     /// To avoid complex logic of changing it during ALTERs we leave it empty.
-    block_out = std::make_unique<NativeBlockOutputStream>(*out, 0, Block{});
+    block_out = std::make_unique<NativeWriter>(*out, 0, Block{});
     min_block_number = std::numeric_limits<Int64>::max();
     max_block_number = -1;
     bytes_at_last_sync = 0;
@@ -116,8 +118,8 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
     std::unique_lock lock(write_mutex);
 
     MergeTreeData::MutableDataPartsVector parts;
-    auto in = disk->readFile(path, DBMS_DEFAULT_BUFFER_SIZE);
-    NativeBlockInputStream block_in(*in, 0);
+    auto in = disk->readFile(path, {});
+    NativeReader block_in(*in, 0);
     NameSet dropped_parts;
 
     while (!in->eof())
@@ -172,8 +174,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
                 || e.code() == ErrorCodes::BAD_DATA_PART_NAME
                 || e.code() == ErrorCodes::CORRUPTED_DATA)
             {
-                LOG_WARNING(&Poco::Logger::get(storage.getLogName() + " (WriteAheadLog)"),
-                    "WAL file '{}' is broken. {}", path, e.displayText());
+                LOG_WARNING(log, "WAL file '{}' is broken. {}", path, e.displayText());
 
                 /// If file is broken, do not write new parts to it.
                 /// But if it contains any part rotate and save them.
@@ -196,13 +197,21 @@ MergeTreeData::MutableDataPartsVector MergeTreeWriteAheadLog::restore(const Stor
                 {},
                 CompressionCodecFactory::instance().get("NONE", {}));
 
-            part->minmax_idx.update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
+            part->minmax_idx->update(block, storage.getMinMaxColumnsNames(metadata_snapshot->getPartitionKey()));
             part->partition.create(metadata_snapshot, block, 0, context);
             if (metadata_snapshot->hasSortingKey())
                 metadata_snapshot->getSortingKey().expression->execute(block);
 
-            part_out.writePrefix();
             part_out.write(block);
+
+            for (const auto & projection : metadata_snapshot->getProjections())
+            {
+                auto projection_block = projection.calculate(block, context);
+                if (projection_block.rows())
+                    part->addProjectionPart(
+                        projection.name,
+                        MergeTreeDataWriter::writeInMemoryProjectionPart(storage, log, projection_block, projection, part.get()));
+            }
             part_out.writeSuffixAndFinalizePart(part);
 
             min_block_number = std::min(min_block_number, part->info.min_block);

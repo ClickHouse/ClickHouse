@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 create temporary table t engine Memory as select * from generateRandom(
 $$
     a Array(Int8),
