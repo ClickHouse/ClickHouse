@@ -123,7 +123,7 @@ thread apply all backtrace
 continue
 " > script.gdb
 
-    sudo gdb -batch -command script.gdb -p "$server_pid" &
+    gdb -batch -command script.gdb -p "$server_pid" &
 }
 
 function clone_root
