@@ -7,7 +7,7 @@
 
 #include <Dictionaries/IDictionarySource.h>
 #include <Dictionaries/DictionaryStructure.h>
-#include <DataStreams/ShellCommandSource.h>
+#include <Processors/Sources/ShellCommandSource.h>
 
 
 namespace DB

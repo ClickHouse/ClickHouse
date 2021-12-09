@@ -5,9 +5,7 @@
 #include <Core/Names.h>
 #include <DataTypes/IDataType.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #include <memory>
 

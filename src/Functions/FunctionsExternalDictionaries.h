@@ -21,7 +21,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
 
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
@@ -662,16 +662,11 @@ private:
     {
         auto return_type = impl.getReturnTypeImpl(arguments);
 
-        if (!areTypesEqual(return_type, result_type))
+        if (!return_type->equals(*result_type))
             throw Exception{"Dictionary attribute has different type " + return_type->getName() + " expected " + result_type->getName(),
                     ErrorCodes::TYPE_MISMATCH};
 
         return impl.executeImpl(arguments, return_type, input_rows_count);
-    }
-
-    static bool areTypesEqual(const DataTypePtr & lhs, const DataTypePtr & rhs)
-    {
-        return removeNullable(recursiveRemoveLowCardinality(lhs))->equals(*removeNullable(recursiveRemoveLowCardinality(rhs)));
     }
 
     const FunctionDictGetNoType<dictionary_get_function_type> impl;

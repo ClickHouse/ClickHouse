@@ -25,7 +25,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [LIMIT [n, ]m] [WITH TIES]
 [SETTINGS ...]
 [UNION ALL ...]
-[INTO OUTFILE filename]
+[INTO OUTFILE filename [COMPRESSION type] ] 
 [FORMAT format]
 ```
 
@@ -45,8 +45,10 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 -   [Секция LIMIT BY](limit-by.md)
 -   [Секция HAVING](having.md)
 -   [Секция LIMIT](limit.md)
-    [Секция OFFSET](offset.md)
+-   [Секция OFFSET](offset.md)
 -   [Секция UNION ALL](union.md)
+-   [Секция INTERSECT](intersect.md)
+-   [Секция EXCEPT](except.md)
 -   [Секция INTO OUTFILE](into-outfile.md)
 -   [Секция FORMAT](format.md)
 

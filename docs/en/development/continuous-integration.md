@@ -126,24 +126,23 @@ Builds ClickHouse in various configurations for use in further steps. You have t
 - **Compiler**: `gcc-9` or `clang-10` (or `clang-10-xx` for other architectures e.g. `clang-10-freebsd`).
 - **Build type**: `Debug` or `RelWithDebInfo` (cmake).
 - **Sanitizer**: `none` (without sanitizers), `address` (ASan), `memory` (MSan), `undefined` (UBSan), or `thread` (TSan).
-- **Bundled**: `bundled` build uses libraries from `contrib` folder, and `unbundled` build uses system libraries.
 - **Splitted** `splitted` is a [split build](../development/build.md#split-build)
 - **Status**: `success` or `fail`
 - **Build log**: link to the building and files copying log, useful when build failed.
 - **Build time**.
 - **Artifacts**: build result files (with `XXX` being the server version e.g. `20.8.1.4344`).
-    - `clickhouse-client_XXX_all.deb`
-    - `clickhouse-common-static-dbg_XXX[+asan, +msan, +ubsan, +tsan]_amd64.deb`
-    - `clickhouse-common-staticXXX_amd64.deb`
-    - `clickhouse-server_XXX_all.deb`
-    - `clickhouse-test_XXX_all.deb`
-    - `clickhouse_XXX_amd64.buildinfo`
-    - `clickhouse_XXX_amd64.changes`
-    - `clickhouse`: Main built binary.
-    - `clickhouse-odbc-bridge`
-    - `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
-    - `shared_build.tgz`: build with shared libraries.
-    - `performance.tgz`: Special package for performance tests.
+  - `clickhouse-client_XXX_all.deb`
+  - `clickhouse-common-static-dbg_XXX[+asan, +msan, +ubsan, +tsan]_amd64.deb`
+  - `clickhouse-common-staticXXX_amd64.deb`
+  - `clickhouse-server_XXX_all.deb`
+  - `clickhouse-test_XXX_all.deb`
+  - `clickhouse_XXX_amd64.buildinfo`
+  - `clickhouse_XXX_amd64.changes`
+  - `clickhouse`: Main built binary.
+  - `clickhouse-odbc-bridge`
+  - `unit_tests_dbms`: GoogleTest binary with ClickHouse unit tests.
+  - `shared_build.tgz`: build with shared libraries.
+  - `performance.tgz`: Special package for performance tests.
 
 
 ## Special Build Check

@@ -4,8 +4,9 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <DataStreams/NativeWriter.h>
-#include <DataStreams/NativeReader.h>
+#include <Formats/NativeWriter.h>
+#include <Formats/NativeReader.h>
+#include <QueryPipeline/ProfileInfo.h>
 #include <Disks/IDisk.h>
 #include <Common/formatReadable.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -13,7 +14,6 @@
 #include <Interpreters/Context.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTLiteral.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -218,7 +218,7 @@ void StorageSetOrJoinBase::restoreFromFile(const String & file_path)
     CompressedReadBuffer compressed_backup_buf(*backup_buf);
     NativeReader backup_stream(compressed_backup_buf, 0);
 
-    BlockStreamProfileInfo info;
+    ProfileInfo info;
     while (Block block = backup_stream.read())
     {
         info.update(block);

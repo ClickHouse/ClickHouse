@@ -1,5 +1,6 @@
 #include <Databases/DatabaseFactory.h>
 
+#include <filesystem>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseDictionary.h>
 #include <Databases/DatabaseLazy.h>
@@ -7,18 +8,15 @@
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/formatAST.h>
-#include <Common/Macros.h>
+#include <Parsers/queryToString.h>
 #include <Storages/ExternalDataSourceConfiguration.h>
-#include <filesystem>
+#include <Common/Macros.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
+#include "config_core.h"
 
 #if USE_MYSQL
 #    include <Core/MySQL/MySQLClient.h>
@@ -31,12 +29,11 @@
 
 #if USE_MYSQL || USE_LIBPQXX
 #include <Common/parseRemoteDescription.h>
-#include <Interpreters/evaluateConstantExpression.h>
 #include <Common/parseAddress.h>
 #endif
 
 #if USE_LIBPQXX
-#include <Databases/PostgreSQL/DatabasePostgreSQL.h> // Y_IGNORE
+#include <Databases/PostgreSQL/DatabasePostgreSQL.h>
 #include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 #include <Storages/StoragePostgreSQL.h>
@@ -57,6 +54,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int CANNOT_CREATE_DATABASE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
@@ -71,6 +69,7 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
         /// Before 20.7 it's possible that .sql metadata file does not exist for some old database.
         /// In this case Ordinary database is created on server startup if the corresponding metadata directory exists.
         /// So we should remove metadata directory if database creation failed.
+        /// TODO remove this code
         created = fs::create_directory(metadata_path);
 
         DatabasePtr impl = getImpl(create, metadata_path, context);
@@ -79,8 +78,8 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
             context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
 
         // Attach database metadata
-        if (impl && create.storage && create.storage->comment)
-            impl->setDatabaseComment(create.storage->comment->as<ASTLiteral>()->value.safeGet<String>());
+        if (impl && create.comment)
+            impl->setDatabaseComment(create.comment->as<ASTLiteral>()->value.safeGet<String>());
 
         return impl;
     }
@@ -104,7 +103,7 @@ static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &eng
 DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context)
 {
     auto * engine_define = create.storage;
-    const String & database_name = create.database;
+    const String & database_name = create.getDatabase();
     const String & engine_name = engine_define->engine->name;
     const UUID & uuid = create.uuid;
 
@@ -212,14 +211,22 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
             if (engine_define->settings)
                 materialize_mode_settings->loadFromQuery(*engine_define);
 
-            if (create.uuid == UUIDHelpers::Nil)
-                return std::make_shared<DatabaseMaterializedMySQL<DatabaseOrdinary>>(
-                    context, database_name, metadata_path, uuid, configuration.database, std::move(mysql_pool),
-                    std::move(client), std::move(materialize_mode_settings));
-            else
-                return std::make_shared<DatabaseMaterializedMySQL<DatabaseAtomic>>(
-                    context, database_name, metadata_path, uuid, configuration.database, std::move(mysql_pool),
-                    std::move(client), std::move(materialize_mode_settings));
+            if (uuid == UUIDHelpers::Nil)
+            {
+                auto print_create_ast = create.clone();
+                print_create_ast->as<ASTCreateQuery>()->attach = false;
+                throw Exception(
+                    fmt::format(
+                        "The MaterializedMySQL database engine no longer supports Ordinary databases. To re-create the database, delete "
+                        "the old one by executing \"rm -rf {}{{,.sql}}\", then re-create the database with the following query: {}",
+                        metadata_path,
+                        queryToString(print_create_ast)),
+                    ErrorCodes::NOT_IMPLEMENTED);
+            }
+
+            return std::make_shared<DatabaseMaterializedMySQL>(
+                context, database_name, metadata_path, uuid, configuration.database, std::move(mysql_pool),
+                std::move(client), std::move(materialize_mode_settings));
         }
         catch (...)
         {
@@ -249,7 +256,9 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         if (!engine->arguments || engine->arguments->children.size() != 3)
             throw Exception("Replicated database requires 3 arguments: zookeeper path, shard name and replica name", ErrorCodes::BAD_ARGUMENTS);
 
-        const auto & arguments = engine->arguments->children;
+        auto & arguments = engine->arguments->children;
+        for (auto & engine_arg : arguments)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
         String zookeeper_path = safeGetLiteralValue<String>(arguments[0], "Replicated");
         String shard_name = safeGetLiteralValue<String>(arguments[1], "Replicated");

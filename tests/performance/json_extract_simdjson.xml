@@ -24,7 +24,7 @@
     <query>SELECT 'simdjson-4',  count() FROM zeros(5000000) WHERE NOT ignore(JSONExtractUInt(materialize({json}), 'nparam'))</query>
     <query>SELECT 'simdjson-5',  count() FROM zeros(5000000) WHERE NOT ignore(JSONExtractFloat(materialize({json}), 'fparam'))</query>
 
-    <query>SELECT 'simdjson-6',  count() FROM zeros(5000000) WHERE NOT ignore(JSONExtractString(materialize({long_json}), 'sparam'))</query>
+    <query>SELECT 'simdjson-6',  count() FROM zeros(1000000) WHERE NOT ignore(JSONExtractString(materialize({long_json}), 'sparam'))</query>
     <query>SELECT 'simdjson-7',  count() FROM zeros(5000000) WHERE NOT ignore(JSONExtractString(materialize({long_json}), 'sparam', 'nested_1'))</query>
     <query>SELECT 'simdjson-8',  count() FROM zeros(5000000) WHERE NOT ignore(JSONExtractInt(materialize({long_json}), 'nparam'))</query>
     <query>SELECT 'simdjson-9',  count() FROM zeros(5000000) WHERE NOT ignore(JSONExtractUInt(materialize({long_json}), 'nparam'))</query>
