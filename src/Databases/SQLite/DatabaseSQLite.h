@@ -12,7 +12,7 @@
 
 namespace DB
 {
-class DatabaseSQLite final : public IDatabase, protected WithContext
+class DatabaseSQLite final : public IDatabase, WithContext
 {
 public:
     using SQLitePtr = std::shared_ptr<sqlite3>;
@@ -58,7 +58,6 @@ private:
 
     StoragePtr fetchTable(const String & table_name, ContextPtr context, bool table_checked) const;
 
-    ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 };
 
 }

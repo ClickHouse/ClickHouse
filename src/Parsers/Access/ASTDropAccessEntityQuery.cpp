@@ -8,8 +8,6 @@ namespace DB
 {
 namespace
 {
-    using EntityTypeInfo = IAccessEntity::TypeInfo;
-
     void formatNames(const Strings & names, const IAST::FormatSettings & settings)
     {
         bool need_comma = false;
@@ -38,11 +36,11 @@ ASTPtr ASTDropAccessEntityQuery::clone() const
 void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "")
-                  << "DROP " << EntityTypeInfo::get(type).name
+                  << "DROP " << AccessEntityTypeInfo::get(type).name
                   << (if_exists ? " IF EXISTS" : "")
                   << (settings.hilite ? hilite_none : "");
 
-    if (type == EntityType::ROW_POLICY)
+    if (type == AccessEntityType::ROW_POLICY)
     {
         settings.ostr << " ";
         row_policy_names->format(settings);

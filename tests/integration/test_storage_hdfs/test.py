@@ -296,6 +296,33 @@ def test_partition_by(started_cluster):
     assert(result.strip() == "1\t2\t3")
 
 
+def test_seekable_formats(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+
+    table_function = f"hdfs('hdfs://hdfs1:9000/parquet', 'Parquet', 'a Int32, b String')"
+    node1.query(f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000)")
+
+    result = node1.query(f"SELECT count() FROM {table_function}")
+    assert(int(result) == 5000000)
+
+    table_function = f"hdfs('hdfs://hdfs1:9000/orc', 'ORC', 'a Int32, b String')"
+    node1.query(f"insert into table function {table_function} SELECT number, randomString(100) FROM numbers(5000000)")
+    result = node1.query(f"SELECT count() FROM {table_function}")
+    assert(int(result) == 5000000)
+
+def test_read_table_with_default(started_cluster):
+    hdfs_api = started_cluster.hdfs_api
+
+    data = "n\n100\n"
+    hdfs_api.write_data("/simple_table_function", data)
+    assert hdfs_api.read_data("/simple_table_function") == data
+
+    output = "n\tm\n100\t200\n"
+    assert node1.query(
+        "select * from hdfs('hdfs://hdfs1:9000/simple_table_function', 'TSVWithNames', 'n UInt32, m UInt32 DEFAULT n * 2') FORMAT TSVWithNames") == output
+
+
+
 if __name__ == '__main__':
     cluster.start()
     input("Cluster created, press any key to destroy...")

@@ -3,6 +3,7 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/Quota.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <base/range.h>
@@ -58,8 +59,11 @@ namespace
 
             auto & quota_limits = *it;
             quota_limits.randomize_interval = query_limits.randomize_interval;
-            for (auto resource_type : collections::range(Quota::MAX_RESOURCE_TYPE))
-                quota_limits.max[resource_type] = query_limits.max[resource_type];
+            for (auto quota_type : collections::range(QuotaType::MAX))
+            {
+                auto quota_type_i = static_cast<size_t>(quota_type);
+                quota_limits.max[quota_type_i] = query_limits.max[quota_type_i];
+            }
         }
 
         if (override_to_roles)
