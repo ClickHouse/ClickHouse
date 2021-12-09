@@ -632,7 +632,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         {
-            OpenTelemetrySpanHolder span("IInterpreter::execute()");
+            std::unique_ptr<OpenTelemetrySpanHolder> span;
+            if (context->query_trace_context.trace_id != UUID())
+            {
+                auto raw_interpreter_ptr = interpreter.get();
+                std::string class_name(abi::__cxa_demangle(typeid(*raw_interpreter_ptr).name(), nullptr, nullptr, nullptr));
+                span = std::make_unique<OpenTelemetrySpanHolder>(class_name + "::execute()");
+            }
             res = interpreter->execute();
         }
 
