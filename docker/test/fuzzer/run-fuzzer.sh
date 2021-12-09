@@ -35,7 +35,7 @@ function clone
             fi
             git diff --name-only master HEAD | tee ci-changed-files.txt
         else
-            if [ -v COMMIT_SHA ]; then
+            if [ -v SHA_TO_TEST ]; then
                 git fetch --depth 2 origin "$SHA_TO_TEST"
                 git checkout "$SHA_TO_TEST"
                 echo "Checked out nominal SHA $SHA_TO_TEST for master"
