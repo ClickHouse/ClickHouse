@@ -371,7 +371,7 @@ ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
         /// Primary key consists of one column.
         auto res = std::make_shared<ASTExpressionList>();
         res->children.push_back(node);
-        return std::move(res);
+        return res;
     }
 }
 

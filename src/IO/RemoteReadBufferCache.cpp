@@ -23,7 +23,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_CREATE_DIRECTORY;
 }
 
 bool RemoteCacheController::loadInnerInformation(const fs::path & file_path)
