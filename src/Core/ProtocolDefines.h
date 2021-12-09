@@ -27,6 +27,7 @@
 /// Minimum revision supporting OpenTelemetry
 #define DBMS_MIN_REVISION_WITH_OPENTELEMETRY 54442
 
+#define DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING 54452
 
 #define DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION 1
 
@@ -38,7 +39,7 @@
 
 #define DBMS_MIN_PROTOCOL_VERSION_WITH_DISTRIBUTED_DEPTH 54448
 
-#define DBMS_MIN_PROTOCOL_VERSION_WITH_PROFILE_EVENTS 54450
+#define DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS 54451
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -47,6 +48,6 @@
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-#define DBMS_TCP_PROTOCOL_VERSION 54450
+#define DBMS_TCP_PROTOCOL_VERSION 54452
 
 #define DBMS_MIN_PROTOCOL_VERSION_WITH_INITIAL_QUERY_START_TIME 54449

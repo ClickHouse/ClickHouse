@@ -7,6 +7,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/ExternalDataSourceConfiguration.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
@@ -221,23 +222,40 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  Block & sample_block,
                                  ContextPtr global_context,
                                  const std::string & default_database [[maybe_unused]],
-                                 bool /* created_from_ddl */) -> DictionarySourcePtr
+                                 bool created_from_ddl) -> DictionarySourcePtr
     {
         bool secure = config.getBool(config_prefix + ".secure", false);
 
         UInt16 default_port = getPortFromContext(global_context, secure);
 
         std::string settings_config_prefix = config_prefix + ".clickhouse";
+
         std::string host = config.getString(settings_config_prefix + ".host", "localhost");
+        std::string user = config.getString(settings_config_prefix + ".user", "default");
+        std::string password =  config.getString(settings_config_prefix + ".password", "");
+        std::string db = config.getString(settings_config_prefix + ".db", default_database);
+        std::string table = config.getString(settings_config_prefix + ".table", "");
         UInt16 port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", default_port));
 
-        ClickHouseDictionarySource::Configuration configuration
+        auto named_collection = created_from_ddl ?
+            getExternalDataSourceConfiguration(config, settings_config_prefix, global_context) : std::nullopt;
+
+        if (named_collection)
         {
+            host = named_collection->host;
+            user = named_collection->username;
+            password = named_collection->password;
+            db = named_collection->database;
+            table = named_collection->table;
+            port = named_collection->port;
+        }
+
+        ClickHouseDictionarySource::Configuration configuration{
             .host = host,
-            .user = config.getString(settings_config_prefix + ".user", "default"),
-            .password = config.getString(settings_config_prefix + ".password", ""),
-            .db = config.getString(settings_config_prefix + ".db", default_database),
-            .table = config.getString(settings_config_prefix + ".table", ""),
+            .user = user,
+            .password = password,
+            .db = db,
+            .table = table,
             .query = config.getString(settings_config_prefix + ".query", ""),
             .where = config.getString(settings_config_prefix + ".where", ""),
             .invalidate_query = config.getString(settings_config_prefix + ".invalidate_query", ""),
@@ -245,8 +263,8 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
             .update_lag = config.getUInt64(settings_config_prefix + ".update_lag", 1),
             .port = port,
             .is_local = isLocalAddress({host, port}, default_port),
-            .secure = config.getBool(settings_config_prefix + ".secure", false)
-        };
+            .secure = config.getBool(settings_config_prefix + ".secure", false)};
+
 
         ContextMutablePtr context;
         if (configuration.is_local)
@@ -260,6 +278,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
         {
             context = Context::createCopy(global_context);
         }
+
         context->applySettingsChanges(readSettingsFromDictionaryConfig(config, config_prefix));
 
         String dictionary_name = config.getString(".dictionary.name", "");

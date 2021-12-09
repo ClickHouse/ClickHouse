@@ -51,6 +51,7 @@ def test_trivial_alter_in_partition_merge_tree_with_where(started_cluster):
         node1.query("CREATE TABLE {} (p Int64, x Int64) ENGINE=MergeTree() ORDER BY tuple() PARTITION BY p".format(name))
         node1.query("INSERT INTO {} VALUES (1, 2), (2, 3)".format(name))
         node1.query("ALTER TABLE {} UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2 SETTINGS mutations_sync = 2".format(name))
+        assert node1.query("SELECT x FROM {} ORDER BY p".format(name)).splitlines() == ["2", "4"]
         assert node1.query("SELECT sum(x) FROM {}".format(name)).splitlines() == ["6"]
         node1.query("ALTER TABLE {} UPDATE x = x + 1 IN PARTITION 1 WHERE p = 2 SETTINGS mutations_sync = 2".format(name))
         assert node1.query("SELECT sum(x) FROM {}".format(name)).splitlines() == ["6"]

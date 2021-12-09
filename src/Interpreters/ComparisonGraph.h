@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTLiteral.h>
 #include <Interpreters/TreeCNFConverter.h>
 #include <unordered_map>
 #include <map>

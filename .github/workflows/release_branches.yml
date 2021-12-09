@@ -6,7 +6,6 @@ on: # yamllint disable-line rule:truthy
       - '22.**'
       - '23.**'
       - '24.**'
-      - 'backport/**'
 jobs:
   DockerHubPush:
     runs-on: [self-hosted, style-checker]
@@ -41,7 +40,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 compatibility_check.py 0
+          cd $REPO_COPY/tests/ci && python3 compatibility_check.py
       - name: Cleanup
         if: always()
         run: |
@@ -72,12 +71,12 @@ jobs:
           REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH: ${{runner.temp}}/../ccaches
           CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NUMBER: 0
+          BUILD_NAME: 'package_release'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NUMBER
+          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
         uses: actions/upload-artifact@v2
         with:
@@ -110,12 +109,12 @@ jobs:
           REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH: ${{runner.temp}}/../ccaches
           CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NUMBER: 3
+          BUILD_NAME: 'package_asan'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NUMBER
+          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
         uses: actions/upload-artifact@v2
         with:
@@ -148,12 +147,12 @@ jobs:
           REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH: ${{runner.temp}}/../ccaches
           CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NUMBER: 4
+          BUILD_NAME: 'package_ubsan'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NUMBER
+          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
         uses: actions/upload-artifact@v2
         with:
@@ -186,12 +185,12 @@ jobs:
           REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH: ${{runner.temp}}/../ccaches
           CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NUMBER: 5
+          BUILD_NAME: 'package_tsan'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NUMBER
+          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
         uses: actions/upload-artifact@v2
         with:
@@ -224,12 +223,12 @@ jobs:
           REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH: ${{runner.temp}}/../ccaches
           CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NUMBER: 6
+          BUILD_NAME: 'package_msan'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NUMBER
+          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
         uses: actions/upload-artifact@v2
         with:
@@ -262,12 +261,12 @@ jobs:
           REPO_COPY: ${{runner.temp}}/build_check/ClickHouse
           CACHES_PATH: ${{runner.temp}}/../ccaches
           CHECK_NAME: 'ClickHouse build check (actions)'
-          BUILD_NUMBER: 7
+          BUILD_NAME: 'package_debug'
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
           cp -r $GITHUB_WORKSPACE $TEMP_PATH
-          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NUMBER
+          cd $REPO_COPY/tests/ci && python3 build_check.py "$CHECK_NAME" $BUILD_NAME
       - name: Upload build URLs to artifacts
         uses: actions/upload-artifact@v2
         with:
