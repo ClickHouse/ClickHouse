@@ -25,15 +25,15 @@ from tee_popen import TeePopen
 DOWNLOAD_RETRIES_COUNT = 5
 
 IMAGES = [
-    "yandex/clickhouse-integration-tests-runner",
-    "yandex/clickhouse-mysql-golang-client",
-    "yandex/clickhouse-mysql-java-client",
-    "yandex/clickhouse-mysql-js-client",
-    "yandex/clickhouse-mysql-php-client",
-    "yandex/clickhouse-postgresql-java-client",
-    "yandex/clickhouse-integration-test",
-    "yandex/clickhouse-kerberos-kdc",
-    "yandex/clickhouse-integration-helper",
+    "clickhouse/integration-tests-runner",
+    "clickhouse/mysql-golang-client",
+    "clickhouse/mysql-java-client",
+    "clickhouse/mysql-js-client",
+    "clickhouse/mysql-php-client",
+    "clickhouse/postgresql-java-client",
+    "clickhouse/integration-test",
+    "clickhouse/kerberos-kdc",
+    "clickhouse/integration-helper",
 ]
 
 def get_json_params_dict(check_name, pr_info, docker_images):
