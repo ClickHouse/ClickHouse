@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <queue>
+#include <Common/Exception.h>
 
 namespace DB
 {

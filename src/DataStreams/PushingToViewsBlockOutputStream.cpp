@@ -15,6 +15,7 @@
 #include <Common/checkStackSize.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeBlockOutputStream.h>
 #include <Storages/StorageValues.h>
+#include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/LiveView/StorageLiveView.h>
 #include <Storages/StorageMaterializedView.h>
 #include <common/logger_useful.h>
@@ -114,7 +115,8 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             BlockIO io = interpreter.execute();
             out = io.out;
         }
-        else if (dynamic_cast<const StorageLiveView *>(dependent_table.get()))
+        else if (
+            dynamic_cast<const StorageLiveView *>(dependent_table.get()) || dynamic_cast<const StorageWindowView *>(dependent_table.get()))
             out = std::make_shared<PushingToViewsBlockOutputStream>(
                 dependent_table, dependent_metadata_snapshot, insert_context, ASTPtr(), true);
         else
@@ -156,6 +158,10 @@ void PushingToViewsBlockOutputStream::write(const Block & block)
     if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
     {
         StorageLiveView::writeIntoLiveView(*live_view, block, getContext());
+    }
+    else if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
+    {
+        StorageWindowView::writeIntoWindowView(*window_view, block, getContext());
     }
     else
     {

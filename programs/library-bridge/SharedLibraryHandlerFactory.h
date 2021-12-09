@@ -24,9 +24,9 @@ public:
         const Block & sample_block,
         const std::vector<std::string> & attributes_names);
 
-    void clone(const std::string & from_dictionary_id, const std::string & to_dictionary_id);
+    bool clone(const std::string & from_dictionary_id, const std::string & to_dictionary_id);
 
-    void remove(const std::string & dictionary_id);
+    bool remove(const std::string & dictionary_id);
 
 private:
     /// map: dict_id -> sharedLibraryHandler

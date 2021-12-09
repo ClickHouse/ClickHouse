@@ -35,8 +35,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
                 ++stream_counts[ISerialization::getFileNameForStream(column, substream_path)];
-            },
-            {});
+            });
     }
 
     NameSet remove_files;

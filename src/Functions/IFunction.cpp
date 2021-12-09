@@ -16,9 +16,7 @@
 #include <cstdlib>
 #include <memory>
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
+#include <Common/config.h>
 
 #if USE_EMBEDDED_COMPILER
 #    pragma GCC diagnostic push
@@ -181,7 +179,10 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
     {
         // Default implementation for nulls returns null result for null arguments,
         // so the result type must be nullable.
-        assert(result_type->isNullable());
+        if (!result_type->isNullable())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "Function {} with Null argument and default implementation for Nulls "
+                            "is expected to return Nullable result, got {}", result_type->getName());
 
         return result_type->createColumnConstWithDefaultValue(input_rows_count);
     }
@@ -375,6 +376,7 @@ static std::optional<DataTypes> removeNullables(const DataTypes & types)
 
 bool IFunction::isCompilable(const DataTypes & arguments) const
 {
+
     if (useDefaultImplementationForNulls())
         if (auto denulled = removeNullables(arguments))
             return isCompilableImpl(*denulled);

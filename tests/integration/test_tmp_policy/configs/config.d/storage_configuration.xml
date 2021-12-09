@@ -1,4 +1,4 @@
-<yandex>
+<clickhouse>
     <storage_configuration>
         <disks>
             <disk1>
@@ -22,4 +22,4 @@
     </storage_configuration>
 
     <tmp_policy>tmp</tmp_policy>
-</yandex>
+</clickhouse>

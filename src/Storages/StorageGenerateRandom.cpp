@@ -3,7 +3,7 @@
 #include <Storages/StorageGenerateRandom.h>
 #include <Storages/StorageFactory.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <Processors/Pipe.h>
+#include <QueryPipeline/Pipe.h>
 #include <Parsers/ASTLiteral.h>
 
 #include <DataTypes/DataTypeTuple.h>
@@ -24,7 +24,7 @@
 
 #include <Common/SipHash.h>
 #include <Common/randomSeed.h>
-#include <common/unaligned.h>
+#include <base/unaligned.h>
 
 #include <Functions/FunctionFactory.h>
 

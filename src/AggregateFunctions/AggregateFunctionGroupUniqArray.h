@@ -48,9 +48,9 @@ private:
     using State = AggregateFunctionGroupUniqArrayData<T>;
 
 public:
-    AggregateFunctionGroupUniqArray(const DataTypePtr & argument_type, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+    AggregateFunctionGroupUniqArray(const DataTypePtr & argument_type, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
         : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayData<T>,
-          AggregateFunctionGroupUniqArray<T, Tlimit_num_elem>>({argument_type}, {}),
+          AggregateFunctionGroupUniqArray<T, Tlimit_num_elem>>({argument_type}, parameters_),
           max_elems(max_elems_) {}
 
     String getName() const override { return "groupUniqArray"; }
@@ -87,7 +87,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         auto & set = this->data(place).value;
         size_t size = set.size();
@@ -96,7 +96,7 @@ public:
             writeIntBinary(elem, buf);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
     {
         this->data(place).value.read(buf);
     }
@@ -152,8 +152,8 @@ class AggregateFunctionGroupUniqArrayGeneric
     using State = AggregateFunctionGroupUniqArrayGenericData;
 
 public:
-    AggregateFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
-        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData, AggregateFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>({input_data_type_}, {})
+    AggregateFunctionGroupUniqArrayGeneric(const DataTypePtr & input_data_type_, const Array & parameters_, UInt64 max_elems_ = std::numeric_limits<UInt64>::max())
+        : IAggregateFunctionDataHelper<AggregateFunctionGroupUniqArrayGenericData, AggregateFunctionGroupUniqArrayGeneric<is_plain_column, Tlimit_num_elem>>({input_data_type_}, parameters_)
         , input_data_type(this->argument_types[0])
         , max_elems(max_elems_) {}
 
@@ -169,7 +169,7 @@ public:
         return true;
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
     {
         auto & set = this->data(place).value;
         writeVarUInt(set.size(), buf);
@@ -180,7 +180,7 @@ public:
         }
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
         auto & set = this->data(place).value;
         size_t size;

@@ -15,27 +15,27 @@ SELECT dateDiff('week', toDate('2017-12-31'), toDate('2018-01-01'));
 SELECT dateDiff('day', toDate('2017-12-31'), toDate('2016-01-01'));
 SELECT dateDiff('day', toDate('2017-12-31'), toDate('2017-01-01'));
 SELECT dateDiff('day', toDate('2017-12-31'), toDate('2018-01-01'));
-SELECT dateDiff('hour', toDate('2017-12-31'), toDate('2016-01-01'));
-SELECT dateDiff('hour', toDate('2017-12-31'), toDate('2017-01-01'));
-SELECT dateDiff('hour', toDate('2017-12-31'), toDate('2018-01-01'));
-SELECT dateDiff('minute', toDate('2017-12-31'), toDate('2016-01-01'));
-SELECT dateDiff('minute', toDate('2017-12-31'), toDate('2017-01-01'));
-SELECT dateDiff('minute', toDate('2017-12-31'), toDate('2018-01-01'));
-SELECT dateDiff('second', toDate('2017-12-31'), toDate('2016-01-01'));
-SELECT dateDiff('second', toDate('2017-12-31'), toDate('2017-01-01'));
-SELECT dateDiff('second', toDate('2017-12-31'), toDate('2018-01-01'));
+SELECT dateDiff('hour', toDate('2017-12-31'), toDate('2016-01-01'), 'UTC');
+SELECT dateDiff('hour', toDate('2017-12-31'), toDate('2017-01-01'), 'UTC');
+SELECT dateDiff('hour', toDate('2017-12-31'), toDate('2018-01-01'), 'UTC');
+SELECT dateDiff('minute', toDate('2017-12-31'), toDate('2016-01-01'), 'UTC');
+SELECT dateDiff('minute', toDate('2017-12-31'), toDate('2017-01-01'), 'UTC');
+SELECT dateDiff('minute', toDate('2017-12-31'), toDate('2018-01-01'), 'UTC');
+SELECT dateDiff('second', toDate('2017-12-31'), toDate('2016-01-01'), 'UTC');
+SELECT dateDiff('second', toDate('2017-12-31'), toDate('2017-01-01'), 'UTC');
+SELECT dateDiff('second', toDate('2017-12-31'), toDate('2018-01-01'), 'UTC');
 
 SELECT 'Date and DateTime arguments';
 
-SELECT dateDiff('second', toDate('2017-12-31'), toDateTime('2016-01-01 00:00:00'));
-SELECT dateDiff('second', toDateTime('2017-12-31 00:00:00'), toDate('2017-01-01'));
-SELECT dateDiff('second', toDateTime('2017-12-31 00:00:00'), toDateTime('2018-01-01 00:00:00'));
+SELECT dateDiff('second', toDate('2017-12-31'), toDateTime('2016-01-01 00:00:00', 'UTC'), 'UTC');
+SELECT dateDiff('second', toDateTime('2017-12-31 00:00:00', 'UTC'), toDate('2017-01-01'), 'UTC');
+SELECT dateDiff('second', toDateTime('2017-12-31 00:00:00', 'UTC'), toDateTime('2018-01-01 00:00:00', 'UTC'));
 
 SELECT 'Constant and non-constant arguments';
 
-SELECT dateDiff('minute', materialize(toDate('2017-12-31')), toDate('2016-01-01'));
-SELECT dateDiff('minute', toDate('2017-12-31'), materialize(toDate('2017-01-01')));
-SELECT dateDiff('minute', materialize(toDate('2017-12-31')), materialize(toDate('2018-01-01')));
+SELECT dateDiff('minute', materialize(toDate('2017-12-31')), toDate('2016-01-01'), 'UTC');
+SELECT dateDiff('minute', toDate('2017-12-31'), materialize(toDate('2017-01-01')), 'UTC');
+SELECT dateDiff('minute', materialize(toDate('2017-12-31')), materialize(toDate('2018-01-01')), 'UTC');
 
 SELECT 'Case insensitive';
 

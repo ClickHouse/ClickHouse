@@ -1,6 +1,10 @@
 #pragma once
 
-#include <pqxx/pqxx> // Y_IGNORE
+#include "config_core.h"
+
+#if USE_LIBPQXX
+
+#include <pqxx/pqxx>
 #include <Core/Types.h>
 #include <boost/noncopyable.hpp>
 
@@ -45,3 +49,5 @@ private:
     Poco::Logger * log;
 };
 }
+
+#endif

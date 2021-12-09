@@ -1,5 +1,5 @@
 #include <Access/AccessRights.h>
-#include <common/logger_useful.h>
+#include <base/logger_useful.h>
 #include <boost/container/small_vector.hpp>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/sort.hpp>
@@ -23,37 +23,27 @@ namespace
 
         friend bool operator<(const ProtoElement & left, const ProtoElement & right)
         {
-            static constexpr auto compare_name = [](const boost::container::small_vector<std::string_view, 3> & left_name,
-                                                    const boost::container::small_vector<std::string_view, 3> & right_name,
-                                                    size_t i)
+            /// Compare components alphabetically.
+            size_t min_size = std::min(left.full_name.size(), right.full_name.size());
+            for (size_t i = 0; i != min_size; ++i)
             {
-                if (i < left_name.size())
-                {
-                    if (i < right_name.size())
-                        return left_name[i].compare(right_name[i]);
-                    else
-                        return 1; /// left_name is longer => left_name > right_name
-                }
-                else if (i < right_name.size())
-                    return 1; /// right_name is longer => left < right
-                else
-                    return 0; /// left_name == right_name
-            };
+                int cmp = left.full_name[i].compare(right.full_name[i]);
+                if (cmp != 0)
+                    return cmp < 0;
+            }
 
-            if (int cmp = compare_name(left.full_name, right.full_name, 0))
-                return cmp < 0;
+            /// Names with less number of components first.
+            if (left.full_name.size() != right.full_name.size())
+                return left.full_name.size() < right.full_name.size();
 
-            if (int cmp = compare_name(left.full_name, right.full_name, 1))
-                return cmp < 0;
-
+            /// Grants before partial revokes.
             if (left.is_partial_revoke != right.is_partial_revoke)
-                return right.is_partial_revoke;
+                return right.is_partial_revoke; /// if left is grant, right is partial revoke, we assume left < right
 
+            /// Grants with grant option after other grants.
+            /// Revoke grant option after normal revokes.
             if (left.grant_option != right.grant_option)
-                return right.grant_option;
-
-            if (int cmp = compare_name(left.full_name, right.full_name, 2))
-                return cmp < 0;
+                return right.grant_option; /// if left is without grant option, and right is with grant option, we assume left < right
 
             return (left.access_flags < right.access_flags);
         }
@@ -655,7 +645,7 @@ private:
             for (auto & [lhs_childname, lhs_child] : *children)
             {
                 if (!rhs.tryGetChild(lhs_childname))
-                    lhs_child.flags |= rhs.flags & lhs_child.getAllGrantableFlags();
+                    lhs_child.addGrantsRec(rhs.flags);
             }
         }
     }
@@ -673,7 +663,7 @@ private:
             for (auto & [lhs_childname, lhs_child] : *children)
             {
                 if (!rhs.tryGetChild(lhs_childname))
-                    lhs_child.flags &= rhs.flags;
+                    lhs_child.removeGrantsRec(~rhs.flags);
             }
         }
     }
@@ -1041,17 +1031,15 @@ void AccessRights::makeIntersection(const AccessRights & other)
     auto helper = [](std::unique_ptr<Node> & root_node, const std::unique_ptr<Node> & other_root_node)
     {
         if (!root_node)
+            return;
+        if (!other_root_node)
         {
-            if (other_root_node)
-                root_node = std::make_unique<Node>(*other_root_node);
+            root_node = nullptr;
             return;
         }
-        if (other_root_node)
-        {
-            root_node->makeIntersection(*other_root_node);
-            if (!root_node->flags && !root_node->children)
-                root_node = nullptr;
-        }
+        root_node->makeIntersection(*other_root_node);
+        if (!root_node->flags && !root_node->children)
+            root_node = nullptr;
     };
     helper(root, other.root);
     helper(root_with_grant_option, other.root_with_grant_option);

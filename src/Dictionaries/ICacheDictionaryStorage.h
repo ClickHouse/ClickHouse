@@ -106,7 +106,8 @@ public:
     /// Insert default keys
     virtual void insertDefaultKeys(const PaddedPODArray<StringRef> & keys) = 0;
 
-    /// Return cached simple keys
+    /// Return cached complex keys.
+    /// It is client responsibility to ensure keys proper lifetime.
     virtual PaddedPODArray<StringRef> getCachedComplexKeys() const = 0;
 
     /// Return size of keys in storage

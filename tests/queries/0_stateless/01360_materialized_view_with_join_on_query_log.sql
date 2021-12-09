@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 DROP TABLE IF EXISTS slow_log;
 DROP TABLE IF EXISTS expected_times;
 

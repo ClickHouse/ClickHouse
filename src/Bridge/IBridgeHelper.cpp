@@ -5,6 +5,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/URI.h>
 #include <filesystem>
+#include <thread>
 
 namespace fs = std::filesystem;
 
@@ -33,24 +34,9 @@ Poco::URI IBridgeHelper::getPingURI() const
 }
 
 
-bool IBridgeHelper::checkBridgeIsRunning() const
+void IBridgeHelper::startBridgeSync()
 {
-    try
-    {
-        ReadWriteBufferFromHTTP buf(
-            getPingURI(), Poco::Net::HTTPRequest::HTTP_GET, {}, ConnectionTimeouts::getHTTPTimeouts(getContext()));
-        return checkString(PING_OK_ANSWER, buf);
-    }
-    catch (...)
-    {
-        return false;
-    }
-}
-
-
-void IBridgeHelper::startBridgeSync() const
-{
-    if (!checkBridgeIsRunning())
+    if (!bridgeHandShake())
     {
         LOG_TRACE(getLog(), "{} is not running, will try to start it", serviceAlias());
         startBridge(startBridgeCommand());
@@ -64,7 +50,7 @@ void IBridgeHelper::startBridgeSync() const
             ++counter;
             LOG_TRACE(getLog(), "Checking {} is running, try {}", serviceAlias(), counter);
 
-            if (checkBridgeIsRunning())
+            if (bridgeHandShake())
             {
                 started = true;
                 break;
@@ -81,7 +67,7 @@ void IBridgeHelper::startBridgeSync() const
 }
 
 
-std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand() const
+std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand()
 {
     if (startBridgeManually())
         throw Exception(serviceAlias() + " is not running. Please, start it manually", ErrorCodes::EXTERNAL_SERVER_IS_NOT_RESPONDING);
@@ -127,7 +113,11 @@ std::unique_ptr<ShellCommand> IBridgeHelper::startBridgeCommand() const
 
     LOG_TRACE(getLog(), "Starting {}", serviceAlias());
 
-    return ShellCommand::executeDirect(path.string(), cmd_args, ShellCommandDestructorStrategy(true));
+    ShellCommand::Config command_config(path.string());
+    command_config.arguments = cmd_args;
+    command_config.terminate_in_destructor_strategy = ShellCommand::DestructorStrategy(true);
+
+    return ShellCommand::executeDirect(command_config);
 }
 
 }

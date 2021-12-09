@@ -84,4 +84,4 @@ SELECT 0 / 0
 
     See the rules for `NaN` sorting in the section [ORDER BY clause](../sql_reference/statements/select/order-by.md).
 
-[元の記事](https://clickhouse.tech/docs/en/data_types/float/) <!--hide-->
+[元の記事](https://clickhouse.com/docs/en/data_types/float/) <!--hide-->

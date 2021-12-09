@@ -1,10 +1,10 @@
 #pragma once
 
-#include <common/types.h>
+#include <base/types.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/Exception.h>
-#include <common/DateLUTImpl.h>
-#include <common/DateLUT.h>
+#include <base/DateLUTImpl.h>
+#include <base/DateLUT.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Functions/FunctionHelpers.h>
@@ -67,6 +67,30 @@ struct ToDateImpl
         return dateIsNotSupported(name);
     }
     static inline UInt16 execute(UInt16 d, const DateLUTImpl &)
+    {
+        return d;
+    }
+
+    using FactorTransform = ZeroTransform;
+};
+
+struct ToDate32Impl
+{
+    static constexpr auto name = "toDate32";
+
+    static inline Int32 execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        return Int32(time_zone.toDayNum(t));
+    }
+    static inline Int32 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return Int32(time_zone.toDayNum(t));
+    }
+    static inline Int32 execute(Int32 d, const DateLUTImpl &)
+    {
+        return d;
+    }
+    static inline Int32 execute(UInt16 d, const DateLUTImpl &)
     {
         return d;
     }

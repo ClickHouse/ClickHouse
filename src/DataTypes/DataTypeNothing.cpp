@@ -1,10 +1,7 @@
-#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/Serializations/SerializationNothing.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Columns/ColumnNothing.h>
-#include <IO/ReadBuffer.h>
-#include <IO/WriteBuffer.h>
 
 
 namespace DB

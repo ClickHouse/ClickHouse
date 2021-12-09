@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/shared_ptr_helper.h>
+#include <base/shared_ptr_helper.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -66,6 +66,8 @@ public:
         unsigned num_streams) override;
 
     NamesAndTypesList getVirtuals() const override;
+
+    bool isSystemStorage() const override { return true; }
 
 private:
     bool hasStateColumn(const Names & column_names, const StorageMetadataPtr & metadata_snapshot) const;
