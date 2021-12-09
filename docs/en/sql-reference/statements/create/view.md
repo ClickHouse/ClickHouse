@@ -296,7 +296,7 @@ CREATE WINDOW VIEW test.wv TO test.dst WATERMARK=ASCENDING ALLOWED_LATENESS=INTE
 
 Note that elements emitted by a late firing should be treated as updated results of a previous computation. Instead of firing at the end of windows, the window view will fire immediately when the late event arrives. Thus, it will result in multiple outputs for the same window. Users need to take these duplicated results into account or deduplicate them.
 
-### Monitoring New Windows{#window-view-monitoring}
+### Monitoring New Windows {#window-view-monitoring}
 
 Window view supports the `WATCH` query to constantly append the processing results to the console or use `TO` syntax to output the results to a table.
 
