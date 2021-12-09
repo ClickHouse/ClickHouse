@@ -189,7 +189,7 @@ continue
         --receive_data_timeout_ms=10000 \
         --stacktrace \
         --query-fuzzer-runs=1000 \
-        --testmode
+        --testmode \
         --queries-file $(ls -1 ch/tests/queries/0_stateless/*.sql | sort -R) \
         $NEW_TESTS_OPT \
         > >(tail -n 100000 > fuzzer.log) \
