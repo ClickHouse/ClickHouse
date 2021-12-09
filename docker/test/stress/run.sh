@@ -1,6 +1,7 @@
 #!/bin/bash
 # shellcheck disable=SC2094
 # shellcheck disable=SC2086
+# shellcheck disable=SC2024
 
 set -x
 
