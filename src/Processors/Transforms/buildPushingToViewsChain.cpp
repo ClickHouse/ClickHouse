@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ProcessList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Transforms/SquashingChunksTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -14,6 +15,7 @@
 #include <Storages/StorageValues.h>
 #include <Common/CurrentThread.h>
 #include <Common/MemoryTracker.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
@@ -22,6 +24,14 @@
 
 #include <atomic>
 #include <chrono>
+
+namespace ProfileEvents
+{
+    extern const Event InsertedBytes;
+    extern const Event InsertedRows;
+    extern const Event SelectedBytes;
+    extern const Event SelectedRows;
+}
 
 namespace DB
 {
@@ -436,13 +446,6 @@ static void process(Block & block, ViewRuntimeData & view, const ViewsData & vie
         pipeline.getHeader(),
         std::make_shared<ExpressionActions>(std::move(converting))));
 
-    pipeline.setProgressCallback([context](const Progress & progress)
-    {
-        CurrentThread::updateProgressIn(progress);
-        if (auto callback = context->getProgressCallback())
-            callback(progress);
-    });
-
     auto query_pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline));
     PullingPipelineExecutor executor(query_pipeline);
     if (!executor.pull(block))
@@ -570,7 +573,11 @@ void PushingToLiveViewSink::consume(Chunk chunk)
 {
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageLiveView::writeIntoLiveView(live_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
-    CurrentThread::updateProgressIn(local_progress);
+    auto process = context->getProcessListElement();
+    if (process)
+        process->updateProgressIn(local_progress);
+    ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
+    ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
 }
 
 
@@ -589,7 +596,11 @@ void PushingToWindowViewSink::consume(Chunk chunk)
     Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
     StorageWindowView::writeIntoWindowView(
         window_view, getHeader().cloneWithColumns(chunk.detachColumns()), context);
-    CurrentThread::updateProgressIn(local_progress);
+    auto process = context->getProcessListElement();
+    if (process)
+        process->updateProgressIn(local_progress);
+    ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
+    ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
 }
 
 
