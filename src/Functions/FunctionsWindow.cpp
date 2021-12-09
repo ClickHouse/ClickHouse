@@ -116,7 +116,7 @@ namespace
 template <>
 struct WindowImpl<TUMBLE>
 {
-    static constexpr auto name = "TUMBLE";
+    static constexpr auto name = "tumble";
 
     [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
@@ -213,7 +213,7 @@ struct WindowImpl<TUMBLE>
 template <>
 struct WindowImpl<TUMBLE_START>
 {
-    static constexpr auto name = "TUMBLE_START";
+    static constexpr auto name = "tumbleStart";
 
     static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
@@ -257,7 +257,7 @@ struct WindowImpl<TUMBLE_START>
 template <>
 struct WindowImpl<TUMBLE_END>
 {
-    static constexpr auto name = "TUMBLE_END";
+    static constexpr auto name = "tumbleEnd";
 
     [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
@@ -285,7 +285,7 @@ struct WindowImpl<TUMBLE_END>
 template <>
 struct WindowImpl<HOP>
 {
-    static constexpr auto name = "HOP";
+    static constexpr auto name = "hop";
 
     [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
@@ -417,7 +417,7 @@ struct WindowImpl<HOP>
 template <>
 struct WindowImpl<WINDOW_ID>
 {
-    static constexpr auto name = "WINDOW_ID";
+    static constexpr auto name = "windowID";
 
     [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
@@ -569,7 +569,7 @@ struct WindowImpl<WINDOW_ID>
 template <>
 struct WindowImpl<HOP_START>
 {
-    static constexpr auto name = "HOP_START";
+    static constexpr auto name = "hopStart";
 
     static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
@@ -612,7 +612,7 @@ struct WindowImpl<HOP_START>
 template <>
 struct WindowImpl<HOP_END>
 {
-    static constexpr auto name = "HOP_END";
+    static constexpr auto name = "hopEnd";
 
     [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
