@@ -165,7 +165,7 @@ thread apply all backtrace
 continue
 " > script.gdb
 
-    gdb -batch -command script.gdb -p $server_pid &
+    sudo gdb -batch -command script.gdb -p $server_pid &
 
     # Check connectivity after we attach gdb, because it might cause the server
     # to freeze and the fuzzer will fail.
