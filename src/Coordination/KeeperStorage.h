@@ -35,7 +35,7 @@ public:
         Coordination::Stat stat{};
         int32_t seq_num = 0;
         ChildrenSet children{};
-        uint64_t size_bytes; // save size to avoid caculate every time
+        uint64_t size_bytes; // save size to avoid calculate every time
 
         Node() 
         {
