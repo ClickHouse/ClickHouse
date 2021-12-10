@@ -84,7 +84,7 @@ def build_for_lang(lang, args):
         if args.htmlproofer:
             plugins.append('htmlproofer')
 
-        website_url = 'https://clickhouse.com'
+        website_url = 'https://clickhouse.tech'
         site_name = site_names.get(lang, site_names['en']) % ''
         site_name = site_name.replace('  ', ' ')
 
@@ -95,7 +95,7 @@ def build_for_lang(lang, args):
             site_dir=site_dir,
             strict=True,
             theme=theme_cfg,
-            copyright='©2016–2021 ClickHouse, Inc.',
+            copyright='©2016–2021 Yandex LLC',
             use_directory_urls=True,
             repo_name='ClickHouse/ClickHouse',
             repo_url='https://github.com/ClickHouse/ClickHouse/',
@@ -116,9 +116,6 @@ def build_for_lang(lang, args):
                 is_blog=False
             )
         )
-
-        # Clean to be safe if last build finished abnormally
-        single_page.remove_temporary_files(lang, args)
 
         raw_config['nav'] = nav.build_docs_nav(lang, args)
 
@@ -192,6 +189,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--skip-multi-page', action='store_true')
     arg_parser.add_argument('--skip-single-page', action='store_true')
     arg_parser.add_argument('--skip-amp', action='store_true')
+    arg_parser.add_argument('--skip-pdf', action='store_true')
     arg_parser.add_argument('--skip-website', action='store_true')
     arg_parser.add_argument('--skip-blog', action='store_true')
     arg_parser.add_argument('--skip-git-log', action='store_true')
@@ -205,7 +203,6 @@ if __name__ == '__main__':
     arg_parser.add_argument('--verbose', action='store_true')
 
     args = arg_parser.parse_args()
-    args.minify = False  # TODO remove
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -227,6 +224,7 @@ if __name__ == '__main__':
         args.skip_multi_page = True
         args.skip_blog = True
         args.skip_website = True
+        args.skip_pdf = True
         args.skip_amp = True
 
     if args.skip_git_log or args.skip_amp:

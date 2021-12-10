@@ -7,9 +7,11 @@
 #include <Core/Field.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/Exception.h>
-#include <base/types.h>
+#include <common/types.h>
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #include <cstddef>
 #include <memory>
@@ -88,12 +90,6 @@ public:
         throw Exception("Prediction is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
-    virtual bool isVersioned() const { return false; }
-
-    virtual size_t getVersionFromRevision(size_t /* revision */) const { return 0; }
-
-    virtual size_t getDefaultVersion() const { return 0; }
-
     virtual ~IAggregateFunction() = default;
 
     /** Data manipulating functions. */
@@ -126,10 +122,10 @@ public:
     virtual void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
 
     /// Serializes state (to transmit it over the network, for example).
-    virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version = std::nullopt) const = 0;
+    virtual void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf) const = 0;
 
     /// Deserializes state. This function is called only for empty (just created) states.
-    virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version = std::nullopt, Arena * arena = nullptr) const = 0;
+    virtual void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, Arena * arena) const = 0;
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
     virtual bool allocatesMemoryInArena() const = 0;
@@ -194,7 +190,6 @@ public:
         size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const = 0;
 
     /** The same for single place when need to aggregate only filtered data.
-      * Instead of using an if-column, the condition is combined inside the null_map
       */
     virtual void addBatchSinglePlaceNotNull(
         size_t batch_size,

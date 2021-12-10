@@ -189,7 +189,7 @@ public:
     ~Pool();
 
     /// Allocates connection.
-    Entry get(uint64_t wait_timeout = UINT64_MAX);
+    Entry get();
 
     /// Allocates connection.
     /// If database is not accessible, returns empty Entry object.

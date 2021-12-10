@@ -7,10 +7,10 @@
 #include <Functions/FunctionsRandom.h>
 #include <pcg_random.hpp>
 #include <Common/randomSeed.h>
-#include <base/arithmeticOverflow.h>
-#include <base/unaligned.h>
+#include <common/arithmeticOverflow.h>
+#include <common/unaligned.h>
 
-#include <base/defines.h>
+#include <common/defines.h>
 
 namespace DB
 {

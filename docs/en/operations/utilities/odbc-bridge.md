@@ -26,7 +26,7 @@ Query is send in post body. Response is returned in RowBinary format.
 ```bash
 $ clickhouse-odbc-bridge --http-port 9018 --daemon
 
-$ curl -d "query=SELECT PageID, ImpID, AdType FROM Keys ORDER BY PageID, ImpID" --data-urlencode "connection_string=DSN=ClickHouse;DATABASE=stat" --data-urlencode "sample_block=columns format version: 1
+$ curl -d "query=SELECT PageID, ImpID, AdType FROM Keys ORDER BY PageID, ImpID" --data-urlencode "connection_string=DSN=ClickHouse;DATABASE=stat" --data-urlencode "columns=columns format version: 1
 3 columns:
 \`PageID\` String
 \`ImpID\` String

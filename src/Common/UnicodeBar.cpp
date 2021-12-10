@@ -1,8 +1,8 @@
 #include <cstring>
 #include <cmath>
 #include <string>
-#include <base/types.h>
-#include <base/arithmeticOverflow.h>
+#include <common/types.h>
+#include <common/arithmeticOverflow.h>
 #include <Common/Exception.h>
 #include <Common/UnicodeBar.h>
 #include <Common/NaNUtils.h>

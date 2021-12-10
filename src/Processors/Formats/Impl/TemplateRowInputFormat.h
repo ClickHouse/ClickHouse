@@ -13,7 +13,7 @@ namespace DB
 
 class TemplateRowInputFormat : public RowInputFormatWithDiagnosticInfo
 {
-    using EscapingRule = FormatSettings::EscapingRule;
+    using ColumnFormat = ParsedTemplateFormatString::ColumnFormat;
 public:
     TemplateRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
                            FormatSettings settings_, bool ignore_spaces_,
@@ -22,9 +22,6 @@ public:
 
     String getName() const override { return "TemplateRowInputFormat"; }
 
-    void resetParser() override;
-
-private:
     bool readRow(MutableColumns & columns, RowReadExtension & extra) override;
 
     void readPrefix() override;
@@ -32,10 +29,13 @@ private:
     bool allowSyncAfterError() const override;
     void syncAfterError() override;
 
+    void resetParser() override;
+
+private:
     bool deserializeField(const DataTypePtr & type,
         const SerializationPtr & serialization, IColumn & column, size_t file_column);
 
-    void skipField(EscapingRule escaping_rule);
+    void skipField(ColumnFormat col_format);
     inline void skipSpaces() { if (ignore_spaces) skipWhitespaceIfAny(buf); }
 
     template <typename ReturnType = void>
@@ -47,7 +47,11 @@ private:
     void tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column) override;
 
     bool isGarbageAfterField(size_t after_col_idx, ReadBuffer::Position pos) override;
+    void writeErrorStringForWrongDelimiter(WriteBuffer & out, const String & description, const String & delim);
 
+    void skipToNextDelimiterOrEof(const String & delimiter);
+
+private:
     PeekableReadBuffer buf;
     const DataTypes data_types;
 
@@ -63,7 +67,5 @@ private:
 
     const std::string row_between_delimiter;
 };
-
-bool parseDelimiterWithDiagnosticInfo(WriteBuffer & out, ReadBuffer & buf, const String & delimiter, const String & description, bool skip_spaces);
 
 }

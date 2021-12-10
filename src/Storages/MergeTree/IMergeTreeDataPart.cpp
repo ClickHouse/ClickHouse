@@ -15,12 +15,11 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorsAccurateComparison.h>
-#include <base/JSON.h>
-#include <base/logger_useful.h>
+#include <common/JSON.h>
+#include <common/logger_useful.h>
 #include <Compression/getCompressionCodecForFile.h>
 #include <Parsers/queryToString.h>
 #include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 
 
 namespace CurrentMetrics
@@ -57,8 +56,7 @@ namespace ErrorCodes
 
 static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & disk, const String & path)
 {
-    size_t file_size = disk->getFileSize(path);
-    return disk->readFile(path, ReadSettings().adjustBufferSize(file_size), file_size);
+    return disk->readFile(path, std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), disk->getFileSize(path)));
 }
 
 void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path)
@@ -69,7 +67,6 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Dis
     auto minmax_column_names = data.getMinMaxColumnsNames(partition_key);
     auto minmax_column_types = data.getMinMaxColumnsTypes(partition_key);
     size_t minmax_idx_size = minmax_column_types.size();
-
     hyperrectangle.reserve(minmax_idx_size);
     for (size_t i = 0; i < minmax_idx_size; ++i)
     {
@@ -84,9 +81,9 @@ void IMergeTreeDataPart::MinMaxIndex::load(const MergeTreeData & data, const Dis
 
         // NULL_LAST
         if (min_val.isNull())
-            min_val = POSITIVE_INFINITY;
+            min_val = PositiveInfinity();
         if (max_val.isNull())
-            max_val = POSITIVE_INFINITY;
+            max_val = PositiveInfinity();
 
         hyperrectangle.emplace_back(min_val, true, max_val, true);
     }
@@ -289,8 +286,6 @@ IMergeTreeDataPart::IMergeTreeDataPart(
         state = State::Committed;
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
-
-    minmax_idx = std::make_shared<MinMaxIndex>();
 }
 
 IMergeTreeDataPart::IMergeTreeDataPart(
@@ -314,8 +309,6 @@ IMergeTreeDataPart::IMergeTreeDataPart(
         state = State::Committed;
     incrementStateMetric(state);
     incrementTypeMetric(part_type);
-
-    minmax_idx = std::make_shared<MinMaxIndex>();
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart()
@@ -366,9 +359,9 @@ IMergeTreeDataPart::State IMergeTreeDataPart::getState() const
 
 std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
 {
-    if (storage.minmax_idx_date_column_pos != -1 && minmax_idx->initialized)
+    if (storage.minmax_idx_date_column_pos != -1 && minmax_idx.initialized)
     {
-        const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_date_column_pos];
+        const auto & hyperrectangle = minmax_idx.hyperrectangle[storage.minmax_idx_date_column_pos];
         return {DayNum(hyperrectangle.left.get<UInt64>()), DayNum(hyperrectangle.right.get<UInt64>())};
     }
     else
@@ -377,9 +370,9 @@ std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
 
 std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 {
-    if (storage.minmax_idx_time_column_pos != -1 && minmax_idx->initialized)
+    if (storage.minmax_idx_time_column_pos != -1 && minmax_idx.initialized)
     {
-        const auto & hyperrectangle = minmax_idx->hyperrectangle[storage.minmax_idx_time_column_pos];
+        const auto & hyperrectangle = minmax_idx.hyperrectangle[storage.minmax_idx_time_column_pos];
 
         /// The case of DateTime
         if (hyperrectangle.left.getType() == Field::Types::UInt64)
@@ -497,16 +490,39 @@ UInt64 IMergeTreeDataPart::getIndexSizeInAllocatedBytes() const
     return res;
 }
 
+String IMergeTreeDataPart::stateToString(IMergeTreeDataPart::State state)
+{
+    switch (state)
+    {
+        case State::Temporary:
+            return "Temporary";
+        case State::PreCommitted:
+            return "PreCommitted";
+        case State::Committed:
+            return "Committed";
+        case State::Outdated:
+            return "Outdated";
+        case State::Deleting:
+            return "Deleting";
+        case State::DeleteOnDestroy:
+            return "DeleteOnDestroy";
+    }
+
+    __builtin_unreachable();
+}
+
+String IMergeTreeDataPart::stateString() const
+{
+    return stateToString(state);
+}
+
 void IMergeTreeDataPart::assertState(const std::initializer_list<IMergeTreeDataPart::State> & affordable_states) const
 {
     if (!checkState(affordable_states))
     {
         String states_str;
         for (auto affordable_state : affordable_states)
-        {
-            states_str += stateString(affordable_state);
-            states_str += ' ';
-        }
+            states_str += stateToString(affordable_state) + " ";
 
         throw Exception("Unexpected state of part " + getNameWithState() + ". Expected: " + states_str, ErrorCodes::NOT_FOUND_EXPECTED_DATA_PART);
     }
@@ -553,7 +569,7 @@ String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const StorageM
         if (!hasColumnFiles(column))
             continue;
 
-        const auto size = getColumnSize(column_name).data_compressed;
+        const auto size = getColumnSize(column_name, *column_type).data_compressed;
         if (size < minimum_size)
         {
             minimum_size = size;
@@ -596,7 +612,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
     loadIndexGranularity();
-    calculateColumnsAndSecondaryIndicesSizesOnDisk();
+    calculateColumnsSizesOnDisk();
     loadIndex();     /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
     loadRowsCount(); /// Must be called after loadIndexGranularity() as it uses the value of `index_granularity`.
     loadPartitionAndMinMaxIndex();
@@ -754,7 +770,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
     for (const auto & part_column : columns)
     {
         /// It was compressed with default codec and it's not empty
-        auto column_size = getColumnSize(part_column.name);
+        auto column_size = getColumnSize(part_column.name, *part_column.type);
         if (column_size.data_compressed != 0 && !storage_columns.hasCompressionCodec(part_column.name))
         {
             auto serialization = IDataType::getSerialization(part_column,
@@ -803,7 +819,7 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
 
         const auto & date_lut = DateLUT::instance();
         partition = MergeTreePartition(date_lut.toNumYYYYMM(min_date));
-        minmax_idx = std::make_shared<MinMaxIndex>(min_date, max_date);
+        minmax_idx = MinMaxIndex(min_date, max_date);
     }
     else
     {
@@ -815,9 +831,9 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
         {
             if (parent_part)
                 // projection parts don't have minmax_idx, and it's always initialized
-                minmax_idx->initialized = true;
+                minmax_idx.initialized = true;
             else
-                minmax_idx->load(storage, volume->getDisk(), path);
+                minmax_idx.load(storage, volume->getDisk(), path);
         }
         if (parent_part)
             return;
@@ -892,7 +908,7 @@ void IMergeTreeDataPart::loadRowsCount()
             /// Most trivial types
             if (column.type->isValueRepresentedByNumber() && !column.type->haveSubtypes())
             {
-                auto size = getColumnSize(column.name);
+                auto size = getColumnSize(column.name, *column.type);
 
                 if (size.data_uncompressed == 0)
                     continue;
@@ -940,7 +956,7 @@ void IMergeTreeDataPart::loadRowsCount()
             if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
                 continue;
 
-            size_t column_size = getColumnSize(column.name).data_uncompressed;
+            size_t column_size = getColumnSize(column.name, *column.type).data_uncompressed;
             if (!column_size)
                 continue;
 
@@ -1042,13 +1058,6 @@ void IMergeTreeDataPart::loadColumns(bool require)
     else
     {
         loaded_columns.readText(*volume->getDisk()->readFile(path));
-
-        for (const auto & column : loaded_columns)
-        {
-            const auto * aggregate_function_data_type = typeid_cast<const DataTypeAggregateFunction *>(column.type.get());
-            if (aggregate_function_data_type && aggregate_function_data_type->isVersioned())
-                aggregate_function_data_type->setVersion(0, /* if_empty */true);
-        }
     }
 
     setColumns(loaded_columns);
@@ -1451,11 +1460,6 @@ void IMergeTreeDataPart::checkConsistency(bool /* require_part_metadata */) cons
     throw Exception("Method 'checkConsistency' is not implemented for part with type " + getType().toString(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-void IMergeTreeDataPart::calculateColumnsAndSecondaryIndicesSizesOnDisk()
-{
-    calculateColumnsSizesOnDisk();
-    calculateSecondaryIndicesSizesOnDisk();
-}
 
 void IMergeTreeDataPart::calculateColumnsSizesOnDisk()
 {
@@ -1465,55 +1469,11 @@ void IMergeTreeDataPart::calculateColumnsSizesOnDisk()
     calculateEachColumnSizes(columns_sizes, total_columns_size);
 }
 
-void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk()
-{
-    if (checksums.empty())
-        throw Exception("Cannot calculate secondary indexes sizes when columns or checksums are not initialized", ErrorCodes::LOGICAL_ERROR);
-
-    auto secondary_indices_descriptions = storage.getInMemoryMetadataPtr()->secondary_indices;
-
-    for (auto & index_description : secondary_indices_descriptions)
-    {
-        ColumnSize index_size;
-
-        auto index_ptr = MergeTreeIndexFactory::instance().get(index_description);
-        auto index_name = index_ptr->getFileName();
-        auto index_name_escaped = escapeForFileName(index_name);
-
-        auto index_file_name = index_name_escaped + index_ptr->getSerializedFileExtension();
-        auto index_marks_file_name = index_name_escaped + index_granularity_info.marks_file_extension;
-
-        /// If part does not contain index
-        auto bin_checksum = checksums.files.find(index_file_name);
-        if (bin_checksum != checksums.files.end())
-        {
-            index_size.data_compressed = bin_checksum->second.file_size;
-            index_size.data_uncompressed = bin_checksum->second.uncompressed_size;
-        }
-
-        auto mrk_checksum = checksums.files.find(index_marks_file_name);
-        if (mrk_checksum != checksums.files.end())
-            index_size.marks = mrk_checksum->second.file_size;
-
-        total_secondary_indices_size.add(index_size);
-        secondary_index_sizes[index_description.name] = index_size;
-    }
-}
-
-ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name) const
+ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name, const IDataType & /* type */) const
 {
     /// For some types of parts columns_size maybe not calculated
     auto it = columns_sizes.find(column_name);
     if (it != columns_sizes.end())
-        return it->second;
-
-    return ColumnSize{};
-}
-
-IndexSize IMergeTreeDataPart::getSecondaryIndexSize(const String & secondary_index_name) const
-{
-    auto it = secondary_index_sizes.find(secondary_index_name);
-    if (it != secondary_index_sizes.end())
         return it->second;
 
     return ColumnSize{};

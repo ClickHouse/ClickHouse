@@ -8,7 +8,8 @@
 #include <Client/HedgedConnectionsFactory.h>
 #include <Client/IConnections.h>
 #include <Client/PacketReceiver.h>
-
+#include <Common/FiberStack.h>
+#include <Common/Fiber.h>
 
 namespace DB
 {
@@ -86,17 +87,12 @@ public:
         const String & query,
         const String & query_id,
         UInt64 stage,
-        ClientInfo & client_info,
+        const ClientInfo & client_info,
         bool with_pending_data) override;
 
     void sendReadTaskResponse(const String &) override
     {
         throw Exception("sendReadTaskResponse in not supported with HedgedConnections", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    void sendMergeTreeReadTaskResponse(PartitionReadResponse) override
-    {
-        throw Exception("sendMergeTreeReadTaskResponse in not supported with HedgedConnections", ErrorCodes::LOGICAL_ERROR);
     }
 
     Packet receivePacket() override;
@@ -116,8 +112,6 @@ public:
     size_t size() const override { return offset_states.size(); }
 
     bool hasActiveConnections() const override { return active_connection_count > 0; }
-
-    void setReplicaInfo(ReplicaInfo value) override { replica_info = value; }
 
 private:
     /// If we don't receive data from replica and there is no progress in query
@@ -205,8 +199,6 @@ private:
     ThrottlerPtr throttler;
     bool sent_query = false;
     bool cancelled = false;
-
-    ReplicaInfo replica_info;
 
     mutable std::mutex cancel_mutex;
 };

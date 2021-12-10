@@ -39,7 +39,7 @@ template <typename ArraySink> struct NullableArraySink;
 template <typename T>
 struct NumericArraySource : public ArraySourceImpl<NumericArraySource<T>>
 {
-    using ColVecType = ColumnVectorOrDecimal<T>;
+    using ColVecType = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
     using Slice = NumericArraySlice<T>;
     using Column = ColumnArray;
 
@@ -325,7 +325,7 @@ struct StringSource
 };
 
 
-/// Differs to StringSource by having 'offset' and 'length' in code points instead of bytes in getSlice* methods.
+/// Differs to StringSource by having 'offest' and 'length' in code points instead of bytes in getSlice* methods.
 /** NOTE: The behaviour of substring and substringUTF8 is inconsistent when negative offset is greater than string size:
   * substring:
   *      hello
@@ -720,7 +720,7 @@ template <typename T>
 struct NumericValueSource : ValueSourceImpl<NumericValueSource<T>>
 {
     using Slice = NumericValueSlice<T>;
-    using Column = ColumnVectorOrDecimal<T>;
+    using Column = std::conditional_t<IsDecimalNumber<T>, ColumnDecimal<T>, ColumnVector<T>>;
 
     using SinkType = NumericArraySink<T>;
 

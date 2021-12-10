@@ -36,8 +36,6 @@ def cleanup_after_test():
         yield
     finally:
         for node in nodes:
-            for i in range(4):
-                node.query("DROP DICTIONARY IF EXISTS test.other_{}".format(i))
             node.query("DROP DICTIONARY IF EXISTS test.adict")
             node.query("DROP DICTIONARY IF EXISTS test.zdict")
             node.query("DROP DICTIONARY IF EXISTS atest.dict")
@@ -90,10 +88,7 @@ def test_dependency_via_explicit_table(node):
     # Restart must not break anything.
     node.restart_clickhouse()
     check()
-    for dct in d_names:
-        node.query(f"DROP DICTIONARY {dct}")
-    for tbl in tbl_names:
-        node.query(f"DROP TABLE {tbl}")
+
 
 @pytest.mark.parametrize("node", nodes)
 def test_dependency_via_dictionary_database(node):
@@ -109,17 +104,8 @@ def test_dependency_via_dictionary_database(node):
         for d_name in d_names:
             assert node.query("SELECT dictGet({}, 'y', toUInt64(5))".format(d_name)) == "6\n"
 
-
-    for d_name in d_names:
-        assert node.query("SELECT dictGet({}, 'y', toUInt64(5))".format(d_name)) == "6\n"
+    check()
 
     # Restart must not break anything.
     node.restart_clickhouse()
-    for d_name in d_names:
-        assert node.query_with_retry("SELECT dictGet({}, 'y', toUInt64(5))".format(d_name)) == "6\n"
-
-    # cleanup 
-    for d_name in d_names:
-        node.query(f"DROP DICTIONARY IF EXISTS {d_name} SYNC")
-    node.query("DROP DATABASE dict_db SYNC")
-    node.restart_clickhouse()
+    check()

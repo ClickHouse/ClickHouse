@@ -1,4 +1,3 @@
-
 SELECT hex(xxHash64('')) = upper('ef46db3751d8e999');
 SELECT hex(xxHash32('')) = upper('02cc5d05');
 

@@ -1,5 +1,3 @@
--- Tags: shard, no-fasttest
-
 SELECT 'Русский (default)';
 SELECT arrayJoin(['а', 'я', 'ё', 'А', 'Я', 'Ё']) AS x ORDER BY x;
 

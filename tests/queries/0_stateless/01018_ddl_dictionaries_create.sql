@@ -1,13 +1,10 @@
--- Tags: no-parallel, no-fasttest
-
 SET send_logs_level = 'fatal';
 
-DROP DATABASE IF EXISTS memory_db;
-DROP DATABASE IF EXISTS db_01018;
 DROP DATABASE IF EXISTS database_for_dict_01018;
 
 CREATE DATABASE database_for_dict_01018;
 
+DROP TABLE IF EXISTS database_for_dict_01018.table_for_dict;
 
 CREATE TABLE database_for_dict_01018.table_for_dict
 (
@@ -26,6 +23,8 @@ CREATE DATABASE db_01018;
 
 SELECT '=DICTIONARY in Ordinary DB';
 
+DROP DICTIONARY IF EXISTS db_01018.dict1;
+
 CREATE DICTIONARY db_01018.dict1
 (
   key_column UInt64 DEFAULT 0,
@@ -43,7 +42,7 @@ SHOW DICTIONARIES FROM db_01018 LIKE 'dict1';
 
 EXISTS DICTIONARY db_01018.dict1;
 
-SELECT database, name FROM system.dictionaries WHERE database='db_01018' AND name LIKE 'dict1';
+SELECT database, name FROM system.dictionaries WHERE name LIKE 'dict1';
 
 SELECT '==DETACH DICTIONARY';
 DETACH DICTIONARY db_01018.dict1;
@@ -52,7 +51,7 @@ SHOW DICTIONARIES FROM db_01018 LIKE 'dict1';
 
 EXISTS DICTIONARY db_01018.dict1;
 
-SELECT database, name FROM system.dictionaries WHERE database='db_01018' AND name LIKE 'dict1';
+SELECT database, name FROM system.dictionaries WHERE name LIKE 'dict1';
 
 SELECT '==ATTACH DICTIONARY';
 ATTACH DICTIONARY db_01018.dict1;
@@ -61,7 +60,7 @@ SHOW DICTIONARIES FROM db_01018 LIKE 'dict1';
 
 EXISTS DICTIONARY db_01018.dict1;
 
-SELECT database, name FROM system.dictionaries WHERE database='db_01018' AND name LIKE 'dict1';
+SELECT database, name FROM system.dictionaries WHERE name LIKE 'dict1';
 
 SELECT '==DROP DICTIONARY';
 
@@ -71,7 +70,7 @@ SHOW DICTIONARIES FROM db_01018 LIKE 'dict1';
 
 EXISTS DICTIONARY db_01018.dict1;
 
-SELECT database, name FROM system.dictionaries WHERE database='db_01018' AND name LIKE 'dict1';
+SELECT database, name FROM system.dictionaries WHERE name LIKE 'dict1';
 
 DROP DATABASE IF EXISTS db_01018;
 
@@ -98,7 +97,7 @@ SHOW DICTIONARIES FROM memory_db LIKE 'dict2';
 
 EXISTS DICTIONARY memory_db.dict2;
 
-SELECT database, name FROM system.dictionaries WHERE database='memory_db' AND name LIKE 'dict2';
+SELECT database, name FROM system.dictionaries WHERE name LIKE 'dict2';
 
 SELECT '=DICTIONARY in Lazy DB';
 
@@ -159,7 +158,6 @@ SHOW DICTIONARIES FROM db_01018;
 
 DROP DATABASE IF EXISTS db_01018;
 
-DROP DICTIONARY memory_db.dict2;
 DROP TABLE IF EXISTS database_for_dict_01018.table_for_dict;
 
 DROP DATABASE IF EXISTS database_for_dict_01018;

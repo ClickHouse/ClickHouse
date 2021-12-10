@@ -209,7 +209,6 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeInterval(*this);
     registerDataTypeLowCardinality(*this);
     registerDataTypeDomainIPv4AndIPv6(*this);
-    registerDataTypeDomainBool(*this);
     registerDataTypeDomainSimpleAggregateFunction(*this);
     registerDataTypeDomainGeo(*this);
     registerDataTypeMap(*this);
