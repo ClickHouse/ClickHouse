@@ -3,7 +3,7 @@
 namespace DB
 {
 
-/// These classes should be present in DB namespace (cannot place them into namelesspace)
+/// These classes should be present in DB namespace (cannot place them into nemelesspace)
 template <typename> struct AbsImpl;
 template <typename> struct NegateImpl;
 template <typename, typename> struct PlusImpl;

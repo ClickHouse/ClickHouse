@@ -57,7 +57,7 @@ protected:
 
     String getFileContents(const String & file_name)
     {
-        auto buf = encrypted_disk->readFile(file_name, /* settings= */ {}, /* size= */ {});
+        auto buf = encrypted_disk->readFile(file_name, {}, 0);
         String str;
         readStringUntilEOF(str, *buf);
         return str;
@@ -65,7 +65,7 @@ protected:
 
     static String getBinaryRepresentation(const String & abs_path)
     {
-        auto buf = createReadBufferFromFileBase(abs_path, /* settings= */ {});
+        auto buf = createReadBufferFromFileBase(abs_path, {}, 0);
         String str;
         readStringUntilEOF(str, *buf);
         return str;
@@ -97,7 +97,7 @@ TEST_F(DiskEncryptedTest, WriteAndRead)
     /// Write a file.
     {
         auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-        writeString(std::string_view{"Some text"}, *buf);
+        writeString(StringRef{"Some text"}, *buf);
     }
 
     /// Now we have one file.
@@ -123,7 +123,7 @@ TEST_F(DiskEncryptedTest, Append)
     /// Write a file (we use the append mode).
     {
         auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
-        writeString(std::string_view{"Some text"}, *buf);
+        writeString(StringRef{"Some text"}, *buf);
     }
 
     EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 9);
@@ -133,7 +133,7 @@ TEST_F(DiskEncryptedTest, Append)
     /// Append the file.
     {
         auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
-        writeString(std::string_view{" Another text"}, *buf);
+        writeString(StringRef{" Another text"}, *buf);
     }
 
     EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 22);
@@ -149,7 +149,7 @@ TEST_F(DiskEncryptedTest, Truncate)
     /// Write a file (we use the append mode).
     {
         auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
-        writeString(std::string_view{"Some text"}, *buf);
+        writeString(StringRef{"Some text"}, *buf);
     }
 
     EXPECT_EQ(encrypted_disk->getFileSize("a.txt"), 9);
@@ -212,7 +212,7 @@ TEST_F(DiskEncryptedTest, AnotherFolder)
     /// Write a file.
     {
         auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-        writeString(std::string_view{"Some text"}, *buf);
+        writeString(StringRef{"Some text"}, *buf);
     }
 
     /// Now we have one file.
@@ -232,11 +232,11 @@ TEST_F(DiskEncryptedTest, RandomIV)
     /// Write two files with the same contents.
     {
         auto buf = encrypted_disk->writeFile("a.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-        writeString(std::string_view{"Some text"}, *buf);
+        writeString(StringRef{"Some text"}, *buf);
     }
     {
         auto buf = encrypted_disk->writeFile("b.txt", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-        writeString(std::string_view{"Some text"}, *buf);
+        writeString(StringRef{"Some text"}, *buf);
     }
 
     /// Now we have two files.

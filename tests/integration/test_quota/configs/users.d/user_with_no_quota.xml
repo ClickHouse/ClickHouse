@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <users>
         <user_with_no_quota>
             <no_password/>
@@ -7,4 +7,4 @@
             </networks>
         </user_with_no_quota>
     </users>
-</clickhouse>
+</yandex>

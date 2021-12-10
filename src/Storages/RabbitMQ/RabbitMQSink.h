@@ -7,9 +7,6 @@
 namespace DB
 {
 
-class IOutputFormat;
-using IOutputFormatPtr = std::shared_ptr<IOutputFormat>;
-
 class RabbitMQSink : public SinkToStorage
 {
 
@@ -27,6 +24,6 @@ private:
     StorageMetadataPtr metadata_snapshot;
     ContextPtr context;
     ProducerBufferPtr buffer;
-    IOutputFormatPtr format;
+    BlockOutputStreamPtr child;
 };
 }

@@ -1,12 +1,14 @@
 #pragma once
 
-#include <base/types.h>
+#include <common/types.h>
 #include <Common/Volnitsky.h>
 #include <Columns/ColumnString.h>
 #include <IO/WriteHelpers.h>
 
-#include "config_functions.h"
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#    include <Common/config.h>
+#endif
 
 #if USE_RE2_ST
 #    include <re2_st/re2.h>

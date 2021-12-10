@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 DROP TABLE IF EXISTS t_00180;
 DROP TABLE IF EXISTS mv_00180;
 DROP TABLE IF EXISTS `.inner.mv_00180`;

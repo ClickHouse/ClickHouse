@@ -2,7 +2,7 @@
 #include <stdexcept>
 #include <gtest/gtest.h>
 
-#include <base/LocalDateTime.h>
+#include <common/LocalDateTime.h>
 
 
 void fillStackWithGarbage()

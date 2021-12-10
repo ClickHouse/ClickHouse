@@ -1,4 +1,4 @@
 <?xml version="1.0"?>
- <clickhouse>
+ <yandex>
      <postgresql_port>5433</postgresql_port>
- </clickhouse>
+ </yandex>
