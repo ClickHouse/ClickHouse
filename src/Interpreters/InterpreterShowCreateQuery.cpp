@@ -2,13 +2,12 @@
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/formatAST.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-#include <DataStreams/BlockIO.h>
-#include <DataStreams/copyData.h>
+#include <QueryPipeline/BlockIO.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
-#include <Access/AccessFlags.h>
+#include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -65,26 +64,26 @@ QueryPipeline InterpreterShowCreateQuery::executeImpl()
         {
             if (!ast_create_query.isView())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}.{} is not a VIEW",
-                    backQuote(ast_create_query.database), backQuote(ast_create_query.table));
+                    backQuote(ast_create_query.getDatabase()), backQuote(ast_create_query.getTable()));
         }
         else if (is_dictionary)
         {
             if (!ast_create_query.is_dictionary)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}.{} is not a DICTIONARY",
-                    backQuote(ast_create_query.database), backQuote(ast_create_query.table));
+                    backQuote(ast_create_query.getDatabase()), backQuote(ast_create_query.getTable()));
         }
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
     {
         if (show_query->temporary)
             throw Exception("Temporary databases are not possible.", ErrorCodes::SYNTAX_ERROR);
-        show_query->database = getContext()->resolveDatabase(show_query->database);
-        getContext()->checkAccess(AccessType::SHOW_DATABASES, show_query->database);
-        create_query = DatabaseCatalog::instance().getDatabase(show_query->database)->getCreateDatabaseQuery();
+        show_query->setDatabase(getContext()->resolveDatabase(show_query->getDatabase()));
+        getContext()->checkAccess(AccessType::SHOW_DATABASES, show_query->getDatabase());
+        create_query = DatabaseCatalog::instance().getDatabase(show_query->getDatabase())->getCreateDatabaseQuery();
     }
 
     if (!create_query)
-        throw Exception("Unable to show the create query of " + show_query->table + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);
+        throw Exception("Unable to show the create query of " + show_query->getTable() + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);
 
     if (!getContext()->getSettingsRef().show_table_uuid_in_table_create_query_if_not_nil)
     {

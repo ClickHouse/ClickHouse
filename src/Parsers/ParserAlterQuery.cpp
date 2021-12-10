@@ -26,6 +26,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_drop_column("DROP COLUMN");
     ParserKeyword s_clear_column("CLEAR COLUMN");
     ParserKeyword s_modify_column("MODIFY COLUMN");
+    ParserKeyword s_alter_column("ALTER COLUMN");
     ParserKeyword s_rename_column("RENAME COLUMN");
     ParserKeyword s_comment_column("COMMENT COLUMN");
     ParserKeyword s_materialize_column("MATERIALIZE COLUMN");
@@ -104,6 +105,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_ttl("TTL");
 
     ParserKeyword s_remove_ttl("REMOVE TTL");
+    ParserKeyword s_remove_sample_by("REMOVE SAMPLE BY");
 
     ParserCompoundIdentifier parser_name;
     ParserStringLiteral parser_string_literal;
@@ -618,10 +620,13 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
                 }
             }
-            else if (s_modify_column.ignore(pos, expected))
+            else if (bool is_modify = s_modify_column.ignore(pos, expected); is_modify || s_alter_column.ignore(pos, expected))
             {
                 if (s_if_exists.ignore(pos, expected))
                     command->if_exists = true;
+
+                if (!is_modify)
+                    parser_modify_col_decl.enableCheckTypeKeyword();
 
                 if (!parser_modify_col_decl.parse(pos, command->col_decl, expected))
                     return false;
@@ -668,6 +673,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
                     return false;
 
                 command->type = ASTAlterCommand::MODIFY_SAMPLE_BY;
+            }
+            else if (s_remove_sample_by.ignore(pos, expected))
+            {
+                command->type = ASTAlterCommand::REMOVE_SAMPLE_BY;
             }
             else if (s_delete.ignore(pos, expected))
             {
@@ -785,6 +794,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->children.push_back(command->constraint_decl);
     if (command->constraint)
         command->children.push_back(command->constraint);
+    if (command->projection_decl)
+        command->children.push_back(command->projection_decl);
+    if (command->projection)
+        command->children.push_back(command->projection);
     if (command->predicate)
         command->children.push_back(command->predicate);
     if (command->update_assignments)
@@ -856,12 +869,12 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (alter_object_type == ASTAlterQuery::AlterObjectType::DATABASE)
     {
-        if (!parseDatabase(pos, expected, query->database))
+        if (!parseDatabaseAsAST(pos, expected, query->database))
             return false;
     }
     else
     {
-        if (!parseDatabaseAndTableName(pos, expected, query->database, query->table))
+        if (!parseDatabaseAndTableAsAST(pos, expected, query->database, query->table))
             return false;
 
         String cluster_str;
@@ -880,6 +893,12 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     query->set(query->command_list, command_list);
     query->alter_object = alter_object_type;
+
+    if (query->database)
+        query->children.push_back(query->database);
+
+    if (query->table)
+        query->children.push_back(query->table);
 
     return true;
 }

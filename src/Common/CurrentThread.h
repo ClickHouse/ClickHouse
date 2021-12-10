@@ -46,6 +46,9 @@ public:
                                             LogsLevel client_logs_level);
     static std::shared_ptr<InternalTextLogsQueue> getInternalTextLogsQueue();
 
+    static void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & queue);
+    static InternalProfileEventsQueuePtr getInternalProfileEventsQueue();
+
     static void setFatalErrorCallback(std::function<void()> callback);
 
     /// Makes system calls to update ProfileEvents that contain info from rusage and taskstats

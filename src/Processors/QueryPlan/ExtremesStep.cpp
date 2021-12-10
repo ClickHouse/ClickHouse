@@ -1,5 +1,5 @@
 #include <Processors/QueryPlan/ExtremesStep.h>
-#include <Processors/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {

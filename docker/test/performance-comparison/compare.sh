@@ -61,7 +61,7 @@ function configure
     cp -rv right/config left ||:
 
     # Start a temporary server to rename the tables
-    while killall clickhouse-server; do echo . ; sleep 1 ; done
+    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
     echo all killed
 
     set -m # Spawn temporary in its own process groups
@@ -88,7 +88,7 @@ function configure
     clickhouse-client --port $LEFT_SERVER_PORT --query "create database test" ||:
     clickhouse-client --port $LEFT_SERVER_PORT --query "rename table datasets.hits_v1 to test.hits" ||:
 
-    while killall clickhouse-server; do echo . ; sleep 1 ; done
+    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
     echo all killed
 
     # Make copies of the original db for both servers. Use hardlinks instead
@@ -106,7 +106,7 @@ function configure
 
 function restart
 {
-    while killall clickhouse-server; do echo . ; sleep 1 ; done
+    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
     echo all killed
 
     # Change the jemalloc settings here.
@@ -196,7 +196,6 @@ function run_tests
         test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
     elif [ "$PR_TO_TEST" -ne 0 ] \
         && [ "$(wc -l < changed-test-definitions.txt)" -gt 0 ] \
-        && [ "$(wc -l < changed-test-scripts.txt)" -eq 0 ] \
         && [ "$(wc -l < other-changed-files.txt)" -eq 0 ]
     then
         # If only the perf tests were changed in the PR, we will run only these
@@ -208,15 +207,15 @@ function run_tests
         test_files=$(ls "$test_prefix"/*.xml)
     fi
 
-    # For PRs w/o changes in test definitons and scripts, test only a subset of
-    # queries, and run them less times. If the corresponding environment variables
-    # are already set, keep those values.
-    if [ "$PR_TO_TEST" -ne 0 ] \
-        && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ] \
-        && [ "$(wc -l < changed-test-scripts.txt)" -eq 0 ]
+    # For PRs w/o changes in test definitons, test only a subset of queries,
+    # and run them less times. If the corresponding environment variables are
+    # already set, keep those values.
+    #
+    # NOTE: too high CHPC_RUNS/CHPC_MAX_QUERIES may hit internal CI timeout.
+    if [ "$PR_TO_TEST" -ne 0 ] && [ "$(wc -l < changed-test-definitions.txt)" -eq 0 ]
     then
         CHPC_RUNS=${CHPC_RUNS:-7}
-        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-20}
+        CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-10}
     else
         CHPC_RUNS=${CHPC_RUNS:-13}
         CHPC_MAX_QUERIES=${CHPC_MAX_QUERIES:-0}
@@ -292,7 +291,7 @@ function get_profiles_watchdog
 
     for pid in $(pgrep -f clickhouse)
     do
-        gdb -p "$pid" --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
+        sudo gdb -p "$pid" --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
     done
     wait
 
@@ -309,24 +308,19 @@ function get_profiles_watchdog
 function get_profiles
 {
     # Collect the profiles
-    clickhouse-client --port $LEFT_SERVER_PORT --query "set query_profiler_cpu_time_period_ns = 0"
-    clickhouse-client --port $LEFT_SERVER_PORT --query "set query_profiler_real_time_period_ns = 0"
     clickhouse-client --port $LEFT_SERVER_PORT --query "system flush logs" &
-
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "set query_profiler_cpu_time_period_ns = 0"
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "set query_profiler_real_time_period_ns = 0"
     clickhouse-client --port $RIGHT_SERVER_PORT --query "system flush logs" &
 
     wait
 
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_log where type = 'QueryFinish' format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
+    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_log where type in ('QueryFinish', 'ExceptionWhileProcessing') format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > left-query-thread-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.metric_log format TSVWithNamesAndTypes" > left-metric-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.asynchronous_metric_log format TSVWithNamesAndTypes" > left-async-metric-log.tsv ||: &
 
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_log where type = 'QueryFinish' format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
+    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_log where type in ('QueryFinish', 'ExceptionWhileProcessing') format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > right-query-thread-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > right-addresses.tsv ||: &
@@ -635,7 +629,7 @@ create view query_display_names as select * from
 
 create view partial_query_times as select * from
     file('analyze/partial-query-times.tsv', TSVWithNamesAndTypes,
-        'test text, query_index int, time_stddev float, time_median float')
+        'test text, query_index int, time_stddev float, time_median double')
     ;
 
 -- Report for partial queries that we could only run on the new server (e.g.
@@ -1415,7 +1409,7 @@ case "$stage" in
     while env kill -- -$watchdog_pid ; do sleep 1; done
 
     # Stop the servers to free memory for the subsequent query analysis.
-    while killall clickhouse; do echo . ; sleep 1 ; done
+    while pkill clickhouse-serv; do echo . ; sleep 1 ; done
     echo Servers stopped.
     ;&
 "analyze_queries")

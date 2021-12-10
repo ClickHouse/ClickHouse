@@ -335,14 +335,14 @@ SELECT * FROM system.metrics LIMIT 10
 メトリック履歴の収集を有効にするには `system.metric_log`,作成 `/etc/clickhouse-server/config.d/metric_log.xml` 次の内容を使って:
 
 ``` xml
-<yandex>
+<clickhouse>
     <metric_log>
         <database>system</database>
         <table>metric_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
     </metric_log>
-</yandex>
+</clickhouse>
 ```
 
 **例**

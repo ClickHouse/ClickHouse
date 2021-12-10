@@ -98,7 +98,7 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
         auto mrk_checksum = checksums.files.find(file_name + index_granularity_info.marks_file_extension);
         if (mrk_checksum != checksums.files.end())
             size.marks += mrk_checksum->second.file_size;
-    }, {});
+    });
 
     return size;
 }
@@ -140,6 +140,11 @@ void MergeTreeDataPartWide::loadIndexGranularity()
     }
 
     index_granularity.setInitialized();
+}
+
+bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
+{
+    return volume->getDisk()->isRemote();
 }
 
 MergeTreeDataPartWide::~MergeTreeDataPartWide()

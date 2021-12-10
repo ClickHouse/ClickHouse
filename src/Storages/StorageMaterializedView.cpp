@@ -1,6 +1,5 @@
 #include <Storages/StorageMaterializedView.h>
 
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
@@ -9,10 +8,8 @@
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/getTableExpressions.h>
-#include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
-#include <Access/AccessFlags.h>
-#include <DataStreams/IBlockOutputStream.h>
+#include <Access/Common/AccessFlags.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
@@ -21,7 +18,6 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
-#include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SettingQuotaAndLimitsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -108,8 +104,8 @@ StorageMaterializedView::StorageMaterializedView(
         /// We will create a query to create an internal table.
         auto create_context = Context::createCopy(local_context);
         auto manual_create_query = std::make_shared<ASTCreateQuery>();
-        manual_create_query->database = getStorageID().database_name;
-        manual_create_query->table = generateInnerTableName(getStorageID());
+        manual_create_query->setDatabase(getStorageID().database_name);
+        manual_create_query->setTable(generateInnerTableName(getStorageID()));
         manual_create_query->uuid = query.to_inner_uuid;
 
         auto new_columns_list = std::make_shared<ASTColumns>();
@@ -122,7 +118,7 @@ StorageMaterializedView::StorageMaterializedView(
         create_interpreter.setInternal(true);
         create_interpreter.execute();
 
-        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table}, getContext())->getStorageID();
+        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->getDatabase(), manual_create_query->getTable()}, getContext())->getStorageID();
     }
 
     if (!select.select_table_id.empty())
@@ -277,7 +273,7 @@ bool StorageMaterializedView::optimize(
 void StorageMaterializedView::alter(
     const AlterCommands & params,
     ContextPtr local_context,
-    TableLockHolder &)
+    AlterLockHolder &)
 {
     auto table_id = getStorageID();
     StorageInMemoryMetadata new_metadata = getInMemoryMetadata();
