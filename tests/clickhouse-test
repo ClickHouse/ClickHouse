@@ -564,7 +564,7 @@ class TestCase:
         database = args.testcase_database
 
         # This is for .sh tests
-        os.environ["CLICKHOUSE_LOG_COMMENT"] = self.case_file
+        os.environ["CLICKHOUSE_LOG_COMMENT"] = args.testcase_basename
 
         params = {
             'client': client + ' --database=' + database,
