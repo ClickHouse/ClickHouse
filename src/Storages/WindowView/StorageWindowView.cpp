@@ -116,7 +116,7 @@ namespace
         }
     };
 
-    /// Replace windowID node name with either tumble or hop.
+    /// Replace windowID node name with either tumble or hop
     struct ReplaceWindowIdMatcher
     {
     public:
