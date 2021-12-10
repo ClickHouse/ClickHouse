@@ -207,7 +207,7 @@
 	branch = MergeWithUpstream
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
-	url = https://github.com/ClickHouse-Extras/NuRaft.git
+	url = https://github.com/Algunenano/NuRaft.git
 [submodule "contrib/nanodbc"]
 	path = contrib/nanodbc
 	url = https://github.com/ClickHouse-Extras/nanodbc.git
