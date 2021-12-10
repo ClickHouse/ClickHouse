@@ -328,8 +328,14 @@ void ClusterDiscovery::start()
         }
     }
 
+    using namespace std::chrono_literals;
+    constexpr static std::chrono::milliseconds DEFAULT_BACKOFF_TIMEOUT = 10ms;
+
+    LOG_DEBUG(log, "Starting working thread");
     main_thread = ThreadFromGlobalPool([this]
     {
+        std::chrono::milliseconds backoff_timeout = DEFAULT_BACKOFF_TIMEOUT;
+
         bool finish = false;
         while (!finish)
         {
@@ -345,6 +351,8 @@ void ClusterDiscovery::start()
                  */
                 tryLogCurrentException(log, "Caught exception in cluster discovery runMainThread");
             }
+            std::this_thread::sleep_for(backoff_timeout);
+            backoff_timeout = std::min(backoff_timeout * 2, std::chrono::milliseconds(3min));
         }
     });
 }
