@@ -124,11 +124,22 @@ private:
         HashMap<UInt64, Value>,
         HashMapWithSavedHash<StringRef, Value, DefaultHash<StringRef>>>;
 
+    /// Here we use SparseHashMap with DefaultHash<> for the following reasons:
+    ///
+    /// - DefaultHash<> is used for HashMap
+    /// - DefaultHash<> (from HashTable/Hash.h> works better then std::hash<>
+    ///   in case of sequential set of keys, but with random access to this set, i.e.
+    ///
+    ///       SELECT number FROM numbers(3000000) ORDER BY rand()
+    ///
+    ///   And even though std::hash<> works better in some other cases,
+    ///   DefaultHash<> is preferred since the difference for this particular
+    ///   case is significant, i.e. it can be 10x+.
     template <typename Value>
     using CollectionTypeSparse = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
-        SparseHashMap<UInt64, Value>,
-        SparseHashMap<StringRef, Value>>;
+        SparseHashMap<UInt64, Value, DefaultHash<KeyType>>,
+        SparseHashMap<StringRef, Value, DefaultHash<KeyType>>>;
 
     template <typename Value>
     using CollectionType = std::conditional_t<sparse, CollectionTypeSparse<Value>, CollectionTypeNonSparse<Value>>;
