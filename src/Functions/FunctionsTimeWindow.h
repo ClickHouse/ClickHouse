@@ -30,7 +30,7 @@ namespace DB
   * hopEnd(time_attr, hop_interval, window_interval [, timezone])
   *
   */
-enum WindowFunctionName
+enum TimeWindowFunctionName
 {
     TUMBLE,
     TUMBLE_START,
@@ -117,7 +117,7 @@ struct ToStartOfTransform;
     ADD_TIME(Second, 1)
 #undef ADD_TIME
 
-template <WindowFunctionName type>
+template <TimeWindowFunctionName type>
 struct TimeWindowImpl
 {
     static constexpr auto name = "UNKNOWN";
@@ -127,7 +127,7 @@ struct TimeWindowImpl
     static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name);
 };
 
-template <WindowFunctionName type>
+template <TimeWindowFunctionName type>
 class FunctionTimeWindow : public IFunction
 {
 public:

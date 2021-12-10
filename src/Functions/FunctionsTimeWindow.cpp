@@ -638,13 +638,13 @@ struct TimeWindowImpl<HOP_END>
     }
 };
 
-template <WindowFunctionName type>
+template <TimeWindowFunctionName type>
 DataTypePtr FunctionTimeWindow<type>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     return TimeWindowImpl<type>::getReturnType(arguments, name);
 }
 
-template <WindowFunctionName type>
+template <TimeWindowFunctionName type>
 ColumnPtr FunctionTimeWindow<type>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const
 {
     return TimeWindowImpl<type>::dispatchForColumns(arguments, name);
