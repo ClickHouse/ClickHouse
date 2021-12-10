@@ -4,7 +4,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionsWindow.h>
+#include <Functions/FunctionsTimeWindow.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -93,7 +93,7 @@ namespace
                     temp_node->setAlias("");
                     if (startsWith(t->arguments->children[0]->getColumnName(), "toDateTime"))
                         throw Exception(
-                            "The first argument of window function should not be a constant value.",
+                            "The first argument of time window function should not be a constant value.",
                             ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
                     if (!data.window_function)
                     {
@@ -108,7 +108,7 @@ namespace
                     else
                     {
                         if (serializeAST(*temp_node) != data.serialized_window_function)
-                            throw Exception("WINDOW VIEW only support ONE WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
+                            throw Exception("WINDOW VIEW only support ONE TIME WINDOW FUNCTION", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
                         t->name = "windowID";
                     }
                 }
@@ -1042,14 +1042,14 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
 
     if (!query_info_data.is_tumble && !query_info_data.is_hop)
         throw Exception(ErrorCodes::INCORRECT_QUERY,
-                        "WINDOW FUNCTION is not specified for {}", getName());
+                        "TIME WINDOW FUNCTION is not specified for {}", getName());
 
     window_id_name = query_info_data.window_id_name;
     window_id_alias = query_info_data.window_id_alias;
     timestamp_column_name = query_info_data.timestamp_column_name;
     is_tumble = query_info_data.is_tumble;
 
-    // Parse window function
+    // Parse time window function
     ASTFunction & window_function = typeid_cast<ASTFunction &>(*query_info_data.window_function);
     const auto & arguments = window_function.arguments->children;
     extractWindowArgument(
