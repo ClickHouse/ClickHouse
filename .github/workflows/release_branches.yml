@@ -93,7 +93,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebAsan:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
@@ -134,7 +134,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebUBsan:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
@@ -175,7 +175,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebTsan:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
@@ -216,7 +216,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebMsan:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
@@ -257,7 +257,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebDebug:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
@@ -298,7 +298,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################

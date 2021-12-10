@@ -88,7 +88,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   PVSCheck:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, func-tester]
@@ -257,7 +257,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinRelease:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
@@ -298,7 +298,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebAsan:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
@@ -339,7 +339,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebUBsan:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
@@ -380,7 +380,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebTsan:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
@@ -421,7 +421,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebMsan:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
@@ -462,7 +462,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebDebug:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
@@ -503,7 +503,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
 ##########################################################################################
 ##################################### SPECIAL BUILDS #####################################
 ##########################################################################################
@@ -547,7 +547,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinTidy:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
@@ -588,7 +588,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinDarwin:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
@@ -629,7 +629,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinAarch64:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
@@ -670,7 +670,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinFreeBSD:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
@@ -711,7 +711,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinDarwinAarch64:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
@@ -752,7 +752,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinPPC64:
     needs: [DockerHubPush, FastTest]
     runs-on: [self-hosted, builder]
@@ -793,7 +793,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
