@@ -155,15 +155,34 @@ function fuzz
 
     kill -0 $server_pid
 
+    # Set follow-fork-mode to parent, because we attach to clickhouse-server, not to watchdog
+    # and clickhouse-server can do fork-exec, for example, to run some bridge.
+    # Do not set nostop noprint for all signals, because some it may cause gdb to hang,
+    # explicitly ignore non-fatal signals that are used by server.
+    # Number of SIGRTMIN can be determined only in runtime.
+    RTMIN=`kill -l SIGRTMIN`
     echo "
-set follow-fork-mode child
-handle all noprint
-handle SIGSEGV stop print
-handle SIGBUS stop print
+set follow-fork-mode parent
+handle SIGHUP nostop noprint pass
+handle SIGINT nostop noprint pass
+handle SIGQUIT nostop noprint pass
+handle SIGPIPE nostop noprint pass
+handle SIGTERM nostop noprint pass
+handle SIGUSR1 nostop noprint pass
+handle SIGUSR2 nostop noprint pass
+handle SIG$RTMIN nostop noprint pass
+info signals
 continue
-thread apply all backtrace
-continue
+backtrace full
+info locals
+detach
+quit
 " > script.gdb
+
+    gdb -batch -command script.gdb -p $server_pid  &
+    sleep 5
+    # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
+    time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
 
     sudo gdb -batch -command script.gdb -p $server_pid &
 
