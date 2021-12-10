@@ -25,8 +25,8 @@ SUSPICIOUS_PATTERNS = [
 MAX_RETRY = 5
 
 WorkflowDescription = namedtuple('WorkflowDescription',
-                                 ['name', 'action', 'run_id', 'event', 'workflow_id',
-                                  'fork_owner_login', 'fork_branch'])
+                                 ['name', 'action', 'run_id', 'event', 'workflow_id', 'conclusion', 'status',
+                                  'fork_owner_login', 'fork_branch', 'rerun_url', 'jobs_url', 'attempt', 'url'])
 
 TRUSTED_WORKFLOW_IDS = {
     14586616, # Cancel workflows, always trusted
@@ -36,6 +36,12 @@ TRUSTED_ORG_IDS = {
     7409213,   # yandex
     28471076,  # altinity
     54801242,  # clickhouse
+}
+
+NEED_RERUN_WORKFLOWS = {
+    13241696, # PR
+    15834118, # Docs
+    15522500, # MasterCI
 }
 
 # Individual trusted contirbutors who are not in any trusted organization.
@@ -180,6 +186,12 @@ def get_workflow_description_from_event(event):
     fork_branch = event['workflow_run']['head_branch']
     name = event['workflow_run']['name']
     workflow_id = event['workflow_run']['workflow_id']
+    conclusion = event['workflow_run']['conclusion']
+    attempt = event['workflow_run']['run_attempt']
+    status = event['workflow_run']['status']
+    jobs_url = event['workflow_run']['jobs_url']
+    rerun_url = event['workflow_run']['rerun_url']
+    url = event['workflow_run']['html_url']
     return WorkflowDescription(
         name=name,
         action=action,
@@ -188,6 +200,12 @@ def get_workflow_description_from_event(event):
         fork_owner_login=fork_owner,
         fork_branch=fork_branch,
         workflow_id=workflow_id,
+        conclusion=conclusion,
+        attempt=attempt,
+        status=status,
+        jobs_url=jobs_url,
+        rerun_url=rerun_url,
+        url=url
     )
 
 def get_pr_author_and_orgs(pull_request):
@@ -255,12 +273,49 @@ def get_token_from_aws():
     installation_id = get_installation_id(encoded_jwt)
     return get_access_token(encoded_jwt, installation_id)
 
+def check_need_to_rerun(workflow_description):
+    if workflow_description.attempt >= 2:
+        print("Not going to rerun workflow because it's already tried more than two times")
+        return False
+    print("Going to check jobs")
+
+    jobs = _exec_get_with_retry(workflow_description.jobs_url + "?per_page=100")
+    print("Got jobs", len(jobs['jobs']))
+    for job in jobs['jobs']:
+        if job['conclusion'] not in ('success', 'skipped'):
+            print("Job", job['name'], "failed, checking steps")
+            for step in job['steps']:
+                # always the last job
+                if step['name'] == 'Complete job':
+                    print("Found Complete job step for job", job['name'])
+                    break
+            else:
+                print("Checked all steps and doesn't found Complete job, going to rerun")
+                return True
+
+    return False
+
+def rerun_workflow(workflow_description, token):
+    print("Going to rerun workflow")
+    _exec_post_with_retry(workflow_description.rerun_url, token)
+
 def main(event):
     token = get_token_from_aws()
     event_data = json.loads(event['body'])
     workflow_description = get_workflow_description_from_event(event_data)
 
     print("Got workflow description", workflow_description)
+    if workflow_description.action == 'completed' and workflow_description.conclusion == 'failure':
+        print("Workflow", workflow_description.url, "completed and failed, let's check for rerun")
+
+        if workflow_description.workflow_id not in NEED_RERUN_WORKFLOWS:
+            print("Workflow", workflow_description.workflow_id, "not in list of rerunable workflows")
+            return
+
+        if check_need_to_rerun(workflow_description):
+            rerun_workflow(workflow_description, token)
+            return
+
     if workflow_description.action != "requested":
         print("Exiting, event action is", workflow_description.action)
         return

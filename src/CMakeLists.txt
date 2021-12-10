@@ -517,6 +517,8 @@ if (USE_BZIP2)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BZIP2_INCLUDE_DIR})
 endif()
 
+dbms_target_link_libraries(PUBLIC consistent-hashing)
+
 include ("${ClickHouse_SOURCE_DIR}/cmake/add_check.cmake")
 
 if (ENABLE_TESTS AND USE_GTEST)
