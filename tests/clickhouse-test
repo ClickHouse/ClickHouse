@@ -17,6 +17,8 @@ import math
 import http.client
 import urllib.parse
 import json
+# for crc32
+import zlib
 
 from argparse import ArgumentParser
 from typing import Tuple, Union, Optional, Dict, Set, List
@@ -56,6 +58,13 @@ MESSAGES_TO_RETRY = [
 MAX_RETRIES = 3
 
 TEST_FILE_EXTENSIONS = ['.sql', '.sql.j2', '.sh', '.py', '.expect']
+
+
+def stringhash(s):
+    # default hash() function consistent
+    # only during process invocation https://stackoverflow.com/a/42089311
+    return zlib.crc32(s.encode('utf-8'))
+
 
 class HTTPError(Exception):
     def __init__(self, message=None, code=None):
@@ -756,7 +765,15 @@ class TestSuite:
         self.suite_tmp_path: str = suite_tmp_path
         self.suite: str = suite
 
-        self.all_tests: List[str] = self.get_tests_list(self.tests_in_suite_key_func)
+        filter_func = lambda x: True
+
+        if args.run_by_hash_num is not None and args.run_by_hash_total is not None:
+            if args.run_by_hash_num > args.run_by_hash_total:
+                raise Exception(f"Incorrect run by hash, value {args.run_by_hash_num} bigger than total {args.run_by_hash_total}")
+
+            filter_func = lambda x: stringhash(x) % args.run_by_hash_total == args.run_by_hash_num
+
+        self.all_tests: List[str] = self.get_tests_list(self.tests_in_suite_key_func, filter_func)
         self.all_tags: Dict[str, Set[str]] = self.read_test_tags(self.suite_path, self.all_tests)
 
         self.sequential_tests = []
@@ -777,17 +794,17 @@ class TestSuite:
 
         return ('no-parallel' in self.all_tags[test_name]) or ('sequential' in self.all_tags[test_name])
 
-    def get_tests_list(self, sort_key):
+    def get_tests_list(self, sort_key, filter_func):
         """
         Return list of tests file names to run
         """
 
-        all_tests = list(self.get_selected_tests())
+        all_tests = list(self.get_selected_tests(filter_func))
         all_tests = all_tests * self.args.test_runs
         all_tests.sort(key=sort_key)
         return all_tests
 
-    def get_selected_tests(self):
+    def get_selected_tests(self, filter_func):
         """
         Find all files with tests, filter, render templates
         """
@@ -804,11 +821,13 @@ class TestSuite:
                 continue
             if USE_JINJA and test_name.endswith(".gen.sql"):
                 continue
+            if not filter_func(test_name):
+                continue
             test_name = self.render_test_template(j2env, self.suite_path, test_name)
             yield test_name
 
     @staticmethod
-    def readTestSuite(args, suite_dir_name: str):
+    def read_test_suite(args, suite_dir_name: str):
         def is_data_present():
             return int(clickhouse_execute(args, 'EXISTS TABLE test.hits'))
 
@@ -1192,7 +1211,7 @@ def main(args):
         if server_died.is_set():
             break
 
-        test_suite = TestSuite.readTestSuite(args, suite)
+        test_suite = TestSuite.read_test_suite(args, suite)
         if test_suite is None:
             continue
 
@@ -1324,6 +1343,9 @@ if __name__ == '__main__':
     parser.add_argument('--client-option', nargs='+', help='Specify additional client argument')
     parser.add_argument('--print-time', action='store_true', dest='print_time', help='Print test time')
     parser.add_argument('--check-zookeeper-session', action='store_true', help='Check ZooKeeper session uptime to determine if failed test should be retried')
+
+    parser.add_argument('--run-by-hash-num', type=int, help='Run tests matching crc32(test_name) % run_by_hash_total == run_by_hash_num')
+    parser.add_argument('--run-by-hash-total', type=int, help='Total test groups for crc32(test_name) % run_by_hash_total == run_by_hash_num')
 
     group = parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--zookeeper', action='store_true', default=None, dest='zookeeper', help='Run zookeeper related tests')
