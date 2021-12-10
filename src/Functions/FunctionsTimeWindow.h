@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/** Window functions:
+/** Time window functions:
   *
   * tumble(time_attr, interval [, timezone])
   *
@@ -118,7 +118,7 @@ struct ToStartOfTransform;
 #undef ADD_TIME
 
 template <WindowFunctionName type>
-struct WindowImpl
+struct TimeWindowImpl
 {
     static constexpr auto name = "UNKNOWN";
 
@@ -128,11 +128,11 @@ struct WindowImpl
 };
 
 template <WindowFunctionName type>
-class FunctionWindow : public IFunction
+class FunctionTimeWindow : public IFunction
 {
 public:
-    static constexpr auto name = WindowImpl<type>::name;
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionWindow>(); }
+    static constexpr auto name = TimeWindowImpl<type>::name;
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTimeWindow>(); }
     String getName() const override { return name; }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -145,11 +145,11 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const override;
 };
 
-using FunctionTumble = FunctionWindow<TUMBLE>;
-using FunctionTumbleStart = FunctionWindow<TUMBLE_START>;
-using FunctionTumbleEnd = FunctionWindow<TUMBLE_END>;
-using FunctionHop = FunctionWindow<HOP>;
-using FunctionWindowId = FunctionWindow<WINDOW_ID>;
-using FunctionHopStart = FunctionWindow<HOP_START>;
-using FunctionHopEnd = FunctionWindow<HOP_END>;
+using FunctionTumble = FunctionTimeWindow<TUMBLE>;
+using FunctionTumbleStart = FunctionTimeWindow<TUMBLE_START>;
+using FunctionTumbleEnd = FunctionTimeWindow<TUMBLE_END>;
+using FunctionHop = FunctionTimeWindow<HOP>;
+using FunctionWindowId = FunctionTimeWindow<WINDOW_ID>;
+using FunctionHopStart = FunctionTimeWindow<HOP_START>;
+using FunctionHopEnd = FunctionTimeWindow<HOP_END>;
 }
