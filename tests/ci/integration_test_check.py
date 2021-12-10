@@ -120,7 +120,7 @@ if __name__ == "__main__":
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
 
-    images = get_images_with_versions(temp_path, IMAGES)
+    images = get_images_with_versions(reports_path, IMAGES)
     images_with_versions = {i.name: i.version for i in images}
     result_path = os.path.join(temp_path, "output_dir")
     if not os.path.exists(result_path):
