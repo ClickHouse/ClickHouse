@@ -116,7 +116,7 @@ namespace
 template <>
 struct WindowImpl<TUMBLE>
 {
-    static constexpr auto name = "TUMBLE";
+    static constexpr auto name = "tumble";
 
     [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
@@ -213,7 +213,7 @@ struct WindowImpl<TUMBLE>
 template <>
 struct WindowImpl<TUMBLE_START>
 {
-    static constexpr auto name = "TUMBLE_START";
+    static constexpr auto name = "tumbleStart";
 
     static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
@@ -238,12 +238,18 @@ struct WindowImpl<TUMBLE_START>
 
     [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
-        const auto which_type = WhichDataType(arguments[0].type);
+        const auto & time_column = arguments[0];
+        const auto which_type = WhichDataType(time_column.type);
         ColumnPtr result_column;
-        if (which_type.isDateTime())
-            result_column= WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
+        if (arguments.size() == 1)
+        {
+            if (which_type.isUInt32())
+                return time_column.column;
+            else //isTuple
+                result_column = time_column.column;
+        }
         else
-            result_column = arguments[0].column;
+            result_column = WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
         return executeWindowBound(result_column, 0, function_name);
     }
 };
@@ -251,7 +257,7 @@ struct WindowImpl<TUMBLE_START>
 template <>
 struct WindowImpl<TUMBLE_END>
 {
-    static constexpr auto name = "TUMBLE_END";
+    static constexpr auto name = "tumbleEnd";
 
     [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
@@ -260,12 +266,18 @@ struct WindowImpl<TUMBLE_END>
 
     [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name)
     {
-        const auto which_type = WhichDataType(arguments[0].type);
+        const auto & time_column = arguments[0];
+        const auto which_type = WhichDataType(time_column.type);
         ColumnPtr result_column;
-        if (which_type.isDateTime())
-            result_column = WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
+        if (arguments.size() == 1)
+        {
+            if (which_type.isUInt32())
+                return time_column.column;
+            else //isTuple
+                result_column = time_column.column;
+        }
         else
-            result_column = arguments[0].column;
+            result_column = WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
         return executeWindowBound(result_column, 1, function_name);
     }
 };
@@ -273,7 +285,7 @@ struct WindowImpl<TUMBLE_END>
 template <>
 struct WindowImpl<HOP>
 {
-    static constexpr auto name = "HOP";
+    static constexpr auto name = "hop";
 
     [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
@@ -405,7 +417,7 @@ struct WindowImpl<HOP>
 template <>
 struct WindowImpl<WINDOW_ID>
 {
-    static constexpr auto name = "WINDOW_ID";
+    static constexpr auto name = "windowID";
 
     [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
@@ -557,7 +569,7 @@ struct WindowImpl<WINDOW_ID>
 template <>
 struct WindowImpl<HOP_START>
 {
-    static constexpr auto name = "HOP_START";
+    static constexpr auto name = "hopStart";
 
     static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
@@ -600,7 +612,7 @@ struct WindowImpl<HOP_START>
 template <>
 struct WindowImpl<HOP_END>
 {
-    static constexpr auto name = "HOP_END";
+    static constexpr auto name = "hopEnd";
 
     [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
