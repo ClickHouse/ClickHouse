@@ -750,7 +750,7 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## max_thread_pool_size {#max-thread-pool-size}
 
-ClickHouse uses threads from the Global Thread pool to process queries. If there is no idle thread to process a query then a new thread is created in the pool. `max_thread_pool_size` limits the maximum number of threads in the pool.
+ClickHouse uses threads from the Global Thread pool to process queries. If there is no idle thread to process a query, then a new thread is created in the pool. `max_thread_pool_size` limits the maximum number of threads in the pool.
 
 Possible values: 
 
