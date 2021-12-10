@@ -11,7 +11,7 @@ services:
         command: --profile=2 --verbose
 
     mongo2:
-        image: mongo:latest
+        image: mongo:5.0
         restart: always
         ports:
             - "27018:27017"
