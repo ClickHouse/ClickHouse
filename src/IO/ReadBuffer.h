@@ -54,7 +54,7 @@ public:
     /** read next data and fill a buffer with it; set position to the beginning;
       * return `false` in case of end, `true` otherwise; throw an exception, if something is wrong
       */
-    virtual bool next()
+    bool next()
     {
         assert(!hasPendingData());
         assert(position() <= working_buffer.end());
@@ -73,7 +73,7 @@ public:
     }
 
 
-    virtual inline void nextIfAtEnd()
+    inline void nextIfAtEnd()
     {
         if (!hasPendingData())
             next();
@@ -89,12 +89,12 @@ public:
       *
       * Try to read after the end should throw an exception.
       */
-    virtual bool ALWAYS_INLINE eof()
+    bool ALWAYS_INLINE eof()
     {
         return !hasPendingData() && !next();
     }
 
-    virtual void ignore()
+    void ignore()
     {
         if (!eof())
             ++pos;
@@ -102,7 +102,7 @@ public:
             throwReadAfterEOF();
     }
 
-    virtual void ignore(size_t n)
+    void ignore(size_t n)
     {
         while (n != 0 && !eof())
         {
@@ -116,7 +116,7 @@ public:
     }
 
     /// You could call this method `ignore`, and `ignore` call `ignoreStrict`.
-    virtual size_t tryIgnore(size_t n)
+    size_t tryIgnore(size_t n)
     {
         size_t bytes_ignored = 0;
 
@@ -130,13 +130,13 @@ public:
         return bytes_ignored;
     }
 
-    virtual void ignoreAll()
+    void ignoreAll()
     {
         tryIgnore(std::numeric_limits<size_t>::max());
     }
 
     /// Peeks a single byte.
-    virtual bool ALWAYS_INLINE peek(char & c)
+    bool ALWAYS_INLINE peek(char & c)
     {
         if (eof())
             return false;
@@ -145,7 +145,7 @@ public:
     }
 
     /// Reads a single byte.
-    virtual bool ALWAYS_INLINE read(char & c)
+    bool ALWAYS_INLINE read(char & c)
     {
         if (peek(c))
         {
@@ -156,7 +156,7 @@ public:
         return false;
     }
 
-    virtual void ALWAYS_INLINE readStrict(char & c)
+    void ALWAYS_INLINE readStrict(char & c)
     {
         if (read(c))
             return;
@@ -164,7 +164,7 @@ public:
     }
 
     /** Reads as many as there are, no more than n bytes. */
-    virtual size_t read(char * to, size_t n)
+    size_t read(char * to, size_t n)
     {
         size_t bytes_copied = 0;
 
@@ -180,7 +180,7 @@ public:
     }
 
     /** Reads n bytes, if there are less - throws an exception. */
-    virtual void readStrict(char * to, size_t n)
+    void readStrict(char * to, size_t n)
     {
         auto read_bytes = read(to, n);
         if (n != read_bytes)

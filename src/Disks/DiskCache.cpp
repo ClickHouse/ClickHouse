@@ -456,10 +456,10 @@ DiskCache::DiskCache(std::shared_ptr<DiskLocal> cache_disk_, std::shared_ptr<Dis
     reload();
 }
 
-class CacheableReadBufferDecorator : public ReadBuffer
+class CacheableReadBuffer : public ReadBuffer
 {
 public:
-    CacheableReadBufferDecorator(std::unique_ptr<ReadBuffer> &from_,
+    CacheableReadBuffer(std::unique_ptr<ReadBuffer> &from_,
         std::shared_ptr<DiskLocal> cache_disk_, std::shared_ptr<DiskCachePolicy> cache_policy_,
         const String & cache_key_, const String & cache_path_, size_t file_size_,
         size_t part_offset_, size_t expected_size_) :
@@ -468,7 +468,7 @@ public:
         cache_file_size(file_size_),
         part_offset(part_offset_), expected_size(expected_size_)
     {
-        log = &Poco::Logger::get("CacheableReadBufferDecorator");
+        log = &Poco::Logger::get("CacheableReadBuffer");
 
         LOG_TRACE(log, "Create for {} ({}+{}) of {}", cache_key, part_offset, expected_size, cache_file_size);
 
@@ -477,9 +477,11 @@ public:
             cache_disk->createDirectories(dir_path);
 
         cache = cache_disk->writeFile(cache_path + ".tmp", 1024, DB::WriteMode::Rewrite);
+
+        swap(*from);
     }
 
-    ~CacheableReadBufferDecorator() override
+    ~CacheableReadBuffer() override
     {
         try
         {
@@ -492,136 +494,18 @@ public:
         }
     }
 
-    void set(BufferBase::Position ptr, size_t size, size_t offset) override
+    bool nextImpl() override
     {
-        from->BufferBase::set(ptr, size, offset);
-    }
-
-    BufferBase::Buffer & internalBuffer() override
-    {
-        return from->internalBuffer();
-    }
-
-    BufferBase::Buffer & buffer() override
-    {
-        return from->buffer();
-    }
-    BufferBase::Position & position() override
-    {
-        return from->position();
-    }
-
-    size_t offset() const override
-    {
-        return from->offset();
-    }
-
-    size_t available() const override
-    {
-        return from->available();
-    }
-
-    void swap(BufferBase & other) override
-    {
-        from->swap(other);
-    }
-
-    size_t count() const override
-    {
-        return from->count();
-    }
-
-    bool hasPendingData() const override
-    {
-        return from->hasPendingData();
-    }
-
-    bool isPadded() const override
-    {
-        return from->isPadded();
-    }
-
-    void set(BufferBase::Position ptr, size_t size) override
-    {
-        from->set(ptr, size);
-    }
-
-    void setReadUntilPosition(size_t position) override
-    {
-        from->setReadUntilPosition(position);
-    }
-
-    void setReadUntilEnd() override
-    {
-        from->setReadUntilEnd();
-    }
-
-    bool next() override
-    {
-        if (!from->next())
-        {
+        swap(*from);
+        bool res = from->next();
+        swap(*from);
+        if (!res)
             return false;
-        }
-        auto buffer = from->buffer();
-        LOG_TRACE(log, "Write to cache {} bytes", buffer.size());
-        cache->write(buffer.begin(), buffer.size());
-        cache_part_size += buffer.size();
+
+        LOG_TRACE(log, "Write to cache {} bytes", working_buffer.size());
+        cache->write(working_buffer.begin(), working_buffer.size());
+        cache_part_size += working_buffer.size();
         return true;
-    }
-
-    void nextIfAtEnd() override
-    {
-        from->nextIfAtEnd();
-    }
-
-    bool eof() override
-    {
-        return from->eof();
-    }
-
-    void ignore(size_t n) override
-    {
-        from->ignore(n);
-    }
-
-    size_t tryIgnore(size_t n) override
-    {
-        return from->tryIgnore(n);
-    }
-
-    void ignoreAll() override
-    {
-        from->ignoreAll();
-    }
-
-    bool peek(char & c) override
-    {
-        return from->peek(c);
-    }
-
-    bool read(char & c) override
-    {
-        return from->read(c);
-    }
-
-    void readStrict(char & c) override
-    {
-        from->readStrict(c);
-    }
-
-    size_t read(char * to, size_t n) override
-    {
-        return from->read(to, n);
-    }
-
-    void readStrict(char * to, size_t n) override
-    {
-        from->readStrict(to, n);
-    }
-
-    void prefetch() override
-    {
-        from->prefetch();
     }
 
 private:
@@ -671,10 +555,10 @@ private:
 };
 
 
-class CacheableMultipartReadBufferDecorator : public ReadBuffer
+class CacheableMultipartReadBuffer : public ReadBuffer
 {
 public:
-    CacheableMultipartReadBufferDecorator(std::shared_ptr<DiskLocal> cache_disk_, std::shared_ptr<DiskCachePolicy> cache_policy_,
+    CacheableMultipartReadBuffer(std::shared_ptr<DiskLocal> cache_disk_, std::shared_ptr<DiskCachePolicy> cache_policy_,
         const String & cache_key_, const String & cache_base_path_,
         size_t offset_, size_t size_,
         std::shared_ptr<DiskCacheDownloader> downloader_) :
@@ -684,107 +568,56 @@ public:
         downloader(std::move(downloader_))
     {
         ProfileEvents::increment(ProfileEvents::DiskCacheRequestsIn, 1);
-        log = &Poco::Logger::get("CacheableMultipartReadBufferDecorator");
+        log = &Poco::Logger::get("CacheableMultipartReadBuffer");
     }
 
     void set(BufferBase::Position ptr, size_t size, size_t offset) override
     {
-        external_buffer_ptr = ptr;
-        external_buffer_size = size;
-        external_buffer_offset = offset;
-
-        if (from)
-            from->set(ptr, size, offset);
-    }
-
-    BufferBase::Buffer & internalBuffer() override
-    {
-        throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    BufferBase::Buffer & buffer() override
-    {
-        ensureFrom();
-        return from->buffer();
-    }
-
-    BufferBase::Position & position() override
-    {
-        ensureFrom();
-        return from->position();
-    }
-
-    size_t offset() const override
-    {
-        if (!from)
-            throw Exception("Call method before buffer creation", ErrorCodes::LOGICAL_ERROR);
-        return from->offset();
-    }
-
-    size_t available() const override
-    {
-        if (!from)
-            throw Exception("Call method before buffer creation", ErrorCodes::LOGICAL_ERROR);
-        return from->available();
-    }
-
-    void swap(BufferBase &) override
-    {
-        throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    size_t count() const override
-    {
-        throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    bool hasPendingData() const override
-    {
-        if (!from)
-            throw Exception("Call method before buffer creation", ErrorCodes::LOGICAL_ERROR);
-        return from->hasPendingData();
-    }
-
-    bool isPadded() const override
-    {
-        throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
+        use_external_buffer = true;
+        BufferBase::set(ptr, size, offset);
     }
 
     void set(BufferBase::Position ptr, size_t size) override
     {
-        external_buffer_ptr = ptr;
-        external_buffer_size = size;
-        external_buffer_offset = 0;
-
-        if (from)
-            from->set(ptr, size);
+        use_external_buffer = true;
+        BufferBase::set(ptr, size);
     }
 
-    void setReadUntilPosition(size_t position) override
+private:
+    class SwapHelper
     {
-        if (from)
-            throw Exception("Can't set end position after start usage", ErrorCodes::LOGICAL_ERROR);
-        end_offset = position;
-    }
+    public:
+        SwapHelper(BufferBase & buffer1_, BufferBase & buffer2_)
+            : buffer1(buffer1_), buffer2(buffer2_)
+        {
+            buffer1.swap(buffer2);
+        }
+        ~SwapHelper()
+        {
+            buffer1.swap(buffer2);
+        }
+    private:
+        BufferBase & buffer1;
+        BufferBase & buffer2;
+    };
 
-    void setReadUntilEnd() override
-    {
-        if (from)
-            throw Exception("Can't set end position after start usage", ErrorCodes::LOGICAL_ERROR);
-        end_offset = 0;
-    }
-
-    bool next() override
+    bool nextImpl() override
     {
         bool res = false;
         if (from)
+        {
+            SwapHelper sh(*this, *from);
             res = from->next();
+        }
         if (!res)
         {
             from.reset(nullptr);
             ensureFrom();
             if (from)
+            {
+                SwapHelper sh(*this, *from);
                 res = from->next();
+            }
         }
 
         if (res)
@@ -815,67 +648,6 @@ public:
         return res;
     }
 
-    void nextIfAtEnd() override
-    {
-        throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    bool eof() override
-    {
-        throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void ignore(size_t) override
-    {
-        throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    size_t tryIgnore(size_t) override
-    {
-        throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    void ignoreAll() override
-    {
-        throw Exception("Method not implemented", ErrorCodes::NOT_IMPLEMENTED);
-    }
-
-    bool peek(char & c) override
-    {
-        ensureFrom();
-        return from->peek(c);
-    }
-
-    bool read(char & c) override
-    {
-        ensureFrom();
-        return from->read(c);
-    }
-
-    void readStrict(char & c) override
-    {
-        ensureFrom();
-        from->readStrict(c);
-    }
-
-    size_t read(char * to, size_t n) override
-    {
-        ensureFrom();
-        return from->read(to, n);
-    }
-
-    void readStrict(char * to, size_t n) override
-    {
-        ensureFrom();
-        from->readStrict(to, n);
-    }
-
-    void prefetch() override
-    {
-        ensureFrom();
-        from->prefetch();
-    }
-
 private:
     void ensureFrom()
     {
@@ -884,8 +656,8 @@ private:
         while (!from)
         {
             size_t max_size = end_offset ? end_offset - current_offset : 0;
-            if (external_buffer_ptr && (!max_size || max_size > external_buffer_size))
-                max_size = external_buffer_size;
+            if (!max_size || max_size > working_buffer.size())
+                max_size = working_buffer.size();
             DiskCachePolicy::CachePart part(current_offset, max_size);
             if (retries > 0)
                 part = cache_policy->find(cache_key, current_offset, max_size);
@@ -950,7 +722,7 @@ private:
                 if (s3from.stream)
                 {
                     String cache_path = cache_base_path + "_" + std::to_string(part.offset);
-                    from = std::unique_ptr<ReadBuffer>{ new CacheableReadBufferDecorator(s3from.stream,
+                    from = std::unique_ptr<ReadBuffer>{ new CacheableReadBuffer(s3from.stream,
                         cache_disk, cache_policy, cache_key, cache_path,
                         s3from.file_size,
                         part.offset, s3from.expected_size) };
@@ -978,13 +750,10 @@ private:
                 }
             }
 
-            if (external_buffer_ptr)
-            {
-                LOG_TRACE(log, "Set size {}, offset {}", external_buffer_size, external_buffer_offset);
-                from->set(external_buffer_ptr, external_buffer_size, external_buffer_offset);
-                LOG_TRACE(log, "Change offset from {} to {}", external_buffer_offset, external_buffer_offset + std::min(part.size, external_buffer_size));
-                external_buffer_offset += std::min(part.size, external_buffer_size);
-            }
+            if (use_external_buffer)
+                from->set(working_buffer.begin(), working_buffer.size());
+
+            swap(*from);
 
             current_type = part.type;
             break;
@@ -1006,9 +775,7 @@ private:
 
     DiskCachePolicy::CachePart::CachePartType current_type = DiskCachePolicy::CachePart::CachePartType::EMPTY;
 
-    BufferBase::Position external_buffer_ptr = nullptr;
-    size_t external_buffer_size = 0;
-    size_t external_buffer_offset = 0;
+    bool use_external_buffer = false;
 };
 
 
@@ -1018,7 +785,7 @@ std::unique_ptr<ReadBuffer> DiskCache::find(const String & path, size_t offset, 
 
     String cache_path = getCacheBasePath(cache_key);
 
-    return std::unique_ptr<ReadBuffer>{ new CacheableMultipartReadBufferDecorator(cache_disk, cache_policy,
+    return std::unique_ptr<ReadBuffer>{ new CacheableMultipartReadBuffer(cache_disk, cache_policy,
         cache_key, cache_path, offset, size, downloader) };
 }
 
