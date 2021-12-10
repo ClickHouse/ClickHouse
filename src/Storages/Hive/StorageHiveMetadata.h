@@ -1,5 +1,5 @@
 #pragma once
-#include <IO/IRemoteFileMetadata.h>
+#include <Storages/IRemoteFileMetadata.h>
 namespace DB
 {
 class StorageHiveMetadata : public IRemoteFileMetadata

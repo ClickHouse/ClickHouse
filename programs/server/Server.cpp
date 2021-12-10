@@ -43,7 +43,6 @@
 #include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
 #include <IO/UseSSL.h>
-#include <IO/RemoteReadBufferCache.h>
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DNSCacheUpdater.h>
@@ -58,6 +57,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/attachSystemTables.h>
 #include <Storages/System/attachInformationSchemaTables.h>
+#include <Storages/RemoteReadBufferCache.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
