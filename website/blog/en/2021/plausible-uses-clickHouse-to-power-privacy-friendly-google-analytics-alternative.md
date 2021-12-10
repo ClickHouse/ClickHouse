@@ -1,6 +1,6 @@
 ---
 title: 'Plausible Analytics uses ClickHouse to power their privacy-friendly Google Analytics alternative'
-image: 'https://blog-images.clickhouse.com/en/2021/plausible-uses-clickHouse-to-power-privacy-friendly-google-analytics-alternative/featured.jpg'
+image: 'https://blog-images.clickhouse.com/en/2021/plausible-uses-clickHouse-to-power-privacy-friendly-google-analytics-alternative/featured-cropped.jpg'
 date: '2021-12-08'
 author: 'Elissa Weve'
 tags: ['company']
