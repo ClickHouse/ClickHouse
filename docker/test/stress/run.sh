@@ -155,7 +155,7 @@ quit
     # FIXME Hung check may work incorrectly because of attached gdb
     # 1. False positives are possible
     # 2. We cannot attach another gdb to get stacktraces if some queries hung
-    gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' | tee -a /test_output/gdb.log &
+    gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" | ts '%Y-%m-%d %H:%M:%S' >> -a /test_output/gdb.log &
     sleep 5
     # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
     time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:

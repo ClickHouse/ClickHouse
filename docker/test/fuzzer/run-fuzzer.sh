@@ -184,8 +184,6 @@ quit
     # gdb will send SIGSTOP, spend some time loading debug info and then send SIGCONT, wait for it (up to send_timeout, 300s)
     time clickhouse-client --query "SELECT 'Connected to clickhouse-server after attaching gdb'" ||:
 
-    sudo gdb -batch -command script.gdb -p $server_pid &
-
     # Check connectivity after we attach gdb, because it might cause the server
     # to freeze and the fuzzer will fail.
     for _ in {1..60}
