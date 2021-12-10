@@ -45,7 +45,7 @@ if __name__ == "__main__":
     temp_path = os.getenv("TEMP_PATH", os.path.abspath("."))
     repo_path = os.getenv("REPO_COPY", os.path.abspath("../../"))
     ramdrive_path = os.getenv("RAMDRIVE_PATH", os.path.join(temp_path, "ramdrive"))
-    ramdrive_size = os.getenv("RAMDRIVE_SIZE", '120G')
+    ramdrive_size = os.getenv("RAMDRIVE_SIZE", '30G')
     reports_path = os.getenv("REPORTS_PATH", "./reports")
 
     check_name = sys.argv[1]
