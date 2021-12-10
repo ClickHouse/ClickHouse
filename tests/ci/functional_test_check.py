@@ -131,7 +131,7 @@ if __name__ == "__main__":
     if 'RUN_BY_HASH_NUM' in os.environ:
         run_by_hash_num = int(os.getenv('RUN_BY_HASH_NUM'))
         run_by_hash_total = int(os.getenv('RUN_BY_HASH_TOTAL'))
-        check_name_with_group = check_name + f' [{run_by_hash_num}/{run_by_hash_total}]'
+        check_name_with_group = check_name + f' [{run_by_hash_num + 1}/{run_by_hash_total}]'
     else:
         run_by_hash_num = 0
         run_by_hash_total = 0
