@@ -767,7 +767,7 @@ class TestSuite:
 
         filter_func = lambda x: True
 
-        if args.run_by_hash_num and args.run_by_hash_total:
+        if args.run_by_hash_num is not None and args.run_by_hash_total is not None:
             if args.run_by_hash_num > args.run_by_hash_total:
                 raise Exception(f"Incorrect run by hash, value {args.run_by_hash_num} bigger than total {args.run_by_hash_total}")
 
