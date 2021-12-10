@@ -1,10 +1,11 @@
 #pragma once
 
-#include <Parsers/IParser.h>
-
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
+
+class IParser;
 
 /// Parse query or set 'out_error_message'.
 ASTPtr tryParseQuery(

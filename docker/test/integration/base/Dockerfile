@@ -19,6 +19,7 @@ RUN apt-get update \
         sqlite3 \
         curl \
         tar \
+        lz4 \
         krb5-user \
         iproute2 \
         lsof \

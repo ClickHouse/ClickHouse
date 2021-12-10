@@ -53,11 +53,15 @@ template <typename Type>
 void SerializationEnum<Type>::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     if (settings.tsv.input_format_enum_as_number)
+    {
         assert_cast<ColumnType &>(column).getData().push_back(readValue(istr));
+        if (!istr.eof())
+            ISerialization::throwUnexpectedDataAfterParsedValue(column, istr, settings, "Enum");
+    }
     else
     {
         std::string field_name;
-        readString(field_name, istr);
+        readStringUntilEOF(field_name, istr);
         assert_cast<ColumnType &>(column).getData().push_back(this->getValue(StringRef(field_name), true));
     }
 }

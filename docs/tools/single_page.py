@@ -195,44 +195,6 @@ def build_single_page_version(lang, args, nav, cfg):
                     test.test_single_page(
                         os.path.join(test_dir, 'single', 'index.html'), lang)
 
-                    if not args.skip_pdf:
-                        single_page_index_html = os.path.join(test_dir, 'single', 'index.html')
-                        single_page_pdf = os.path.abspath(
-                            os.path.join(single_page_output_path, f'clickhouse_{lang}.pdf')
-                        )
-
-                        with open(single_page_index_html, 'r') as f:
-                            soup = bs4.BeautifulSoup(
-                                f.read(),
-                                features='html.parser'
-                            )
-                        soup_prefix = f'file://{test_dir}'
-                        for img in soup.findAll('img'):
-                            if img['src'].startswith('/'):
-                                img['src'] = soup_prefix + img['src']
-                        for script in soup.findAll('script'):
-                            script_src = script.get('src')
-                            if script_src:
-                                script['src'] = soup_prefix + script_src.split('?', 1)[0]
-                        for link in soup.findAll('link'):
-                            link['href'] = soup_prefix + link['href'].split('?', 1)[0]
-
-                        with open(single_page_index_html, 'w') as f:
-                            f.write(str(soup))
-
-                        create_pdf_command = [
-                            'wkhtmltopdf',
-                            '--print-media-type',
-                            '--log-level', 'warn',
-                            single_page_index_html, single_page_pdf
-                        ]
-
-                        logging.info(' '.join(create_pdf_command))
-                        try:
-                            subprocess.check_call(' '.join(create_pdf_command), shell=True)
-                        except:
-                            pass  # TODO: fix pdf issues
-
         logging.info(f'Finished building single page version for {lang}')
 
         remove_temporary_files(lang, args)

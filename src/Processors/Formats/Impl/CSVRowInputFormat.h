@@ -25,12 +25,13 @@ public:
 
     String getName() const override { return "CSVRowInputFormat"; }
 
+private:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
-private:
     bool parseFieldDelimiterWithDiagnosticInfo(WriteBuffer & out) override;
     bool parseRowEndWithDiagnosticInfo(WriteBuffer & out) override;
+
     bool isGarbageAfterField(size_t, ReadBuffer::Position pos) override
     {
         return *pos != '\n' && *pos != '\r' && *pos != format_settings.csv.delimiter && *pos != ' ' && *pos != '\t';

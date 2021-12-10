@@ -25,7 +25,7 @@ WriteIndirectBufferFromRemoteFS<T>::~WriteIndirectBufferFromRemoteFS()
 {
     try
     {
-        WriteIndirectBufferFromRemoteFS::finalize();
+        finalize();
     }
     catch (...)
     {
@@ -35,12 +35,9 @@ WriteIndirectBufferFromRemoteFS<T>::~WriteIndirectBufferFromRemoteFS()
 
 
 template <typename T>
-void WriteIndirectBufferFromRemoteFS<T>::finalize()
+void WriteIndirectBufferFromRemoteFS<T>::finalizeImpl()
 {
-    if (finalized)
-        return;
-
-    WriteBufferFromFileDecorator::finalize();
+    WriteBufferFromFileDecorator::finalizeImpl();
 
     metadata.addObject(remote_fs_path, count());
     metadata.save();
