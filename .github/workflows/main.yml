@@ -1689,7 +1689,7 @@ jobs:
 #############################################################################################
 ############################# INTEGRATION TESTS #############################################
 #############################################################################################
-  IntegrationTestsAsan:
+  IntegrationTestsAsan0:
     needs: [BuilderDebAsan]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -1705,6 +1705,8 @@ jobs:
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Integration tests (asan, actions)'
           REPO_COPY: ${{runner.temp}}/integration_tests_asan/ClickHouse
+          RUN_BY_HASH_NUM: 0
+          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1717,7 +1719,67 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  IntegrationTestsTsan:
+  IntegrationTestsAsan1:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_asan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (asan, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_asan/ClickHouse
+          RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsAsan2:
+    needs: [BuilderDebAsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_asan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (asan, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_asan/ClickHouse
+          RUN_BY_HASH_NUM: 2
+          RUN_BY_HASH_TOTAL: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsTsan0:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -1733,6 +1795,8 @@ jobs:
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Integration tests (thread, actions)'
           REPO_COPY: ${{runner.temp}}/integration_tests_tsan/ClickHouse
+          RUN_BY_HASH_NUM: 0
+          RUN_BY_HASH_TOTAL: 4
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1745,7 +1809,97 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  IntegrationTestsRelease:
+  IntegrationTestsTsan1:
+    needs: [BuilderDebTsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_tsan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (thread, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_tsan/ClickHouse
+          RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 4
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsTsan2:
+    needs: [BuilderDebTsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_tsan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (thread, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_tsan/ClickHouse
+          RUN_BY_HASH_NUM: 2
+          RUN_BY_HASH_TOTAL: 4
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsTsan3:
+    needs: [BuilderDebTsan]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_tsan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (thread, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_tsan/ClickHouse
+          RUN_BY_HASH_NUM: 3
+          RUN_BY_HASH_TOTAL: 4
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsRelease0:
     needs: [BuilderDebRelease]
     runs-on: [self-hosted, stress-tester]
     steps:
@@ -1761,6 +1915,38 @@ jobs:
           REPORTS_PATH: ${{runner.temp}}/reports_dir
           CHECK_NAME: 'Integration tests (release, actions)'
           REPO_COPY: ${{runner.temp}}/integration_tests_release/ClickHouse
+          RUN_BY_HASH_NUM: 0
+          RUN_BY_HASH_TOTAL: 2
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 integration_test_check.py "$CHECK_NAME"
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  IntegrationTestsRelease1:
+    needs: [BuilderDebRelease]
+    runs-on: [self-hosted, stress-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Integration test
+        env:
+          TEMP_PATH: ${{runner.temp}}/integration_tests_release
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Integration tests (release, actions)'
+          REPO_COPY: ${{runner.temp}}/integration_tests_release/ClickHouse
+          RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 2
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1981,9 +2167,15 @@ jobs:
       - ASTFuzzerTestTsan
       - ASTFuzzerTestMSan
       - ASTFuzzerTestUBSan
-      - IntegrationTestsAsan
-      - IntegrationTestsRelease
-      - IntegrationTestsTsan
+      - IntegrationTestsAsan0
+      - IntegrationTestsAsan1
+      - IntegrationTestsAsan2
+      - IntegrationTestsRelease0
+      - IntegrationTestsRelease1
+      - IntegrationTestsTsan0
+      - IntegrationTestsTsan1
+      - IntegrationTestsTsan2
+      - IntegrationTestsTsan3
       - PVSCheck
       - UnitTestsAsan
       - UnitTestsTsan
