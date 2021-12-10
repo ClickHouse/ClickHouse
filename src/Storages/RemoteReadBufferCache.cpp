@@ -12,7 +12,7 @@
 #include <Common/SipHash.h>
 #include <Common/hex.h>
 #include <Common/Exception.h>
-#include <IO/RemoteReadBufferCache.h>
+#include <Storages/RemoteReadBufferCache.h>
 #include <IO/WriteHelpers.h>
 
 namespace fs = std::filesystem;

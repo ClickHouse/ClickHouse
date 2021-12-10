@@ -17,7 +17,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadSettings.h>
 #include <IO/SeekableReadBuffer.h>
-#include <IO/IRemoteFileMetadata.h>
+#include <Storages/IRemoteFileMetadata.h>
 #include <condition_variable>
 #include <Interpreters/Context.h>
 #include <boost/core/noncopyable.hpp>
