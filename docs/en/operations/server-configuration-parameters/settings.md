@@ -782,7 +782,7 @@ Default value: `1000`.
 
 ## thread_pool_queue_size {#thread-pool-queue-size}
 
-The maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to `max_thread_pool_size`.
+The maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to [max_thread_pool_size](#max-thread-pool-size).
 
 Possible values: 
 
