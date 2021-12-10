@@ -187,7 +187,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinRelease:
     needs: [DockerHubPush]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
@@ -229,7 +229,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebAsan:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
@@ -270,7 +270,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebUBsan:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
@@ -311,7 +311,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebTsan:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
@@ -352,7 +352,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebMsan:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
@@ -393,7 +393,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderDebDebug:
     needs: [DockerHubPush]
     runs-on: [self-hosted, builder]
@@ -434,7 +434,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
 ##########################################################################################
 ##################################### SPECIAL BUILDS #####################################
 ##########################################################################################
@@ -479,7 +479,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinTidy:
     needs: [DockerHubPush]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
@@ -521,7 +521,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinDarwin:
     needs: [DockerHubPush]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
@@ -563,7 +563,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinAarch64:
     needs: [DockerHubPush]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
@@ -605,7 +605,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinFreeBSD:
     needs: [DockerHubPush]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
@@ -647,7 +647,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinDarwinAarch64:
     needs: [DockerHubPush]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
@@ -689,7 +689,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
   BuilderBinPPC64:
     needs: [DockerHubPush]
     if: ${{ !contains(github.event.pull_request.labels.*.name, 'pr-documentation') && !contains(github.event.pull_request.labels.*.name, 'pr-doc-fix') }}
@@ -731,7 +731,7 @@ jobs:
         run: |
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
-          sudo rm -fr $TEMP_PATH
+          sudo rm -fr $TEMP_PATH $CACHES_PATH
 ############################################################################################
 ##################################### BUILD REPORTER #######################################
 ############################################################################################
