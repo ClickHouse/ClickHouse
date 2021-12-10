@@ -9,11 +9,9 @@
 #include <IO/LimitReadBuffer.h>
 #include <IO/copyData.h>
 
-#include <DataStreams/BlockIO.h>
-#include <DataStreams/copyData.h>
-#include <DataStreams/IBlockInputStream.h>
+#include <QueryPipeline/BlockIO.h>
+#include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
-#include <DataStreams/CountingBlockOutputStream.h>
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -51,7 +49,6 @@
 #include <Common/ProfileEvents.h>
 
 #include <Common/SensitiveDataMasker.h>
-#include <DataStreams/materializeBlock.h>
 #include <IO/CompressionMethod.h>
 
 #include <Processors/Transforms/LimitsCheckingTransform.h>
@@ -250,7 +247,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
 {
     /// Exception before the query execution.
     if (auto quota = context->getQuota())
-        quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
+        quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
 
     const Settings & settings = context->getSettingsRef();
 
@@ -311,7 +308,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
         span.parent_span_id = context->getClientInfo().client_trace_context.span_id;
         span.operation_name = "query";
         span.start_time_us = current_time_us;
-        span.finish_time_us = current_time_us;
+        span.finish_time_us = time_in_microseconds(std::chrono::system_clock::now());
 
         /// Keep values synchronized to type enum in QueryLogElement::createBlock.
         span.attribute_names.push_back("clickhouse.query_status");
@@ -322,6 +319,12 @@ static void onExceptionBeforeStart(const String & query_for_logging, ContextPtr 
 
         span.attribute_names.push_back("clickhouse.query_id");
         span.attribute_values.push_back(elem.client_info.current_query_id);
+
+        span.attribute_names.push_back("clickhouse.exception");
+        span.attribute_values.push_back(elem.exception);
+
+        span.attribute_names.push_back("clickhouse.exception_code");
+        span.attribute_values.push_back(elem.exception_code);
 
         if (!context->query_trace_context.tracestate.empty())
         {
@@ -396,10 +399,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         client_info.initial_query_start_time_microseconds = time_in_microseconds(current_time);
     }
 
-#if !defined(ARCADIA_BUILD)
     assert(internal || CurrentThread::get().getQueryContext());
     assert(internal || CurrentThread::get().getQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
-#endif
 
     const Settings & settings = context->getSettingsRef();
 
@@ -434,12 +435,6 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             if (query_with_output->settings_ast)
                 InterpreterSetQuery(query_with_output->settings_ast, context).executeForCurrentContext();
-        }
-
-        if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
-        {
-            query_database = query_with_table_output->database;
-            query_table = query_with_table_output->table;
         }
 
         if (auto * create_query = ast->as<ASTCreateQuery>())
@@ -513,6 +508,12 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(ast);
             query = serializeAST(*ast);
+        }
+
+        if (const auto * query_with_table_output = dynamic_cast<const ASTQueryWithTableAndOutput *>(ast.get()))
+        {
+            query_database = query_with_table_output->getDatabase();
+            query_table = query_with_table_output->getTable();
         }
 
         /// MUST go before any modification (except for prepared statements,
@@ -612,14 +613,14 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             {
                 if (ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
                 {
-                    quota->used(Quota::QUERY_SELECTS, 1);
+                    quota->used(QuotaType::QUERY_SELECTS, 1);
                 }
                 else if (ast->as<ASTInsertQuery>())
                 {
-                    quota->used(Quota::QUERY_INSERTS, 1);
+                    quota->used(QuotaType::QUERY_INSERTS, 1);
                 }
-                quota->used(Quota::QUERIES, 1);
-                quota->checkExceeded(Quota::ERRORS);
+                quota->used(QuotaType::QUERIES, 1);
+                quota->checkExceeded(QuotaType::ERRORS);
             }
         }
 
@@ -631,7 +632,13 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         }
 
         {
-            OpenTelemetrySpanHolder span("IInterpreter::execute()");
+            std::unique_ptr<OpenTelemetrySpanHolder> span;
+            if (context->query_trace_context.trace_id != UUID())
+            {
+                auto raw_interpreter_ptr = interpreter.get();
+                std::string class_name(abi::__cxa_demangle(typeid(*raw_interpreter_ptr).name(), nullptr, nullptr, nullptr));
+                span = std::make_unique<OpenTelemetrySpanHolder>(class_name + "::execute()");
+            }
             res = interpreter->execute();
         }
 
@@ -869,7 +876,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                  quota(quota), status_info_to_query_log] () mutable
             {
                 if (quota)
-                    quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
+                    quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
 
                 elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
 

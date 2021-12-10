@@ -16,11 +16,12 @@
 #include <Common/ColumnsHashing.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/FixedHashMap.h>
+#include <Common/RWLock.h>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 
 #include <Core/Block.h>
 
@@ -230,6 +231,7 @@ public:
     template <typename Mapped>
     struct MapsTemplate
     {
+        using MappedType = Mapped;
         std::unique_ptr<FixedHashMap<UInt8, Mapped>>                  key8;
         std::unique_ptr<FixedHashMap<UInt16, Mapped>>                 key16;
         std::unique_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>   key32;
@@ -334,9 +336,9 @@ public:
 
     /// We keep correspondence between used_flags and hash table internal buffer.
     /// Hash table cannot be modified during HashJoin lifetime and must be protected with lock.
-    void setLock(std::shared_mutex & rwlock)
+    void setLock(RWLockImpl::LockHolder rwlock_holder)
     {
-        storage_join_lock = std::shared_lock<std::shared_mutex>(rwlock);
+        storage_join_lock = rwlock_holder;
     }
 
     void reuseJoinedData(const HashJoin & join);
@@ -391,7 +393,7 @@ private:
 
     /// Should be set via setLock to protect hash table from modification from StorageJoin
     /// If set HashJoin instance is not available for modification (addJoinedBlock)
-    std::shared_lock<std::shared_mutex> storage_join_lock;
+    RWLockImpl::LockHolder storage_join_lock = nullptr;
 
     void dataMapInit(MapsVariant &);
 
@@ -410,7 +412,7 @@ private:
 
     void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
-    static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
+    static Type chooseMethod(ASTTableJoin::Kind kind, const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     bool empty() const;
     bool overDictionary() const;

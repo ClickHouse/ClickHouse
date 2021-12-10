@@ -15,13 +15,9 @@
 #include <Storages/MergeTree/MergeProgress.h>
 #include <Storages/MergeTree/MergeTask.h>
 
-#include <DataStreams/TTLBlockInputStream.h>
-#include <DataStreams/TTLCalcInputStream.h>
-#include <DataStreams/DistinctSortedBlockInputStream.h>
-#include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/MaterializingBlockInputStream.h>
-#include <DataStreams/ColumnGathererStream.h>
-#include <DataStreams/SquashingBlockInputStream.h>
+#include <Processors/Transforms/TTLTransform.h>
+#include <Processors/Transforms/TTLCalcTransform.h>
+#include <Processors/Transforms/DistinctSortedTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
@@ -32,7 +28,6 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
-#include <Processors/Executors/PipelineExecutingBlockInputStream.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/Context.h>
 #include <Common/interpolate.h>
@@ -46,18 +41,9 @@
 
 #include <boost/algorithm/string/replace.hpp>
 
-namespace ProfileEvents
-{
-    extern const Event MergedRows;
-    extern const Event MergedUncompressedBytes;
-    extern const Event MergesTimeMilliseconds;
-    extern const Event Merge;
-}
-
 namespace CurrentMetrics
 {
     extern const Metric BackgroundMergesAndMutationsPoolTask;
-    extern const Metric PartMutation;
 }
 
 namespace DB
@@ -328,7 +314,11 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     MergeTreeData::DataPartsVector parts = selectAllPartsFromPartition(partition_id);
 
     if (parts.empty())
+    {
+        if (out_disable_reason)
+            *out_disable_reason = "There are no parts inside partition";
         return SelectPartsDecision::CANNOT_SELECT;
+    }
 
     if (!final && parts.size() == 1)
     {
@@ -342,6 +332,8 @@ SelectPartsDecision MergeTreeDataMergerMutator::selectAllPartsToMergeWithinParti
     if (final && optimize_skip_merged_partitions && parts.size() == 1 && parts[0]->info.level > 0 &&
         (!metadata_snapshot->hasAnyTTL() || parts[0]->checkAllTTLCalculated(metadata_snapshot)))
     {
+        if (out_disable_reason)
+            *out_disable_reason = "Partition skipped due to optimize_skip_merged_partitions";
         return SelectPartsDecision::NOTHING_TO_MERGE;
     }
 
@@ -426,7 +418,7 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     const Names & deduplicate_by_columns,
     const MergeTreeData::MergingParams & merging_params,
     const IMergeTreeDataPart * parent_part,
-    const String & prefix)
+    const String & suffix)
 {
     return std::make_shared<MergeTask>(
         future_part,
@@ -440,8 +432,9 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         deduplicate_by_columns,
         merging_params,
         parent_part,
-        prefix,
+        suffix,
         &data,
+        this,
         &merges_blocker,
         &ttl_merges_blocker);
 }
@@ -771,5 +764,11 @@ ExecuteTTLType MergeTreeDataMergerMutator::shouldExecuteTTL(const StorageMetadat
     return has_ttl_expression ? ExecuteTTLType::RECALCULATE : ExecuteTTLType::NONE;
 }
 
+
+bool MergeTreeDataMergerMutator::hasTemporaryPart(const std::string & basename) const
+{
+    std::lock_guard lock(tmp_parts_lock);
+    return tmp_parts.contains(basename);
+}
 
 }

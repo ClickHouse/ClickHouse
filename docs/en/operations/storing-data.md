@@ -22,7 +22,7 @@ ClickHouse supports zero-copy replication for `S3` and `HDFS` disks, which means
 Configuration markup:
 
 ``` xml
-<yandex>
+<clickhouse>
     <storage_configuration>
         <disks>
             <hdfs>
@@ -44,7 +44,7 @@ Configuration markup:
     <merge_tree>
         <min_bytes_for_wide_part>0</min_bytes_for_wide_part>
     </merge_tree>
-</yandex>
+</clickhouse>
 ```
 
 Required parameters:
@@ -96,7 +96,7 @@ Optional parameters:
 Example of disk configuration:
 
 ``` xml
-<yandex>
+<clickhouse>
     <storage_configuration>
         <disks>
             <disk_s3>
@@ -113,7 +113,7 @@ Example of disk configuration:
             </disk_s3_encrypted>
         </disks>
     </storage_configuration>
-</yandex>
+</clickhouse>
 ```
 
 ## Storing Data on Web Server {#storing-data-on-webserver}
@@ -127,7 +127,7 @@ Web server storage is supported only for the [MergeTree](../engines/table-engine
 A ready test case. You need to add this configuration to config:
 
 ``` xml
-<yandex>
+<clickhouse>
     <storage_configuration>
         <disks>
             <web>
@@ -145,7 +145,7 @@ A ready test case. You need to add this configuration to config:
             </web>
         </policies>
     </storage_configuration>
-</yandex>
+</clickhouse>
 ```
 
 And then execute this query:

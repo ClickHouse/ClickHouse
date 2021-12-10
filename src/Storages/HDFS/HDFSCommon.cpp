@@ -1,6 +1,7 @@
 #include <Storages/HDFS/HDFSCommon.h>
 #include <Poco/URI.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <re2/re2.h>
 
 #if USE_HDFS
 #include <Common/ShellCommand.h>
@@ -21,6 +22,7 @@ namespace ErrorCodes
 }
 
 const String HDFSBuilderWrapper::CONFIG_PREFIX = "hdfs";
+const String HDFS_URL_REGEXP = "^hdfs://[^:/]*:[0-9]*/.*";
 
 void HDFSBuilderWrapper::loadFromConfig(const Poco::Util::AbstractConfiguration & config,
     const String & config_path, bool isUser)
@@ -195,6 +197,12 @@ HDFSFSPtr createHDFSFS(hdfsBuilder * builder)
             ErrorCodes::NETWORK_ERROR);
 
     return fs;
+}
+
+void checkHDFSURL(const String & url)
+{
+    if (!re2::RE2::FullMatch(url, HDFS_URL_REGEXP))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Bad hdfs url: {}. It should have structure 'hdfs://<host_name>:<port>/<path>'", url);
 }
 
 }

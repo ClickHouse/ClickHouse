@@ -7,7 +7,7 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/SortedBlocksWriter.h>
-#include <DataStreams/SizeLimits.h>
+#include <QueryPipeline/SizeLimits.h>
 
 namespace DB
 {
@@ -117,6 +117,8 @@ private:
     const size_t max_files_to_merge;
 
     Names lowcard_right_keys;
+
+    Poco::Logger * log;
 
     void changeLeftColumns(Block & block, MutableColumns && columns) const;
     void addRightColumns(Block & block, MutableColumns && columns);

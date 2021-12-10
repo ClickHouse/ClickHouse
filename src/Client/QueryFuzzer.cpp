@@ -21,6 +21,7 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ParserQuery.h>
@@ -144,7 +145,7 @@ Field QueryFuzzer::fuzzField(Field field)
         {
             size_t pos = fuzz_rand() % arr.size();
             arr.erase(arr.begin() + pos);
-            fprintf(stderr, "erased\n");
+            std::cerr << "erased\n";
         }
 
         if (fuzz_rand() % 5 == 0)
@@ -153,12 +154,12 @@ Field QueryFuzzer::fuzzField(Field field)
             {
                 size_t pos = fuzz_rand() % arr.size();
                 arr.insert(arr.begin() + pos, fuzzField(arr[pos]));
-                fprintf(stderr, "inserted (pos %zd)\n", pos);
+                std::cerr << fmt::format("inserted (pos {})\n", pos);
             }
             else
             {
                 arr.insert(arr.begin(), getRandomField(0));
-                fprintf(stderr, "inserted (0)\n");
+                std::cerr << "inserted (0)\n";
             }
 
         }
@@ -278,7 +279,7 @@ void QueryFuzzer::fuzzOrderByList(IAST * ast)
         }
         else
         {
-            fprintf(stderr, "no random col!\n");
+            std::cerr << "No random column.\n";
         }
     }
 
@@ -312,13 +313,9 @@ void QueryFuzzer::fuzzColumnLikeExpressionList(IAST * ast)
                 : impl->children.begin() + fuzz_rand() % impl->children.size();
         auto col = getRandomColumnLike();
         if (col)
-        {
             impl->children.insert(pos, col);
-        }
         else
-        {
-            fprintf(stderr, "no random col!\n");
-        }
+            std::cerr << "No random column.\n";
     }
 
     // We don't have to recurse here to fuzz the children, this is handled by
@@ -450,6 +447,11 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     if (auto * with_union = typeid_cast<ASTSelectWithUnionQuery *>(ast.get()))
     {
         fuzz(with_union->list_of_selects);
+    }
+    else if (auto * with_intersect_except = typeid_cast<ASTSelectIntersectExceptQuery *>(ast.get()))
+    {
+        auto selects = with_intersect_except->getListOfSelects();
+        fuzz(selects);
     }
     else if (auto * tables = typeid_cast<ASTTablesInSelectQuery *>(ast.get()))
     {

@@ -40,6 +40,22 @@ struct QualifiedTableName
         return hash_state.get64();
     }
 
+    std::vector<std::string> getParts() const
+    {
+        if (database.empty())
+            return {table};
+        else
+            return {database, table};
+    }
+
+    std::string getFullName() const
+    {
+        if (database.empty())
+            return table;
+        else
+            return database + '.' + table;
+    }
+
     /// NOTE: It's different from compound identifier parsing and does not support escaping and dots in name.
     /// Usually it's better to use ParserIdentifier instead,
     /// but we parse DDL dictionary name (and similar things) this way for historical reasons.

@@ -13,12 +13,14 @@
  * Define overrides for non-standard allocator-related functions if they are
  * present on the system.
  */
-#define JEMALLOC_OVERRIDE___LIBC_CALLOC
-#define JEMALLOC_OVERRIDE___LIBC_FREE
-#define JEMALLOC_OVERRIDE___LIBC_MALLOC
-#define JEMALLOC_OVERRIDE___LIBC_MEMALIGN
-#define JEMALLOC_OVERRIDE___LIBC_REALLOC
-#define JEMALLOC_OVERRIDE___LIBC_VALLOC
+#if !defined(USE_MUSL)
+    #define JEMALLOC_OVERRIDE___LIBC_CALLOC
+    #define JEMALLOC_OVERRIDE___LIBC_FREE
+    #define JEMALLOC_OVERRIDE___LIBC_MALLOC
+    #define JEMALLOC_OVERRIDE___LIBC_MEMALIGN
+    #define JEMALLOC_OVERRIDE___LIBC_REALLOC
+    #define JEMALLOC_OVERRIDE___LIBC_VALLOC
+#endif
 /* #undef JEMALLOC_OVERRIDE___POSIX_MEMALIGN */
 
 /*
