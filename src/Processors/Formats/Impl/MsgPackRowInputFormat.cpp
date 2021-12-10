@@ -37,7 +37,7 @@ MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, std::unique_
 void MsgPackRowInputFormat::resetParser()
 {
     IRowInputFormat::resetParser();
-    buf.reset();
+    buf->reset();
     visitor.reset();
 }
 
