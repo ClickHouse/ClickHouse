@@ -22,6 +22,8 @@ from rerun_helper import RerunHelper
 from tee_popen import TeePopen
 
 
+DOWNLOAD_RETRIES_COUNT = 5
+
 IMAGES = [
     "clickhouse/integration-tests-runner",
     "clickhouse/mysql-golang-client",
@@ -34,7 +36,7 @@ IMAGES = [
     "clickhouse/integration-helper",
 ]
 
-def get_json_params_dict(check_name, pr_info, docker_images, run_by_hash_total, run_by_hash_num):
+def get_json_params_dict(check_name, pr_info, docker_images):
     return {
         'context_name': check_name,
         'commit': pr_info.sha,
@@ -44,8 +46,6 @@ def get_json_params_dict(check_name, pr_info, docker_images, run_by_hash_total, 
         'shuffle_test_groups': False,
         'use_tmpfs': False,
         'disable_net_host': True,
-        'run_by_hash_total': run_by_hash_total,
-        'run_by_hash_num': run_by_hash_num,
     }
 
 def get_env_for_runner(build_path, repo_path, result_path, work_path):
@@ -107,15 +107,6 @@ if __name__ == "__main__":
 
     check_name = sys.argv[1]
 
-    if 'RUN_BY_HASH_NUM' in os.environ:
-        run_by_hash_num = int(os.getenv('RUN_BY_HASH_NUM'))
-        run_by_hash_total = int(os.getenv('RUN_BY_HASH_TOTAL'))
-        check_name_with_group = check_name + f' [{run_by_hash_num + 1}/{run_by_hash_total}]'
-    else:
-        run_by_hash_num = 0
-        run_by_hash_total = 0
-        check_name_with_group = check_name
-
     if not os.path.exists(temp_path):
         os.makedirs(temp_path)
 
@@ -124,7 +115,7 @@ if __name__ == "__main__":
 
     gh = Github(get_best_robot_token())
 
-    rerun_helper = RerunHelper(gh, pr_info, check_name_with_group)
+    rerun_helper = RerunHelper(gh, pr_info, check_name)
     if rerun_helper.is_already_finished_by_status():
         logging.info("Check is already finished according to github status, exiting")
         sys.exit(0)
@@ -149,7 +140,7 @@ if __name__ == "__main__":
 
     json_path = os.path.join(work_path, 'params.json')
     with open(json_path, 'w', encoding='utf-8') as json_params:
-        json_params.write(json.dumps(get_json_params_dict(check_name, pr_info, images_with_versions, run_by_hash_total, run_by_hash_num)))
+        json_params.write(json.dumps(get_json_params_dict(check_name, pr_info, images_with_versions)))
 
     output_path_log = os.path.join(result_path, "main_script_log.txt")
 
@@ -171,9 +162,9 @@ if __name__ == "__main__":
     mark_flaky_tests(ch_helper, check_name, test_results)
 
     s3_helper = S3Helper('https://s3.amazonaws.com')
-    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [output_path_log] + additional_logs, check_name_with_group, False)
+    report_url = upload_results(s3_helper, pr_info.number, pr_info.sha, test_results, [output_path_log] + additional_logs, check_name, False)
     print(f"::notice ::Report url: {report_url}")
-    post_commit_status(gh, pr_info.sha, check_name_with_group, description, state, report_url)
+    post_commit_status(gh, pr_info.sha, check_name, description, state, report_url)
 
-    prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_results, state, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, check_name_with_group)
+    prepared_events = prepare_tests_results_for_clickhouse(pr_info, test_results, state, stopwatch.duration_seconds, stopwatch.start_time_str, report_url, check_name)
     ch_helper.insert_events_into(db="gh-data", table="checks", events=prepared_events)

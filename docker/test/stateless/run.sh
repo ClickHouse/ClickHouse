@@ -96,13 +96,6 @@ function run_tests()
         ADDITIONAL_OPTIONS+=('8')
     fi
 
-    if [[ -n "$RUN_BY_HASH_NUM" ]] && [[ -n "$RUN_BY_HASH_TOTAL" ]]; then
-        ADDITIONAL_OPTIONS+=('--run-by-hash-num')
-        ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_NUM")
-        ADDITIONAL_OPTIONS+=('--run-by-hash-total')
-        ADDITIONAL_OPTIONS+=("$RUN_BY_HASH_TOTAL")
-    fi
-
     set +e
     clickhouse-test --testname --shard --zookeeper --check-zookeeper-session --hung-check --print-time \
             --test-runs "$NUM_TRIES" "${ADDITIONAL_OPTIONS[@]}" 2>&1 \
