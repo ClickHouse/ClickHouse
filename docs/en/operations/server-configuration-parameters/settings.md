@@ -766,7 +766,7 @@ Default value: `10000`.
 
 ## max_thread_pool_free_size {#max-thread-pool-free-size}
 
-If the number of **idle** threads in the Global Thread pool is greater than `max_thread_pool_free_size` then ClickHouse releases resources occupied by some threads and the pool size is decreased. Threads can be created again if necessary.
+If the number of **idle** threads in the Global Thread pool is greater than `max_thread_pool_free_size`, then ClickHouse releases resources occupied by some threads and the pool size is decreased. Threads can be created again if necessary.
 
 Possible values: 
 
