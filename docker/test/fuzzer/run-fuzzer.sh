@@ -160,7 +160,7 @@ function fuzz
     # Do not set nostop noprint for all signals, because some it may cause gdb to hang,
     # explicitly ignore non-fatal signals that are used by server.
     # Number of SIGRTMIN can be determined only in runtime.
-    RTMIN=`kill -l SIGRTMIN`
+    RTMIN=$(kill -l SIGRTMIN)
     echo "
 set follow-fork-mode parent
 handle SIGHUP nostop noprint pass
