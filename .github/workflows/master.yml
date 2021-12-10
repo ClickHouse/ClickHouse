@@ -799,7 +799,7 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  FunctionalStatelessTestTsan:
+  FunctionalStatelessTestTsan0:
     needs: [BuilderDebTsan]
     runs-on: [self-hosted, func-tester]
     steps:
@@ -816,6 +816,70 @@ jobs:
           CHECK_NAME: 'Stateless tests (thread, actions)'
           REPO_COPY: ${{runner.temp}}/stateless_tsan/ClickHouse
           KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 0
+          RUN_BY_HASH_TOTAL: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestTsan1:
+    needs: [BuilderDebTsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_tsan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (thread, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_tsan/ClickHouse
+          KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestTsan2:
+    needs: [BuilderDebTsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_tsan
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (thread, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_tsan/ClickHouse
+          KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 2
+          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -857,7 +921,7 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  FunctionalStatelessTestMsan:
+  FunctionalStatelessTestMsan0:
     needs: [BuilderDebMsan]
     runs-on: [self-hosted, func-tester]
     steps:
@@ -874,6 +938,8 @@ jobs:
           CHECK_NAME: 'Stateless tests (memory, actions)'
           REPO_COPY: ${{runner.temp}}/stateless_memory/ClickHouse
           KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 0
+          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -886,7 +952,69 @@ jobs:
           docker kill $(docker ps -q) ||:
           docker rm -f $(docker ps -a -q) ||:
           sudo rm -fr $TEMP_PATH
-  FunctionalStatelessTestDebug:
+  FunctionalStatelessTestMsan1:
+    needs: [BuilderDebMsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_memory
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (memory, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_memory/ClickHouse
+          KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestMsan2:
+    needs: [BuilderDebMsan]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_memory
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (memory, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_memory/ClickHouse
+          KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 2
+          RUN_BY_HASH_TOTAL: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestDebug0:
     needs: [BuilderDebDebug]
     runs-on: [self-hosted, func-tester]
     steps:
@@ -903,6 +1031,70 @@ jobs:
           CHECK_NAME: 'Stateless tests (debug, actions)'
           REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
           KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 0
+          RUN_BY_HASH_TOTAL: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestDebug1:
+    needs: [BuilderDebDebug]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (debug, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
+          KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 1
+          RUN_BY_HASH_TOTAL: 3
+        run: |
+          sudo rm -fr $TEMP_PATH
+          mkdir -p $TEMP_PATH
+          cp -r $GITHUB_WORKSPACE $TEMP_PATH
+          cd $REPO_COPY/tests/ci
+          python3 functional_test_check.py "$CHECK_NAME" $KILL_TIMEOUT
+      - name: Cleanup
+        if: always()
+        run: |
+          docker kill $(docker ps -q) ||:
+          docker rm -f $(docker ps -a -q) ||:
+          sudo rm -fr $TEMP_PATH
+  FunctionalStatelessTestDebug2:
+    needs: [BuilderDebDebug]
+    runs-on: [self-hosted, func-tester]
+    steps:
+      - name: Download json reports
+        uses: actions/download-artifact@v2
+        with:
+          path: ${{runner.temp}}/reports_dir
+      - name: Check out repository code
+        uses: actions/checkout@v2
+      - name: Functional test
+        env:
+          TEMP_PATH: ${{runner.temp}}/stateless_debug
+          REPORTS_PATH: ${{runner.temp}}/reports_dir
+          CHECK_NAME: 'Stateless tests (debug, actions)'
+          REPO_COPY: ${{runner.temp}}/stateless_debug/ClickHouse
+          KILL_TIMEOUT: 10800
+          RUN_BY_HASH_NUM: 2
+          RUN_BY_HASH_TOTAL: 3
         run: |
           sudo rm -fr $TEMP_PATH
           mkdir -p $TEMP_PATH
@@ -1641,12 +1833,18 @@ jobs:
     needs:
       - DockerHubPush
       - BuilderReport
-      - FunctionalStatelessTestDebug
+      - FunctionalStatelessTestDebug0
+      - FunctionalStatelessTestDebug1
+      - FunctionalStatelessTestDebug2
       - FunctionalStatelessTestRelease
       - FunctionalStatelessTestReleaseDatabaseOrdinary
       - FunctionalStatelessTestAsan
-      - FunctionalStatelessTestTsan
-      - FunctionalStatelessTestMsan
+      - FunctionalStatelessTestTsan0
+      - FunctionalStatelessTestTsan1
+      - FunctionalStatelessTestTsan2
+      - FunctionalStatelessTestMsan0
+      - FunctionalStatelessTestMsan1
+      - FunctionalStatelessTestMsan2
       - FunctionalStatelessTestUBsan
       - FunctionalStatefulTestDebug
       - FunctionalStatefulTestRelease
