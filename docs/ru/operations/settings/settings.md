@@ -807,26 +807,6 @@ ClickHouse может парсить только базовый формат `Y
 
 Значение по умолчанию: 2013265920.
 
-## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
-
-Задает интервал в секундах для удаления старых временных каталогов на сервере ClickHouse.
-
-Возможные значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: `60` секунд.
-
-## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
-
-Задает интервал в секундах для удаления старых кусков данных, журналов предзаписи (WAL) и мутаций на сервере ClickHouse .
-
-Возможные значения:
-
--   Положительное целое число.
-
-Значение по умолчанию: `1` секунда.
-
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
 Минимальный объём данных, необходимый для прямого (небуферизованного) чтения/записи (direct I/O) на диск.
@@ -912,11 +892,18 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 ## log_query_threads {#settings-log-query-threads}
 
-Установка логирования информации о потоках выполнения запроса.
+Управляет логированием информации о потоках выполнения запросов.
 
-Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log).
+Информация о потоках выполнения запросов сохраняется в системной таблице [system.query_thread_log](../../operations/system-tables/query_thread_log.md). Работает только в том случае, если включена настройка [log_queries](#settings-log-queries). Лог информации о потоках выполнения запросов, переданных в ClickHouse с этой установкой, записывается согласно правилам конфигурационного параметра сервера [query_thread_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log).
 
-Пример:
+Возможные значения:
+
+-   0 — отключено.
+-   1 — включено.
+
+Значение по умолчанию: `1`.
+
+**Пример**
 
 ``` text
 log_query_threads=1
@@ -3808,6 +3795,40 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 Значение по умолчанию: `0`.
 
+## alter_partition_verbose_result {#alter-partition-verbose-result}
+
+Включает или отключает вывод информации о кусках, к которым были успешно применены операции манипуляции с партициями и кусками. Применимо к [ATTACH PARTITION|PART](../../sql-reference/statements/alter/partition.md#alter_attach-partition) и к [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition)
+
+Возможные значения:
+
+-   0 — отображение отключено.
+-   1 — отображение включено.
+
+Значение по умолчанию: `0`.
+
+**Пример**
+
+```sql
+CREATE TABLE test(a Int64, d Date, s String) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY a;
+INSERT INTO test VALUES(1, '2021-01-01', '');
+INSERT INTO test VALUES(1, '2021-01-01', '');
+ALTER TABLE test DETACH PARTITION ID '202101';
+
+ALTER TABLE test ATTACH PARTITION ID '202101' SETTINGS alter_partition_verbose_result = 1;
+
+┌─command_type─────┬─partition_id─┬─part_name────┬─old_part_name─┐
+│ ATTACH PARTITION │ 202101       │ 202101_7_7_0 │ 202101_5_5_0  │
+│ ATTACH PARTITION │ 202101       │ 202101_8_8_0 │ 202101_6_6_0  │
+└──────────────────┴──────────────┴──────────────┴───────────────┘
+
+ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
+
+┌─command_type─┬─partition_id─┬─part_name────┬─backup_name─┬─backup_path───────────────────┬─part_backup_path────────────────────────────────────────────┐
+│ FREEZE ALL   │ 202101       │ 202101_7_7_0 │ 8           │ /var/lib/clickhouse/shadow/8/ │ /var/lib/clickhouse/shadow/8/data/default/test/202101_7_7_0 │
+│ FREEZE ALL   │ 202101       │ 202101_8_8_0 │ 8           │ /var/lib/clickhouse/shadow/8/ │ /var/lib/clickhouse/shadow/8/data/default/test/202101_8_8_0 │
+└──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
+```
+
 ## format_capn_proto_enum_comparising_mode {#format-capn-proto-enum-comparising-mode}
 
 Определяет, как сопоставить тип данных ClickHouse `Enum` и тип данных `Enum` формата [CapnProto](../../interfaces/formats.md#capnproto) из схемы.
@@ -3830,3 +3851,54 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 -   0 — большие файлы считываются только с копированием данных из ядра в пространство пользователей.
 
 Значение по умолчанию: `0`.
+
+## format_custom_escaping_rule {#format-custom-escaping-rule}
+
+Устанавливает правило экранирования данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Возможные значения:
+
+-   `'Escaped'` — как в формате [TSV](../../interfaces/formats.md#tabseparated).
+-   `'Quoted'` — как в формате [Values](../../interfaces/formats.md#data-format-values).
+-   `'CSV'` — как в формате [CSV](../../interfaces/formats.md#csv).
+-   `'JSON'` — как в формате [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+-   `'XML'` — как в формате [XML](../../interfaces/formats.md#xml).
+-   `'Raw'` — данные импортируются как есть, без экранирования, как в формате [TSVRaw](../../interfaces/formats.md#tabseparatedraw).
+
+Значение по умолчанию: `'Escaped'`.
+
+## format_custom_field_delimiter {#format-custom-field-delimiter}
+
+Задает символ, который интерпретируется как разделитель между полями данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `'\t'`.
+
+## format_custom_row_before_delimiter {#format-custom-row-before-delimiter}
+
+Задает символ, который интерпретируется как разделитель перед полем первого столбца данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `''`.
+
+## format_custom_row_after_delimiter {#format-custom-row-after-delimiter}
+
+Задает символ, который интерпретируется как разделитель после поля последнего столбца данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `'\n'`.
+
+## format_custom_row_between_delimiter {#format-custom-row-between-delimiter}
+
+Задает символ, который интерпретируется как разделитель между строками данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `''`.
+
+## format_custom_result_before_delimiter {#format-custom-result-before-delimiter}
+
+Задает символ, который интерпретируется как префикс перед результирующим набором данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `''`.
+
+## format_custom_result_after_delimiter {#format-custom-result-after-delimiter}
+
+Задает символ, который интерпретируется как суффикс после результирующего набора данных формата [CustomSeparated](../../interfaces/formats.md#format-customseparated).
+
+Значение по умолчанию: `''`.

@@ -1026,7 +1026,6 @@ void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String
 
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
 {
-    /// Slightly suboptimal.
     auto hash = table_expression->getTreeHash();
     String key = toString(hash.first) + '_' + toString(hash.second);
 
@@ -1035,9 +1034,20 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression)
     if (!res)
     {
         TableFunctionPtr table_function_ptr = TableFunctionFactory::instance().get(table_expression, shared_from_this());
-
-        /// Run it and remember the result
         res = table_function_ptr->execute(table_expression, shared_from_this(), table_function_ptr->getName());
+
+        /// Since ITableFunction::parseArguments() may change table_expression, i.e.:
+        ///
+        ///     remote('127.1', system.one) -> remote('127.1', 'system.one'),
+        ///
+        auto new_hash = table_expression->getTreeHash();
+        if (hash != new_hash)
+        {
+            key = toString(new_hash.first) + '_' + toString(new_hash.second);
+            table_function_results[key] = res;
+        }
+
+        return res;
     }
 
     return res;
@@ -2952,7 +2962,7 @@ PartUUIDsPtr Context::getPartUUIDs() const
 ReadTaskCallback Context::getReadTaskCallback() const
 {
     if (!next_task_callback.has_value())
-        throw Exception(fmt::format("Next task callback is not set for query {}", getInitialQueryId()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Next task callback is not set for query {}", getInitialQueryId());
     return next_task_callback.value();
 }
 
@@ -2960,6 +2970,20 @@ ReadTaskCallback Context::getReadTaskCallback() const
 void Context::setReadTaskCallback(ReadTaskCallback && callback)
 {
     next_task_callback = callback;
+}
+
+
+MergeTreeReadTaskCallback Context::getMergeTreeReadTaskCallback() const
+{
+    if (!merge_tree_read_task_callback.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Next task callback for is not set for query {}", getInitialQueryId());
+
+    return merge_tree_read_task_callback.value();
+}
+
+void Context::setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback)
+{
+    merge_tree_read_task_callback = callback;
 }
 
 PartUUIDsPtr Context::getIgnoredPartUUIDs() const
