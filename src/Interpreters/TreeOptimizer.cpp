@@ -4,6 +4,9 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/OptimizeIfChains.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
+#include <Interpreters/WhereConstraintsOptimizer.h>
+#include <Interpreters/SubstituteColumnOptimizer.h>
+#include <Interpreters/TreeCNFConverter.h>
 #include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
 #include <Interpreters/DuplicateOrderByVisitor.h>
 #include <Interpreters/GroupByFunctionKeysVisitor.h>
@@ -164,7 +167,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, ContextPtr context)
                 if (value.getType() == Field::Types::UInt64)
                 {
                     auto pos = value.get<UInt64>();
-                    if (pos > 0 && pos <= select_query->children.size())
+                    if (pos > 0 && pos <= select_query->select()->children.size())
                         keep_position = true;
                 }
             }
@@ -539,6 +542,44 @@ void optimizeLimitBy(const ASTSelectQuery * select_query)
         elems = std::move(unique_elems);
 }
 
+/// Use constraints to get rid of useless parts of query
+void optimizeWithConstraints(ASTSelectQuery * select_query,
+                             Aliases & /*aliases*/,
+                             const NameSet & /*source_columns_set*/,
+                             const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
+                             const StorageMetadataPtr & metadata_snapshot,
+                             const bool optimize_append_index)
+{
+    WhereConstraintsOptimizer(select_query, metadata_snapshot, optimize_append_index).perform();
+}
+
+void optimizeSubstituteColumn(ASTSelectQuery * select_query,
+                              Aliases & /*aliases*/,
+                              const NameSet & /*source_columns_set*/,
+                              const std::vector<TableWithColumnNamesAndTypes> & /*tables_with_columns*/,
+                              const StorageMetadataPtr & metadata_snapshot,
+                              const ConstStoragePtr & storage)
+{
+    SubstituteColumnOptimizer(select_query, metadata_snapshot, storage).perform();
+}
+
+/// Transform WHERE to CNF for more convenient optimization.
+bool convertQueryToCNF(ASTSelectQuery * select_query)
+{
+    if (select_query->where())
+    {
+        auto cnf_form = TreeCNFConverter::tryConvertToCNF(select_query->where());
+        if (!cnf_form)
+            return false;
+
+        cnf_form->pushNotInFuntions();
+        select_query->refWhere() = TreeCNFConverter::fromCNF(*cnf_form);
+        return true;
+    }
+
+    return false;
+}
+
 /// Remove duplicated columns from USING(...).
 void optimizeUsing(const ASTSelectQuery * select_query)
 {
@@ -699,6 +740,20 @@ void TreeOptimizer::apply(ASTPtr & query, TreeRewriterResult & result,
     /// Move arithmetic operations out of aggregation functions
     if (settings.optimize_arithmetic_operations_in_aggregate_functions)
         optimizeAggregationFunctions(query);
+
+    bool converted_to_cnf = false;
+    if (settings.convert_query_to_cnf)
+        converted_to_cnf = convertQueryToCNF(select_query);
+
+    if (converted_to_cnf && settings.optimize_using_constraints)
+    {
+        optimizeWithConstraints(select_query, result.aliases, result.source_columns_set,
+            tables_with_columns, result.metadata_snapshot, settings.optimize_append_index);
+
+        if (settings.optimize_substitute_columns)
+            optimizeSubstituteColumn(select_query, result.aliases, result.source_columns_set,
+                tables_with_columns, result.metadata_snapshot, result.storage);
+    }
 
     /// GROUP BY injective function elimination.
     optimizeGroupBy(select_query, context);

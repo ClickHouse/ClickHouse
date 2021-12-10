@@ -131,7 +131,7 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 ```xml
 <encryption_codecs>
     <aes_128_gcm_siv>
-        <nonce>0123456789101</nonce>
+        <nonce>012345678910</nonce>
     </aes_128_gcm_siv>
 </encryption_codecs>
 ```
@@ -999,14 +999,14 @@ ClickHouse проверяет условия для `min_part_size` и `min_part
 
 Настройки логирования информации о зависимых представлениях (materialized, live и т.п.) в запросах принятых с настройкой [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views).
 
-Запросы сохраняются в таблицу system.query_views_log. Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
+Запросы логируются в таблице [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log). Вы можете изменить название этой таблицы в параметре `table` (см. ниже).
 
 При настройке логирования используются следующие параметры:
 
 -   `database` – имя базы данных.
--   `table` – имя таблицы куда будут записываться использованные представления.
--   `partition_by` — устанавливает [произвольный ключ партиционирования](../../engines/table-engines/mergetree-family/custom-partitioning-key.md). Нельзя использовать если используется `engine`
--   `engine` - устанавливает [настройки MergeTree Engine](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) для системной таблицы. Нельзя использовать если используется `partition_by`.
+-   `table` – имя системной таблицы, где будут логироваться запросы.
+-   `partition_by` — устанавливает [произвольный ключ партиционирования](../../engines/table-engines/mergetree-family/custom-partitioning-key.md). Нельзя использовать, если задан параметр `engine`.
+-   `engine` — устанавливает [настройки MergeTree Engine](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) для системной таблицы. Нельзя использовать, если задан параметр `partition_by`.
 -   `flush_interval_milliseconds` — период сброса данных из буфера в памяти в таблицу.
 
 Если таблица не существует, то ClickHouse создаст её. Если структура журнала запросов изменилась при обновлении сервера ClickHouse, то таблица со старой структурой переименовывается, а новая таблица создается автоматически.
@@ -1432,3 +1432,54 @@ ClickHouse использует ZooKeeper для хранения метадан
         </roles>
 </ldap>
 ```
+
+## total_memory_profiler_step {#total-memory-profiler-step}
+
+Задает размер памяти (в байтах) для трассировки стека на каждом шаге выделения максимума памяти. Данные хранятся в системной таблице [system.trace_log](../../operations/system-tables/trace_log.md) с `query_id`, равным пустой строке.
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `4194304`.
+
+## total_memory_tracker_sample_probability {#total-memory-tracker-sample-probability}
+
+Позволяет собирать случайные выделения и освобождения памяти и записывать их в системную таблицу [system.trace_log](../../operations/system-tables/trace_log.md) с `trace_type`, равным `MemorySample`, с указанной вероятностью. Вероятность касается каждого выделения или освобождения памяти, независимо от размера выделения. Обратите внимание, что выборка происходит только тогда, когда объем неотслеживаемой памяти превышает лимит неотслеживаемой памяти (значение по умолчанию: `4` MiB). Значение настройки может быть уменьшено, если значение настройки [total_memory_profiler_step](#total-memory-profiler-step) уменьшено. Вы можете установить значение настройки `total_memory_profiler_step`, равным `1`, для особой детализованной выборки.
+
+Возможные значения:
+
+-   Положительное целое число.
+-   0 — запись случайных выделений и освобождений памяти в системную таблицу `system.trace_log` отключена.
+
+Значение по умолчанию: `0`.
+
+## mmap_cache_size {#mmap-cache-size}
+
+Задает размер кеша (в байтах) для сопоставленных файлов. Эта настройка позволяет избежать частых открытых/[mmap/munmap](https://en.wikipedia.org/wiki/Mmap)/закрытых вызовов (очень дорогостоящие из-за последующих ошибок страниц) и повторного использования сопоставления из нескольких потоков и запросов. Значение настройки — это количество сопоставленных областей (обычно равно количеству сопоставленных файлов). Объем данных в сопоставленных файлах можно отслеживать в системных таблицах [system.metrics](../../operations/system-tables/metrics.md), [system.metric_log](../../operations/system-tables/metric_log.md) по метрикам `MMappedFiles` и `MMappedFileBytes`, в таблицах [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md), [system.asynchronous_metrics_log](../../operations/system-tables/asynchronous_metric_log.md) по метрике `MMapCacheCells`, а также в [system.events](../../operations/system-tables/events.md), [system.processes](../../operations/system-tables/processes.md), [system.query_log](../../operations/system-tables/query_log.md), [system.query_thread_log](../../operations/system-tables/query_thread_log.md), [system.query_views_log](../../operations/system-tables/query_views_log.md) по событиям `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses`. Обратите внимание, что объем данных в сопоставленных файлах не потребляет память напрямую и не учитывается в запросе или использовании памяти сервера, поскольку эта память может быть удалена аналогично кешу страниц ОС. Кеш удаляется (т.е. файлы закрываются) автоматически при удалении старых кусков в таблицах семейства [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md), также его можно удалить вручную с помощью запроса `SYSTEM DROP MMAP CACHE`.
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `1000`.
+
+## compiled_expression_cache_size {#compiled-expression-cache-size}
+
+Задает размер кеша (в байтах) для [скомпилированных выражений](../../operations/caches.md).
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `134217728`.
+
+## compiled_expression_cache_elements_size {#compiled_expression_cache_elements_size}
+
+Задает размер кеша (в элементах) для [скомпилированных выражений](../../operations/caches.md).
+
+Возможные значения:
+
+-   Положительное целое число.
+
+Значение по умолчанию: `10000`.

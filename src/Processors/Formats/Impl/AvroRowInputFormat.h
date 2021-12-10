@@ -107,12 +107,13 @@ class AvroRowInputFormat : public IRowInputFormat
 {
 public:
     AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
-    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
-    void readPrefix() override;
 
     String getName() const override { return "AvroRowInputFormat"; }
 
 private:
+    bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+    void readPrefix() override;
+
     std::unique_ptr<avro::DataFileReaderBase> file_reader_ptr;
     std::unique_ptr<AvroDeserializer> deserializer_ptr;
     bool allow_missing_fields;
@@ -128,14 +129,16 @@ class AvroConfluentRowInputFormat : public IRowInputFormat
 {
 public:
     AvroConfluentRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_);
-    virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     String getName() const override { return "AvroConfluentRowInputFormat"; }
 
     class SchemaRegistry;
-protected:
+
+private:
+    virtual bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
+
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
-private:
+
     std::shared_ptr<SchemaRegistry> schema_registry;
     using SchemaId = uint32_t;
     std::unordered_map<SchemaId, AvroDeserializer> deserializer_cache;
