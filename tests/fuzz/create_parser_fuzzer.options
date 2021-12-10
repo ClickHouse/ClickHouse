@@ -1,3 +1,2 @@
 [libfuzzer]
-dict = all.dict
-jobs = 8
+dict = ast.dict

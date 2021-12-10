@@ -33,7 +33,7 @@ toc_title: Nullable
 
 **Пример**
 
-Запрос:
+Запрос: 
 
 ``` sql
 CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();

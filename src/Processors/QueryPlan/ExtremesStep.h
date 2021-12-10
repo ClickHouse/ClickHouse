@@ -11,7 +11,7 @@ public:
 
     String getName() const override { return "Extremes"; }
 
-    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+    void transformPipeline(QueryPipeline & pipeline, const BuildQueryPipelineSettings &) override;
 };
 
 }

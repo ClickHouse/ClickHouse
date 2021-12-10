@@ -1,7 +1,6 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 #include <IO/WriteHelpers.h>
@@ -32,7 +31,7 @@ static bool tryExtractConstValueFromCondition(const ASTPtr & condition, bool & v
     /// We should allow any constant condition (or maybe remove this optimization completely) later.
     if (const auto * function = condition->as<ASTFunction>())
     {
-        if (isFunctionCast(function))
+        if (function->name == "CAST")
         {
             if (const auto * expr_list = function->arguments->as<ASTExpressionList>())
             {

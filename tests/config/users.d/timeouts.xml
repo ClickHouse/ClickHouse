@@ -1,16 +1,9 @@
-<clickhouse>
+<yandex>
     <profiles>
         <default>
             <!-- Default HTTP timeout is 30 minutes. Set it to 1 minute. -->
             <http_send_timeout>60</http_send_timeout>
             <http_receive_timeout>60</http_receive_timeout>
-            <!-- 1 minute (default is 10 minutes) -->
-            <insert_quorum_timeout>60000</insert_quorum_timeout>
-            <!-- 30 seconds (default is 2 minutes) -->
-            <replication_wait_for_inactive_replica_timeout>30</replication_wait_for_inactive_replica_timeout>
-
-            <!-- Increase timeout for async INSERT to avoid flakiness in tests -->
-            <async_insert_busy_timeout_ms>5000</async_insert_busy_timeout_ms>
         </default>
     </profiles>
-</clickhouse>
+</yandex>

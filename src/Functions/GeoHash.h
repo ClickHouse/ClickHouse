@@ -2,7 +2,7 @@
 
 #include <map>
 #include <vector>
-#include <base/types.h>
+#include <common/types.h>
 
 
 namespace DB

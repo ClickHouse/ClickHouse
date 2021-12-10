@@ -12,15 +12,6 @@ class Context;
  */
 class ITableFunctionFileLike : public ITableFunction
 {
-
-protected:
-    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
-
-    String filename;
-    String format;
-    String structure;
-    String compression_method = "auto";
-
 private:
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns) const override;
 
@@ -30,6 +21,13 @@ private:
 
     ColumnsDescription getActualTableStructure(ContextPtr context) const override;
 
+    void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
+
     bool hasStaticStructure() const override { return true; }
+
+    String filename;
+    String format;
+    String structure;
+    String compression_method = "auto";
 };
 }

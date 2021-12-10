@@ -3,16 +3,15 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/queryNormalization.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Common/typeid_cast.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
-#include <base/logger_useful.h>
+#include <DataStreams/IBlockInputStream.h>
+#include <common/logger_useful.h>
 #include <chrono>
 
 
@@ -24,7 +23,6 @@ namespace ErrorCodes
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING;
     extern const int LOGICAL_ERROR;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 
@@ -204,6 +202,7 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
             if (query_context->hasTraceCollector())
             {
                 /// Set up memory profiling
+                thread_group->memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
                 thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
                 thread_group->memory_tracker.setSampleProbability(settings.memory_profiler_sample_probability);
             }
@@ -238,6 +237,9 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
 ProcessListEntry::~ProcessListEntry()
 {
+    /// Destroy all streams to avoid long lock of ProcessList
+    it->releaseQueryStreams();
+
     std::lock_guard lock(parent.mutex);
 
     String user = it->getClientInfo().current_user;
@@ -291,59 +293,77 @@ QueryStatus::QueryStatus(
     , query(query_)
     , client_info(client_info_)
     , priority_handle(std::move(priority_handle_))
+    , num_queries_increment{CurrentMetrics::Query}
 {
-    auto settings = getContext()->getSettings();
-    limits.max_execution_time = settings.max_execution_time;
-    overflow_mode = settings.timeout_overflow_mode;
 }
 
-QueryStatus::~QueryStatus()
+QueryStatus::~QueryStatus() = default;
+
+void QueryStatus::setQueryStreams(const BlockIO & io)
 {
-    assert(executors.empty());
+    std::lock_guard lock(query_streams_mutex);
+
+    query_stream_in = io.in;
+    query_stream_out = io.out;
+    query_streams_status = QueryStreamsStatus::Initialized;
 }
 
-CancellationCode QueryStatus::cancelQuery(bool)
+void QueryStatus::releaseQueryStreams()
 {
-    if (is_killed.load())
-        return CancellationCode::CancelSent;
+    BlockInputStreamPtr in;
+    BlockOutputStreamPtr out;
 
-    is_killed.store(true);
+    {
+        std::lock_guard lock(query_streams_mutex);
 
-    std::lock_guard lock(executors_mutex);
-    for (auto * e : executors)
-        e->cancel();
+        query_streams_status = QueryStreamsStatus::Released;
+        in = std::move(query_stream_in);
+        out = std::move(query_stream_out);
+    }
 
-    return CancellationCode::CancelSent;
+    /// Destroy streams outside the mutex lock
 }
 
-void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
+bool QueryStatus::streamsAreReleased()
 {
-    std::lock_guard lock(executors_mutex);
-    assert(std::find(executors.begin(), executors.end(), e) == executors.end());
-    executors.push_back(e);
+    std::lock_guard lock(query_streams_mutex);
+
+    return query_streams_status == QueryStreamsStatus::Released;
 }
 
-void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
+bool QueryStatus::tryGetQueryStreams(BlockInputStreamPtr & in, BlockOutputStreamPtr & out) const
 {
-    std::lock_guard lock(executors_mutex);
-    assert(std::find(executors.begin(), executors.end(), e) != executors.end());
-    std::erase_if(executors, [e](PipelineExecutor * x) { return x == e; });
-}
+    std::lock_guard lock(query_streams_mutex);
 
-bool QueryStatus::checkTimeLimit()
-{
-    if (is_killed.load())
-        throw Exception("Query was cancelled", ErrorCodes::QUERY_WAS_CANCELLED);
-
-    return limits.checkTimeLimit(watch, overflow_mode);
-}
-
-bool QueryStatus::checkTimeLimitSoft()
-{
-    if (is_killed.load())
+    if (query_streams_status != QueryStreamsStatus::Initialized)
         return false;
 
-    return limits.checkTimeLimit(watch, OverflowMode::BREAK);
+    in = query_stream_in;
+    out = query_stream_out;
+    return true;
+}
+
+CancellationCode QueryStatus::cancelQuery(bool kill)
+{
+    /// Streams are destroyed, and ProcessListElement will be deleted from ProcessList soon. We need wait a little bit
+    if (streamsAreReleased())
+        return CancellationCode::CancelSent;
+
+    BlockInputStreamPtr input_stream;
+    BlockOutputStreamPtr output_stream;
+
+    if (tryGetQueryStreams(input_stream, output_stream))
+    {
+        if (input_stream)
+        {
+            input_stream->cancel(kill);
+            return CancellationCode::CancelSent;
+        }
+        return CancellationCode::CancelCannotBeSent;
+    }
+    /// Query is not even started
+    is_killed.store(true);
+    return CancellationCode::CancelSent;
 }
 
 
@@ -427,7 +447,7 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         }
 
         if (get_profile_events)
-            res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+            res.profile_counters = std::make_shared<ProfileEvents::Counters>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
     }
 
     if (get_settings && getContext())
@@ -465,7 +485,7 @@ ProcessListForUserInfo ProcessListForUser::getInfo(bool get_profile_events) cons
     res.peak_memory_usage = user_memory_tracker.getPeak();
 
     if (get_profile_events)
-        res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(user_performance_counters.getPartiallyAtomicSnapshot());
+        res.profile_counters = std::make_shared<ProfileEvents::Counters>(user_performance_counters.getPartiallyAtomicSnapshot());
 
     return res;
 }

@@ -8,7 +8,7 @@
 #include <Common/Exception.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <base/logger_useful.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -125,12 +125,6 @@ HDFSBuilderWrapper createHDFSBuilder(const String & uri_str, const Poco::Util::A
     if (host.empty())
         throw Exception("Illegal HDFS URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
-    // Shall set env LIBHDFS3_CONF *before* HDFSBuilderWrapper construction.
-    const String & libhdfs3_conf = config.getString(HDFSBuilderWrapper::CONFIG_PREFIX + ".libhdfs3_conf", "");
-    if (!libhdfs3_conf.empty())
-    {
-        setenv("LIBHDFS3_CONF", libhdfs3_conf.c_str(), 1);
-    }
     HDFSBuilderWrapper builder;
     if (builder.get() == nullptr)
         throw Exception("Unable to create builder to connect to HDFS: " +

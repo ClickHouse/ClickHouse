@@ -1,5 +1,6 @@
-#include "config_functions.h"
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 namespace DB
 {
@@ -36,22 +37,12 @@ void registerFunctionCountMatches(FunctionFactory &);
 void registerFunctionEncodeXMLComponent(FunctionFactory &);
 void registerFunctionDecodeXMLComponent(FunctionFactory &);
 void registerFunctionExtractTextFromHTML(FunctionFactory &);
-void registerFunctionToStringCutToZero(FunctionFactory &);
+
 
 #if USE_BASE64
 void registerFunctionBase64Encode(FunctionFactory &);
 void registerFunctionBase64Decode(FunctionFactory &);
 void registerFunctionTryBase64Decode(FunctionFactory &);
-#endif
-
-#if USE_NLP
-void registerFunctionStem(FunctionFactory &);
-void registerFunctionSynonyms(FunctionFactory &);
-void registerFunctionLemmatize(FunctionFactory &);
-#endif
-
-#if USE_ICU
-void registerFunctionNormalizeUTF8(FunctionFactory &);
 #endif
 
 void registerFunctionsString(FunctionFactory & factory)
@@ -86,22 +77,10 @@ void registerFunctionsString(FunctionFactory & factory)
     registerFunctionEncodeXMLComponent(factory);
     registerFunctionDecodeXMLComponent(factory);
     registerFunctionExtractTextFromHTML(factory);
-    registerFunctionToStringCutToZero(factory);
-
 #if USE_BASE64
     registerFunctionBase64Encode(factory);
     registerFunctionBase64Decode(factory);
     registerFunctionTryBase64Decode(factory);
-#endif
-
-#if USE_NLP
-    registerFunctionStem(factory);
-    registerFunctionSynonyms(factory);
-    registerFunctionLemmatize(factory);
-#endif
-
-#if USE_ICU
-    registerFunctionNormalizeUTF8(factory);
 #endif
 }
 
