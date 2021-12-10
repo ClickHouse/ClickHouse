@@ -59,14 +59,12 @@ class S3:
         "https://s3.amazonaws.com/"
         # "clickhouse-builds/"
         "{bucket_name}/"
-        # "33333/" or "0/"
+        # "33333/" or "21.11/" from --release, if pull request is omitted
         "{pr}/"
         # "2bef313f75e4cacc6ea2ef2133e8849ecf0385ec/"
         "{commit}/"
-        # "clickhouse_build_check_(actions)/"
+        # "package_release/"
         "{check_name}/"
-        # "clang-13_relwithdebuginfo_memory_bundled_unsplitted_notidy_without_coverage_deb/"
-        "{build_name}/"
         # "clickhouse-common-static_21.11.5.0_amd64.deb"
         "{package}"
     )
@@ -77,7 +75,6 @@ class S3:
         pr: int,
         commit: str,
         check_name: str,
-        build_name: str,
         version: str,
     ):
         self._common = dict(
@@ -85,7 +82,6 @@ class S3:
             pr=pr,
             commit=commit,
             check_name=check_name,
-            build_name=build_name,
         )
         self.packages = Packages(version)
 
@@ -107,16 +103,22 @@ class Release:
         r = re.compile(r"^v\d{2}[.]\d+[.]\d+[.]\d+-(testing|prestable|stable|lts)$")
         if not r.match(name):
             raise argparse.ArgumentTypeError(
-                "release name does not match v12.13.14-TYPE pattern"
+                "release name does not match "
+                "v12.1.2.15-(testing|prestable|stable|lts) pattern"
             )
         self._name = name
         self._version = self._name.removeprefix("v")
-        self._version = self._version.split("-")[0]
+        self._version = self.version.split("-")[0]
+        self._version_parts = tuple(self.version.split("."))
         self._type = self._name.split("-")[-1]
 
     @property
     def version(self) -> str:
         return self._version
+
+    @property
+    def version_parts(self) -> str:
+        return self._version_parts
 
     @property
     def type(self) -> str:
@@ -187,11 +189,22 @@ def parse_args() -> argparse.Namespace:
         "artifactory. ENV variables JFROG_API_KEY and JFROG_TOKEN are used "
         "for authentication in the given order",
     )
-    parser.add_argument("--pull-request", type=int, default=0, help="release name")
+    parser.add_argument(
+        "--release",
+        required=True,
+        type=Release,
+        help="release name, e.g. v12.13.14.15-prestable",
+    )
+    parser.add_argument(
+        "--pull-request",
+        type=int,
+        default=0,
+        help="pull request number; if PR is omitted, the first two numbers "
+        "from release will be used, e.g. 12.11",
+    )
     parser.add_argument(
         "--commit", required=True, type=commit, help="commit hash for S3 bucket"
     )
-    parser.add_argument("--release", required=True, type=Release, help="release name")
     parser.add_argument(
         "--bucket-name",
         default="clickhouse-builds",
@@ -199,15 +212,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--check-name",
-        default="ClickHouse build check (actions)",
+        default="package_release",
         help="check name, a part of bucket path, "
         "will be converted to lower case with spaces->underscore",
-    )
-    parser.add_argument(
-        "--build-name",
-        default="clang-13_relwithdebuginfo_none_bundled_"
-        "unsplitted_notidy_without_coverage_deb",
-        help="build name, a part of bucket path",
     )
     parser.add_argument(
         "--deb", action="store_true", help="if Debian packages should be processed"
@@ -223,6 +230,8 @@ def parse_args() -> argparse.Namespace:
     if not args.deb and not args.rpm:
         parser.error("at least one of --deb and --rpm should be specified")
     args.check_name = args.check_name.lower().replace(" ", "_")
+    if args.pull_request == 0:
+        args.pull_request = ".".join(args.release.version_parts[:2])
     return args
 
 
@@ -234,7 +243,6 @@ def main():
         args.pull_request,
         args.commit,
         args.check_name,
-        args.build_name,
         args.release.version,
     )
     art_client = Artifactory(args.artifactory_url, args.release.type)

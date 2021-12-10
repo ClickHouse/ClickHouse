@@ -108,6 +108,11 @@ public:
 
     bool is_replicated_database_internal = false;
 
+    /// For parallel processing on replicas
+    bool collaborate_with_initiator{false};
+    UInt64 count_participating_replicas{0};
+    UInt64 number_of_current_replica{0};
+
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 
     /** Serialization and deserialization.

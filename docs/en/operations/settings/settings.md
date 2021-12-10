@@ -885,26 +885,6 @@ Possible values:
 
 Default value: 2013265920.
 
-## merge_tree_clear_old_temporary_directories_interval_seconds {#setting-merge-tree-clear-old-temporary-directories-interval-seconds}
-
-Sets the interval in seconds for ClickHouse to execute the cleanup of old temporary directories.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: `60` seconds.
-
-## merge_tree_clear_old_parts_interval_seconds {#setting-merge-tree-clear-old-parts-interval-seconds}
-
-Sets the interval in seconds for ClickHouse to execute the cleanup of old parts, WALs, and mutations.
-
-Possible values:
-
--   Any positive integer.
-
-Default value: `1` second.
-
 ## min_bytes_to_use_direct_io {#settings-min-bytes-to-use-direct-io}
 
 The minimum data volume required for using direct I/O access to the storage disk.
@@ -992,9 +972,16 @@ log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 
 Setting up query threads logging.
 
-Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
+Query threads log into [system.query_thread_log](../../operations/system-tables/query_thread_log.md) table. This setting have effect only when [log_queries](#settings-log-queries) is true. Queries’ threads run by ClickHouse with this setup are logged according to the rules in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server configuration parameter.
 
-Example:
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: `1`.
+
+**Example**
 
 ``` text
 log_query_threads=1
@@ -3691,6 +3678,14 @@ Sets a comma-separated list of PostgreSQL database tables, which will be replica
 
 Default value: empty list — means whole PostgreSQL database will be replicated.
 
+## materialized_postgresql_schema {#materialized-postgresql-schema}
+
+Default value: empty string. (Default schema is used)
+
+## materialized_postgresql_schema_list {#materialized-postgresql-schema-list}
+
+Default value: empty list. (Default schema is used)
+
 ## materialized_postgresql_allow_automatic_update {#materialized-postgresql-allow-automatic-update}
 
 Allows reloading table in the background, when schema changes are detected. DDL queries on the PostgreSQL side are not replicated via ClickHouse [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) engine, because it is not allowed with PostgreSQL logical replication protocol, but the fact of DDL changes is detected transactionally. In this case, the default behaviour is to stop replicating those tables once DDL is detected. However, if this setting is enabled, then, instead of stopping the replication of those tables, they will be reloaded in the background via database snapshot without data losses and replication will continue for them.
@@ -4049,6 +4044,41 @@ Possible values:
 
 Default value: `0`.
 
+## alter_partition_verbose_result {#alter-partition-verbose-result}
+
+Enables or disables the display of information about the parts to which the manipulation operations with partitions and parts have been successfully applied. 
+Applicable to [ATTACH PARTITION|PART](../../sql-reference/statements/alter/partition.md#alter_attach-partition) and to [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition).
+
+Possible values:
+
+-   0 — disable verbosity.
+-   1 — enable verbosity.
+
+Default value: `0`.
+
+**Example**
+
+```sql
+CREATE TABLE test(a Int64, d Date, s String) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY a;
+INSERT INTO test VALUES(1, '2021-01-01', '');
+INSERT INTO test VALUES(1, '2021-01-01', '');
+ALTER TABLE test DETACH PARTITION ID '202101';
+
+ALTER TABLE test ATTACH PARTITION ID '202101' SETTINGS alter_partition_verbose_result = 1;
+
+┌─command_type─────┬─partition_id─┬─part_name────┬─old_part_name─┐
+│ ATTACH PARTITION │ 202101       │ 202101_7_7_0 │ 202101_5_5_0  │
+│ ATTACH PARTITION │ 202101       │ 202101_8_8_0 │ 202101_6_6_0  │
+└──────────────────┴──────────────┴──────────────┴───────────────┘
+
+ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
+
+┌─command_type─┬─partition_id─┬─part_name────┬─backup_name─┬─backup_path───────────────────┬─part_backup_path────────────────────────────────────────────┐
+│ FREEZE ALL   │ 202101       │ 202101_7_7_0 │ 8           │ /var/lib/clickhouse/shadow/8/ │ /var/lib/clickhouse/shadow/8/data/default/test/202101_7_7_0 │
+│ FREEZE ALL   │ 202101       │ 202101_8_8_0 │ 8           │ /var/lib/clickhouse/shadow/8/ │ /var/lib/clickhouse/shadow/8/data/default/test/202101_8_8_0 │
+└──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
+```
+
 ## format_capn_proto_enum_comparising_mode {#format-capn-proto-enum-comparising-mode}
 
 Determines how to map ClickHouse `Enum` data type and [CapnProto](../../interfaces/formats.md#capnproto) `Enum` data type from schema.
@@ -4071,3 +4101,54 @@ Possible values:
 -   0 — Big files read with only copying data from kernel to userspace.
 
 Default value: `0`.
+
+## format_custom_escaping_rule {#format-custom-escaping-rule}
+
+Sets the field escaping rule for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Possible values:
+
+-   `'Escaped'` — Similarly to [TSV](../../interfaces/formats.md#tabseparated).
+-   `'Quoted'` — Similarly to [Values](../../interfaces/formats.md#data-format-values).
+-   `'CSV'` — Similarly to [CSV](../../interfaces/formats.md#csv).
+-   `'JSON'` — Similarly to [JSONEachRow](../../interfaces/formats.md#jsoneachrow).
+-   `'XML'` — Similarly to [XML](../../interfaces/formats.md#xml).
+-   `'Raw'` — Extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](../../interfaces/formats.md#tabseparatedraw).
+
+Default value: `'Escaped'`.
+
+## format_custom_field_delimiter {#format-custom-field-delimiter}
+
+Sets the character that is interpreted as a delimiter between the fields for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `'\t'`.
+
+## format_custom_row_before_delimiter {#format-custom-row-before-delimiter}
+
+Sets the character that is interpreted as a delimiter before the field of the first column for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `''`.
+
+## format_custom_row_after_delimiter {#format-custom-row-after-delimiter}
+
+Sets the character that is interpreted as a delimiter after the field of the last column for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `'\n'`.
+
+## format_custom_row_between_delimiter {#format-custom-row-between-delimiter}
+
+Sets the character that is interpreted as a delimiter between the rows for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `''`.
+
+## format_custom_result_before_delimiter {#format-custom-result-before-delimiter}
+
+Sets the character that is interpreted as a prefix before the result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `''`.
+
+## format_custom_result_after_delimiter {#format-custom-result-after-delimiter}
+
+Sets the character that is interpreted as a suffix after the result set for [CustomSeparated](../../interfaces/formats.md#format-customseparated) data format.
+
+Default value: `''`.
