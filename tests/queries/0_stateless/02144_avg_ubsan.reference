@@ -2,7 +2,13 @@
 
 -- Aggregate function 'avg' allows overflow with two's complement arithmetics.
 -- This contradicts the standard SQL semantic and we are totally fine with it.
-SELECT avg(-8000000000000000000) FROM remote('127.0.0.{1,2,3,4,5,6,7,8,9,10,11}', system.one);
-384883669867978000
-SELECT avg(-8000000000000000000) FROM numbers(11);
-384883669867978000
+
+-- AggregateFunctionAvg::add
+SELECT avg(-8000000000000000000) FROM (SELECT *, 1 AS k FROM numbers(65535*2)) GROUP BY k;
+63121857572613.94
+-- AggregateFunctionAvg::addBatchSinglePlace
+SELECT avg(-8000000000000000000) FROM numbers(65535 * 2);
+63121857572613.94
+-- AggregateFunctionAvg::addBatchSinglePlaceNotNull
+SELECT avg(toNullable(-8000000000000000000)) FROM numbers(65535 * 2);
+63121857572613.94
