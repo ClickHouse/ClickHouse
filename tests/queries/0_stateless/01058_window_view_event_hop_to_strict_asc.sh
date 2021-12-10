@@ -1,10 +1,14 @@
--- Tags: disabled
-SET allow_experimental_window_view = 1;
+#!/usr/bin/env bash
 
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+$CLICKHOUSE_CLIENT --multiquery <<EOF
+SET allow_experimental_window_view = 1;
 DROP TABLE IF EXISTS mt;
 DROP TABLE IF EXISTS dst;
 DROP TABLE IF EXISTS wv;
-DROP TABLE IF EXISTS `.inner.wv`;
 
 CREATE TABLE dst(count UInt64, w_end DateTime) Engine=MergeTree ORDER BY tuple();
 CREATE TABLE mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
@@ -17,10 +21,13 @@ INSERT INTO mt VALUES (1, '1990/01/01 12:00:05');
 INSERT INTO mt VALUES (1, '1990/01/01 12:00:10');
 INSERT INTO mt VALUES (1, '1990/01/01 12:00:11');
 INSERT INTO mt VALUES (1, '1990/01/01 12:00:30');
+EOF
 
-SELECT sleep(3);
-SELECT * from dst order by w_end;
+while true; do
+	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM dst" | grep -q "6" && break || sleep .5 ||:
+done
 
-DROP TABLE wv;
-DROP TABLE mt;
-DROP TABLE dst;
+$CLICKHOUSE_CLIENT --query="SELECT * FROM dst ORDER BY w_end;"
+$CLICKHOUSE_CLIENT --query="DROP TABLE wv"
+$CLICKHOUSE_CLIENT --query="DROP TABLE mt"
+$CLICKHOUSE_CLIENT --query="DROP TABLE dst"
