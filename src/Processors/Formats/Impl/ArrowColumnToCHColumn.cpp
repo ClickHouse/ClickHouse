@@ -272,7 +272,7 @@ static ColumnPtr readByteMapFromArrowColumn(std::shared_ptr<arrow::ChunkedArray>
         for (size_t value_i = 0; value_i != static_cast<size_t>(chunk->length()); ++value_i)
             bytemap_data.emplace_back(chunk->IsNull(value_i));
     }
-    return std::move(nullmap_column);
+    return nullmap_column;
 }
 
 static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedArray> & arrow_column)
@@ -290,7 +290,7 @@ static ColumnPtr readOffsetsFromArrowListColumn(std::shared_ptr<arrow::ChunkedAr
         for (int64_t i = 1; i < arrow_offsets.length(); ++i)
             offsets_data.emplace_back(start + arrow_offsets.Value(i));
     }
-    return std::move(offsets_column);
+    return offsets_column;
 }
 
 static ColumnPtr readColumnWithIndexesData(std::shared_ptr<arrow::ChunkedArray> & arrow_column)
