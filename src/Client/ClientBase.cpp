@@ -1414,9 +1414,6 @@ void ClientBase::runInteractive()
         highlight_callback = highlight;
 
     ReplxxLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters, highlight_callback);
-
-#elif defined(USE_READLINE) && USE_READLINE
-    ReadlineLineReader lr(*suggest, history_file, config().has("multiline"), query_extenders, query_delimiters);
 #else
     LineReader lr(history_file, config().has("multiline"), query_extenders, query_delimiters);
 #endif
