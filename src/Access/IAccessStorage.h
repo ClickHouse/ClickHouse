@@ -92,7 +92,8 @@ public:
     /// Inserts an entity to the storage. Returns ID of a new entry in the storage.
     /// Throws an exception if the specified name already exists.
     UUID insert(const AccessEntityPtr & entity);
-    std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities);
+    std::optional<UUID> insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
+    std::vector<UUID> insert(const std::vector<AccessEntityPtr> & multiple_entities, bool replace_if_exists = false, bool throw_if_exists = true);
 
     /// Inserts an entity to the storage. Returns ID of a new entry in the storage.
     std::optional<UUID> tryInsert(const AccessEntityPtr & entity);
@@ -151,7 +152,7 @@ protected:
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const = 0;
     virtual std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const;
-    virtual UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) = 0;
+    virtual std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) = 0;
     virtual void removeImpl(const UUID & id) = 0;
     virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) = 0;
     virtual scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const = 0;

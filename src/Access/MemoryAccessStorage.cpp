@@ -61,40 +61,49 @@ AccessEntityPtr MemoryAccessStorage::readImpl(const UUID & id, bool throw_if_not
 }
 
 
-UUID MemoryAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists)
+std::optional<UUID> MemoryAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
 {
     Notifications notifications;
     SCOPE_EXIT({ notify(notifications); });
 
     UUID id = generateRandomID();
     std::lock_guard lock{mutex};
-    insertNoLock(id, new_entity, replace_if_exists, notifications);
-    return id;
+    if (insertNoLock(id, new_entity, replace_if_exists, throw_if_exists, notifications))
+        return id;
+
+    return std::nullopt;
 }
 
 
-void MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, Notifications & notifications)
+bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, Notifications & notifications)
 {
     const String & name = new_entity->getName();
     AccessEntityType type = new_entity->getType();
 
     /// Check that we can insert.
-    auto it = entries_by_id.find(id);
-    if (it != entries_by_id.end())
+    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
+    auto it_by_name = entries_by_name.find(name);
+    bool name_collision = (it_by_name != entries_by_name.end());
+
+    if (name_collision && !replace_if_exists)
     {
-        const auto & existing_entry = it->second;
+        if (throw_if_exists)
+            throwNameCollisionCannotInsert(type, name);
+        else
+            return false;
+    }
+
+    auto it_by_id = entries_by_id.find(id);
+    if (it_by_id != entries_by_id.end())
+    {
+        const auto & existing_entry = it_by_id->second;
         throwIDCollisionCannotInsert(id, type, name, existing_entry.entity->getType(), existing_entry.entity->getName());
     }
 
-    auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
-    auto it2 = entries_by_name.find(name);
-    if (it2 != entries_by_name.end())
+    if (name_collision && replace_if_exists)
     {
-        const auto & existing_entry = *(it2->second);
-        if (replace_if_exists)
-            removeNoLock(existing_entry.id, notifications);
-        else
-            throwNameCollisionCannotInsert(type, name);
+        const auto & existing_entry = *(it_by_name->second);
+        removeNoLock(existing_entry.id, notifications);
     }
 
     /// Do insertion.
@@ -103,6 +112,7 @@ void MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     entry.entity = new_entity;
     entries_by_name[name] = &entry;
     prepareNotifications(entry, false, notifications);
+    return true;
 }
 
 
@@ -249,7 +259,9 @@ void MemoryAccessStorage::setAllNoLock(const std::vector<std::pair<UUID, AccessE
             }
         }
         else
-            insertNoLock(id, entity, false, notifications);
+        {
+            insertNoLock(id, entity, /* replace_if_exists = */ false, /* throw_if_exists = */ true, notifications);
+        }
     }
 }
 

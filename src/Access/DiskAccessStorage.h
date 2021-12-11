@@ -35,7 +35,7 @@ private:
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
     std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const override;
-    UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
+    std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
@@ -50,7 +50,7 @@ private:
     void listsWritingThreadFunc();
     void stopListsWritingThread();
 
-    void insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, Notifications & notifications);
+    bool insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, Notifications & notifications);
     void removeNoLock(const UUID & id, Notifications & notifications);
     void updateNoLock(const UUID & id, const UpdateFunc & update_func, Notifications & notifications);
 

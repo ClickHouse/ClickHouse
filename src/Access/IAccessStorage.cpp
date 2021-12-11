@@ -222,83 +222,82 @@ std::optional<String> IAccessStorage::readNameImpl(const UUID & id, bool throw_i
 
 UUID IAccessStorage::insert(const AccessEntityPtr & entity)
 {
-    return insertImpl(entity, false);
+    return *insertImpl(entity, /* replace_if_exists = */ false, /* throw_if_exists = */ true);
 }
 
 
-std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & multiple_entities)
+std::optional<UUID> IAccessStorage::insert(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
-    ErrorsTracker tracker(multiple_entities.size());
+    return insertImpl(entity, replace_if_exists, throw_if_exists);
+}
 
-    std::vector<UUID> ids;
-    for (const auto & entity : multiple_entities)
+
+std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & multiple_entities, bool replace_if_exists, bool throw_if_exists)
+{
+    if (multiple_entities.empty())
+        return {};
+
+    if (multiple_entities.size() == 1)
     {
-        UUID id;
-        auto func = [&] { id = insertImpl(entity, /* replace_if_exists = */ false); };
-        if (tracker.tryCall(func))
-            ids.push_back(id);
+        if (auto id = insert(multiple_entities[0], replace_if_exists, throw_if_exists))
+            return {*id};
+        return {};
     }
 
-    if (tracker.errors())
+    std::vector<AccessEntityPtr> successfully_inserted;
+    try
     {
-        auto get_name_function = [&](size_t i) { return multiple_entities[i]->formatTypeWithName(); };
-        tracker.showErrors("Couldn't insert {failed_names}. Successfully inserted: {succeeded_names}", get_name_function);
+        std::vector<UUID> ids;
+        for (const auto & entity : multiple_entities)
+        {
+            if (auto id = insertImpl(entity, replace_if_exists, throw_if_exists))
+            {
+                successfully_inserted.push_back(entity);
+                ids.push_back(*id);
+            }
+        }
+        return ids;
     }
-
-    return ids;
+    catch (Exception & e)
+    {
+        if (!successfully_inserted.empty())
+        {
+            String successfully_inserted_str;
+            for (auto entity : successfully_inserted)
+            {
+                if (!successfully_inserted_str.empty())
+                    successfully_inserted_str += ", ";
+                successfully_inserted_str += entity->formatTypeWithName();
+            }
+            e.addMessage("After successfully inserting {}/{}: {}", successfully_inserted.size(), multiple_entities.size(), successfully_inserted_str);
+        }
+        e.rethrow();
+        __builtin_unreachable();
+    }
 }
 
 
 std::optional<UUID> IAccessStorage::tryInsert(const AccessEntityPtr & entity)
 {
-    UUID id;
-    auto func = [&] { id = insertImpl(entity, /* replace_if_exists = */ false); };
-    if (!tryCall(func))
-        return {};
-    return id;
+    return insert(entity, /* replace_if_exists = */ false, /* throw_if_exists = */ false);
 }
 
 
 std::vector<UUID> IAccessStorage::tryInsert(const std::vector<AccessEntityPtr> & multiple_entities)
 {
-    std::vector<UUID> ids;
-    for (const auto & entity : multiple_entities)
-    {
-        UUID id;
-        auto func = [&] { id = insertImpl(entity, /* replace_if_exists = */ false); };
-        if (tryCall(func))
-            ids.push_back(id);
-    }
-    return ids;
+    return insert(multiple_entities, /* replace_if_exists = */ false, /* throw_if_exists = */ false);
 }
 
 
 UUID IAccessStorage::insertOrReplace(const AccessEntityPtr & entity)
 {
-    return insertImpl(entity, /* replace_if_exists = */ true);
+    return *insertImpl(entity, /* replace_if_exists = */ true, /* throw_if_exists = */ false);
 }
 
 
 std::vector<UUID> IAccessStorage::insertOrReplace(const std::vector<AccessEntityPtr> & multiple_entities)
 {
-    ErrorsTracker tracker(multiple_entities.size());
-
-    std::vector<UUID> ids;
-    for (const auto & entity : multiple_entities)
-    {
-        UUID id;
-        auto func = [&] { id = insertImpl(entity, /* replace_if_exists = */ true); };
-        if (tracker.tryCall(func))
-            ids.push_back(id);
-    }
-
-    if (tracker.errors())
-    {
-        auto get_name_function = [&](size_t i) { return multiple_entities[i]->formatTypeWithName(); };
-        tracker.showErrors("Couldn't insert {failed_names}. Successfully inserted: {succeeded_names}", get_name_function);
-    }
-
-    return ids;
+    return insert(multiple_entities, /* replace_if_exists = */ true, /* throw_if_exists = */ false);
 }
 
 

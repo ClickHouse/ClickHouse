@@ -91,7 +91,7 @@ static void retryOnZooKeeperUserError(size_t attempts, Func && function)
     }
 }
 
-UUID ReplicatedAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists)
+std::optional<UUID> ReplicatedAccessStorage::insertImpl(const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists)
 {
     const UUID id = generateRandomID();
     const AccessEntityTypeInfo type_info = AccessEntityTypeInfo::get(new_entity->getType());
@@ -99,7 +99,11 @@ UUID ReplicatedAccessStorage::insertImpl(const AccessEntityPtr & new_entity, boo
     LOG_DEBUG(getLogger(), "Inserting entity of type {} named {} with id {}", type_info.name, name, toString(id));
 
     auto zookeeper = get_zookeeper();
-    retryOnZooKeeperUserError(10, [&]{ insertZooKeeper(zookeeper, id, new_entity, replace_if_exists); });
+    bool ok = false;
+    retryOnZooKeeperUserError(10, [&]{ ok = insertZooKeeper(zookeeper, id, new_entity, replace_if_exists, throw_if_exists); });
+
+    if (!ok)
+        return std::nullopt;
 
     Notifications notifications;
     SCOPE_EXIT({ notify(notifications); });
@@ -109,8 +113,12 @@ UUID ReplicatedAccessStorage::insertImpl(const AccessEntityPtr & new_entity, boo
 }
 
 
-void ReplicatedAccessStorage::insertZooKeeper(
-    const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists)
+bool ReplicatedAccessStorage::insertZooKeeper(
+    const zkutil::ZooKeeperPtr & zookeeper,
+    const UUID & id,
+    const AccessEntityPtr & new_entity,
+    bool replace_if_exists,
+    bool throw_if_exists)
 {
     const String & name = new_entity->getName();
     const AccessEntityType type = new_entity->getType();
@@ -131,6 +139,7 @@ void ReplicatedAccessStorage::insertZooKeeper(
 
     Coordination::Responses responses;
     const Coordination::Error res = zookeeper->tryMulti(ops, responses);
+
     if (res == Coordination::Error::ZNODEEXISTS)
     {
         if (responses[0]->error == Coordination::Error::ZNODEEXISTS)
@@ -166,16 +175,25 @@ void ReplicatedAccessStorage::insertZooKeeper(
 
             /// If this fails, then we'll just retry from the start.
             zookeeper->multi(replace_ops);
+
+            /// Everything's fine, the new entity has been inserted instead of an existing entity.
+            return true;
         }
         else
         {
-            throwNameCollisionCannotInsert(type, name);
+            /// Couldn't insert the new entity because there is an existing entity with such name.
+            if (throw_if_exists)
+                throwNameCollisionCannotInsert(type, name);
+            else
+                return false;
         }
     }
-    else
-    {
-        zkutil::KeeperMultiException::check(res, ops, responses);
-    }
+
+    /// If this fails, then we'll just retry from the start.
+    zkutil::KeeperMultiException::check(res, ops, responses);
+
+    /// Everything's fine, the new entity has been inserted.
+    return true;
 }
 
 void ReplicatedAccessStorage::removeImpl(const UUID & id)
