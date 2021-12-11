@@ -45,11 +45,11 @@ private:
     ThreadFromGlobalPool worker_thread;
     ConcurrentBoundedQueue<UUID> refresh_queue;
 
-    UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
+    std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
 
-    void insertZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists);
+    bool insertZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
     void removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id);
     void updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const UpdateFunc & update_func);
 

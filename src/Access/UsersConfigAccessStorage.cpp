@@ -621,7 +621,7 @@ std::optional<String> UsersConfigAccessStorage::readNameImpl(const UUID & id, bo
 }
 
 
-UUID UsersConfigAccessStorage::insertImpl(const AccessEntityPtr & entity, bool)
+std::optional<UUID> UsersConfigAccessStorage::insertImpl(const AccessEntityPtr & entity, bool, bool)
 {
     throwReadonlyCannotInsert(entity->getType(), entity->getName());
 }

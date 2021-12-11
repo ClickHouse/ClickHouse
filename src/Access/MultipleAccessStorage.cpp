@@ -216,15 +216,14 @@ bool MultipleAccessStorage::isReadOnly() const
 }
 
 
-UUID MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists)
+std::optional<UUID> MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
     auto storages = getStoragesInternal();
 
     std::shared_ptr<IAccessStorage> storage_for_insertion;
     for (const auto & storage : *storages)
     {
-        if (!storage->isReadOnly() ||
-            storage->find(entity->getType(), entity->getName()))
+        if (!storage->isReadOnly() || storage->find(entity->getType(), entity->getName()))
         {
             storage_for_insertion = storage;
             break;
@@ -234,9 +233,12 @@ UUID MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool repl
     if (!storage_for_insertion)
         throw Exception("Not found a storage to insert " + entity->formatTypeWithName(), ErrorCodes::ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND);
 
-    auto id = replace_if_exists ? storage_for_insertion->insertOrReplace(entity) : storage_for_insertion->insert(entity);
-    std::lock_guard lock{mutex};
-    ids_cache.set(id, storage_for_insertion);
+    auto id = storage_for_insertion->insert(entity, replace_if_exists, throw_if_exists);
+    if (id)
+    {
+        std::lock_guard lock{mutex};
+        ids_cache.set(*id, storage_for_insertion);
+    }
     return id;
 }
 

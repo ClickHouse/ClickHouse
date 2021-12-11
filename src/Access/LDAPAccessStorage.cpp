@@ -447,7 +447,7 @@ std::optional<String> LDAPAccessStorage::readNameImpl(const UUID & id, bool thro
 }
 
 
-UUID LDAPAccessStorage::insertImpl(const AccessEntityPtr & entity, bool)
+std::optional<UUID> LDAPAccessStorage::insertImpl(const AccessEntityPtr & entity, bool, bool)
 {
     throwReadonlyCannotInsert(entity->getType(), entity->getName());
 }
