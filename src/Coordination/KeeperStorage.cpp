@@ -133,21 +133,6 @@ static bool fixupACL(
     return valid_found;
 }
 
-//uint64_t KeeperStorage::Node::sizeInBytes() const
-//{
-//    uint64_t total_size{0};
-//    for (const auto & child : children)
-//        total_size += child.size();
-//
-//    total_size += data.size();
-//
-//    total_size += sizeof(acl_id);
-//    total_size += sizeof(is_sequental);
-//    total_size += sizeof(stat);
-//    total_size += sizeof(seq_num);
-//    return total_size;
-//}
-
 static KeeperStorage::ResponsesForSessions processWatchesImpl(const String & path, KeeperStorage::Watches & watches, KeeperStorage::Watches & list_watches, Coordination::Event event_type)
 {
     KeeperStorage::ResponsesForSessions result;
@@ -625,11 +610,11 @@ struct KeeperStorageSetRequestProcessor final : public KeeperStorageRequestProce
 
             auto itr = container.updateValue(request.path, [zxid, request] (KeeperStorage::Node & value)
             {
-                value.data = request.data;
                 value.stat.version++;
                 value.stat.mzxid = zxid;
                 value.stat.mtime = std::chrono::system_clock::now().time_since_epoch() / std::chrono::milliseconds(1);
                 value.stat.dataLength = request.data.length();
+                value.size_bytes += request.data.size() - value.data.size();
                 value.data = request.data;
             });
 
