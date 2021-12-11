@@ -1,13 +1,13 @@
 ---
 toc_priority: 68
-toc_title: Window View
+toc_title: 时间窗口
 ---
 
-# Window View 函数 {#window-view-han-shu}
+# 时间窗口函数 {#time-window-han-shu}
 
-Window view函数用于获取窗口的起始(包含边界)和结束时间(不包含边界)。系统支持的window view函数如下：
+时间窗口函数用于获取窗口的起始(包含边界)和结束时间(不包含边界)。系统支持的时间窗口函数如下：
 
-## tumble {#window-view-functions-tumble}
+## tumble {#time-window-functions-tumble}
 
 tumble窗口是连续的、不重叠的固定大小(`interval`)时间窗口。
 
@@ -42,7 +42,7 @@ SELECT tumble(now(), toIntervalDay('1'))
 └───────────────────────────────────────────────┘
 ```
 
-## hop {#window-view-functions-hop}
+## hop {#time-window-functions-hop}
 
 hop窗口是一个固定大小(`window_interval`)的时间窗口，并按照一个固定的滑动间隔(`hop_interval`)滑动。当滑动间隔小于窗口大小时，滑动窗口间存在重叠，此时一个数据可能存在于多个窗口。
 
@@ -79,7 +79,7 @@ SELECT hop(now(), INTERVAL '1' SECOND, INTERVAL '2' SECOND)
 └───────────────────────────────────────────────────────────┘
 ```
 
-## tumbleStart {#window-view-functions-tumblestart}
+## tumbleStart {#time-window-functions-tumblestart}
 
 返回tumble窗口的开始时间(包含边界)。
 
@@ -87,7 +87,7 @@ SELECT hop(now(), INTERVAL '1' SECOND, INTERVAL '2' SECOND)
 tumbleStart(time_attr, interval [, timezone]);
 ```
 
-## tumbleEnd {#window-view-functions-tumbleend}
+## tumbleEnd {#time-window-functions-tumbleend}
 
 返回tumble窗口的结束时间(不包含边界)。
 
@@ -95,7 +95,7 @@ tumbleStart(time_attr, interval [, timezone]);
 tumbleEnd(time_attr, interval [, timezone]);
 ```
 
-## hopStart {#window-view-functions-hopstart}
+## hopStart {#time-window-functions-hopstart}
 
 返回hop窗口的开始时间(包含边界)。
 
@@ -103,7 +103,7 @@ tumbleEnd(time_attr, interval [, timezone]);
 hopStart(time_attr, hop_interval, window_interval [, timezone]);
 ```
 
-## hopEnd {#window-view-functions-hopend}
+## hopEnd {#time-window-functions-hopend}
 
 返回hop窗口的结束时间(不包含边界)。
 
