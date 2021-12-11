@@ -9,3 +9,9 @@ services:
         ports:
             - ${MONGO_EXTERNAL_PORT}:${MONGO_INTERNAL_PORT}
         command: --profile=2 --verbose
+
+    mongo2:
+        image: mongo:5.0
+        restart: always
+        ports:
+            - "27018:27017"
