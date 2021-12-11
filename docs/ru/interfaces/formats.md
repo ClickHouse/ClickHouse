@@ -129,6 +129,9 @@ world
 
 Каждый элемент структуры типа [Nested](../sql-reference/data-types/nested-data-structures/nested.md) представляется как отдельный массив.
 
+Значения перечисления, в качестве входных данных, могут быть представлены как имя или как идентификаторы. Сначала мы пытаемся сопоставить входное значение с именем перечисления. В случае неудачи и при условии, что входное значение является числом, мы пытаемся сопоставить это число с идентификатором перечисления.
+Если входные данные содержат только ENUM идентификаторы, рекомендуется включить настройку [input_format_tsv_enum_as_number](../operations/settings/settings.md#settings-input_format_tsv_enum_as_number) для оптимизации парсинга перечисления.
+
 Например:
 
 ``` sql
@@ -361,6 +364,9 @@ $ clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FOR
 `NULL` форматируется в виде `\N` или `NULL` или пустой неэкранированной строки (см. настройки [input_format_csv_unquoted_null_literal_as_null](../operations/settings/settings.md#settings-input_format_csv_unquoted_null_literal_as_null) и [input_format_defaults_for_omitted_fields](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields)).
 
 Если установлена настройка [input_format_defaults_for_omitted_fields = 1](../operations/settings/settings.md#session_settings-input_format_defaults_for_omitted_fields) и тип столбца не `Nullable(T)`, то пустые значения без кавычек заменяются значениями по умолчанию для типа данных столбца.
+
+Значения перечисления, в качестве входных данных, могут быть представлены как имя или как идентификаторы. Сначала мы пытаемся сопоставить входное значение с именем перечисления. В случае неудачи и при условии, что входное значение является числом, мы пытаемся сопоставить это число с идентификатором перечисления.
+Если входные данные содержат только идентификаторы перечисления, рекомендуется включить настройку [input_format_tsv_enum_as_number](../operations/settings/settings.md#settings-input_format_tsv_enum_as_number) для оптимизации парсинга перечисления.
 
 Формат CSV поддерживает вывод totals и extremes аналогично `TabSeparated`.
 
