@@ -75,8 +75,7 @@ private:
 
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
-    AccessEntityPtr readImpl(const UUID & id) const override;
-    String readNameImpl(const UUID & id) const override;
+    AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
 
     void prepareNotifications(const Entry & entry, bool remove, Notifications & notifications) const;
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;

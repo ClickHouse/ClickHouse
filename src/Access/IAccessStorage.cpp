@@ -175,52 +175,48 @@ std::vector<UUID> IAccessStorage::getIDs(AccessEntityType type, const Strings & 
 }
 
 
-AccessEntityPtr IAccessStorage::tryReadBase(const UUID & id) const
-{
-    AccessEntityPtr entity;
-    auto func = [&] { entity = readImpl(id); };
-    if (!tryCall(func))
-        return nullptr;
-    return entity;
-}
-
-
 String IAccessStorage::readName(const UUID & id) const
 {
-    return readNameImpl(id);
+    return *readNameImpl(id, /* throw_if_not_exists = */ true);
 }
 
 
-Strings IAccessStorage::readNames(const std::vector<UUID> & ids) const
+std::optional<String> IAccessStorage::readName(const UUID & id, bool throw_if_not_exists) const
+{
+    return readNameImpl(id, throw_if_not_exists);
+}
+
+
+Strings IAccessStorage::readNames(const std::vector<UUID> & ids, bool throw_if_not_exists) const
 {
     Strings res;
     res.reserve(ids.size());
     for (const auto & id : ids)
-        res.emplace_back(readName(id));
+    {
+        if (auto name = readNameImpl(id, throw_if_not_exists))
+            res.emplace_back(std::move(name).value());
+    }
     return res;
 }
 
 
 std::optional<String> IAccessStorage::tryReadName(const UUID & id) const
 {
-    String name;
-    auto func = [&] { name = readNameImpl(id); };
-    if (!tryCall(func))
-        return {};
-    return name;
+    return readName(id, /* throw_if_not_exists = */ false);
 }
 
 
 Strings IAccessStorage::tryReadNames(const std::vector<UUID> & ids) const
 {
-    Strings res;
-    res.reserve(ids.size());
-    for (const auto & id : ids)
-    {
-        if (auto name = tryReadName(id))
-            res.emplace_back(std::move(name).value());
-    }
-    return res;
+    return readNames(ids, /* throw_if_not_exists = */ false);
+}
+
+
+std::optional<String> IAccessStorage::readNameImpl(const UUID & id, bool throw_if_not_exists) const
+{
+    if (auto entity = read(id, throw_if_not_exists))
+        return entity->getName();
+    return std::nullopt;
 }
 
 

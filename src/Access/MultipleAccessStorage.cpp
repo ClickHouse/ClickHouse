@@ -180,15 +180,27 @@ ConstStoragePtr MultipleAccessStorage::getStorage(const UUID & id) const
     return const_cast<MultipleAccessStorage *>(this)->getStorage(id);
 }
 
-AccessEntityPtr MultipleAccessStorage::readImpl(const UUID & id) const
+AccessEntityPtr MultipleAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const
 {
-    return getStorage(id)->read(id);
+    if (auto storage = findStorage(id))
+        return storage->read(id, throw_if_not_exists);
+
+    if (throw_if_not_exists)
+        throwNotFound(id);
+    else
+        return nullptr;
 }
 
 
-String MultipleAccessStorage::readNameImpl(const UUID & id) const
+std::optional<String> MultipleAccessStorage::readNameImpl(const UUID & id, bool throw_if_not_exists) const
 {
-    return getStorage(id)->readName(id);
+    if (auto storage = findStorage(id))
+        return storage->readName(id, throw_if_not_exists);
+
+    if (throw_if_not_exists)
+        throwNotFound(id);
+    else
+        return std::nullopt;
 }
 
 

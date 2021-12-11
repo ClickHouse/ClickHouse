@@ -50,8 +50,8 @@ private:
 
     std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
     std::vector<UUID> findAllImpl(AccessEntityType type) const override;
-    AccessEntityPtr readImpl(const UUID & id) const override;
-    String readNameImpl(const UUID & id) const override;
+    AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
+    std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const override;
     UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
