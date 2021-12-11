@@ -391,12 +391,12 @@ INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (
 
 ## input_format_tsv_enum_as_number {#settings-input_format_tsv_enum_as_number}
 
-Включает или отключает парсинг значений перечислений как идентификаторов перечислений для входного формата TSV.
+При включенном режиме всегда обрабатывайте значения перечисления как идентификаторы перечисления для входного формата TSV. Для оптимизации парсинга, рекомендуется включать этот параметр, если данные содержат только идентификаторы перечисления.
 
 Возможные значения:
 
--   0 — парсинг значений перечисления как значений.
--   1 — парсинг значений перечисления как идентификаторов перечисления.
+-   0 — данные перечисления обработаны как значения или как идентификаторы.
+-   1 — данные перечисления обработаны только как идентификаторы.
 
 Значение по умолчанию: 0.
 
@@ -410,10 +410,39 @@ CREATE TABLE table_with_enum_column_for_tsv_insert (Id Int32,Value Enum('first' 
 
 При включенной настройке `input_format_tsv_enum_as_number`:
 
+Запрос:
+
 ```sql
 SET input_format_tsv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	1;
+SELECT * FROM table_with_enum_column_for_tsv_insert;
+```
+
+Результат:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+```
+
+Запрос:
+
+```sql
+SET input_format_tsv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
+```
+
+сгенерирует исключение.
+
+При отключенной настройке `input_format_tsv_enum_as_number`:
+
+Запрос:
+
+```sql
+SET input_format_tsv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
+INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 103	'first';
 SELECT * FROM table_with_enum_column_for_tsv_insert;
 ```
 
@@ -427,15 +456,6 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 │ 103 │ first  │
 └─────┴────────┘
 ```
-
-При отключенной настройке `input_format_tsv_enum_as_number` запрос `INSERT`:
-
-```sql
-SET input_format_tsv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_tsv_insert FORMAT TSV 102	2;
-```
-
-сгенерирует исключение.
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
@@ -1511,12 +1531,12 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 ## input_format_csv_enum_as_number {#settings-input_format_csv_enum_as_number}
 
-Включает или отключает парсинг значений перечислений как идентификаторов перечислений для входного формата CSV.
+При включенном режиме всегда обрабатывайте значения перечисления как идентификаторы перечисления для входного формата CSV. Для оптимизации парсинга, рекомендуется включать этот параметр, если данные содержат только идентификаторы перечисления.
 
 Возможные значения:
 
--   0 — парсинг значений перечисления как значений.
--   1 — парсинг значений перечисления как идентификаторов перечисления.
+-   0 — данные перечисления обработаны как значения или как идентификаторы.
+-   1 — данные перечисления обработаны только как идентификаторы.
 
 Значение по умолчанию: 0.
 
@@ -1530,10 +1550,11 @@ CREATE TABLE table_with_enum_column_for_csv_insert (Id Int32,Value Enum('first' 
 
 При включенной настройке `input_format_csv_enum_as_number`:
 
+Запрос:
+
 ```sql
 SET input_format_csv_enum_as_number = 1;
 INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
-SELECT * FROM table_with_enum_column_for_csv_insert;
 ```
 
 Результат:
@@ -1544,14 +1565,36 @@ SELECT * FROM table_with_enum_column_for_csv_insert;
 └─────┴────────┘
 ```
 
-При отключенной настройке `input_format_csv_enum_as_number` запрос `INSERT`:
+Запрос:
 
 ```sql
-SET input_format_csv_enum_as_number = 0;
-INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2;
+SET input_format_csv_enum_as_number = 1;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
 ```
 
 сгенерирует исключение.
+
+При отключенной настройке `input_format_csv_enum_as_number`:
+
+Запрос:
+
+```sql
+SET input_format_csv_enum_as_number = 0;
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 102,2
+INSERT INTO table_with_enum_column_for_csv_insert FORMAT CSV 103,'first'
+SELECT * FROM table_with_enum_column_for_csv_insert;
+```
+
+Результат:
+
+```text
+┌──Id─┬─Value──┐
+│ 102 │ second │
+└─────┴────────┘
+┌──Id─┬─Value─┐
+│ 103 │ first │
+└─────┴───────┘
+```
 
 ## output_format_csv_crlf_end_of_line {#settings-output-format-csv-crlf-end-of-line}
 
