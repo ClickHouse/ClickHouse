@@ -21,7 +21,7 @@ while true; do
 	$CLICKHOUSE_CLIENT --query="SELECT count(*) FROM dst" | grep -q "1" && break || sleep .5 ||:
 done
 
-$CLICKHOUSE_CLIENT --query="SELECT count FROM dst"
-$CLICKHOUSE_CLIENT --query="DROP TABLE wv"
-$CLICKHOUSE_CLIENT --query="DROP TABLE mt"
-$CLICKHOUSE_CLIENT --query="DROP TABLE dst"
+$CLICKHOUSE_CLIENT --query="SELECT count FROM dst;"
+$CLICKHOUSE_CLIENT --query="DROP TABLE wv;"
+$CLICKHOUSE_CLIENT --query="DROP TABLE mt;"
+$CLICKHOUSE_CLIENT --query="DROP TABLE dst;"
