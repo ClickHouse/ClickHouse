@@ -1,4 +1,4 @@
-### ClickHouse release v21.12, 2021-12-09
+### ClickHouse release v21.12, 2021-12-13
 
 #### Backward Incompatible Change
 
