@@ -13,9 +13,7 @@
 #include <tuple>
 #include <utility> /// pair
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_tools.h"
-#endif
+#include "config_tools.h"
 
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/getHashOfLoadedBinary.h>
