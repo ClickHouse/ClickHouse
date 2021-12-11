@@ -75,7 +75,7 @@ jobs:
           sudo rm -fr $TEMP_PATH
   PerformanceComparison:
     needs: [BuilderPerformance]
-    runs-on: [self-hosted, stress-tester]
+    runs-on: [self-hosted, perf-tester]
     steps:
       - name: Download json reports
         uses: actions/download-artifact@v2
