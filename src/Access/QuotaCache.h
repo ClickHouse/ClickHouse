@@ -43,7 +43,7 @@ private:
 
         String calculateKey(const EnabledQuota & enabled_quota) const;
         boost::shared_ptr<const Intervals> getOrBuildIntervals(const String & key);
-        boost::shared_ptr<const Intervals> rebuildIntervals(const String & key);
+        boost::shared_ptr<const Intervals> rebuildIntervals(const String & key, std::chrono::system_clock::time_point current_time);
         void rebuildAllIntervals();
 
         QuotaPtr quota;
