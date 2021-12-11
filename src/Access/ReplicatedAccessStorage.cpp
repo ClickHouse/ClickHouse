@@ -532,20 +532,19 @@ bool ReplicatedAccessStorage::exists(const UUID & id) const
 }
 
 
-AccessEntityPtr ReplicatedAccessStorage::readImpl(const UUID & id) const
+AccessEntityPtr ReplicatedAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const
 {
     std::lock_guard lock{mutex};
     const auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
-        throwNotFound(id);
+    {
+        if (throw_if_not_exists)
+            throwNotFound(id);
+        else
+            return nullptr;
+    }
     const Entry & entry = it->second;
     return entry.entity;
-}
-
-
-String ReplicatedAccessStorage::readNameImpl(const UUID & id) const
-{
-    return readImpl(id)->getName();
 }
 
 

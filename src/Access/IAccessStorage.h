@@ -70,10 +70,10 @@ public:
 
     /// Reads an entity. Throws an exception if not found.
     template <typename EntityClassT = IAccessEntity>
-    std::shared_ptr<const EntityClassT> read(const UUID & id) const;
+    std::shared_ptr<const EntityClassT> read(const UUID & id, bool throw_if_not_exists = true) const;
 
     template <typename EntityClassT = IAccessEntity>
-    std::shared_ptr<const EntityClassT> read(const String & name) const;
+    std::shared_ptr<const EntityClassT> read(const String & name, bool throw_if_not_exists = true) const;
 
     /// Reads an entity. Returns nullptr if not found.
     template <typename EntityClassT = IAccessEntity>
@@ -84,7 +84,8 @@ public:
 
     /// Reads only name of an entity.
     String readName(const UUID & id) const;
-    Strings readNames(const std::vector<UUID> & ids) const;
+    std::optional<String> readName(const UUID & id, bool throw_if_not_exists) const;
+    Strings readNames(const std::vector<UUID> & ids, bool throw_if_not_exists = true) const;
     std::optional<String> tryReadName(const UUID & id) const;
     Strings tryReadNames(const std::vector<UUID> & ids) const;
 
@@ -148,8 +149,8 @@ public:
 protected:
     virtual std::optional<UUID> findImpl(AccessEntityType type, const String & name) const = 0;
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
-    virtual AccessEntityPtr readImpl(const UUID & id) const = 0;
-    virtual String readNameImpl(const UUID & id) const = 0;
+    virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const = 0;
+    virtual std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const;
     virtual UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) = 0;
     virtual void removeImpl(const UUID & id) = 0;
     virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) = 0;
@@ -181,23 +182,22 @@ protected:
     static void notify(const Notifications & notifications);
 
 private:
-    AccessEntityPtr tryReadBase(const UUID & id) const;
-
     const String storage_name;
     mutable std::atomic<Poco::Logger *> log = nullptr;
 };
 
 
 template <typename EntityClassT>
-std::shared_ptr<const EntityClassT> IAccessStorage::read(const UUID & id) const
+std::shared_ptr<const EntityClassT> IAccessStorage::read(const UUID & id, bool throw_if_not_exists) const
 {
-    auto entity = readImpl(id);
+    auto entity = readImpl(id, throw_if_not_exists);
     if constexpr (std::is_same_v<EntityClassT, IAccessEntity>)
         return entity;
     else
     {
-        auto ptr = typeid_cast<std::shared_ptr<const EntityClassT>>(entity);
-        if (ptr)
+        if (!entity)
+            return nullptr;
+        if (auto ptr = typeid_cast<std::shared_ptr<const EntityClassT>>(entity))
             return ptr;
         throwBadCast(id, entity->getType(), entity->getName(), EntityClassT::TYPE);
     }
@@ -205,26 +205,27 @@ std::shared_ptr<const EntityClassT> IAccessStorage::read(const UUID & id) const
 
 
 template <typename EntityClassT>
-std::shared_ptr<const EntityClassT> IAccessStorage::read(const String & name) const
+std::shared_ptr<const EntityClassT> IAccessStorage::read(const String & name, bool throw_if_not_exists) const
 {
-    return read<EntityClassT>(getID<EntityClassT>(name));
+    if (auto id = find<EntityClassT>(name))
+        return read<EntityClassT>(*id, throw_if_not_exists);
+    if (throw_if_not_exists)
+        throwNotFound(EntityClassT::TYPE, name);
+    else
+        return nullptr;
 }
 
 
 template <typename EntityClassT>
 std::shared_ptr<const EntityClassT> IAccessStorage::tryRead(const UUID & id) const
 {
-    auto entity = tryReadBase(id);
-    if (!entity)
-        return nullptr;
-    return typeid_cast<std::shared_ptr<const EntityClassT>>(entity);
+    return read<EntityClassT>(id, false);
 }
 
 
 template <typename EntityClassT>
 std::shared_ptr<const EntityClassT> IAccessStorage::tryRead(const String & name) const
 {
-    auto id = find<EntityClassT>(name);
-    return id ? tryRead<EntityClassT>(*id) : nullptr;
+    return read<EntityClassT>(name, false);
 }
 }

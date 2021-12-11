@@ -609,15 +609,15 @@ bool UsersConfigAccessStorage::exists(const UUID & id) const
 }
 
 
-AccessEntityPtr UsersConfigAccessStorage::readImpl(const UUID & id) const
+AccessEntityPtr UsersConfigAccessStorage::readImpl(const UUID & id, bool throw_if_not_exists) const
 {
-    return memory_storage.read(id);
+    return memory_storage.read(id, throw_if_not_exists);
 }
 
 
-String UsersConfigAccessStorage::readNameImpl(const UUID & id) const
+std::optional<String> UsersConfigAccessStorage::readNameImpl(const UUID & id, bool throw_if_not_exists) const
 {
-    return memory_storage.readName(id);
+    return memory_storage.readName(id, throw_if_not_exists);
 }
 
 
