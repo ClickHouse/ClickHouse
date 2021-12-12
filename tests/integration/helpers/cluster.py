@@ -726,6 +726,8 @@ class ClickHouseCluster:
         env_variables['MONGO_HOST'] = self.mongo_host
         env_variables['MONGO_EXTERNAL_PORT'] = str(self.mongo_port)
         env_variables['MONGO_INTERNAL_PORT'] = "27017"
+        env_variables['MONGO_EXTERNAL_PORT_2'] = "27018"
+        env_variables['MONGO_INTERNAL_PORT_2'] = "27017"
         self.base_cmd.extend(['--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')])
         self.base_mongo_cmd = ['docker-compose', '--env-file', instance.env_file, '--project-name', self.project_name,
                                 '--file', p.join(docker_compose_yml_dir, 'docker_compose_mongo.yml')]
@@ -2128,7 +2130,7 @@ class ClickHouseInstance:
                 except Exception as e:
                     logging.warning(f"Current start attempt failed. Will kill {pid} just in case.")
                     self.exec_in_container(["bash", "-c", f"kill -9 {pid}"], user='root', nothrow=True)
-                    time.sleep(time_to_sleep)        
+                    time.sleep(time_to_sleep)
 
         raise Exception("Cannot start ClickHouse, see additional info in logs")
 

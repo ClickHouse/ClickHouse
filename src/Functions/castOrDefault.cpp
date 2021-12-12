@@ -107,48 +107,61 @@ public:
         const auto & null_map_data = cast_result_nullable.getNullMapData();
         size_t null_map_data_size = null_map_data.size();
         const auto & nested_column = cast_result_nullable.getNestedColumn();
-        IColumn::MutablePtr result = return_type->createColumn();
+        auto result = return_type->createColumn();
         result->reserve(null_map_data_size);
+
+        ColumnNullable * result_nullable = nullptr;
+        if (result->isNullable())
+            result_nullable = assert_cast<ColumnNullable *>(&*result);
 
         size_t start_insert_index = 0;
 
-        /// Created separate branch because cast and inserting field from other column is slower
+        Field default_value;
+        ColumnPtr default_column;
+
         if (arguments.size() == 3)
         {
-            const auto & default_column_with_type = arguments[2];
-            auto default_column = default_column_with_type.column->convertToFullColumnIfConst();
+            auto default_values_column = arguments[2].column;
 
-            for (size_t i = 0; i < null_map_data_size; ++i)
-            {
-                bool is_current_index_null = null_map_data[i];
-                if (!is_current_index_null)
-                    continue;
-
-                if (i != start_insert_index)
-                    result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
-
-                result->insertFrom(*default_column, i);
-                start_insert_index = i + 1;
-            }
+            if (isColumnConst(*default_values_column))
+                default_value = (*default_values_column)[0];
+            else
+                default_column = default_values_column->convertToFullColumnIfConst();
         }
         else
         {
-            for (size_t i = 0; i < null_map_data_size; ++i)
+            default_value = return_type->getDefault();
+        }
+
+        for (size_t i = 0; i < null_map_data_size; ++i)
+        {
+            bool is_current_index_null = null_map_data[i];
+            if (!is_current_index_null)
+                continue;
+
+            if (i != start_insert_index)
             {
-                bool is_current_index_null = null_map_data[i];
-                if (!is_current_index_null)
-                    continue;
-
-                if (i != start_insert_index)
+                if (result_nullable)
+                    result_nullable->insertRangeFromNotNullable(nested_column, start_insert_index, i - start_insert_index);
+                else
                     result->insertRangeFrom(nested_column, start_insert_index, i - start_insert_index);
-
-                result->insertDefault();
-                start_insert_index = i + 1;
             }
+
+            if (default_column)
+                result->insertFrom(*default_column, i);
+            else
+                result->insert(default_value);
+
+            start_insert_index = i + 1;
         }
 
         if (null_map_data_size != start_insert_index)
-            result->insertRangeFrom(nested_column, start_insert_index, null_map_data_size - start_insert_index);
+        {
+            if (result_nullable)
+                result_nullable->insertRangeFromNotNullable(nested_column, start_insert_index, null_map_data_size - start_insert_index);
+            else
+                result->insertRangeFrom(nested_column, start_insert_index, null_map_data_size - start_insert_index);
+        }
 
         return result;
     }

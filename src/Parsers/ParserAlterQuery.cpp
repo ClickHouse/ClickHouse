@@ -794,6 +794,10 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         command->children.push_back(command->constraint_decl);
     if (command->constraint)
         command->children.push_back(command->constraint);
+    if (command->projection_decl)
+        command->children.push_back(command->projection_decl);
+    if (command->projection)
+        command->children.push_back(command->projection);
     if (command->predicate)
         command->children.push_back(command->predicate);
     if (command->update_assignments)

@@ -3,7 +3,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 import time
 
-cluster = ClickHouseCluster(__file__)
+cluster = ClickHouseCluster(__file__, name="test_keeper_4lw_white_list")
 node1 = cluster.add_instance('node1', main_configs=['configs/keeper_config_with_white_list.xml'], stay_alive=True)
 node2 = cluster.add_instance('node2', main_configs=['configs/keeper_config_without_white_list.xml'], stay_alive=True)
 node3 = cluster.add_instance('node3', main_configs=['configs/keeper_config_with_white_list_all.xml'], stay_alive=True)
@@ -35,7 +35,6 @@ def wait_node(node):
     for _ in range(100):
         zk = None
         try:
-            node.query("SELECT * FROM system.zookeeper WHERE path = '/'")
             zk = get_fake_zk(node.name, timeout=30.0)
             # zk.create("/test", sequence=True)
             print("node", node.name, "ready")
