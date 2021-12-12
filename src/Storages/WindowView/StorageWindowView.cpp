@@ -527,7 +527,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
         for (auto & watch_stream : watch_streams)
         {
             if (auto watch_stream_ptr = watch_stream.lock())
-                watch_stream_ptr->addBlock(block);
+                watch_stream_ptr->addBlock(block, watermark);
         }
     }
     if (!target_table_id.empty())
@@ -910,7 +910,11 @@ Pipe StorageWindowView::watch(
     }
 
     auto reader = std::make_shared<WindowViewSource>(
-        *this, has_limit, limit,
+        *this,
+        query.is_watch_events,
+        window_view_timezone,
+        has_limit,
+        limit,
         local_context->getSettingsRef().window_view_heartbeat_interval.totalSeconds());
 
     std::lock_guard lock(fire_signal_mutex);
@@ -1077,7 +1081,8 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column #{} of time zone argument of function, must be constant string",
                 time_zone_arg_num);
-        time_zone = &DateLUT::instance(time_zone_ast->value.safeGet<String>());
+        window_view_timezone = time_zone_ast->value.safeGet<String>();
+        time_zone = &DateLUT::instance(window_view_timezone);
     }
     else
         time_zone = &DateLUT::instance();
@@ -1354,9 +1359,12 @@ Block & StorageWindowView::getHeader() const
         sample_block = InterpreterSelectQuery(
             select_query->clone(), window_view_context, getParentStorage(), nullptr,
             SelectQueryOptions(QueryProcessingStage::Complete)).getSampleBlock();
-
+        /// convert all columns to full columns
+        /// in case some of them are constant
         for (size_t i = 0; i < sample_block.columns(); ++i)
+        {
             sample_block.safeGetByPosition(i).column = sample_block.safeGetByPosition(i).column->convertToFullColumnIfConst();
+        }
     }
     return sample_block;
 }
