@@ -123,7 +123,12 @@ function run_tests()
 export -f run_tests
 timeout "$MAX_RUN_TIME" bash -c run_tests ||:
 
-./process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
+echo "Files in current directory"
+ls -la ./
+echo "Files in root directory"
+ls -la /
+
+/process_functional_tests_result.py || echo -e "failure\tCannot parse results" > /test_output/check_status.tsv
 
 grep -Fa "Fatal" /var/log/clickhouse-server/clickhouse-server.log ||:
 

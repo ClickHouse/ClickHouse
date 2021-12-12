@@ -9,7 +9,7 @@
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
-#include <Functions/FunctionsWindow.h>
+#include <Functions/FunctionsTimeWindow.h>
 
 namespace DB
 {
@@ -114,7 +114,7 @@ namespace
 }
 
 template <>
-struct WindowImpl<TUMBLE>
+struct TimeWindowImpl<TUMBLE>
 {
     static constexpr auto name = "tumble";
 
@@ -211,7 +211,7 @@ struct WindowImpl<TUMBLE>
 };
 
 template <>
-struct WindowImpl<TUMBLE_START>
+struct TimeWindowImpl<TUMBLE_START>
 {
     static constexpr auto name = "tumbleStart";
 
@@ -231,7 +231,7 @@ struct WindowImpl<TUMBLE_START>
         }
         else
         {
-            return std::static_pointer_cast<const DataTypeTuple>(WindowImpl<TUMBLE>::getReturnType(arguments, function_name))
+            return std::static_pointer_cast<const DataTypeTuple>(TimeWindowImpl<TUMBLE>::getReturnType(arguments, function_name))
                 ->getElement(0);
         }
     }
@@ -249,19 +249,19 @@ struct WindowImpl<TUMBLE_START>
                 result_column = time_column.column;
         }
         else
-            result_column = WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
+            result_column = TimeWindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
         return executeWindowBound(result_column, 0, function_name);
     }
 };
 
 template <>
-struct WindowImpl<TUMBLE_END>
+struct TimeWindowImpl<TUMBLE_END>
 {
     static constexpr auto name = "tumbleEnd";
 
     [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
-        return WindowImpl<TUMBLE_START>::getReturnType(arguments, function_name);
+        return TimeWindowImpl<TUMBLE_START>::getReturnType(arguments, function_name);
     }
 
     [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String& function_name)
@@ -277,13 +277,13 @@ struct WindowImpl<TUMBLE_END>
                 result_column = time_column.column;
         }
         else
-            result_column = WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
+            result_column = TimeWindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
         return executeWindowBound(result_column, 1, function_name);
     }
 };
 
 template <>
-struct WindowImpl<HOP>
+struct TimeWindowImpl<HOP>
 {
     static constexpr auto name = "hop";
 
@@ -415,7 +415,7 @@ struct WindowImpl<HOP>
 };
 
 template <>
-struct WindowImpl<WINDOW_ID>
+struct TimeWindowImpl<WINDOW_ID>
 {
     static constexpr auto name = "windowID";
 
@@ -547,7 +547,7 @@ struct WindowImpl<WINDOW_ID>
     [[maybe_unused]] static ColumnPtr
     dispatchForTumbleColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
-        ColumnPtr column = WindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
+        ColumnPtr column = TimeWindowImpl<TUMBLE>::dispatchForColumns(arguments, function_name);
         return executeWindowBound(column, 1, function_name);
     }
 
@@ -567,7 +567,7 @@ struct WindowImpl<WINDOW_ID>
 };
 
 template <>
-struct WindowImpl<HOP_START>
+struct TimeWindowImpl<HOP_START>
 {
     static constexpr auto name = "hopStart";
 
@@ -587,7 +587,7 @@ struct WindowImpl<HOP_START>
         }
         else
         {
-            return std::static_pointer_cast<const DataTypeTuple>(WindowImpl<HOP>::getReturnType(arguments, function_name))->getElement(0);
+            return std::static_pointer_cast<const DataTypeTuple>(TimeWindowImpl<HOP>::getReturnType(arguments, function_name))->getElement(0);
         }
     }
 
@@ -604,19 +604,19 @@ struct WindowImpl<HOP_START>
                 result_column = time_column.column;
         }
         else
-            result_column = WindowImpl<HOP>::dispatchForColumns(arguments, function_name);
+            result_column = TimeWindowImpl<HOP>::dispatchForColumns(arguments, function_name);
         return executeWindowBound(result_column, 0, function_name);
     }
 };
 
 template <>
-struct WindowImpl<HOP_END>
+struct TimeWindowImpl<HOP_END>
 {
     static constexpr auto name = "hopEnd";
 
     [[maybe_unused]] static DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments, const String & function_name)
     {
-        return WindowImpl<HOP_START>::getReturnType(arguments, function_name);
+        return TimeWindowImpl<HOP_START>::getReturnType(arguments, function_name);
     }
 
     [[maybe_unused]] static ColumnPtr dispatchForColumns(const ColumnsWithTypeAndName & arguments, const String & function_name)
@@ -632,25 +632,25 @@ struct WindowImpl<HOP_END>
                 result_column = time_column.column;
         }
         else
-            result_column = WindowImpl<HOP>::dispatchForColumns(arguments, function_name);
+            result_column = TimeWindowImpl<HOP>::dispatchForColumns(arguments, function_name);
 
         return executeWindowBound(result_column, 1, function_name);
     }
 };
 
-template <WindowFunctionName type>
-DataTypePtr FunctionWindow<type>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+template <TimeWindowFunctionName type>
+DataTypePtr FunctionTimeWindow<type>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
-    return WindowImpl<type>::getReturnType(arguments, name);
+    return TimeWindowImpl<type>::getReturnType(arguments, name);
 }
 
-template <WindowFunctionName type>
-ColumnPtr FunctionWindow<type>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const
+template <TimeWindowFunctionName type>
+ColumnPtr FunctionTimeWindow<type>::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t /*input_rows_count*/) const
 {
-    return WindowImpl<type>::dispatchForColumns(arguments, name);
+    return TimeWindowImpl<type>::dispatchForColumns(arguments, name);
 }
 
-void registerFunctionsWindow(FunctionFactory& factory)
+void registerFunctionsTimeWindow(FunctionFactory& factory)
 {
     factory.registerFunction<FunctionTumble>();
     factory.registerFunction<FunctionHop>();
