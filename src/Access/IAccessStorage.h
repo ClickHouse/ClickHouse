@@ -117,8 +117,8 @@ public:
     using UpdateFunc = std::function<AccessEntityPtr(const AccessEntityPtr &)>;
 
     /// Updates an entity stored in the storage. Throws an exception if couldn't update.
-    void update(const UUID & id, const UpdateFunc & update_func);
-    void update(const std::vector<UUID> & ids, const UpdateFunc & update_func);
+    bool update(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists = true);
+    std::vector<UUID> update(const std::vector<UUID> & ids, const UpdateFunc & update_func, bool throw_if_not_exists = true);
 
     /// Updates an entity stored in the storage. Returns false if couldn't update.
     bool tryUpdate(const UUID & id, const UpdateFunc & update_func);
@@ -154,7 +154,7 @@ protected:
     virtual std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const;
     virtual std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) = 0;
     virtual bool removeImpl(const UUID & id, bool throw_if_not_exists) = 0;
-    virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) = 0;
+    virtual bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) = 0;
     virtual scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const = 0;
     virtual scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const = 0;
     virtual UUID authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;

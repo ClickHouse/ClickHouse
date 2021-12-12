@@ -636,9 +636,11 @@ bool UsersConfigAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exi
 }
 
 
-void UsersConfigAccessStorage::updateImpl(const UUID & id, const UpdateFunc &)
+bool UsersConfigAccessStorage::updateImpl(const UUID & id, const UpdateFunc &, bool throw_if_not_exists)
 {
-    auto entity = read(id);
+    auto entity = read(id, throw_if_not_exists);
+    if (!entity)
+        return false;
     throwReadonlyCannotUpdate(entity->getType(), entity->getName());
 }
 

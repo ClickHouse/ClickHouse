@@ -151,21 +151,26 @@ bool MemoryAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists
 }
 
 
-void MemoryAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func)
+bool MemoryAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
     Notifications notifications;
     SCOPE_EXIT({ notify(notifications); });
 
     std::lock_guard lock{mutex};
-    updateNoLock(id, update_func, notifications);
+    return updateNoLock(id, update_func, throw_if_not_exists, notifications);
 }
 
 
-void MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, Notifications & notifications)
+bool MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, Notifications & notifications)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
-        throwNotFound(id);
+    {
+        if (throw_if_not_exists)
+            throwNotFound(id);
+        else
+            return false;
+    }
 
     Entry & entry = it->second;
     auto old_entity = entry.entity;
@@ -175,7 +180,7 @@ void MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & updat
         throwBadCast(id, new_entity->getType(), new_entity->getName(), old_entity->getType());
 
     if (*new_entity == *old_entity)
-        return;
+        return true;
 
     entry.entity = new_entity;
 
@@ -191,6 +196,7 @@ void MemoryAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & updat
     }
 
     prepareNotifications(entry, false, notifications);
+    return true;
 }
 
 
@@ -261,7 +267,10 @@ void MemoryAccessStorage::setAllNoLock(const std::vector<std::pair<UUID, AccessE
             if (*(it->second.entity) != *entity)
             {
                 const AccessEntityPtr & changed_entity = entity;
-                updateNoLock(id, [&changed_entity](const AccessEntityPtr &) { return changed_entity; }, notifications);
+                updateNoLock(id,
+                             [&changed_entity](const AccessEntityPtr &) { return changed_entity; },
+                             /* throw_if_not_exists = */ true,
+                             notifications);
             }
         }
         else

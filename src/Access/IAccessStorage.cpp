@@ -32,101 +32,6 @@ namespace
     {
         return "ID(" + toString(id) + ")";
     }
-
-    String formatTypeWithNameOrID(const IAccessStorage & storage, const UUID & id)
-    {
-        auto entity = storage.tryRead(id);
-        if (entity)
-            return entity->formatTypeWithName();
-        return outputID(id);
-    }
-
-
-    template <typename Func>
-    bool tryCall(const Func & function)
-    {
-        try
-        {
-            function();
-            return true;
-        }
-        catch (...)
-        {
-            return false;
-        }
-    }
-
-
-    class ErrorsTracker
-    {
-    public:
-        explicit ErrorsTracker(size_t count_) { succeed.reserve(count_); }
-
-        template <typename Func>
-        bool tryCall(const Func & func)
-        {
-            try
-            {
-                func();
-            }
-            catch (Exception & e)
-            {
-                if (!exception)
-                    exception.emplace(e);
-                succeed.push_back(false);
-                return false;
-            }
-            catch (Poco::Exception & e)
-            {
-                if (!exception)
-                    exception.emplace(Exception::CreateFromPocoTag{}, e);
-                succeed.push_back(false);
-                return false;
-            }
-            catch (std::exception & e)
-            {
-                if (!exception)
-                    exception.emplace(Exception::CreateFromSTDTag{}, e);
-                succeed.push_back(false);
-                return false;
-            }
-            succeed.push_back(true);
-            return true;
-        }
-
-        bool errors() const { return exception.has_value(); }
-
-        void showErrors(const char * format, Fn<String(size_t)> auto && get_name_function)
-        {
-            if (!exception)
-                return;
-
-            Strings succeeded_names_list;
-            Strings failed_names_list;
-            for (size_t i = 0; i != succeed.size(); ++i)
-            {
-                String name = get_name_function(i);
-                if (succeed[i])
-                    succeeded_names_list.emplace_back(name);
-                else
-                    failed_names_list.emplace_back(name);
-            }
-            String succeeded_names = boost::algorithm::join(succeeded_names_list, ", ");
-            String failed_names = boost::algorithm::join(failed_names_list, ", ");
-            if (succeeded_names.empty())
-                succeeded_names = "none";
-
-            String error_message = format;
-            boost::replace_all(error_message, "{succeeded_names}", succeeded_names);
-            boost::replace_all(error_message, "{failed_names}", failed_names);
-            exception->addMessage(error_message);
-            exception->rethrow();
-        }
-
-    private:
-        std::vector<bool> succeed;
-        std::optional<Exception> exception;
-    };
 }
 
 
@@ -361,47 +266,63 @@ std::vector<UUID> IAccessStorage::tryRemove(const std::vector<UUID> & ids)
 }
 
 
-void IAccessStorage::update(const UUID & id, const UpdateFunc & update_func)
+bool IAccessStorage::update(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
-    updateImpl(id, update_func);
+    return updateImpl(id, update_func, throw_if_not_exists);
 }
 
 
-void IAccessStorage::update(const std::vector<UUID> & ids, const UpdateFunc & update_func)
+std::vector<UUID> IAccessStorage::update(const std::vector<UUID> & ids, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
-    ErrorsTracker tracker(ids.size());
+    if (ids.empty())
+        return {};
+    if (ids.size() == 1)
+        return update(ids[0], update_func, throw_if_not_exists) ? ids : std::vector<UUID>{};
 
-    for (const auto & id : ids)
+    Strings names_of_updated;
+    try
     {
-        auto func = [&] { updateImpl(id, update_func); };
-        tracker.tryCall(func);
+        std::vector<UUID> ids_of_updated;
+        for (const auto & id : ids)
+        {
+            auto name = tryReadName(id);
+            if (update(id, update_func, throw_if_not_exists))
+            {
+                ids_of_updated.push_back(id);
+                if (name)
+                    names_of_updated.push_back(std::move(name).value());
+            }
+        }
+        return ids_of_updated;
     }
-
-    if (tracker.errors())
+    catch (Exception & e)
     {
-        auto get_name_function = [&](size_t i) { return formatTypeWithNameOrID(*this, ids[i]); };
-        tracker.showErrors("Couldn't update {failed_names}. Successfully updated: {succeeded_names}", get_name_function);
+        if (!names_of_updated.empty())
+        {
+            String names_of_updated_str;
+            for (const auto & name : names_of_updated)
+            {
+                if (!names_of_updated_str.empty())
+                    names_of_updated_str += ", ";
+                names_of_updated_str += backQuote(name);
+            }
+            e.addMessage("After successfully updating {}/{}: {}", names_of_updated.size(), ids.size(), names_of_updated_str);
+        }
+        e.rethrow();
+        __builtin_unreachable();
     }
 }
 
 
 bool IAccessStorage::tryUpdate(const UUID & id, const UpdateFunc & update_func)
 {
-    auto func = [&] { updateImpl(id, update_func); };
-    return tryCall(func);
+    return update(id, update_func, /* throw_if_not_exists = */ false);
 }
 
 
 std::vector<UUID> IAccessStorage::tryUpdate(const std::vector<UUID> & ids, const UpdateFunc & update_func)
 {
-    std::vector<UUID> updated_ids;
-    for (const auto & id : ids)
-    {
-        auto func = [&] { updateImpl(id, update_func); };
-        if (tryCall(func))
-            updated_ids.push_back(id);
-    }
-    return updated_ids;
+    return update(ids, update_func, /* throw_if_not_exists = */ false);
 }
 
 

@@ -255,34 +255,43 @@ bool MultipleAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists
 }
 
 
-void MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func)
+bool MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
-    auto storage_for_updating = getStorage(id);
+    auto storage_for_updating = findStorage(id);
+    if (!storage_for_updating)
+    {
+        if (throw_if_not_exists)
+            throwNotFound(id);
+        else
+            return false;
+    }
 
     /// If the updating involves renaming check that the renamed entity will be accessible by name.
     auto storages = getStoragesInternal();
     if ((storages->size() > 1) && (storages->front() != storage_for_updating))
     {
-        auto old_entity = storage_for_updating->read(id);
-        auto new_entity = update_func(old_entity);
-        if (new_entity->getName() != old_entity->getName())
+        if (auto old_entity = storage_for_updating->tryRead(id))
         {
-            for (const auto & storage : *storages)
+            auto new_entity = update_func(old_entity);
+            if (new_entity->getName() != old_entity->getName())
             {
-                if (storage == storage_for_updating)
-                    break;
-                if (storage->find(new_entity->getType(), new_entity->getName()))
+                for (const auto & storage : *storages)
                 {
-                    throw Exception(
-                        old_entity->formatTypeWithName() + ": cannot rename to " + backQuote(new_entity->getName()) + " because "
-                            + new_entity->formatTypeWithName() + " already exists in " + storage->getStorageName(),
-                        ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
+                    if (storage == storage_for_updating)
+                        break;
+                    if (storage->find(new_entity->getType(), new_entity->getName()))
+                    {
+                        throw Exception(
+                            old_entity->formatTypeWithName() + ": cannot rename to " + backQuote(new_entity->getName()) + " because "
+                                + new_entity->formatTypeWithName() + " already exists in " + storage->getStorageName(),
+                            ErrorCodes::ACCESS_ENTITY_ALREADY_EXISTS);
+                    }
                 }
             }
         }
     }
 
-    storage_for_updating->update(id, update_func);
+    return storage_for_updating->update(id, update_func, throw_if_not_exists);
 }
 
 

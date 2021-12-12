@@ -250,21 +250,26 @@ bool ReplicatedAccessStorage::removeZooKeeper(const zkutil::ZooKeeperPtr & zooke
 }
 
 
-void ReplicatedAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func)
+bool ReplicatedAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
     LOG_DEBUG(getLogger(), "Updating entity {}", toString(id));
 
     auto zookeeper = get_zookeeper();
-    retryOnZooKeeperUserError(10, [&] { updateZooKeeper(zookeeper, id, update_func); });
+    bool ok = false;
+    retryOnZooKeeperUserError(10, [&] { ok = updateZooKeeper(zookeeper, id, update_func, throw_if_not_exists); });
+
+    if (!ok)
+        return false;
 
     Notifications notifications;
     SCOPE_EXIT({ notify(notifications); });
     std::lock_guard lock{mutex};
     refreshEntityNoLock(zookeeper, id, notifications);
+    return true;
 }
 
 
-void ReplicatedAccessStorage::updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const UpdateFunc & update_func)
+bool ReplicatedAccessStorage::updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
     const String entity_uuid = toString(id);
     const String entity_path = zookeeper_path + "/uuid/" + entity_uuid;
@@ -273,7 +278,12 @@ void ReplicatedAccessStorage::updateZooKeeper(const zkutil::ZooKeeperPtr & zooke
     Coordination::Stat stat;
     const bool uuid_exists = zookeeper->tryGet(entity_path, old_entity_definition, &stat);
     if (!uuid_exists)
-        throwNotFound(id);
+    {
+        if (throw_if_not_exists)
+            throwNotFound(id);
+        else
+            return false;
+    }
 
     const AccessEntityPtr old_entity = deserializeAccessEntity(old_entity_definition, entity_path);
     const AccessEntityPtr new_entity = update_func(old_entity);
@@ -309,7 +319,11 @@ void ReplicatedAccessStorage::updateZooKeeper(const zkutil::ZooKeeperPtr & zooke
     }
     else
     {
+        /// If this fails, then we'll just retry from the start.
         zkutil::KeeperMultiException::check(res, ops, responses);
+
+        /// Everything's fine, the entity has been updated.
+        return true;
     }
 }
 
