@@ -566,21 +566,26 @@ bool DiskAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists, 
 }
 
 
-void DiskAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func)
+bool DiskAccessStorage::updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
     Notifications notifications;
     SCOPE_EXIT({ notify(notifications); });
 
     std::lock_guard lock{mutex};
-    updateNoLock(id, update_func, notifications);
+    return updateNoLock(id, update_func, throw_if_not_exists, notifications);
 }
 
 
-void DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, Notifications & notifications)
+bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, Notifications & notifications)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
-        throwNotFound(id);
+    {
+        if (throw_if_not_exists)
+            throwNotFound(id);
+        else
+            return false;
+    }
 
     Entry & entry = it->second;
     if (readonly)
@@ -594,7 +599,7 @@ void DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
         throwBadCast(id, new_entity->getType(), new_entity->getName(), old_entity->getType());
 
     if (*new_entity == *old_entity)
-        return;
+        return true;
 
     const String & new_name = new_entity->getName();
     const String & old_name = old_entity->getName();
@@ -620,6 +625,7 @@ void DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     }
 
     prepareNotifications(id, entry, false, notifications);
+    return true;
 }
 
 

@@ -463,10 +463,12 @@ bool LDAPAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
 }
 
 
-void LDAPAccessStorage::updateImpl(const UUID & id, const UpdateFunc &)
+bool LDAPAccessStorage::updateImpl(const UUID & id, const UpdateFunc &, bool throw_if_not_exists)
 {
     std::scoped_lock lock(mutex);
-    auto entity = read(id);
+    auto entity = read(id, throw_if_not_exists);
+    if (!entity)
+        return false;
     throwReadonlyCannotUpdate(entity->getType(), entity->getName());
 }
 

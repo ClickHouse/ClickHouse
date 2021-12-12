@@ -33,7 +33,7 @@ private:
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
     std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
     bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
-    void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
+    bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) override;
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
     scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
 
@@ -46,7 +46,7 @@ private:
 
     bool insertNoLock(const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists, Notifications & notifications);
     bool removeNoLock(const UUID & id, bool throw_if_not_exists, Notifications & notifications);
-    void updateNoLock(const UUID & id, const UpdateFunc & update_func, Notifications & notifications);
+    bool updateNoLock(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists, Notifications & notifications);
     void setAllNoLock(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities, Notifications & notifications);
     void prepareNotifications(const Entry & entry, bool remove, Notifications & notifications) const;
 
