@@ -1,6 +1,7 @@
 #!/bin/bash
 # shellcheck disable=SC2094
 # shellcheck disable=SC2086
+# shellcheck disable=SC2024
 
 set -x
 
@@ -142,7 +143,7 @@ quit
     # FIXME Hung check may work incorrectly because of attached gdb
     # 1. False positives are possible
     # 2. We cannot attach another gdb to get stacktraces if some queries hung
-    gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" >> /test_output/gdb.log &
+    sudo gdb -batch -command script.gdb -p "$(cat /var/run/clickhouse-server/clickhouse-server.pid)" >> /test_output/gdb.log &
 }
 
 configure
