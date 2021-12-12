@@ -40,7 +40,7 @@ public:
     void addBlock(Block block_, UInt32 watermark)
     {
         std::lock_guard lock(blocks_mutex);
-        blocks_with_watermark.push_back(std::make_pair(std::move(block_), watermark));
+        blocks_with_watermark.push_back({std::move(block_), watermark});
     }
 
 protected:
@@ -58,16 +58,18 @@ protected:
                 block.rows());
         }
         else
+        {
             return Chunk(block.getColumns(), block.rows());
+        }
     }
 
     std::pair<Block, UInt32> generateImpl()
     {
         if (has_limit && num_updates == static_cast<Int64>(limit))
-            return std::make_pair(Block(), 0);
+            return {Block(), 0};
 
         if (isCancelled() || storage.shutdown_called)
-            return std::make_pair(Block(), 0);
+            return {Block(), 0};
 
         std::unique_lock lock(blocks_mutex);
         if (blocks_with_watermark.empty())
@@ -76,18 +78,18 @@ protected:
             {
                 end_of_blocks = true;
                 num_updates += 1;
-                return std::make_pair(getHeader(), 0);
+                return {getHeader(), 0};
             }
 
             storage.fire_condition.wait_for(lock, std::chrono::seconds(heartbeat_interval_sec));
 
             if (isCancelled() || storage.shutdown_called)
             {
-                return std::make_pair(Block(), 0);
+                return {Block(), 0};
             }
 
             if (blocks_with_watermark.empty())
-                return std::make_pair(getHeader(), 0);
+                return {getHeader(), 0};
             else
             {
                 end_of_blocks = false;

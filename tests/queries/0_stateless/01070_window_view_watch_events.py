@@ -43,12 +43,6 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client2.expect("Ok.")
     client1.expect('1990-01-01 12:00:05' + end_of_block)
     client1.expect('Progress: 1.00 rows.*\)')
-    client2.send("INSERT INTO 01070_window_view_watch_events.mt VALUES (1, '1990/01/01 12:00:10');")
-    client2.expect("Ok.")
-    client2.send("INSERT INTO 01070_window_view_watch_events.mt VALUES (1, '1990/01/01 12:00:11');")
-    client2.expect("Ok.")
-    client1.expect('1990-01-01 12:00:10' + end_of_block)
-    client1.expect('Progress: 2.00 rows.*\)')
 
     # send Ctrl-C
     client1.send('\x03', eol='')
