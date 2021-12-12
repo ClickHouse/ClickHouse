@@ -486,10 +486,10 @@ bool DiskAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & ne
     const String & name = new_entity->getName();
     AccessEntityType type = new_entity->getType();
 
+    /// Check that we can insert.
     if (readonly)
         throwReadonlyCannotInsert(type, name);
 
-    /// Check that we can insert.
     auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
     auto it_by_name = entries_by_name.find(name);
     bool name_collision = (it_by_name != entries_by_name.end());
@@ -590,6 +590,7 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     Entry & entry = it->second;
     if (readonly)
         throwReadonlyCannotUpdate(entry.type, entry.name);
+
     if (!entry.entity)
         entry.entity = readAccessEntityFromDisk(id);
     auto old_entity = entry.entity;

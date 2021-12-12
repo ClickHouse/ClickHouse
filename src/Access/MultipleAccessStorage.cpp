@@ -13,8 +13,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND;
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
+    extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND;
 }
 
 using Storage = IAccessStorage;
@@ -216,11 +216,20 @@ bool MultipleAccessStorage::isReadOnly() const
 }
 
 
+bool MultipleAccessStorage::isReadOnly(const UUID & id) const
+{
+    auto storage = findStorage(id);
+    if (storage)
+        return storage->isReadOnly(id);
+    return false;
+}
+
+
 std::optional<UUID> MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists)
 {
-    auto storages = getStoragesInternal();
-
     std::shared_ptr<IAccessStorage> storage_for_insertion;
+
+    auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
     {
         if (!storage->isReadOnly() || storage->find(entity->getType(), entity->getName()))
@@ -231,7 +240,13 @@ std::optional<UUID> MultipleAccessStorage::insertImpl(const AccessEntityPtr & en
     }
 
     if (!storage_for_insertion)
-        throw Exception("Not found a storage to insert " + entity->formatTypeWithName(), ErrorCodes::ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND);
+    {
+        throw Exception(
+            ErrorCodes::ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND,
+            "Could not insert {} because there is no writeable access storage in {}",
+            entity->formatTypeWithName(),
+            getStorageName());
+    }
 
     auto id = storage_for_insertion->insert(entity, replace_if_exists, throw_if_exists);
     if (id)
