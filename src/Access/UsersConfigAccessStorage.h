@@ -53,7 +53,7 @@ private:
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
     std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const override;
     std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
-    void removeImpl(const UUID & id) override;
+    bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
     scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;

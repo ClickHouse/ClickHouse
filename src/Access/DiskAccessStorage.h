@@ -36,7 +36,7 @@ private:
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
     std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const override;
     std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
-    void removeImpl(const UUID & id) override;
+    bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
     scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
@@ -51,7 +51,7 @@ private:
     void stopListsWritingThread();
 
     bool insertNoLock(const UUID & id, const AccessEntityPtr & new_entity, bool replace_if_exists, bool throw_if_exists, Notifications & notifications);
-    void removeNoLock(const UUID & id, Notifications & notifications);
+    bool removeNoLock(const UUID & id, bool throw_if_not_exists, Notifications & notifications);
     void updateNoLock(const UUID & id, const UpdateFunc & update_func, Notifications & notifications);
 
     AccessEntityPtr readAccessEntityFromDisk(const UUID & id) const;

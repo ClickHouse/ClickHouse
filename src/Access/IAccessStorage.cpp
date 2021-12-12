@@ -301,47 +301,63 @@ std::vector<UUID> IAccessStorage::insertOrReplace(const std::vector<AccessEntity
 }
 
 
-void IAccessStorage::remove(const UUID & id)
+bool IAccessStorage::remove(const UUID & id, bool throw_if_not_exists)
 {
-    removeImpl(id);
+    return removeImpl(id, throw_if_not_exists);
 }
 
 
-void IAccessStorage::remove(const std::vector<UUID> & ids)
+std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool throw_if_not_exists)
 {
-    ErrorsTracker tracker(ids.size());
+    if (ids.empty())
+        return {};
+    if (ids.size() == 1)
+        return remove(ids[0], throw_if_not_exists) ? ids : std::vector<UUID>{};
 
-    for (const auto & id : ids)
+    Strings removed_names;
+    try
     {
-        auto func = [&] { removeImpl(id); };
-        tracker.tryCall(func);
+        std::vector<UUID> removed_ids;
+        for (const auto & id : ids)
+        {
+            auto name = tryReadName(id);
+            if (remove(id, throw_if_not_exists))
+            {
+                removed_ids.push_back(id);
+                if (name)
+                    removed_names.push_back(std::move(name).value());
+            }
+        }
+        return removed_ids;
     }
-
-    if (tracker.errors())
+    catch (Exception & e)
     {
-        auto get_name_function = [&](size_t i) { return formatTypeWithNameOrID(*this, ids[i]); };
-        tracker.showErrors("Couldn't remove {failed_names}. Successfully removed: {succeeded_names}", get_name_function);
+        if (!removed_names.empty())
+        {
+            String removed_names_str;
+            for (const auto & name : removed_names)
+            {
+                if (!removed_names_str.empty())
+                    removed_names_str += ", ";
+                removed_names_str += backQuote(name);
+            }
+            e.addMessage("After successfully removing {}/{}: {}", removed_names.size(), ids.size(), removed_names_str);
+        }
+        e.rethrow();
+        __builtin_unreachable();
     }
 }
 
 
 bool IAccessStorage::tryRemove(const UUID & id)
 {
-    auto func = [&] { removeImpl(id); };
-    return tryCall(func);
+    return remove(id, /* throw_if_not_exists = */ false);
 }
 
 
 std::vector<UUID> IAccessStorage::tryRemove(const std::vector<UUID> & ids)
 {
-    std::vector<UUID> removed_ids;
-    for (const auto & id : ids)
-    {
-        auto func = [&] { removeImpl(id); };
-        if (tryCall(func))
-            removed_ids.push_back(id);
-    }
-    return removed_ids;
+    return remove(ids, /* throw_if_not_exists = */ false);
 }
 
 

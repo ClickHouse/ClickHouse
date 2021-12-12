@@ -51,7 +51,7 @@ private: // IAccessStorage implementations.
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
     virtual std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const override;
     virtual std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
-    virtual void removeImpl(const UUID & id) override;
+    virtual bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
     virtual scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
     virtual scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;

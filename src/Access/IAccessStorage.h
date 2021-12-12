@@ -105,8 +105,8 @@ public:
     std::vector<UUID> insertOrReplace(const std::vector<AccessEntityPtr> & multiple_entities);
 
     /// Removes an entity from the storage. Throws an exception if couldn't remove.
-    void remove(const UUID & id);
-    void remove(const std::vector<UUID> & ids);
+    bool remove(const UUID & id, bool throw_if_not_exists = true);
+    std::vector<UUID> remove(const std::vector<UUID> & ids, bool throw_if_not_exists = true);
 
     /// Removes an entity from the storage. Returns false if couldn't remove.
     bool tryRemove(const UUID & id);
@@ -153,7 +153,7 @@ protected:
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const = 0;
     virtual std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const;
     virtual std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) = 0;
-    virtual void removeImpl(const UUID & id) = 0;
+    virtual bool removeImpl(const UUID & id, bool throw_if_not_exists) = 0;
     virtual void updateImpl(const UUID & id, const UpdateFunc & update_func) = 0;
     virtual scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const = 0;
     virtual scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const = 0;

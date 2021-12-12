@@ -243,9 +243,15 @@ std::optional<UUID> MultipleAccessStorage::insertImpl(const AccessEntityPtr & en
 }
 
 
-void MultipleAccessStorage::removeImpl(const UUID & id)
+bool MultipleAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
 {
-    getStorage(id)->remove(id);
+    if (auto storage = findStorage(id))
+        return storage->remove(id, throw_if_not_exists);
+
+    if (throw_if_not_exists)
+        throwNotFound(id);
+    else
+        return false;
 }
 
 

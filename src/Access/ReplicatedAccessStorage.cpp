@@ -196,21 +196,26 @@ bool ReplicatedAccessStorage::insertZooKeeper(
     return true;
 }
 
-void ReplicatedAccessStorage::removeImpl(const UUID & id)
+bool ReplicatedAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
 {
     LOG_DEBUG(getLogger(), "Removing entity {}", toString(id));
 
     auto zookeeper = get_zookeeper();
-    retryOnZooKeeperUserError(10, [&] { removeZooKeeper(zookeeper, id); });
+    bool ok = false;
+    retryOnZooKeeperUserError(10, [&] { ok = removeZooKeeper(zookeeper, id, throw_if_not_exists); });
+
+    if (!ok)
+        return false;
 
     Notifications notifications;
     SCOPE_EXIT({ notify(notifications); });
     std::lock_guard lock{mutex};
     removeEntityNoLock(id, notifications);
+    return true;
 }
 
 
-void ReplicatedAccessStorage::removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id)
+bool ReplicatedAccessStorage::removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, bool throw_if_not_exists)
 {
     const String entity_uuid = toString(id);
     const String entity_path = zookeeper_path + "/uuid/" + entity_uuid;
@@ -219,7 +224,13 @@ void ReplicatedAccessStorage::removeZooKeeper(const zkutil::ZooKeeperPtr & zooke
     Coordination::Stat entity_stat;
     const bool uuid_exists = zookeeper->tryGet(entity_path, entity_definition, &entity_stat);
     if (!uuid_exists)
-        throwNotFound(id);
+    {
+        /// Couldn't remove, there is no such entity.
+        if (throw_if_not_exists)
+            throwNotFound(id);
+        else
+            return false;
+    }
 
     const AccessEntityPtr entity = deserializeAccessEntity(entity_definition, entity_path);
     const AccessEntityTypeInfo type_info = AccessEntityTypeInfo::get(entity->getType());
@@ -230,8 +241,12 @@ void ReplicatedAccessStorage::removeZooKeeper(const zkutil::ZooKeeperPtr & zooke
     Coordination::Requests ops;
     ops.emplace_back(zkutil::makeRemoveRequest(entity_path, entity_stat.version));
     ops.emplace_back(zkutil::makeRemoveRequest(entity_name_path, -1));
+
     /// If this fails, then we'll just retry from the start.
     zookeeper->multi(ops);
+
+    /// Everything's fine, the entity has been removed.
+    return true;
 }
 
 

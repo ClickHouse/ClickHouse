@@ -453,10 +453,12 @@ std::optional<UUID> LDAPAccessStorage::insertImpl(const AccessEntityPtr & entity
 }
 
 
-void LDAPAccessStorage::removeImpl(const UUID & id)
+bool LDAPAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
 {
     std::scoped_lock lock(mutex);
-    auto entity = read(id);
+    auto entity = read(id, throw_if_not_exists);
+    if (!entity)
+        return false;
     throwReadonlyCannotRemove(entity->getType(), entity->getName());
 }
 
