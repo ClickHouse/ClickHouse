@@ -627,9 +627,11 @@ std::optional<UUID> UsersConfigAccessStorage::insertImpl(const AccessEntityPtr &
 }
 
 
-void UsersConfigAccessStorage::removeImpl(const UUID & id)
+bool UsersConfigAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
 {
-    auto entity = read(id);
+    auto entity = read(id, throw_if_not_exists);
+    if (!entity)
+        return false;
     throwReadonlyCannotRemove(entity->getType(), entity->getName());
 }
 

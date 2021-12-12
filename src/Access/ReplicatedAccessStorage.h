@@ -46,11 +46,11 @@ private:
     ConcurrentBoundedQueue<UUID> refresh_queue;
 
     std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) override;
-    void removeImpl(const UUID & id) override;
+    bool removeImpl(const UUID & id, bool throw_if_not_exists) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
 
     bool insertZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
-    void removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id);
+    bool removeZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, bool throw_if_not_exists);
     void updateZooKeeper(const zkutil::ZooKeeperPtr & zookeeper, const UUID & id, const UpdateFunc & update_func);
 
     void runWorkerThread();

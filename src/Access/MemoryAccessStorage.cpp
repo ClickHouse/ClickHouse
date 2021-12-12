@@ -103,7 +103,7 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
     if (name_collision && replace_if_exists)
     {
         const auto & existing_entry = *(it_by_name->second);
-        removeNoLock(existing_entry.id, notifications);
+        removeNoLock(existing_entry.id, /* throw_if_not_exists = */ false, notifications);
     }
 
     /// Do insertion.
@@ -116,21 +116,26 @@ bool MemoryAccessStorage::insertNoLock(const UUID & id, const AccessEntityPtr & 
 }
 
 
-void MemoryAccessStorage::removeImpl(const UUID & id)
+bool MemoryAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
 {
     Notifications notifications;
     SCOPE_EXIT({ notify(notifications); });
 
     std::lock_guard lock{mutex};
-    removeNoLock(id, notifications);
+    return removeNoLock(id, throw_if_not_exists, notifications);
 }
 
 
-void MemoryAccessStorage::removeNoLock(const UUID & id, Notifications & notifications)
+bool MemoryAccessStorage::removeNoLock(const UUID & id, bool throw_if_not_exists, Notifications & notifications)
 {
     auto it = entries_by_id.find(id);
     if (it == entries_by_id.end())
-        throwNotFound(id);
+    {
+        if (throw_if_not_exists)
+            throwNotFound(id);
+        else
+            return false;
+    }
 
     Entry & entry = it->second;
     const String & name = entry.entity->getName();
@@ -142,6 +147,7 @@ void MemoryAccessStorage::removeNoLock(const UUID & id, Notifications & notifica
     auto & entries_by_name = entries_by_name_and_type[static_cast<size_t>(type)];
     entries_by_name.erase(name);
     entries_by_id.erase(it);
+    return true;
 }
 
 
@@ -244,7 +250,7 @@ void MemoryAccessStorage::setAllNoLock(const std::vector<std::pair<UUID, AccessE
     boost::container::flat_set<UUID> ids_to_remove = std::move(not_used_ids);
     boost::range::copy(conflicting_ids, std::inserter(ids_to_remove, ids_to_remove.end()));
     for (const auto & id : ids_to_remove)
-        removeNoLock(id, notifications);
+        removeNoLock(id, /* throw_if_not_exists = */ false, notifications);
 
     /// Insert or update entities.
     for (const auto & [id, entity] : all_entities)
