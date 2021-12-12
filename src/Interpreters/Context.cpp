@@ -2966,7 +2966,7 @@ PartUUIDsPtr Context::getPartUUIDs() const
 ReadTaskCallback Context::getReadTaskCallback() const
 {
     if (!next_task_callback.has_value())
-        throw Exception(fmt::format("Next task callback is not set for query {}", getInitialQueryId()), ErrorCodes::LOGICAL_ERROR);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Next task callback is not set for query {}", getInitialQueryId());
     return next_task_callback.value();
 }
 
@@ -2974,6 +2974,20 @@ ReadTaskCallback Context::getReadTaskCallback() const
 void Context::setReadTaskCallback(ReadTaskCallback && callback)
 {
     next_task_callback = callback;
+}
+
+
+MergeTreeReadTaskCallback Context::getMergeTreeReadTaskCallback() const
+{
+    if (!merge_tree_read_task_callback.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Next task callback for is not set for query {}", getInitialQueryId());
+
+    return merge_tree_read_task_callback.value();
+}
+
+void Context::setMergeTreeReadTaskCallback(MergeTreeReadTaskCallback && callback)
+{
+    merge_tree_read_task_callback = callback;
 }
 
 PartUUIDsPtr Context::getIgnoredPartUUIDs() const

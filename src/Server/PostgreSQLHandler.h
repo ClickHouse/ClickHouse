@@ -1,14 +1,11 @@
 #pragma once
 
 #include <Common/CurrentMetrics.h>
+#include <Common/config.h>
 #include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <base/logger_useful.h>
 #include "IServer.h"
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
 
 #if USE_SSL
 #   include <Poco/Net/SecureStreamSocket.h>
