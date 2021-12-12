@@ -73,6 +73,8 @@ FormatSettings getFormatSettings(ContextPtr context, const Settings & settings)
     format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
     format_settings.date_time_input_format = settings.date_time_input_format;
     format_settings.date_time_output_format = settings.date_time_output_format;
+    format_settings.bool_true_representation = settings.bool_true_representation;
+    format_settings.bool_false_representation = settings.bool_false_representation;
     format_settings.enable_streaming = settings.output_format_enable_streaming;
     format_settings.import_nested_json = settings.input_format_import_nested_json;
     format_settings.input_allow_errors_num = settings.input_format_allow_errors_num;
@@ -307,6 +309,26 @@ OutputFormatPtr FormatFactory::getOutputFormat(
 
     return format;
 }
+
+String FormatFactory::getContentType(
+    const String & name,
+    ContextPtr context,
+    const std::optional<FormatSettings> & _format_settings) const
+{
+    const auto & output_getter = getCreators(name).output_creator;
+    if (!output_getter)
+        throw Exception(ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT, "Format {} is not suitable for output (with processors)", name);
+
+    auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
+
+    Block empty_block;
+    RowOutputFormatParams empty_params;
+    WriteBufferFromOwnString empty_buffer;
+    auto format = output_getter(empty_buffer, empty_block, empty_params, format_settings);
+
+    return format->getContentType();
+}
+
 
 void FormatFactory::registerInputFormat(const String & name, InputCreator input_creator)
 {

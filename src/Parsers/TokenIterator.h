@@ -1,7 +1,9 @@
 #pragma once
 
-#include <vector>
+#include <Core/Defines.h>
 #include <Parsers/Lexer.h>
+
+#include <vector>
 
 
 namespace DB
@@ -59,22 +61,30 @@ private:
 public:
     explicit TokenIterator(Tokens & tokens_) : tokens(&tokens_) {}
 
-    const Token & get() { return (*tokens)[index]; }
-    const Token & operator*() { return get(); }
-    const Token * operator->() { return &get(); }
+    ALWAYS_INLINE const Token & get() { return (*tokens)[index]; }
+    ALWAYS_INLINE const Token & operator*() { return get(); }
+    ALWAYS_INLINE const Token * operator->() { return &get(); }
 
-    TokenIterator & operator++() { ++index; return *this; }
-    TokenIterator & operator--() { --index; return *this; }
+    ALWAYS_INLINE TokenIterator & operator++()
+    {
+        ++index;
+        return *this;
+    }
+    ALWAYS_INLINE TokenIterator & operator--()
+    {
+        --index;
+        return *this;
+    }
 
-    bool operator< (const TokenIterator & rhs) const { return index < rhs.index; }
-    bool operator<= (const TokenIterator & rhs) const { return index <= rhs.index; }
-    bool operator== (const TokenIterator & rhs) const { return index == rhs.index; }
-    bool operator!= (const TokenIterator & rhs) const { return index != rhs.index; }
+    ALWAYS_INLINE bool operator<(const TokenIterator & rhs) const { return index < rhs.index; }
+    ALWAYS_INLINE bool operator<=(const TokenIterator & rhs) const { return index <= rhs.index; }
+    ALWAYS_INLINE bool operator==(const TokenIterator & rhs) const { return index == rhs.index; }
+    ALWAYS_INLINE bool operator!=(const TokenIterator & rhs) const { return index != rhs.index; }
 
-    bool isValid() { return get().type < TokenType::EndOfStream; }
+    ALWAYS_INLINE bool isValid() { return get().type < TokenType::EndOfStream; }
 
     /// Rightmost token we had looked.
-    const Token & max() { return tokens->max(); }
+    ALWAYS_INLINE const Token & max() { return tokens->max(); }
 };
 
 
