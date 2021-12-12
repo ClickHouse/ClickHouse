@@ -35,6 +35,7 @@ def process_result(result_folder):
         with open(status_path, 'r', encoding='utf-8') as status_file:
             status = list(csv.reader(status_file, delimiter='\t'))
     if len(status) != 1 or len(status[0]) != 2:
+        logging.info("Files in result folder %s", os.listdir(result_folder))
         return "error", "Invalid check_status.tsv", test_results, additional_files
     state, description = status[0][0], status[0][1]
 
