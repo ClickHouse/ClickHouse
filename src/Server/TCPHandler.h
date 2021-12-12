@@ -177,6 +177,7 @@ private:
     String cluster_secret;
 
     std::mutex task_callback_mutex;
+    std::mutex fatal_error_mutex;
 
     /// At the moment, only one ongoing query in the connection is supported at a time.
     QueryState state;
