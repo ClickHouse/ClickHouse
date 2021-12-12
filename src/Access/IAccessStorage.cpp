@@ -23,6 +23,7 @@ namespace ErrorCodes
     extern const int IP_ADDRESS_NOT_ALLOWED;
     extern const int AUTHENTICATION_FAILED;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -127,7 +128,7 @@ std::optional<String> IAccessStorage::readNameImpl(const UUID & id, bool throw_i
 
 UUID IAccessStorage::insert(const AccessEntityPtr & entity)
 {
-    return *insertImpl(entity, /* replace_if_exists = */ false, /* throw_if_exists = */ true);
+    return *insert(entity, /* replace_if_exists = */ false, /* throw_if_exists = */ true);
 }
 
 
@@ -165,6 +166,7 @@ std::vector<UUID> IAccessStorage::insert(const std::vector<AccessEntityPtr> & mu
     }
     catch (Exception & e)
     {
+        /// Try to add more information to the error message.
         if (!successfully_inserted.empty())
         {
             String successfully_inserted_str;
@@ -196,13 +198,21 @@ std::vector<UUID> IAccessStorage::tryInsert(const std::vector<AccessEntityPtr> &
 
 UUID IAccessStorage::insertOrReplace(const AccessEntityPtr & entity)
 {
-    return *insertImpl(entity, /* replace_if_exists = */ true, /* throw_if_exists = */ false);
+    return *insert(entity, /* replace_if_exists = */ true, /* throw_if_exists = */ false);
 }
 
 
 std::vector<UUID> IAccessStorage::insertOrReplace(const std::vector<AccessEntityPtr> & multiple_entities)
 {
     return insert(multiple_entities, /* replace_if_exists = */ true, /* throw_if_exists = */ false);
+}
+
+
+std::optional<UUID> IAccessStorage::insertImpl(const AccessEntityPtr & entity, bool, bool)
+{
+    if (isReadOnly())
+        throwReadonlyCannotInsert(entity->getType(), entity->getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "insertImpl() is not implemented in {}", getStorageType());
 }
 
 
@@ -223,7 +233,29 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
     try
     {
         std::vector<UUID> removed_ids;
+        std::vector<UUID> readonly_ids;
+
+        /// First we call remove() for non-readonly entities.
         for (const auto & id : ids)
+        {
+            if (isReadOnly(id))
+                readonly_ids.push_back(id);
+            else
+            {
+                auto name = tryReadName(id);
+                if (remove(id, throw_if_not_exists))
+                {
+                    removed_ids.push_back(id);
+                    if (name)
+                        removed_names.push_back(std::move(name).value());
+                }
+            }
+        }
+
+        /// For readonly entities we're still going to call remove() because
+        /// isReadOnly(id) could change and even if it's not then a storage-specific
+        /// implementation of removeImpl() will probably generate a better error message.
+        for (const auto & id : readonly_ids)
         {
             auto name = tryReadName(id);
             if (remove(id, throw_if_not_exists))
@@ -233,10 +265,12 @@ std::vector<UUID> IAccessStorage::remove(const std::vector<UUID> & ids, bool thr
                     removed_names.push_back(std::move(name).value());
             }
         }
+
         return removed_ids;
     }
     catch (Exception & e)
     {
+        /// Try to add more information to the error message.
         if (!removed_names.empty())
         {
             String removed_names_str;
@@ -266,6 +300,19 @@ std::vector<UUID> IAccessStorage::tryRemove(const std::vector<UUID> & ids)
 }
 
 
+bool IAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
+{
+    if (isReadOnly(id))
+    {
+        auto entity = read(id, throw_if_not_exists);
+        if (!entity)
+            return false;
+        throwReadonlyCannotRemove(entity->getType(), entity->getName());
+    }
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeImpl() is not implemented in {}", getStorageType());
+}
+
+
 bool IAccessStorage::update(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists)
 {
     return updateImpl(id, update_func, throw_if_not_exists);
@@ -283,7 +330,29 @@ std::vector<UUID> IAccessStorage::update(const std::vector<UUID> & ids, const Up
     try
     {
         std::vector<UUID> ids_of_updated;
+        std::vector<UUID> readonly_ids;
+
+        /// First we call update() for non-readonly entities.
         for (const auto & id : ids)
+        {
+            if (isReadOnly(id))
+                readonly_ids.push_back(id);
+            else
+            {
+                auto name = tryReadName(id);
+                if (update(id, update_func, throw_if_not_exists))
+                {
+                    ids_of_updated.push_back(id);
+                    if (name)
+                        names_of_updated.push_back(std::move(name).value());
+                }
+            }
+        }
+
+        /// For readonly entities we're still going to call update() because
+        /// isReadOnly(id) could change and even if it's not then a storage-specific
+        /// implementation of updateImpl() will probably generate a better error message.
+        for (const auto & id : readonly_ids)
         {
             auto name = tryReadName(id);
             if (update(id, update_func, throw_if_not_exists))
@@ -293,10 +362,12 @@ std::vector<UUID> IAccessStorage::update(const std::vector<UUID> & ids, const Up
                     names_of_updated.push_back(std::move(name).value());
             }
         }
+
         return ids_of_updated;
     }
     catch (Exception & e)
     {
+        /// Try to add more information to the error message.
         if (!names_of_updated.empty())
         {
             String names_of_updated_str;
@@ -323,6 +394,19 @@ bool IAccessStorage::tryUpdate(const UUID & id, const UpdateFunc & update_func)
 std::vector<UUID> IAccessStorage::tryUpdate(const std::vector<UUID> & ids, const UpdateFunc & update_func)
 {
     return update(ids, update_func, /* throw_if_not_exists = */ false);
+}
+
+
+bool IAccessStorage::updateImpl(const UUID & id, const UpdateFunc &, bool throw_if_not_exists)
+{
+    if (isReadOnly(id))
+    {
+        auto entity = read(id, throw_if_not_exists);
+        if (!entity)
+            return false;
+        throwReadonlyCannotUpdate(entity->getType(), entity->getName());
+    }
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "updateImpl() is not implemented in {}", getStorageType());
 }
 
 

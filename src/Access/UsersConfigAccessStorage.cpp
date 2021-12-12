@@ -621,30 +621,6 @@ std::optional<String> UsersConfigAccessStorage::readNameImpl(const UUID & id, bo
 }
 
 
-std::optional<UUID> UsersConfigAccessStorage::insertImpl(const AccessEntityPtr & entity, bool, bool)
-{
-    throwReadonlyCannotInsert(entity->getType(), entity->getName());
-}
-
-
-bool UsersConfigAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
-{
-    auto entity = read(id, throw_if_not_exists);
-    if (!entity)
-        return false;
-    throwReadonlyCannotRemove(entity->getType(), entity->getName());
-}
-
-
-bool UsersConfigAccessStorage::updateImpl(const UUID & id, const UpdateFunc &, bool throw_if_not_exists)
-{
-    auto entity = read(id, throw_if_not_exists);
-    if (!entity)
-        return false;
-    throwReadonlyCannotUpdate(entity->getType(), entity->getName());
-}
-
-
 scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
     return memory_storage.subscribeForChanges(id, handler);

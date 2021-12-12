@@ -22,6 +22,7 @@ public:
 
     const char * getStorageType() const override { return STORAGE_TYPE; }
     bool isReadOnly() const override;
+    bool isReadOnly(const UUID & id) const override;
 
     void setStorages(const std::vector<StoragePtr> & storages);
     void addStorage(const StoragePtr & new_storage);

@@ -447,32 +447,6 @@ std::optional<String> LDAPAccessStorage::readNameImpl(const UUID & id, bool thro
 }
 
 
-std::optional<UUID> LDAPAccessStorage::insertImpl(const AccessEntityPtr & entity, bool, bool)
-{
-    throwReadonlyCannotInsert(entity->getType(), entity->getName());
-}
-
-
-bool LDAPAccessStorage::removeImpl(const UUID & id, bool throw_if_not_exists)
-{
-    std::scoped_lock lock(mutex);
-    auto entity = read(id, throw_if_not_exists);
-    if (!entity)
-        return false;
-    throwReadonlyCannotRemove(entity->getType(), entity->getName());
-}
-
-
-bool LDAPAccessStorage::updateImpl(const UUID & id, const UpdateFunc &, bool throw_if_not_exists)
-{
-    std::scoped_lock lock(mutex);
-    auto entity = read(id, throw_if_not_exists);
-    if (!entity)
-        return false;
-    throwReadonlyCannotUpdate(entity->getType(), entity->getName());
-}
-
-
 scope_guard LDAPAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
     std::scoped_lock lock(mutex);

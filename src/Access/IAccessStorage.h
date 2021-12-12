@@ -37,6 +37,9 @@ public:
     /// Returns true if this storage is readonly.
     virtual bool isReadOnly() const { return false; }
 
+    /// Returns true if this entity is readonly.
+    virtual bool isReadOnly(const UUID &) const { return isReadOnly(); }
+
     /// Returns the identifiers of all the entities of a specified type contained in the storage.
     std::vector<UUID> findAll(AccessEntityType type) const;
 
@@ -152,9 +155,9 @@ protected:
     virtual std::vector<UUID> findAllImpl(AccessEntityType type) const = 0;
     virtual AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const = 0;
     virtual std::optional<String> readNameImpl(const UUID & id, bool throw_if_not_exists) const;
-    virtual std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists) = 0;
-    virtual bool removeImpl(const UUID & id, bool throw_if_not_exists) = 0;
-    virtual bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists) = 0;
+    virtual std::optional<UUID> insertImpl(const AccessEntityPtr & entity, bool replace_if_exists, bool throw_if_exists);
+    virtual bool removeImpl(const UUID & id, bool throw_if_not_exists);
+    virtual bool updateImpl(const UUID & id, const UpdateFunc & update_func, bool throw_if_not_exists);
     virtual scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const = 0;
     virtual scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const = 0;
     virtual UUID authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const;
