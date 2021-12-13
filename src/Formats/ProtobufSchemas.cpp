@@ -1,4 +1,6 @@
-#include "config_formats.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
 
 #if USE_PROTOBUF
 #    include <Formats/FormatSchemaInfo.h>
@@ -71,7 +73,6 @@ ProtobufSchemas::~ProtobufSchemas() = default;
 
 const google::protobuf::Descriptor * ProtobufSchemas::getMessageTypeForFormatSchema(const FormatSchemaInfo & info)
 {
-    std::lock_guard lock(mutex);
     auto it = importers.find(info.schemaDirectory());
     if (it == importers.end())
         it = importers.emplace(info.schemaDirectory(), std::make_unique<ImporterWithSourceTree>(info.schemaDirectory())).first;

@@ -18,8 +18,8 @@ namespace ErrorCodes
 
 StorageID::StorageID(const ASTQueryWithTableAndOutput & query)
 {
-    database_name = query.getDatabase();
-    table_name = query.getTable();
+    database_name = query.database;
+    table_name = query.table;
     uuid = query.uuid;
     assertNotEmpty();
 }
@@ -110,7 +110,7 @@ StorageID StorageID::fromDictionaryConfig(const Poco::Util::AbstractConfiguratio
     return res;
 }
 
-String StorageID::getShortName() const
+String StorageID::getInternalDictionaryName() const
 {
     assertNotEmpty();
     if (hasUUID())

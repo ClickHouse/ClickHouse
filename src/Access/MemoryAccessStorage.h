@@ -24,8 +24,8 @@ public:
     void setAll(const std::vector<std::pair<UUID, AccessEntityPtr>> & all_entities);
 
 private:
-    std::optional<UUID> findImpl(AccessEntityType type, const String & name) const override;
-    std::vector<UUID> findAllImpl(AccessEntityType type) const override;
+    std::optional<UUID> findImpl(EntityType type, const String & name) const override;
+    std::vector<UUID> findAllImpl(EntityType type) const override;
     bool existsImpl(const UUID & id) const override;
     AccessEntityPtr readImpl(const UUID & id) const override;
     String readNameImpl(const UUID & id) const override;
@@ -34,9 +34,9 @@ private:
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
     scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    scope_guard subscribeForChangesImpl(AccessEntityType type, const OnChangedHandler & handler) const override;
+    scope_guard subscribeForChangesImpl(EntityType type, const OnChangedHandler & handler) const override;
     bool hasSubscriptionImpl(const UUID & id) const override;
-    bool hasSubscriptionImpl(AccessEntityType type) const override;
+    bool hasSubscriptionImpl(EntityType type) const override;
 
     struct Entry
     {
@@ -53,7 +53,7 @@ private:
 
     mutable std::recursive_mutex mutex;
     std::unordered_map<UUID, Entry> entries_by_id; /// We want to search entries both by ID and by the pair of name and type.
-    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(AccessEntityType::MAX)];
-    mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(AccessEntityType::MAX)];
+    std::unordered_map<String, Entry *> entries_by_name_and_type[static_cast<size_t>(EntityType::MAX)];
+    mutable std::list<OnChangedHandler> handlers_by_type[static_cast<size_t>(EntityType::MAX)];
 };
 }

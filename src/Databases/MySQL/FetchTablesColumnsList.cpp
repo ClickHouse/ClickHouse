@@ -1,4 +1,6 @@
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_MYSQL
 #include <Core/Block.h>
@@ -6,9 +8,7 @@
 #include <DataTypes/convertMySQLDataType.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Processors/Executors/PullingPipelineExecutor.h>
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Sources/MySQLSource.h>
+#include <Formats/MySQLBlockInputStream.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
@@ -85,12 +85,8 @@ std::map<String, ColumnsDescription> fetchTablesColumnsList(
     query << " TABLE_NAME IN " << toQueryStringWithQuote(tables_name) << " ORDER BY ORDINAL_POSITION";
 
     StreamSettings mysql_input_stream_settings(settings);
-    auto result = std::make_unique<MySQLSource>(pool.get(), query.str(), tables_columns_sample_block, mysql_input_stream_settings);
-    QueryPipeline pipeline(std::move(result));
-
-    Block block;
-    PullingPipelineExecutor executor(pipeline);
-    while (executor.pull(block))
+    MySQLBlockInputStream result(pool.get(), query.str(), tables_columns_sample_block, mysql_input_stream_settings);
+    while (Block block = result.read())
     {
         const auto & table_name_col = *block.getByPosition(0).column;
         const auto & column_name_col = *block.getByPosition(1).column;

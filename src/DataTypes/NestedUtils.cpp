@@ -45,15 +45,6 @@ std::pair<std::string, std::string> splitName(const std::string & name)
     return {name.substr(0, idx), name.substr(idx + 1)};
 }
 
-std::pair<std::string_view, std::string_view> splitName(const std::string_view & name)
-{
-    auto idx = name.find_first_of('.');
-    if (idx == std::string::npos || idx == 0 || idx + 1 == name.size())
-        return {name, {}};
-
-    return {name.substr(0, idx), name.substr(idx + 1)};
-}
-
 
 std::string extractTableName(const std::string & nested_name)
 {
@@ -218,19 +209,6 @@ void validateArraySizes(const Block & block)
             }
         }
     }
-}
-
-
-std::unordered_set<String> getAllTableNames(const Block & block)
-{
-    std::unordered_set<String> nested_table_names;
-    for (auto & name : block.getNames())
-    {
-        auto nested_table_name = Nested::extractTableName(name);
-        if (!nested_table_name.empty())
-            nested_table_names.insert(nested_table_name);
-    }
-    return nested_table_names;
 }
 
 }

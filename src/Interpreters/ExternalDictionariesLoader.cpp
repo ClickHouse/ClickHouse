@@ -6,7 +6,9 @@
 #include <Databases/IDatabase.h>
 #include <Storages/IStorage.h>
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_MYSQL
 #   include <mysqlxx/PoolFactory.h>
@@ -43,20 +45,12 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
-
-    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
-        local_context->addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, resolved_dictionary_name);
-
     return std::static_pointer_cast<const IDictionary>(load(resolved_dictionary_name));
 }
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
     std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
-
-    if (local_context->hasQueryContext() && local_context->getSettingsRef().log_queries)
-        local_context->addQueryFactoriesInfo(Context::QueryLogFactories::Dictionary, resolved_dictionary_name);
-
     return std::static_pointer_cast<const IDictionary>(tryLoad(resolved_dictionary_name));
 }
 
@@ -99,7 +93,7 @@ QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase
     if (qualified_name->database.empty() && !has(qualified_name->table))
     {
         std::string current_database_name = query_context->getCurrentDatabase();
-        std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name, current_database_name);
+        std::string resolved_name = resolveDictionaryNameFromDatabaseCatalog(dictionary_name);
 
         /// If after qualify dictionary_name with default_database_name we find it, add default_database to qualified name.
         if (has(resolved_name))

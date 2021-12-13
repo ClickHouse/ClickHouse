@@ -10,8 +10,6 @@ from collections import defaultdict
 import random
 import json
 import csv
-# for crc32
-import zlib
 
 
 MAX_RETRY = 3
@@ -27,9 +25,6 @@ MAX_TIME_SECONDS = 3600
 
 MAX_TIME_IN_SANDBOX = 20 * 60   # 20 minutes
 TASK_TIMEOUT = 8 * 60 * 60      # 8 hours
-
-def stringhash(s):
-    return zlib.crc32(s.encode('utf-8'))
 
 def get_tests_to_run(pr_info):
     result = set([])
@@ -130,13 +125,13 @@ def clear_ip_tables_and_restart_daemons():
     logging.info("Dump iptables after run %s", subprocess.check_output("sudo iptables -L", shell=True))
     try:
         logging.info("Killing all alive docker containers")
-        subprocess.check_output("timeout -s 9 10m docker kill $(docker ps -q)", shell=True)
+        subprocess.check_output("docker kill $(docker ps -q)", shell=True)
     except subprocess.CalledProcessError as err:
         logging.info("docker kill excepted: " + str(err))
 
     try:
         logging.info("Removing all docker containers")
-        subprocess.check_output("timeout -s 9 10m docker rm $(docker ps -a -q) --force", shell=True)
+        subprocess.check_output("docker rm $(docker ps -a -q) --force", shell=True)
     except subprocess.CalledProcessError as err:
         logging.info("docker rm excepted: " + str(err))
 
@@ -187,13 +182,6 @@ class ClickhouseIntegrationTestsRunner:
         self.disable_net_host = 'disable_net_host' in self.params and self.params['disable_net_host']
         self.start_time = time.time()
         self.soft_deadline_time = self.start_time + (TASK_TIMEOUT - MAX_TIME_IN_SANDBOX)
-
-        if 'run_by_hash_total' in self.params:
-            self.run_by_hash_total = self.params['run_by_hash_total']
-            self.run_by_hash_num = self.params['run_by_hash_num']
-        else:
-            self.run_by_hash_total = 0
-            self.run_by_hash_num = 0
 
     def path(self):
         return self.result_path
@@ -293,20 +281,8 @@ class ClickhouseIntegrationTestsRunner:
         logging.info("Getting all tests with cmd '%s'", cmd)
         subprocess.check_call(cmd, shell=True)  # STYLE_CHECK_ALLOW_SUBPROCESS_CHECK_CALL
 
-        all_tests_file_path = "{repo_path}/tests/integration/{out_file}".format(repo_path=repo_path, out_file=out_file)
+        all_tests_file_path = "{}/tests/integration/all_tests.txt".format(repo_path)
         if not os.path.isfile(all_tests_file_path) or os.path.getsize(all_tests_file_path) == 0:
-            all_tests_full_file_path = "{repo_path}/tests/integration/{out_file}".format(repo_path=repo_path, out_file=out_file_full)
-            if os.path.isfile(all_tests_full_file_path):
-                # log runner output
-                logging.info("runner output:")
-                with open(all_tests_full_file_path, 'r') as all_tests_full_file:
-                    for line in all_tests_full_file:
-                        line = line.rstrip()
-                        if line:
-                            logging.info("runner output: %s", line)
-            else:
-                logging.info("runner output '%s' is empty", all_tests_full_file_path)
-
             raise Exception("There is something wrong with getting all tests list: file '{}' is empty or does not exist.".format(all_tests_file_path))
 
         all_tests = []
@@ -397,24 +373,6 @@ class ClickhouseIntegrationTestsRunner:
                 res.add(path)
         return res
 
-    def try_run_test_group(self, repo_path, test_group, tests_in_group, num_tries, num_workers):
-        try:
-            return self.run_test_group(repo_path, test_group, tests_in_group, num_tries, num_workers)
-        except Exception as e:
-            logging.info("Failed to run {}:\n{}".format(str(test_group), str(e)))
-            counters = {
-                "ERROR": [],
-                "PASSED": [],
-                "FAILED": [],
-                "SKIPPED": [],
-                "FLAKY": [],
-            }
-            tests_times = defaultdict(float)
-            for test in tests_in_group:
-                counters["ERROR"].append(test)
-                tests_times[test] = 0
-            return counters, tests_times, []
-
     def run_test_group(self, repo_path, test_group, tests_in_group, num_tries, num_workers):
         counters = {
             "ERROR": [],
@@ -434,7 +392,7 @@ class ClickhouseIntegrationTestsRunner:
 
         image_cmd = self._get_runner_image_cmd(repo_path)
         test_group_str = test_group.replace('/', '_').replace('.', '_')
-
+        
         log_paths = []
         test_data_dirs = {}
 
@@ -546,7 +504,7 @@ class ClickhouseIntegrationTestsRunner:
         for i in range(TRIES_COUNT):
             final_retry += 1
             logging.info("Running tests for the %s time", i)
-            counters, tests_times, log_paths = self.try_run_test_group(repo_path, "flaky", tests_to_run, 1, 1)
+            counters, tests_times, log_paths = self.run_test_group(repo_path, "flaky", tests_to_run, 1, 1)
             logs += log_paths
             if counters["FAILED"]:
                 logging.info("Found failed tests: %s", ' '.join(counters["FAILED"]))
@@ -588,15 +546,6 @@ class ClickhouseIntegrationTestsRunner:
         self._install_clickhouse(build_path)
         logging.info("Dump iptables before run %s", subprocess.check_output("sudo iptables -L", shell=True))
         all_tests = self._get_all_tests(repo_path)
-
-        if self.run_by_hash_total != 0:
-            grouped_tests = self.group_test_by_file(all_tests)
-            all_filtered_by_hash_tests = []
-            for group, tests_in_group in grouped_tests.items():
-                if stringhash(group) % self.run_by_hash_total == self.run_by_hash_num:
-                    all_filtered_by_hash_tests += tests_in_group
-            all_tests = all_filtered_by_hash_tests
-
         parallel_skip_tests = self._get_parallel_tests_skip_list(repo_path)
         logging.info("Found %s tests first 3 %s", len(all_tests), ' '.join(all_tests[:3]))
         filtered_sequential_tests = list(filter(lambda test: test in all_tests, parallel_skip_tests))
@@ -631,7 +580,7 @@ class ClickhouseIntegrationTestsRunner:
 
         for group, tests in items_to_run:
             logging.info("Running test group %s countaining %s tests", group, len(tests))
-            group_counters, group_test_times, log_paths = self.try_run_test_group(repo_path, group, tests, MAX_RETRY, NUM_WORKERS)
+            group_counters, group_test_times, log_paths = self.run_test_group(repo_path, group, tests, MAX_RETRY, NUM_WORKERS)
             total_tests = 0
             for counter, value in group_counters.items():
                 logging.info("Tests from group %s stats, %s count %s", group, counter, len(value))

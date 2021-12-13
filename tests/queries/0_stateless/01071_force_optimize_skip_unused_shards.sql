@@ -1,5 +1,3 @@
--- Tags: shard
-
 set optimize_skip_unused_shards=1;
 
 drop table if exists data_01071;

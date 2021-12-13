@@ -34,7 +34,6 @@ The table structure can differ from the original PostgreSQL table structure:
 -   `user` — PostgreSQL user.
 -   `password` — User password.
 -   `schema` — Non-default table schema. Optional.
--   `on conflict ...` — example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
 
 ## Implementation Details {#implementation-details}
 
@@ -50,14 +49,14 @@ PostgreSQL `Array` types are converted into ClickHouse arrays.
 
 !!! info "Note"
     Be careful - in PostgreSQL an array data, created like a `type_name[]`, may contain multi-dimensional arrays of different dimensions in different table rows in same column. But in ClickHouse it is only allowed to have multidimensional arrays of the same count of dimensions in all table rows in same column.
-
+	
 Supports multiple replicas that must be listed by `|`. For example:
 
 ```sql
 CREATE TABLE test_replicas (id UInt32, name String) ENGINE = PostgreSQL(`postgres{2|3|4}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword');
 ```
 
-Replicas priority for PostgreSQL dictionary source is supported. The bigger the number in map, the less the priority. The highest priority is `0`.
+Replicas priority for PostgreSQL dictionary source is supported. The bigger the number in map, the less the priority. The highest priority is `0`. 
 
 In the example below replica `example01-1` has the highest priority:
 
@@ -149,4 +148,4 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 -   [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
 -   [Using PostgreSQL as a source of external dictionary](../../../sql-reference/dictionaries/external-dictionaries/external-dicts-dict-sources.md#dicts-external_dicts_dict_sources-postgresql)
 
-[Original article](https://clickhouse.com/docs/en/engines/table-engines/integrations/postgresql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/engines/table-engines/integrations/postgresql/) <!--hide-->

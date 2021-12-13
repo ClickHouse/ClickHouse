@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-# Tags: long, replica, no-parallel
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
-# shellcheck source=./replication.lib
-. "$CURDIR"/replication.lib
 
 REPLICAS=5
 
@@ -62,6 +59,10 @@ timeout $TIMEOUT bash -c kill_mutation_thread 2> /dev/null &
 
 wait
 
+for i in $(seq $REPLICAS); do
+    $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_kill_$i"
+done
+
 # with timeout alter query can be not finished yet, so to execute new alter
 # we use retries
 counter=0
@@ -79,7 +80,7 @@ while true; do
 done
 
 
-metadata_version=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/s1/replicas/r11/' and name = 'metadata_version'")
+metadata_version=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/s1/replicas/r1$i/' and name = 'metadata_version'")
 for i in $(seq $REPLICAS); do
     replica_metadata_version=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.zookeeper WHERE path = '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/s1/replicas/r1$i/' and name = 'metadata_version'")
 
@@ -93,8 +94,6 @@ for i in $(seq $REPLICAS); do
 done
 
 $CLICKHOUSE_CLIENT --query "SELECT sum(value) FROM concurrent_kill_1"
-
-check_replication_consistency "concurrent_kill_" "count(), sum(key), sum(cityHash64(value))"
 
 for i in $(seq $REPLICAS); do
     $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS concurrent_kill_$i"

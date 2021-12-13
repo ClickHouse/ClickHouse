@@ -13,7 +13,7 @@ struct NamePosition
     static constexpr auto name = "position";
 };
 
-using FunctionPosition = FunctionsStringSearch<PositionImpl<NamePosition, PositionCaseSensitiveASCII>>;
+using FunctionPosition = FunctionsStringSearch<PositionImpl<PositionCaseSensitiveASCII>, NamePosition>;
 
 }
 
