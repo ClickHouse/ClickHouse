@@ -449,30 +449,24 @@ void MultipleAccessStorage::updateSubscriptionsToNestedStorages(std::unique_lock
 }
 
 
-UUID MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
+std::optional<UUID> MultipleAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators, bool throw_if_user_not_exists) const
 {
     auto storages = getStoragesInternal();
     for (const auto & storage : *storages)
     {
-        try
+        auto id = storage->authenticate(credentials, address, external_authenticators, /* throw_if_user_not_exists = */ false);
+        if (id)
         {
-            auto id = storage->authenticate(credentials, address, external_authenticators, /* replace_exception_with_cannot_authenticate = */ false);
             std::lock_guard lock{mutex};
-            ids_cache.set(id, storage);
+            ids_cache.set(*id, storage);
             return id;
         }
-        catch (...)
-        {
-            if (!storage->find(AccessEntityType::USER, credentials.getUserName()))
-            {
-                /// The authentication failed because there no users with such name in the `storage`
-                /// thus we can try to search in other nested storages.
-                continue;
-            }
-            throw;
-        }
     }
-    throwNotFound(AccessEntityType::USER, credentials.getUserName());
+
+    if (throw_if_user_not_exists)
+        throwNotFound(AccessEntityType::USER, credentials.getUserName());
+    else
+        return std::nullopt;
 }
 
 }

@@ -474,7 +474,11 @@ bool LDAPAccessStorage::hasSubscription(AccessEntityType type) const
     return memory_storage.hasSubscription(type);
 }
 
-UUID LDAPAccessStorage::authenticateImpl(const Credentials & credentials, const Poco::Net::IPAddress & address, const ExternalAuthenticators & external_authenticators) const
+std::optional<UUID> LDAPAccessStorage::authenticateImpl(
+    const Credentials & credentials,
+    const Poco::Net::IPAddress & address,
+    const ExternalAuthenticators & external_authenticators,
+    bool /* throw_if_user_not_exists */) const
 {
     std::scoped_lock lock(mutex);
     LDAPClient::SearchResultsList external_roles;
@@ -487,7 +491,7 @@ UUID LDAPAccessStorage::authenticateImpl(const Credentials & credentials, const 
             throwAddressNotAllowed(address);
 
         if (typeid_cast<const AlwaysAllowCredentials *>(&credentials))
-            return *id;
+            return id;
 
         if (!areLDAPCredentialsValidNoLock(*user, credentials, external_authenticators, external_roles))
             throwInvalidCredentials();
@@ -495,7 +499,7 @@ UUID LDAPAccessStorage::authenticateImpl(const Credentials & credentials, const 
         // Just in case external_roles are changed. This will be no-op if they are not.
         updateAssignedRolesNoLock(*id, user->getName(), external_roles);
 
-        return *id;
+        return id;
     }
     else
     {
@@ -523,5 +527,4 @@ UUID LDAPAccessStorage::authenticateImpl(const Credentials & credentials, const 
         return memory_storage.insert(user);
     }
 }
-
 }
