@@ -147,8 +147,7 @@ Strings StorageFile::getPathsList(const String & table_path, const String & user
     Strings paths;
     /// Do not use fs::canonical or fs::weakly_canonical.
     /// Otherwise it will not allow to work with symlinks in `user_files_path` directory.
-    String path = fs::absolute(fs_table_path);
-    path = fs::path(path).lexically_normal(); /// Normalize path.
+    String path = fs::absolute(fs_table_path).lexically_normal(); /// Normalize path.
     if (path.find_first_of("*?{") == std::string::npos)
     {
         std::error_code error;
