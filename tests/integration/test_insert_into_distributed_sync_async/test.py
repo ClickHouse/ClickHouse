@@ -68,8 +68,6 @@ def test_insertion_sync(started_cluster):
 2000-01-01	100500''')
     assert TSV(node2.query('SELECT date, val FROM local_table WHERE val = 100500 ORDER BY date')) == expected
 
-    node1.query("TRUNCATE TABLE local_table SYNC")
-    node2.query("TRUNCATE TABLE local_table SYNC")
 
 """
 def test_insertion_sync_fails_on_error(started_cluster):

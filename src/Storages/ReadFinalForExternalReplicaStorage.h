@@ -1,11 +1,13 @@
 #pragma once
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_MYSQL || USE_LIBPQXX
 
 #include <Storages/StorageProxy.h>
-#include <QueryPipeline/Pipe.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB

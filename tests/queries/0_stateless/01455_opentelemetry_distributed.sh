@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: distributed
-
 set -ue
 
 unset CLICKHOUSE_LOG_COMMENT

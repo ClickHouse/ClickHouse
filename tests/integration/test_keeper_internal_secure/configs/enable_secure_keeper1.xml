@@ -1,4 +1,4 @@
-<clickhouse>
+<yandex>
     <keeper_server>
         <tcp_port>9181</tcp_port>
         <server_id>1</server_id>
@@ -17,14 +17,14 @@
             <server>
                 <id>1</id>
                 <hostname>node1</hostname>
-                <port>9234</port>
+                <port>44444</port>
                 <can_become_leader>true</can_become_leader>
                 <priority>3</priority>
             </server>
             <server>
                 <id>2</id>
                 <hostname>node2</hostname>
-                <port>9234</port>
+                <port>44444</port>
                 <can_become_leader>true</can_become_leader>
                 <start_as_follower>true</start_as_follower>
                 <priority>2</priority>
@@ -32,11 +32,11 @@
             <server>
                 <id>3</id>
                 <hostname>node3</hostname>
-                <port>9234</port>
+                <port>44444</port>
                 <can_become_leader>true</can_become_leader>
                 <start_as_follower>true</start_as_follower>
                 <priority>1</priority>
             </server>
         </raft_configuration>
     </keeper_server>
-</clickhouse>
+</yandex>

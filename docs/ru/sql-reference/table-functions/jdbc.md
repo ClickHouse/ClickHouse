@@ -35,4 +35,4 @@ FROM jdbc('mysql-dev?datasource_column', 'show databases') a
 INNER JOIN jdbc('self?datasource_column', 'show databases') b ON a.Database = b.name
 ```
 
-[Оригинальная статья](https://clickhouse.com/docs/en/query_language/table_functions/jdbc/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/en/query_language/table_functions/jdbc/) <!--hide-->

@@ -1,5 +1,3 @@
--- Tags: long, replica
-
 DROP TABLE IF EXISTS r1;
 DROP TABLE IF EXISTS r2;
 

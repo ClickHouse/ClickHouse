@@ -107,7 +107,10 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func)
         || !supported.find(lower_name)->second.count(child_func->name))
         return {};
 
-    auto original_alias = func.tryGetAlias();
+    /// Cannot rewrite function with alias cause alias could become undefined
+    if (!func.tryGetAlias().empty() || !child_func->tryGetAlias().empty())
+        return {};
+
     const auto & child_func_args = child_func->arguments->children;
     const auto * first_literal = child_func_args[0]->as<ASTLiteral>();
     const auto * second_literal = child_func_args[1]->as<ASTLiteral>();
@@ -129,12 +132,7 @@ ASTPtr tryExchangeFunctions(const ASTFunction & func)
         optimized_ast = exchangeExtractSecondArgument(new_name, *child_func);
     }
 
-    if (optimized_ast)
-    {
-        optimized_ast->setAlias(original_alias);
-        return optimized_ast;
-    }
-    return {};
+    return optimized_ast;
 }
 
 }
@@ -157,12 +155,7 @@ void ArithmeticOperationsInAgrFuncMatcher::visit(const ASTFunction & func, ASTPt
 void ArithmeticOperationsInAgrFuncMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (const auto * function_node = ast->as<ASTFunction>())
-    {
-        if (function_node->is_window_function)
-            return;
-
         visit(*function_node, ast, data);
-    }
 }
 
 bool ArithmeticOperationsInAgrFuncMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)

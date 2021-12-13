@@ -1,8 +1,10 @@
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_BZIP2
 #    include <IO/Bzip2ReadBuffer.h>
-#    include <bzlib.h>
+#    include <bzlib.h> // Y_IGNORE
 
 namespace DB
 {

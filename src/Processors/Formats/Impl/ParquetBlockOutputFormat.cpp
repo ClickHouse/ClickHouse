@@ -60,7 +60,7 @@ void ParquetBlockOutputFormat::consume(Chunk chunk)
         throw Exception{"Error while writing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
-void ParquetBlockOutputFormat::finalizeImpl()
+void ParquetBlockOutputFormat::finalize()
 {
     if (!file_writer)
     {
@@ -74,9 +74,9 @@ void ParquetBlockOutputFormat::finalizeImpl()
         throw Exception{"Error while closing a table: " + status.ToString(), ErrorCodes::UNKNOWN_EXCEPTION};
 }
 
-void registerOutputFormatParquet(FormatFactory & factory)
+void registerOutputFormatProcessorParquet(FormatFactory & factory)
 {
-    factory.registerOutputFormat(
+    factory.registerOutputFormatProcessor(
         "Parquet",
         [](WriteBuffer & buf,
            const Block & sample,
@@ -94,7 +94,7 @@ void registerOutputFormatParquet(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatParquet(FormatFactory &)
+void registerOutputFormatProcessorParquet(FormatFactory &)
 {
 }
 }

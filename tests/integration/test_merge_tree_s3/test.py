@@ -77,7 +77,8 @@ def generate_values(date_str, count, sign=1):
     return ",".join(["('{}',{},'{}')".format(x, y, z) for x, y, z in data])
 
 
-def create_table(node, table_name, **additional_settings):
+def create_table(cluster, table_name, **additional_settings):
+    node = cluster.instances["node"]
     settings = {
         "storage_policy": "s3",
         "old_parts_lifetime": 0,
@@ -96,7 +97,6 @@ def create_table(node, table_name, **additional_settings):
         ORDER BY (dt, id)
         SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}"""
 
-    node.query(f"DROP TABLE IF EXISTS {table_name}")
     node.query(create_table_statement)
 
 
@@ -140,10 +140,9 @@ def wait_for_delete_s3_objects(cluster, expected, timeout=30):
 
 
 @pytest.fixture(autouse=True)
-@pytest.mark.parametrize("node_name", ["node"])
-def drop_table(cluster, node_name):
+def drop_table(cluster):
     yield
-    node = cluster.instances[node_name]
+    node = cluster.instances["node"]
     minio = cluster.minio_client
 
     node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
@@ -157,15 +156,16 @@ def drop_table(cluster, node_name):
 
 
 @pytest.mark.parametrize(
-    "min_rows_for_wide_part,files_per_part,node_name",
+    "min_rows_for_wide_part,files_per_part",
     [
-        (0, FILES_OVERHEAD_PER_PART_WIDE, "node"),
-        (8192, FILES_OVERHEAD_PER_PART_COMPACT, "node")
+        (0, FILES_OVERHEAD_PER_PART_WIDE),
+        (8192, FILES_OVERHEAD_PER_PART_COMPACT)
     ]
 )
-def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part, node_name):
-    node = cluster.instances[node_name]
-    create_table(node, "s3_test", min_rows_for_wide_part=min_rows_for_wide_part)
+def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part):
+    create_table(cluster, "s3_test", min_rows_for_wide_part=min_rows_for_wide_part)
+
+    node = cluster.instances["node"]
     minio = cluster.minio_client
 
     values1 = generate_values('2020-01-03', 4096)
@@ -182,18 +182,17 @@ def test_simple_insert_select(cluster, min_rows_for_wide_part, files_per_part, n
 
 
 @pytest.mark.parametrize(
-    "merge_vertical,node_name", [
-        (True, "node"),
-        (False, "node")
-])
-def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
+    "merge_vertical", [False, True]
+)
+def test_insert_same_partition_and_merge(cluster, merge_vertical):
     settings = {}
     if merge_vertical:
         settings['vertical_merge_algorithm_min_rows_to_activate'] = 0
         settings['vertical_merge_algorithm_min_columns_to_activate'] = 0
 
-    node = cluster.instances[node_name]
-    create_table(node, "s3_test", **settings)
+    create_table(cluster, "s3_test", **settings)
+
+    node = cluster.instances["node"]
     minio = cluster.minio_client
 
     node.query("SYSTEM STOP MERGES s3_test")
@@ -226,10 +225,10 @@ def test_insert_same_partition_and_merge(cluster, merge_vertical, node_name):
     wait_for_delete_s3_objects(cluster, FILES_OVERHEAD_PER_PART_WIDE + FILES_OVERHEAD)
 
 
-@pytest.mark.parametrize("node_name", ["node"])
-def test_alter_table_columns(cluster, node_name):
-    node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+def test_alter_table_columns(cluster):
+    create_table(cluster, "s3_test")
+
+    node = cluster.instances["node"]
     minio = cluster.minio_client
 
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
@@ -255,10 +254,10 @@ def test_alter_table_columns(cluster, node_name):
     wait_for_delete_s3_objects(cluster, FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE + 2)
 
 
-@pytest.mark.parametrize("node_name", ["node"])
-def test_attach_detach_partition(cluster, node_name):
-    node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+def test_attach_detach_partition(cluster):
+    create_table(cluster, "s3_test")
+
+    node = cluster.instances["node"]
     minio = cluster.minio_client
 
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
@@ -287,10 +286,10 @@ def test_attach_detach_partition(cluster, node_name):
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD
 
 
-@pytest.mark.parametrize("node_name", ["node"])
-def test_move_partition_to_another_disk(cluster, node_name):
-    node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+def test_move_partition_to_another_disk(cluster):
+    create_table(cluster, "s3_test")
+
+    node = cluster.instances["node"]
     minio = cluster.minio_client
 
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
@@ -309,10 +308,10 @@ def test_move_partition_to_another_disk(cluster, node_name):
         list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 2
 
 
-@pytest.mark.parametrize("node_name", ["node"])
-def test_table_manipulations(cluster, node_name):
-    node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+def test_table_manipulations(cluster):
+    create_table(cluster, "s3_test")
+
+    node = cluster.instances["node"]
     minio = cluster.minio_client
 
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
@@ -337,10 +336,10 @@ def test_table_manipulations(cluster, node_name):
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD
 
 
-@pytest.mark.parametrize("node_name", ["node"])
-def test_move_replace_partition_to_another_table(cluster, node_name):
-    node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+def test_move_replace_partition_to_another_table(cluster):
+    create_table(cluster, "s3_test")
+
+    node = cluster.instances["node"]
     minio = cluster.minio_client
 
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
@@ -352,7 +351,7 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
     assert len(
         list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE * 4
 
-    create_table(node, "s3_clone")
+    create_table(cluster, "s3_clone")
 
     node.query("ALTER TABLE s3_test MOVE PARTITION '2020-01-03' TO TABLE s3_clone")
     node.query("ALTER TABLE s3_test MOVE PARTITION '2020-01-05' TO TABLE s3_clone")
@@ -403,10 +402,10 @@ def test_move_replace_partition_to_another_table(cluster, node_name):
         minio.remove_object(cluster.minio_bucket, obj.object_name)
 
 
-@pytest.mark.parametrize("node_name", ["node"])
-def test_freeze_unfreeze(cluster, node_name):
-    node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+def test_freeze_unfreeze(cluster):
+    create_table(cluster, "s3_test")
+
+    node = cluster.instances["node"]
     minio = cluster.minio_client
 
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-03', 4096)))
@@ -428,10 +427,9 @@ def test_freeze_unfreeze(cluster, node_name):
         list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD
 
 
-@pytest.mark.parametrize("node_name", ["node"])
-def test_s3_disk_apply_new_settings(cluster, node_name):
-    node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+def test_s3_disk_apply_new_settings(cluster):
+    create_table(cluster, "s3_test")
+    node = cluster.instances["node"]
 
     def get_s3_requests():
         node.query("SYSTEM FLUSH LOGS")
@@ -454,10 +452,10 @@ def test_s3_disk_apply_new_settings(cluster, node_name):
     assert get_s3_requests() - s3_requests_before == s3_requests_to_write_partition * 3
 
 
-@pytest.mark.parametrize("node_name", ["node"])
-def test_s3_disk_restart_during_load(cluster, node_name):
-    node = cluster.instances[node_name]
-    create_table(node, "s3_test")
+def test_s3_disk_restart_during_load(cluster):
+    create_table(cluster, "s3_test")
+
+    node = cluster.instances["node"]
 
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-04', 1024 * 1024)))
     node.query("INSERT INTO s3_test VALUES {}".format(generate_values('2020-01-05', 1024 * 1024, -1)))
@@ -489,11 +487,11 @@ def test_s3_disk_restart_during_load(cluster, node_name):
         thread.join()
 
 
-@pytest.mark.parametrize("node_name", ["node"])
-def test_s3_disk_reads_on_unstable_connection(cluster, node_name):
-    node = cluster.instances[node_name]
-    create_table(node, "s3_test", storage_policy='unstable_s3')
+def test_s3_disk_reads_on_unstable_connection(cluster):
+    create_table(cluster, "s3_test", storage_policy='unstable_s3')
+    node = cluster.instances["node"]
     node.query("INSERT INTO s3_test SELECT today(), *, toString(*) FROM system.numbers LIMIT 9000000")
     for i in range(30):
         print(f"Read sequence {i}")
         assert node.query("SELECT sum(id) FROM s3_test").splitlines() == ["40499995500000"]
+

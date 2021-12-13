@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<clickhouse>
+<yandex>
     <max_table_size_to_drop>1</max_table_size_to_drop>
     <max_partition_size_to_drop>1</max_partition_size_to_drop>
-</clickhouse>
+</yandex>

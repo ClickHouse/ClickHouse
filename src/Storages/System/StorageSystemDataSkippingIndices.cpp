@@ -25,9 +25,6 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
             { "type", std::make_shared<DataTypeString>() },
             { "expr", std::make_shared<DataTypeString>() },
             { "granularity", std::make_shared<DataTypeUInt64>() },
-            { "data_compressed_bytes", std::make_shared<DataTypeUInt64>() },
-            { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>() },
-            { "marks", std::make_shared<DataTypeUInt64>()}
         }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -100,7 +97,6 @@ protected:
                     continue;
                 const auto indices = metadata_snapshot->getSecondaryIndices();
 
-                auto secondary_index_sizes = table->getSecondaryIndexSizes();
                 for (const auto & index : indices)
                 {
                     ++rows_count;
@@ -131,21 +127,6 @@ protected:
                     // 'granularity' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(index.granularity);
-
-                    auto & secondary_index_size = secondary_index_sizes[index.name];
-
-                    // 'compressed bytes' column
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.data_compressed);
-
-                    // 'uncompressed bytes' column
-
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.data_uncompressed);
-
-                    /// 'marks' column
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(secondary_index_size.marks);
                 }
             }
         }

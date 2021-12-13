@@ -33,7 +33,7 @@
 #   include <IO/ReadHelpers.h>
 #   include <IO/WriteBufferFromString.h>
 #   include <IO/WriteHelpers.h>
-#   include <base/range.h>
+#   include <common/range.h>
 #   include <google/protobuf/descriptor.h>
 #   include <google/protobuf/descriptor.pb.h>
 #   include <boost/algorithm/string.hpp>
@@ -42,7 +42,7 @@
 #   include <boost/numeric/conversion/cast.hpp>
 #   include <boost/range/algorithm.hpp>
 #   include <boost/range/algorithm_ext/erase.hpp>
-#   include <base/logger_useful.h>
+#   include <common/logger_useful.h>
 
 namespace DB
 {
@@ -1690,7 +1690,7 @@ namespace
             {
                 aggregate_function->create(data);
                 ReadBufferFromMemory buf(str.data(), str.length());
-                aggregate_function->deserialize(data, buf, std::nullopt, &arena);
+                aggregate_function->deserialize(data, buf, &arena);
                 return data;
             }
             catch (...)
