@@ -25,7 +25,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
 
     client1.send('CREATE DATABASE IF NOT EXISTS 01070_window_view_watch_events')
     client1.expect(prompt)
-    client1.send('DROP TABLE IF EXISTS 01070_window_view_watch_events.mt')
+    client1.send('DROP TABLE IF EXISTS 01070_window_view_watch_events.mt NO DELAY')
     client1.expect(prompt)
     client1.send('DROP TABLE IF EXISTS 01070_window_view_watch_events.wv NO DELAY')
     client1.expect(prompt)
